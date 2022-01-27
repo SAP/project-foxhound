@@ -24,8 +24,7 @@
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Source)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 HTMLSourceElement::HTMLSourceElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
@@ -57,17 +56,18 @@ bool HTMLSourceElement::WouldMatchMediaForDocument(const nsAString& aMedia,
     return true;
   }
 
-  RefPtr<MediaList> mediaList = MediaList::Create(aMedia);
+  RefPtr<MediaList> mediaList =
+      MediaList::Create(NS_ConvertUTF16toUTF8(aMedia));
   return mediaList->Matches(*aDocument);
 }
 
 void HTMLSourceElement::UpdateMediaList(const nsAttrValue* aValue) {
   mMediaList = nullptr;
-  nsString mediaStr;
-  if (!aValue || (mediaStr = aValue->GetStringValue()).IsEmpty()) {
+  if (!aValue) {
     return;
   }
 
+  NS_ConvertUTF16toUTF8 mediaStr(aValue->GetStringValue());
   mMediaList = MediaList::Create(mediaStr);
 }
 
@@ -158,5 +158,4 @@ JSObject* HTMLSourceElement::WrapNode(JSContext* aCx,
   return HTMLSourceElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

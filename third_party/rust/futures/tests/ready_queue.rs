@@ -8,9 +8,6 @@ use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, Barrier};
 use std::thread;
 
-trait AssertSendSync: Send + Sync {}
-impl AssertSendSync for FuturesUnordered<()> {}
-
 #[test]
 fn basic_usage() {
     block_on(future::lazy(move |cx| {
@@ -126,7 +123,7 @@ fn stress() {
 
             assert_eq!(rx.len(), n);
 
-            rx.sort();
+            rx.sort_unstable();
 
             for (i, x) in rx.into_iter().enumerate() {
                 assert_eq!(i, x);

@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// While the order is stable, it is arbitrary and does not necessarily resemble the layout order.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct Block(u32);
 entity_impl!(Block, "block");
 
@@ -65,6 +66,7 @@ impl Block {
 ///
 /// While the order is stable, it is arbitrary.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct Value(u32);
 entity_impl!(Value, "v");
 
@@ -97,6 +99,7 @@ impl Value {
 ///
 /// While the order is stable, it is arbitrary and does not necessarily resemble the layout order.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct Inst(u32);
 entity_impl!(Inst, "inst");
 
@@ -143,7 +146,7 @@ impl StackSlot {
 /// [`VmContext`](super::GlobalValueData::VMContext) using
 /// [`FuncEnvironment::make_global`](https://docs.rs/cranelift-wasm/*/cranelift_wasm/trait.FuncEnvironment.html#tymethod.make_global).
 /// - When compiling to native code, you can use it for objects in static memory with
-/// [`Module::declare_data_in_func`](https://docs.rs/cranelift-module/*/cranelift_module/struct.Module.html#method.declare_data_in_func).
+/// [`Module::declare_data_in_func`](https://docs.rs/cranelift-module/*/cranelift_module/trait.Module.html#method.declare_data_in_func).
 /// - For any compilation target, it can be registered with
 /// [`FunctionBuilder::create_global_value`](https://docs.rs/cranelift-frontend/*/cranelift_frontend/struct.FunctionBuilder.html#method.create_global_value).
 ///
@@ -152,6 +155,7 @@ impl StackSlot {
 ///
 /// While the order is stable, it is arbitrary.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct GlobalValue(u32);
 entity_impl!(GlobalValue, "gv");
 
@@ -177,6 +181,7 @@ impl GlobalValue {
 /// While the order is stable, it is arbitrary and does not necessarily resemble the order in which
 /// the constants are written in the constant pool.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct Constant(u32);
 entity_impl!(Constant, "const");
 
@@ -202,6 +207,7 @@ impl Constant {
 ///
 /// While the order is stable, it is arbitrary.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct Immediate(u32);
 entity_impl!(Immediate, "imm");
 
@@ -258,15 +264,16 @@ impl JumpTable {
 ///
 /// - [`FunctionBuilder::import_function`](https://docs.rs/cranelift-frontend/*/cranelift_frontend/struct.FunctionBuilder.html#method.import_function)
 /// for external functions
-/// - [`Module::declare_func_in_func`](https://docs.rs/cranelift-module/*/cranelift_module/struct.Module.html#method.declare_func_in_func)
+/// - [`Module::declare_func_in_func`](https://docs.rs/cranelift-module/*/cranelift_module/trait.Module.html#method.declare_func_in_func)
 /// for functions declared elsewhere in the same native
-/// [`Module`](https://docs.rs/cranelift-module/*/cranelift_module/struct.Module.html)
+/// [`Module`](https://docs.rs/cranelift-module/*/cranelift_module/trait.Module.html)
 /// - [`FuncEnvironment::make_direct_func`](https://docs.rs/cranelift-wasm/*/cranelift_wasm/trait.FuncEnvironment.html#tymethod.make_direct_func)
 /// for functions declared in the same WebAssembly
 /// [`FuncEnvironment`](https://docs.rs/cranelift-wasm/*/cranelift_wasm/trait.FuncEnvironment.html#tymethod.make_direct_func)
 ///
 /// While the order is stable, it is arbitrary.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct FuncRef(u32);
 entity_impl!(FuncRef, "fn");
 
@@ -298,6 +305,7 @@ impl FuncRef {
 ///
 /// While the order is stable, it is arbitrary.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct SigRef(u32);
 entity_impl!(SigRef, "sig");
 
@@ -323,6 +331,7 @@ impl SigRef {
 ///
 /// While the order is stable, it is arbitrary.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct Heap(u32);
 entity_impl!(Heap, "heap");
 
@@ -349,6 +358,7 @@ impl Heap {
 ///
 /// While the order is stable, it is arbitrary.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct Table(u32);
 entity_impl!(Table, "table");
 
@@ -367,6 +377,7 @@ impl Table {
 
 /// An opaque reference to any of the entities defined in this module that can appear in CLIF IR.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub enum AnyEntity {
     /// The whole function.
     Function,

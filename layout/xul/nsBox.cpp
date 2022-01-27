@@ -19,7 +19,7 @@
 #include "nsGkAtoms.h"
 #include "nsITheme.h"
 #include "nsBoxLayout.h"
-#include "FrameLayerBuilder.h"
+#include "nsLayoutUtils.h"
 #include "mozilla/dom/Attr.h"
 #include "mozilla/dom/Element.h"
 #include <algorithm>
@@ -52,8 +52,6 @@ nsresult nsIFrame::BeginXULLayout(nsBoxLayoutState& aState) {
 nsresult nsIFrame::EndXULLayout(nsBoxLayoutState& aState) {
   return SyncXULLayout(aState);
 }
-
-nsresult nsIFrame::XULRelayoutChildAtOrdinal(nsIFrame* aChild) { return NS_OK; }
 
 nsresult nsIFrame::GetXULClientRect(nsRect& aClientRect) {
   aClientRect = mRect;
@@ -255,13 +253,10 @@ nsresult nsIFrame::XULLayout(nsBoxLayoutState& aState) {
   return NS_OK;
 }
 
-bool nsIFrame::DoesClipChildren() {
+bool nsIFrame::DoesClipChildrenInBothAxes() {
   const nsStyleDisplay* display = StyleDisplay();
-  NS_ASSERTION(
-      (display->mOverflowY == StyleOverflow::MozHiddenUnscrollable) ==
-          (display->mOverflowX == StyleOverflow::MozHiddenUnscrollable),
-      "If one overflow is -moz-hidden-unscrollable, the other should be too");
-  return display->mOverflowX == StyleOverflow::MozHiddenUnscrollable;
+  return display->mOverflowX == StyleOverflow::Clip &&
+         display->mOverflowY == StyleOverflow::Clip;
 }
 
 nsresult nsIFrame::SyncXULLayout(nsBoxLayoutState& aBoxLayoutState) {
@@ -289,8 +284,8 @@ nsresult nsIFrame::SyncXULLayout(nsBoxLayoutState& aBoxLayoutState) {
     inkOverflow = InkOverflowRect();
   } else {
     nsRect rect(nsPoint(0, 0), GetSize());
-    nsOverflowAreas overflowAreas(rect, rect);
-    if (!DoesClipChildren() && !IsXULCollapsed()) {
+    OverflowAreas overflowAreas(rect, rect);
+    if (!DoesClipChildrenInBothAxes() && !IsXULCollapsed()) {
       // See if our child frames caused us to overflow after being laid
       // out. If so, store the overflow area.  This normally can't happen
       // in XUL, but it can happen with the CSS 'outline' property and
@@ -378,22 +373,6 @@ bool nsIFrame::AddXULPrefSize(nsIFrame* aBox, nsSize& aSize, bool& aWidthSet,
   return (aWidthSet && aHeightSet);
 }
 
-// This returns the scrollbar width we want to use when either native
-// theme is disabled, or the native theme claims that it doesn't support
-// scrollbar.
-static nscoord GetScrollbarWidthNoTheme(nsIFrame* aBox) {
-  ComputedStyle* scrollbarStyle = nsLayoutUtils::StyleForScrollbar(aBox);
-  switch (scrollbarStyle->StyleUIReset()->mScrollbarWidth) {
-    default:
-    case StyleScrollbarWidth::Auto:
-      return 12 * AppUnitsPerCSSPixel();
-    case StyleScrollbarWidth::Thin:
-      return 6 * AppUnitsPerCSSPixel();
-    case StyleScrollbarWidth::None:
-      return 0;
-  }
-}
-
 bool nsIFrame::AddXULMinSize(nsIFrame* aBox, nsSize& aSize, bool& aWidthSet,
                              bool& aHeightSet) {
   aWidthSet = false;
@@ -422,13 +401,20 @@ bool nsIFrame::AddXULMinSize(nsIFrame* aBox, nsSize& aSize, bool& aWidthSet,
     } else {
       switch (appearance) {
         case StyleAppearance::ScrollbarVertical:
-          aSize.width = GetScrollbarWidthNoTheme(aBox);
-          aWidthSet = true;
+        case StyleAppearance::ScrollbarHorizontal: {
+          ComputedStyle* style = nsLayoutUtils::StyleForScrollbar(aBox);
+          auto sizes = theme->GetScrollbarSizes(
+              pc, style->StyleUIReset()->mScrollbarWidth,
+              nsITheme::Overlay::No);
+          if (appearance == StyleAppearance::ScrollbarVertical) {
+            aSize.width = pc->DevPixelsToAppUnits(sizes.mVertical);
+            aWidthSet = true;
+          } else {
+            aSize.height = pc->DevPixelsToAppUnits(sizes.mHorizontal);
+            aHeightSet = true;
+          }
           break;
-        case StyleAppearance::ScrollbarHorizontal:
-          aSize.height = GetScrollbarWidthNoTheme(aBox);
-          aHeightSet = true;
-          break;
+        }
         default:
           break;
       }

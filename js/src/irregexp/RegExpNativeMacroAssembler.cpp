@@ -13,7 +13,9 @@
 #include "irregexp/imported/special-case.h"
 #include "jit/Linker.h"
 #include "vm/MatchPairs.h"
+#include "vm/Realm.h"
 
+#include "jit/ABIFunctionList-inl.h"
 #include "jit/MacroAssembler-inl.h"
 
 namespace v8 {
@@ -85,12 +87,23 @@ void SMRegExpMacroAssembler::AdvanceRegister(int reg, int by) {
 }
 
 void SMRegExpMacroAssembler::Backtrack() {
+#ifdef DEBUG
+  js::jit::Label bailOut;
+  // Check for simulating interrupt
+  masm_.branch32(Assembler::NotEqual,
+                 AbsoluteAddress(&cx_->isolate->shouldSimulateInterrupt_),
+                 Imm32(0), &bailOut);
+#endif
   // Check for an interrupt. We have to restart from the beginning if we
   // are interrupted, so we only check for urgent interrupts.
   js::jit::Label noInterrupt;
   masm_.branchTest32(
       Assembler::Zero, AbsoluteAddress(cx_->addressOfInterruptBits()),
       Imm32(uint32_t(js::InterruptReason::CallbackUrgent)), &noInterrupt);
+#ifdef DEBUG
+  // bailing out if we have simulating interrupt flag set
+  masm_.bind(&bailOut);
+#endif
   masm_.movePtr(ImmWord(js::RegExpRunStatus_Error), temp0_);
   masm_.jump(&exit_label_);
   masm_.bind(&noInterrupt);
@@ -304,19 +317,16 @@ void SMRegExpMacroAssembler::CheckNotBackReferenceImpl(int start_reg,
       masm_.subPtr(temp0_, current_position_);
     }
 
+    using Fn = uint32_t (*)(const char16_t*, const char16_t*, size_t);
     masm_.setupUnalignedABICall(temp1_);
     masm_.passABIArg(current_character_);
     masm_.passABIArg(current_position_);
     masm_.passABIArg(temp0_);
 
     if (unicode) {
-      uint32_t (*fun)(const char16_t*, const char16_t*, size_t) =
-          CaseInsensitiveCompareUnicode;
-      masm_.callWithABI(JS_FUNC_TO_DATA_PTR(void*, fun));
+      masm_.callWithABI<Fn, ::js::irregexp::CaseInsensitiveCompareUnicode>();
     } else {
-      uint32_t (*fun)(const char16_t*, const char16_t*, size_t) =
-          CaseInsensitiveCompareNonUnicode;
-      masm_.callWithABI(JS_FUNC_TO_DATA_PTR(void*, fun));
+      masm_.callWithABI<Fn, ::js::irregexp::CaseInsensitiveCompareNonUnicode>();
     }
     masm_.storeCallInt32Result(temp1_);
     masm_.PopRegsInMask(volatileRegs);
@@ -1107,6 +1117,9 @@ void SMRegExpMacroAssembler::stackOverflowHandler() {
     return;
   }
 
+  js::jit::AutoCreatedBy acb(masm_,
+                             "SMRegExpMacroAssembler::stackOverflowHandler");
+
   // Called if the backtrack-stack limit has been hit.
   masm_.bind(&stack_overflow_label_);
 
@@ -1127,9 +1140,10 @@ void SMRegExpMacroAssembler::stackOverflowHandler() {
   volatileRegs.takeUnchecked(temp1_);
   masm_.PushRegsInMask(volatileRegs);
 
+  using Fn = bool (*)(RegExpStack * regexp_stack);
   masm_.setupUnalignedABICall(temp0_);
   masm_.passABIArg(temp1_);
-  masm_.callWithABI(JS_FUNC_TO_DATA_PTR(void*, GrowBacktrackStack));
+  masm_.callWithABI<Fn, ::js::irregexp::GrowBacktrackStack>();
   masm_.storeCallBoolResult(temp0_);
 
   masm_.PopRegsInMask(volatileRegs);

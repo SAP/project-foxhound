@@ -5,7 +5,7 @@
 // Test for the docshell active state of local and remote browsers.
 
 const kTestPage =
-  "http://example.org/browser/browser/base/content/test/general/dummy_page.html";
+  "https://example.org/browser/browser/base/content/test/general/dummy_page.html";
 
 function promiseNewTabSwitched() {
   return new Promise(resolve => {
@@ -24,7 +24,11 @@ function getParentTabState(aTab) {
 }
 
 function getChildTabState(aTab) {
-  return ContentTask.spawn(aTab.linkedBrowser, null, () => docShell.isActive);
+  return ContentTask.spawn(
+    aTab.linkedBrowser,
+    null,
+    () => content.browsingContext.isActive
+  );
 }
 
 function checkState(parentSide, childSide, value, message) {

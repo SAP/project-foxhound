@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/SpinEventLoopUntil.h"
 #include "nsIOService.h"
 #include "nsSyncStreamListener.h"
 #include "nsThreadUtils.h"
@@ -30,7 +31,8 @@ already_AddRefed<nsISyncStreamListener> nsSyncStreamListener::Create() {
 nsresult nsSyncStreamListener::WaitForData() {
   mKeepWaiting = true;
 
-  if (!mozilla::SpinEventLoopUntil([&]() { return !mKeepWaiting; })) {
+  if (!mozilla::SpinEventLoopUntil("nsSyncStreamListener::Create"_ns,
+                                   [&]() { return !mKeepWaiting; })) {
     return NS_ERROR_FAILURE;
   }
 

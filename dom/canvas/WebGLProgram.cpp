@@ -9,6 +9,7 @@
 #include "mozilla/CheckedInt.h"
 #include "mozilla/dom/WebGL2RenderingContextBinding.h"
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
+#include "mozilla/gfx/Logging.h"
 #include "mozilla/RefPtr.h"
 #include "nsPrintfCString.h"
 #include "WebGLBuffer.h"
@@ -347,6 +348,7 @@ RefPtr<const webgl::LinkedProgramInfo> QueryProgramInfo(WebGLProgram* prog,
     const auto version = compileResults->mShaderVersion;
 
     const auto fnAddInfo = [&](const webgl::FragOutputInfo& x) {
+      info->hasOutput[x.loc] = true;
       info->fragOutputs.insert({x.loc, x});
     };
 
@@ -681,7 +683,7 @@ webgl::LinkedProgramInfo::GetDrawFetchLimits() const {
     }
   }
 
-  if (hasActiveAttrib && !hasActiveDivisor0) {
+  if (!webgl->IsWebGL2() && hasActiveAttrib && !hasActiveDivisor0) {
     webgl->ErrorInvalidOperation(
         "One active vertex attrib (if any are active)"
         " must have a divisor of 0.");
@@ -814,14 +816,25 @@ void WebGLProgram::UniformBlockBinding(GLuint uniformBlockIndex,
 }
 
 bool WebGLProgram::ValidateForLink() {
+  const auto AppendCompileLog = [&](const WebGLShader* const shader) {
+    if (!shader) {
+      mLinkLog += " Missing shader.";
+      return;
+    }
+    mLinkLog += "\nSHADER_INFO_LOG:\n";
+    mLinkLog += shader->CompileLog();
+  };
+
   if (!mVertShader || !mVertShader->IsCompiled()) {
-    mLinkLog = "Must have a compiled vertex shader attached.";
+    mLinkLog = "Must have a compiled vertex shader attached:";
+    AppendCompileLog(mVertShader);
     return false;
   }
   const auto& vertInfo = *mVertShader->CompileResults();
 
   if (!mFragShader || !mFragShader->IsCompiled()) {
-    mLinkLog = "Must have an compiled fragment shader attached.";
+    mLinkLog = "Must have a compiled fragment shader attached:";
+    AppendCompileLog(mFragShader);
     return false;
   }
   const auto& fragInfo = *mFragShader->CompileResults();

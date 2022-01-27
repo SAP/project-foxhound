@@ -6,6 +6,8 @@
 #ifndef GFX_UTILS_H
 #define GFX_UTILS_H
 
+#include "gfxMatrix.h"
+#include "gfxRect.h"
 #include "gfxTypes.h"
 #include "ImageTypes.h"
 #include "imgIContainer.h"
@@ -13,11 +15,13 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "nsColor.h"
+#include "nsContentUtils.h"
 #include "nsPrintfCString.h"
 #include "nsRegionFwd.h"
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/webrender/WebRenderTypes.h"
+#include "qcms.h"
 
 class gfxASurface;
 class gfxDrawable;
@@ -56,6 +60,7 @@ class gfxUtils {
   typedef mozilla::gfx::DrawTarget DrawTarget;
   typedef mozilla::gfx::IntPoint IntPoint;
   typedef mozilla::gfx::Matrix Matrix;
+  typedef mozilla::gfx::Matrix4x4 Matrix4x4;
   typedef mozilla::gfx::SourceSurface SourceSurface;
   typedef mozilla::gfx::SurfaceFormat SurfaceFormat;
   typedef mozilla::image::ImageRegion ImageRegion;
@@ -162,6 +167,55 @@ class gfxUtils {
   static float ClampToScaleFactor(float aVal, bool aRoundDown = false);
 
   /**
+   * We can snap layer transforms for two reasons:
+   * 1) To avoid unnecessary resampling when a transform is a translation
+   * by a non-integer number of pixels.
+   * Snapping the translation to an integer number of pixels avoids
+   * blurring the layer and can be faster to composite.
+   * 2) When a layer is used to render a rectangular object, we need to
+   * emulate the rendering of rectangular inactive content and snap the
+   * edges of the rectangle to pixel boundaries. This is both to ensure
+   * layer rendering is consistent with inactive content rendering, and to
+   * avoid seams.
+   * This function implements type 1 snapping. If aTransform is a 2D
+   * translation, and this layer's layer manager has enabled snapping
+   * (which is the default), return aTransform with the translation snapped
+   * to nearest pixels. Otherwise just return aTransform. Call this when the
+   * layer does not correspond to a single rectangular content object.
+   * This function does not try to snap if aTransform has a scale, because in
+   * that case resampling is inevitable and there's no point in trying to
+   * avoid it. In fact snapping can cause problems because pixel edges in the
+   * layer's content can be rendered unpredictably (jiggling) as the scale
+   * interacts with the snapping of the translation, especially with animated
+   * transforms.
+   * @param aResidualTransform a transform to apply before the result transform
+   * in order to get the results to completely match aTransform.
+   */
+  static Matrix4x4 SnapTransformTranslation(const Matrix4x4& aTransform,
+                                            Matrix* aResidualTransform);
+  static Matrix SnapTransformTranslation(const Matrix& aTransform,
+                                         Matrix* aResidualTransform);
+  static Matrix4x4 SnapTransformTranslation3D(const Matrix4x4& aTransform,
+                                              Matrix* aResidualTransform);
+  /**
+   * See comment for SnapTransformTranslation.
+   * This function implements type 2 snapping. If aTransform is a translation
+   * and/or scale, transform aSnapRect by aTransform, snap to pixel boundaries,
+   * and return the transform that maps aSnapRect to that rect. Otherwise
+   * just return aTransform.
+   * @param aSnapRect a rectangle whose edges should be snapped to pixel
+   * boundaries in the destination surface.
+   * @param aResidualTransform a transform to apply before the result transform
+   * in order to get the results to completely match aTransform.
+   */
+  static Matrix4x4 SnapTransform(const Matrix4x4& aTransform,
+                                 const gfxRect& aSnapRect,
+                                 Matrix* aResidualTransform);
+  static Matrix SnapTransform(const Matrix& aTransform,
+                              const gfxRect& aSnapRect,
+                              Matrix* aResidualTransform);
+
+  /**
    * Clears surface to aColor (which defaults to transparent black).
    */
   static void ClearThebesSurface(gfxASurface* aSurface);
@@ -172,6 +226,11 @@ class gfxUtils {
       mozilla::gfx::YUVColorSpace aYUVColorSpace);
   static const float* YuvToRgbMatrix4x4ColumnMajor(
       mozilla::gfx::YUVColorSpace aYUVColorSpace);
+
+  static mozilla::Maybe<mozilla::gfx::YUVColorSpace> CicpToColorSpace(
+      const mozilla::gfx::CICP::MatrixCoefficients,
+      const mozilla::gfx::CICP::ColourPrimaries,
+      mozilla::LazyLogModule& aLogger);
 
   /**
    * Creates a copy of aSurface, but having the SurfaceFormat aFormat.
@@ -296,10 +355,6 @@ class gfxUtils {
                                  const nsAString& aEncoderOptions,
                                  nsIInputStream** outStream);
 
-  static nsresult ThreadSafeGetFeatureStatus(
-      const nsCOMPtr<nsIGfxInfo>& gfxInfo, int32_t feature,
-      nsACString& failureId, int32_t* status);
-
   static void RemoveShaderCacheFromDiskIfNecessary();
 
   /**
@@ -320,10 +375,10 @@ struct StyleRGBA;
 namespace gfx {
 
 /**
- * If the CMS mode is eCMSMode_All, these functions transform the passed
- * color to a device color using the transform returened by gfxPlatform::
- * GetCMSRGBTransform().  If the CMS mode is some other value, the color is
- * returned unchanged (other than a type change to Moz2D Color, if
+ * If the CMS mode is CMSMode::All, these functions transform the passed
+ * color to a device color using the transform returned by
+ * gfxPlatform::GetCMSRGBTransform().  If the CMS mode is some other value, the
+ * color is returned unchanged (other than a type change to Moz2D Color, if
  * applicable).
  */
 DeviceColor ToDeviceColor(const sRGBColor& aColor);

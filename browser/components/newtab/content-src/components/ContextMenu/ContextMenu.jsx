@@ -3,6 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import React from "react";
+import { connect } from "react-redux";
 
 export class ContextMenu extends React.PureComponent {
   constructor(props) {
@@ -71,7 +72,7 @@ export class ContextMenu extends React.PureComponent {
   }
 }
 
-export class ContextMenuItem extends React.PureComponent {
+export class _ContextMenuItem extends React.PureComponent {
   constructor(props) {
     super(props);
     this.onClick = this.onClick.bind(this);
@@ -160,12 +161,13 @@ export class ContextMenuItem extends React.PureComponent {
           onKeyUp={this.onKeyUp}
           ref={option.first ? this.focusFirst : null}
         >
-          {option.icon && (
-            <span className={`icon icon-spacer icon-${option.icon}`} />
-          )}
           <span data-l10n-id={option.string_id || option.id} />
         </button>
       </li>
     );
   }
 }
+
+export const ContextMenuItem = connect(state => ({
+  Prefs: state.Prefs,
+}))(_ContextMenuItem);

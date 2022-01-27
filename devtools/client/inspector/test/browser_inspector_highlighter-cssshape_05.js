@@ -11,10 +11,16 @@ const HIGHLIGHTER_TYPE = "ShapesHighlighter";
 add_task(async function() {
   const env = await openInspectorForURL(TEST_URL);
   const helper = await getHighlighterHelperFor(HIGHLIGHTER_TYPE)(env);
-  const { testActor, inspector } = env;
+  const { highlighterTestFront, inspector } = env;
   const view = selectRuleView(inspector);
   const highlighters = view.highlighters;
-  const config = { inspector, view, highlighters, testActor, helper };
+  const config = {
+    inspector,
+    view,
+    highlighters,
+    highlighterTestFront,
+    helper,
+  };
 
   await highlightFromRuleView(config);
   await highlightFromHighlighter(config);
@@ -37,7 +43,7 @@ async function teardown(config) {
  * in the shapes highlighter on the page.
  */
 async function highlightFromRuleView(config) {
-  const { view, highlighters, testActor } = config;
+  const { view, highlighters, highlighterTestFront, inspector } = config;
   const selector = "#polygon";
   const property = "clip-path";
 
@@ -46,8 +52,11 @@ async function highlightFromRuleView(config) {
   const container = getRuleViewProperty(view, selector, property).valueSpan;
   const shapesToggle = container.querySelector(".ruleview-shapeswatch");
 
-  const highlighterFront = highlighters.highlighters[HIGHLIGHTER_TYPE];
-  let markerHidden = await testActor.getHighlighterNodeAttribute(
+  const highlighterFront = inspector.inspectorFront.getKnownHighlighter(
+    HIGHLIGHTER_TYPE
+  );
+
+  let markerHidden = await highlighterTestFront.getHighlighterNodeAttribute(
     "shapes-marker-hover",
     "hidden",
     highlighterFront
@@ -69,7 +78,7 @@ async function highlightFromRuleView(config) {
   info(
     "Point in shapes highlighter is marked when same point in rule view is hovered"
   );
-  markerHidden = await testActor.getHighlighterNodeAttribute(
+  markerHidden = await highlighterTestFront.getHighlighterNodeAttribute(
     "shapes-marker-hover",
     "hidden",
     highlighterFront
@@ -85,7 +94,7 @@ async function highlightFromRuleView(config) {
   );
   await onHighlighterShown;
 
-  markerHidden = await testActor.getHighlighterNodeAttribute(
+  markerHidden = await highlighterTestFront.getHighlighterNodeAttribute(
     "shapes-marker-hover",
     "hidden",
     highlighterFront
@@ -100,13 +109,21 @@ async function highlightFromRuleView(config) {
  * corresponding points in the rule view.
  */
 async function highlightFromHighlighter(config) {
-  const { view, highlighters, testActor, helper } = config;
+  const {
+    view,
+    highlighters,
+    highlighterTestFront,
+    helper,
+    inspector,
+  } = config;
   const selector = "#polygon";
   const property = "clip-path";
 
   await setup({ selector, property, ...config });
 
-  const highlighterFront = highlighters.highlighters[HIGHLIGHTER_TYPE];
+  const highlighterFront = inspector.inspectorFront.getKnownHighlighter(
+    HIGHLIGHTER_TYPE
+  );
   const { mouse } = helper;
   const container = getRuleViewProperty(view, selector, property).valueSpan;
 
@@ -114,7 +131,7 @@ async function highlightFromHighlighter(config) {
   let onEventHandled = highlighters.once("highlighter-event-handled");
   await mouse.move(0, 0);
   await onEventHandled;
-  let markerHidden = await testActor.getHighlighterNodeAttribute(
+  let markerHidden = await highlighterTestFront.getHighlighterNodeAttribute(
     "shapes-marker-hover",
     "hidden",
     highlighterFront
@@ -133,7 +150,7 @@ async function highlightFromHighlighter(config) {
   onEventHandled = highlighters.once("highlighter-event-handled");
   await mouse.move(100, 100);
   await onEventHandled;
-  markerHidden = await testActor.getHighlighterNodeAttribute(
+  markerHidden = await highlighterTestFront.getHighlighterNodeAttribute(
     "shapes-marker-hover",
     "hidden",
     highlighterFront

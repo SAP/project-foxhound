@@ -5,11 +5,9 @@
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 
 richlistbox {
-  appearance: auto;
-  -moz-default-appearance: listbox;
   margin: 2px 4px;
-  background-color: -moz-Field;
-  color: -moz-FieldText;
+  background-color: Field;
+  color: FieldText;
   overflow: auto;
 }
 
@@ -22,13 +20,13 @@ richlistitem[selected="true"] {
   color: -moz-cellhighlighttext;
 }
 
-richlistbox:focus > richlistitem[selected="true"] {
-  background-color: Highlight;
-  color: HighlightText;
+richlistbox:where(:focus) > richlistitem[selected="true"] {
+  background-color: SelectedItem;
+  color: SelectedItemText;
 }
 
 richlistbox[seltype="multiple"]:focus > richlistitem[current="true"] {
-  outline: 1px dotted Highlight;
+  outline: 1px dotted SelectedItem;
   outline-offset: -1px;
 }
 
@@ -45,7 +43,7 @@ richlistbox.theme-listbox:focus > richlistitem[selected="true"][current="true"] 
 }
 
 richlistbox.theme-listbox:focus > richlistitem[current="true"] {
-  outline: 1px dotted Highlight;
+  outline: 1px dotted SelectedItem;
   outline-offset: -1px;
 }
 
@@ -55,8 +53,8 @@ richlistbox.theme-listbox > richlistitem[selected="true"] {
 }
 
 richlistbox.theme-listbox:focus > richlistitem[selected="true"] {
-  background-color: Highlight;
-  color: HighlightText;
+  background-color: SelectedItem;
+  color: SelectedItemText;
 }
 
 richlistbox.theme-listbox > richlistitem > label {
@@ -68,6 +66,7 @@ richlistbox.theme-listbox > richlistitem > label {
 
 @media (-moz-windows-default-theme) {
   richlistbox.theme-listbox > richlistitem {
+    --listitem-selectedTextColor: rgb(0,0,0);
     --listitem-selectedColor: rgb(217,217,217);
     --listitem-selectedBorder: var(--listitem-selectedColor);
     --listitem-selectedBottomBorder: rgb(204,204,204);
@@ -83,7 +82,7 @@ richlistbox.theme-listbox > richlistitem > label {
     --listitem-selectedFocusCurrentBottomBorder: var(--listitem-selectedFocusBottomBorder);
     --listitem-selectedFocusCurrentBackground: var(--listitem-selectedFocusColor);
 
-    color: -moz-FieldText;
+    color: FieldText;
     margin-inline: 1px;
     padding-block: 1px;
     border-width: 1px;
@@ -97,7 +96,7 @@ richlistbox.theme-listbox > richlistitem > label {
     border-bottom-color: var(--listitem-selectedBottomBorder);
     background-image: var(--listitem-selectedImage);
     background-color: var(--listitem-selectedBackground);
-    color: -moz-DialogText;
+    color: var(--listitem-selectedTextColor);
   }
 
   richlistbox.theme-listbox:focus > richlistitem[selected="true"] {
@@ -106,7 +105,7 @@ richlistbox.theme-listbox > richlistitem > label {
     border-bottom-color: var(--listitem-selectedFocusBottomBorder);
     background-image: var(--listitem-selectedFocusImage);
     background-color: var(--listitem-selectedFocusBackground);
-    color: -moz-DialogText;
+    color: var(--listitem-selectedTextColor);
   }
 
   richlistbox.theme-listbox:focus > richlistitem[current="true"] {

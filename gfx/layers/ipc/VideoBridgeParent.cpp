@@ -6,6 +6,7 @@
 
 #include "VideoBridgeParent.h"
 #include "CompositorThread.h"
+#include "mozilla/ipc/Endpoint.h"
 #include "mozilla/layers/TextureHost.h"
 #include "mozilla/layers/VideoBridgeUtils.h"
 
@@ -63,7 +64,7 @@ void VideoBridgeParent::Bind(Endpoint<PVideoBridgeParent>&& aEndpoint) {
 
 /* static */
 VideoBridgeParent* VideoBridgeParent::GetSingleton(
-    Maybe<VideoBridgeSource>& aSource) {
+    const Maybe<VideoBridgeSource>& aSource) {
   MOZ_ASSERT(aSource.isSome());
   switch (aSource.value()) {
     default:
@@ -78,6 +79,8 @@ VideoBridgeParent* VideoBridgeParent::GetSingleton(
 }
 
 TextureHost* VideoBridgeParent::LookupTexture(uint64_t aSerial) {
+  MOZ_DIAGNOSTIC_ASSERT(CompositorThread() &&
+                        CompositorThread()->IsOnCurrentThread());
   return TextureHost::AsTextureHost(mTextureMap[aSerial]);
 }
 
@@ -86,17 +89,32 @@ void VideoBridgeParent::ActorDestroy(ActorDestroyReason aWhy) {
   mClosed = true;
 }
 
+/* static */
+void VideoBridgeParent::Shutdown() {
+  if (sVideoBridgeFromRddProcess) {
+    sVideoBridgeFromRddProcess->ReleaseCompositorThread();
+  } else if (sVideoBridgeFromGpuProcess) {
+    sVideoBridgeFromGpuProcess->ReleaseCompositorThread();
+  }
+}
+
+void VideoBridgeParent::ReleaseCompositorThread() {
+  mCompositorThreadHolder = nullptr;
+}
+
 void VideoBridgeParent::ActorDealloc() {
   mCompositorThreadHolder = nullptr;
+  ReleaseCompositorThread();
   mSelfRef = nullptr;
 }
 
 PTextureParent* VideoBridgeParent::AllocPTextureParent(
-    const SurfaceDescriptor& aSharedData, const ReadLockDescriptor& aReadLock,
+    const SurfaceDescriptor& aSharedData, ReadLockDescriptor& aReadLock,
     const LayersBackend& aLayersBackend, const TextureFlags& aFlags,
     const uint64_t& aSerial) {
-  PTextureParent* parent = TextureHost::CreateIPDLActor(
-      this, aSharedData, aReadLock, aLayersBackend, aFlags, aSerial, Nothing());
+  PTextureParent* parent =
+      TextureHost::CreateIPDLActor(this, aSharedData, std::move(aReadLock),
+                                   aLayersBackend, aFlags, aSerial, Nothing());
 
   if (!parent) {
     return nullptr;

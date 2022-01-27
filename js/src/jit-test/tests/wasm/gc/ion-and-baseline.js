@@ -1,4 +1,4 @@
-// |jit-test| skip-if: !wasmReftypesEnabled() || !wasmGcEnabled()
+// |jit-test| skip-if: !wasmGcEnabled()
 
 // Attempt to test intercalls from ion to baseline and back.
 //
@@ -20,15 +20,15 @@ var refmod = new WebAssembly.Module(wasmTextToBinary(
       ;; Just a dummy
       (type $s (struct (field i32)))
 
-      (type $htype (func (param anyref)))
-      (type $itype (func (result anyref)))
+      (type $htype (func (param externref)))
+      (type $itype (func (result externref)))
 
       (elem (i32.const 0) $f $g)
 
-      (func $f (param anyref)
+      (func $f (param externref)
        (call $print (i32.const 1)))
 
-      (func $g (result anyref)
+      (func $g (result externref)
        (call $print (i32.const 2))
        (ref.null extern))
 
@@ -66,7 +66,7 @@ var nonrefmod = new WebAssembly.Module(wasmTextToBinary(
        (i32.const 37))
      )`));
 
-var tbl = new WebAssembly.Table({initial:4, element:"funcref"});
+var tbl = new WebAssembly.Table({initial:4, element:"anyfunc"});
 var refins = new WebAssembly.Instance(refmod, {"":{print, tbl}}).exports;
 var nonrefins = new WebAssembly.Instance(nonrefmod, {"":{print, tbl}}).exports;
 

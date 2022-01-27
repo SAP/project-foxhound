@@ -6,22 +6,27 @@
 #ifndef WEBGLIPDL_H_
 #define WEBGLIPDL_H_
 
+#include "ipc/EnumSerializer.h"
+#include "mozilla/ipc/IPDLParamTraits.h"
+#include "mozilla/ipc/Shmem.h"
 #include "mozilla/layers/LayersSurfaces.h"
 #include "WebGLTypes.h"
 
 namespace mozilla {
 namespace webgl {
 
-// TODO: This should probably replace Shmem, or at least this should move to ipc/glue.
+// TODO: This should probably replace Shmem, or at least this should move to
+// ipc/glue.
+
 class RaiiShmem final {
   RefPtr<mozilla::ipc::ActorLifecycleProxy> mWeakRef;
   mozilla::ipc::Shmem mShmem = {};
 
  public:
   /// Returns zeroed data.
-  static RaiiShmem Alloc(mozilla::ipc::IProtocol* const allocator,
-                         const size_t size,
-                         const Shmem::SharedMemory::SharedMemoryType type) {
+  static RaiiShmem Alloc(
+      mozilla::ipc::IProtocol* const allocator, const size_t size,
+      const mozilla::ipc::SharedMemory::SharedMemoryType type) {
     mozilla::ipc::Shmem shmem;
     if (!allocator->AllocShmem(size, type, &shmem)) return {};
     return {allocator, shmem};
@@ -32,12 +37,18 @@ class RaiiShmem final {
   RaiiShmem() = default;
 
   RaiiShmem(mozilla::ipc::IProtocol* const allocator,
-            const mozilla::ipc::Shmem& shmem)
-      : mWeakRef(allocator->ToplevelProtocol()->GetLifecycleProxy()),
-        mShmem(shmem) {
+            const mozilla::ipc::Shmem& shmem) {
+    if (!allocator || !allocator->CanSend()) {
+      return;
+    }
+
     // Shmems are handled by the top-level, so use that or we might leak after
     // the actor dies.
-    MOZ_ASSERT(mWeakRef);
+    mWeakRef = allocator->ToplevelProtocol()->GetLifecycleProxy();
+    mShmem = shmem;
+    if (!mWeakRef || !mWeakRef->Get() || !IsShmem()) {
+      reset();
+    }
   }
 
   void reset() {
@@ -77,7 +88,9 @@ class RaiiShmem final {
   }
 
   Range<uint8_t> ByteRange() const {
-    MOZ_ASSERT(IsShmem());
+    if (!IsShmem()) {
+      return {};
+    }
     return {mShmem.get<uint8_t>(), mShmem.Size<uint8_t>()};
   }
 
@@ -215,6 +228,10 @@ struct ParamTraits<mozilla::webgl::OpaqueFramebufferOptions> final
 
 // -
 
+template <typename T>
+struct ParamTraits<mozilla::webgl::EnumMask<T>> final
+    : public PlainOldDataSerializer<mozilla::webgl::EnumMask<T>> {};
+
 template <>
 struct ParamTraits<mozilla::webgl::InitContextResult> final {
   using T = mozilla::webgl::InitContextResult;
@@ -223,13 +240,15 @@ struct ParamTraits<mozilla::webgl::InitContextResult> final {
     WriteParam(msg, in.error);
     WriteParam(msg, in.options);
     WriteParam(msg, in.limits);
+    WriteParam(msg, in.uploadableSdTypes);
   }
 
   static bool Read(const Message* const msg, PickleIterator* const itr,
                    T* const out) {
     return ReadParam(msg, itr, &out->error) &&
            ReadParam(msg, itr, &out->options) &&
-           ReadParam(msg, itr, &out->limits);
+           ReadParam(msg, itr, &out->limits) &&
+           ReadParam(msg, itr, &out->uploadableSdTypes);
   }
 };
 

@@ -10,24 +10,17 @@
 
 #include <utility>
 
+#include "mozilla/AtomicBitfields.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/Tuple.h"
 #include "mozilla/dom/DOMTypes.h"
-#include "mozilla/dom/ReferrerInfo.h"
-#include "mozilla/net/ChannelEventQueue.h"
 #include "mozilla/net/DNS.h"
 #include "mozilla/net/NeckoCommon.h"
 #include "mozilla/net/PrivateBrowsingChannel.h"
-#include "nsCOMArray.h"
 #include "nsCOMPtr.h"
 #include "nsHashPropertyBag.h"
 #include "nsHttp.h"
-#include "nsHttpConnectionInfo.h"
 #include "nsHttpHandler.h"
 #include "nsHttpRequestHead.h"
-#include "nsHttpResponseHead.h"
-#include "nsIApplicationCache.h"
 #include "nsIClassOfService.h"
 #include "nsIClassifiedChannel.h"
 #include "nsIConsoleReportCollector.h"
@@ -37,9 +30,7 @@
 #include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsILoadInfo.h"
-#include "nsIProgressEventSink.h"
 #include "nsIResumableChannel.h"
-#include "nsISecurityConsoleMessage.h"
 #include "nsIStringEnumerator.h"
 #include "nsISupportsPriority.h"
 #include "nsIThrottledInputChannel.h"
@@ -47,7 +38,6 @@
 #include "nsITraceableChannel.h"
 #include "nsIURI.h"
 #include "nsIUploadChannel2.h"
-#include "nsProxyInfo.h"
 #include "nsStringEnumerator.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
@@ -59,6 +49,7 @@
     }                                                \
   }
 
+class nsIProgressEventSink;
 class nsISecurityConsoleMessage;
 class nsIPrincipal;
 
@@ -74,6 +65,7 @@ class LogCollector;
 namespace net {
 extern mozilla::LazyLogModule gHttpLog;
 
+class OpaqueResponseBlockingInfo;
 class PreferredAlternativeDataTypeParams;
 
 enum CacheDisposition : uint8_t {
@@ -129,7 +121,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
                                       nsProxyInfo* aProxyInfo,
                                       uint32_t aProxyResolveFlags,
                                       nsIURI* aProxyURI, uint64_t aChannelId,
-                                      nsContentPolicyType aContentPolicyType);
+                                      ExtContentPolicyType aContentPolicyType);
 
   // nsIRequest
   NS_IMETHOD GetName(nsACString& aName) override;
@@ -194,6 +186,9 @@ class HttpBaseChannel : public nsHashPropertyBag,
                               nsACString& aValue) override;
   NS_IMETHOD SetRequestHeader(const nsACString& aHeader,
                               const nsACString& aValue, bool aMerge) override;
+  NS_IMETHOD SetNewReferrerInfo(const nsACString& aUrl,
+                                nsIReferrerInfo::ReferrerPolicyIDL aPolicy,
+                                bool aSendReferrer) override;
   NS_IMETHOD SetEmptyRequestHeader(const nsACString& aHeader) override;
   NS_IMETHOD VisitRequestHeaders(nsIHttpHeaderVisitor* visitor) override;
   NS_IMETHOD VisitNonDefaultRequestHeaders(
@@ -228,6 +223,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD GetRequestSize(uint64_t* aRequestSize) override;
   NS_IMETHOD GetDecodedBodySize(uint64_t* aDecodedBodySize) override;
   NS_IMETHOD GetEncodedBodySize(uint64_t* aEncodedBodySize) override;
+  NS_IMETHOD GetSupportsHTTP3(bool* aSupportsHTTP3) override;
+  NS_IMETHOD GetHasHTTPSRR(bool* aHasHTTPSRR) override;
   NS_IMETHOD SetRequestContextID(uint64_t aRCID) override;
   NS_IMETHOD GetIsMainDocumentChannel(bool* aValue) override;
   NS_IMETHOD SetIsMainDocumentChannel(bool aValue) override;
@@ -236,15 +233,15 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD SetChannelId(uint64_t aChannelId) override;
   NS_IMETHOD GetTopLevelContentWindowId(uint64_t* aContentWindowId) override;
   NS_IMETHOD SetTopLevelContentWindowId(uint64_t aContentWindowId) override;
-  NS_IMETHOD GetTopLevelOuterContentWindowId(uint64_t* aWindowId) override;
-  NS_IMETHOD SetTopLevelOuterContentWindowId(uint64_t aWindowId) override;
+  NS_IMETHOD GetTopBrowsingContextId(uint64_t* aId) override;
+  NS_IMETHOD SetTopBrowsingContextId(uint64_t aId) override;
 
   NS_IMETHOD GetFlashPluginState(
       nsIHttpChannel::FlashPluginState* aState) override;
 
   using nsIClassifiedChannel::IsThirdPartyTrackingResource;
 
-  virtual void SetSource(UniqueProfilerBacktrace aSource) override {
+  virtual void SetSource(UniquePtr<ProfileChunkedBuffer> aSource) override {
     mSource = std::move(aSource);
   }
 
@@ -269,13 +266,19 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD SetConnectOnly() override;
   NS_IMETHOD GetAllowSpdy(bool* aAllowSpdy) override;
   NS_IMETHOD SetAllowSpdy(bool aAllowSpdy) override;
+  NS_IMETHOD GetAllowHttp3(bool* aAllowHttp3) override;
+  NS_IMETHOD SetAllowHttp3(bool aAllowHttp3) override;
   NS_IMETHOD GetAllowAltSvc(bool* aAllowAltSvc) override;
   NS_IMETHOD SetAllowAltSvc(bool aAllowAltSvc) override;
   NS_IMETHOD GetBeConservative(bool* aBeConservative) override;
   NS_IMETHOD SetBeConservative(bool aBeConservative) override;
+  NS_IMETHOD GetBypassProxy(bool* aBypassProxy) override;
+  NS_IMETHOD SetBypassProxy(bool aBypassProxy) override;
   NS_IMETHOD GetIsTRRServiceChannel(bool* aTRR) override;
   NS_IMETHOD SetIsTRRServiceChannel(bool aTRR) override;
   NS_IMETHOD GetIsResolvedByTRR(bool* aResolvedByTRR) override;
+  NS_IMETHOD GetIsOCSP(bool* value) override;
+  NS_IMETHOD SetIsOCSP(bool value) override;
   NS_IMETHOD GetTlsFlags(uint32_t* aTlsFlags) override;
   NS_IMETHOD SetTlsFlags(uint32_t aTlsFlags) override;
   NS_IMETHOD GetApiRedirectToURI(nsIURI** aApiRedirectToURI) override;
@@ -304,7 +307,9 @@ class HttpBaseChannel : public nsHashPropertyBag,
       const nsTArray<nsCString>& unsafeHeaders,
       bool aShouldStripRequestBodyHeader) override;
   virtual void SetAltDataForChild(bool aIsForChild) override;
-  virtual void DisableAltDataCache() override { mDisableAltDataCache = true; };
+  virtual void DisableAltDataCache() override {
+    StoreDisableAltDataCache(true);
+  };
 
   NS_IMETHOD GetConnectionInfoHashKey(
       nsACString& aConnectionInfoHashKey) override;
@@ -325,13 +330,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD HasCrossOriginOpenerPolicyMismatch(bool* aIsMismatch) override;
   NS_IMETHOD GetResponseEmbedderPolicy(
       nsILoadInfo::CrossOriginEmbedderPolicy* aOutPolicy) override;
-  virtual bool GetHasNonEmptySandboxingFlag() override {
-    return mHasNonEmptySandboxingFlag;
-  }
-  virtual void SetHasNonEmptySandboxingFlag(
-      bool aHasNonEmptySandboxingFlag) override {
-    mHasNonEmptySandboxingFlag = aHasNonEmptySandboxingFlag;
-  }
 
   inline void CleanRedirectCacheChainIfNecessary() {
     mRedirectedCachekeys = nullptr;
@@ -339,6 +337,11 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD HTTPUpgrade(const nsACString& aProtocolName,
                          nsIHttpUpgradeListener* aListener) override;
   void DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() override;
+
+  NS_IMETHOD SetWaitForHTTPSSVCRecord() override;
+
+  virtual void SetConnectionInfo(
+      mozilla::net::nsHttpConnectionInfo* aCI) override;
 
   // nsISupportsPriority
   NS_IMETHOD GetPriority(int32_t* value) override;
@@ -415,6 +418,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
     return mResponseTrailers.get();
   }
 
+  void SetDummyChannelForImageCache();
+
   const NetAddr& GetSelfAddr() { return mSelfAddr; }
   const NetAddr& GetPeerAddr() { return mPeerAddr; }
 
@@ -424,7 +429,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   int64_t GetAltDataLength() { return mAltDataLength; }
   bool IsNavigation();
 
-  bool IsDeliveringAltData() const { return mDeliveringAltData; }
+  bool IsDeliveringAltData() const { return LoadDeliveringAltData(); }
 
   static void PropagateReferenceIfNeeded(nsIURI* aURI,
                                          nsCOMPtr<nsIURI>& aRedirectURI);
@@ -444,7 +449,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // |EnsureUploadStreamIsCloneableComplete| to main thread.
   virtual void OnCopyComplete(nsresult aStatus);
 
-  void AddClassificationFlags(uint32_t aFlags, bool aIsThirdParty);
+  void AddClassificationFlags(uint32_t aClassificationFlags,
+                              bool aIsThirdParty);
 
   void SetFlashPluginState(nsIHttpChannel::FlashPluginState aState);
 
@@ -459,7 +465,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   }
 
   void SetUploadStreamHasHeaders(bool hasHeaders) {
-    mUploadStreamHasHeaders = hasHeaders;
+    StoreUploadStreamHasHeaders(hasHeaders);
   }
 
   virtual nsresult SetReferrerHeader(const nsACString& aReferrer,
@@ -494,10 +500,10 @@ class HttpBaseChannel : public nsHashPropertyBag,
     Maybe<bool> privateBrowsing = Nothing();
     Maybe<nsCString> method;
     nsCOMPtr<nsIReferrerInfo> referrerInfo;
-    Maybe<dom::TimedChannelInfo> timedChannel;
+    Maybe<dom::TimedChannelInfo> timedChannelInfo;
     nsCOMPtr<nsIInputStream> uploadStream;
-    uint64_t uploadStreamLength;
-    bool uploadStreamHasHeaders;
+    uint64_t uploadStreamLength = 0;
+    bool uploadStreamHasHeaders = false;
     Maybe<nsCString> contentType;
     Maybe<nsCString> contentLength;
 
@@ -525,7 +531,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
   // True if we've already applied content conversion to the data
   // passed to mListener.
-  bool HasAppliedConversion() { return mHasAppliedConversion; }
+  bool HasAppliedConversion() { return LoadHasAppliedConversion(); }
 
  protected:
   nsresult GetTopWindowURI(nsIURI* aURIBeingLoaded, nsIURI** aTopWindowURI);
@@ -558,8 +564,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // bundle calling OMR observers and marking flag into one function
   inline void CallOnModifyRequestObservers() {
     gHttpHandler->OnModifyRequest(this);
-    MOZ_ASSERT(!mRequestObserversCalled);
-    mRequestObserversCalled = true;
+    MOZ_ASSERT(!LoadRequestObserversCalled());
+    StoreRequestObserversCalled(true);
   }
 
   // Helper function to simplify getting notification callbacks.
@@ -573,9 +579,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // Redirect tracking
   // Checks whether or not aURI and mOriginalURI share the same domain.
   virtual bool SameOriginWithOriginalUri(nsIURI* aURI);
-
-  // GetPrincipal Returns the channel's URI principal.
-  nsIPrincipal* GetURIPrincipal();
 
   [[nodiscard]] bool BypassServiceWorker() const;
 
@@ -610,6 +613,16 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
   nsresult ComputeCrossOriginOpenerPolicyMismatch();
 
+  nsresult ProcessCrossOriginSecurityHeaders();
+
+  nsresult ValidateMIMEType();
+
+  bool EnsureOpaqueResponseIsAllowed();
+
+  Result<bool, nsresult> EnsureOpaqueResponseIsAllowedAfterSniff();
+
+  bool Http3Allowed() const;
+
   friend class PrivateBrowsingChannel<HttpBaseChannel>;
   friend class InterceptFailedOnStop;
 
@@ -624,7 +637,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
   nsCOMPtr<nsIProgressEventSink> mProgressSink;
   nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
-  nsCOMPtr<nsIApplicationCache> mApplicationCache;
   nsCOMPtr<nsIURI> mAPIRedirectToURI;
   nsCOMPtr<nsIURI> mProxyURI;
   nsCOMPtr<nsIPrincipal> mPrincipal;
@@ -635,6 +647,9 @@ class HttpBaseChannel : public nsHashPropertyBag,
   nsCOMPtr<nsIEventTarget> mCurrentThread;
 
  private:
+  // WHATWG Fetch Standard 4.4. HTTP-redirect fetch, step 10
+  bool ShouldTaintReplacementChannelOrigin(nsIURI* aNewURI);
+
   // Proxy release all members above on main thread.
   void ReleaseMainThreadOnlyReferences();
 
@@ -689,6 +704,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   UniquePtr<nsTArray<nsCString>> mRedirectedCachekeys;
   nsCOMPtr<nsIRequestContext> mRequestContext;
 
+  RefPtr<OpaqueResponseBlockingInfo> mOpaqueResponseBlockingInfo;
+
   NetAddr mSelfAddr;
   NetAddr mPeerAddr;
 
@@ -725,12 +742,14 @@ class HttpBaseChannel : public nsHashPropertyBag,
   uint64_t mTransferSize;
   uint64_t mRequestSize;
   uint64_t mDecodedBodySize;
+  // True only when the channel supports any of the versions of HTTP3
+  bool mSupportsHTTP3;
   uint64_t mEncodedBodySize;
   uint64_t mRequestContextID;
   // ID of the top-level document's inner window this channel is being
   // originated from.
   uint64_t mContentWindowId;
-  uint64_t mTopLevelOuterContentWindowId;
+  uint64_t mTopBrowsingContextId;
   int64_t mAltDataLength;
   uint64_t mChannelId;
   uint64_t mReqContentLength;
@@ -744,82 +763,101 @@ class HttpBaseChannel : public nsHashPropertyBag,
   Atomic<uint32_t, ReleaseAcquire> mThirdPartyClassificationFlags;
   Atomic<uint32_t, ReleaseAcquire> mFlashPluginState;
 
-  UniqueProfilerBacktrace mSource;
+  UniquePtr<ProfileChunkedBuffer> mSource;
 
   uint32_t mLoadFlags;
   uint32_t mCaps;
   uint32_t mClassOfService;
 
-  uint32_t mUpgradeToSecure : 1;
-  uint32_t mApplyConversion : 1;
-  // Set to true if DoApplyContentConversions has been applied to
-  // our default mListener.
-  uint32_t mHasAppliedConversion : 1;
-  uint32_t mIsPending : 1;
-  uint32_t mWasOpened : 1;
-  // if 1 all "http-on-{opening|modify|etc}-request" observers have been called
-  uint32_t mRequestObserversCalled : 1;
-  uint32_t mResponseHeadersModified : 1;
-  uint32_t mAllowSTS : 1;
-  uint32_t mThirdPartyFlags : 3;
-  uint32_t mUploadStreamHasHeaders : 1;
-  uint32_t mInheritApplicationCache : 1;
-  uint32_t mChooseApplicationCache : 1;
-  uint32_t mLoadedFromApplicationCache : 1;
-  uint32_t mChannelIsForDownload : 1;
-  uint32_t mTracingEnabled : 1;
-  // True if timing collection is enabled
-  uint32_t mTimingEnabled : 1;
-  uint32_t mReportTiming : 1;
-  uint32_t mAllowSpdy : 1;
-  uint32_t mAllowAltSvc : 1;
-  // !!! This is also used by the URL classifier to exempt channels from
-  // classification. If this is changed or removed, make sure we also update
-  // NS_ShouldClassifyChannel accordingly !!!
-  uint32_t mBeConservative : 1;
-  // If the current channel is used to as a TRR connection.
-  uint32_t mIsTRRServiceChannel : 1;
-  // If the request was performed to a TRR resolved IP address.
-  // Will be false if loading the resource does not create a connection
-  // (for example when it's loaded from the cache).
-  uint32_t mResolvedByTRR : 1;
-  uint32_t mResponseTimeoutEnabled : 1;
-  // A flag that should be false only if a cross-domain redirect occurred
-  uint32_t mAllRedirectsSameOrigin : 1;
+  // clang-format off
+  MOZ_ATOMIC_BITFIELDS(mAtomicBitfields1, 32, (
+    (uint32_t, UpgradeToSecure, 1),
+    (uint32_t, ApplyConversion, 1),
+    // Set to true if DoApplyContentConversions has been applied to
+    // our default mListener.
+    (uint32_t, HasAppliedConversion, 1),
+    (uint32_t, IsPending, 1),
+    (uint32_t, WasOpened, 1),
+    // if 1 all "http-on-{opening|modify|etc}-request" observers have been
+    // called.
+    (uint32_t, RequestObserversCalled, 1),
+    (uint32_t, ResponseHeadersModified, 1),
+    (uint32_t, AllowSTS, 1),
+    (uint32_t, ThirdPartyFlags, 3),
+    (uint32_t, UploadStreamHasHeaders, 1),
+    (uint32_t, ChannelIsForDownload, 1),
+    (uint32_t, TracingEnabled, 1),
+    // True if timing collection is enabled
+    (uint32_t, TimingEnabled, 1),
+    (uint32_t, ReportTiming, 1),
+    (uint32_t, AllowSpdy, 1),
+    (uint32_t, AllowHttp3, 1),
+    (uint32_t, AllowAltSvc, 1),
+    // !!! This is also used by the URL classifier to exempt channels from
+    // classification. If this is changed or removed, make sure we also update
+    // NS_ShouldClassifyChannel accordingly !!!
+    (uint32_t, BeConservative, 1),
+    // If the current channel is used to as a TRR connection.
+    (uint32_t, IsTRRServiceChannel, 1),
+    // If the request was performed to a TRR resolved IP address.
+    // Will be false if loading the resource does not create a connection
+    // (for example when it's loaded from the cache).
+    (uint32_t, ResolvedByTRR, 1),
+    (uint32_t, ResponseTimeoutEnabled, 1),
+    // A flag that should be false only if a cross-domain redirect occurred
+    (uint32_t, AllRedirectsSameOrigin, 1),
 
-  // Is 1 if no redirects have occured or if all redirects
-  // pass the Resource Timing timing-allow-check
-  uint32_t mAllRedirectsPassTimingAllowCheck : 1;
+    // Is 1 if no redirects have occured or if all redirects
+    // pass the Resource Timing timing-allow-check
+    (uint32_t, AllRedirectsPassTimingAllowCheck, 1),
 
-  // True if this channel was intercepted and could receive a synthesized
-  // response.
-  uint32_t mResponseCouldBeSynthesized : 1;
+    // True if this channel was intercepted and could receive a synthesized
+    // response.
+    (uint32_t, ResponseCouldBeSynthesized, 1),
 
-  uint32_t mBlockAuthPrompt : 1;
+    (uint32_t, BlockAuthPrompt, 1),
 
-  // If true, we behave as if the LOAD_FROM_CACHE flag has been set.
-  // Used to enforce that flag's behavior but not expose it externally.
-  uint32_t mAllowStaleCacheContent : 1;
+    // If true, we behave as if the LOAD_FROM_CACHE flag has been set.
+    // Used to enforce that flag's behavior but not expose it externally.
+    (uint32_t, AllowStaleCacheContent, 1),
 
-  // If true, we prefer the LOAD_FROM_CACHE flag over LOAD_BYPASS_CACHE or
-  // LOAD_BYPASS_LOCAL_CACHE.
-  uint32_t mPreferCacheLoadOverBypass : 1;
+    // If true, we behave as if the VALIDATE_ALWAYS flag has been set.
+    // Used to force validate the cached content.
+    (uint32_t, ForceValidateCacheContent, 1),
 
-  // True iff this request has been calculated in its request context as
-  // a non tail request.  We must remove it again when this channel is done.
-  uint32_t mAddedAsNonTailRequest : 1;
+    // If true, we prefer the LOAD_FROM_CACHE flag over LOAD_BYPASS_CACHE or
+    // LOAD_BYPASS_LOCAL_CACHE.
+    (uint32_t, PreferCacheLoadOverBypass, 1)
+  ))
 
-  // True if AsyncOpen() is called when the stream length is still unknown.
-  // AsyncOpen() will be retriggered when InputStreamLengthHelper execs the
-  // callback, passing the stream length value.
-  uint32_t mAsyncOpenWaitingForStreamLength : 1;
+  // Broken up into two bitfields to avoid alignment requirements of uint64_t.
+  // (Too many bits used for one uint32_t.)
+  MOZ_ATOMIC_BITFIELDS(mAtomicBitfields2, 32, (
+    // True iff this request has been calculated in its request context as
+    // a non tail request.  We must remove it again when this channel is done.
+    (uint32_t, AddedAsNonTailRequest, 1),
 
-  // Defaults to true.  This is set to false when it is no longer possible
-  // to upgrade the request to a secure channel.
-  uint32_t mUpgradableToSecure : 1;
+    // True if AsyncOpen() is called when the stream length is still unknown.
+    // AsyncOpen() will be retriggered when InputStreamLengthHelper execs the
+    // callback, passing the stream length value.
+    (uint32_t, AsyncOpenWaitingForStreamLength, 1),
 
-  // True if the docshell's sandboxing flag set is not empty.
-  uint32_t mHasNonEmptySandboxingFlag : 1;
+    // Defaults to true.  This is set to false when it is no longer possible
+    // to upgrade the request to a secure channel.
+    (uint32_t, UpgradableToSecure, 1),
+
+    // Tainted origin flag of a request, specified by
+    // WHATWG Fetch Standard 2.2.5.
+    (uint32_t, TaintedOriginFlag, 1),
+
+    // If the channel is being used to check OCSP
+    (uint32_t, IsOCSP, 1),
+
+    // Used by system requests such as remote settings and updates to
+    // retry requests without proxies.
+    (uint32_t, BypassProxy, 1)
+  ))
+  // clang-format on
 
   // An opaque flags for non-standard behavior of the TLS system.
   // It is unlikely this will need to be set outside of telemetry studies
@@ -853,53 +891,84 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // Number of internal redirects that has occurred.
   int8_t mInternalRedirectCount;
 
-  bool mAsyncOpenTimeOverriden;
-  bool mForcePending;
+  enum class SnifferCategoryType {
+    NetContent = 0,
+    OpaqueResponseBlocking,
+    All
+  };
+  SnifferCategoryType mSnifferCategoryType = SnifferCategoryType::NetContent;
+  const bool mCachedOpaqueResponseBlockingPref;
+  bool mBlockOpaqueResponseAfterSniff;
+  bool mCheckIsOpaqueResponseAllowedAfterSniff;
+  bool mDummyChannelForImageCache;
 
-  // true if the channel is deliving alt-data.
-  bool mDeliveringAltData;
+  // clang-format off
+  MOZ_ATOMIC_BITFIELDS(mAtomicBitfields3, 8, (
+    (bool, AsyncOpenTimeOverriden, 1),
+    (bool, ForcePending, 1),
 
-  bool mCorsIncludeCredentials;
+    // true if the channel is deliving alt-data.
+    (bool, DeliveringAltData, 1),
 
-  // These parameters are used to ensure that we do not call OnStartRequest and
-  // OnStopRequest more than once.
-  bool mOnStartRequestCalled;
-  bool mOnStopRequestCalled;
+    (bool, CorsIncludeCredentials, 1),
 
-  // Defaults to false. Is set to true at the begining of OnStartRequest.
-  // Used to ensure methods can't be called before OnStartRequest.
-  bool mAfterOnStartRequestBegun;
+    // These parameters are used to ensure that we do not call OnStartRequest
+    // and OnStopRequest more than once.
+    (bool, OnStartRequestCalled, 1),
+    (bool, OnStopRequestCalled, 1),
 
-  bool mRequireCORSPreflight;
+    // Defaults to false. Is set to true at the begining of OnStartRequest.
+    // Used to ensure methods can't be called before OnStartRequest.
+    (bool, AfterOnStartRequestBegun, 1),
 
-  // This flag will be true if the consumer is requesting alt-data AND the
-  // consumer is in the child process.
-  bool mAltDataForChild;
+    (bool, RequireCORSPreflight, 1)
+  ))
 
-  // This flag will be true if the consumer cannot process alt-data.  This
-  // is used in the webextension StreamFilter handler.  If true, we bypass
-  // using alt-data for the request.
-  bool mDisableAltDataCache;
+  // Broken up into two bitfields to avoid alignment requirements of uint16_t.
+  // (Too many bits used for one uint8_t.)
+  MOZ_ATOMIC_BITFIELDS(mAtomicBitfields4, 8, (
+    // This flag will be true if the consumer is requesting alt-data AND the
+    // consumer is in the child process.
+    (bool, AltDataForChild, 1),
+    // This flag will be true if the consumer cannot process alt-data.  This
+    // is used in the webextension StreamFilter handler.  If true, we bypass
+    // using alt-data for the request.
+    (bool, DisableAltDataCache, 1),
 
-  bool mForceMainDocumentChannel;
-  // This is set true if the channel is waiting for the
-  // InputStreamLengthHelper::GetAsyncLength callback.
-  bool mPendingInputStreamLengthOperation;
+    (bool, ForceMainDocumentChannel, 1),
+    // This is set true if the channel is waiting for the
+    // InputStreamLengthHelper::GetAsyncLength callback.
+    (bool, PendingInputStreamLengthOperation, 1),
+
+    // Set to true if our listener has indicated that it requires
+    // content conversion to be done by us.
+    (bool, ListenerRequiresContentConversion, 1),
+
+    // True if this is a navigation to a page with a different cross origin
+    // opener policy ( see ComputeCrossOriginOpenerPolicyMismatch )
+    (uint32_t, HasCrossOriginOpenerPolicyMismatch, 1),
+
+    // True if HTTPS RR is used during the connection establishment of this
+    // channel.
+    (uint32_t, HasHTTPSRR, 1)
+  ))
+  // clang-format on
 
   bool EnsureRequestContextID();
   bool EnsureRequestContext();
 
   // Adds/removes this channel as a non-tailed request in its request context
   // these helpers ensure we add it only once and remove it only when added
-  // via mAddedAsNonTailRequest member tracking.
+  // via AddedAsNonTailRequest member tracking.
   void AddAsNonTailRequest();
   void RemoveAsNonTailRequest();
 
-  void EnsureTopLevelOuterContentWindowId();
+  void EnsureTopBrowsingContextId();
 
-  // True if this is a navigation to a page with a different cross origin
-  // opener policy ( see ComputeCrossOriginOpenerPolicyMismatch )
-  uint32_t mHasCrossOriginOpenerPolicyMismatch : 1;
+  void InitiateORBTelemetry();
+
+  void ReportORBTelemetry(const nsCString& aKey);
+  void ReportORBTelemetry(int64_t aContentLength);
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(HttpBaseChannel, HTTP_BASE_CHANNEL_IID)
@@ -970,8 +1039,9 @@ inline void HttpAsyncAborter<T>::HandleAsyncAbort() {
   mThis->DoNotifyListener();
 
   // finally remove ourselves from the load group.
-  if (mThis->mLoadGroup)
+  if (mThis->mLoadGroup) {
     mThis->mLoadGroup->RemoveRequest(mThis, nullptr, mThis->mStatus);
+  }
 }
 
 template <class T>

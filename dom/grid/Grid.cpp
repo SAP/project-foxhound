@@ -8,11 +8,12 @@
 
 #include "GridArea.h"
 #include "GridDimension.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/GridBinding.h"
 #include "nsGridContainerFrame.h"
+#include "nsTHashSet.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(Grid, mParent, mRows, mCols, mAreas)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(Grid)
@@ -34,13 +35,13 @@ Grid::Grid(nsISupports* aParent, nsGridContainerFrame* aFrame)
 
   // Add implicit areas first. Track the names that we add here, because
   // we will ignore future explicit areas with the same name.
-  nsTHashtable<nsRefPtrHashKey<nsAtom>> namesSeen;
+  nsTHashSet<RefPtr<nsAtom>> namesSeen;
   nsGridContainerFrame::ImplicitNamedAreas* implicitAreas =
       aFrame->GetImplicitNamedAreas();
   if (implicitAreas) {
     for (auto iter = implicitAreas->iter(); !iter.done(); iter.next()) {
       auto& areaInfo = iter.get().value();
-      namesSeen.PutEntry(areaInfo.name.AsAtom());
+      namesSeen.Insert(areaInfo.name.AsAtom());
       GridArea* area =
           new GridArea(this, areaInfo.name.AsAtom(), GridDeclaration::Implicit,
                        areaInfo.rows.start, areaInfo.rows.end,
@@ -93,5 +94,4 @@ void Grid::GetAreas(nsTArray<RefPtr<GridArea>>& aAreas) const {
   aAreas = mAreas.Clone();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

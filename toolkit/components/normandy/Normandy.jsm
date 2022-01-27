@@ -8,6 +8,10 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { PromiseUtils } = ChromeUtils.import(
+  "resource://gre/modules/PromiseUtils.jsm"
+);
+const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AddonRollouts: "resource://normandy/lib/AddonRollouts.jsm",
@@ -21,10 +25,9 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   ShieldPreferences: "resource://normandy/lib/ShieldPreferences.jsm",
   TelemetryUtils: "resource://gre/modules/TelemetryUtils.jsm",
   TelemetryEvents: "resource://normandy/lib/TelemetryEvents.jsm",
-  ExperimentManager:
-    "resource://messaging-system/experiments/ExperimentManager.jsm",
+  ExperimentManager: "resource://nimbus/lib/ExperimentManager.jsm",
   RemoteSettingsExperimentLoader:
-    "resource://messaging-system/lib/RemoteSettingsExperimentLoader.jsm",
+    "resource://nimbus/lib/RemoteSettingsExperimentLoader.jsm",
 });
 
 var EXPORTED_SYMBOLS = ["Normandy"];
@@ -45,38 +48,54 @@ log.level = Services.prefs.getIntPref(PREF_LOGGING_LEVEL, Log.Level.Warn);
 var Normandy = {
   studyPrefsChanged: {},
   rolloutPrefsChanged: {},
+  defaultPrefsHaveBeenApplied: PromiseUtils.defer(),
+  uiAvailableNotificationObserved: PromiseUtils.defer(),
 
+  /** Initialization that needs to happen before the first paint on startup. */
   async init({ runAsync = true } = {}) {
-    // Initialization that needs to happen before the first paint on startup.
+    // It is important to register the listener for the UI before the first
+    // await, to avoid missing it.
+    Services.obs.addObserver(this, UI_AVAILABLE_NOTIFICATION);
+
+    // Listen for when Telemetry is disabled or re-enabled.
     Services.obs.addObserver(
       this,
       TelemetryUtils.TELEMETRY_UPLOAD_DISABLED_TOPIC
     );
 
-    await NormandyMigrations.applyAll();
+    // It is important this happens before the first `await`. Note that this
+    // also happens before migrations are applied.
     this.rolloutPrefsChanged = this.applyStartupPrefs(
       STARTUP_ROLLOUT_PREFS_BRANCH
     );
     this.studyPrefsChanged = this.applyStartupPrefs(
       STARTUP_EXPERIMENT_PREFS_BRANCH
     );
+    this.defaultPrefsHaveBeenApplied.resolve();
 
+    await NormandyMigrations.applyAll();
+
+    // Wait for the UI to be ready, or time out after 5 minutes.
     if (runAsync) {
-      Services.obs.addObserver(this, UI_AVAILABLE_NOTIFICATION);
-    } else {
-      // Remove any observers, if present.
-      try {
-        Services.obs.removeObserver(this, UI_AVAILABLE_NOTIFICATION);
-      } catch (e) {}
-
-      await this.finishInit();
+      await Promise.race([
+        this.uiAvailableNotificationObserved,
+        new Promise(resolve => setTimeout(resolve, 5 * 60 * 1000)),
+      ]);
     }
+
+    // Remove observer for UI notifications. It will error if the notification
+    // was already removed, which is fine.
+    try {
+      Services.obs.removeObserver(this, UI_AVAILABLE_NOTIFICATION);
+    } catch (e) {}
+
+    await this.finishInit();
   },
 
   async observe(subject, topic, data) {
     if (topic === UI_AVAILABLE_NOTIFICATION) {
       Services.obs.removeObserver(this, UI_AVAILABLE_NOTIFICATION);
-      this.finishInit();
+      this.uiAvailableNotificationObserved.resolve();
     } else if (topic === TelemetryUtils.TELEMETRY_UPLOAD_DISABLED_TOPIC) {
       await Promise.all(
         [
@@ -175,12 +194,16 @@ var Normandy = {
    * Copy a preference subtree from one branch to another, being careful about
    * types, and return the values the target branch originally had. Prefs will
    * be read from the user branch and applied to the default branch.
+   *
    * @param sourcePrefix
    *   The pref prefix to read prefs from.
    * @returns
    *   The original values that each pref had on the default branch.
    */
   applyStartupPrefs(sourcePrefix) {
+    // Note that this is called before Normandy's migrations are applied. This
+    // currently has no effect, but future changes should be careful to be
+    // backwards compatible.
     const originalValues = {};
     const sourceBranch = Services.prefs.getBranch(sourcePrefix);
     const targetBranch = Services.prefs.getDefaultBranch("");

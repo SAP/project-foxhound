@@ -24,7 +24,9 @@
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoUtils.h"
 #include "mozilla/ShadowParts.h"
+#include "mozilla/SVGAttrValueWrapper.h"
 #include "mozilla/DeclarationBlock.h"
+#include "mozilla/dom/CSSRuleBinding.h"
 #include "nsContentUtils.h"
 #include "nsReadableUtils.h"
 #include "nsHTMLCSSStyleSheet.h"
@@ -563,7 +565,9 @@ void nsAttrValue::ToString(nsAString& aResult) const {
       aResult.Truncate();
       MiscContainer* container = GetMiscContainer();
       if (DeclarationBlock* decl = container->mValue.mCSSDeclaration) {
-        decl->ToString(aResult);
+        nsAutoCString result;
+        decl->ToString(result);
+        CopyUTF8toUTF16(result, aResult);
       }
 
       // This can be reached during parallel selector matching with attribute
@@ -1735,10 +1739,10 @@ bool nsAttrValue::ParseStyleAttribute(const nsAString& aString,
 
   nsCOMPtr<nsIReferrerInfo> referrerInfo =
       dom::ReferrerInfo::CreateForInternalCSSResources(ownerDoc);
-  RefPtr<URLExtraData> data =
-      new URLExtraData(baseURI, referrerInfo, principal);
+  auto data = MakeRefPtr<URLExtraData>(baseURI, referrerInfo, principal);
   RefPtr<DeclarationBlock> decl = DeclarationBlock::FromCssText(
-      aString, data, ownerDoc->GetCompatibilityMode(), ownerDoc->CSSLoader());
+      aString, data, ownerDoc->GetCompatibilityMode(), ownerDoc->CSSLoader(),
+      StyleCssRuleType::Style);
   if (!decl) {
     return false;
   }

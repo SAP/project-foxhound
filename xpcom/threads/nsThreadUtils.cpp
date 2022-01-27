@@ -17,13 +17,8 @@
 #include "nsTimerImpl.h"
 #include "prsystem.h"
 
-#ifdef MOZILLA_INTERNAL_API
-#  include "nsThreadManager.h"
-#else
-#  include "nsIThreadManager.h"
-#  include "nsServiceManagerUtils.h"
-#  include "nsXPCOMCIDInternal.h"
-#endif
+#include "nsThreadManager.h"
+#include "TaskController.h"
 
 #ifdef XP_WIN
 #  include <windows.h>
@@ -35,7 +30,7 @@
 #  include <sys/prctl.h>
 #endif
 
-static LazyLogModule sEventDispatchAndRunLog("events");
+static mozilla::LazyLogModule sEventDispatchAndRunLog("events");
 #ifdef LOG1
 #  undef LOG1
 #endif
@@ -87,14 +82,22 @@ Runnable::GetName(nsACString& aName) {
 }
 #  endif
 
-NS_IMPL_ISUPPORTS_INHERITED(CancelableRunnable, Runnable, nsICancelableRunnable)
+NS_IMPL_ISUPPORTS_INHERITED(DiscardableRunnable, Runnable,
+                            nsIDiscardableRunnable)
 
-nsresult CancelableRunnable::Cancel() {
-  // Do nothing
-  return NS_OK;
+NS_IMPL_ISUPPORTS_INHERITED(CancelableRunnable, DiscardableRunnable,
+                            nsICancelableRunnable)
+
+void CancelableRunnable::OnDiscard() {
+  // Tasks that implement Cancel() can be safely cleaned up if it turns out
+  // that the task will not run.
+  (void)NS_WARN_IF(NS_FAILED(Cancel()));
 }
 
-NS_IMPL_ISUPPORTS_INHERITED(IdleRunnable, CancelableRunnable, nsIIdleRunnable)
+NS_IMPL_ISUPPORTS_INHERITED(IdleRunnable, DiscardableRunnable, nsIIdleRunnable)
+
+NS_IMPL_ISUPPORTS_INHERITED(CancelableIdleRunnable, CancelableRunnable,
+                            nsIIdleRunnable)
 
 NS_IMPL_ISUPPORTS_INHERITED(PrioritizableRunnable, Runnable,
                             nsIRunnablePriority)
@@ -135,10 +138,10 @@ PrioritizableRunnable::GetPriority(uint32_t* aPriority) {
   return NS_OK;
 }
 
-already_AddRefed<nsIRunnable> mozilla::CreateMediumHighRunnable(
+already_AddRefed<nsIRunnable> mozilla::CreateRenderBlockingRunnable(
     already_AddRefed<nsIRunnable>&& aRunnable) {
   nsCOMPtr<nsIRunnable> runnable = new PrioritizableRunnable(
-      std::move(aRunnable), nsIRunnablePriority::PRIORITY_MEDIUMHIGH);
+      std::move(aRunnable), nsIRunnablePriority::PRIORITY_RENDER_BLOCKING);
   return runnable.forget();
 }
 
@@ -157,19 +160,8 @@ nsresult NS_NewNamedThread(const nsACString& aName, nsIThread** aResult,
                            uint32_t aStackSize) {
   nsCOMPtr<nsIRunnable> event = std::move(aInitialEvent);
   nsCOMPtr<nsIThread> thread;
-#ifdef MOZILLA_INTERNAL_API
   nsresult rv = nsThreadManager::get().nsThreadManager::NewNamedThread(
       aName, aStackSize, getter_AddRefs(thread));
-#else
-  nsresult rv;
-  nsCOMPtr<nsIThreadManager> mgr =
-      do_GetService(NS_THREADMANAGER_CONTRACTID, &rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  rv = mgr->NewNamedThread(aName, aStackSize, getter_AddRefs(thread));
-#endif
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -187,48 +179,20 @@ nsresult NS_NewNamedThread(const nsACString& aName, nsIThread** aResult,
 }
 
 nsresult NS_GetCurrentThread(nsIThread** aResult) {
-#ifdef MOZILLA_INTERNAL_API
   return nsThreadManager::get().nsThreadManager::GetCurrentThread(aResult);
-#else
-  nsresult rv;
-  nsCOMPtr<nsIThreadManager> mgr =
-      do_GetService(NS_THREADMANAGER_CONTRACTID, &rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-  return mgr->GetCurrentThread(aResult);
-#endif
 }
 
 nsresult NS_GetMainThread(nsIThread** aResult) {
-#ifdef MOZILLA_INTERNAL_API
   return nsThreadManager::get().nsThreadManager::GetMainThread(aResult);
-#else
-  nsresult rv;
-  nsCOMPtr<nsIThreadManager> mgr =
-      do_GetService(NS_THREADMANAGER_CONTRACTID, &rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-  return mgr->GetMainThread(aResult);
-#endif
 }
 
 nsresult NS_DispatchToCurrentThread(already_AddRefed<nsIRunnable>&& aEvent) {
   nsresult rv;
   nsCOMPtr<nsIRunnable> event(aEvent);
-#ifdef MOZILLA_INTERNAL_API
   nsIEventTarget* thread = GetCurrentEventTarget();
   if (!thread) {
     return NS_ERROR_UNEXPECTED;
   }
-#else
-  nsCOMPtr<nsIThread> thread;
-  rv = NS_GetCurrentThread(getter_AddRefs(thread));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-#endif
   // To keep us from leaking the runnable if dispatch method fails,
   // we grab the reference on failures and release it.
   nsIRunnable* temp = event.get();
@@ -278,19 +242,10 @@ nsresult NS_DispatchToMainThread(nsIRunnable* aEvent, uint32_t aDispatchFlags) {
 nsresult NS_DelayedDispatchToCurrentThread(
     already_AddRefed<nsIRunnable>&& aEvent, uint32_t aDelayMs) {
   nsCOMPtr<nsIRunnable> event(aEvent);
-#ifdef MOZILLA_INTERNAL_API
   nsIEventTarget* thread = GetCurrentEventTarget();
   if (!thread) {
     return NS_ERROR_UNEXPECTED;
   }
-#else
-  nsresult rv;
-  nsCOMPtr<nsIThread> thread;
-  rv = NS_GetCurrentThread(getter_AddRefs(thread));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-#endif
 
   return thread->DelayedDispatch(event.forget(), aDelayMs);
 }
@@ -334,18 +289,36 @@ extern nsresult NS_DispatchToMainThreadQueue(
   return rv;
 }
 
-class IdleRunnableWrapper final : public IdleRunnable {
+class IdleRunnableWrapper final : public Runnable,
+                                  public nsIDiscardableRunnable,
+                                  public nsIIdleRunnable {
  public:
   explicit IdleRunnableWrapper(already_AddRefed<nsIRunnable>&& aEvent)
-      : mRunnable(std::move(aEvent)) {}
+      : Runnable("IdleRunnableWrapper"),
+        mRunnable(std::move(aEvent)),
+        mDiscardable(do_QueryInterface(mRunnable)) {}
+
+  NS_DECL_ISUPPORTS_INHERITED
 
   NS_IMETHOD Run() override {
     if (!mRunnable) {
       return NS_OK;
     }
     CancelTimer();
+    // Don't clear mDiscardable because that would cause QueryInterface to
+    // change behavior during the lifetime of an instance.
     nsCOMPtr<nsIRunnable> runnable = std::move(mRunnable);
     return runnable->Run();
+  }
+
+  // nsIDiscardableRunnable
+  void OnDiscard() override {
+    if (!mRunnable) {
+      // Run() was already called from TimedOut().
+      return;
+    }
+    mDiscardable->OnDiscard();
+    mRunnable = nullptr;
   }
 
   static void TimedOut(nsITimer* aTimer, void* aClosure) {
@@ -390,7 +363,16 @@ class IdleRunnableWrapper final : public IdleRunnable {
 
   nsCOMPtr<nsITimer> mTimer;
   nsCOMPtr<nsIRunnable> mRunnable;
+  nsCOMPtr<nsIDiscardableRunnable> mDiscardable;
 };
+
+NS_IMPL_ADDREF_INHERITED(IdleRunnableWrapper, Runnable)
+NS_IMPL_RELEASE_INHERITED(IdleRunnableWrapper, Runnable)
+
+NS_INTERFACE_MAP_BEGIN(IdleRunnableWrapper)
+  NS_INTERFACE_MAP_ENTRY(nsIIdleRunnable)
+  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIDiscardableRunnable, mDiscardable)
+NS_INTERFACE_MAP_END_INHERITING(Runnable)
 
 extern nsresult NS_DispatchToThreadQueue(already_AddRefed<nsIRunnable>&& aEvent,
                                          uint32_t aTimeout, nsIThread* aThread,
@@ -437,23 +419,12 @@ extern nsresult NS_DispatchToCurrentThreadQueue(
 nsresult NS_ProcessPendingEvents(nsIThread* aThread, PRIntervalTime aTimeout) {
   nsresult rv = NS_OK;
 
-#  ifdef MOZILLA_INTERNAL_API
   if (!aThread) {
     aThread = NS_GetCurrentThread();
     if (NS_WARN_IF(!aThread)) {
       return NS_ERROR_UNEXPECTED;
     }
   }
-#  else
-  nsCOMPtr<nsIThread> current;
-  if (!aThread) {
-    rv = NS_GetCurrentThread(getter_AddRefs(current));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-    aThread = current.get();
-  }
-#  endif
 
   PRIntervalTime start = PR_IntervalNow();
   for (;;) {
@@ -477,38 +448,21 @@ inline bool hasPendingEvents(nsIThread* aThread) {
 
 bool NS_HasPendingEvents(nsIThread* aThread) {
   if (!aThread) {
-#ifndef MOZILLA_INTERNAL_API
-    nsCOMPtr<nsIThread> current;
-    NS_GetCurrentThread(getter_AddRefs(current));
-    return hasPendingEvents(current);
-#else
     aThread = NS_GetCurrentThread();
     if (NS_WARN_IF(!aThread)) {
       return false;
     }
-#endif
   }
   return hasPendingEvents(aThread);
 }
 
 bool NS_ProcessNextEvent(nsIThread* aThread, bool aMayWait) {
-#ifdef MOZILLA_INTERNAL_API
   if (!aThread) {
     aThread = NS_GetCurrentThread();
     if (NS_WARN_IF(!aThread)) {
       return false;
     }
   }
-#else
-  nsCOMPtr<nsIThread> current;
-  if (!aThread) {
-    NS_GetCurrentThread(getter_AddRefs(current));
-    if (NS_WARN_IF(!current)) {
-      return false;
-    }
-    aThread = current.get();
-  }
-#endif
   bool val;
   return NS_SUCCEEDED(aThread->ProcessNextEvent(aMayWait, &val)) && val;
 }
@@ -521,10 +475,13 @@ void NS_SetCurrentThreadName(const char* aName) {
 #else
   PR_SetCurrentThreadName(aName);
 #endif
+  if (nsThreadManager::get().IsNSThread()) {
+    nsThread* thread = nsThreadManager::get().GetCurrentThread();
+    thread->SetThreadNameInternal(nsDependentCString(aName));
+  }
   CrashReporter::SetCurrentThreadName(aName);
 }
 
-#ifdef MOZILLA_INTERNAL_API
 nsIThread* NS_GetCurrentThread() {
   return nsThreadManager::get().GetCurrentThread();
 }
@@ -535,7 +492,6 @@ nsIThread* NS_GetCurrentThreadNoCreate() {
   }
   return nullptr;
 }
-#endif
 
 // nsThreadPoolNaming
 nsCString nsThreadPoolNaming::GetNextThreadName(const nsACString& aPoolName) {
@@ -629,6 +585,10 @@ template <typename T>
 void LogTaskBase<T>::LogDispatch(T* aEvent) {
   LOG1(("DISP %p", aEvent));
 }
+template <typename T>
+void LogTaskBase<T>::LogDispatch(T* aEvent, void* aContext) {
+  LOG1(("DISP %p (%p)", aEvent, aContext));
+}
 
 template <>
 void LogTaskBase<IPC::Message>::LogDispatchWithPid(IPC::Message* aEvent,
@@ -645,6 +605,11 @@ LogTaskBase<T>::Run::Run(T* aEvent, bool aWillRunAgain)
   // while not keeping any ref to the event that could be invalid at the dtor
   // time.
   LOG1(("EXEC %p %p", aEvent, this));
+}
+template <typename T>
+LogTaskBase<T>::Run::Run(T* aEvent, void* aContext, bool aWillRunAgain)
+    : mWillRunAgain(aWillRunAgain) {
+  LOG1(("EXEC %p (%p) %p", aEvent, aContext, this));
 }
 
 template <>
@@ -663,6 +628,22 @@ LogTaskBase<nsIRunnable>::Run::Run(nsIRunnable* aEvent, bool aWillRunAgain)
   nsAutoCString name;
   named->GetName(name);
   LOG1(("EXEC %p %p [%s]", aEvent, this, name.BeginReading()));
+}
+
+template <>
+LogTaskBase<Task>::Run::Run(Task* aTask, bool aWillRunAgain)
+    : mWillRunAgain(aWillRunAgain) {
+  if (!LOG1_ENABLED()) {
+    return;
+  }
+
+  nsAutoCString name;
+  if (!aTask->GetName(name)) {
+    LOG1(("EXEC %p %p", aTask, this));
+    return;
+  }
+
+  LOG1(("EXEC %p %p [%s]", aTask, this, name.BeginReading()));
 }
 
 template <>
@@ -690,6 +671,8 @@ template class LogTaskBase<MicroTaskRunnable>;
 template class LogTaskBase<IPC::Message>;
 template class LogTaskBase<nsTimerImpl>;
 template class LogTaskBase<Task>;
+template class LogTaskBase<PresShell>;
+template class LogTaskBase<dom::FrameRequestCallback>;
 
 MOZ_THREAD_LOCAL(nsISerialEventTarget*)
 SerialEventTargetGuard::sCurrentThreadTLS;
@@ -699,53 +682,6 @@ void SerialEventTargetGuard::InitTLS() {
     MOZ_CRASH();
   }
 }
-
-DelayedRunnable::DelayedRunnable(already_AddRefed<nsIEventTarget> aTarget,
-                                 already_AddRefed<nsIRunnable> aRunnable,
-                                 uint32_t aDelay)
-    : mozilla::Runnable("DelayedRunnable"),
-      mTarget(aTarget),
-      mWrappedRunnable(aRunnable),
-      mDelayedFrom(TimeStamp::NowLoRes()),
-      mDelay(aDelay) {}
-
-nsresult DelayedRunnable::Init() {
-  return NS_NewTimerWithCallback(getter_AddRefs(mTimer), this, mDelay,
-                                 nsITimer::TYPE_ONE_SHOT, mTarget);
-}
-
-NS_IMETHODIMP DelayedRunnable::Run() {
-  MOZ_ASSERT(mTimer, "DelayedRunnable without Init?");
-
-  // Already ran?
-  if (!mWrappedRunnable) {
-    return NS_OK;
-  }
-
-  // Are we too early?
-  if ((mozilla::TimeStamp::NowLoRes() - mDelayedFrom).ToMilliseconds() <
-      mDelay) {
-    return NS_OK;  // Let the nsITimer run us.
-  }
-
-  mTimer->Cancel();
-  return DoRun();
-}
-
-NS_IMETHODIMP DelayedRunnable::Notify(nsITimer* aTimer) {
-  // If we already ran, the timer should have been canceled.
-  MOZ_ASSERT(mWrappedRunnable);
-  MOZ_ASSERT(aTimer == mTimer);
-
-  return DoRun();
-}
-
-nsresult DelayedRunnable::DoRun() {
-  nsCOMPtr<nsIRunnable> r = std::move(mWrappedRunnable);
-  return r->Run();
-}
-
-NS_IMPL_ISUPPORTS_INHERITED(DelayedRunnable, Runnable, nsITimerCallback)
 
 }  // namespace mozilla
 

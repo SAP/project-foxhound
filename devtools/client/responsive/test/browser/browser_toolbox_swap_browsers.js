@@ -11,7 +11,7 @@ function getServerConnections(browser) {
   ok(browser.isRemoteBrowser, "Content browser is remote");
   return SpecialPowers.spawn(browser, [], async function() {
     const { require } = ChromeUtils.import(
-      "resource://devtools/shared/Loader.jsm"
+      "resource://devtools/shared/loader/Loader.jsm"
     );
     const { DevToolsServer } = require("devtools/server/devtools-server");
     if (!DevToolsServer._connections) {
@@ -27,8 +27,8 @@ const checkServerConnectionCount = async function(browser, expected, msg) {
 };
 
 const checkToolbox = async function(tab, location) {
-  const target = await TargetFactory.forTab(tab);
-  ok(!!gDevTools.getToolbox(target), `Toolbox exists ${location}`);
+  const toolbox = await gDevTools.getToolboxForTab(tab);
+  ok(!!toolbox, `Toolbox exists ${location}`);
 };
 
 addRDMTask(

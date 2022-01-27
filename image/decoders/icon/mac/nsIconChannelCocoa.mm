@@ -8,6 +8,7 @@
 #include "nsIconChannel.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/EndianUtils.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIIconURI.h"
 #include "nsIInputStream.h"
 #include "nsIInterfaceRequestor.h"
@@ -36,11 +37,7 @@ using namespace mozilla;
 // nsIconChannel methods
 nsIconChannel::nsIconChannel() {}
 
-nsIconChannel::~nsIconChannel() {
-  if (mLoadInfo) {
-    NS_ReleaseOnMainThread("nsIconChannel::mLoadInfo", mLoadInfo.forget());
-  }
-}
+nsIconChannel::~nsIconChannel() {}
 
 NS_IMPL_ISUPPORTS(nsIconChannel, nsIChannel, nsIRequest, nsIRequestObserver, nsIStreamListener)
 
@@ -213,7 +210,7 @@ nsIconChannel::AsyncOpen(nsIStreamListener* aListener) {
     return rv;
   }
 
-  rv = mPump->AsyncRead(this, nullptr);
+  rv = mPump->AsyncRead(this);
   if (NS_SUCCEEDED(rv)) {
     // Store our real listener
     mListener = aListener;
@@ -229,7 +226,7 @@ nsIconChannel::AsyncOpen(nsIStreamListener* aListener) {
 }
 
 nsresult nsIconChannel::MakeInputStream(nsIInputStream** _retval, bool aNonBlocking) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   nsCString contentType;
   nsAutoCString fileExt;
@@ -344,7 +341,7 @@ nsresult nsIconChannel::MakeInputStream(nsIInputStream** _retval, bool aNonBlock
 
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 NS_IMETHODIMP

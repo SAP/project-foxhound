@@ -10,24 +10,12 @@ use crate::media_queries::media_feature::{AllowsRanges, ParsingRequirements};
 use crate::media_queries::media_feature::{Evaluator, MediaFeatureDescription};
 use crate::media_queries::media_feature_expression::RangeOrOperator;
 use crate::media_queries::{Device, MediaType};
-use crate::values::computed::position::Ratio;
 use crate::values::computed::CSSPixelLength;
+use crate::values::computed::Ratio;
 use crate::values::computed::Resolution;
 use crate::Atom;
 use app_units::Au;
 use euclid::default::Size2D;
-
-fn viewport_size(device: &Device) -> Size2D<Au> {
-    if let Some(pc) = device.pres_context() {
-        if pc.mIsRootPaginatedDocument() != 0 {
-            // We want the page size, including unprintable areas and margins.
-            // FIXME(emilio, bug 1414600): Not quite!
-            let area = &pc.mPageSize;
-            return Size2D::new(Au(area.width), Au(area.height));
-        }
-    }
-    device.au_viewport_size()
-}
 
 fn device_size(device: &Device) -> Size2D<Au> {
     let mut width = 0;
@@ -47,7 +35,7 @@ fn eval_width(
     RangeOrOperator::evaluate(
         range_or_operator,
         value.map(Au::from),
-        viewport_size(device).width,
+        device.au_viewport_size().width,
     )
 }
 
@@ -73,7 +61,7 @@ fn eval_height(
     RangeOrOperator::evaluate(
         range_or_operator,
         value.map(Au::from),
-        viewport_size(device).height,
+        device.au_viewport_size().height,
     )
 }
 
@@ -99,8 +87,12 @@ fn eval_aspect_ratio_for<F>(
 where
     F: FnOnce(&Device) -> Size2D<Au>,
 {
+    // A ratio of 0/0 behaves as the ratio 1/0, so we need to call used_value()
+    // to convert it if necessary.
+    // FIXME: we may need to update here once
+    // https://github.com/w3c/csswg-drafts/issues/4954 got resolved.
     let query_value = match query_value {
-        Some(v) => v,
+        Some(v) => v.used_value(),
         None => return true,
     };
 
@@ -115,7 +107,12 @@ fn eval_aspect_ratio(
     query_value: Option<Ratio>,
     range_or_operator: Option<RangeOrOperator>,
 ) -> bool {
-    eval_aspect_ratio_for(device, query_value, range_or_operator, viewport_size)
+    eval_aspect_ratio_for(
+        device,
+        query_value,
+        range_or_operator,
+        Device::au_viewport_size,
+    )
 }
 
 /// https://drafts.csswg.org/mediaqueries-4/#device-aspect-ratio
@@ -168,7 +165,7 @@ where
 
 /// https://drafts.csswg.org/mediaqueries-4/#orientation
 fn eval_orientation(device: &Device, value: Option<Orientation>) -> bool {
-    eval_orientation_for(device, value, viewport_size)
+    eval_orientation_for(device, value, Device::au_viewport_size)
 }
 
 /// FIXME: There's no spec for `-moz-device-orientation`.
@@ -252,7 +249,8 @@ fn eval_monochrome(
     range_or_operator: Option<RangeOrOperator>,
 ) -> bool {
     // For color devices we should return 0.
-    let depth = unsafe { bindings::Gecko_MediaFeatures_GetMonochromeBitsPerPixel(device.document()) };
+    let depth =
+        unsafe { bindings::Gecko_MediaFeatures_GetMonochromeBitsPerPixel(device.document()) };
     RangeOrOperator::evaluate(range_or_operator, query_value, depth)
 }
 
@@ -277,10 +275,6 @@ enum PrefersReducedMotion {
     Reduce,
 }
 
-fn color_scheme_no_preference_enabled(_: &crate::parser::ParserContext) -> bool {
-    static_prefs::pref!("layout.css.prefers-color-scheme-no-preference.enabled")
-}
-
 /// Values for the prefers-color-scheme media feature.
 #[derive(Clone, Copy, Debug, FromPrimitive, Parse, PartialEq, ToCss)]
 #[repr(u8)]
@@ -288,8 +282,6 @@ fn color_scheme_no_preference_enabled(_: &crate::parser::ParserContext) -> bool 
 pub enum PrefersColorScheme {
     Light,
     Dark,
-    #[parse(condition = "color_scheme_no_preference_enabled")]
-    NoPreference,
 }
 
 /// https://drafts.csswg.org/mediaqueries-5/#prefers-reduced-motion
@@ -309,48 +301,45 @@ fn eval_prefers_reduced_motion(device: &Device, query_value: Option<PrefersReduc
 
 /// Possible values for prefers-contrast media query.
 /// https://drafts.csswg.org/mediaqueries-5/#prefers-contrast
-#[derive(Clone, Copy, Debug, FromPrimitive, PartialEq, Parse, ToCss)]
+#[derive(Clone, Copy, Debug, FromPrimitive, Parse, PartialEq, ToCss)]
 #[repr(u8)]
-#[allow(missing_docs)]
-enum PrefersContrast {
-    High,
-    Low,
-    NoPreference,
-    Forced,
-}
-
-/// Represents the parts of prefers-contrast that explicitly deal with
-/// contrast. Used in combination with information about rather or not
-/// forced colors are active this allows for evaluation of the
-/// prefers-contrast media query.
-#[derive(Clone, Copy, Debug, FromPrimitive, PartialEq)]
-#[repr(u8)]
-pub enum ContrastPref {
-    /// High contrast is prefered. Corresponds to an accessibility theme
-    /// being enabled or firefox forcing high contrast colors.
-    High,
-    /// Low contrast is prefered. Corresponds to the
-    /// browser.display.prefers_low_contrast pref being true.
-    Low,
+pub enum PrefersContrast {
+    /// More contrast is preferred. Corresponds to an accessibility theme
+    /// being enabled or Firefox forcing high contrast colors.
+    More,
+    /// Low contrast is preferred.
+    Less,
     /// The default value if neither high or low contrast is enabled.
     NoPreference,
 }
 
 /// https://drafts.csswg.org/mediaqueries-5/#prefers-contrast
 fn eval_prefers_contrast(device: &Device, query_value: Option<PrefersContrast>) -> bool {
-    let forced_colors = !device.use_document_colors();
-    let contrast_pref =
-        unsafe { bindings::Gecko_MediaFeatures_PrefersContrast(device.document(), forced_colors) };
-    if let Some(query_value) = query_value {
-        match query_value {
-            PrefersContrast::Forced => forced_colors,
-            PrefersContrast::High => contrast_pref == ContrastPref::High,
-            PrefersContrast::Low => contrast_pref == ContrastPref::Low,
-            PrefersContrast::NoPreference => contrast_pref == ContrastPref::NoPreference,
-        }
-    } else {
-        // Only prefers-contrast: no-preference evaluates to false.
-        forced_colors || (contrast_pref != ContrastPref::NoPreference)
+    let prefers_contrast =
+        unsafe { bindings::Gecko_MediaFeatures_PrefersContrast(device.document()) };
+    match query_value {
+        Some(v) => v == prefers_contrast,
+        None => prefers_contrast != PrefersContrast::NoPreference,
+    }
+}
+
+/// Possible values for the forced-colors media query.
+/// https://drafts.csswg.org/mediaqueries-5/#forced-colors
+#[derive(Clone, Copy, Debug, FromPrimitive, Parse, PartialEq, ToCss)]
+#[repr(u8)]
+pub enum ForcedColors {
+    /// Page colors are not being forced.
+    None,
+    /// Page colors are being forced.
+    Active,
+}
+
+/// https://drafts.csswg.org/mediaqueries-5/#forced-colors
+fn eval_forced_colors(device: &Device, query_value: Option<ForcedColors>) -> bool {
+    let forced = !device.use_document_colors();
+    match query_value {
+        Some(query_value) => forced == (query_value == ForcedColors::Active),
+        None => forced,
     }
 }
 
@@ -413,7 +402,7 @@ fn eval_prefers_color_scheme(device: &Device, query_value: Option<PrefersColorSc
         unsafe { bindings::Gecko_MediaFeatures_PrefersColorScheme(device.document()) };
     match query_value {
         Some(v) => prefers_color_scheme == v,
-        None => prefers_color_scheme != PrefersColorScheme::NoPreference,
+        None => true,
     }
 }
 
@@ -514,6 +503,28 @@ fn eval_moz_is_glyph(
     query_value.map_or(is_glyph, |v| v == is_glyph)
 }
 
+fn eval_moz_print_preview(
+    device: &Device,
+    query_value: Option<bool>,
+    _: Option<RangeOrOperator>,
+) -> bool {
+    let is_print_preview = device.is_print_preview();
+    if is_print_preview {
+        debug_assert_eq!(device.media_type(), MediaType::print());
+    }
+    query_value.map_or(is_print_preview, |v| v == is_print_preview)
+}
+
+fn eval_moz_non_native_content_theme(
+    device: &Device,
+    query_value: Option<bool>,
+    _: Option<RangeOrOperator>,
+) -> bool {
+    let non_native_theme =
+        unsafe { bindings::Gecko_MediaFeatures_ShouldAvoidNativeTheme(device.document()) };
+    query_value.map_or(non_native_theme, |v| v == non_native_theme)
+}
+
 fn eval_moz_is_resource_document(
     device: &Device,
     query_value: Option<bool>,
@@ -522,35 +533,6 @@ fn eval_moz_is_resource_document(
     let is_resource_doc =
         unsafe { bindings::Gecko_MediaFeatures_IsResourceDocument(device.document()) };
     query_value.map_or(is_resource_doc, |v| v == is_resource_doc)
-}
-
-fn eval_system_metric(
-    device: &Device,
-    query_value: Option<bool>,
-    metric: Atom,
-    accessible_from_content: bool,
-) -> bool {
-    let supports_metric = unsafe {
-        bindings::Gecko_MediaFeatures_HasSystemMetric(
-            device.document(),
-            metric.as_ptr(),
-            accessible_from_content,
-        )
-    };
-    query_value.map_or(supports_metric, |v| v == supports_metric)
-}
-
-fn eval_moz_touch_enabled(
-    device: &Device,
-    query_value: Option<bool>,
-    _: Option<RangeOrOperator>,
-) -> bool {
-    eval_system_metric(
-        device,
-        query_value,
-        atom!("-moz-touch-enabled"),
-        /* accessible_from_content = */ true,
-    )
 }
 
 fn eval_moz_os_version(
@@ -569,15 +551,91 @@ fn eval_moz_os_version(
     query_value.as_ptr() == os_version
 }
 
-macro_rules! system_metric_feature {
-    ($feature_name:expr) => {{
-        fn __eval(device: &Device, query_value: Option<bool>, _: Option<RangeOrOperator>) -> bool {
-            eval_system_metric(
-                device,
-                query_value,
-                $feature_name,
-                /* accessible_from_content = */ false,
-            )
+fn eval_moz_windows_non_native_menus(
+    device: &Device,
+    query_value: Option<bool>,
+    _: Option<RangeOrOperator>,
+) -> bool {
+    let use_non_native_menus = match static_prefs::pref!("browser.display.windows.non_native_menus")
+    {
+        0 => false,
+        1 => true,
+        _ => {
+            eval_moz_os_version(device, Some(atom!("windows-win10")), None) &&
+                get_lnf_int_as_bool(bindings::LookAndFeel_IntID::WindowsDefaultTheme as i32)
+        },
+    };
+
+    query_value.map_or(use_non_native_menus, |v| v == use_non_native_menus)
+}
+
+fn eval_moz_overlay_scrollbars(
+    device: &Device,
+    query_value: Option<bool>,
+    _: Option<RangeOrOperator>,
+) -> bool {
+    let use_overlay =
+        unsafe { bindings::Gecko_MediaFeatures_UseOverlayScrollbars(device.document()) };
+    query_value.map_or(use_overlay, |v| v == use_overlay)
+}
+
+fn get_lnf_int(int_id: i32) -> i32 {
+    unsafe { bindings::Gecko_GetLookAndFeelInt(int_id) }
+}
+
+fn get_lnf_int_as_bool(int_id: i32) -> bool {
+    get_lnf_int(int_id) != 0
+}
+
+fn get_scrollbar_start_backward(int_id: i32) -> bool {
+    (get_lnf_int(int_id) & bindings::LookAndFeel_eScrollArrow_StartBackward as i32) != 0
+}
+
+fn get_scrollbar_start_forward(int_id: i32) -> bool {
+    (get_lnf_int(int_id) & bindings::LookAndFeel_eScrollArrow_StartForward as i32) != 0
+}
+
+fn get_scrollbar_end_backward(int_id: i32) -> bool {
+    (get_lnf_int(int_id) & bindings::LookAndFeel_eScrollArrow_EndBackward as i32) != 0
+}
+
+fn get_scrollbar_end_forward(int_id: i32) -> bool {
+    (get_lnf_int(int_id) & bindings::LookAndFeel_eScrollArrow_EndForward as i32) != 0
+}
+
+macro_rules! lnf_int_feature {
+    ($feature_name:expr, $int_id:ident, $get_value:ident) => {{
+        fn __eval(_: &Device, query_value: Option<bool>, _: Option<RangeOrOperator>) -> bool {
+            let value = $get_value(bindings::LookAndFeel_IntID::$int_id as i32);
+            query_value.map_or(value, |v| v == value)
+        }
+
+        feature!(
+            $feature_name,
+            AllowsRanges::No,
+            Evaluator::BoolInteger(__eval),
+            ParsingRequirements::CHROME_AND_UA_ONLY,
+        )
+    }};
+    ($feature_name:expr, $int_id:ident) => {{
+        lnf_int_feature!($feature_name, $int_id, get_lnf_int_as_bool)
+    }};
+}
+
+/// bool pref-based features are an slightly less convenient to start using
+/// version of @supports -moz-bool-pref, but with some benefits, mainly that
+/// they can support dynamic changes, and don't require a pref lookup every time
+/// they're used.
+///
+/// In order to use them you need to make sure that the pref defined as a static
+/// pref, with `rust: true`. The feature name needs to be defined in
+/// `StaticAtoms.py` just like the others. In order to support dynamic changes,
+/// you also need to add them to kMediaQueryPrefs in nsXPLookAndFeel.cpp
+macro_rules! bool_pref_feature {
+    ($feature_name:expr, $pref:tt) => {{
+        fn __eval(_: &Device, query_value: Option<bool>, _: Option<RangeOrOperator>) -> bool {
+            let value = static_prefs::pref!($pref);
+            query_value.map_or(value, |v| v == value)
         }
 
         feature!(
@@ -594,7 +652,7 @@ macro_rules! system_metric_feature {
 /// to support new types in these entries and (2) ensuring that either
 /// nsPresContext::MediaFeatureValuesChanged is called when the value that
 /// would be returned by the evaluator function could change.
-pub static MEDIA_FEATURES: [MediaFeatureDescription; 54] = [
+pub static MEDIA_FEATURES: [MediaFeatureDescription; 57] = [
     feature!(
         atom!("width"),
         AllowsRanges::Yes,
@@ -724,6 +782,12 @@ pub static MEDIA_FEATURES: [MediaFeatureDescription; 54] = [
         ParsingRequirements::empty(),
     ),
     feature!(
+        atom!("forced-colors"),
+        AllowsRanges::No,
+        keyword_evaluator!(eval_forced_colors, ForcedColors),
+        ParsingRequirements::empty(),
+    ),
+    feature!(
         atom!("overflow-block"),
         AllowsRanges::No,
         keyword_evaluator!(eval_overflow_block, OverflowBlock),
@@ -786,36 +850,78 @@ pub static MEDIA_FEATURES: [MediaFeatureDescription; 54] = [
         Evaluator::Ident(eval_moz_os_version),
         ParsingRequirements::CHROME_AND_UA_ONLY,
     ),
-    system_metric_feature!(atom!("-moz-scrollbar-start-backward")),
-    system_metric_feature!(atom!("-moz-scrollbar-start-forward")),
-    system_metric_feature!(atom!("-moz-scrollbar-end-backward")),
-    system_metric_feature!(atom!("-moz-scrollbar-end-forward")),
-    system_metric_feature!(atom!("-moz-scrollbar-thumb-proportional")),
-    system_metric_feature!(atom!("-moz-overlay-scrollbars")),
-    system_metric_feature!(atom!("-moz-windows-default-theme")),
-    system_metric_feature!(atom!("-moz-mac-graphite-theme")),
-    system_metric_feature!(atom!("-moz-mac-yosemite-theme")),
-    system_metric_feature!(atom!("-moz-windows-accent-color-in-titlebar")),
-    system_metric_feature!(atom!("-moz-windows-compositor")),
-    system_metric_feature!(atom!("-moz-windows-classic")),
-    system_metric_feature!(atom!("-moz-windows-glass")),
-    system_metric_feature!(atom!("-moz-menubar-drag")),
-    system_metric_feature!(atom!("-moz-swipe-animation-enabled")),
-    system_metric_feature!(atom!("-moz-gtk-csd-available")),
-    system_metric_feature!(atom!("-moz-gtk-csd-hide-titlebar-by-default")),
-    system_metric_feature!(atom!("-moz-gtk-csd-transparent-background")),
-    system_metric_feature!(atom!("-moz-gtk-csd-minimize-button")),
-    system_metric_feature!(atom!("-moz-gtk-csd-maximize-button")),
-    system_metric_feature!(atom!("-moz-gtk-csd-close-button")),
-    system_metric_feature!(atom!("-moz-gtk-csd-reversed-placement")),
-    system_metric_feature!(atom!("-moz-system-dark-theme")),
-    // This is the only system-metric media feature that's accessible to
-    // content as of today.
-    // FIXME(emilio): Restrict (or remove?) when bug 1035774 lands.
     feature!(
-        atom!("-moz-touch-enabled"),
+        atom!("-moz-print-preview"),
         AllowsRanges::No,
-        Evaluator::BoolInteger(eval_moz_touch_enabled),
-        ParsingRequirements::empty(),
+        Evaluator::BoolInteger(eval_moz_print_preview),
+        ParsingRequirements::CHROME_AND_UA_ONLY,
+    ),
+    feature!(
+        atom!("-moz-non-native-content-theme"),
+        AllowsRanges::No,
+        Evaluator::BoolInteger(eval_moz_non_native_content_theme),
+        ParsingRequirements::CHROME_AND_UA_ONLY,
+    ),
+    feature!(
+        atom!("-moz-windows-non-native-menus"),
+        AllowsRanges::No,
+        Evaluator::BoolInteger(eval_moz_windows_non_native_menus),
+        ParsingRequirements::CHROME_AND_UA_ONLY,
+    ),
+    feature!(
+        atom!("-moz-overlay-scrollbars"),
+        AllowsRanges::No,
+        Evaluator::BoolInteger(eval_moz_overlay_scrollbars),
+        ParsingRequirements::CHROME_AND_UA_ONLY,
+    ),
+    lnf_int_feature!(
+        atom!("-moz-scrollbar-start-backward"),
+        ScrollArrowStyle,
+        get_scrollbar_start_backward
+    ),
+    lnf_int_feature!(
+        atom!("-moz-scrollbar-start-forward"),
+        ScrollArrowStyle,
+        get_scrollbar_start_forward
+    ),
+    lnf_int_feature!(
+        atom!("-moz-scrollbar-end-backward"),
+        ScrollArrowStyle,
+        get_scrollbar_end_backward
+    ),
+    lnf_int_feature!(
+        atom!("-moz-scrollbar-end-forward"),
+        ScrollArrowStyle,
+        get_scrollbar_end_forward
+    ),
+    lnf_int_feature!(
+        atom!("-moz-scrollbar-thumb-proportional"),
+        ScrollSliderStyle
+    ),
+    lnf_int_feature!(atom!("-moz-menubar-drag"), MenuBarDrag),
+    lnf_int_feature!(atom!("-moz-windows-default-theme"), WindowsDefaultTheme),
+    lnf_int_feature!(atom!("-moz-mac-graphite-theme"), MacGraphiteTheme),
+    lnf_int_feature!(atom!("-moz-mac-big-sur-theme"), MacBigSurTheme),
+    lnf_int_feature!(atom!("-moz-mac-rtl"), MacRTL),
+    lnf_int_feature!(
+        atom!("-moz-windows-accent-color-in-titlebar"),
+        WindowsAccentColorInTitlebar
+    ),
+    lnf_int_feature!(atom!("-moz-windows-compositor"), DWMCompositor),
+    lnf_int_feature!(atom!("-moz-windows-classic"), WindowsClassic),
+    lnf_int_feature!(atom!("-moz-windows-glass"), WindowsGlass),
+    lnf_int_feature!(atom!("-moz-swipe-animation-enabled"), SwipeAnimationEnabled),
+    lnf_int_feature!(atom!("-moz-gtk-csd-available"), GTKCSDAvailable),
+    lnf_int_feature!(atom!("-moz-gtk-csd-minimize-button"), GTKCSDMinimizeButton),
+    lnf_int_feature!(atom!("-moz-gtk-csd-maximize-button"), GTKCSDMaximizeButton),
+    lnf_int_feature!(atom!("-moz-gtk-csd-close-button"), GTKCSDCloseButton),
+    lnf_int_feature!(
+        atom!("-moz-gtk-csd-reversed-placement"),
+        GTKCSDReversedPlacement
+    ),
+    lnf_int_feature!(atom!("-moz-system-dark-theme"), SystemUsesDarkTheme),
+    bool_pref_feature!(
+        atom!("-moz-proton-places-tooltip"),
+        "browser.proton.places-tooltip.enabled"
     ),
 ];

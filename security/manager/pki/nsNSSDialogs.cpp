@@ -299,10 +299,8 @@ nsNSSDialogs::GetPKCS12FilePassword(nsIInterfaceRequestor* ctx,
 
   // Get the parent window for the dialog
   nsCOMPtr<mozIDOMWindowProxy> parent = do_GetInterface(ctx);
-  bool ignored = false;
   char16_t* pwTemp = nullptr;
-  rv = promptSvc->PromptPassword(parent, nullptr, msg.get(), &pwTemp, nullptr,
-                                 &ignored, _retval);
+  rv = promptSvc->PromptPassword(parent, nullptr, msg.get(), &pwTemp, _retval);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -338,8 +336,8 @@ nsNSSDialogs::DisplayProtectedAuth(nsIInterfaceRequestor* aCtx,
 
   nsCOMPtr<mozIDOMWindowProxy> newWindow;
   rv = windowWatcher->OpenWindow(
-      parent, "chrome://pippki/content/protectedAuth.xhtml", "_blank",
-      "centerscreen,chrome,modal,titlebar,close=no", runnable,
+      parent, "chrome://pippki/content/protectedAuth.xhtml"_ns, "_blank"_ns,
+      "centerscreen,chrome,modal,titlebar,close=no"_ns, runnable,
       getter_AddRefs(newWindow));
 
   return rv;

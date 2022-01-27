@@ -87,16 +87,8 @@ function startTest(test, token)
   TestSetSrc(test, token + "_setSrc");
 }
 
-function beginTest() {
-  manager.runTests(gEMENonMSEFailTests, startTest);
-}
-
-if (!IsMacOSSnowLeopardOrEarlier()) {
-  SimpleTest.waitForExplicitFinish();
-  SetupEMEPref(beginTest);
-} else {
-  todo(false, "Test disabled on this platform.");
-}
+SimpleTest.waitForExplicitFinish();
+manager.runTests(gEMENonMSEFailTests, startTest);
 </script>
 </pre>
 </body>

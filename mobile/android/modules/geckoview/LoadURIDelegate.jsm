@@ -17,7 +17,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
 });
 
-const { debug, warn } = GeckoViewUtils.initLogging("LoadURIDelegate"); // eslint-disable-line no-unused-vars
+const { debug, warn } = GeckoViewUtils.initLogging("LoadURIDelegate");
 
 const LoadURIDelegate = {
   // Delegate URI loading to the app.
@@ -52,6 +52,7 @@ const LoadURIDelegate = {
       }
     );
     Services.tm.spinEventLoopUntil(
+      "LoadURIDelegate.jsm:load",
       () => aWindow.closed || handled !== undefined
     );
 
@@ -92,6 +93,7 @@ const LoadURIDelegate = {
       }
     );
     Services.tm.spinEventLoopUntil(
+      "LoadURIDelegate.jsm:handleLoadError",
       () => aWindow.closed || errorPageURI !== undefined
     );
 

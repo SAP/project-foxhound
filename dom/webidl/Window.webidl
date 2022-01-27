@@ -22,6 +22,7 @@
 interface nsIBrowserDOMWindow;
 interface XULControllers;
 interface nsIDOMWindowUtils;
+interface nsIPrintSettings;
 
 typedef OfflineResourceList ApplicationCache;
 
@@ -204,13 +205,13 @@ typedef OfflineResourceList ApplicationCache;
                     WritableStream)]
 /*sealed*/ interface Window : EventTarget {
   // the current browsing context
-  [Unforgeable, Constant, StoreInSlot,
+  [LegacyUnforgeable, Constant, StoreInSlot,
    CrossOriginReadable] readonly attribute WindowProxy window;
   [Replaceable, Constant, StoreInSlot,
    CrossOriginReadable] readonly attribute WindowProxy self;
-  [Unforgeable, StoreInSlot, Pure] readonly attribute Document? document;
+  [LegacyUnforgeable, StoreInSlot, Pure] readonly attribute Document? document;
   [Throws] attribute DOMString name;
-  [PutForwards=href, Unforgeable, CrossOriginReadable,
+  [PutForwards=href, LegacyUnforgeable, CrossOriginReadable,
    CrossOriginWritable] readonly attribute Location location;
   [Throws] readonly attribute History history;
   readonly attribute CustomElementRegistry customElements;
@@ -225,27 +226,28 @@ typedef OfflineResourceList ApplicationCache;
   [Throws, CrossOriginReadable] readonly attribute boolean closed;
   [Throws] void stop();
   [Throws, CrossOriginCallable, NeedsCallerType] void focus();
-  [Throws, CrossOriginCallable] void blur();
+  [Throws, CrossOriginCallable, NeedsCallerType] void blur();
   [Replaceable, Pref="dom.window.event.enabled"] readonly attribute any event;
 
   // other browsing contexts
   [Replaceable, Throws, CrossOriginReadable] readonly attribute WindowProxy frames;
   [Replaceable, CrossOriginReadable] readonly attribute unsigned long length;
   //[Unforgeable, Throws, CrossOriginReadable] readonly attribute WindowProxy top;
-  [Unforgeable, Throws, CrossOriginReadable] readonly attribute WindowProxy? top;
+  [LegacyUnforgeable, Throws, CrossOriginReadable] readonly attribute WindowProxy? top;
   [Throws, CrossOriginReadable] attribute any opener;
   //[Throws] readonly attribute WindowProxy parent;
   [Replaceable, Throws, CrossOriginReadable] readonly attribute WindowProxy? parent;
   [Throws, NeedsSubjectPrincipal] readonly attribute Element? frameElement;
   //[Throws] WindowProxy? open(optional USVString url = "about:blank", optional DOMString target = "_blank", [TreatNullAs=EmptyString] optional DOMString features = "");
-  [Throws] WindowProxy? open(optional USVString url = "", optional DOMString target = "", optional [TreatNullAs=EmptyString] DOMString features = "");
+  [Throws] WindowProxy? open(optional USVString url = "", optional DOMString target = "", optional [LegacyNullToEmptyString] DOMString features = "");
   getter object (DOMString name);
 
   // the user agent
   readonly attribute Navigator navigator;
-#ifdef HAVE_SIDEBAR
+  [Pref="dom.window.clientinformation.enabled", BinaryName="Navigator"]
+  readonly attribute Navigator clientInformation;
+
   [Replaceable, Throws] readonly attribute External external;
-#endif
   [Throws, SecureContext, Pref="browser.cache.offline.enable"] readonly attribute ApplicationCache applicationCache;
 
   // user prompts
@@ -255,6 +257,15 @@ typedef OfflineResourceList ApplicationCache;
   [Throws, NeedsSubjectPrincipal] DOMString? prompt(optional DOMString message = "", optional DOMString default = "");
   [Throws, Pref="dom.enable_window_print"]
   void print();
+
+  // Returns a window that you can use for a print preview.
+  //
+  // This may reuse an existing window if this window is already a print
+  // preview document, or if you pass a docshell explicitly.
+  [Throws, Func="nsContentUtils::IsCallerChromeOrFuzzingEnabled"]
+  WindowProxy? printPreview(optional nsIPrintSettings? settings = null,
+                            optional nsIWebProgressListener? listener = null,
+                            optional nsIDocShell? docShellToPreviewInto = null);
 
   [Throws, CrossOriginCallable, NeedsSubjectPrincipal,
    BinaryName="postMessageMoz"]
@@ -293,10 +304,10 @@ partial interface Window {
   [Throws] Selection? getSelection();
 };
 
-// http://dev.w3.org/csswg/cssom/
+// https://drafts.csswg.org/cssom/#extensions-to-the-window-interface
 partial interface Window {
-  //[NewObject, Throws] CSSStyleDeclaration getComputedStyle(Element elt, optional DOMString pseudoElt = "");
-  [NewObject, Throws] CSSStyleDeclaration? getComputedStyle(Element elt, optional DOMString pseudoElt = "");
+  //[NewObject, Throws] CSSStyleDeclaration getComputedStyle(Element elt, optional DOMString? pseudoElt = "");
+  [NewObject, Throws] CSSStyleDeclaration? getComputedStyle(Element elt, optional DOMString? pseudoElt = "");
 };
 
 // http://dev.w3.org/csswg/cssom-view/
@@ -313,7 +324,7 @@ dictionary ScrollToOptions : ScrollOptions {
 
 partial interface Window {
   //[Throws, NewObject, NeedsCallerType] MediaQueryList matchMedia(DOMString query);
-  [Throws, NewObject, NeedsCallerType] MediaQueryList? matchMedia(DOMString query);
+  [Throws, NewObject, NeedsCallerType] MediaQueryList? matchMedia(UTF8String query);
   // Per spec, screen is SameObject, but we don't actually guarantee that given
   // nsGlobalWindow::Cleanup.  :(
   //[SameObject, Replaceable, Throws] readonly attribute Screen screen;
@@ -482,8 +493,9 @@ partial interface Window {
            attribute EventHandler ondevicemotion;
            attribute EventHandler ondeviceorientation;
            attribute EventHandler onabsolutedeviceorientation;
-           attribute EventHandler ondeviceproximity;
+           [Pref="device.sensors.proximity.enabled"]
            attribute EventHandler onuserproximity;
+           [Pref="device.sensors.ambientLight.enabled"]
            attribute EventHandler ondevicelight;
 
   void                      dump(DOMString str);
@@ -555,14 +567,12 @@ partial interface Window {
 };
 #endif
 
-#ifdef HAVE_SIDEBAR
 // Mozilla extension
 // Sidebar is deprecated and it will be removed in the next cycles. See bug 1640138.
 partial interface Window {
-  [Replaceable, Throws, UseCounter]
+  [Replaceable, Throws, UseCounter, Pref="dom.window.sidebar.enabled"]
   readonly attribute (External or WindowProxy) sidebar;
 };
-#endif
 
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
 callback PromiseDocumentFlushedCallback = any ();
@@ -693,6 +703,11 @@ partial interface Window {
 
   [ChromeOnly]
   readonly attribute boolean isChromeWindow;
+
+  [ChromeOnly]
+  readonly attribute GleanImpl Glean;
+  [ChromeOnly]
+  readonly attribute GleanPingsImpl GleanPings;
 };
 
 partial interface Window {
@@ -708,11 +723,13 @@ partial interface Window {
   attribute EventHandler onvrdisplaypresentchange;
 };
 
+#ifndef RELEASE_OR_BETA
 // https://drafts.css-houdini.org/css-paint-api-1/#dom-window-paintworklet
 partial interface Window {
     [Pref="dom.paintWorklet.enabled", Throws]
     readonly attribute Worklet paintWorklet;
 };
+#endif
 
 Window includes WindowOrWorkerGlobalScope;
 
@@ -777,9 +794,16 @@ partial interface Window {
 partial interface Window {
   [SameObject, Pref="dom.visualviewport.enabled", Replaceable]
   readonly attribute VisualViewport visualViewport;
-
 };
 
-dictionary WindowPostMessageOptions : PostMessageOptions {
+// Used to assign marks to appear on the scrollbar when
+// finding on a page.
+partial interface Window {
+  // The marks are values between 0 and scrollMaxY.
+  [ChromeOnly]
+  void setScrollMarks(sequence<unsigned long> marks);
+};
+
+dictionary WindowPostMessageOptions : StructuredSerializeOptions {
   USVString targetOrigin = "/";
 };

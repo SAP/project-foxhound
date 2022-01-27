@@ -1,7 +1,7 @@
 "use strict";
 
 // This file expects these globals to be defined by the test case.
-/* global gTestTab:true, gContentAPI:true, gContentWindow:true, tests:false */
+/* global gTestTab:true, gContentAPI:true, tests:false */
 
 ChromeUtils.defineModuleGetter(
   this,
@@ -15,6 +15,8 @@ const { PermissionTestUtils } = ChromeUtils.import(
 
 const SINGLE_TRY_TIMEOUT = 100;
 const NUMBER_OF_TRIES = 30;
+
+let gProxyCallbackMap = new Map();
 
 function waitForConditionPromise(
   condition,
@@ -300,146 +302,99 @@ function isTourBrowser(aBrowser) {
   );
 }
 
-function promisePageEvent() {
-  return new Promise(resolve => {
-    Services.mm.addMessageListener("UITour:onPageEvent", function onPageEvent(
-      aMessage
-    ) {
-      Services.mm.removeMessageListener("UITour:onPageEvent", onPageEvent);
-      SimpleTest.executeSoon(resolve);
-    });
-  });
-}
-
-function loadUITourTestPage(callback, host = "https://example.org/") {
+async function loadUITourTestPage(callback, host = "https://example.org/") {
   if (gTestTab) {
+    gProxyCallbackMap.clear();
     gBrowser.removeTab(gTestTab);
+  }
+
+  if (!window.gProxyCallbackMap) {
+    window.gProxyCallbackMap = gProxyCallbackMap;
   }
 
   let url = getRootDirectory(gTestPath) + "uitour.html";
   url = url.replace("chrome://mochitests/content/", host);
 
-  gTestTab = BrowserTestUtils.addTab(gBrowser, url);
-  gBrowser.selectedTab = gTestTab;
-
-  BrowserTestUtils.browserLoaded(gTestTab.linkedBrowser).then(() => {
-    if (gMultiProcessBrowser) {
-      // When e10s is enabled, make gContentAPI and gContentWindow proxies which has every property
-      // return a function which calls the method of the same name on
-      // contentWin.Mozilla.UITour/contentWin in a ContentTask.
-      let contentWinHandler = {
-        get(target, prop, receiver) {
-          return (...args) => {
-            let taskArgs = {
-              methodName: prop,
-              args,
-            };
-            return SpecialPowers.spawn(
-              gTestTab.linkedBrowser,
-              [taskArgs],
-              contentArgs => {
-                let contentWin = Cu.waiveXrays(content);
-                return contentWin[contentArgs.methodName].apply(
-                  contentWin,
-                  contentArgs.args
-                );
-              }
-            );
-          };
-        },
-      };
-      gContentWindow = new Proxy({}, contentWinHandler);
-
-      let UITourHandler = {
-        get(target, prop, receiver) {
-          return (...args) => {
-            let browser = gTestTab.linkedBrowser;
-            const proxyFunctionName = "UITourHandler:proxiedfunction-";
-            // We need to proxy any callback functions using messages:
-            let callbackMap = new Map();
-            let fnIndices = [];
-            args = args.map((arg, index) => {
-              // Replace function arguments with "", and add them to the list of
-              // forwarded functions. We'll construct a function on the content-side
-              // that forwards all its arguments to a message, and we'll listen for
-              // those messages on our side and call the corresponding function with
-              // the arguments we got from the content side.
-              if (typeof arg == "function") {
-                callbackMap.set(index, arg);
-                fnIndices.push(index);
-                let handler = function(msg) {
-                  // Please note that this handler assumes that the callback is used only once.
-                  // That means that a single gContentAPI.observer() call can't be used to observe
-                  // multiple events.
-                  browser.messageManager.removeMessageListener(
-                    proxyFunctionName + index,
-                    handler
+  gTestTab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
+  // When e10s is enabled, make gContentAPI a proxy which has every property
+  // return a function which calls the method of the same name on
+  // contentWin.Mozilla.UITour in a ContentTask.
+  let UITourHandler = {
+    get(target, prop, receiver) {
+      return (...args) => {
+        let browser = gTestTab.linkedBrowser;
+        // We need to proxy any callback functions using messages:
+        let fnIndices = [];
+        args = args.map((arg, index) => {
+          // Replace function arguments with "", and add them to the list of
+          // forwarded functions. We'll construct a function on the content-side
+          // that forwards all its arguments to a message, and we'll listen for
+          // those messages on our side and call the corresponding function with
+          // the arguments we got from the content side.
+          if (typeof arg == "function") {
+            gProxyCallbackMap.set(index, arg);
+            fnIndices.push(index);
+            return "";
+          }
+          return arg;
+        });
+        let taskArgs = {
+          methodName: prop,
+          args,
+          fnIndices,
+        };
+        return SpecialPowers.spawn(browser, [taskArgs], async function(
+          contentArgs
+        ) {
+          let contentWin = Cu.waiveXrays(content);
+          let callbacksCalled = 0;
+          let resolveCallbackPromise;
+          let allCallbacksCalledPromise = new Promise(
+            resolve => (resolveCallbackPromise = resolve)
+          );
+          let argumentsWithFunctions = Cu.cloneInto(
+            contentArgs.args.map((arg, index) => {
+              if (arg === "" && contentArgs.fnIndices.includes(index)) {
+                return function() {
+                  callbacksCalled++;
+                  SpecialPowers.spawnChrome(
+                    [index, Array.from(arguments)],
+                    (indexParent, argumentsParent) => {
+                      // Please note that this handler only allows the callback to be used once.
+                      // That means that a single gContentAPI.observer() call can't be used
+                      // to observe multiple events.
+                      let window = this.browsingContext.topChromeWindow;
+                      let cb = window.gProxyCallbackMap.get(indexParent);
+                      window.gProxyCallbackMap.delete(indexParent);
+                      cb.apply(null, argumentsParent);
+                    }
                   );
-                  callbackMap.get(index).apply(null, msg.data);
+                  if (callbacksCalled >= contentArgs.fnIndices.length) {
+                    resolveCallbackPromise();
+                  }
                 };
-                browser.messageManager.addMessageListener(
-                  proxyFunctionName + index,
-                  handler
-                );
-                return "";
               }
               return arg;
-            });
-            let taskArgs = {
-              methodName: prop,
-              args,
-              fnIndices,
-            };
-            return ContentTask.spawn(browser, taskArgs, async function(
-              contentArgs
-            ) {
-              let contentWin = Cu.waiveXrays(content);
-              let callbacksCalled = 0;
-              let resolveCallbackPromise;
-              let allCallbacksCalledPromise = new Promise(
-                resolve => (resolveCallbackPromise = resolve)
-              );
-              let argumentsWithFunctions = Cu.cloneInto(
-                contentArgs.args.map((arg, index) => {
-                  if (arg === "" && contentArgs.fnIndices.includes(index)) {
-                    return function() {
-                      callbacksCalled++;
-                      sendAsyncMessage(
-                        "UITourHandler:proxiedfunction-" + index,
-                        Array.from(arguments)
-                      );
-                      if (callbacksCalled >= contentArgs.fnIndices.length) {
-                        resolveCallbackPromise();
-                      }
-                    };
-                  }
-                  return arg;
-                }),
-                content,
-                { cloneFunctions: true }
-              );
-              let rv = contentWin.Mozilla.UITour[contentArgs.methodName].apply(
-                contentWin.Mozilla.UITour,
-                argumentsWithFunctions
-              );
-              if (contentArgs.fnIndices.length) {
-                await allCallbacksCalledPromise;
-              }
-              return rv;
-            });
-          };
-        },
+            }),
+            content,
+            { cloneFunctions: true }
+          );
+          let rv = contentWin.Mozilla.UITour[contentArgs.methodName].apply(
+            contentWin.Mozilla.UITour,
+            argumentsWithFunctions
+          );
+          if (contentArgs.fnIndices.length) {
+            await allCallbacksCalledPromise;
+          }
+          return rv;
+        });
       };
-      gContentAPI = new Proxy({}, UITourHandler);
-    } else {
-      gContentWindow = Cu.waiveXrays(
-        gTestTab.linkedBrowser.contentDocument.defaultView
-      );
-      gContentAPI = gContentWindow.Mozilla.UITour;
-    }
+    },
+  };
+  gContentAPI = new Proxy({}, UITourHandler);
 
-    waitForFocus(callback, gTestTab.linkedBrowser);
-  });
+  await SimpleTest.promiseFocus(gTestTab.linkedBrowser);
+  callback();
 }
 
 // Wrapper for UITourTest to be used by add_task tests.
@@ -473,12 +428,12 @@ function UITourTest(usingAddTask = false) {
   }
 
   registerCleanupFunction(function() {
-    delete window.gContentWindow;
     delete window.gContentAPI;
     if (gTestTab) {
       gBrowser.removeTab(gTestTab);
     }
     delete window.gTestTab;
+    delete window.gProxyCallbackMap;
     Services.prefs.clearUserPref("browser.uitour.enabled");
     PermissionTestUtils.remove(testHttpsOrigin, "uitour");
     PermissionTestUtils.remove(testHttpOrigin, "uitour");
@@ -498,6 +453,7 @@ function done(usingAddTask = false) {
         gBrowser.removeTab(gTestTab);
       }
       gTestTab = null;
+      gProxyCallbackMap.clear();
 
       let highlight = document.getElementById("UITourHighlightContainer");
       is_element_hidden(

@@ -31,14 +31,13 @@ class Http2PushedStream final : public Http2Stream {
                     Http2Session* aSession, Http2Stream* aAssociatedStream,
                     uint32_t aID,
                     uint64_t aCurrentForegroundTabOuterContentWindowId);
-  virtual ~Http2PushedStream() = default;
 
   bool GetPushComplete();
 
   // The consumer stream is the synthetic pull stream hooked up to this push
   virtual Http2Stream* GetConsumerStream() override { return mConsumerStream; };
 
-  void SetConsumerStream(Http2Stream* aStream);
+  void SetConsumerStream(Http2Stream* consumer);
   [[nodiscard]] bool GetHashKey(nsCString& key);
 
   // override of Http2Stream
@@ -49,10 +48,10 @@ class Http2PushedStream final : public Http2Stream {
   void AdjustInitialWindow() override;
 
   nsIRequestContext* RequestContext() override { return mRequestContext; };
-  void ConnectPushedStream(Http2Stream* consumer);
+  void ConnectPushedStream(Http2Stream* stream);
 
   [[nodiscard]] bool TryOnPush();
-  [[nodiscard]] static bool TestOnPush(Http2Stream* consumer);
+  [[nodiscard]] static bool TestOnPush(Http2Stream* stream);
 
   virtual bool DeferCleanup(nsresult status) override;
   void SetDeferCleanupOnSuccess(bool val) { mDeferCleanupOnSuccess = val; }
@@ -69,15 +68,16 @@ class Http2PushedStream final : public Http2Stream {
   // overload of Http2Stream
   virtual bool HasSink() override { return !!mConsumerStream; }
   virtual void SetPushComplete() override { mPushCompleted = true; }
-  virtual void TopLevelOuterContentWindowIdChanged(uint64_t) override;
+  virtual void TopBrowsingContextIdChanged(uint64_t) override;
 
   nsCString& GetRequestString() { return mRequestString; }
   nsCString& GetResourceUrl() { return mResourceUrl; }
 
  private:
-  Http2Stream*
-      mConsumerStream;  // paired request stream that consumes from
-                        // real http/2 one.. null until a match is made.
+  virtual ~Http2PushedStream() = default;
+  // paired request stream that consumes from real http/2 one.. null until a
+  // match is made.
+  Http2Stream* mConsumerStream{nullptr};
 
   nsCOMPtr<nsIRequestContext> mRequestContext;
 
@@ -87,9 +87,9 @@ class Http2PushedStream final : public Http2Stream {
   mozilla::TimeStamp mLastRead;
 
   nsCString mHashKey;
-  nsresult mStatus;
-  bool mPushCompleted;  // server push FIN received
-  bool mDeferCleanupOnSuccess;
+  nsresult mStatus{NS_OK};
+  bool mPushCompleted{false};  // server push FIN received
+  bool mDeferCleanupOnSuccess{true};
 
   // mDeferCleanupOnPush prevents Http2Session::CleanupStream() from
   // destroying the push stream on an error code during the period between
@@ -97,8 +97,8 @@ class Http2PushedStream final : public Http2Stream {
   // for that event to create a synthetic pull stream attached to this
   // object. That synthetic pull will become mConsuemerStream.
   // Ths is essentially a delete protecting reference.
-  bool mDeferCleanupOnPush;
-  bool mOnPushFailed;
+  bool mDeferCleanupOnPush{false};
+  bool mOnPushFailed{false};
   nsCString mRequestString;
   nsCString mResourceUrl;
 
@@ -122,15 +122,15 @@ class Http2PushTransactionBuffer final : public nsAHttpTransaction {
 
   const static uint32_t kDefaultBufferSize = 4096;
 
-  nsresult mStatus;
-  nsHttpRequestHead* mRequestHead;
-  Http2PushedStream* mPushStream;
-  bool mIsDone;
+  nsresult mStatus{NS_OK};
+  nsHttpRequestHead* mRequestHead{nullptr};
+  Http2PushedStream* mPushStream{nullptr};
+  bool mIsDone{false};
 
   UniquePtr<char[]> mBufferedHTTP1;
-  uint32_t mBufferedHTTP1Size;
-  uint32_t mBufferedHTTP1Used;
-  uint32_t mBufferedHTTP1Consumed;
+  uint32_t mBufferedHTTP1Size{kDefaultBufferSize};
+  uint32_t mBufferedHTTP1Used{0};
+  uint32_t mBufferedHTTP1Consumed{0};
 };
 
 class Http2PushedStreamWrapper : public nsISupports {

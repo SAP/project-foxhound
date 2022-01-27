@@ -8,6 +8,7 @@
 
 #include "DOMException.h"
 #include "nsThreadUtils.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/Promise.h"
@@ -33,10 +34,7 @@ DOMRequest::DOMRequest(nsIGlobalObject* aGlobal)
       mResult(JS::UndefinedValue()),
       mDone(false) {}
 
-DOMRequest::~DOMRequest() {
-  mResult.setUndefined();
-  mozilla::DropJSObjects(this);
-}
+DOMRequest::~DOMRequest() { mozilla::DropJSObjects(this); }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(DOMRequest)
 

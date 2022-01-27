@@ -7,7 +7,6 @@
  * Tests utility functions contained in `source-utils.js`
  */
 
-const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
 const curl = require("devtools/client/shared/curl");
 const Curl = curl.Curl;
 const CurlUtils = curl.CurlUtils;
@@ -60,9 +59,8 @@ add_task(async function() {
     "accept-language header present in curl output"
   );
   ok(
-    !headerTypeInParams(curlParams, "Accept-Encoding") &&
-      inParams(curlParams, "--compressed"),
-    '"--compressed" param replaced accept-encoding header'
+    exactHeaderInParams(curlParams, "Accept-Encoding: gzip, deflate, br"),
+    "accept-encoding header present in curl output"
   );
   ok(
     exactHeaderInParams(curlParams, "Origin: https://example.com"),
@@ -151,6 +149,34 @@ add_task(async function() {
   ok(
     inParams(curlParams, `--data-raw ${quote(request.postDataText)}`),
     "proper payload data present in output"
+  );
+});
+
+// Test `Curl.generateCommand` data POSTing - not post data
+add_task(async function() {
+  const request = {
+    url: "https://example.com/form/",
+    method: "POST",
+    headers: [
+      { name: "Content-Length", value: "1000" },
+      { name: "Content-Type", value: "text/plain" },
+    ],
+    httpVersion: "HTTP/2.0",
+  };
+
+  const cmd = Curl.generateCommand(request);
+  const curlParams = parseCurl(cmd);
+
+  ok(
+    !inParams(curlParams, "--data-raw"),
+    '"--data-raw" param not present in curl output'
+  );
+
+  const methodIndex = curlParams.indexOf("-X");
+
+  ok(
+    methodIndex !== -1 && curlParams[methodIndex + 1] === "POST",
+    "request method explicit is POST"
   );
 });
 

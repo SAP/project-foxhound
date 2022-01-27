@@ -7,7 +7,7 @@ import signal
 import re
 
 from buildconfig import substs
-from mozboot.util import get_state_dir
+from mozboot.util import get_tools_dir
 from mozlint import result
 from mozlint.pathutils import expand_exclusions
 from mozprocess import ProcessHandler
@@ -79,7 +79,7 @@ def get_clang_format_binary():
     if binary:
         return binary
 
-    clang_tools_path = os.path.join(get_state_dir(), "clang-tools")
+    clang_tools_path = os.path.join(get_tools_dir(), "clang-tools")
     bin_path = os.path.join(clang_tools_path, "clang-tidy", "bin")
     return os.path.join(bin_path, "clang-format" + substs.get("HOST_BIN_SUFFIX", ""))
 
@@ -144,10 +144,12 @@ def lint(paths, config, fix=None, **lintargs):
         return []
 
     cmd_args = [binary]
-    if fix:
-        cmd_args.append("-i")
-    else:
-        cmd_args.append("--dry-run")
+
+    base_command = cmd_args + ["--version"]
+    version = run_process(config, base_command)
+    log.debug("Version: {}".format(version))
+
+    cmd_args.append("--dry-run")
     base_command = cmd_args + paths
     log.debug("Command: {}".format(" ".join(cmd_args)))
     output = run_process(config, base_command)
@@ -158,6 +160,16 @@ def lint(paths, config, fix=None, **lintargs):
             "clang-format output should be a multiple of 3. Output: %s" % output
         )
 
+    fixed = (int)(len(output) / 3)
+    if fix:
+        cmd_args.remove("--dry-run")
+        cmd_args.append("-i")
+        base_command = cmd_args + paths
+        log.debug("Command: {}".format(" ".join(cmd_args)))
+        output = run_process(config, base_command)
+    else:
+        fixed = 0
+
     for i in range(0, len(output), 3):
         # Merge the element 3 by 3 (clang-format output)
         line = output[i]
@@ -167,5 +179,5 @@ def lint(paths, config, fix=None, **lintargs):
 
     if fix:
         # clang-format is able to fix all issues so don't bother parsing the output.
-        return []
-    return parse_issues(config, output_list, paths, log)
+        return {"results": [], "fixed": fixed}
+    return {"results": parse_issues(config, output_list, paths, log), "fixed": fixed}

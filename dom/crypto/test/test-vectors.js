@@ -792,6 +792,13 @@ let tv = {
   // KASValidityTest_ECCEphemeralUnified_NOKC_ZZOnly_init.fax [EC]
   // <http://csrc.nist.gov/groups/STM/cavp/documents/keymgmt/kastestvectors.zip>
   ecdh_p256: {
+    pkcs8: util.hex2abv(
+      "308187020100301306072a8648ce3d020106082a8648ce3d030107046d30" +
+        "6b020101042086880a915c7de9140f5d06a936c3bcd0c192848bd551894d" +
+        "916a72d1540d2495a14403420004656492c9b86256b6d324c98ad554d466" +
+        "d80cfd8ade6ee841086f109c728ab3aa9b027586e77e7582a5ed59bdfc46" +
+        "89d66e37d71dbbabae00614b2d3e83b7bc01"
+    ),
     jwk_pub: {
       kty: "EC",
       crv: "P-256",
@@ -952,6 +959,7 @@ let tv = {
     pub_jwk: {
       kty: "EC",
       crv: "P-521",
+      alg: "ES512",
 
       // 0061387fd6b95914e885f912edfbb5fb274655027f216c4091ca83e19336740fd8
       // 1aedfe047f51b42bdf68161121013e0d55b117a14e4303f926c8debb77a7fdaad1
@@ -992,6 +1000,27 @@ let tv = {
         "0087488c859a96fea266ea13bf6d114c429b163be97a57559086edb64aed4a1859" +
         "4b46fb9efc7fd25d8b2de8f09ca0587f54bd287299f47b2ff124aac56600000000"
     ),
+  },
+
+  // An ECDSA key in JWK format, which an "alg" field that doesn't match the
+  // curve.
+  ecdsa_jwk_alg_mismatch: {
+    pub_jwk: {
+      kty: "EC",
+      crv: "P-521",
+      alg: "ES256",
+
+      // 0061387fd6b95914e885f912edfbb5fb274655027f216c4091ca83e19336740fd8
+      // 1aedfe047f51b42bdf68161121013e0d55b117a14e4303f926c8debb77a7fdaad1
+      x:
+        "AGE4f9a5WRTohfkS7fu1-ydGVQJ_IWxAkcqD4ZM2dA_Y" +
+        "Gu3-BH9RtCvfaBYRIQE-DVWxF6FOQwP5Jsjeu3en_arR",
+      // 00e7d0c75c38626e895ca21526b9f9fdf84dcecb93f2b233390550d2b1463b7ee3
+      // f58df7346435ff0434199583c97c665a97f12f706f2357da4b40288def888e59e6
+      y:
+        "AOfQx1w4Ym6JXKIVJrn5_fhNzsuT8rIzOQVQ0rFGO37j" +
+        "9Y33NGQ1_wQ0GZWDyXxmWpfxL3BvI1faS0Aoje-Ijlnm",
+    },
   },
 
   ecdsa_bad: {

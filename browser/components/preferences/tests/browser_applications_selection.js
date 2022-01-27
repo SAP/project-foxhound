@@ -1,7 +1,6 @@
 SimpleTest.requestCompleteLog();
-ChromeUtils.import(
-  "resource://testing-common/HandlerServiceTestUtils.jsm",
-  this
+const { HandlerServiceTestUtils } = ChromeUtils.import(
+  "resource://testing-common/HandlerServiceTestUtils.jsm"
 );
 
 let gHandlerService = Cc["@mozilla.org/uriloader/handler-service;1"].getService(
@@ -184,7 +183,7 @@ async function selectStandardOptions(itemToUse) {
     Assert.equal(
       list.selectedItem,
       useDefaultItem,
-      "Should have selected always ask item (" + itemType + ")"
+      "Should have selected 'use default' item (" + itemType + ")"
     );
     preferredAction = HandlerServiceTestUtils.getHandlerInfo(itemType)
       .preferredAction;

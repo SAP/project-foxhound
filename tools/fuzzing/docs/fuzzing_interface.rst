@@ -63,14 +63,14 @@ Afterwards, you can run
 
 ::
 
-   $ python -m fuzzfetch -a --fuzzing --tests gtest -n firefox-fuzzing
+   $ python -m fuzzfetch -a --fuzzing --gtest -n firefox-fuzzing
 
 to fetch the latest optimized build. Alternatively, we offer non-ASan debug builds
 which you can download using
 
 ::
 
-   $ python -m fuzzfetch -d --fuzzing --tests gtest -n firefox-fuzzing
+   $ python -m fuzzfetch -d --fuzzing --gtest -n firefox-fuzzing
 
 In both commands, ``firefox-fuzzing`` indicates the name of the directory that
 will be created for the download.
@@ -92,6 +92,8 @@ bug you are working on and ``test.bin`` is the attached testcase.
 
 If the CI builds don't meet your requirements and you need a local build instead,
 you can follow the steps below to create one:
+
+.. _Local build requirements and flags:
 
 Local build requirements and flags
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -161,7 +163,7 @@ non-determinism and loss of performance.
 
 If you are unsure if the fuzzing interface is the right approach for you or you
 require help in evaluating what could be done for your particular task, please
-don't hestitate to :ref:`contact us <Fuzzing#Contact Us>`.
+don't hestitate to :ref:`contact us <Fuzzing#contact-us>`.
 
 
 Develop the fuzzing code
@@ -174,13 +176,13 @@ The code using the fuzzing interface usually lives in a separate directory
 called ``fuzztest`` that is on the same level as gtests. If your component
 has no gtests, then a subdirectory either in tests or in your main directory
 will work. If such a directory does not exist yet in your component, then you
-need to create one with a suitable ``moz.build``. See  `the mtransport target
-for an example <https://searchfox.org/mozilla-central/source/media/mtransport/fuzztest/moz.build>`__
+need to create one with a suitable ``moz.build``. See  `the transport target
+for an example <https://searchfox.org/mozilla-central/source/dom/media/webrtc/transport/fuzztest/moz.build>`__
 
 In order to include the new subdirectory into the build process, you will
 also have to modify the toplevel ``moz.build`` file accordingly. For this
 purpose, you should add your directory to ``TEST_DIRS`` only if ``FUZZING_INTERFACES``
-is set. See again `the mtransport target for an example
+is set. See again `the transport target for an example
 <https://searchfox.org/mozilla-central/rev/de7676288a78b70d2b9927c79493adbf294faad5/media/mtransport/moz.build#18-24>`__.
 
 How your code should look like
@@ -274,7 +276,7 @@ but the macro invocation is quite similar:
   MOZ_FUZZING_INTERFACE_STREAM(FuzzingInitMyTarget, FuzzingRunMyTarget, MyTarget);
 
 For a live example, see also the `implementation of the STUN fuzzing target
-<https://searchfox.org/mozilla-central/source/media/mtransport/fuzztest/stun_parser_libfuzz.cpp>`__.
+<https://searchfox.org/mozilla-central/source/dom/media/webrtc/transport/fuzztest/stun_parser_libfuzz.cpp>`__.
 
 Add instrumentation to the code being tested
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -309,7 +311,7 @@ reduce the amount of noise that libFuzzer sees.
 Build your code
 ^^^^^^^^^^^^^^^
 
-See the :ref:`Build instructions above <Build Requirements>` for instructions
+See the :ref:`Build instructions above <Local build requirements and flags>` for instructions
 how to modify your ``.mozconfig`` to create the appropriate build.
 
 
@@ -402,6 +404,7 @@ What this does is
    tool
 -  write statistics to the ``libfuzzer-stunparser.stats`` file
 
+.. _JS Engine Specifics:
 
 JS Engine Specifics
 ~~~~~~~~~~~~~~~~~~~

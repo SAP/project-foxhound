@@ -13,6 +13,7 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/IDBFactoryBinding.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/BrowserChild.h"
@@ -32,6 +33,7 @@
 #include "nsIURI.h"
 #include "nsIUUIDGenerator.h"
 #include "nsIWebNavigation.h"
+#include "nsNetUtil.h"
 #include "nsSandboxFlags.h"
 #include "nsServiceManagerUtils.h"
 #include "ProfilerHelpers.h"
@@ -45,8 +47,7 @@
 #  include "nsContentUtils.h"  // For assertions.
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace mozilla::dom::indexedDB;
 using namespace mozilla::dom::quota;
@@ -408,7 +409,7 @@ RefPtr<IDBOpenDBRequest> IDBFactory::Open(JSContext* aCx,
     nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(mGlobal);
     if (window && window->GetExtantDoc()) {
       window->GetExtantDoc()->WarnOnceAbout(
-          Document::eIDBOpenDBOptions_StorageType);
+          DeprecatedOperations::eIDBOpenDBOptions_StorageType);
     } else if (!NS_IsMainThread()) {
       // The method below reports on the main thread too, so we need to make
       // sure we're on a worker. Workers don't have a WarnOnceAbout mechanism,
@@ -446,15 +447,15 @@ int16_t IDBFactory::Cmp(JSContext* aCx, JS::Handle<JS::Value> aFirst,
                         JS::Handle<JS::Value> aSecond, ErrorResult& aRv) {
   Key first, second;
   auto result = first.SetFromJSVal(aCx, aFirst);
-  if (!result.Is(Ok)) {
-    aRv = result.ExtractErrorResult(
+  if (result.isErr()) {
+    aRv = result.unwrapErr().ExtractErrorResult(
         InvalidMapsTo<NS_ERROR_DOM_INDEXEDDB_DATA_ERR>);
     return 0;
   }
 
   result = second.SetFromJSVal(aCx, aSecond);
-  if (!result.Is(Ok)) {
-    aRv = result.ExtractErrorResult(
+  if (result.isErr()) {
+    aRv = result.unwrapErr().ExtractErrorResult(
         InvalidMapsTo<NS_ERROR_DOM_INDEXEDDB_DATA_ERR>);
     return 0;
   }
@@ -802,5 +803,4 @@ JSObject* IDBFactory::WrapObject(JSContext* aCx,
   return IDBFactory_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

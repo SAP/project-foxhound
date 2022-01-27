@@ -23,7 +23,6 @@ XPCOMUtils.defineLazyGetter(this, "isXpcshell", function() {
  *        - a regular expression, it must match the error message.
  *        - a function, it is called with the error object and its
  *          return value is returned.
- *        - null, the function always returns true.
  * @param {BaseContext} context
  *
  * @returns {boolean}
@@ -37,9 +36,6 @@ const errorMatches = (error, expectedError, context) => {
   ) {
     Cu.reportError("Error object belongs to the wrong scope.");
     return false;
-  }
-  if (expectedError === null) {
-    return true;
   }
 
   if (typeof expectedError === "function") {
@@ -86,7 +82,7 @@ const toSource = value => {
   }
 
   try {
-    return String(value.toSource());
+    return String(value);
   } catch (e) {
     return "<unknown>";
   }
@@ -96,23 +92,58 @@ this.test = class extends ExtensionAPI {
   getAPI(context) {
     const { extension } = context;
 
-    function getStack() {
+    function getStack(savedFrame = null) {
+      if (savedFrame) {
+        return ChromeUtils.createError("", savedFrame).stack.replace(
+          /^/gm,
+          "    "
+        );
+      }
       return new context.Error().stack.replace(/^/gm, "    ");
     }
 
     function assertTrue(value, msg) {
-      extension.emit("test-result", Boolean(value), String(msg), getStack());
+      extension.emit(
+        "test-result",
+        Boolean(value),
+        String(msg),
+        getStack(context.getCaller())
+      );
     }
 
     class TestEventManager extends EventManager {
+      constructor(...args) {
+        super(...args);
+
+        // A map to keep track of the listeners wrappers being added in
+        // addListener (the wrapper will be needed to be able to remove
+        // the listener from this EventManager instance if the extension
+        // does call test.onMessage.removeListener).
+        this._listenerWrappers = new Map();
+        context.callOnClose({
+          close: () => this._listenerWrappers.clear(),
+        });
+      }
+
       addListener(callback, ...args) {
-        super.addListener(function(...args) {
+        const listenerWrapper = function(...args) {
           try {
             callback.call(this, ...args);
           } catch (e) {
             assertTrue(false, `${e}\n${e.stack}`);
           }
-        }, ...args);
+        };
+        super.addListener(listenerWrapper, ...args);
+        this._listenerWrappers.set(callback, listenerWrapper);
+      }
+
+      removeListener(callback) {
+        if (!this._listenerWrappers.has(callback)) {
+          return;
+        }
+
+        super.removeListener(this._listenerWrappers.get(callback));
+        this._listenerWrappers.delete(callback);
       }
     }
 
@@ -143,15 +174,20 @@ this.test = class extends ExtensionAPI {
         },
 
         notifyPass(msg) {
-          extension.emit("test-done", true, msg, getStack());
+          extension.emit("test-done", true, msg, getStack(context.getCaller()));
         },
 
         notifyFail(msg) {
-          extension.emit("test-done", false, msg, getStack());
+          extension.emit(
+            "test-done",
+            false,
+            msg,
+            getStack(context.getCaller())
+          );
         },
 
         log(msg) {
-          extension.emit("test-log", true, msg, getStack());
+          extension.emit("test-log", true, msg, getStack(context.getCaller()));
         },
 
         fail(msg) {
@@ -185,7 +221,7 @@ this.test = class extends ExtensionAPI {
             String(msg),
             expected,
             actual,
-            getStack()
+            getStack(context.getCaller())
           );
         },
 
@@ -193,13 +229,9 @@ this.test = class extends ExtensionAPI {
           // Wrap in a native promise for consistency.
           promise = Promise.resolve(promise);
 
-          if (msg) {
-            msg = `: ${msg}`;
-          }
-
           return promise.then(
             result => {
-              assertTrue(false, `Promise resolved, expected rejection${msg}`);
+              assertTrue(false, `Promise resolved, expected rejection: ${msg}`);
             },
             error => {
               let errorMessage = toSource(error && error.message);
@@ -208,21 +240,17 @@ this.test = class extends ExtensionAPI {
                 errorMatches(error, expectedError, context),
                 `Promise rejected, expecting rejection to match ${toSource(
                   expectedError
-                )}, got ${errorMessage}${msg}`
+                )}, got ${errorMessage}: ${msg}`
               );
             }
           );
         },
 
         assertThrows(func, expectedError, msg) {
-          if (msg) {
-            msg = `: ${msg}`;
-          }
-
           try {
             func();
 
-            assertTrue(false, `Function did not throw, expected error${msg}`);
+            assertTrue(false, `Function did not throw, expected error: ${msg}`);
           } catch (error) {
             let errorMessage = toSource(error && error.message);
 
@@ -230,7 +258,7 @@ this.test = class extends ExtensionAPI {
               errorMatches(error, expectedError, context),
               `Function threw, expecting error to match ${toSource(
                 expectedError
-              )}got ${errorMessage}${msg}`
+              )}, got ${errorMessage}: ${msg}`
             );
           }
         },

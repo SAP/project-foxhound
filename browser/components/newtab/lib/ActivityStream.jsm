@@ -50,8 +50,8 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
-  "RecommendationProviderSwitcher",
-  "resource://activity-stream/lib/RecommendationProviderSwitcher.jsm"
+  "RecommendationProvider",
+  "resource://activity-stream/lib/RecommendationProvider.jsm"
 );
 ChromeUtils.defineModuleGetter(
   this,
@@ -100,21 +100,20 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
-  "ASRouterFeed",
-  "resource://activity-stream/lib/ASRouterFeed.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "DiscoveryStreamFeed",
   "resource://activity-stream/lib/DiscoveryStreamFeed.jsm"
 );
 
 const REGION_STORIES_CONFIG =
   "browser.newtabpage.activity-stream.discoverystream.region-stories-config";
+const REGION_STORIES_BLOCK =
+  "browser.newtabpage.activity-stream.discoverystream.region-stories-block";
 const REGION_SPOCS_CONFIG =
   "browser.newtabpage.activity-stream.discoverystream.region-spocs-config";
-const REGION_LAYOUT_CONFIG =
-  "browser.newtabpage.activity-stream.discoverystream.region-layout-config";
+const REGION_BASIC_CONFIG =
+  "browser.newtabpage.activity-stream.discoverystream.region-basic-config";
+const LOCALE_LIST_CONFIG =
+  "browser.newtabpage.activity-stream.discoverystream.locale-list-config";
 
 // Determine if spocs should be shown for a geo/locale
 function showSpocs({ geo }) {
@@ -146,7 +145,7 @@ const PREFS_CONFIG = new Map([
           api_key_pref: "extensions.pocket.oAuthConsumerKey",
           // Use the opposite value as what default value the feed would have used
           hidden: !PREFS_CONFIG.get("feeds.system.topstories").getValue(args),
-          provider_icon: "pocket",
+          provider_icon: "chrome://global/skin/icons/pocket.svg",
           provider_name: "Pocket",
           read_more_endpoint:
             "https://getpocket.com/explore/trending?src=fx_new_tab",
@@ -157,67 +156,7 @@ const PREFS_CONFIG = new Map([
           }`,
           stories_referrer: "https://getpocket.com/recommendations",
           topics_endpoint: `https://getpocket.cdn.mozilla.net/v3/firefox/trending-topics?version=2&consumer_key=$apiKey&locale_lang=${args.locale}`,
-          model_keys: [
-            "nmf_model_animals",
-            "nmf_model_business",
-            "nmf_model_career",
-            "nmf_model_datascience",
-            "nmf_model_design",
-            "nmf_model_education",
-            "nmf_model_entertainment",
-            "nmf_model_environment",
-            "nmf_model_fashion",
-            "nmf_model_finance",
-            "nmf_model_food",
-            "nmf_model_health",
-            "nmf_model_home",
-            "nmf_model_life",
-            "nmf_model_marketing",
-            "nmf_model_politics",
-            "nmf_model_programming",
-            "nmf_model_science",
-            "nmf_model_shopping",
-            "nmf_model_sports",
-            "nmf_model_tech",
-            "nmf_model_travel",
-            "nb_model_animals",
-            "nb_model_books",
-            "nb_model_business",
-            "nb_model_career",
-            "nb_model_datascience",
-            "nb_model_design",
-            "nb_model_economics",
-            "nb_model_education",
-            "nb_model_entertainment",
-            "nb_model_environment",
-            "nb_model_fashion",
-            "nb_model_finance",
-            "nb_model_food",
-            "nb_model_game",
-            "nb_model_health",
-            "nb_model_history",
-            "nb_model_home",
-            "nb_model_life",
-            "nb_model_marketing",
-            "nb_model_military",
-            "nb_model_philosophy",
-            "nb_model_photography",
-            "nb_model_politics",
-            "nb_model_productivity",
-            "nb_model_programming",
-            "nb_model_psychology",
-            "nb_model_science",
-            "nb_model_shopping",
-            "nb_model_society",
-            "nb_model_space",
-            "nb_model_sports",
-            "nb_model_tech",
-            "nb_model_travel",
-            "nb_model_writing",
-          ],
           show_spocs: showSpocs(args),
-          personalized: true,
-          version: 1,
         }),
     },
   ],
@@ -229,10 +168,25 @@ const PREFS_CONFIG = new Map([
     },
   ],
   [
+    "hideTopSitesTitle",
+    {
+      title:
+        "Hide the top sites section's title, including the section and collapse icons",
+      value: false,
+    },
+  ],
+  [
     "showSponsored",
     {
       title:
         "Show sponsored cards in spoc experiment (show_spocs in topstories.options has to be set to true as well)",
+      value: true,
+    },
+  ],
+  [
+    "showSponsoredTopSites",
+    {
+      title: "Show sponsored top sites",
       value: true,
     },
   ],
@@ -249,13 +203,6 @@ const PREFS_CONFIG = new Map([
     },
   ],
   [
-    "filterAdult",
-    {
-      title: "Remove adult pages from sites, highlights, etc.",
-      value: true,
-    },
-  ],
-  [
     "showSearch",
     {
       title: "Show the Search bar",
@@ -266,7 +213,7 @@ const PREFS_CONFIG = new Map([
     "feeds.snippets",
     {
       title: "Show snippets on activity stream",
-      value: true,
+      value: false,
     },
   ],
   [
@@ -400,20 +347,6 @@ const PREFS_CONFIG = new Map([
     },
   ],
   [
-    "asrouter.userprefs.cfr.addons",
-    {
-      title: "Does the user allow CFR addon recommendations?",
-      value: true,
-    },
-  ],
-  [
-    "asrouter.userprefs.cfr.features",
-    {
-      title: "Does the user allow CFR feature recommendations?",
-      value: true,
-    },
-  ],
-  [
     "asrouter.providers.onboarding",
     {
       title: "Configuration for onboarding provider",
@@ -424,20 +357,6 @@ const PREFS_CONFIG = new Map([
         enabled: true,
         // Block specific messages from this local provider
         exclude: [],
-      }),
-    },
-  ],
-  [
-    "asrouter.providers.cfr-fxa",
-    {
-      title: "Configuration for CFR FxA Messages provider",
-      value: JSON.stringify({
-        id: "cfr-fxa",
-        enabled: true,
-        type: "remote-settings",
-        bucket: "cfr-fxa",
-        frequency: { custom: [{ period: "daily", cap: 1 }] },
-        updateCycleInMs: 3600000,
       }),
     },
   ],
@@ -461,7 +380,6 @@ const PREFS_CONFIG = new Map([
           enabled: true,
           show_spocs: showSpocs({ geo }),
           hardcoded_layout: true,
-          personalized: true,
           // This is currently an exmple layout used for dev purposes.
           layout_endpoint:
             "https://getpocket.cdn.mozilla.net/v3/newtab/layout?version=1&consumer_key=$apiKey&layout_variant=basic",
@@ -498,12 +416,19 @@ const PREFS_CONFIG = new Map([
       title: "Decision to use basic layout based on region.",
       getValue: ({ geo }) => {
         const preffedRegionsString =
-          Services.prefs.getStringPref(REGION_LAYOUT_CONFIG) || "";
+          Services.prefs.getStringPref(REGION_BASIC_CONFIG) || "";
+        // If no regions are set to basic,
+        // we don't need to bother checking against the region.
+        // We are also not concerned if geo is not set,
+        // because stories are going to be empty until we have geo.
+        if (!preffedRegionsString) {
+          return false;
+        }
         const preffedRegions = preffedRegionsString
           .split(",")
           .map(s => s.trim());
 
-        return !preffedRegions.includes(geo);
+        return preffedRegions.includes(geo);
       },
     },
   ],
@@ -569,7 +494,7 @@ const FEEDS_DATA = [
     name: "section.highlights",
     factory: () => new HighlightsFeed(),
     title: "Fetches content recommendations from places db",
-    value: true,
+    value: false,
   },
   {
     name: "system.topstories",
@@ -579,9 +504,24 @@ const FEEDS_DATA = [
       "System pref that fetches content recommendations from a configurable content provider",
     // Dynamically determine if Pocket should be shown for a geo / locale
     getValue: ({ geo, locale }) => {
+      // If we don't have geo, we don't want to flash the screen with stories while geo loads.
+      // Best to display nothing until geo is ready.
+      if (!geo) {
+        return false;
+      }
+      const preffedRegionsBlockString =
+        Services.prefs.getStringPref(REGION_STORIES_BLOCK) || "";
       const preffedRegionsString =
         Services.prefs.getStringPref(REGION_STORIES_CONFIG) || "";
+      const preffedLocaleListString =
+        Services.prefs.getStringPref(LOCALE_LIST_CONFIG) || "";
+      const preffedBlockRegions = preffedRegionsBlockString
+        .split(",")
+        .map(s => s.trim());
       const preffedRegions = preffedRegionsString.split(",").map(s => s.trim());
+      const preffedLocales = preffedLocaleListString
+        .split(",")
+        .map(s => s.trim());
       const locales = {
         US: ["en-CA", "en-GB", "en-US"],
         CA: ["en-CA", "en-GB", "en-US"],
@@ -591,8 +531,8 @@ const FEEDS_DATA = [
         IN: ["en-CA", "en-GB", "en-US"],
         IE: ["en-CA", "en-GB", "en-US"],
         ZA: ["en-CA", "en-GB", "en-US"],
-        CH: ["de", "fr", "it"],
-        BE: ["fr", "de"],
+        CH: ["de"],
+        BE: ["de"],
         DE: ["de"],
         AT: ["de"],
         IT: ["it"],
@@ -601,9 +541,12 @@ const FEEDS_DATA = [
         PL: ["pl"],
         JP: ["ja", "ja-JP-mac"],
       }[geo];
-      return (
-        preffedRegions.includes(geo) && !!locales && locales.includes(locale)
-      );
+
+      const regionBlocked = preffedBlockRegions.includes(geo);
+      const localeEnabled = locale && preffedLocales.includes(locale);
+      const regionEnabled =
+        preffedRegions.includes(geo) && !!locales && locales.includes(locale);
+      return !regionBlocked && (localeEnabled || regionEnabled);
     },
   },
   {
@@ -631,15 +574,9 @@ const FEEDS_DATA = [
     value: true,
   },
   {
-    name: "asrouterfeed",
-    factory: () => new ASRouterFeed(),
-    title: "Handles AS Router messages, such as snippets and onboaridng",
-    value: true,
-  },
-  {
-    name: "recommendationproviderswitcher",
-    factory: () => new RecommendationProviderSwitcher(),
-    title: "Handles switching between two types of personality providers",
+    name: "recommendationprovider",
+    factory: () => new RecommendationProvider(),
+    title: "Handles setup and interaction for the personality provider",
     value: true,
   },
   {
@@ -813,9 +750,7 @@ this.ActivityStream = class ActivityStream {
   observe(subject, topic, data) {
     switch (topic) {
       case Region.REGION_TOPIC:
-        if (data === Region.REGION_UPDATED) {
-          this._updateDynamicPrefs();
-        }
+        this._updateDynamicPrefs();
         break;
     }
   }

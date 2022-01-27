@@ -1,8 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-ChromeUtils.import("resource://testing-common/LoginTestUtils.jsm", this);
-
 function waitForLoginCountToReach(browser, loginCount) {
   return SpecialPowers.spawn(
     browser,
@@ -19,6 +17,14 @@ function waitForLoginCountToReach(browser, loginCount) {
   );
 }
 
+add_task(async function setup() {
+  await addLogin(TEST_LOGIN1);
+  registerCleanupFunction(() => {
+    Services.logins.removeAllUserFacingLogins();
+    LoginTestUtils.masterPassword.disable();
+  });
+});
+
 add_task(async function test() {
   // Confirm that the mocking of the OS auth dialog isn't enabled so the
   // test will timeout if a real OS auth dialog is shown. We don't show
@@ -31,8 +37,6 @@ add_task(async function test() {
     "",
     "Pref should be set to default value of empty string to start the test"
   );
-
-  TEST_LOGIN1 = await addLogin(TEST_LOGIN1);
   LoginTestUtils.masterPassword.enable();
 
   let mpDialogShown = forceAuthTimeoutAndWaitForMPDialog("cancel");
@@ -41,11 +45,6 @@ add_task(async function test() {
     url: "about:logins",
   });
   await mpDialogShown;
-
-  registerCleanupFunction(async function() {
-    Services.logins.removeAllLogins();
-    BrowserTestUtils.removeTab(gBrowser.selectedTab);
-  });
 
   let browser = gBrowser.selectedBrowser;
   let logins = await waitForLoginCountToReach(browser, 0);
@@ -56,7 +55,7 @@ add_task(async function test() {
   );
 
   let notification;
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () =>
       (notification = gBrowser
         .getNotificationBox()
@@ -69,7 +68,9 @@ add_task(async function test() {
     "master-password-login-required notification should be visible"
   );
 
-  let buttons = notification.querySelectorAll(".notification-button");
+  let buttons = notification.buttonContainer.querySelectorAll(
+    ".notification-button"
+  );
   is(buttons.length, 1, "Should have one button.");
 
   let refreshPromise = BrowserTestUtils.browserLoaded(browser);
@@ -199,8 +200,8 @@ add_task(async function test() {
       loginList._list.querySelectorAll(
         ".login-list-item[data-guid]:not([hidden])"
       ).length,
-      0,
-      "login-list should not show any results since the filter won't search passwords when MP is enabled"
+      1,
+      "login-list should show corresponding result when primary password is enabled"
     );
     loginFilter.value = "";
     is(
@@ -227,4 +228,42 @@ add_task(async function test() {
       "login-list should show login with matching password since MP is disabled"
     );
   });
+
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+});
+
+add_task(async function test_login_item_after_successful_auth() {
+  // Confirm that the mocking of the OS auth dialog isn't enabled so the
+  // test will timeout if a real OS auth dialog is shown. We don't show
+  // the OS auth dialog when Master Password is enabled.
+  is(
+    Services.prefs.getStringPref(
+      "toolkit.osKeyStore.unofficialBuildOnlyLogin",
+      ""
+    ),
+    "",
+    "Pref should be set to default value of empty string to start the test"
+  );
+  LoginTestUtils.masterPassword.enable();
+
+  let mpDialogShown = forceAuthTimeoutAndWaitForMPDialog("authenticate");
+  await BrowserTestUtils.openNewForegroundTab({
+    gBrowser,
+    url: "about:logins",
+  });
+  await mpDialogShown;
+
+  let browser = gBrowser.selectedBrowser;
+  let logins = await waitForLoginCountToReach(browser, 1);
+  is(logins, 1, "Logins should be displayed when MP is set and authenticated");
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
+    let loginItem = content.document.querySelector("login-item");
+    ok(
+      !loginItem.classList.contains("no-logins"),
+      "Login item should have content after MP is authenticated"
+    );
+  });
+
+  LoginTestUtils.masterPassword.disable();
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });

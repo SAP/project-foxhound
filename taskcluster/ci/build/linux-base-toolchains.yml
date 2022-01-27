@@ -17,10 +17,8 @@ linux64-base-toolchains/opt:
     run-on-projects: ['mozilla-central']
     worker-type: b-linux
     worker:
-        docker-image: {in-tree: debian8-amd64-build-base}
         max-run-time: 7200
         env:
-            MOZ_LOW_PARALLELISM_BUILD: '1'
             PERFHERDER_EXTRA_OPTIONS: base-toolchains
             FORCE_GCC: '1'
     run:
@@ -38,12 +36,13 @@ linux64-base-toolchains/opt:
         toolchain:
             - linux64-clang-5.0
             - linux64-gcc-7
-            - linux64-rust-1.43
+            - linux64-rust-1.53
             - linux64-cbindgen
-            - linux64-dump-syms
+            - linux64-dump_syms
             - linux64-sccache
             - linux64-nasm-2.14.02
-            - linux64-node
+            - linux64-node-10
+            - sysroot-x86_64-linux-gnu
 
 linux64-base-toolchains/debug:
     description: "Linux64 base toolchains Debug"
@@ -54,13 +53,11 @@ linux64-base-toolchains/debug:
         platform: linux64/debug
         symbol: Bb
     optimization:
-        push-interval-10: null
+        skip-unless-expanded: null
     worker-type: b-linux
     worker:
-        docker-image: {in-tree: debian8-amd64-build-base}
         max-run-time: 7200
         env:
-            MOZ_LOW_PARALLELISM_BUILD: '1'
             PERFHERDER_EXTRA_OPTIONS: base-toolchains
             FORCE_GCC: '1'
     run:
@@ -80,16 +77,13 @@ linux64-base-toolchains/debug:
         toolchain:
             - linux64-clang-5.0
             - linux64-gcc-7
-            - linux64-rust-1.43
+            - linux64-rust-1.53
             - linux64-cbindgen
-            - linux64-dump-syms
+            - linux64-dump_syms
             - linux64-sccache
             - linux64-nasm-2.14.02
-            - linux64-node
-            # `fix-stacks` is needed because xpcshell self tests run as part of
-            # the build step. Once bug 1614626 moves them to the xpcshell task,
-            # this dependency can be removed.
-            - linux64-fix-stacks
+            - linux64-node-10
+            - sysroot-x86_64-linux-gnu
 
 linux64-base-toolchains-clang/opt:
     description: "Linux64 base toolchains clang Opt"
@@ -102,7 +96,6 @@ linux64-base-toolchains-clang/opt:
     run-on-projects: ['mozilla-central']
     worker-type: b-linux
     worker:
-        docker-image: {in-tree: debian8-amd64-build-base}
         max-run-time: 7200
         env:
             PERFHERDER_EXTRA_OPTIONS: base-toolchains-clang
@@ -119,13 +112,14 @@ linux64-base-toolchains-clang/opt:
         need-xvfb: true
     fetches:
         toolchain:
-            - linux64-binutils
+            - linux64-binutils-2.31.1
             - linux64-clang-5.0
-            - linux64-rust-1.43
+            - linux64-rust-1.53
             - linux64-cbindgen
-            - linux64-dump-syms
+            - linux64-dump_syms
             - linux64-nasm-2.14.02
-            - linux64-node
+            - linux64-node-10
+            - sysroot-x86_64-linux-gnu
 
 linux64-base-toolchains-clang/debug:
     description: "Linux64 base toolchains clang Debug"
@@ -136,10 +130,9 @@ linux64-base-toolchains-clang/debug:
         platform: linux64/debug
         symbol: Bbc
     optimization:
-        push-interval-10: null
+        skip-unless-expanded: null
     worker-type: b-linux
     worker:
-        docker-image: {in-tree: debian8-amd64-build-base}
         max-run-time: 5400
         env:
             PERFHERDER_EXTRA_OPTIONS: base-toolchains-clang
@@ -158,14 +151,11 @@ linux64-base-toolchains-clang/debug:
         need-xvfb: true
     fetches:
         toolchain:
-            - linux64-binutils
+            - linux64-binutils-2.31.1
             - linux64-clang-5.0
-            - linux64-rust-1.43
+            - linux64-rust-1.53
             - linux64-cbindgen
-            - linux64-dump-syms
+            - linux64-dump_syms
             - linux64-nasm-2.14.02
-            - linux64-node
-            # `fix-stacks` is needed because xpcshell self tests run as part of
-            # the build step. Once bug 1614626 moves them to the xpcshell task,
-            # this dependency can be removed.
-            - linux64-fix-stacks
+            - linux64-node-10
+            - sysroot-x86_64-linux-gnu

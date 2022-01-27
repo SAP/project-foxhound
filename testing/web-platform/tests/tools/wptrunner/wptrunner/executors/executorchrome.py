@@ -1,14 +1,14 @@
 import os
 import traceback
 
-from six.moves.urllib.parse import urljoin
+from urllib.parse import urljoin
 
 from .base import WdspecProtocol, WdspecExecutor, get_pages
 from .executorwebdriver import WebDriverProtocol, WebDriverRefTestExecutor, WebDriverRun
 from .protocol import PrintProtocolPart
 from ..webdriver_server import ChromeDriverServer
 
-here = os.path.join(os.path.split(__file__)[0])
+here = os.path.dirname(__file__)
 
 
 class ChromeDriverPrintProtocolPart(PrintProtocolPart):

@@ -7,18 +7,21 @@
 #include "AudioBuffer.h"
 #include "mozilla/dom/AudioBufferBinding.h"
 #include "jsfriendapi.h"
-#include "js/ArrayBuffer.h"  // JS::StealArrayBufferContents
+#include "js/ArrayBuffer.h"             // JS::StealArrayBufferContents
+#include "js/experimental/TypedData.h"  // JS_NewFloat32Array, JS_GetFloat32ArrayData, JS_GetTypedArrayLength, JS_GetArrayBufferViewBuffer
 #include "mozilla/ErrorResult.h"
 #include "AudioSegment.h"
 #include "AudioChannelFormat.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/MemoryReporting.h"
 #include "AudioNodeEngine.h"
 #include "nsPrintfCString.h"
+#include "nsTHashSet.h"
+#include <numeric>
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(AudioBuffer)
 
@@ -71,7 +74,7 @@ class AudioBufferMemoryTracker : public nsIMemoryReporter {
   /* This protects all members of this class. */
   static StaticMutex sMutex;
   static StaticRefPtr<AudioBufferMemoryTracker> sSingleton;
-  nsTHashtable<nsPtrHashKey<const AudioBuffer>> mBuffers;
+  nsTHashSet<const AudioBuffer*> mBuffers;
 };
 
 StaticRefPtr<AudioBufferMemoryTracker> AudioBufferMemoryTracker::sSingleton;
@@ -117,13 +120,13 @@ void AudioBufferMemoryTracker::UnregisterAudioBuffer(
 void AudioBufferMemoryTracker::RegisterAudioBufferInternal(
     const AudioBuffer* aAudioBuffer) {
   sMutex.AssertCurrentThreadOwns();
-  mBuffers.PutEntry(aAudioBuffer);
+  mBuffers.Insert(aAudioBuffer);
 }
 
 uint32_t AudioBufferMemoryTracker::UnregisterAudioBufferInternal(
     const AudioBuffer* aAudioBuffer) {
   sMutex.AssertCurrentThreadOwns();
-  mBuffers.RemoveEntry(aAudioBuffer);
+  mBuffers.Remove(aAudioBuffer);
   return mBuffers.Count();
 }
 
@@ -132,12 +135,12 @@ MOZ_DEFINE_MALLOC_SIZE_OF(AudioBufferMemoryTrackerMallocSizeOf)
 NS_IMETHODIMP
 AudioBufferMemoryTracker::CollectReports(nsIHandleReportCallback* aHandleReport,
                                          nsISupports* aData, bool) {
-  size_t amount = 0;
-
-  for (auto iter = mBuffers.Iter(); !iter.Done(); iter.Next()) {
-    amount += iter.Get()->GetKey()->SizeOfIncludingThis(
-        AudioBufferMemoryTrackerMallocSizeOf);
-  }
+  const size_t amount =
+      std::accumulate(mBuffers.cbegin(), mBuffers.cend(), size_t(0),
+                      [](size_t val, const AudioBuffer* buffer) {
+                        return val + buffer->SizeOfIncludingThis(
+                                         AudioBufferMemoryTrackerMallocSizeOf);
+                      });
 
   MOZ_COLLECT_REPORT("explicit/webaudio/audiobuffer", KIND_HEAP, UNITS_BYTES,
                      amount, "Memory used by AudioBuffer objects (Web Audio).");
@@ -311,46 +314,39 @@ bool AudioBuffer::RestoreJSChannelData(JSContext* aJSContext) {
 
 void AudioBuffer::CopyFromChannel(const Float32Array& aDestination,
                                   uint32_t aChannelNumber,
-                                  uint32_t aStartInChannel, ErrorResult& aRv) {
+                                  uint32_t aBufferOffset, ErrorResult& aRv) {
   if (aChannelNumber >= NumberOfChannels()) {
     aRv.ThrowIndexSizeError(
         nsPrintfCString("Channel number (%u) is out of range", aChannelNumber));
     return;
   }
 
-  if (aStartInChannel > Length()) {
-    // FIXME: this is not in the spec.  See
-    // https://bugzilla.mozilla.org/show_bug.cgi?id=1614006
-    aRv.ThrowIndexSizeError(
-        nsPrintfCString("Start index (%u) is out of range", aStartInChannel));
-    return;
-  }
-
   JS::AutoCheckCannotGC nogc;
   aDestination.ComputeState();
-  uint32_t count = std::min(Length() - aStartInChannel, aDestination.Length());
+
+  int64_t length = Length();
+  int64_t offset = aBufferOffset;
+  int64_t destLength = aDestination.Length();
+  uint32_t count = std::max(int64_t(0), std::min(length - offset, destLength));
+
   JSObject* channelArray = mJSChannels[aChannelNumber];
   if (channelArray) {
     if (JS_GetTypedArrayLength(channelArray) != Length()) {
       // The array's buffer was detached.
-      // FIXME: this is not in the spec.  See
-      // https://bugzilla.mozilla.org/show_bug.cgi?id=1614006
-      aRv.ThrowIndexSizeError("Channel's backing buffer is detached");
       return;
     }
-
     bool isShared = false;
     const float* sourceData =
         JS_GetFloat32ArrayData(channelArray, &isShared, nogc);
     // The sourceData arrays should all have originated in
     // RestoreJSChannelData, where they are created unshared.
     MOZ_ASSERT(!isShared);
-    PodMove(aDestination.Data(), sourceData + aStartInChannel, count);
+    PodMove(aDestination.Data(), sourceData + aBufferOffset, count);
     return;
   }
 
   if (!mSharedChannels.IsNull()) {
-    CopyChannelDataToFloat(mSharedChannels, aChannelNumber, aStartInChannel,
+    CopyChannelDataToFloat(mSharedChannels, aChannelNumber, aBufferOffset,
                            aDestination.Data(), count);
     return;
   }
@@ -360,19 +356,11 @@ void AudioBuffer::CopyFromChannel(const Float32Array& aDestination,
 
 void AudioBuffer::CopyToChannel(JSContext* aJSContext,
                                 const Float32Array& aSource,
-                                uint32_t aChannelNumber,
-                                uint32_t aStartInChannel, ErrorResult& aRv) {
+                                uint32_t aChannelNumber, uint32_t aBufferOffset,
+                                ErrorResult& aRv) {
   if (aChannelNumber >= NumberOfChannels()) {
     aRv.ThrowIndexSizeError(
         nsPrintfCString("Channel number (%u) is out of range", aChannelNumber));
-    return;
-  }
-
-  if (aStartInChannel > Length()) {
-    // FIXME: this is not in the spec.  See
-    // https://bugzilla.mozilla.org/show_bug.cgi?id=1614006
-    aRv.ThrowIndexSizeError(
-        nsPrintfCString("Start index (%u) is out of range", aStartInChannel));
     return;
   }
 
@@ -385,20 +373,20 @@ void AudioBuffer::CopyToChannel(JSContext* aJSContext,
   JSObject* channelArray = mJSChannels[aChannelNumber];
   if (JS_GetTypedArrayLength(channelArray) != Length()) {
     // The array's buffer was detached.
-    // FIXME: this is not in the spec.  See
-    // https://bugzilla.mozilla.org/show_bug.cgi?id=1614006
-    aRv.ThrowIndexSizeError("Channel's backing buffer is detached");
     return;
   }
 
   aSource.ComputeState();
-  uint32_t count = std::min(Length() - aStartInChannel, aSource.Length());
+  int64_t length = JS_GetTypedArrayLength(channelArray);
+  int64_t offset = aBufferOffset;
+  int64_t srcLength = aSource.Length();
+  uint32_t count = std::max(int64_t(0), std::min(length - offset, srcLength));
   bool isShared = false;
   float* channelData = JS_GetFloat32ArrayData(channelArray, &isShared, nogc);
   // The channelData arrays should all have originated in
   // RestoreJSChannelData, where they are created unshared.
   MOZ_ASSERT(!isShared);
-  PodMove(channelData + aStartInChannel, aSource.Data(), count);
+  PodMove(channelData + aBufferOffset, aSource.Data(), count);
 }
 
 void AudioBuffer::GetChannelData(JSContext* aJSContext, uint32_t aChannel,
@@ -494,5 +482,4 @@ size_t AudioBuffer::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
   return amount;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

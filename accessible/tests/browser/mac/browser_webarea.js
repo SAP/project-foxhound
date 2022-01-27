@@ -9,7 +9,9 @@ loadScripts({ name: "role.js", dir: MOCHITESTS_DIR });
 
 // Test web area role and AXLoadComplete event
 addAccessibleTask(``, async (browser, accDoc) => {
-  let evt = waitForMacEvent("AXLoadComplete");
+  let evt = waitForMacEvent("AXLoadComplete", (iface, data) => {
+    return iface.getAttributeValue("AXDescription") == "webarea test";
+  });
   await SpecialPowers.spawn(browser, [], () => {
     content.location = "data:text/html,<title>webarea test</title>";
   });
@@ -22,11 +24,6 @@ addAccessibleTask(``, async (browser, accDoc) => {
   );
   is(doc.getAttributeValue("AXValue"), "", "document has no AXValue");
   is(doc.getAttributeValue("AXTitle"), null, "document has no AXTitle");
-  is(
-    doc.getAttributeValue("AXDescription"),
-    "webarea test",
-    "test has correct label"
-  );
 
   is(doc.getAttributeValue("AXLoaded"), 1, "document has finished loading");
 });
@@ -38,8 +35,14 @@ addAccessibleTask(`<title>webarea test</title>`, async (browser, accDoc) => {
   // event for the document. Otherwise, if the iframe loads after the
   // document, we'll get one AXLoadComplete event.
   let eventPromise = Promise.race([
-    waitForMacEvent("AXLayoutComplete"),
-    waitForMacEvent("AXLoadComplete"),
+    waitForMacEvent("AXLayoutComplete", (iface, data) => {
+      return (
+        iface.getAttributeValue("AXDescription") == "data:text/html,hello world"
+      );
+    }),
+    waitForMacEvent("AXLoadComplete", (iface, data) => {
+      return iface.getAttributeValue("AXDescription") == "webarea test";
+    }),
   ]);
   await SpecialPowers.spawn(browser, [], () => {
     const iframe = content.document.createElement("iframe");

@@ -4,8 +4,6 @@
 
 "use strict";
 
-const EventEmitter = require("devtools/shared/event-emitter");
-
 loader.lazyRequireGetter(
   this,
   "CombinedProgress",
@@ -23,13 +21,14 @@ const { FILTERS } = require("devtools/client/accessibility/constants");
  * content processes.
  */
 class AccessibilityProxy {
-  constructor(toolbox) {
-    this.toolbox = toolbox;
+  #panel;
+  constructor(commands, panel) {
+    this.commands = commands;
+    this.#panel = panel;
 
     this._accessibilityWalkerFronts = new Set();
     this.lifecycleEvents = new Map();
     this.accessibilityEvents = new Map();
-    this._updateTargetListeners = new EventEmitter();
     this.supports = {};
 
     this.audit = this.audit.bind(this);
@@ -45,9 +44,6 @@ class AccessibilityProxy {
     this.startListeningForParentLifecycleEvents = this.startListeningForParentLifecycleEvents.bind(
       this
     );
-    this.startListeningForTargetUpdated = this.startListeningForTargetUpdated.bind(
-      this
-    );
     this.stopListeningForAccessibilityEvents = this.stopListeningForAccessibilityEvents.bind(
       this
     );
@@ -57,13 +53,12 @@ class AccessibilityProxy {
     this.stopListeningForParentLifecycleEvents = this.stopListeningForParentLifecycleEvents.bind(
       this
     );
-    this.stopListeningForTargetUpdated = this.stopListeningForTargetUpdated.bind(
-      this
-    );
     this.highlightAccessible = this.highlightAccessible.bind(this);
     this.unhighlightAccessible = this.unhighlightAccessible.bind(this);
     this.onTargetAvailable = this.onTargetAvailable.bind(this);
     this.onTargetDestroyed = this.onTargetDestroyed.bind(this);
+    this.onTargetSelected = this.onTargetSelected.bind(this);
+    this.onResourceAvailable = this.onResourceAvailable.bind(this);
     this.onAccessibilityFrontAvailable = this.onAccessibilityFrontAvailable.bind(
       this
     );
@@ -77,6 +72,7 @@ class AccessibilityProxy {
       this
     );
     this.unhighlightBeforeCalling = this.unhighlightBeforeCalling.bind(this);
+    this.toggleDisplayTabbingOrder = this.toggleDisplayTabbingOrder.bind(this);
   }
 
   get enabled() {
@@ -91,7 +87,7 @@ class AccessibilityProxy {
   }
 
   get currentTarget() {
-    return this.toolbox.targetList.targetFront;
+    return this.commands.targetCommand.selectedTargetFront;
   }
 
   /**
@@ -108,12 +104,15 @@ class AccessibilityProxy {
    */
   async audit(filter, onProgress) {
     const types = filter === FILTERS.ALL ? Object.values(AUDIT_TYPE) : [filter];
-    const totalFrames = this.toolbox.targetList.getAllTargets([
-      this.toolbox.targetList.TYPES.FRAME,
-    ]).length;
+
+    const targetTypes = [this.commands.targetCommand.TYPES.FRAME];
+    const targets = await this.commands.targetCommand.getAllTargetsInSelectedTargetTree(
+      targetTypes
+    );
+
     const progress = new CombinedProgress({
       onProgress,
-      totalFrames,
+      totalFrames: targets.length,
     });
     const audits = await this.withAllAccessibilityWalkerFronts(
       async accessibleWalkerFront =>
@@ -123,6 +122,9 @@ class AccessibilityProxy {
             progress,
             accessibleWalkerFront
           ),
+          // If a frame was selected in the iframe picker, we don't want to retrieve the
+          // ancestries at it would mess with the tree structure and would make it misbehave.
+          retrieveAncestries: this.commands.targetCommand.isTopLevelTargetSelected(),
         })
     );
 
@@ -140,12 +142,28 @@ class AccessibilityProxy {
     return combinedAudit;
   }
 
-  startListeningForTargetUpdated(onTargetUpdated) {
-    this._updateTargetListeners.on("target-updated", onTargetUpdated);
-  }
-
-  stopListeningForTargetUpdated(onTargetUpdated) {
-    this._updateTargetListeners.off("target-updated", onTargetUpdated);
+  async toggleDisplayTabbingOrder(displayTabbingOrder) {
+    if (displayTabbingOrder) {
+      const { walker: domWalkerFront } = await this.currentTarget.getFront(
+        "inspector"
+      );
+      await this.accessibilityFront.accessibleWalkerFront.showTabbingOrder(
+        await domWalkerFront.getRootNode(),
+        0
+      );
+    } else {
+      // we don't want to use withAllAccessibilityWalkerFronts as it only acts on selected
+      // target tree, and we want to hide _all_ highlighters.
+      const accessibilityFronts = await this.commands.targetCommand.getAllFronts(
+        [this.commands.targetCommand.TYPES.FRAME],
+        "accessibility"
+      );
+      await Promise.all(
+        accessibilityFronts.map(accessibilityFront =>
+          accessibilityFront.accessibleWalkerFront.hideTabbingOrder()
+        )
+      );
+    }
   }
 
   async enableAccessibility() {
@@ -176,9 +194,15 @@ class AccessibilityProxy {
    *        Function to execute with each accessiblity front.
    */
   async withAllAccessibilityFronts(taskFn) {
-    const accessibilityFronts = await this.toolbox.targetList.getAllFronts(
-      this.toolbox.targetList.TYPES.FRAME,
-      "accessibility"
+    const accessibilityFronts = await this.commands.targetCommand.getAllFronts(
+      [this.commands.targetCommand.TYPES.FRAME],
+      "accessibility",
+      {
+        // only get the fronts for the selected frame tree, in case a specific document
+        // is selected in the iframe picker (if not, the top-level target is considered
+        // as the selected target)
+        onlyInSelectedTargetTree: true,
+      }
     );
     const tasks = [];
     for (const accessibilityFront of accessibilityFronts) {
@@ -196,13 +220,9 @@ class AccessibilityProxy {
    *        Function to execute with each accessiblity walker front.
    */
   withAllAccessibilityWalkerFronts(taskFn) {
-    return this.withAllAccessibilityFronts(async accessibilityFront => {
-      if (!accessibilityFront.accessibleWalkerFront) {
-        await accessibilityFront.bootstrap();
-      }
-
-      return taskFn(accessibilityFront.accessibleWalkerFront);
-    });
+    return this.withAllAccessibilityFronts(async accessibilityFront =>
+      taskFn(accessibilityFront.accessibleWalkerFront)
+    );
   }
 
   /**
@@ -363,9 +383,9 @@ class AccessibilityProxy {
     accessibleWalkerFront
       .highlightAccessible(accessibleFront, options)
       .catch(error => {
-        // Only report an error where there's still a toolbox. Ignore cases
-        // where toolbox is already destroyed.
-        if (this.toolbox) {
+        // Only report an error where there's still a commands instance.
+        // Ignore cases where toolbox is already destroyed.
+        if (this.commands) {
           console.error(error);
         }
       });
@@ -382,41 +402,53 @@ class AccessibilityProxy {
     }
 
     accessibleWalkerFront.unhighlight().catch(error => {
-      // Only report an error where there's still a toolbox. Ignore cases
-      // where toolbox is already destroyed.
-      if (this.toolbox) {
+      // Only report an error where there's still a commands instance.
+      // Ignore cases where toolbox is already destroyed.
+      if (this.commands) {
         console.error(error);
       }
     });
   }
 
   async initialize() {
-    await this.toolbox.targetList.watchTargets(
-      [this.toolbox.targetList.TYPES.FRAME],
-      this.onTargetAvailable,
-      this.onTargetDestroyed
+    await this.commands.targetCommand.watchTargets({
+      types: [this.commands.targetCommand.TYPES.FRAME],
+      onAvailable: this.onTargetAvailable,
+      onSelected: this.onTargetSelected,
+      onDestroyed: this.onTargetDestroyed,
+    });
+    await this.commands.resourceCommand.watchResources(
+      [this.commands.resourceCommand.TYPES.DOCUMENT_EVENT],
+      {
+        onAvailable: this.onResourceAvailable,
+      }
     );
-    this.parentAccessibilityFront = await this.toolbox.targetList.rootFront.getFront(
+    this.parentAccessibilityFront = await this.commands.targetCommand.rootFront.getFront(
       "parentaccessibility"
     );
   }
 
   destroy() {
-    this.toolbox.targetList.unwatchTargets(
-      [this.toolbox.targetList.TYPES.FRAME],
-      this.onTargetAvailable,
-      this.onTargetDestroyed
+    this.commands.targetCommand.unwatchTargets({
+      types: [this.commands.targetCommand.TYPES.FRAME],
+      onAvailable: this.onTargetAvailable,
+      onSelected: this.onTargetSelected,
+      onDestroyed: this.onTargetDestroyed,
+    });
+    this.commands.resourceCommand.unwatchResources(
+      [this.commands.resourceCommand.TYPES.DOCUMENT_EVENT],
+      { onAvailable: this.onResourceAvailable }
     );
 
     this.lifecycleEvents.clear();
     this.accessibilityEvents.clear();
-    this._updateTargetListeners = null;
 
     this.accessibilityFront = null;
+    this.accessibilityFrontGetPromise = null;
     this.parentAccessibilityFront = null;
     this.simulatorFront = null;
     this.simulate = null;
-    this.toolbox = null;
+    this.commands = null;
   }
 
   _getEvents(front) {
@@ -506,16 +538,13 @@ class AccessibilityProxy {
 
     this._accessibilityWalkerFronts.clear();
 
-    this.accessibilityFront = await this.currentTarget.getFront(
-      "accessibility"
-    );
-    // To add a check for backward compatibility add something similar to the
-    // example below:
-    //
-    // [this.supports.simulation] = await Promise.all([
-    //   // Please specify the version of Firefox when the feature was added.
-    //   this.currentTarget.actorHasMethod("accessibility", "getSimulator"),
-    // ]);
+    this.accessibilityFrontGetPromise = targetFront.getFront("accessibility");
+    this.accessibilityFront = await this.accessibilityFrontGetPromise;
+
+    // Check for backward compatibility. New API's must be described in the
+    // "getTraits" method of the AccessibilityActor.
+    this.supports = { ...this.accessibilityFront.traits };
+
     this.simulatorFront = this.accessibilityFront.simulatorFront;
     if (this.simulatorFront) {
       this.simulate = types => this.simulatorFront.simulate({ types });
@@ -530,8 +559,6 @@ class AccessibilityProxy {
         this.accessibilityFront.on(type, listener);
       }
     }
-
-    this._updateTargetListeners.emit("target-updated", { isTargetSwitching });
   }
 
   async onTargetDestroyed({ targetFront }) {
@@ -540,6 +567,35 @@ class AccessibilityProxy {
       this.onAccessibilityFrontAvailable,
       this.onAccessibilityFrontDestroyed
     );
+  }
+
+  async onTargetSelected({ targetFront }) {
+    await this.toggleDisplayTabbingOrder(false);
+    this.accessibilityFront = await targetFront.getFront("accessibility");
+
+    this.simulatorFront = this.accessibilityFront.simulatorFront;
+    if (this.simulatorFront) {
+      this.simulate = types => this.simulatorFront.simulate({ types });
+    } else {
+      this.simulate = null;
+    }
+
+    this.#panel.shouldRefresh = true;
+    this.#panel.refresh();
+  }
+
+  onResourceAvailable(resources) {
+    for (const resource of resources) {
+      // Only consider top level document, and ignore remote iframes top document
+      if (
+        resource.resourceType ===
+          this.commands.resourceCommand.TYPES.DOCUMENT_EVENT &&
+        resource.name === "dom-complete" &&
+        resource.targetFront.isTopLevel
+      ) {
+        this.#panel.forceRefresh();
+      }
+    }
   }
 }
 

@@ -21,8 +21,7 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/IntegerPrintfMacros.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* DocumentFragment::WrapNode(JSContext* aCx,
                                      JS::Handle<JSObject*> aGivenProto) {
@@ -31,7 +30,7 @@ JSObject* DocumentFragment::WrapNode(JSContext* aCx,
 
 bool DocumentFragment::IsNodeOfType(uint32_t aFlags) const { return false; }
 
-#ifdef DEBUG
+#ifdef MOZ_DOM_LIST
 void DocumentFragment::List(FILE* out, int32_t aIndent) const {
   int32_t indent;
   for (indent = aIndent; --indent >= 0;) {
@@ -122,5 +121,4 @@ NS_IMPL_RELEASE_INHERITED(DocumentFragment, FragmentOrElement)
 
 NS_IMPL_ELEMENT_CLONE(DocumentFragment)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

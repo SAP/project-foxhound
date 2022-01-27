@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 zu{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"i-Abidjan"}
@@ -1894,6 +1894,9 @@ zu{
             ld{"Isikhathi sasehlobo e-Yekaterinburg"}
             lg{"Isikhathi sase-Yekaterinburg"}
             ls{"Isikhathi Esivamile sase-Yekaterinburg"}
+        }
+        "meta:Yukon"{
+            ls{"Yukon Time"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

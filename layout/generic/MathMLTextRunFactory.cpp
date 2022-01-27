@@ -516,6 +516,9 @@ void MathMLTextRunFactory::RebuildTextRun(
   uint8_t mathVar = NS_MATHML_MATHVARIANT_NONE;
   bool doMathvariantStyling = true;
 
+  // Ensure it will be safe to call FindFontForChar in the loop below.
+  fontGroup->CheckForUpdatedPlatformList();
+
   for (uint32_t i = 0; i < length; ++i) {
     int extraChars = 0;
     mathVar = styles[i]->mMathVariant;
@@ -639,10 +642,8 @@ void MathMLTextRunFactory::RebuildTextRun(
     params.explicitLanguage = styles[0]->mExplicitLanguage;
     params.userFontSet = pc->GetUserFontSet();
     params.textPerf = pc->GetTextPerfMetrics();
-    params.fontStats = pc->GetFontMatchingStats();
     params.featureValueLookup = pc->GetFontFeatureValuesLookup();
-    RefPtr<nsFontMetrics> metrics =
-        pc->DeviceContext()->GetMetricsFor(font, params);
+    RefPtr<nsFontMetrics> metrics = pc->GetMetricsFor(font, params);
     newFontGroup = metrics->GetThebesFontGroup();
   }
 
@@ -678,6 +679,7 @@ void MathMLTextRunFactory::RebuildTextRun(
     transformedChild->FinishSettingProperties(aRefDrawTarget, aMFR);
   }
 
+  aTextRun->ResetGlyphRuns();
   if (mergeNeeded) {
     // Now merge multiple characters into one multi-glyph character as required
     NS_ASSERTION(charsToMergeArray.Length() == child->GetLength(),
@@ -690,7 +692,6 @@ void MathMLTextRunFactory::RebuildTextRun(
     // No merging to do, so just copy; this produces a more optimized textrun.
     // We can't steal the data because the child may be cached and stealing
     // the data would break the cache.
-    aTextRun->ResetGlyphRuns();
     aTextRun->CopyGlyphDataFrom(child, Range(child), 0);
   }
 }

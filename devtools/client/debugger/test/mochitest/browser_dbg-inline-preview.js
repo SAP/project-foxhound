@@ -32,6 +32,19 @@ add_task(async function() {
     { identifier: "b:", value: '"b"' },
   ]);
 
+  // Check that referencing an object property previews the property, not the
+  // object (bug 1599917)
+  await checkInlinePreview(dbg, "objectProperties", [
+    { identifier: "obj:", value: 'Object { hello: "world", a: {…} }' },
+    { identifier: "obj.hello:", value: '"world"' },
+    { identifier: "obj.a.b:", value: '"c"' },
+  ]);
+
+  await checkInlinePreview(dbg, "classProperties", [
+    { identifier: "i:", value: "2" },
+    { identifier: "self:", value: `Object { x: 1, #privateVar: 2 }` },
+  ]);
+
   // Checks that open in inspector button works in inline preview
   invokeInTab("btnClick");
   await checkInspectorIcon(dbg);
@@ -79,17 +92,17 @@ async function checkInspectorIcon(dbg) {
 
   // Ensure hovering over button highlights the node in content pane
   const view = node.ownerDocument.defaultView;
-  const inspectorFront = await toolbox.target.getFront("inspector");
-  const onNodeHighlight = inspectorFront.highlighter.once("node-highlight");
+  const onNodeHighlight = toolbox.getHighlighter().waitForHighlighterShown();
 
   EventUtils.synthesizeMouseAtCenter(node, { type: "mousemove" }, view);
 
-  const nodeFront = await onNodeHighlight;
+  const { nodeFront } = await onNodeHighlight;
   is(nodeFront.displayName, "button", "The correct node was highlighted");
 
   // Ensure panel changes when button is clicked
+  const onInspectorPanelLoad = waitForInspectorPanelChange(dbg);
   node.click();
-  await waitForInspectorPanelChange(dbg);
+  await onInspectorPanelLoad;
 
   await resume(dbg);
 }

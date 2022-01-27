@@ -8,10 +8,8 @@ ${helpers.two_properties_shorthand(
     "overflow",
     "overflow-x",
     "overflow-y",
-    "specified::Overflow::parse",
     engines="gecko servo-2013 servo-2020",
     flags="SHORTHAND_IN_GETCS",
-    needs_context=False,
     spec="https://drafts.csswg.org/css-overflow/#propdef-overflow",
 )}
 
@@ -19,10 +17,8 @@ ${helpers.two_properties_shorthand(
     "overflow-clip-box",
     "overflow-clip-box-block",
     "overflow-clip-box-inline",
-    "specified::OverflowClipBox::parse",
     engines="gecko",
     enabled_in="ua",
-    needs_context=False,
     gecko_pref="layout.css.overflow-clip-box.enabled",
     spec="Internal, may be standardized in the future "
          "(https://developer.mozilla.org/en-US/docs/Web/CSS/overflow-clip-box)",
@@ -193,11 +189,11 @@ macro_rules! try_parse_one {
                     sub_properties="animation-name animation-duration
                                     animation-timing-function animation-delay
                                     animation-iteration-count animation-direction
-                                    animation-fill-mode animation-play-state"
-                    allowed_in_keyframe_block="False"
+                                    animation-fill-mode animation-play-state animation-timeline"
+                    rule_types_allowed="Style"
                     spec="https://drafts.csswg.org/css-animations/#propdef-animation">
     <%
-        props = "name duration timing_function delay iteration_count \
+        props = "name timeline duration timing_function delay iteration_count \
                  direction fill_mode play_state".split()
     %>
     % for prop in props:
@@ -238,6 +234,9 @@ macro_rules! try_parse_one {
                 try_parse_one!(context, input, fill_mode, animation_fill_mode);
                 try_parse_one!(context, input, play_state, animation_play_state);
                 try_parse_one!(context, input, name, animation_name);
+                if static_prefs::pref!("layout.css.scroll-linked-animations.enabled") {
+                    try_parse_one!(context, input, timeline, animation_timeline);
+                }
 
                 parsed -= 1;
                 break
@@ -284,22 +283,46 @@ macro_rules! try_parse_one {
 
             // If any value list length is differs then we don't do a shorthand serialization
             // either.
-            % for name in props[1:]:
+            % for name in props[2:]:
                 if len != self.animation_${name}.0.len() {
                     return Ok(())
                 }
             % endfor
+
+            // If the preference of animation-timeline is disabled, `self.animation_timeline` is
+            // None.
+            if self.animation_timeline.map_or(false, |v| len != v.0.len()) {
+                return Ok(());
+            }
 
             for i in 0..len {
                 if i != 0 {
                     dest.write_str(", ")?;
                 }
 
-                % for name in props[1:]:
+                % for name in props[2:]:
                     self.animation_${name}.0[i].to_css(dest)?;
                     dest.write_str(" ")?;
                 % endfor
+
                 self.animation_name.0[i].to_css(dest)?;
+
+                // Based on the spec, the default values of other properties must be output in at
+                // least the cases necessary to distinguish an animation-name. The serialization
+                // order of animation-timeline is always later than animation-name, so it's fine
+                // to not serialize it if it is the default value. It's still possible to
+                // distinguish them (because we always serialize animation-name).
+                // https://drafts.csswg.org/css-animations-1/#animation
+                // https://drafts.csswg.org/css-animations-2/#typedef-single-animation
+                //
+                // Note: it's also fine to always serialize this. However, it seems Blink
+                // doesn't serialize default animation-timeline now, so we follow the same rule.
+                if let Some(ref timeline) = self.animation_timeline {
+                    if !timeline.0[i].is_auto() {
+                        dest.write_char(' ')?;
+                        timeline.0[i].to_css(dest)?;
+                    }
+                }
             }
             Ok(())
         }
@@ -310,9 +333,7 @@ ${helpers.two_properties_shorthand(
     "overscroll-behavior",
     "overscroll-behavior-x",
     "overscroll-behavior-y",
-    "specified::OverscrollBehavior::parse",
     engines="gecko",
-    needs_context=False,
     gecko_pref="layout.css.overscroll-behavior.enabled",
     spec="https://wicg.github.io/overscroll-behavior/#overscroll-behavior-properties",
 )}
@@ -322,15 +343,15 @@ ${helpers.two_properties_shorthand(
     name="page-break-before"
     flags="SHORTHAND_IN_GETCS IS_LEGACY_SHORTHAND"
     sub_properties="break-before"
-    spec="https://drafts.csswg.org/css2/page.html#propdef-page-break-before"
+    spec="https://drafts.csswg.org/css-break-3/#page-break-properties"
 >
     pub fn parse_value<'i>(
-        _: &ParserContext,
+        context: &ParserContext,
         input: &mut Parser<'i, '_>,
     ) -> Result<Longhands, ParseError<'i>> {
         use crate::values::specified::box_::BreakBetween;
         Ok(expanded! {
-            break_before: BreakBetween::parse_legacy(input)?,
+            break_before: BreakBetween::parse_legacy(context, input)?,
         })
     }
 
@@ -346,21 +367,45 @@ ${helpers.two_properties_shorthand(
     name="page-break-after"
     flags="SHORTHAND_IN_GETCS IS_LEGACY_SHORTHAND"
     sub_properties="break-after"
-    spec="https://drafts.csswg.org/css2/page.html#propdef-page-break-after"
+    spec="https://drafts.csswg.org/css-break-3/#page-break-properties"
 >
     pub fn parse_value<'i>(
-        _: &ParserContext,
+        context: &ParserContext,
         input: &mut Parser<'i, '_>,
     ) -> Result<Longhands, ParseError<'i>> {
         use crate::values::specified::box_::BreakBetween;
         Ok(expanded! {
-            break_after: BreakBetween::parse_legacy(input)?,
+            break_after: BreakBetween::parse_legacy(context, input)?,
         })
     }
 
     impl<'a> ToCss for LonghandsToSerialize<'a> {
         fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result where W: fmt::Write {
             self.break_after.to_css_legacy(dest)
+        }
+    }
+</%helpers:shorthand>
+
+<%helpers:shorthand
+    engines="gecko"
+    name="page-break-inside"
+    flags="SHORTHAND_IN_GETCS IS_LEGACY_SHORTHAND"
+    sub_properties="break-inside"
+    spec="https://drafts.csswg.org/css-break-3/#page-break-properties"
+>
+    pub fn parse_value<'i>(
+        context: &ParserContext,
+        input: &mut Parser<'i, '_>,
+    ) -> Result<Longhands, ParseError<'i>> {
+        use crate::values::specified::box_::BreakWithin;
+        Ok(expanded! {
+            break_inside: BreakWithin::parse_legacy(context, input)?,
+        })
+    }
+
+    impl<'a> ToCss for LonghandsToSerialize<'a> {
+        fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result where W: fmt::Write {
+            self.break_inside.to_css_legacy(dest)
         }
     }
 </%helpers:shorthand>

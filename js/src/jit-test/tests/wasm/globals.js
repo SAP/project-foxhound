@@ -3,13 +3,13 @@ const { Instance, Module, LinkError } = WebAssembly;
 // Locally-defined globals
 assertErrorMessage(() => wasmEvalText(`(module (global))`), SyntaxError, /wasm text error/);
 // A global field in the text format is valid with an empty expression, but this produces an invalid module
-assertErrorMessage(() => wasmEvalText(`(module (global i32))`), WebAssembly.CompileError, /unexpected initializer expression/);
-assertErrorMessage(() => wasmEvalText(`(module (global (mut i32)))`), WebAssembly.CompileError, /unexpected initializer expression/);
+assertErrorMessage(() => wasmEvalText(`(module (global i32))`), WebAssembly.CompileError, /popping value/);
+assertErrorMessage(() => wasmEvalText(`(module (global (mut i32)))`), WebAssembly.CompileError, /popping value/);
 
 // Initializer expressions.
 wasmFailValidateText(`(module (global i32 (f32.const 13.37)))`, /type mismatch/);
 wasmFailValidateText(`(module (global f64 (f32.const 13.37)))`, /type mismatch/);
-wasmFailValidateText(`(module (global i32 (i32.add (i32.const 13) (i32.const 37))))`, /failed to read end/);
+wasmFailValidateText(`(module (global i32 (i32.add (i32.const 13) (i32.const 37))))`, /unrecognized opcode/);
 
 wasmFailValidateText(`(module (global i32 (global.get 0)))`, /out of range/);
 wasmFailValidateText(`(module (global i32 (global.get 1)) (global i32 (i32.const 1)))`, /out of range/);
@@ -44,8 +44,8 @@ testInner('f32', 13.37, 0.1989, Math.fround);
 testInner('f64', 13.37, 0.1989, x => +x);
 
 // Semantic errors.
-wasmFailValidateText(`(module (global (mut i32) (i32.const 1337)) (func (global.set 1 (i32.const 0))))`, /out of range/);
-wasmFailValidateText(`(module (global i32 (i32.const 1337)) (func (global.set 0 (i32.const 0))))`, /can't write an immutable global/);
+wasmFailValidateText(`(module (global (mut i32) (i32.const 1337)) (func (global.set 1 (i32.const 0))))`, /(out of range)|(global index out of bounds)/);
+wasmFailValidateText(`(module (global i32 (i32.const 1337)) (func (global.set 0 (i32.const 0))))`, /(can't write an immutable global)|(global is immutable)/);
 
 // Big module with many variables: test that setting one doesn't overwrite the
 // other ones.
@@ -300,7 +300,11 @@ wasmAssert(`(module
         let s = "";
         for ( let i in x )
             s = s + i + ",";
-        assertEq(s, "valueOf,value,");
+        if (getBuildConfiguration().release_or_beta) {
+            assertEq(s, "valueOf,value,");
+        } else {
+            assertEq(s, "type,valueOf,value,");
+        }
     }
 
     // "value" is defined on the prototype, not on the object

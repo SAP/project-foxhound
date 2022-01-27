@@ -2,8 +2,8 @@
 
 [![Rayon crate](https://img.shields.io/crates/v/rayon.svg)](https://crates.io/crates/rayon)
 [![Rayon documentation](https://docs.rs/rayon/badge.svg)](https://docs.rs/rayon)
-[![Travis Status](https://travis-ci.org/rayon-rs/rayon.svg?branch=master)](https://travis-ci.org/rayon-rs/rayon)
-[![Appveyor status](https://ci.appveyor.com/api/projects/status/wre5dkx08gayy8hc/branch/master?svg=true)](https://ci.appveyor.com/project/cuviper/rayon/branch/master)
+![minimum rustc 1.36](https://img.shields.io/badge/rustc-1.36+-red.svg)
+[![build status](https://github.com/rayon-rs/rayon/workflows/master/badge.svg)](https://github.com/rayon-rs/rayon/actions)
 [![Join the chat at https://gitter.im/rayon-rs/Lobby](https://badges.gitter.im/rayon-rs/Lobby.svg)](https://gitter.im/rayon-rs/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 Rayon is a data-parallelism library for Rust. It is extremely
@@ -15,7 +15,7 @@ Belt Rust conference.) Rayon is
 [available on crates.io](https://crates.io/crates/rayon), and
 [API Documentation is available on docs.rs](https://docs.rs/rayon/).
 
-[blog]: http://smallcultfollowing.com/babysteps/blog/2015/12/18/rayon-data-parallelism-in-rust/
+[blog]: https://smallcultfollowing.com/babysteps/blog/2015/12/18/rayon-data-parallelism-in-rust/
 [video]: https://www.youtube.com/watch?v=gof_OEv71Aw
 
 ## Parallel iterators and more
@@ -71,13 +71,7 @@ as:
 
 ```toml
 [dependencies]
-rayon = "1.1"
-```
-
-and then add the following to your `lib.rs`:
-
-```rust
-extern crate rayon;
+rayon = "1.5"
 ```
 
 To use the Parallel Iterator APIs, a number of traits have to be in
@@ -90,7 +84,7 @@ just add:
 use rayon::prelude::*;
 ```
 
-Rayon currently requires `rustc 1.28.0` or greater.
+Rayon currently requires `rustc 1.36.0` or greater.
 
 ## Contribution
 

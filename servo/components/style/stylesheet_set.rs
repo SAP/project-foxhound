@@ -5,11 +5,13 @@
 //! A centralized set of stylesheets for a document.
 
 use crate::dom::TElement;
-use crate::invalidation::stylesheets::StylesheetInvalidationSet;
+use crate::invalidation::stylesheets::{RuleChangeKind, StylesheetInvalidationSet};
 use crate::media_queries::Device;
 use crate::selector_parser::SnapshotMap;
 use crate::shared_lock::SharedRwLockReadGuard;
-use crate::stylesheets::{Origin, OriginSet, OriginSetIterator, PerOrigin, StylesheetInDocument};
+use crate::stylesheets::{
+    CssRule, Origin, OriginSet, OriginSetIterator, PerOrigin, StylesheetInDocument,
+};
 use std::{mem, slice};
 
 /// Entry for a StylesheetSet.
@@ -182,7 +184,9 @@ pub struct SheetCollectionFlusher<'a, S>
 where
     S: StylesheetInDocument + PartialEq + 'static,
 {
-    iter: slice::IterMut<'a, StylesheetSetEntry<S>>,
+    // TODO: This can be made an iterator again once
+    // https://github.com/rust-lang/rust/pull/82771 lands on stable.
+    entries: &'a mut [StylesheetSetEntry<S>],
     validity: DataValidity,
     dirty: bool,
 }
@@ -202,32 +206,42 @@ where
     pub fn data_validity(&self) -> DataValidity {
         self.validity
     }
+
+    /// Returns an iterator over the remaining list of sheets to consume.
+    pub fn sheets<'b>(&'b self) -> impl Iterator<Item = &'b S> {
+        self.entries.iter().map(|entry| &entry.sheet)
+    }
 }
 
-impl<'a, S> Iterator for SheetCollectionFlusher<'a, S>
+impl<'a, S> SheetCollectionFlusher<'a, S>
 where
     S: StylesheetInDocument + PartialEq + 'static,
 {
-    type Item = (&'a S, SheetRebuildKind);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let potential_sheet = self.iter.next()?;
-
+    /// Iterates over all sheets and values that we have to invalidate.
+    ///
+    /// TODO(emilio): This would be nicer as an iterator but we can't do that
+    /// until https://github.com/rust-lang/rust/pull/82771 stabilizes.
+    ///
+    /// Since we don't have a good use-case for partial iteration, this does the
+    /// trick for now.
+    pub fn each(self, mut callback: impl FnMut(&S, SheetRebuildKind) -> bool) {
+        for potential_sheet in self.entries.iter_mut() {
             let committed = mem::replace(&mut potential_sheet.committed, true);
-            if !committed {
+            let rebuild_kind = if !committed {
                 // If the sheet was uncommitted, we need to do a full rebuild
                 // anyway.
-                return Some((&potential_sheet.sheet, SheetRebuildKind::Full));
-            }
-
-            let rebuild_kind = match self.validity {
-                DataValidity::Valid => continue,
-                DataValidity::CascadeInvalid => SheetRebuildKind::CascadeOnly,
-                DataValidity::FullyInvalid => SheetRebuildKind::Full,
+                SheetRebuildKind::Full
+            } else {
+                match self.validity {
+                    DataValidity::Valid => continue,
+                    DataValidity::CascadeInvalid => SheetRebuildKind::CascadeOnly,
+                    DataValidity::FullyInvalid => SheetRebuildKind::Full,
+                }
             };
 
-            return Some((&potential_sheet.sheet, rebuild_kind));
+            if !callback(&potential_sheet.sheet, rebuild_kind) {
+                return;
+            }
         }
     }
 }
@@ -355,7 +369,7 @@ where
         let validity = mem::replace(&mut self.data_validity, DataValidity::Valid);
 
         SheetCollectionFlusher {
-            iter: self.entries.iter_mut(),
+            entries: &mut self.entries,
             dirty,
             validity,
         }
@@ -406,7 +420,7 @@ macro_rules! sheet_set_methods {
         ) {
             debug!(concat!($set_name, "::append_stylesheet"));
             self.collect_invalidations_for(device, &sheet, guard);
-            let collection = self.collection_for(&sheet, guard);
+            let collection = self.collection_for(&sheet);
             collection.append(sheet);
         }
 
@@ -421,7 +435,7 @@ macro_rules! sheet_set_methods {
             debug!(concat!($set_name, "::insert_stylesheet_before"));
             self.collect_invalidations_for(device, &sheet, guard);
 
-            let collection = self.collection_for(&sheet, guard);
+            let collection = self.collection_for(&sheet);
             collection.insert_before(sheet, &before_sheet);
         }
 
@@ -435,8 +449,58 @@ macro_rules! sheet_set_methods {
             debug!(concat!($set_name, "::remove_stylesheet"));
             self.collect_invalidations_for(device, &sheet, guard);
 
-            let collection = self.collection_for(&sheet, guard);
+            let collection = self.collection_for(&sheet);
             collection.remove(&sheet)
+        }
+
+        /// Notify the set that a rule from a given stylesheet has changed
+        /// somehow.
+        pub fn rule_changed(
+            &mut self,
+            device: Option<&Device>,
+            sheet: &S,
+            rule: &CssRule,
+            guard: &SharedRwLockReadGuard,
+            change_kind: RuleChangeKind,
+        ) {
+            if let Some(device) = device {
+                let quirks_mode = device.quirks_mode();
+                self.invalidations.rule_changed(
+                    sheet,
+                    rule,
+                    guard,
+                    device,
+                    quirks_mode,
+                    change_kind,
+                );
+            }
+
+            let validity = match change_kind {
+                // Insertion / Removals need to rebuild both the cascade and
+                // invalidation data. For generic changes this is conservative,
+                // could be optimized on a per-case basis.
+                RuleChangeKind::Generic | RuleChangeKind::Insertion | RuleChangeKind::Removal => {
+                    DataValidity::FullyInvalid
+                },
+                // TODO(emilio): This, in theory, doesn't need to invalidate
+                // style data, if the rule we're modifying is actually in the
+                // CascadeData already.
+                //
+                // But this is actually a bit tricky to prove, because when we
+                // copy-on-write a stylesheet we don't bother doing a rebuild,
+                // so we may still have rules from the original stylesheet
+                // instead of the cloned one that we're modifying. So don't
+                // bother for now and unconditionally rebuild, it's no worse
+                // than what we were already doing anyway.
+                //
+                // Maybe we could record whether we saw a clone in this flush,
+                // and if so do the conservative thing, otherwise just
+                // early-return.
+                RuleChangeKind::StyleRuleDeclarations => DataValidity::FullyInvalid,
+            };
+
+            let collection = self.collection_for(&sheet);
+            collection.set_data_validity_at_least(validity);
         }
     };
 }
@@ -453,12 +517,8 @@ where
         }
     }
 
-    fn collection_for(
-        &mut self,
-        sheet: &S,
-        guard: &SharedRwLockReadGuard,
-    ) -> &mut SheetCollection<S> {
-        let origin = sheet.origin(guard);
+    fn collection_for(&mut self, sheet: &S) -> &mut SheetCollection<S> {
+        let origin = sheet.contents().origin;
         self.collections.borrow_mut_for_origin(&origin)
     }
 
@@ -485,9 +545,10 @@ where
 
     /// Returns whether the given set has changed from the last flush.
     pub fn has_changed(&self) -> bool {
-        self.collections
-            .iter_origins()
-            .any(|(collection, _)| collection.dirty)
+        !self.invalidations.is_empty() ||
+            self.collections
+                .iter_origins()
+                .any(|(collection, _)| collection.dirty)
     }
 
     /// Flush the current set, unmarking it as dirty, and returns a
@@ -605,11 +666,7 @@ where
         self.collection.len()
     }
 
-    fn collection_for(
-        &mut self,
-        _sheet: &S,
-        _guard: &SharedRwLockReadGuard,
-    ) -> &mut SheetCollection<S> {
+    fn collection_for(&mut self, _sheet: &S) -> &mut SheetCollection<S> {
         &mut self.collection
     }
 

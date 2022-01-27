@@ -6,14 +6,16 @@
 
 #include "mozilla/StaticPresData.h"
 
+#include "gfxFontFeatures.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ServoUtils.h"
+#include "mozilla/StaticPtr.h"
 #include "nsPresContext.h"
 
 namespace mozilla {
 
-static StaticPresData* sSingleton = nullptr;
+static StaticAutoPtr<StaticPresData> sSingleton;
 
 void StaticPresData::Init() {
   MOZ_ASSERT(!sSingleton);
@@ -22,7 +24,6 @@ void StaticPresData::Init() {
 
 void StaticPresData::Shutdown() {
   MOZ_ASSERT(sSingleton);
-  delete sSingleton;
   sSingleton = nullptr;
 }
 
@@ -46,19 +47,20 @@ static const char* const kGenericFont[] = {
   ".sans-serif.",
   ".monospace.",
   ".cursive.",
-  ".fantasy."
+  ".fantasy.",
+  ".system-ui.",
 };
 // clang-format on
 
-// These are private, use the list in nsFont.h if you want a public list.
-enum {
-  eDefaultFont_Variable,
-  eDefaultFont_Serif,
-  eDefaultFont_SansSerif,
-  eDefaultFont_Monospace,
-  eDefaultFont_Cursive,
-  eDefaultFont_Fantasy,
-  eDefaultFont_COUNT
+enum class DefaultFont {
+  Variable = 0,
+  Serif,
+  SansSerif,
+  Monospace,
+  Cursive,
+  Fantasy,
+  SystemUi,
+  COUNT
 };
 
 void LangGroupFontPrefs::Initialize(nsStaticAtom* aLangGroupAtom) {
@@ -111,10 +113,11 @@ void LangGroupFontPrefs::Initialize(nsStaticAtom* aLangGroupAtom) {
     &mDefaultSansSerifFont,
     &mDefaultMonospaceFont,
     &mDefaultCursiveFont,
-    &mDefaultFantasyFont
+    &mDefaultFantasyFont,
+    &mDefaultSystemUiFont,
   };
   // clang-format on
-  static_assert(MOZ_ARRAY_LENGTH(fontTypes) == eDefaultFont_COUNT,
+  static_assert(MOZ_ARRAY_LENGTH(fontTypes) == size_t(DefaultFont::COUNT),
                 "FontTypes array count is not correct");
 
   // Get attributes specific to each generic font. We do not get the user's
@@ -123,50 +126,39 @@ void LangGroupFontPrefs::Initialize(nsStaticAtom* aLangGroupAtom) {
   // code to look up the font prefs to convert generic names to specific
   // family names as necessary.
   nsAutoCString generic_dot_langGroup;
-  for (uint32_t eType = 0; eType < ArrayLength(fontTypes); ++eType) {
-    generic_dot_langGroup.Assign(kGenericFont[eType]);
+  for (auto type : MakeEnumeratedRange(DefaultFont::COUNT)) {
+    generic_dot_langGroup.Assign(kGenericFont[size_t(type)]);
     generic_dot_langGroup.Append(langGroup);
 
-    nsFont* font = fontTypes[eType];
+    nsFont* font = fontTypes[size_t(type)];
 
-    // set the default variable font (the other fonts are seen as 'generic'
+    // Set the default variable font (the other fonts are seen as 'generic'
     // fonts in GFX and will be queried there when hunting for alternative
     // fonts)
-    if (eType == eDefaultFont_Variable) {
+    if (type == DefaultFont::Variable) {
       // XXX "font.name.variable."?  There is no such pref...
       MAKE_FONT_PREF_KEY(pref, "font.name.variable.", langGroup);
 
       nsAutoCString value;
       Preferences::GetCString(pref.get(), value);
-      if (!value.IsEmpty()) {
-        FontFamilyName defaultVariableName = FontFamilyName::Convert(value);
-        StyleGenericFontFamily defaultType = defaultVariableName.mGeneric;
-        NS_ASSERTION(defaultType == StyleGenericFontFamily::Serif ||
-                         defaultType == StyleGenericFontFamily::SansSerif,
-                     "default type must be serif or sans-serif");
-        mDefaultVariableFont.fontlist = FontFamilyList();
-        mDefaultVariableFont.fontlist.SetDefaultFontType(defaultType);
-        // We create mDefaultVariableFont.fontlist with defaultType as the
-        // fallback font, and not as part of the font list proper. This way,
-        // it can be overwritten should there be a language change.
-      } else {
+      if (value.IsEmpty()) {
         MAKE_FONT_PREF_KEY(pref, "font.default.", langGroup);
         Preferences::GetCString(pref.get(), value);
-        if (!value.IsEmpty()) {
-          FontFamilyName defaultVariableName = FontFamilyName::Convert(value);
-          StyleGenericFontFamily defaultType = defaultVariableName.mGeneric;
-          NS_ASSERTION(defaultType == StyleGenericFontFamily::Serif ||
-                           defaultType == StyleGenericFontFamily::SansSerif,
-                       "default type must be serif or sans-serif");
-          mDefaultVariableFont.fontlist = FontFamilyList();
-          mDefaultVariableFont.fontlist.SetDefaultFontType(defaultType);
-          // We create mDefaultVariableFont.fontlist with defaultType as the
-          // (fallback) font, and not as part of the font list proper. This way,
-          // it can be overwritten should there be a language change.
+      }
+      if (!value.IsEmpty()) {
+        auto defaultVariableName = StyleSingleFontFamily::Parse(value);
+        auto defaultType = defaultVariableName.IsGeneric()
+                               ? defaultVariableName.AsGeneric()
+                               : StyleGenericFontFamily::None;
+        if (defaultType == StyleGenericFontFamily::Serif ||
+            defaultType == StyleGenericFontFamily::SansSerif) {
+          mDefaultVariableFont.family = *Servo_FontFamily_Generic(defaultType);
+        } else {
+          NS_WARNING("default type must be serif or sans-serif");
         }
       }
     } else {
-      if (eType != eDefaultFont_Monospace) {
+      if (type != DefaultFont::Monospace) {
         // all the other generic fonts are initialized with the size of the
         // variable font, but their specific size can supersede later -- see
         // below
@@ -195,7 +187,8 @@ void LangGroupFontPrefs::Initialize(nsStaticAtom* aLangGroupAtom) {
     nsAutoCString cvalue;
     Preferences::GetCString(pref.get(), cvalue);
     if (!cvalue.IsEmpty()) {
-      font->sizeAdjust = (float)atof(cvalue.get());
+      font->sizeAdjust =
+          StyleFontSizeAdjust::ExHeight((float)atof(cvalue.get()));
     }
 
 #ifdef DEBUG_rbs

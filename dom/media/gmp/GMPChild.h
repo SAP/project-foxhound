@@ -26,7 +26,7 @@ class GMPChild : public PGMPChild {
   virtual ~GMPChild();
 
   bool Init(const nsAString& aPluginPath, base::ProcessId aParentPid,
-            MessageLoop* aIOLoop, UniquePtr<IPC::Channel> aChannel);
+            mozilla::ipc::ScopedPort aPort);
   MessageLoop* GMPMessageLoop();
 
   // Main thread only.
@@ -65,11 +65,11 @@ class GMPChild : public PGMPChild {
   void ProcessingError(Result aCode, const char* aReason) override;
 
   GMPErr GetAPI(const char* aAPIName, void* aHostAPI, void** aPluginAPI,
-                uint32_t aDecryptorId = 0);
+                const nsCString aKeySystem = ""_ns);
 
   nsTArray<std::pair<nsCString, nsCString>> MakeCDMHostVerificationPaths();
 
-  nsTArray<UniquePtr<GMPContentChild>> mGMPContentChildren;
+  nsTArray<RefPtr<GMPContentChild>> mGMPContentChildren;
 
   RefPtr<GMPTimerChild> mTimerChild;
   RefPtr<GMPStorageChild> mStorage;

@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 qu{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"Abiyán"}
@@ -1882,6 +1882,9 @@ qu{
             ld{"Hora de Verano de Ekaterinburgo"}
             lg{"Hora de Ekaterinburgo"}
             ls{"Hora Estandar de Ekaterinburgo"}
+        }
+        "meta:Yukon"{
+            ls{"Yukon Ura"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

@@ -10,9 +10,6 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Variant.h"
-
-#include "jsapi.h"
 
 #include "builtin/MapObject.h"
 #include "js/GCVector.h"
@@ -34,11 +31,7 @@ namespace js {
 namespace shell {
 
 // Define use of application-specific slots on the shell's global object.
-enum GlobalAppSlot {
-  GlobalAppSlotModuleRegistry,
-  GlobalAppSlotModuleResolveHook,  // HostResolveImportedModule
-  GlobalAppSlotCount
-};
+enum GlobalAppSlot { GlobalAppSlotModuleRegistry, GlobalAppSlotCount };
 static_assert(GlobalAppSlotCount <= JSCLASS_GLOBAL_APPLICATION_SLOTS,
               "Too many applications slots defined for shell global");
 
@@ -107,6 +100,8 @@ extern int sArgc;
 extern char** sArgv;
 
 // Shell state set once at startup.
+extern const char* selfHostedXDRPath;
+extern bool encodeSelfHostedCode;
 extern bool enableCodeCoverage;
 extern bool enableDisassemblyDumps;
 extern bool offthreadCompilation;
@@ -114,17 +109,14 @@ extern bool enableAsmJS;
 extern bool enableWasm;
 extern bool enableSharedMemory;
 extern bool enableWasmBaseline;
-extern bool enableWasmIon;
-extern bool enableWasmCranelift;
-extern bool enableWasmReftypes;
-#ifdef ENABLE_WASM_GC
-extern bool enableWasmGc;
-#endif
-#ifdef ENABLE_WASM_MULTI_VALUE
-extern bool enableWasmMultiValue;
-#endif
-#ifdef ENABLE_WASM_SIMD
-extern bool enableWasmSimd;
+extern bool enableWasmOptimizing;
+
+#define WASM_FEATURE(NAME, ...) extern bool enableWasm##NAME;
+JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE);
+#undef WASM_FEATURE
+
+#ifdef ENABLE_WASM_SIMD_WORMHOLE
+extern bool enableWasmSimdWormhole;
 #endif
 extern bool enableWasmVerbose;
 extern bool enableTestWasmAwaitTier2;
@@ -141,6 +133,16 @@ extern bool enableToSource;
 extern bool enablePropertyErrorMessageFix;
 extern bool enableIteratorHelpers;
 extern bool enablePrivateClassFields;
+extern bool enablePrivateClassMethods;
+extern bool enableErgonomicBrandChecks;
+#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
+extern bool enableChangeArrayByCopy;
+#endif
+#ifdef ENABLE_NEW_SET_METHODS
+extern bool enableNewSetMethods;
+#endif
+extern bool enableClassStaticBlocks;
+extern bool enableImportAssertions;
 #ifdef JS_GC_ZEAL
 extern uint32_t gZealBits;
 extern uint32_t gZealFrequency;
@@ -150,7 +152,6 @@ extern RCFile* gErrFile;
 extern RCFile* gOutFile;
 extern bool reportWarnings;
 extern bool compileOnly;
-extern bool fuzzingSafe;
 extern bool disableOOMFunctions;
 extern bool defaultToSameCompartment;
 
@@ -158,6 +159,10 @@ extern bool defaultToSameCompartment;
 extern bool dumpEntrainedVariables;
 extern bool OOM_printAllocationCount;
 #endif
+
+extern bool useFdlibmForSinCosTan;
+
+extern UniqueChars processWideModuleLoadPath;
 
 // Alias the global dstName to namespaceObj.srcName. For example, if dstName is
 // "snarf", namespaceObj represents "os.file", and srcName is "readFile", then
@@ -171,17 +176,16 @@ extern bool OOM_printAllocationCount;
 bool CreateAlias(JSContext* cx, const char* dstName,
                  JS::HandleObject namespaceObj, const char* srcName);
 
-enum class ScriptKind { Script, DecodeScript, Module };
+enum class ScriptKind { Script, ScriptStencil, DecodeScript, Module };
 
 class NonshrinkingGCObjectVector
-    : public GCVector<JSObject*, 0, SystemAllocPolicy> {
+    : public GCVector<HeapPtrObject, 0, SystemAllocPolicy> {
  public:
-  void sweep() {
-    for (JSObject*& obj : *this) {
-      if (JS::GCPolicy<JSObject*>::needsSweep(&obj)) {
-        obj = nullptr;
-      }
+  bool traceWeak(JSTracer* trc) {
+    for (HeapPtrObject& obj : *this) {
+      TraceWeakEdge(trc, &obj, "NonshrinkingGCObjectVector element");
     }
+    return true;
   }
 };
 
@@ -257,8 +261,8 @@ struct ShellContext {
 
 extern ShellContext* GetShellContext(JSContext* cx);
 
-extern MOZ_MUST_USE bool PrintStackTrace(JSContext* cx,
-                                         JS::Handle<JSObject*> stackObj);
+[[nodiscard]] extern bool PrintStackTrace(JSContext* cx,
+                                          JS::Handle<JSObject*> stackObj);
 
 extern JSObject* CreateScriptPrivate(JSContext* cx,
                                      HandleString path = nullptr);

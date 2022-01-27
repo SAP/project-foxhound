@@ -13,18 +13,6 @@ loader.lazyRequireGetter(
   "devtools/shared/picker-constants"
 );
 
-var systemAppOrigin = (function() {
-  let systemOrigin = "_";
-  try {
-    systemOrigin = Services.io.newURI(
-      Services.prefs.getCharPref("b2g.system_manifest_url")
-    ).prePath;
-  } catch (e) {
-    // Fall back to default value
-  }
-  return systemOrigin;
-})();
-
 var isClickHoldEnabled = Services.prefs.getBoolPref(
   "ui.click_hold_context_menus"
 );
@@ -43,34 +31,34 @@ const TOUCH_STATES = {
   touchend: TOUCH_REMOVE,
 };
 
-const kStateHover = 0x00000004; // NS_EVENT_STATE_HOVER
+const EVENTS_TO_HANDLE = [
+  "mousedown",
+  "mousemove",
+  "mouseup",
+  "touchstart",
+  "touchend",
+  "mouseenter",
+  "mouseover",
+  "mouseout",
+  "mouseleave",
+];
 
-function TouchSimulator(simulatorTarget) {
-  this.simulatorTarget = simulatorTarget;
-  this._currentPickerMap = new Map();
-}
+const kStateHover = 0x00000004; // NS_EVENT_STATE_HOVER
 
 /**
  * Simulate touch events for platforms where they aren't generally available.
  */
-TouchSimulator.prototype = {
-  events: [
-    "mousedown",
-    "mousemove",
-    "mouseup",
-    "touchstart",
-    "touchend",
-    "mouseenter",
-    "mouseover",
-    "mouseout",
-    "mouseleave",
-  ],
+class TouchSimulator {
+  /**
+   * @param {ChromeEventHandler} simulatorTarget: The object we'll use to listen for click
+   *                             and touch events to handle.
+   */
+  constructor(simulatorTarget) {
+    this.simulatorTarget = simulatorTarget;
+    this._currentPickerMap = new Map();
+  }
 
-  contextMenuTimeout: null,
-
-  simulatorTarget: null,
-
-  enabled: false,
+  enabled = false;
 
   start() {
     if (this.enabled) {
@@ -78,30 +66,30 @@ TouchSimulator.prototype = {
       return;
     }
 
-    this.events.forEach(evt => {
+    EVENTS_TO_HANDLE.forEach(evt => {
       // Only listen trusted events to prevent messing with
       // event dispatched manually within content documents
       this.simulatorTarget.addEventListener(evt, this, true, false);
     });
 
     this.enabled = true;
-  },
+  }
 
   stop() {
     if (!this.enabled) {
       // Simulator isn't running
       return;
     }
-    this.events.forEach(evt => {
+    EVENTS_TO_HANDLE.forEach(evt => {
       this.simulatorTarget.removeEventListener(evt, this, true);
     });
     this.enabled = false;
-  },
+  }
 
   _isPicking() {
     const types = Object.values(PICKER_TYPES);
     return types.some(type => this._currentPickerMap.get(type));
-  },
+  }
 
   /**
    * Set the state value for one of DevTools pickers (either eyedropper or
@@ -123,7 +111,7 @@ TouchSimulator.prototype = {
       );
     }
     this._currentPickerMap.set(pickerType, state);
-  },
+  }
 
   // eslint-disable-next-line complexity
   handleEvent(evt) {
@@ -132,20 +120,14 @@ TouchSimulator.prototype = {
       return;
     }
 
-    // The gaia system window use an hybrid system even on the device which is
-    // a mix of mouse/touch events. So let's not cancel *all* mouse events
-    // if it is the current target.
     const content = this.getContent(evt.target);
     if (!content) {
       return;
     }
-    const isSystemWindow = content.location
-      .toString()
-      .startsWith(systemAppOrigin);
 
     // App touchstart & touchend should also be dispatched on the system app
     // to match on-device behavior.
-    if (evt.type.startsWith("touch") && !isSystemWindow) {
+    if (evt.type.startsWith("touch")) {
       const sysFrame = content.realFrameElement;
       if (!sysFrame) {
         return;
@@ -226,7 +208,7 @@ TouchSimulator.prototype = {
         // into contextmenu events.
         // Just don't do it if the event occurred on a scrollbar.
         if (isClickHoldEnabled && !evt.originalTarget.closest("scrollbar")) {
-          this.contextMenuTimeout = this.sendContextMenu(evt);
+          this._contextMenuTimeout = this.sendContextMenu(evt);
         }
 
         this.startX = evt.pageX;
@@ -255,7 +237,7 @@ TouchSimulator.prototype = {
         }
         this.target = null;
 
-        content.clearTimeout(this.contextMenuTimeout);
+        content.clearTimeout(this._contextMenuTimeout);
         type = "touchend";
 
         // Only register click listener after mouseup to ensure
@@ -272,21 +254,12 @@ TouchSimulator.prototype = {
 
     const target = eventTarget || this.target;
     if (target && type) {
-      this.synthesizeNativeTouch(
-        this.getContent(evt.target),
-        evt.clientX,
-        evt.clientY,
-        evt.screenX,
-        evt.screenY,
-        type
-      );
+      this.synthesizeNativeTouch(content, evt.screenX, evt.screenY, type);
     }
 
-    if (!isSystemWindow) {
-      evt.preventDefault();
-      evt.stopImmediatePropagation();
-    }
-  },
+    evt.preventDefault();
+    evt.stopImmediatePropagation();
+  }
 
   sendContextMenu({ target, clientX, clientY, screenX, screenY }) {
     const view = target.ownerGlobal;
@@ -306,19 +279,13 @@ TouchSimulator.prototype = {
     }, clickHoldDelay);
 
     return timeout;
-  },
+  }
 
   /**
-   * Synthesizes a native touch action on a given target element. The `x` and `y` values
-   * passed to this function should be relative to the layout viewport (what is returned
-   * by `MouseEvent.clientX/clientY`) and are reported in CSS pixels.
+   * Synthesizes a native touch action on a given target element.
    *
    * @param {Window} win
    *        The target window.
-   * @param {Number} x
-   *        The `x` CSS coordinate relative to the layout viewport.
-   * @param {Number} y
-   *        The `y` CSS coordinate relative to the layout viewport.
    * @param {Number} screenX
    *        The `x` screen coordinate relative to the screen origin.
    * @param {Number} screenY
@@ -326,7 +293,7 @@ TouchSimulator.prototype = {
    * @param {String} type
    *        A key appearing in the TOUCH_STATES associative array.
    */
-  synthesizeNativeTouch(win, x, y, screenX, screenY, type) {
+  synthesizeNativeTouch(win, screenX, screenY, type) {
     // Native events work in device pixels, so calculate device coordinates from
     // the screen coordinates.
     const utils = win.windowUtils;
@@ -335,92 +302,12 @@ TouchSimulator.prototype = {
 
     utils.sendNativeTouchPoint(0, TOUCH_STATES[type], pt.x, pt.y, 1, 90, null);
     return true;
-  },
-
-  sendTouchEvent(evt, target, name) {
-    const win = target.ownerGlobal;
-    const content = this.getContent(target);
-    if (!content) {
-      return;
-    }
-
-    // To avoid duplicating logic for creating and dispatching touch events on the JS
-    // side, we should use what's already implemented for WindowUtils.sendTouchEvent.
-    const utils = win.windowUtils;
-    utils.sendTouchEvent(
-      name,
-      [0],
-      [evt.clientX],
-      [evt.clientY],
-      [1],
-      [1],
-      [0],
-      [1],
-      0,
-      false
-    );
-  },
+  }
 
   getContent(target) {
     const win = target?.ownerDocument ? target.ownerGlobal : null;
     return win;
-  },
-
-  getDelayBeforeMouseEvent(evt) {
-    // On mobile platforms, Firefox inserts a 300ms delay between
-    // touch events and accompanying mouse events, except if the
-    // content window is not zoomable and the content window is
-    // auto-zoomed to device-width.
-
-    // If the preference dom.meta-viewport.enabled is set to false,
-    // we couldn't read viewport's information from getViewportInfo().
-    // So we always simulate 300ms delay when the
-    // dom.meta-viewport.enabled is false.
-    const savedMetaViewportEnabled = Services.prefs.getBoolPref(
-      "dom.meta-viewport.enabled"
-    );
-    if (!savedMetaViewportEnabled) {
-      return 300;
-    }
-
-    const content = this.getContent(evt.target);
-    if (!content) {
-      return 0;
-    }
-
-    const utils = content.windowUtils;
-
-    const allowZoom = {};
-    const minZoom = {};
-    const maxZoom = {};
-    const autoSize = {};
-
-    utils.getViewportInfo(
-      content.innerWidth,
-      content.innerHeight,
-      {},
-      allowZoom,
-      minZoom,
-      maxZoom,
-      {},
-      {},
-      autoSize
-    );
-
-    // FIXME: On Safari and Chrome mobile platform, if the css property
-    // touch-action set to none or manipulation would also suppress 300ms
-    // delay. But Firefox didn't support this property now, we can't get
-    // this value from utils.getVisitedDependentComputedStyle() to check
-    // if we should suppress 300ms delay.
-    if (
-      !allowZoom.value || // user-scalable = no
-      minZoom.value === maxZoom.value || // minimum-scale = maximum-scale
-      autoSize.value // width = device-width
-    ) {
-      return 0;
-    }
-    return 300;
-  },
-};
+  }
+}
 
 exports.TouchSimulator = TouchSimulator;

@@ -5,19 +5,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AOMDecoder.h"
+
+#include <algorithm>
+
+#include "ImageContainer.h"
 #include "MediaResult.h"
 #include "TimeUnits.h"
-#include "aom/aomdx.h"
 #include "aom/aom_image.h"
+#include "aom/aomdx.h"
 #include "gfx2DGlue.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/SyncRunnable.h"
+#include "mozilla/TaskQueue.h"
 #include "nsError.h"
-#include "prsystem.h"
-#include "ImageContainer.h"
 #include "nsThreadUtils.h"
-
-#include <algorithm>
+#include "prsystem.h"
+#include "VideoUtils.h"
 
 #undef LOG
 #define LOG(arg, ...)                                                  \
@@ -77,7 +80,8 @@ static MediaResult InitContext(AOMDecoder& aAOMDecoder, aom_codec_ctx_t* aCtx,
 
 AOMDecoder::AOMDecoder(const CreateDecoderParams& aParams)
     : mImageContainer(aParams.mImageContainer),
-      mTaskQueue(aParams.mTaskQueue),
+      mTaskQueue(new TaskQueue(
+          GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER), "AOMDecoder")),
       mInfo(aParams.VideoConfig()) {
   PodZero(&mCodec);
 }
@@ -91,7 +95,7 @@ RefPtr<ShutdownPromise> AOMDecoder::Shutdown() {
     if (res != AOM_CODEC_OK) {
       LOGEX_RESULT(self.get(), res, "aom_codec_destroy");
     }
-    return ShutdownPromise::CreateAndResolve(true, __func__);
+    return self->mTaskQueue->BeginShutdown();
   });
 }
 
@@ -207,10 +211,10 @@ RefPtr<MediaDataDecoder::DecodePromise> AOMDecoder::ProcessDecode(
                                                     : ColorRange::LIMITED;
 
     RefPtr<VideoData> v;
-    v = VideoData::CreateAndCopyData(mInfo, mImageContainer, aSample->mOffset,
-                                     aSample->mTime, aSample->mDuration, b,
-                                     aSample->mKeyframe, aSample->mTimecode,
-                                     mInfo.ScaledImageRect(img->d_w, img->d_h));
+    v = VideoData::CreateAndCopyData(
+        mInfo, mImageContainer, aSample->mOffset, aSample->mTime,
+        aSample->mDuration, b, aSample->mKeyframe, aSample->mTimecode,
+        mInfo.ScaledImageRect(img->d_w, img->d_h), nullptr);
 
     if (!v) {
       LOG("Image allocation error source %ux%u display %ux%u picture %ux%u",

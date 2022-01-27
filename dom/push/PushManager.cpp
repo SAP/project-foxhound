@@ -8,8 +8,9 @@
 
 #include "mozilla/Base64.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "mozilla/Unused.h"
+#include "mozilla/dom/PermissionStatusBinding.h"
 #include "mozilla/dom/PushManagerBinding.h"
 #include "mozilla/dom/PushSubscription.h"
 #include "mozilla/dom/PushSubscriptionOptionsBinding.h"
@@ -28,16 +29,16 @@
 
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
+#include "nsServiceManagerUtils.h"
 
 namespace mozilla {
 namespace dom {
 
 namespace {
 
-nsresult GetPermissionState(nsIPrincipal* aPrincipal,
-                            PushPermissionState& aState) {
+nsresult GetPermissionState(nsIPrincipal* aPrincipal, PermissionState& aState) {
   nsCOMPtr<nsIPermissionManager> permManager =
-      mozilla::services::GetPermissionManager();
+      mozilla::components::PermissionManager::Service();
 
   if (!permManager) {
     return NS_ERROR_FAILURE;
@@ -51,11 +52,11 @@ nsresult GetPermissionState(nsIPrincipal* aPrincipal,
 
   if (permission == nsIPermissionManager::ALLOW_ACTION ||
       Preferences::GetBool("dom.push.testing.ignorePermission", false)) {
-    aState = PushPermissionState::Granted;
+    aState = PermissionState::Granted;
   } else if (permission == nsIPermissionManager::DENY_ACTION) {
-    aState = PushPermissionState::Denied;
+    aState = PermissionState::Denied;
   } else {
-    aState = PushPermissionState::Prompt;
+    aState = PermissionState::Prompt;
   }
 
   return NS_OK;
@@ -97,6 +98,7 @@ class GetSubscriptionResultRunnable final : public WorkerRunnable {
                                 RefPtr<PromiseWorkerProxy>&& aProxy,
                                 nsresult aStatus, const nsAString& aEndpoint,
                                 const nsAString& aScope,
+                                Nullable<EpochTimeStamp>&& aExpirationTime,
                                 nsTArray<uint8_t>&& aRawP256dhKey,
                                 nsTArray<uint8_t>&& aAuthSecret,
                                 nsTArray<uint8_t>&& aAppServerKey)
@@ -105,6 +107,7 @@ class GetSubscriptionResultRunnable final : public WorkerRunnable {
         mStatus(aStatus),
         mEndpoint(aEndpoint),
         mScope(aScope),
+        mExpirationTime(std::move(aExpirationTime)),
         mRawP256dhKey(std::move(aRawP256dhKey)),
         mAuthSecret(std::move(aAuthSecret)),
         mAppServerKey(std::move(aAppServerKey)) {}
@@ -116,8 +119,9 @@ class GetSubscriptionResultRunnable final : public WorkerRunnable {
         promise->MaybeResolve(JS::NullHandleValue);
       } else {
         RefPtr<PushSubscription> sub = new PushSubscription(
-            nullptr, mEndpoint, mScope, std::move(mRawP256dhKey),
-            std::move(mAuthSecret), std::move(mAppServerKey));
+            nullptr, mEndpoint, mScope, std::move(mExpirationTime),
+            std::move(mRawP256dhKey), std::move(mAuthSecret),
+            std::move(mAppServerKey));
         promise->MaybeResolve(sub);
       }
     } else if (NS_ERROR_GET_MODULE(mStatus) == NS_ERROR_MODULE_DOM_PUSH) {
@@ -138,6 +142,7 @@ class GetSubscriptionResultRunnable final : public WorkerRunnable {
   nsresult mStatus;
   nsString mEndpoint;
   nsString mScope;
+  Nullable<EpochTimeStamp> mExpirationTime;
   nsTArray<uint8_t> mRawP256dhKey;
   nsTArray<uint8_t> mAuthSecret;
   nsTArray<uint8_t> mAppServerKey;
@@ -172,9 +177,11 @@ class GetSubscriptionCallback final : public nsIPushSubscriptionCallback {
     WorkerPrivate* worker = mProxy->GetWorkerPrivate();
     RefPtr<GetSubscriptionResultRunnable> r = new GetSubscriptionResultRunnable(
         worker, std::move(mProxy), aStatus, endpoint, mScope,
-        std::move(rawP256dhKey), std::move(authSecret),
-        std::move(appServerKey));
-    MOZ_ALWAYS_TRUE(r->Dispatch());
+        std::move(mExpirationTime), std::move(rawP256dhKey),
+        std::move(authSecret), std::move(appServerKey));
+    if (!r->Dispatch()) {
+      return NS_ERROR_UNEXPECTED;
+    }
 
     return NS_OK;
   }
@@ -190,6 +197,7 @@ class GetSubscriptionCallback final : public nsIPushSubscriptionCallback {
  private:
   RefPtr<PromiseWorkerProxy> mProxy;
   nsString mScope;
+  Nullable<EpochTimeStamp> mExpirationTime;
 };
 
 NS_IMPL_ISUPPORTS(GetSubscriptionCallback, nsIPushSubscriptionCallback)
@@ -228,14 +236,14 @@ class GetSubscriptionRunnable final : public Runnable {
     RefPtr<GetSubscriptionCallback> callback =
         new GetSubscriptionCallback(mProxy, mScope);
 
-    PushPermissionState state;
+    PermissionState state;
     nsresult rv = GetPermissionState(principal, state);
     if (NS_FAILED(rv)) {
       callback->OnPushSubscriptionError(NS_ERROR_FAILURE);
       return NS_OK;
     }
 
-    if (state != PushPermissionState::Granted) {
+    if (state != PermissionState::Granted) {
       if (mAction == PushManager::GetSubscriptionAction) {
         callback->OnPushSubscriptionError(NS_OK);
         return NS_OK;
@@ -283,7 +291,7 @@ class GetSubscriptionRunnable final : public Runnable {
 class PermissionResultRunnable final : public WorkerRunnable {
  public:
   PermissionResultRunnable(PromiseWorkerProxy* aProxy, nsresult aStatus,
-                           PushPermissionState aState)
+                           PermissionState aState)
       : WorkerRunnable(aProxy->GetWorkerPrivate()),
         mProxy(aProxy),
         mStatus(aStatus),
@@ -312,7 +320,7 @@ class PermissionResultRunnable final : public WorkerRunnable {
 
   RefPtr<PromiseWorkerProxy> mProxy;
   nsresult mStatus;
-  PushPermissionState mState;
+  PermissionState mState;
 };
 
 class PermissionStateRunnable final : public Runnable {
@@ -328,13 +336,16 @@ class PermissionStateRunnable final : public Runnable {
       return NS_OK;
     }
 
-    PushPermissionState state;
+    PermissionState state;
     nsresult rv =
         GetPermissionState(mProxy->GetWorkerPrivate()->GetPrincipal(), state);
 
     RefPtr<PermissionResultRunnable> r =
         new PermissionResultRunnable(mProxy, rv, state);
-    MOZ_ALWAYS_TRUE(r->Dispatch());
+
+    // This can fail if the worker thread is already shutting down, but there's
+    // nothing we can do in that case.
+    Unused << NS_WARN_IF(!r->Dispatch());
 
     return NS_OK;
   }
@@ -449,7 +460,7 @@ already_AddRefed<Promise> PushManager::PermissionState(
 
 already_AddRefed<Promise> PushManager::PerformSubscriptionActionFromWorker(
     SubscriptionAction aAction, ErrorResult& aRv) {
-  PushSubscriptionOptionsInit options;
+  RootedDictionary<PushSubscriptionOptionsInit> options(RootingCx());
   return PerformSubscriptionActionFromWorker(aAction, options, aRv);
 }
 

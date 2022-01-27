@@ -27,6 +27,28 @@
 
 // IMPORTANT: Do not change this list without review from
 //            a JavaScript Engine peer!
+var wasmGlobalEntry = {
+  name: "WebAssembly",
+  insecureContext: true,
+  disabled: !getJSTestingFunctions().wasmIsSupportedByHardware(),
+};
+var wasmGlobalInterfaces = [
+  { name: "Module", insecureContext: true },
+  { name: "Instance", insecureContext: true },
+  { name: "Memory", insecureContext: true },
+  { name: "Table", insecureContext: true },
+  { name: "Global", insecureContext: true },
+  { name: "CompileError", insecureContext: true },
+  { name: "LinkError", insecureContext: true },
+  { name: "RuntimeError", insecureContext: true },
+  {
+    name: "Function",
+    insecureContext: true,
+    nightly: true,
+  },
+];
+// IMPORTANT: Do not change this list without review from
+//            a JavaScript Engine peer!
 var ecmaGlobals = [
   { name: "AggregateError", insecureContext: true },
   { name: "Array", insecureContext: true },
@@ -76,7 +98,6 @@ var ecmaGlobals = [
   { name: "String", insecureContext: true },
   { name: "Symbol", insecureContext: true },
   { name: "SyntaxError", insecureContext: true },
-  { name: "TypedObject", insecureContext: true, nightly: true },
   { name: "TypeError", insecureContext: true },
   { name: "Uint16Array", insecureContext: true },
   { name: "Uint32Array", insecureContext: true },
@@ -86,11 +107,7 @@ var ecmaGlobals = [
   { name: "WeakMap", insecureContext: true },
   { name: "WeakRef", insecureContext: true },
   { name: "WeakSet", insecureContext: true },
-  {
-    name: "WebAssembly",
-    insecureContext: true,
-    disabled: !getJSTestingFunctions().wasmIsSupportedByHardware(),
-  },
+  wasmGlobalEntry,
 ];
 // IMPORTANT: Do not change the list above without review from
 //            a JavaScript Engine peer!
@@ -187,6 +204,10 @@ var interfaceNamesInGlobalScope = [
   { name: "ImageBitmapRenderingContext", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "ImageData", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "Lock",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "LockManager",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "MessageChannel", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -294,59 +315,63 @@ var interfaceNamesInGlobalScope = [
 ];
 // IMPORTANT: Do not change the list above without review from a DOM peer!
 
-function createInterfaceMap({
-  isNightly,
-  isEarlyBetaOrEarlier,
-  isRelease,
-  isDesktop,
-  isAndroid,
-  isInsecureContext,
-  isFennec,
-  isCrossOringinIsolated,
-}) {
+function entryDisabled(
+  entry,
+  {
+    isNightly,
+    isEarlyBetaOrEarlier,
+    isRelease,
+    isDesktop,
+    isAndroid,
+    isInsecureContext,
+    isFennec,
+    isCrossOringinIsolated,
+  }
+) {
+  return (
+    entry.nightly === !isNightly ||
+    (entry.nightlyAndroid === !(isAndroid && isNightly) && isAndroid) ||
+    entry.desktop === !isDesktop ||
+    (entry.android === !isAndroid && !entry.nightlyAndroid) ||
+    entry.fennecOrDesktop === (isAndroid && !isFennec) ||
+    entry.fennec === !isFennec ||
+    entry.release === !isRelease ||
+    // The insecureContext test is very purposefully converting
+    // entry.insecureContext to boolean, so undefined will convert to
+    // false.  That way entries without an insecureContext annotation
+    // will get treated as "insecureContext: false", which means exposed
+    // only in secure contexts.
+    (isInsecureContext && !entry.insecureContext) ||
+    entry.earlyBetaOrEarlier === !isEarlyBetaOrEarlier ||
+    entry.crossOringinIsolated === !isCrossOringinIsolated ||
+    entry.disabled
+  );
+}
+
+function createInterfaceMap(data, ...interfaceGroups) {
   var interfaceMap = {};
 
   function addInterfaces(interfaces) {
     for (var entry of interfaces) {
       if (typeof entry === "string") {
-        interfaceMap[entry] = !isInsecureContext;
+        interfaceMap[entry] = !data.isInsecureContext;
       } else {
         ok(!("pref" in entry), "Bogus pref annotation for " + entry.name);
-        if (
-          entry.nightly === !isNightly ||
-          (entry.nightlyAndroid === !(isAndroid && isNightly) && isAndroid) ||
-          entry.desktop === !isDesktop ||
-          (entry.android === !isAndroid && !entry.nightlyAndroid) ||
-          entry.fennecOrDesktop === (isAndroid && !isFennec) ||
-          entry.fennec === !isFennec ||
-          entry.release === !isRelease ||
-          // The insecureContext test is very purposefully converting
-          // entry.insecureContext to boolean, so undefined will convert to
-          // false.  That way entries without an insecureContext annotation
-          // will get treated as "insecureContext: false", which means exposed
-          // only in secure contexts.
-          (isInsecureContext && !entry.insecureContext) ||
-          entry.earlyBetaOrEarlier === !isEarlyBetaOrEarlier ||
-          entry.crossOringinIsolated === !isCrossOringinIsolated ||
-          entry.disabled
-        ) {
-          interfaceMap[entry.name] = false;
-        } else {
-          interfaceMap[entry.name] = true;
-        }
+        interfaceMap[entry.name] = !entryDisabled(entry, data);
       }
     }
   }
 
-  addInterfaces(ecmaGlobals);
-  addInterfaces(interfaceNamesInGlobalScope);
+  for (let interfaceGroup of interfaceGroups) {
+    addInterfaces(interfaceGroup);
+  }
 
   return interfaceMap;
 }
 
-function runTest(data) {
-  var interfaceMap = createInterfaceMap(data);
-  for (var name of Object.getOwnPropertyNames(self)) {
+function runTest(parentName, parent, data, ...interfaceGroups) {
+  var interfaceMap = createInterfaceMap(data, ...interfaceGroups);
+  for (var name of Object.getOwnPropertyNames(parent)) {
     // An interface name should start with an upper case character.
     if (!/^[A-Z]/.test(name)) {
       continue;
@@ -355,18 +380,21 @@ function runTest(data) {
       interfaceMap[name],
       "If this is failing: DANGER, are you sure you want to expose the new interface " +
         name +
-        " to all webpages as a property on the worker? Do not make a change to this file without a " +
+        " to all webpages as a property of " +
+        parentName +
+        "? Do not make a change to this file without a " +
         " review from a DOM peer for that specific change!!! (or a JS peer for changes to ecmaGlobals)"
     );
     delete interfaceMap[name];
   }
   for (var name of Object.keys(interfaceMap)) {
     ok(
-      name in self === interfaceMap[name],
+      name in parent === interfaceMap[name],
       name +
         " should " +
         (interfaceMap[name] ? "" : " NOT") +
-        " be defined on the global scope"
+        " be defined on " +
+        parentName
     );
     if (!interfaceMap[name]) {
       delete interfaceMap[name];
@@ -381,6 +409,9 @@ function runTest(data) {
 }
 
 workerTestGetHelperData(function(data) {
-  runTest(data);
+  runTest("self", self, data, ecmaGlobals, interfaceNamesInGlobalScope);
+  if (WebAssembly && !entryDisabled(wasmGlobalEntry, data)) {
+    runTest("WebAssembly", WebAssembly, data, wasmGlobalInterfaces);
+  }
   workerTestDone();
 });

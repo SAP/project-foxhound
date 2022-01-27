@@ -9,6 +9,7 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/PFetchEventOpProxyParent.h"
 #include "mozilla/ipc/BackgroundParent.h"
+#include "mozilla/SchedulerGroup.h"
 #include "mozilla/Unused.h"
 #include "nsProxyRelease.h"
 
@@ -67,20 +68,11 @@ void RemoteWorkerParent::Initialize(bool aAlreadyRegistered) {
   }
 }
 
-PFetchEventOpProxyParent* RemoteWorkerParent::AllocPFetchEventOpProxyParent(
-    const ServiceWorkerFetchEventOpArgs& aArgs) {
+already_AddRefed<PFetchEventOpProxyParent>
+RemoteWorkerParent::AllocPFetchEventOpProxyParent(
+    const ParentToChildServiceWorkerFetchEventOpArgs& aArgs) {
   MOZ_CRASH("PFetchEventOpProxyParent actors must be manually constructed!");
   return nullptr;
-}
-
-bool RemoteWorkerParent::DeallocPFetchEventOpProxyParent(
-    PFetchEventOpProxyParent* aActor) {
-  MOZ_ASSERT(XRE_IsParentProcess());
-  AssertIsOnBackgroundThread();
-  MOZ_ASSERT(aActor);
-
-  delete aActor;
-  return true;
 }
 
 void RemoteWorkerParent::ActorDestroy(IProtocol::ActorDestroyReason) {
@@ -126,6 +118,17 @@ IPCResult RemoteWorkerParent::RecvError(const ErrorValue& aValue) {
 
   if (mController) {
     mController->ErrorPropagation(aValue);
+  }
+
+  return IPC_OK();
+}
+
+IPCResult RemoteWorkerParent::RecvNotifyLock(const bool& aCreated) {
+  AssertIsOnBackgroundThread();
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  if (mController) {
+    mController->NotifyLock(aCreated);
   }
 
   return IPC_OK();

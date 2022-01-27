@@ -13,8 +13,11 @@ interface FetchEvent : ExtendableEvent {
   constructor(DOMString type, FetchEventInit eventInitDict);
 
   [SameObject, BinaryName="request_"] readonly attribute Request request;
+  [Pref="dom.serviceWorkers.navigationPreload.enabled"]
+  readonly attribute Promise<any> preloadResponse;
   readonly attribute DOMString clientId;
   readonly attribute DOMString resultingClientId;
+  readonly attribute Promise<void> handled;
 
   [Throws]
   void respondWith(Promise<Response> r);

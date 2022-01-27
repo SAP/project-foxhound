@@ -17,30 +17,31 @@ add_task(async function setup() {
   });
   registerCleanupFunction(async function() {
     await PlacesUtils.bookmarks.remove(bm);
-  });
-  await PlacesUtils.keywords.insert({
-    keyword: "keyword",
-    url: "http://example.com/?q=%s",
+    await PlacesUtils.history.clear();
   });
   // Needs at least one success.
   ok(true, "Setup complete");
 });
 
 add_task(
-  taskWithNewTab(async function test_keyword() {
+  taskWithNewTab(async function test_loadSite() {
+    await SpecialPowers.pushPrefEnv({
+      set: [["browser.urlbar.autofill", false]],
+    });
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
-      value: "keyword bear",
+      value: "example.co",
     });
     gURLBar.focus();
-    EventUtils.sendString("d");
+    EventUtils.sendString("m");
     EventUtils.synthesizeKey("KEY_Enter");
     info("wait for the page to load");
     await BrowserTestUtils.browserLoaded(
       gBrowser.selectedTab.linkedBrowser,
       false,
-      "http://example.com/?q=beard"
+      "http://example.com/"
     );
+    await SpecialPowers.popPrefEnv();
   })
 );
 
@@ -100,11 +101,9 @@ add_task(
     let suggestOpenPages = Preferences.get("browser.urlbar.suggest.openpage");
     Preferences.set("browser.urlbar.suggest.openpage", false);
 
-    await Services.search.addEngineWithDetails("MozSearch", {
-      method: "GET",
-      template: "http://example.com/?q={searchTerms}",
-    });
-    let engine = Services.search.getEngineByName("MozSearch");
+    await SearchTestUtils.installSearchExtension();
+
+    let engine = Services.search.getEngineByName("Example");
     let originalEngine = await Services.search.getDefault();
     await Services.search.setDefault(engine);
 
@@ -114,10 +113,6 @@ add_task(
       Preferences.set("browser.urlbar.suggest.openpage", suggestOpenPages);
 
       await Services.search.setDefault(originalEngine);
-      let mozSearchEngine = Services.search.getEngineByName("MozSearch");
-      if (mozSearchEngine) {
-        await Services.search.removeEngine(mozSearchEngine);
-      }
     }
     registerCleanupFunction(cleanup);
 
@@ -130,12 +125,14 @@ add_task(
     await BrowserTestUtils.browserLoaded(
       gBrowser.selectedTab.linkedBrowser,
       false,
-      "http://example.com/?q=ex"
+      "https://example.com/?q=ex"
     );
     await cleanup();
   })
 );
 
+// Tests that setting a high value for browser.urlbar.delay does not delay the
+// fetching of heuristic results.
 add_task(
   taskWithNewTab(async function test_delay() {
     // This is needed to clear the current value, otherwise autocomplete may think
@@ -154,17 +151,29 @@ add_task(
       UrlbarPrefs.set("delay", delay);
     });
 
-    let start = Cu.now();
     gURLBar.focus();
     gURLBar.value = "e";
+    let recievedResult = new Promise(resolve => {
+      gURLBar.controller.addQueryListener({
+        onQueryResults(queryContext) {
+          gURLBar.controller.removeQueryListener(this);
+          Assert.ok(
+            queryContext.heuristicResult,
+            "Recieved a heuristic result."
+          );
+          Assert.equal(
+            queryContext.searchString,
+            "ex",
+            "The heuristic result is based on the correct search string."
+          );
+          resolve();
+        },
+      });
+    });
+    let start = Cu.now();
     EventUtils.sendString("x");
     EventUtils.synthesizeKey("KEY_Enter");
-    info("wait for the page to load");
-    await BrowserTestUtils.browserLoaded(
-      gBrowser.selectedTab.linkedBrowser,
-      false,
-      "http://example.com/"
-    );
+    await recievedResult;
     Assert.ok(Cu.now() - start < TIMEOUT);
   })
 );

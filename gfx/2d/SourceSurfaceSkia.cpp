@@ -10,6 +10,8 @@
 #include "DrawTargetSkia.h"
 #include "DataSurfaceHelpers.h"
 #include "skia/include/core/SkData.h"
+#include "skia/include/core/SkImage.h"
+#include "skia/include/core/SkSurface.h"
 #include "mozilla/CheckedInt.h"
 
 namespace mozilla::gfx {
@@ -31,8 +33,32 @@ IntSize SourceSurfaceSkia::GetSize() const { return mSize; }
 
 SurfaceFormat SourceSurfaceSkia::GetFormat() const { return mFormat; }
 
-sk_sp<SkImage> SourceSurfaceSkia::GetImage() {
-  MutexAutoLock lock(mChangeMutex);
+// This is only ever called by the DT destructor, which can only ever happen
+// from one place at a time. Therefore it doesn't need to hold the ChangeMutex
+// as mSurface is never read to directly and is just there to keep the object
+// alive, which itself is refcounted in a thread-safe manner.
+void SourceSurfaceSkia::GiveSurface(SkSurface* aSurface) {
+  mSurface.reset(aSurface);
+  mDrawTarget = nullptr;
+}
+
+sk_sp<SkImage> SourceSurfaceSkia::GetImage(Maybe<MutexAutoLock>* aLock) {
+  // If we were provided a lock object, we can let the caller access
+  // a shared SkImage and we know it won't go away while the lock is held.
+  // Otherwise we need to call DrawTargetWillChange to ensure we have our
+  // own SkImage.
+  if (aLock) {
+    MOZ_ASSERT(aLock->isNothing());
+    aLock->emplace(mChangeMutex);
+
+    // Now that we are locked, we can check mDrawTarget. If it's null, then
+    // we're not shared and we can unlock eagerly.
+    if (!mDrawTarget) {
+      aLock->reset();
+    }
+  } else {
+    DrawTargetWillChange();
+  }
   sk_sp<SkImage> image = mImage;
   return image;
 }
@@ -153,7 +179,7 @@ void SourceSurfaceSkia::Unmap() {
 
 void SourceSurfaceSkia::DrawTargetWillChange() {
   MutexAutoLock lock(mChangeMutex);
-  if (mDrawTarget) {
+  if (mDrawTarget.exchange(nullptr)) {
     // Raster snapshots do not use Skia's internal copy-on-write mechanism,
     // so we need to do an explicit copy here.
     // GPU snapshots, for which peekPixels is false, will already be dealt
@@ -166,7 +192,6 @@ void SourceSurfaceSkia::DrawTargetWillChange() {
         gfxCriticalError() << "Failed copying Skia raster snapshot";
       }
     }
-    mDrawTarget = nullptr;
   }
 }
 

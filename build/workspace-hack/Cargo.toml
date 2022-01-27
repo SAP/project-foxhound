@@ -15,12 +15,24 @@ version = "0.1.0"
 
 [build-dependencies]
 void = { features = ["std", "default"], version = "1.0.2" }
-syn = { features = ["clone-impls", "default", "derive", "extra-traits", "fold", "full", "parsing", "printing", "proc-macro", "quote", "visit"],  version = "1.0" }
+syn = { features = [
+    "clone-impls",
+    "default",
+    "derive",
+    "extra-traits",
+    "fold",
+    "full",
+    "parsing",
+    "printing",
+    "proc-macro",
+    "quote",
+    "visit",
+], version = "1.0" }
 serde = { features = ["default", "derive", "rc", "serde_derive", "std"], version = "1.0.66" }
 serde_derive = { features = ["default", "deserialize_in_place"], version = "1.0.66" }
 quote = { features = ["default", "proc-macro"], version = "1.0" }
 libc = { features = ["default", "std", "use_std"], version = "0.2" }
-bindgen = { default-features = false, features = ["runtime"], version = "0.53" }
+bindgen = { default-features = false, features = ["runtime"], version = "0.56" }
 
 [target."cfg(windows)".dependencies.winapi]
 version = "0.3.6"
@@ -32,9 +44,25 @@ features = [
     "bitsmsg",
     "combaseapi",
     "consoleapi",
+    "d3d11",
+    "d3d11_1",
+    "d3d11sdklayers",
+    "d3d12",
+    "d3d12sdklayers",
+    "d3d12shader",
+    "d3dcommon",
+    "d3dcompiler",
     "dwrite",
     "dwrite_1",
     "dwrite_3",
+    "dxgi1_2",
+    "dxgi1_3",
+    "dxgi1_4",
+    "dxgi1_5",
+    "dxgi1_6",
+    "dxgidebug",
+    "dxgiformat",
+    "dxgitype",
     "errhandlingapi",
     "fileapi",
     "guiddef",
@@ -45,6 +73,7 @@ features = [
     "impl-default",
     "ioapiset",
     "libloaderapi",
+    "knownfolders",
     "memoryapi",
     "minwinbase",
     "minwindef",
@@ -52,25 +81,37 @@ features = [
     "ntdef",
     "ntsecapi",
     "ntstatus",
+    "oaidl",
     "objbase",
+    "oleauto",
     "processenv",
+    "processthreadsapi",
     "profileapi",
+    "psapi",
     "rpcndr",
     "setupapi",
+    "shlobj",
     "std",
     "synchapi",
     "sysinfoapi",
+    "taskschd",
+    "timeapi",
     "timezoneapi",
     "unknwnbase",
     "winbase",
     "wincon",
+    "wincrypt",
+    "windef",
     "winerror",
+    "wininet",
     "winnls",
     "winnt",
+    "winreg",
     "winsock2",
+    "winuser",
     "ws2def",
     "ws2ipdef",
     "ws2tcpip",
     "wtypes",
-    "wtypesbase"
+    "wtypesbase",
 ]

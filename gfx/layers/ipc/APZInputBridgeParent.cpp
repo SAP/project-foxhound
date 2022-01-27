@@ -6,12 +6,26 @@
 
 #include "mozilla/layers/APZInputBridgeParent.h"
 
+#include "mozilla/ipc/Endpoint.h"
 #include "mozilla/layers/APZInputBridge.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/IAPZCTreeManager.h"
+#include "InputData.h"
 
 namespace mozilla {
 namespace layers {
+
+/* static */
+RefPtr<APZInputBridgeParent> APZInputBridgeParent::Create(
+    const LayersId& aLayersId, Endpoint<PAPZInputBridgeParent>&& aEndpoint) {
+  RefPtr<APZInputBridgeParent> parent = new APZInputBridgeParent(aLayersId);
+  if (!aEndpoint.Bind(parent)) {
+    // We can't recover from this.
+    MOZ_CRASH("Failed to bind APZInputBridgeParent to endpoint");
+  }
+
+  return parent;
+}
 
 APZInputBridgeParent::APZInputBridgeParent(const LayersId& aLayersId) {
   MOZ_ASSERT(XRE_IsGPUProcess());
@@ -101,8 +115,10 @@ mozilla::ipc::IPCResult APZInputBridgeParent::RecvReceiveKeyboardInputEvent(
 }
 
 mozilla::ipc::IPCResult APZInputBridgeParent::RecvUpdateWheelTransaction(
-    const LayoutDeviceIntPoint& aRefPoint, const EventMessage& aEventMessage) {
-  mTreeManager->InputBridge()->UpdateWheelTransaction(aRefPoint, aEventMessage);
+    const LayoutDeviceIntPoint& aRefPoint, const EventMessage& aEventMessage,
+    const Maybe<ScrollableLayerGuid>& aTargetGuid) {
+  mTreeManager->InputBridge()->UpdateWheelTransaction(aRefPoint, aEventMessage,
+                                                      aTargetGuid);
   return IPC_OK();
 }
 

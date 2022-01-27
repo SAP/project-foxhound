@@ -16,7 +16,6 @@
 #include "nsIMemoryReporter.h"              // for nsIMemoryReporter
 #include "mozilla/Atomics.h"                // for Atomic
 #include "mozilla/layers/LayersMessages.h"  // for ShmemSection
-#include "LayersTypes.h"
 
 namespace mozilla {
 namespace ipc {
@@ -187,9 +186,6 @@ class LegacySurfaceDescriptorAllocator {
 };
 
 bool IsSurfaceDescriptorValid(const SurfaceDescriptor& aSurface);
-
-already_AddRefed<gfx::DrawTarget> GetDrawTargetForDescriptor(
-    const SurfaceDescriptor& aDescriptor, gfx::BackendType aBackend);
 
 already_AddRefed<gfx::DataSourceSurface> GetSurfaceForDescriptor(
     const SurfaceDescriptor& aDescriptor);

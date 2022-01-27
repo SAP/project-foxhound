@@ -27,6 +27,11 @@ inline JSAtom* BytecodeLocation::getAtom(const JSScript* script) const {
   return script->getAtom(this->rawBytecode_);
 }
 
+inline JSString* BytecodeLocation::getString(const JSScript* script) const {
+  MOZ_ASSERT(this->isValid());
+  return script->getString(this->rawBytecode_);
+}
+
 inline PropertyName* BytecodeLocation::getPropertyName(
     const JSScript* script) const {
   MOZ_ASSERT(this->isValid());
@@ -41,8 +46,7 @@ inline JS::BigInt* BytecodeLocation::getBigInt(const JSScript* script) const {
 
 inline JSObject* BytecodeLocation::getObject(const JSScript* script) const {
   MOZ_ASSERT(this->isValid());
-  MOZ_ASSERT(is(JSOp::CallSiteObj) || is(JSOp::Object) ||
-             is(JSOp::NewArrayCopyOnWrite));
+  MOZ_ASSERT(is(JSOp::CallSiteObj) || is(JSOp::Object));
   return script->getObject(this->rawBytecode_);
 }
 

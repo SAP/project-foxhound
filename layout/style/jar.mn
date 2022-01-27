@@ -9,8 +9,8 @@ toolkit.jar:
    res/counterstyles.css                     (res/counterstyles.css)
    res/noscript.css                          (res/noscript.css)
    res/noframes.css                          (res/noframes.css)
+*  res/scrollbars.css                        (res/scrollbars.css)
 *  res/forms.css                             (res/forms.css)
-   res/pluginproblem.css                     (res/pluginproblem.css)
    res/arrow.gif                             (res/arrow.gif)
    res/arrow-left.gif                        (res/arrow-left.gif)
    res/arrow-right.gif                       (res/arrow-right.gif)
@@ -29,6 +29,9 @@ toolkit.jar:
    res/accessiblecaret-tilt-right@1.5x.png   (res/accessiblecaret-tilt-right@1.5x.png)
    res/accessiblecaret-tilt-right@2x.png     (res/accessiblecaret-tilt-right@2x.png)
    res/accessiblecaret-tilt-right@2.25x.png  (res/accessiblecaret-tilt-right@2.25x.png)
+   res/searchfield-cancel.svg                (res/searchfield-cancel.svg)
+   res/password.svg                          (res/password.svg)
+   res/password-hide.svg                     (res/password-hide.svg)
 
 % resource gre-resources %res/
 % resource content-accessible resource://gre/contentaccessible/ contentaccessible=yes

@@ -47,7 +47,6 @@ pub use self::GenericMatrix as Matrix;
 
 #[allow(missing_docs)]
 #[cfg_attr(rustfmt, rustfmt_skip)]
-#[css(comma, function = "matrix3d")]
 #[derive(
     Clone,
     Copy,
@@ -62,6 +61,7 @@ pub use self::GenericMatrix as Matrix;
     ToResolvedValue,
     ToShmem,
 )]
+#[css(comma, function = "matrix3d")]
 #[repr(C)]
 pub struct GenericMatrix3D<T> {
     pub m11: T, pub m12: T, pub m13: T, pub m14: T,
@@ -76,7 +76,7 @@ pub use self::GenericMatrix3D as Matrix3D;
 impl<T: Into<f64>> From<Matrix<T>> for Transform3D<f64> {
     #[inline]
     fn from(m: Matrix<T>) -> Self {
-        Transform3D::row_major(
+        Transform3D::new(
             m.a.into(), m.b.into(), 0.0, 0.0,
             m.c.into(), m.d.into(), 0.0, 0.0,
             0.0,        0.0,        1.0, 0.0,
@@ -89,7 +89,7 @@ impl<T: Into<f64>> From<Matrix<T>> for Transform3D<f64> {
 impl<T: Into<f64>> From<Matrix3D<T>> for Transform3D<f64> {
     #[inline]
     fn from(m: Matrix3D<T>) -> Self {
-        Transform3D::row_major(
+        Transform3D::new(
             m.m11.into(), m.m12.into(), m.m13.into(), m.m14.into(),
             m.m21.into(), m.m22.into(), m.m23.into(), m.m24.into(),
             m.m31.into(), m.m32.into(), m.m33.into(), m.m34.into(),
@@ -140,6 +140,41 @@ impl<H, V, D> TransformOrigin<H, V, D> {
 fn is_same<N: PartialEq>(x: &N, y: &N) -> bool {
     x == y
 }
+
+/// A value for the `perspective()` transform function, which is either a
+/// non-negative `<length>` or `none`.
+#[derive(
+    Clone,
+    Debug,
+    Deserialize,
+    MallocSizeOf,
+    PartialEq,
+    Serialize,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(C, u8)]
+pub enum GenericPerspectiveFunction<L> {
+    /// `none`
+    None,
+    /// A `<length>`.
+    Length(L),
+}
+
+impl<L> GenericPerspectiveFunction<L> {
+    /// Returns `f32::INFINITY` or the result of a function on the length value.
+    pub fn infinity_or(&self, f: impl FnOnce(&L) -> f32) -> f32 {
+        match *self {
+            Self::None => std::f32::INFINITY,
+            Self::Length(ref l) => f(l),
+        }
+    }
+}
+
+pub use self::GenericPerspectiveFunction as PerspectiveFunction;
 
 #[derive(
     Clone,
@@ -240,7 +275,7 @@ where
     ///
     /// The value must be greater than or equal to zero.
     #[css(function)]
-    Perspective(Length),
+    Perspective(GenericPerspectiveFunction<Length>),
     /// A intermediate type for interpolation of mismatched transform lists.
     #[allow(missing_docs)]
     #[css(comma, function = "interpolatematrix")]
@@ -369,15 +404,7 @@ impl ToAbsoluteLength for ComputedLength {
 impl ToAbsoluteLength for ComputedLengthPercentage {
     #[inline]
     fn to_pixel_length(&self, containing_len: Option<ComputedLength>) -> Result<CSSFloat, ()> {
-        match containing_len {
-            Some(relative_len) => Ok(self.resolve(relative_len).px()),
-            // If we don't have reference box, we cannot resolve the used value,
-            // so only retrieve the length part. This will be used for computing
-            // distance without any layout info.
-            //
-            // FIXME(emilio): This looks wrong.
-            None => Ok(self.resolve(Zero::zero()).px()),
-        }
+        Ok(self.maybe_percentage_relative_to(containing_len).ok_or(())?.px())
     }
 }
 
@@ -443,15 +470,14 @@ where
         use self::TransformOperation::*;
         use std::f64;
 
-        const TWO_PI: f64 = 2.0f64 * f64::consts::PI;
         let reference_width = reference_box.map(|v| v.size.width);
         let reference_height = reference_box.map(|v| v.size.height);
         let matrix = match *self {
             Rotate3D(ax, ay, az, theta) => {
-                let theta = TWO_PI - theta.radians64();
+                let theta = theta.radians64();
                 let (ax, ay, az, theta) =
                     get_normalized_vector_and_angle(ax.into(), ay.into(), az.into(), theta);
-                Transform3D::create_rotation(
+                Transform3D::rotation(
                     ax as f64,
                     ay as f64,
                     az as f64,
@@ -459,56 +485,57 @@ where
                 )
             },
             RotateX(theta) => {
-                let theta = euclid::Angle::radians(TWO_PI - theta.radians64());
-                Transform3D::create_rotation(1., 0., 0., theta)
+                let theta = euclid::Angle::radians(theta.radians64());
+                Transform3D::rotation(1., 0., 0., theta)
             },
             RotateY(theta) => {
-                let theta = euclid::Angle::radians(TWO_PI - theta.radians64());
-                Transform3D::create_rotation(0., 1., 0., theta)
+                let theta = euclid::Angle::radians(theta.radians64());
+                Transform3D::rotation(0., 1., 0., theta)
             },
             RotateZ(theta) | Rotate(theta) => {
-                let theta = euclid::Angle::radians(TWO_PI - theta.radians64());
-                Transform3D::create_rotation(0., 0., 1., theta)
+                let theta = euclid::Angle::radians(theta.radians64());
+                Transform3D::rotation(0., 0., 1., theta)
             },
-            Perspective(ref d) => {
-                let m = create_perspective_matrix(d.to_pixel_length(None)?);
-                m.cast()
+            Perspective(ref p) => {
+                let px = match p {
+                    PerspectiveFunction::None => std::f32::INFINITY,
+                    PerspectiveFunction::Length(ref p) => p.to_pixel_length(None)?,
+                };
+                create_perspective_matrix(px).cast()
             },
-            Scale3D(sx, sy, sz) => Transform3D::create_scale(sx.into(), sy.into(), sz.into()),
-            Scale(sx, sy) => Transform3D::create_scale(sx.into(), sy.into(), 1.),
-            ScaleX(s) => Transform3D::create_scale(s.into(), 1., 1.),
-            ScaleY(s) => Transform3D::create_scale(1., s.into(), 1.),
-            ScaleZ(s) => Transform3D::create_scale(1., 1., s.into()),
+            Scale3D(sx, sy, sz) => Transform3D::scale(sx.into(), sy.into(), sz.into()),
+            Scale(sx, sy) => Transform3D::scale(sx.into(), sy.into(), 1.),
+            ScaleX(s) => Transform3D::scale(s.into(), 1., 1.),
+            ScaleY(s) => Transform3D::scale(1., s.into(), 1.),
+            ScaleZ(s) => Transform3D::scale(1., 1., s.into()),
             Translate3D(ref tx, ref ty, ref tz) => {
                 let tx = tx.to_pixel_length(reference_width)? as f64;
                 let ty = ty.to_pixel_length(reference_height)? as f64;
-                Transform3D::create_translation(tx, ty, tz.to_pixel_length(None)? as f64)
+                Transform3D::translation(tx, ty, tz.to_pixel_length(None)? as f64)
             },
             Translate(ref tx, ref ty) => {
                 let tx = tx.to_pixel_length(reference_width)? as f64;
                 let ty = ty.to_pixel_length(reference_height)? as f64;
-                Transform3D::create_translation(tx, ty, 0.)
+                Transform3D::translation(tx, ty, 0.)
             },
             TranslateX(ref t) => {
                 let t = t.to_pixel_length(reference_width)? as f64;
-                Transform3D::create_translation(t, 0., 0.)
+                Transform3D::translation(t, 0., 0.)
             },
             TranslateY(ref t) => {
                 let t = t.to_pixel_length(reference_height)? as f64;
-                Transform3D::create_translation(0., t, 0.)
+                Transform3D::translation(0., t, 0.)
             },
-            TranslateZ(ref z) => {
-                Transform3D::create_translation(0., 0., z.to_pixel_length(None)? as f64)
-            },
-            Skew(theta_x, theta_y) => Transform3D::create_skew(
+            TranslateZ(ref z) => Transform3D::translation(0., 0., z.to_pixel_length(None)? as f64),
+            Skew(theta_x, theta_y) => Transform3D::skew(
                 euclid::Angle::radians(theta_x.radians64()),
                 euclid::Angle::radians(theta_y.radians64()),
             ),
-            SkewX(theta) => Transform3D::create_skew(
+            SkewX(theta) => Transform3D::skew(
                 euclid::Angle::radians(theta.radians64()),
                 euclid::Angle::radians(0.),
             ),
-            SkewY(theta) => Transform3D::create_skew(
+            SkewY(theta) => Transform3D::skew(
                 euclid::Angle::radians(0.),
                 euclid::Angle::radians(theta.radians64()),
             ),
@@ -537,6 +564,7 @@ impl<T> Transform<T> {
 
 impl<T: ToMatrix> Transform<T> {
     /// Return the equivalent 3d matrix of this transform list.
+    ///
     /// We return a pair: the first one is the transform matrix, and the second one
     /// indicates if there is any 3d transform function in this transform list.
     #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -544,10 +572,18 @@ impl<T: ToMatrix> Transform<T> {
         &self,
         reference_box: Option<&Rect<ComputedLength>>
     ) -> Result<(Transform3D<CSSFloat>, bool), ()> {
+        Self::components_to_transform_3d_matrix(&self.0, reference_box)
+    }
+
+    /// Converts a series of components to a 3d matrix.
+    pub fn components_to_transform_3d_matrix(
+        ops: &[T],
+        reference_box: Option<&Rect<ComputedLength>>
+    ) -> Result<(Transform3D<CSSFloat>, bool), ()> {
         let cast_3d_transform = |m: Transform3D<f64>| -> Transform3D<CSSFloat> {
             use std::{f32, f64};
             let cast = |v: f64| { v.min(f32::MAX as f64).max(f32::MIN as f64) as f32 };
-            Transform3D::row_major(
+            Transform3D::new(
                 cast(m.m11), cast(m.m12), cast(m.m13), cast(m.m14),
                 cast(m.m21), cast(m.m22), cast(m.m23), cast(m.m24),
                 cast(m.m31), cast(m.m32), cast(m.m33), cast(m.m34),
@@ -555,27 +591,28 @@ impl<T: ToMatrix> Transform<T> {
             )
         };
 
-        let (m, is_3d) = self.to_transform_3d_matrix_f64(reference_box)?;
+        let (m, is_3d) = Self::components_to_transform_3d_matrix_f64(ops, reference_box)?;
         Ok((cast_3d_transform(m), is_3d))
     }
 
     /// Same as Transform::to_transform_3d_matrix but a f64 version.
-    pub fn to_transform_3d_matrix_f64(
-        &self,
+    fn components_to_transform_3d_matrix_f64(
+        ops: &[T],
         reference_box: Option<&Rect<ComputedLength>>,
     ) -> Result<(Transform3D<f64>, bool), ()> {
-        // We intentionally use Transform3D<f64> during computation to avoid error propagation
-        // because using f32 to compute triangle functions (e.g. in create_rotation()) is not
-        // accurate enough. In Gecko, we also use "double" to compute the triangle functions.
-        // Therefore, let's use Transform3D<f64> during matrix computation and cast it into f32
-        // in the end.
+        // We intentionally use Transform3D<f64> during computation to avoid
+        // error propagation because using f32 to compute triangle functions
+        // (e.g. in rotation()) is not accurate enough. In Gecko, we also use
+        // "double" to compute the triangle functions. Therefore, let's use
+        // Transform3D<f64> during matrix computation and cast it into f32 in
+        // the end.
         let mut transform = Transform3D::<f64>::identity();
         let mut contain_3d = false;
 
-        for operation in &*self.0 {
+        for operation in ops {
             let matrix = operation.to_3d_matrix(reference_box)?;
-            contain_3d |= operation.is_3d();
-            transform = transform.pre_transform(&matrix);
+            contain_3d = contain_3d || operation.is_3d();
+            transform = matrix.then(&transform);
         }
 
         Ok((transform, contain_3d))
@@ -585,17 +622,10 @@ impl<T: ToMatrix> Transform<T> {
 /// Return the transform matrix from a perspective length.
 #[inline]
 pub fn create_perspective_matrix(d: CSSFloat) -> Transform3D<CSSFloat> {
-    // TODO(gw): The transforms spec says that perspective length must
-    // be positive. However, there is some confusion between the spec
-    // and browser implementations as to handling the case of 0 for the
-    // perspective value. Until the spec bug is resolved, at least ensure
-    // that a provided perspective value of <= 0.0 doesn't cause panics
-    // and behaves as it does in other browsers.
-    // See https://lists.w3.org/Archives/Public/www-style/2016Jan/0020.html for more details.
-    if d <= 0.0 {
-        Transform3D::identity()
+    if d.is_finite() {
+        Transform3D::perspective(d.max(1.))
     } else {
-        Transform3D::create_perspective(d)
+        Transform3D::identity()
     }
 }
 
@@ -659,7 +689,7 @@ pub trait IsParallelTo {
 
 impl<Number, Angle> ToCss for Rotate<Number, Angle>
 where
-    Number: Copy + ToCss,
+    Number: Copy + ToCss + Zero,
     Angle: ToCss,
     (Number, Number, Number): IsParallelTo,
 {
@@ -672,25 +702,41 @@ where
             Rotate::None => dest.write_str("none"),
             Rotate::Rotate(ref angle) => angle.to_css(dest),
             Rotate::Rotate3D(x, y, z, ref angle) => {
-                // If a 3d rotation is specified, the property must serialize with an axis
-                // specified. If the axis is parallel with the x, y, or z axises, it must
-                // serialize as the appropriate keyword.
+                // If the axis is parallel with the x or y axes, it must serialize as the
+                // appropriate keyword. If a rotation about the z axis (that is, in 2D) is
+                // specified, the property must serialize as just an <angle>
+                //
                 // https://drafts.csswg.org/css-transforms-2/#individual-transform-serialization
                 let v = (x, y, z);
-                if v.is_parallel_to(&DirectionVector::new(1., 0., 0.)) {
-                    dest.write_char('x')?;
+                let axis = if x.is_zero() && y.is_zero() && z.is_zero() {
+                    // The zero length vector is parallel to every other vector, so
+                    // is_parallel_to() returns true for it. However, it is definitely different
+                    // from x axis, y axis, or z axis, and it's meaningless to perform a rotation
+                    // using that direction vector. So we *have* to serialize it using that same
+                    // vector - we can't simplify to some theoretically parallel axis-aligned
+                    // vector.
+                    None
+                } else if v.is_parallel_to(&DirectionVector::new(1., 0., 0.)) {
+                    Some("x ")
                 } else if v.is_parallel_to(&DirectionVector::new(0., 1., 0.)) {
-                    dest.write_char('y')?;
+                    Some("y ")
                 } else if v.is_parallel_to(&DirectionVector::new(0., 0., 1.)) {
-                    dest.write_char('z')?;
+                    // When we're parallel to the z-axis, we can just serialize the angle.
+                    return angle.to_css(dest);
                 } else {
-                    x.to_css(dest)?;
-                    dest.write_char(' ')?;
-                    y.to_css(dest)?;
-                    dest.write_char(' ')?;
-                    z.to_css(dest)?;
+                    None
+                };
+                match axis {
+                    Some(a) => dest.write_str(a)?,
+                    None => {
+                        x.to_css(dest)?;
+                        dest.write_char(' ')?;
+                        y.to_css(dest)?;
+                        dest.write_char(' ')?;
+                        z.to_css(dest)?;
+                        dest.write_char(' ')?;
+                    },
                 }
-                dest.write_char(' ')?;
                 angle.to_css(dest)
             },
         }

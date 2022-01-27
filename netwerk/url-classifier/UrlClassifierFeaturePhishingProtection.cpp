@@ -5,6 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "UrlClassifierFeaturePhishingProtection.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "nsCOMPtr.h"
 
 namespace mozilla {
 namespace net {
@@ -37,12 +39,12 @@ UrlClassifierFeaturePhishingProtection::UrlClassifierFeaturePhishingProtection(
     : UrlClassifierFeatureBase(
           nsDependentCString(aFeature.mName),
           nsDependentCString(aFeature.mBlocklistPrefTables),
-          EmptyCString(),    // aPrefEntitylistPrefTbles,
-          EmptyCString(),    // aPrefBlocklistHosts
-          EmptyCString(),    // aPrefEntitylistHosts
-          EmptyCString(),    // aPrefBlocklistTableName
-          EmptyCString(),    // aPrefEntitylistTableName
-          EmptyCString()) {  // aPrefExceptionHosts
+          ""_ns,    // aPrefEntitylistPrefTbles,
+          ""_ns,    // aPrefBlocklistHosts
+          ""_ns,    // aPrefEntitylistHosts
+          ""_ns,    // aPrefBlocklistTableName
+          ""_ns,    // aPrefEntitylistTableName
+          ""_ns) {  // aPrefExceptionHosts
 }
 
 /* static */

@@ -15,16 +15,11 @@ const { openDocLink } = require("devtools/client/shared/link");
 const {
   A11Y_CONTRAST_LEARN_MORE_LINK,
 } = require("devtools/client/accessibility/constants");
+loader.lazyRequireGetter(this, "throttle", "devtools/shared/throttle", true);
 
 loader.lazyRequireGetter(
   this,
-  "wrapMoveFocus",
-  "devtools/client/shared/focus",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "getFocusableElements",
+  ["getFocusableElements", "wrapMoveFocus"],
   "devtools/client/shared/focus",
   true
 );
@@ -98,6 +93,10 @@ class SwatchColorPickerTooltip extends SwatchBasedEditorTooltip {
     this._onTooltipKeydown = this._onTooltipKeydown.bind(this);
     this.cssColor4 = supportsCssColor4ColorFunction();
 
+    // Selecting color by hovering on the spectrum widget could create a lot
+    // of requests. Throttle by 50ms to avoid this. See Bug 1665547.
+    this._selectColor = throttle(this._selectColor.bind(this), 50);
+
     this.tooltip.container.addEventListener("keydown", this._onTooltipKeydown);
   }
 
@@ -140,18 +139,8 @@ class SwatchColorPickerTooltip extends SwatchBasedEditorTooltip {
     // set contrast enabled for the spectrum
     const name = this.activeSwatch.dataset.propertyName;
 
-    if (this.isContrastCompatible === undefined) {
-      const target = this.inspector.currentTarget;
-      this.isContrastCompatible = await target.actorHasMethod(
-        "domnode",
-        "getBackgroundColor"
-      );
-    }
-
-    // Only enable contrast and set text props and bg color if selected node is
-    // contrast compatible and if the type of property is color.
-    this.spectrum.contrastEnabled =
-      name === "color" && this.isContrastCompatible;
+    // Only enable contrast if the type of property is color.
+    this.spectrum.contrastEnabled = name === "color";
     if (this.spectrum.contrastEnabled) {
       const { nodeFront } = this.inspector.selection;
       const { pageStyle } = nodeFront.inspectorFront;
@@ -284,7 +273,7 @@ class SwatchColorPickerTooltip extends SwatchBasedEditorTooltip {
       .add(true);
 
     // cancelling picker(if it is already selected) on opening eye-dropper
-    toolbox.nodePicker.cancel();
+    toolbox.nodePicker.stop({ canceled: true });
 
     // disable simulating touch events if RDM is active
     toolbox.tellRDMAboutPickerState(true, PICKER_TYPES.EYEDROPPER);

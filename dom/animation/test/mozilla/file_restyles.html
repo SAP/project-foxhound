@@ -22,6 +22,16 @@ SimpleTest.finish = function finish() {
 <script src="../testcommon.js"></script>
 <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css">
 <style>
+@keyframes background-position {
+  0% {
+    background-position: -25px center;
+  }
+
+  40%,
+  100% {
+    background-position: 36px center;
+  }
+}
 @keyframes opacity {
   from { opacity: 1; }
   to { opacity: 0; }
@@ -46,6 +56,9 @@ div {
   width: 100px;
   height: 100px;
   background-color: white;
+}
+progress:not(.stop)::-moz-progress-bar {
+  animation: on-main-thread 100s;
 }
 body {
   /*
@@ -113,6 +126,28 @@ function add_task_if_omta_enabled(test) {
 // We need to wait for all paints before running tests to avoid contaminations
 // from styling of this document itself.
 waitForAllPaints(() => {
+  add_task(async function () {
+    // Start vsync rate measurement in after a RAF callback.
+    await waitForNextFrame();
+
+    const timeAtStart = document.timeline.currentTime;
+    await waitForAnimationFrames(5);
+    const vsyncRate = (document.timeline.currentTime - timeAtStart) / 5;
+
+    // In this test we basically observe restyling counts in 5 frames, if it
+    // takes over 200ms during the 5 frames, this test will fail. So
+    // "200ms / 5 = 40ms" is a threshold whether the test works as expected or
+    // not. We'd take 5ms additional tolerance here.
+    // Note that the 200ms is a period we unthrottle throttled animations that
+    // at least one of the animating styles produces change hints causing
+    // overflow, the value is defined in
+    // KeyframeEffect::OverflowRegionRefreshInterval.
+    if (vsyncRate > 40 - 5) {
+      ok(true, `the vsync rate ${vsyncRate} on this machine is too slow to run this test`);
+      SimpleTest.finish();
+    }
+  });
+
   add_task(async function restyling_for_main_thread_animations() {
     const div = addDiv(null, { style: 'animation: on-main-thread 100s' });
     const animation = div.getAnimations()[0];
@@ -126,6 +161,26 @@ waitForAllPaints(() => {
        'CSS animations running on the main-thread should update style ' +
        'on the main thread');
     await ensureElementRemoval(div);
+  });
+
+  add_task(async function restyling_for_main_thread_animations_progress_bar_pseudo() {
+    const progress = document.createElement("progress");
+    document.body.appendChild(progress);
+
+    await waitForNextFrame();
+    await waitForNextFrame();
+
+    let markers = await observeStyling(5);
+    is(markers.length, 5,
+       'CSS animations running on the main-thread should update style ' +
+       'on the main thread on ::-moz-progress-bar');
+    progress.classList.add("stop");
+    await waitForNextFrame();
+    await waitForNextFrame();
+
+    markers = await observeStyling(5);
+    is(markers.length, 0, 'Animation is correctly removed');
+    await ensureElementRemoval(progress);
   });
 
   add_task_if_omta_enabled(async function no_restyling_for_compositor_animations() {
@@ -1943,7 +1998,7 @@ waitForAllPaints(() => {
 
     const FLUSH_LAYOUT = SpecialPowers.DOMWindowUtils.FLUSH_LAYOUT;
     const isWebRender =
-      SpecialPowers.DOMWindowUtils.layerManagerType == 'WebRender';
+      SpecialPowers.DOMWindowUtils.layerManagerType.startsWith('WebRender');
     ok(SpecialPowers.DOMWindowUtils.needsFlush(FLUSH_LAYOUT),
        'Flush layout is needed for the appended div');
     await waitForAnimationReadyToRestyle(animation);
@@ -2006,6 +2061,26 @@ waitForAllPaints(() => {
 
     is(markers.length, 0, 'Creating animations should not flush styles');
 
+    await ensureElementRemoval(div);
+  });
+
+  add_task(async function out_of_view_background_position() {
+    const div = addDiv(null, {
+      style: `
+        background-image: linear-gradient(90deg, rgb(224, 224, 224), rgb(241, 241, 241) 30%, rgb(224, 224, 224) 60%);
+        background-size: 80px;
+        animation: background-position 100s infinite;
+        transform: translateY(-400px);
+      `,
+    })
+
+    const animation = div.getAnimations()[0];
+
+    await waitForAnimationReadyToRestyle(animation);
+
+    const markers = await observeStyling(5);
+
+    is(markers.length, 0, 'background-position animations can be throttled');
     await ensureElementRemoval(div);
   });
 
@@ -2091,6 +2166,81 @@ waitForAllPaints(() => {
        'Animations in opacity zero descendant element ' +
        'should not be throttled if root is animating opacity');
     await ensureElementRemoval(container);
+  });
+
+  add_task_if_omta_enabled(async function transparent_background_color_animations() {
+    const div = addDiv(null);
+    const animation =
+      div.animate({ backgroundColor: [ 'rgb(0, 200, 0, 0)',
+                                       'rgb(200, 0, 0, 0.1)' ] },
+                  { duration: 100 * MS_PER_SEC,
+                    // An easing function producing zero in the first half of
+                    // the duration.
+                    easing: 'cubic-bezier(1, 0, 1, 0)' });
+    await waitForAnimationReadyToRestyle(animation);
+
+    ok(SpecialPowers.wrap(animation).isRunningOnCompositor);
+
+    const markers = await observeStyling(5);
+    is(markers.length, 0,
+       'transparent background-color animation should not update styles on ' +
+       'the main thread');
+
+    await ensureElementRemoval(div);
+  });
+
+  add_task_if_omta_enabled(async function transform_animation_on_collapsed_element() {
+    const iframe = document.createElement('iframe');
+    document.body.appendChild(iframe);
+
+    // Load a cross origin iframe.
+    const targetURL = SimpleTest.getTestFileURL("empty.html")
+      .replace(window.location.origin, "http://example.com/");
+    iframe.src = targetURL;
+    await new Promise(resolve => {
+      iframe.onload = resolve;
+    });
+
+    await SpecialPowers.spawn(iframe, [MS_PER_SEC], async (MS_PER_SEC) => {
+      // Create a flex item with "preserve-3d" having an abs-pos child inside
+      // a grid container.
+      // These styles make the the flex item size (0x0).
+      const gridContainer = content.document.createElement("div");
+      gridContainer.style.display = "grid";
+      gridContainer.style.placeItems = "center";
+
+      const target = content.document.createElement("div");
+      target.style.display = "flex";
+      target.style.transformStyle = "preserve-3d";
+      gridContainer.appendChild(target);
+
+      const child = content.document.createElement("div");
+      child.style.position = "absolute";
+      child.style.transform = "rotateY(0deg)";
+      child.style.width = "100px";
+      child.style.height = "100px";
+      child.style.backgroundColor = "green";
+      target.appendChild(child);
+
+      content.document.body.appendChild(gridContainer);
+
+      const animation =
+        target.animate({ transform: [ "rotateY(0deg)", "rotateY(360deg)" ] },
+                    { duration: 100 * MS_PER_SEC,
+                      id: "test",
+                      easing: 'step-end' });
+      await content.wrappedJSObject.waitForAnimationReadyToRestyle(animation);
+      ok(SpecialPowers.wrap(animation).isRunningOnCompositor,
+         'transform animation on a collapsed element should run on the ' +
+         'compositor');
+
+      const markers = await content.wrappedJSObject.observeStyling(5);
+      is(markers.length, 0,
+         'transform animation on a collapsed element animation should not ' +
+         'update styles on the main thread');
+    });
+
+    await ensureElementRemoval(iframe);
   });
 });
 

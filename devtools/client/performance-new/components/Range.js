@@ -10,7 +10,7 @@
 /**
  * @typedef {Object} Props
  * @property {number} value
- * @property {string} label
+ * @property {React.ReactNode} label
  * @property {string} id
  * @property {ScaleFunctions} scale
  * @property {(value: number) => unknown} onChange
@@ -29,24 +29,24 @@ const {
  * @extends React.PureComponent<Props>
  */
 class Range extends PureComponent {
-  /** @param {Props} props */
-  constructor(props) {
-    super(props);
-    this.handleInput = this.handleInput.bind(this);
-  }
-
   /**
    * @param {React.ChangeEvent<HTMLInputElement>} event
    */
-  handleInput(event) {
+  handleInput = event => {
     event.preventDefault();
     const { scale, onChange } = this.props;
-    const frac = Number(event.target.value) / 100;
+    const frac = Number(event.target.value) / scale.steps;
     onChange(scale.fromFractionToSingleDigitValue(frac));
-  }
+  };
 
   render() {
     const { label: labelText, scale, id, value, display } = this.props;
+
+    const min = "0";
+    const max = scale.steps;
+    // Convert the value to the current range.
+    const rangeValue = scale.fromValueToFraction(value) * max;
+
     return div(
       { className: "perf-settings-row" },
       label(
@@ -63,9 +63,12 @@ class Range extends PureComponent {
           input({
             type: "range",
             className: `perf-settings-range-input-el`,
-            min: "0",
-            max: "100",
-            value: scale.fromValueToFraction(value) * 100,
+            min,
+            "aria-valuemin": scale.fromFractionToValue(0),
+            max,
+            "aria-valuemax": scale.fromFractionToValue(1),
+            value: rangeValue,
+            "aria-valuenow": value,
             onChange: this.handleInput,
             id,
           })

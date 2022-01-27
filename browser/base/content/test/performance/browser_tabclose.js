@@ -5,7 +5,7 @@
  * Instead of adding reflows to the list, you should be modifying your code to
  * avoid the reflow.
  *
- * See https://developer.mozilla.org/en-US/Firefox/Performance_best_practices_for_Firefox_fe_engineers
+ * See https://firefox-source-docs.mozilla.org/performance/bestpractices.html
  * for tips on how to do that.
  */
 const EXPECTED_REFLOWS = [
@@ -24,6 +24,13 @@ add_task(async function() {
 
   await ensureNoPreloadedBrowser();
   await disableFxaBadge();
+
+  // The test starts on about:blank and opens an about:blank
+  // tab which triggers opening the toolbar since
+  // ensureNoPreloadedBrowser sets AboutNewTab.newTabURL to about:blank.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.toolbars.bookmarks.visibility", "never"]],
+  });
 
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
   await TestUtils.waitForCondition(() => tab._fullyOpen);
@@ -62,7 +69,7 @@ add_task(async function() {
                     // The '+' icon moves with an animation. At the end of the animation
                     // the former and new positions can touch each other causing the rect
                     // to have twice the icon's width.
-                    (r.h == 14 && r.w <= 2 * 14 + kMaxEmptyPixels) ||
+                    (r.h == 13 && r.w <= 2 * 13 + kMaxEmptyPixels) ||
                     // We sometimes have a rect for the right most 2px of the '+' button.
                     (r.h == 2 && r.w == 2))
                 )

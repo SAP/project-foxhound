@@ -35,6 +35,7 @@ USE_LIBS += [
 ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
+    DEFINES['UNICODE'] = True
     # On windows, the WASAPI backend needs the resampler we have in
     # /media/libspeex_resampler, so we can't get away with just linking cubeb's
     # .o
@@ -68,7 +69,6 @@ elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'uikit':
       '-framework AudioToolbox',
     ]
 
-if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
-    CXXFLAGS += ['-Wno-error=shadow']
-
 FINAL_LIBRARY = 'xul-gtest'
+
+REQUIRES_UNIFIED_BUILD = True

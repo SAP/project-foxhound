@@ -10,9 +10,11 @@
 #include "mozilla/RangeBoundary.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsIContent.h"
 #include "nsRange.h"
 #include "nsTArray.h"
+
+class nsIContent;
+class nsINode;
 
 namespace mozilla {
 
@@ -27,7 +29,7 @@ class ContentIteratorBase {
   ContentIteratorBase() = delete;
   ContentIteratorBase(const ContentIteratorBase&) = delete;
   ContentIteratorBase& operator=(const ContentIteratorBase&) = delete;
-  virtual ~ContentIteratorBase() = default;
+  virtual ~ContentIteratorBase();
 
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(ContentIteratorBase)
 
@@ -49,14 +51,21 @@ class ContentIteratorBase {
   virtual void Next();
   virtual void Prev();
 
-  virtual nsINode* GetCurrentNode();
+  nsINode* GetCurrentNode() const { return mCurNode; }
 
-  virtual bool IsDone();
+  bool IsDone() const { return !mCurNode; }
 
   virtual nsresult PositionAt(nsINode* aCurNode);
 
  protected:
-  explicit ContentIteratorBase(bool aPre);
+  enum class Order {
+    Pre, /*!< <https://en.wikipedia.org/wiki/Tree_traversal#Pre-order_(NLR)>.
+          */
+    Post /*!< <https://en.wikipedia.org/wiki/Tree_traversal#Post-order_(LRN)>.
+          */
+  };
+
+  explicit ContentIteratorBase(Order aOrder);
 
   class Initializer;
 
@@ -71,16 +80,16 @@ class ContentIteratorBase {
 
   // Recursively get the deepest first/last child of aRoot.  This will return
   // aRoot itself if it has no children.
-  nsINode* GetDeepFirstChild(nsINode* aRoot);
-  nsIContent* GetDeepFirstChild(nsIContent* aRoot);
-  nsINode* GetDeepLastChild(nsINode* aRoot);
-  nsIContent* GetDeepLastChild(nsIContent* aRoot);
+  static nsINode* GetDeepFirstChild(nsINode* aRoot);
+  static nsIContent* GetDeepFirstChild(nsIContent* aRoot);
+  static nsINode* GetDeepLastChild(nsINode* aRoot);
+  static nsIContent* GetDeepLastChild(nsIContent* aRoot);
 
   // Get the next/previous sibling of aNode, or its parent's, or grandparent's,
   // etc.  Returns null if aNode and all its ancestors have no next/previous
   // sibling.
-  nsIContent* GetNextSibling(nsINode* aNode);
-  nsIContent* GetPrevSibling(nsINode* aNode);
+  static nsIContent* GetNextSibling(nsINode* aNode);
+  static nsIContent* GetPrevSibling(nsINode* aNode);
 
   nsINode* NextNode(nsINode* aNode);
   nsINode* PrevNode(nsINode* aNode);
@@ -90,42 +99,23 @@ class ContentIteratorBase {
   nsCOMPtr<nsINode> mCurNode;
   nsCOMPtr<nsINode> mFirst;
   nsCOMPtr<nsINode> mLast;
-  nsCOMPtr<nsINode> mCommonParent;
+  // See <https://dom.spec.whatwg.org/#concept-tree-inclusive-ancestor>.
+  nsCOMPtr<nsINode> mClosestCommonInclusiveAncestor;
 
-  bool mIsDone;
-  bool mPre;
+  const Order mOrder;
+
   friend void ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback&,
                                           ContentIteratorBase&, const char*,
                                           uint32_t);
   friend void ImplCycleCollectionUnlink(ContentIteratorBase&);
 };
 
-// Each concreate class of ContentIteratorBase may be owned by another class
-// which may be owned by JS.  Therefore, all of them should be in the cycle
-// collection.  However, we cannot make non-refcountable classes only with the
-// macros.  So, we need to make them cycle collectable without the macros.
-inline void ImplCycleCollectionTraverse(
-    nsCycleCollectionTraversalCallback& aCallback, ContentIteratorBase& aField,
-    const char* aName, uint32_t aFlags = 0) {
-  ImplCycleCollectionTraverse(aCallback, aField.mCurNode, aName, aFlags);
-  ImplCycleCollectionTraverse(aCallback, aField.mFirst, aName, aFlags);
-  ImplCycleCollectionTraverse(aCallback, aField.mLast, aName, aFlags);
-  ImplCycleCollectionTraverse(aCallback, aField.mCommonParent, aName, aFlags);
-}
-
-inline void ImplCycleCollectionUnlink(ContentIteratorBase& aField) {
-  ImplCycleCollectionUnlink(aField.mCurNode);
-  ImplCycleCollectionUnlink(aField.mFirst);
-  ImplCycleCollectionUnlink(aField.mLast);
-  ImplCycleCollectionUnlink(aField.mCommonParent);
-}
-
 /**
  * A simple iterator class for traversing the content in "close tag" order.
  */
 class PostContentIterator final : public ContentIteratorBase {
  public:
-  PostContentIterator() : ContentIteratorBase(false) {}
+  PostContentIterator() : ContentIteratorBase(Order::Post) {}
   PostContentIterator(const PostContentIterator&) = delete;
   PostContentIterator& operator=(const PostContentIterator&) = delete;
   virtual ~PostContentIterator() = default;
@@ -151,7 +141,7 @@ inline void ImplCycleCollectionUnlink(PostContentIterator& aField) {
  */
 class PreContentIterator final : public ContentIteratorBase {
  public:
-  PreContentIterator() : ContentIteratorBase(true) {}
+  PreContentIterator() : ContentIteratorBase(Order::Pre) {}
   PreContentIterator(const PreContentIterator&) = delete;
   PreContentIterator& operator=(const PreContentIterator&) = delete;
   virtual ~PreContentIterator() = default;
@@ -177,7 +167,7 @@ inline void ImplCycleCollectionUnlink(PreContentIterator& aField) {
  */
 class ContentSubtreeIterator final : public ContentIteratorBase {
  public:
-  ContentSubtreeIterator() : ContentIteratorBase(true) {}
+  ContentSubtreeIterator() : ContentIteratorBase(Order::Pre) {}
   ContentSubtreeIterator(const ContentSubtreeIterator&) = delete;
   ContentSubtreeIterator& operator=(const ContentSubtreeIterator&) = delete;
   virtual ~ContentSubtreeIterator() = default;
@@ -193,21 +183,46 @@ class ContentSubtreeIterator final : public ContentIteratorBase {
   virtual nsresult Init(const RawRangeBoundary& aStartBoundary,
                         const RawRangeBoundary& aEndBoundary) override;
 
-  virtual void Next() override;
-  virtual void Prev() override;
+  void Next() override;
+  void Prev() override;
   // Must override these because we don't do PositionAt
-  virtual void First() override;
+  void First() override;
   // Must override these because we don't do PositionAt
-  virtual void Last() override;
+  void Last() override;
 
-  virtual nsresult PositionAt(nsINode* aCurNode) override;
+  nsresult PositionAt(nsINode* aCurNode) override;
 
   friend void ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback&,
                                           ContentSubtreeIterator&, const char*,
                                           uint32_t);
   friend void ImplCycleCollectionUnlink(ContentSubtreeIterator&);
 
- protected:
+ private:
+  /**
+   * See <https://dom.spec.whatwg.org/#concept-tree-inclusive-ancestor>.
+   */
+  void CacheInclusiveAncestorsOfEndContainer();
+
+  /**
+   * @return may be nullptr.
+   */
+  nsIContent* DetermineCandidateForFirstContent() const;
+
+  /**
+   * @return may be nullptr.
+   */
+  nsIContent* DetermineCandidateForLastContent() const;
+
+  /**
+   * @return may be nullptr.
+   */
+  nsIContent* DetermineFirstContent() const;
+
+  /**
+   * @return may be nullptr.
+   */
+  nsIContent* DetermineLastContent() const;
+
   /**
    * Callers must guarantee that mRange isn't nullptr and is positioned.
    */
@@ -218,11 +233,12 @@ class ContentSubtreeIterator final : public ContentIteratorBase {
   // in the range.  A node is in the range if (node, 0) comes strictly after
   // the range endpoint, and (node, node.length) comes strictly before it, so
   // the range's start and end nodes will never be considered "in" it.
-  nsIContent* GetTopAncestorInRange(nsINode* aNode);
+  nsIContent* GetTopAncestorInRange(nsINode* aNode) const;
 
   RefPtr<nsRange> mRange;
 
-  AutoTArray<nsIContent*, 8> mEndNodes;
+  // See <https://dom.spec.whatwg.org/#concept-tree-inclusive-ancestor>.
+  AutoTArray<nsIContent*, 8> mInclusiveAncestorsOfEndContainer;
 };
 
 inline void ImplCycleCollectionTraverse(

@@ -12,9 +12,9 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["fetch", "URL"]);
 
-const TIPPYTOP_PATH = "resource://activity-stream/data/content/tippytop/";
+const TIPPYTOP_PATH = "chrome://activity-stream/content/data/content/tippytop/";
 const TIPPYTOP_JSON_PATH =
-  "resource://activity-stream/data/content/tippytop/top_sites.json";
+  "chrome://activity-stream/content/data/content/tippytop/top_sites.json";
 
 /*
  * Get a domain from a url optionally stripping subdomains.
@@ -48,10 +48,8 @@ this.TippyTopProvider = class TippyTopProvider {
           credentials: "omit",
         })
       ).json()) {
-        // The tippy top manifest can have a url property (string) or a
-        // urls property (array of strings)
-        for (const url of site.url ? [site.url] : site.urls || []) {
-          this._sitesByDomain.set(getDomain(url), site);
+        for (const domain of site.domains) {
+          this._sitesByDomain.set(domain, site);
         }
       }
       this.initialized = true;

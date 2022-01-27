@@ -6,6 +6,8 @@
 #ifndef nsDeviceContextSpecGTK_h___
 #define nsDeviceContextSpecGTK_h___
 
+struct JSContext;
+
 #include "nsIDeviceContextSpec.h"
 #include "nsIPrinterList.h"
 #include "nsIPrintSettings.h"
@@ -55,19 +57,6 @@ class nsDeviceContextSpecGTK : public nsIDeviceContextSpec {
   void EnumeratePrinters();
   void StartPrintJob();
   static gboolean PrinterEnumerator(GtkPrinter* aPrinter, gpointer aData);
-};
-
-//-------------------------------------------------------------------------
-// Printer Enumerator
-//-------------------------------------------------------------------------
-class nsPrinterListGTK final : public nsIPrinterList {
- public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIPRINTERLIST
-  nsPrinterListGTK() = default;
-
- private:
-  ~nsPrinterListGTK() = default;
 };
 
 #endif /* !nsDeviceContextSpecGTK_h___ */

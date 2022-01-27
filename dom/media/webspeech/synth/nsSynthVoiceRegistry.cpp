@@ -10,6 +10,7 @@
 
 #include "SpeechSynthesisUtterance.h"
 #include "SpeechSynthesisVoice.h"
+#include "nsContentUtils.h"
 #include "nsSynthVoiceRegistry.h"
 #include "nsSpeechTask.h"
 #include "AudioChannelService.h"
@@ -18,6 +19,7 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPtr.h"
@@ -64,8 +66,7 @@ void GetAllSpeechSynthActors(
 
 }  // namespace
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // VoiceData
 
@@ -476,8 +477,7 @@ nsSynthVoiceRegistry::GetVoiceName(const nsAString& aUri, nsAString& aRetval) {
 nsresult nsSynthVoiceRegistry::AddVoiceImpl(
     nsISpeechService* aService, const nsAString& aUri, const nsAString& aName,
     const nsAString& aLang, bool aLocalService, bool aQueuesUtterances) {
-  bool found = false;
-  mUriVoiceMap.GetWeak(aUri, &found);
+  const bool found = mUriVoiceMap.Contains(aUri);
   if (NS_WARN_IF(found)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -486,7 +486,7 @@ nsresult nsSynthVoiceRegistry::AddVoiceImpl(
                                           aLocalService, aQueuesUtterances);
 
   mVoices.AppendElement(voice);
-  mUriVoiceMap.Put(aUri, std::move(voice));
+  mUriVoiceMap.InsertOrUpdate(aUri, std::move(voice));
   mUseGlobalQueue |= aQueuesUtterances;
 
   nsTArray<SpeechSynthesisParent*> ssplist;
@@ -762,5 +762,4 @@ void nsSynthVoiceRegistry::SpeakImpl(VoiceData* aVoice, nsSpeechTask* aTask,
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

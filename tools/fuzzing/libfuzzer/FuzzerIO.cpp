@@ -62,10 +62,19 @@ void CopyFileToErr(const std::string &Path) {
 }
 
 void WriteToFile(const Unit &U, const std::string &Path) {
+  WriteToFile(U.data(), U.size(), Path);
+}
+
+void WriteToFile(const std::string &Data, const std::string &Path) {
+  WriteToFile(reinterpret_cast<const uint8_t *>(Data.c_str()), Data.size(),
+              Path);
+}
+
+void WriteToFile(const uint8_t *Data, size_t Size, const std::string &Path) {
   // Use raw C interface because this function may be called from a sig handler.
-  FILE *Out = fopen(Path.c_str(), "w");
+  FILE *Out = fopen(Path.c_str(), "wb");
   if (!Out) return;
-  mozilla::Unused << fwrite(U.data(), sizeof(U[0]), U.size(), Out);
+  mozilla::Unused << fwrite(Data, sizeof(Data[0]), Size, Out);
   fclose(Out);
 }
 
@@ -73,7 +82,9 @@ void ReadDirToVectorOfUnits(const char *Path, Vector<Unit> *V,
                             long *Epoch, size_t MaxSize, bool ExitOnError) {
   long E = Epoch ? *Epoch : 0;
   Vector<std::string> Files;
-  ListFilesInDirRecursive(Path, Epoch, &Files, /*TopDir*/true);
+  int Res = ListFilesInDirRecursive(Path, Epoch, &Files, /*TopDir*/true);
+  if (ExitOnError && Res != 0)
+    exit(Res);
   size_t NumLoaded = 0;
   for (size_t i = 0; i < Files.size(); i++) {
     auto &X = Files[i];
@@ -88,12 +99,15 @@ void ReadDirToVectorOfUnits(const char *Path, Vector<Unit> *V,
 }
 
 
-void GetSizedFilesFromDir(const std::string &Dir, Vector<SizedFile> *V) {
+int GetSizedFilesFromDir(const std::string &Dir, Vector<SizedFile> *V) {
   Vector<std::string> Files;
-  ListFilesInDirRecursive(Dir, 0, &Files, /*TopDir*/true);
+  int Res = ListFilesInDirRecursive(Dir, 0, &Files, /*TopDir*/true);
+  if (Res != 0)
+    return Res;
   for (auto &File : Files)
     if (size_t Size = FileSize(File))
       V->push_back({File, Size});
+  return 0;
 }
 
 std::string DirPlusFile(const std::string &DirPath,
@@ -103,7 +117,7 @@ std::string DirPlusFile(const std::string &DirPath,
 
 void DupAndCloseStderr() {
   int OutputFd = DuplicateFile(2);
-  if (OutputFd > 0) {
+  if (OutputFd >= 0) {
     FILE *NewOutputFile = OpenFile(OutputFd, "w");
     if (NewOutputFile) {
       OutputFile = NewOutputFile;
@@ -143,9 +157,9 @@ void RmDirRecursive(const std::string &Dir) {
       [](const std::string &Path) { RemoveFile(Path); });
 }
 
-std::string TempPath(const char *Extension) {
-  return DirPlusFile(TmpDir(),
-                     "libFuzzerTemp." + std::to_string(GetPid()) + Extension);
+std::string TempPath(const char *Prefix, const char *Extension) {
+  return DirPlusFile(TmpDir(), std::string("libFuzzerTemp.") + Prefix +
+                                   std::to_string(GetPid()) + Extension);
 }
 
 }  // namespace fuzzer

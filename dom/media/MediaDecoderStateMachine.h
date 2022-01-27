@@ -335,8 +335,12 @@ class MediaDecoderStateMachine
   // request is discarded.
   void ScheduleStateMachineIn(const media::TimeUnit& aTime);
 
-  bool HaveEnoughDecodedAudio();
-  bool HaveEnoughDecodedVideo();
+  bool HaveEnoughDecodedAudio() const;
+  bool HaveEnoughDecodedVideo() const;
+
+  // The check is used to store more video frames than usual when playing 4K+
+  // video.
+  bool IsVideoDataEnoughComparedWithAudio() const;
 
   // Returns true if we're currently playing. The decoder monitor must
   // be held.
@@ -388,6 +392,7 @@ class MediaDecoderStateMachine
   void SetPlaybackRate(double aPlaybackRate);
   void PreservesPitchChanged();
   void LoopingChanged();
+  void StreamNameChanged();
   void UpdateSecondaryVideoContainer();
   void UpdateOutputCaptured();
   void OutputTracksChanged();
@@ -395,6 +400,9 @@ class MediaDecoderStateMachine
 
   MediaQueue<AudioData>& AudioQueue() { return mAudioQueue; }
   MediaQueue<VideoData>& VideoQueue() { return mVideoQueue; }
+
+  const MediaQueue<AudioData>& AudioQueue() const { return mAudioQueue; }
+  const MediaQueue<VideoData>& VideoQueue() const { return mVideoQueue; }
 
   // True if we are low in decoded audio/video data.
   // May not be invoked when mReader->UseBufferingHeuristics() is false.
@@ -478,7 +486,11 @@ class MediaDecoderStateMachine
   void RequestAudioData();
 
   // Start a task to decode video.
-  void RequestVideoData(const media::TimeUnit& aCurrentTime);
+  // @param aRequestNextVideoKeyFrame
+  // If aRequestNextKeyFrame is true, will request data for the next keyframe
+  // after aCurrentTime.
+  void RequestVideoData(const media::TimeUnit& aCurrentTime,
+                        bool aRequestNextKeyFrame = false);
 
   void WaitForData(MediaData::Type aType);
 
@@ -504,7 +516,7 @@ class MediaDecoderStateMachine
   // calling this, the audio hardware may play some of the audio pushed to
   // hardware, so this can only be used as a upper bound. The decoder monitor
   // must be held when calling this. Called on the decode thread.
-  media::TimeUnit GetDecodedAudioDuration();
+  media::TimeUnit GetDecodedAudioDuration() const;
 
   void FinishDecodeFirstFrame();
 
@@ -721,6 +733,9 @@ class MediaDecoderStateMachine
   // upon reaching the end.
   Mirror<bool> mLooping;
 
+  // Audio stream name
+  Mirror<nsAutoString> mStreamName;
+
   // The device used with SetSink, or nullptr if no explicit device has been
   // set.
   Mirror<RefPtr<AudioDeviceInfo>> mSinkDevice;
@@ -729,9 +744,13 @@ class MediaDecoderStateMachine
   // should not suspend the decoder.
   Mirror<RefPtr<VideoFrameContainer>> mSecondaryVideoContainer;
 
-  // Whether all output should be captured into mOutputTracks. While true, the
-  // media sink will only play if there are output tracks.
-  Mirror<bool> mOutputCaptured;
+  // Whether all output should be captured into mOutputTracks, halted, or not
+  // captured.
+  Mirror<MediaDecoder::OutputCaptureState> mOutputCaptureState;
+
+  // A dummy track used to access the right MediaTrackGraph instance. Needed
+  // since there's no guarantee that output tracks are present.
+  Mirror<nsMainThreadPtrHandle<SharedDummyTrack>> mOutputDummyTrack;
 
   // Tracks to capture data into.
   Mirror<CopyableTArray<RefPtr<ProcessedMediaTrack>>> mOutputTracks;

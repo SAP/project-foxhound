@@ -39,6 +39,10 @@
 
 namespace mozilla {
 
+namespace gl {
+enum class OriginPos : uint8_t;
+}
+
 bool ConvertImage(size_t width, size_t height, const void* srcBegin,
                   size_t srcStride, gl::OriginPos srcOrigin,
                   WebGLTexelFormat srcFormat, bool srcPremultiplied,
@@ -310,36 +314,35 @@ template <WebGLTexelFormat Format, bool IsFloat = IsFloatFormat<Format>::Value,
           bool Is16bpp = Is16bppFormat<Format>::Value,
           bool IsHalfFloat = IsHalfFloatFormat<Format>::Value>
 struct DataTypeForFormat {
-  typedef uint8_t Type;
+  using Type = uint8_t;
 };
 
 template <WebGLTexelFormat Format>
 struct DataTypeForFormat<Format, true, false, false> {
-  typedef float Type;
+  using Type = float;
 };
 
 template <WebGLTexelFormat Format>
 struct DataTypeForFormat<Format, false, true, false> {
-  typedef uint16_t Type;
+  using Type = uint16_t;
 };
 
 template <WebGLTexelFormat Format>
 struct DataTypeForFormat<Format, false, false, true> {
-  typedef uint16_t Type;
+  using Type = uint16_t;
 };
 
 template <>
 struct DataTypeForFormat<WebGLTexelFormat::RGB11F11F10F, true, false, false> {
-  typedef uint32_t Type;
+  using Type = uint32_t;
 };
 
 template <WebGLTexelFormat Format>
 struct IntermediateFormat {
-  static const WebGLTexelFormat Value = IsFloatFormat<Format>::Value
-                                            ? WebGLTexelFormat::RGBA32F
-                                            : IsHalfFloatFormat<Format>::Value
-                                                  ? WebGLTexelFormat::RGBA16F
-                                                  : WebGLTexelFormat::RGBA8;
+  static const WebGLTexelFormat Value =
+      IsFloatFormat<Format>::Value       ? WebGLTexelFormat::RGBA32F
+      : IsHalfFloatFormat<Format>::Value ? WebGLTexelFormat::RGBA16F
+                                         : WebGLTexelFormat::RGBA8;
 };
 
 inline size_t TexelBytesForFormat(WebGLTexelFormat format) {

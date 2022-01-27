@@ -72,6 +72,7 @@ const test = new SearchConfigTest({
             "pt-BR",
             "rm",
             "ro",
+            "sco",
             "son",
             "sq",
             "sr",
@@ -114,8 +115,5 @@ add_task(async function setup() {
 });
 
 add_task(async function test_searchConfig_bing() {
-  await test.run(true);
-  // Only applies to the default locale fallback for the legacy config.
-  test._config.available.included[0].locales.matches.push("unknown");
-  await test.run(false);
+  await test.run();
 });

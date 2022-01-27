@@ -19,9 +19,12 @@ add_task(async function test_check_unknown_mime_type() {
   let extension = mimeService.getPrimaryExtension("application/pdf", "");
   Assert.equal(extension, "pdf", "Expect pdf extension when given mime");
   let mimeInfo = gMIMEService.getFromTypeAndExtension("", "pdf");
+  let stringBundle = Services.strings.createBundle(
+    "chrome://mozapps/locale/downloads/unknownContentType.properties"
+  );
   Assert.equal(
     mimeInfo.description,
-    "Portable Document Format",
+    stringBundle.GetStringFromName("pdfExtHandlerDescription"),
     "PDF has generic description"
   );
 });

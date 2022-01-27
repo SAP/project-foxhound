@@ -26,8 +26,6 @@ namespace net {
 // TLSServerSocket
 //-----------------------------------------------------------------------------
 
-TLSServerSocket::TLSServerSocket() : mServerCert(nullptr) {}
-
 NS_IMPL_ISUPPORTS_INHERITED(TLSServerSocket, nsServerSocket, nsITLSServerSocket)
 
 nsresult TLSServerSocket::SetSocketDefaults() {
@@ -136,8 +134,7 @@ TLSServerSocket::GetServerCert(nsIX509Cert** aCert) {
   if (NS_WARN_IF(!aCert)) {
     return NS_ERROR_INVALID_POINTER;
   }
-  *aCert = mServerCert;
-  NS_IF_ADDREF(*aCert);
+  *aCert = do_AddRef(mServerCert).take();
   return NS_OK;
 }
 
@@ -267,16 +264,6 @@ TLSServerSecurityObserverProxy::OnHandshakeDoneRunnable::Run() {
 NS_IMPL_ISUPPORTS(TLSServerConnectionInfo, nsITLSServerConnectionInfo,
                   nsITLSClientStatus)
 
-TLSServerConnectionInfo::TLSServerConnectionInfo()
-    : mServerSocket(nullptr),
-      mTransport(nullptr),
-      mPeerCert(nullptr),
-      mTlsVersionUsed(TLS_VERSION_UNKNOWN),
-      mKeyLength(0),
-      mMacLength(0),
-      mLock("TLSServerConnectionInfo.mLock"),
-      mSecurityObserver(nullptr) {}
-
 TLSServerConnectionInfo::~TLSServerConnectionInfo() {
   RefPtr<nsITLSServerSecurityObserver> observer;
   {
@@ -317,8 +304,7 @@ TLSServerConnectionInfo::GetServerSocket(nsITLSServerSocket** aSocket) {
   if (NS_WARN_IF(!aSocket)) {
     return NS_ERROR_INVALID_POINTER;
   }
-  *aSocket = mServerSocket;
-  NS_IF_ADDREF(*aSocket);
+  *aSocket = do_AddRef(mServerSocket).take();
   return NS_OK;
 }
 
@@ -327,8 +313,7 @@ TLSServerConnectionInfo::GetStatus(nsITLSClientStatus** aStatus) {
   if (NS_WARN_IF(!aStatus)) {
     return NS_ERROR_INVALID_POINTER;
   }
-  *aStatus = this;
-  NS_IF_ADDREF(*aStatus);
+  *aStatus = do_AddRef(this).take();
   return NS_OK;
 }
 
@@ -337,8 +322,7 @@ TLSServerConnectionInfo::GetPeerCert(nsIX509Cert** aCert) {
   if (NS_WARN_IF(!aCert)) {
     return NS_ERROR_INVALID_POINTER;
   }
-  *aCert = mPeerCert;
-  NS_IF_ADDREF(*aCert);
+  *aCert = do_AddRef(mPeerCert).take();
   return NS_OK;
 }
 

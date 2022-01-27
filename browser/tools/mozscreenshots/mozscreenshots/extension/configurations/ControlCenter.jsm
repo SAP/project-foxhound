@@ -51,7 +51,7 @@ var ControlCenter = {
 
     localFile: {
       // This selector is different so we can exclude the changing file: path
-      selectors: ["#identity-popup-security"],
+      selectors: ["#identity-popup-security-button"],
       async applyConfig() {
         let channel = NetUtil.newChannel({
           uri: "resource://mozscreenshots/lib/mozscreenshots.html",
@@ -304,12 +304,12 @@ async function openIdentityPopup(expand) {
   if (AppConstants.platform == "macosx") {
     gIdentityHandler._identityPopup.classList.add("no-shadow");
   }
-  gIdentityHandler._identityBox.querySelector("#identity-icon").click();
+  gIdentityHandler._identityIconBox.click();
   if (expand) {
     // give some time for opening to avoid weird style issues
     await new Promise(c => setTimeout(c, 500));
     gIdentityHandler._identityPopup
-      .querySelector("#identity-popup-security-expander")
+      .querySelector("#identity-popup-security-button")
       .click();
   }
 }

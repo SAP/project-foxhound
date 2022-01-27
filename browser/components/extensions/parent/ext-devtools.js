@@ -38,27 +38,20 @@ function getDevToolsPrefBranchName(extensionId) {
  *   The corresponding WebExtensions tabId.
  */
 global.getTargetTabIdForToolbox = toolbox => {
-  let { target } = toolbox;
+  let { descriptorFront } = toolbox;
 
-  if (!target.isLocalTab) {
+  if (!descriptorFront.isLocalTab) {
     throw new Error(
       "Unexpected target type: only local tabs are currently supported."
     );
   }
 
-  let parentWindow = target.localTab.linkedBrowser.ownerGlobal;
+  let parentWindow = descriptorFront.localTab.linkedBrowser.ownerGlobal;
   let tab = parentWindow.gBrowser.getTabForBrowser(
-    target.localTab.linkedBrowser
+    descriptorFront.localTab.linkedBrowser
   );
 
   return tabTracker.getId(tab);
-};
-
-// Create an InspectedWindowFront instance for a given context (used in devtoools.inspectedWindow.eval
-// and in sidebar.setExpression API methods).
-global.getInspectedWindowFront = async function(context) {
-  const target = await context.getCurrentDevToolsTarget();
-  return DevToolsShim.createWebExtensionInspectedWindowFront(target);
 };
 
 // Get the WebExtensionInspectedWindowActor eval options (needed to provide the $0 and inspect
@@ -211,7 +204,11 @@ class DevToolsPageDefinition {
   }
 
   buildForToolbox(toolbox) {
-    if (!this.extension.canAccessWindow(toolbox.target.localTab.ownerGlobal)) {
+    if (
+      !this.extension.canAccessWindow(
+        toolbox.descriptorFront.localTab.ownerGlobal
+      )
+    ) {
       // We should never create a devtools page for a toolbox related to a private browsing window
       // if the extension is not allowed to access it.
       return;
@@ -247,7 +244,7 @@ class DevToolsPageDefinition {
       // raise an exception if it is still there.
       if (this.devtoolsPageForToolbox.has(toolbox)) {
         throw new Error(
-          `Leaked DevToolsPage instance for target "${toolbox.target.descriptorFront.url}", extension "${this.extension.policy.debugName}"`
+          `Leaked DevToolsPage instance for target "${toolbox.descriptorFront.url}", extension "${this.extension.policy.debugName}"`
         );
       }
 
@@ -272,8 +269,10 @@ class DevToolsPageDefinition {
     // (if the toolbox target is supported).
     for (let toolbox of DevToolsShim.getToolboxes()) {
       if (
-        !toolbox.target.isLocalTab ||
-        !this.extension.canAccessWindow(toolbox.target.localTab.ownerGlobal)
+        !toolbox.descriptorFront.isLocalTab ||
+        !this.extension.canAccessWindow(
+          toolbox.descriptorFront.localTab.ownerGlobal
+        )
       ) {
         // Skip any non-local tab and private browsing windows if the extension
         // is not allowed to access them.
@@ -315,21 +314,28 @@ this.devtools = class extends ExtensionAPI {
     // DevToolsPageDefinition instance (created in onManifestEntry).
     this.pageDefinition = null;
 
-    this.onToolboxCreated = this.onToolboxCreated.bind(this);
+    this.onToolboxReady = this.onToolboxReady.bind(this);
     this.onToolboxDestroy = this.onToolboxDestroy.bind(this);
 
     /* eslint-disable mozilla/balanced-listeners */
     extension.on("add-permissions", (ignoreEvent, permissions) => {
       if (permissions.permissions.includes("devtools")) {
+        Services.prefs.setBoolPref(
+          `${getDevToolsPrefBranchName(extension.id)}.enabled`,
+          true
+        );
+
         this._initialize();
       }
     });
+
     extension.on("remove-permissions", (ignoreEvent, permissions) => {
-      Services.prefs.setBoolPref(
-        `${getDevToolsPrefBranchName(extension.id)}.enabled`,
-        false
-      );
       if (permissions.permissions.includes("devtools")) {
+        Services.prefs.setBoolPref(
+          `${getDevToolsPrefBranchName(extension.id)}.enabled`,
+          false
+        );
+
         this._uninitialize();
       }
     });
@@ -369,7 +375,7 @@ this.devtools = class extends ExtensionAPI {
       this.pageDefinition.build();
     }
 
-    DevToolsShim.on("toolbox-created", this.onToolboxCreated);
+    DevToolsShim.on("toolbox-ready", this.onToolboxReady);
     DevToolsShim.on("toolbox-destroy", this.onToolboxDestroy);
     this._initialized = true;
   }
@@ -382,7 +388,7 @@ this.devtools = class extends ExtensionAPI {
       return;
     }
 
-    DevToolsShim.off("toolbox-created", this.onToolboxCreated);
+    DevToolsShim.off("toolbox-ready", this.onToolboxReady);
     DevToolsShim.off("toolbox-destroy", this.onToolboxDestroy);
 
     // Shutdown the extension devtools_page from all existing toolboxes.
@@ -408,10 +414,12 @@ this.devtools = class extends ExtensionAPI {
     };
   }
 
-  onToolboxCreated(toolbox) {
+  onToolboxReady(toolbox) {
     if (
-      !toolbox.target.isLocalTab ||
-      !this.extension.canAccessWindow(toolbox.target.localTab.ownerGlobal)
+      !toolbox.descriptorFront.isLocalTab ||
+      !this.extension.canAccessWindow(
+        toolbox.descriptorFront.localTab.ownerGlobal
+      )
     ) {
       // Skip any non-local (as remote tabs are not yet supported, see Bug 1304378 for additional details
       // related to remote targets support), and private browsing windows if the extension
@@ -433,7 +441,7 @@ this.devtools = class extends ExtensionAPI {
   }
 
   onToolboxDestroy(toolbox) {
-    if (!toolbox.target.isLocalTab) {
+    if (!toolbox.descriptorFront.isLocalTab) {
       // Only local tabs are currently supported (See Bug 1304378 for additional details
       // related to remote targets support).
       return;

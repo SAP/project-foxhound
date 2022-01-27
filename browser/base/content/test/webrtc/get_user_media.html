@@ -20,18 +20,18 @@ try {
 function message(m) {
   // eslint-disable-next-line no-unsanitized/property
   document.getElementById("message").innerHTML = m;
-  parent.postMessage(m, "*");
+  top.postMessage(m, "*");
 }
 
 var gStreams = [];
+var gVideoEvents = [];
+var gAudioEvents = [];
 
-function requestDevice(aAudio, aVideo, aShare, aBadDevice = false) {
-  var opts = {video: aVideo, audio: aAudio};
+async function requestDevice(aAudio, aVideo, aShare, aBadDevice = false) {
+  const opts = {video: aVideo, audio: aAudio};
   if (aShare) {
-    opts.video = {
-      mozMediaSource: aShare,
-      mediaSource: aShare,
-    };
+    opts.video = { mediaSource: aShare };
+    SpecialPowers.wrap(document).notifyUserGestureActivation();
   }
   if (useFakeStreams) {
     opts.fake = true;
@@ -51,22 +51,67 @@ function requestDevice(aAudio, aVideo, aShare, aBadDevice = false) {
     opts.fake = true;
   }
 
-  navigator.mediaDevices.getUserMedia(opts)
-    .then(stream => {
-      gStreams.push(stream);
-      message("ok");
-    }, err => message("error: " + err));
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia(opts)
+    gStreams.push(stream);
+
+    const videoTrack = stream.getVideoTracks()[0];
+    if (videoTrack) {
+      for (const name of ["mute", "unmute", "ended"]) {
+        videoTrack.addEventListener(name, () => gVideoEvents.push(name));
+      }
+    }
+
+    const audioTrack = stream.getAudioTracks()[0];
+    if (audioTrack) {
+      for (const name of ["mute", "unmute", "ended"]) {
+        audioTrack.addEventListener(name, () => gAudioEvents.push(name));
+      }
+    }
+    message("ok");
+  } catch (err) {
+    message("error: " + err);
+  }
 }
+
+async function requestAudioOutput() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  try {
+    await navigator.mediaDevices.selectAudioOutput();
+    message("ok");
+  } catch (err) {
+    message("error: " + err);
+  }
+}
+
 message("pending");
+
+function stopTracks(aKind) {
+  for (let stream of gStreams) {
+    for (let track of stream.getTracks()) {
+      if (track.kind == aKind) {
+        track.stop();
+        stream.removeTrack(track);
+      }
+    }
+  }
+  gStreams = gStreams.filter(s => !!s.getTracks().length);
+  if (aKind == "video") {
+    gVideoEvents = [];
+  } else if (aKind == "audio") {
+    gAudioEvents = [];
+  }
+}
 
 function closeStream() {
   for (let stream of gStreams) {
-    if (stream) {
-      stream.getTracks().forEach(t => t.stop());
-      stream = null;
+    for (let track of stream.getTracks()) {
+      track.stop();
     }
   }
   gStreams = [];
+  gVideoEvents = [];
+  gAudioEvents = [];
   message("closed");
 }
 </script>

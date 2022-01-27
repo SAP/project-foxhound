@@ -74,57 +74,12 @@ const REDDIT_ENHANCEMENT_PARAMS = {
   sumo_path: "extensionrecommendations",
   min_frecency: 10000,
 };
-const PINNED_TABS_TARGET_SITES = [
-  "docs.google.com",
-  "www.docs.google.com",
-  "calendar.google.com",
-  "messenger.com",
-  "www.messenger.com",
-  "web.whatsapp.com",
-  "mail.google.com",
-  "outlook.live.com",
-  "facebook.com",
-  "www.facebook.com",
-  "twitter.com",
-  "www.twitter.com",
-  "reddit.com",
-  "www.reddit.com",
-  "github.com",
-  "www.github.com",
-  "youtube.com",
-  "www.youtube.com",
-  "feedly.com",
-  "www.feedly.com",
-  "drive.google.com",
-  "amazon.com",
-  "www.amazon.com",
-  "messages.android.com",
-  "amazon.ca",
-  "www.amazon.ca",
-  "amazon.com.au",
-  "www.amazon.com.au",
-  "amazon.co.uk",
-  "www.amazon.co.uk",
-  "amazon.fr",
-  "www.amazon.fr",
-  "amazon.de",
-  "www.amazon.de",
-];
-const PINNED_TABS_TARGET_LOCALES = [
-  "en-US",
-  "en-CA",
-  "en-AU",
-  "en-GB",
-  "en-ZA",
-  "en-NZ",
-  "fr",
-  "de",
-];
 
 const CFR_MESSAGES = [
   {
     id: "FACEBOOK_CONTAINER_3",
     template: "cfr_doorhanger",
+    groups: ["cfr-message-provider"],
     content: {
       layout: "addon_recommendation",
       category: "cfrAddons",
@@ -140,8 +95,7 @@ const CFR_MESSAGES = [
       addon: {
         id: "954390",
         title: "Facebook Container",
-        icon:
-          "resource://activity-stream/data/content/assets/cfr_fb_container.png",
+        icon: "chrome://browser/skin/addons/addon-install-downloading.svg",
         rating: 4.6,
         users: 299019,
         author: "Mozilla",
@@ -195,6 +149,7 @@ const CFR_MESSAGES = [
   },
   {
     id: "GOOGLE_TRANSLATE_3",
+    groups: ["cfr-message-provider"],
     template: "cfr_doorhanger",
     content: {
       layout: "addon_recommendation",
@@ -211,8 +166,7 @@ const CFR_MESSAGES = [
       addon: {
         id: "445852",
         title: "To Google Translate",
-        icon:
-          "resource://activity-stream/data/content/assets/cfr_google_translate.png",
+        icon: "chrome://browser/skin/addons/addon-install-downloading.svg",
         rating: 4.1,
         users: 313474,
         author: "Juan Escobar",
@@ -267,6 +221,7 @@ const CFR_MESSAGES = [
   },
   {
     id: "YOUTUBE_ENHANCE_3",
+    groups: ["cfr-message-provider"],
     template: "cfr_doorhanger",
     content: {
       layout: "addon_recommendation",
@@ -283,8 +238,7 @@ const CFR_MESSAGES = [
       addon: {
         id: "700308",
         title: "Enhancer for YouTube\u2122",
-        icon:
-          "resource://activity-stream/data/content/assets/cfr_enhancer_youtube.png",
+        icon: "chrome://browser/skin/addons/addon-install-downloading.svg",
         rating: 4.8,
         users: 357328,
         author: "Maxime RF",
@@ -339,6 +293,7 @@ const CFR_MESSAGES = [
   },
   {
     id: "WIKIPEDIA_CONTEXT_MENU_SEARCH_3",
+    groups: ["cfr-message-provider"],
     template: "cfr_doorhanger",
     exclude: true,
     content: {
@@ -356,8 +311,7 @@ const CFR_MESSAGES = [
       addon: {
         id: "659026",
         title: "Wikipedia Context Menu Search",
-        icon:
-          "resource://activity-stream/data/content/assets/cfr_wiki_search.png",
+        icon: "chrome://browser/skin/addons/addon-install-downloading.svg",
         rating: 4.9,
         users: 3095,
         author: "Nick Diedrich",
@@ -415,6 +369,7 @@ const CFR_MESSAGES = [
   },
   {
     id: "REDDIT_ENHANCEMENT_3",
+    groups: ["cfr-message-provider"],
     template: "cfr_doorhanger",
     exclude: true,
     content: {
@@ -432,8 +387,7 @@ const CFR_MESSAGES = [
       addon: {
         id: "387429",
         title: "Reddit Enhancement Suite",
-        icon:
-          "resource://activity-stream/data/content/assets/cfr_reddit_enhancement.png",
+        icon: "chrome://browser/skin/addons/addon-install-downloading.svg",
         rating: 4.6,
         users: 258129,
         author: "honestbleeps",
@@ -487,63 +441,8 @@ const CFR_MESSAGES = [
     trigger: { id: "openURL", params: REDDIT_ENHANCEMENT_PARAMS.open_urls },
   },
   {
-    id: "PIN_TAB",
-    template: "cfr_doorhanger",
-    content: {
-      layout: "message_and_animation",
-      category: "cfrFeatures",
-      bucket_id: "CFR_PIN_TAB",
-      notification_text: { string_id: "cfr-doorhanger-feature-notification" },
-      heading_text: { string_id: "cfr-doorhanger-pintab-heading" },
-      info_icon: {
-        label: { string_id: "cfr-doorhanger-extension-sumo-link" },
-        sumo_path: REDDIT_ENHANCEMENT_PARAMS.sumo_path,
-      },
-      text: { string_id: "cfr-doorhanger-pintab-description" },
-      descriptionDetails: {
-        steps: [
-          { string_id: "cfr-doorhanger-pintab-step1" },
-          { string_id: "cfr-doorhanger-pintab-step2" },
-          { string_id: "cfr-doorhanger-pintab-step3" },
-        ],
-      },
-      buttons: {
-        primary: {
-          label: { string_id: "cfr-doorhanger-pintab-ok-button" },
-          action: {
-            type: "PIN_CURRENT_TAB",
-          },
-        },
-        secondary: [
-          {
-            label: { string_id: "cfr-doorhanger-extension-cancel-button" },
-            action: { type: "CANCEL" },
-          },
-          {
-            label: {
-              string_id: "cfr-doorhanger-extension-never-show-recommendation",
-            },
-          },
-          {
-            label: {
-              string_id: "cfr-doorhanger-extension-manage-settings-button",
-            },
-            action: {
-              type: "OPEN_PREFERENCES_PAGE",
-              data: { category: "general-cfrfeatures" },
-            },
-          },
-        ],
-      },
-    },
-    targeting: `locale in ${JSON.stringify(
-      PINNED_TABS_TARGET_LOCALES
-    )} && !hasPinnedTabs && recentVisits[.timestamp > (currentDate|date - 3600 * 1000 * 1)]|length >= 3`,
-    frequency: { lifetime: 3 },
-    trigger: { id: "frequentVisits", params: PINNED_TABS_TARGET_SITES },
-  },
-  {
     id: "DOH_ROLLOUT_CONFIRMATION",
+    groups: ["cfr-message-provider"],
     targeting: `
       "doh-rollout.enabled"|preferenceValue &&
       !"doh-rollout.disable-heuristics"|preferenceValue &&
@@ -557,7 +456,7 @@ const CFR_MESSAGES = [
       anchor_id: "PanelUI-menu-button",
       layout: "icon_and_message",
       text: { string_id: "cfr-doorhanger-doh-body" },
-      icon: "chrome://browser/skin/connection-secure.svg",
+      icon: "chrome://global/skin/icons/security.svg",
       buttons: {
         secondary: [
           {
@@ -568,7 +467,7 @@ const CFR_MESSAGES = [
           },
         ],
         primary: {
-          label: { string_id: "cfr-doorhanger-doh-primary-button" },
+          label: { string_id: "cfr-doorhanger-doh-primary-button-2" },
           action: {
             type: "ACCEPT_DOH",
           },
@@ -592,6 +491,7 @@ const CFR_MESSAGES = [
   },
   {
     id: "SAVE_LOGIN",
+    groups: ["cfr-message-provider"],
     frequency: {
       lifetime: 3,
     },
@@ -600,9 +500,7 @@ const CFR_MESSAGES = [
     template: "cfr_doorhanger",
     content: {
       layout: "icon_and_message",
-      text: {
-        string_id: "cfr-doorhanger-sync-logins-body",
-      },
+      text: "Securely store and sync your passwords to all your devices.",
       icon: "chrome://browser/content/aboutlogins/icons/intro-illustration.svg",
       icon_class: "cfr-doorhanger-large-icon",
       buttons: {
@@ -634,7 +532,8 @@ const CFR_MESSAGES = [
         ],
         primary: {
           label: {
-            string_id: "cfr-doorhanger-sync-logins-ok-button",
+            value: "Turn on Sync",
+            attributes: { accesskey: "T" },
           },
           action: {
             type: "OPEN_PREFERENCES_PAGE",
@@ -646,9 +545,7 @@ const CFR_MESSAGES = [
         },
       },
       bucket_id: "CFR_SAVE_LOGIN",
-      heading_text: {
-        string_id: "cfr-doorhanger-sync-logins-header",
-      },
+      heading_text: "Never Lose a Password Again",
       info_icon: {
         label: {
           string_id: "cfr-doorhanger-extension-sumo-link",
@@ -666,6 +563,7 @@ const CFR_MESSAGES = [
   },
   {
     id: "UPDATE_LOGIN",
+    groups: ["cfr-message-provider"],
     frequency: {
       lifetime: 3,
     },
@@ -674,9 +572,7 @@ const CFR_MESSAGES = [
     template: "cfr_doorhanger",
     content: {
       layout: "icon_and_message",
-      text: {
-        string_id: "cfr-doorhanger-sync-logins-body",
-      },
+      text: "Securely store and sync your passwords to all your devices.",
       icon: "chrome://browser/content/aboutlogins/icons/intro-illustration.svg",
       icon_class: "cfr-doorhanger-large-icon",
       buttons: {
@@ -708,7 +604,8 @@ const CFR_MESSAGES = [
         ],
         primary: {
           label: {
-            string_id: "cfr-doorhanger-sync-logins-ok-button",
+            value: "Turn on Sync",
+            attributes: { accesskey: "T" },
           },
           action: {
             type: "OPEN_PREFERENCES_PAGE",
@@ -720,9 +617,7 @@ const CFR_MESSAGES = [
         },
       },
       bucket_id: "CFR_UPDATE_LOGIN",
-      heading_text: {
-        string_id: "cfr-doorhanger-sync-logins-header",
-      },
+      heading_text: "Never Lose a Password Again",
       info_icon: {
         label: {
           string_id: "cfr-doorhanger-extension-sumo-link",
@@ -739,173 +634,8 @@ const CFR_MESSAGES = [
     },
   },
   {
-    id: "SOCIAL_TRACKING_PROTECTION",
-    template: "cfr_doorhanger",
-    priority: 1,
-    content: {
-      layout: "icon_and_message",
-      category: "cfrFeatures",
-      anchor_id: "tracking-protection-icon-box",
-      skip_address_bar_notifier: true,
-      bucket_id: "CFR_SOCIAL_TRACKING_PROTECTION",
-      heading_text: { string_id: "cfr-doorhanger-socialtracking-heading" },
-      notification_text: "",
-      info_icon: {
-        label: {
-          string_id: "cfr-doorhanger-extension-sumo-link",
-        },
-        sumo_path: "extensionrecommendations",
-      },
-      learn_more: "social-media-tracking-report",
-      text: { string_id: "cfr-doorhanger-socialtracking-description" },
-      icon: "chrome://browser/skin/notification-icons/block-social.svg",
-      icon_dark_theme:
-        "chrome://browser/skin/notification-icons/block-social-dark.svg",
-      buttons: {
-        primary: {
-          label: { string_id: "cfr-doorhanger-socialtracking-ok-button" },
-          action: { type: "OPEN_PROTECTION_PANEL" },
-          event: "PROTECTION",
-        },
-        secondary: [
-          {
-            label: { string_id: "cfr-doorhanger-socialtracking-close-button" },
-            event: "BLOCK",
-          },
-          {
-            label: {
-              string_id: "cfr-doorhanger-socialtracking-dont-show-again",
-            },
-            action: { type: "DISABLE_STP_DOORHANGERS" },
-            event: "BLOCK",
-          },
-        ],
-      },
-    },
-    targeting: "pageLoad >= 4 && firefoxVersion >= 71",
-    frequency: {
-      lifetime: 2,
-      custom: [{ period: 2 * 86400 * 1000, cap: 1 }],
-    },
-    trigger: {
-      id: "contentBlocking",
-      params: [
-        Ci.nsIWebProgressListener.STATE_BLOCKED_SOCIALTRACKING_CONTENT,
-        Ci.nsIWebProgressListener.STATE_LOADED_SOCIALTRACKING_CONTENT |
-          Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER,
-      ],
-    },
-  },
-  {
-    id: "FINGERPRINTERS_PROTECTION",
-    template: "cfr_doorhanger",
-    priority: 2,
-    content: {
-      layout: "icon_and_message",
-      category: "cfrFeatures",
-      anchor_id: "tracking-protection-icon-box",
-      skip_address_bar_notifier: true,
-      bucket_id: "CFR_SOCIAL_TRACKING_PROTECTION",
-      heading_text: { string_id: "cfr-doorhanger-fingerprinters-heading" },
-      notification_text: "",
-      info_icon: {
-        label: {
-          string_id: "cfr-doorhanger-extension-sumo-link",
-        },
-        sumo_path: "extensionrecommendations",
-      },
-      learn_more: "fingerprinters-report",
-      text: { string_id: "cfr-doorhanger-fingerprinters-description" },
-      icon: "chrome://browser/skin/notification-icons/block-fingerprinter.svg",
-      icon_dark_theme:
-        "chrome://browser/skin/notification-icons/block-fingerprinter-dark.svg",
-      buttons: {
-        primary: {
-          label: { string_id: "cfr-doorhanger-socialtracking-ok-button" },
-          action: { type: "OPEN_PROTECTION_PANEL" },
-          event: "PROTECTION",
-        },
-        secondary: [
-          {
-            label: { string_id: "cfr-doorhanger-socialtracking-close-button" },
-            event: "BLOCK",
-          },
-          {
-            label: {
-              string_id: "cfr-doorhanger-socialtracking-dont-show-again",
-            },
-            action: { type: "DISABLE_STP_DOORHANGERS" },
-            event: "BLOCK",
-          },
-        ],
-      },
-    },
-    targeting: "pageLoad >= 4 && firefoxVersion >= 71",
-    frequency: {
-      lifetime: 2,
-      custom: [{ period: 2 * 86400 * 1000, cap: 1 }],
-    },
-    trigger: {
-      id: "contentBlocking",
-      params: [Ci.nsIWebProgressListener.STATE_BLOCKED_FINGERPRINTING_CONTENT],
-    },
-  },
-  {
-    id: "CRYPTOMINERS_PROTECTION",
-    template: "cfr_doorhanger",
-    priority: 3,
-    content: {
-      layout: "icon_and_message",
-      category: "cfrFeatures",
-      anchor_id: "tracking-protection-icon-box",
-      skip_address_bar_notifier: true,
-      bucket_id: "CFR_SOCIAL_TRACKING_PROTECTION",
-      heading_text: { string_id: "cfr-doorhanger-cryptominers-heading" },
-      notification_text: "",
-      info_icon: {
-        label: {
-          string_id: "cfr-doorhanger-extension-sumo-link",
-        },
-        sumo_path: "extensionrecommendations",
-      },
-      learn_more: "cryptominers-report",
-      text: { string_id: "cfr-doorhanger-cryptominers-description" },
-      icon: "chrome://browser/skin/notification-icons/block-cryptominer.svg",
-      icon_dark_theme:
-        "chrome://browser/skin/notification-icons/block-cryptominer-dark.svg",
-      buttons: {
-        primary: {
-          label: { string_id: "cfr-doorhanger-socialtracking-ok-button" },
-          action: { type: "OPEN_PROTECTION_PANEL" },
-          event: "PROTECTION",
-        },
-        secondary: [
-          {
-            label: { string_id: "cfr-doorhanger-socialtracking-close-button" },
-            event: "BLOCK",
-          },
-          {
-            label: {
-              string_id: "cfr-doorhanger-socialtracking-dont-show-again",
-            },
-            action: { type: "DISABLE_STP_DOORHANGERS" },
-            event: "BLOCK",
-          },
-        ],
-      },
-    },
-    targeting: "pageLoad >= 4 && firefoxVersion >= 71",
-    frequency: {
-      lifetime: 2,
-      custom: [{ period: 2 * 86400 * 1000, cap: 1 }],
-    },
-    trigger: {
-      id: "contentBlocking",
-      params: [Ci.nsIWebProgressListener.STATE_BLOCKED_CRYPTOMINING_CONTENT],
-    },
-  },
-  {
     id: "MILESTONE_MESSAGE",
+    groups: ["cfr-message-provider"],
     template: "milestone_message",
     content: {
       layout: "short_message",
@@ -913,7 +643,7 @@ const CFR_MESSAGES = [
       anchor_id: "tracking-protection-icon-box",
       skip_address_bar_notifier: true,
       bucket_id: "CFR_MILESTONE_MESSAGE",
-      heading_text: { string_id: "cfr-doorhanger-milestone-heading" },
+      heading_text: { string_id: "cfr-doorhanger-milestone-heading2" },
       notification_text: "",
       text: "",
       buttons: {
@@ -931,7 +661,7 @@ const CFR_MESSAGES = [
         ],
       },
     },
-    targeting: "pageLoad >= 4",
+    targeting: "pageLoad >= 1",
     frequency: {
       lifetime: 7, // Length of privacy.contentBlocking.cfr-milestone.milestones pref
     },
@@ -942,6 +672,7 @@ const CFR_MESSAGES = [
   },
   {
     id: "HEARTBEAT_TACTIC_2",
+    groups: ["cfr-message-provider"],
     template: "cfr_urlbar_chiclet",
     content: {
       layout: "chiclet_open_url",
@@ -963,11 +694,135 @@ const CFR_MESSAGES = [
       patterns: ["*://*/*"],
     },
   },
+  {
+    id: "HOMEPAGE_REMEDIATION_82",
+    groups: ["cfr-message-provider"],
+    frequency: {
+      lifetime: 3,
+    },
+    targeting:
+      "!homePageSettings.isDefault && homePageSettings.isCustomUrl && homePageSettings.urls[.host == 'google.com']|length > 0 && visitsCount >= 3 && userPrefs.cfrFeatures",
+    template: "cfr_doorhanger",
+    content: {
+      layout: "icon_and_message",
+      text:
+        "Update your homepage to search Google while also being able to search your Firefox history and bookmarks.",
+      icon: "chrome://global/skin/icons/search-glass.svg",
+      buttons: {
+        secondary: [
+          {
+            label: {
+              string_id: "cfr-doorhanger-extension-cancel-button",
+            },
+            action: {
+              type: "CANCEL",
+            },
+          },
+          {
+            label: {
+              string_id: "cfr-doorhanger-extension-never-show-recommendation",
+            },
+          },
+          {
+            label: {
+              string_id: "cfr-doorhanger-extension-manage-settings-button",
+            },
+            action: {
+              type: "OPEN_PREFERENCES_PAGE",
+              data: {
+                category: "general-cfrfeatures",
+              },
+            },
+          },
+        ],
+        primary: {
+          label: {
+            value: "Activate now",
+            attributes: {
+              accesskey: "A",
+            },
+          },
+          action: {
+            type: "CONFIGURE_HOMEPAGE",
+            data: {
+              homePage: "default",
+              newtab: "default",
+              layout: {
+                search: true,
+                topsites: false,
+                highlights: false,
+                topstories: false,
+                snippets: false,
+              },
+            },
+          },
+        },
+      },
+      bucket_id: "HOMEPAGE_REMEDIATION_82",
+      heading_text: "A better search experience",
+      info_icon: {
+        label: {
+          string_id: "cfr-doorhanger-extension-sumo-link",
+        },
+        sumo_path: "extensionrecommendations",
+      },
+      notification_text: {
+        string_id: "cfr-doorhanger-feature-notification",
+      },
+      category: "cfrFeatures",
+    },
+    trigger: {
+      id: "openURL",
+      params: ["google.com", "www.google.com"],
+    },
+  },
+  {
+    id: "INFOBAR_ACTION_86",
+    groups: ["cfr-message-provider"],
+    targeting: "false",
+    template: "infobar",
+    content: {
+      type: "global",
+      text: { string_id: "default-browser-notification-message" },
+      buttons: [
+        {
+          label: { string_id: "default-browser-notification-button" },
+          primary: true,
+          accessKey: "O",
+          action: {
+            type: "SET_DEFAULT_BROWSER",
+          },
+        },
+      ],
+    },
+    trigger: { id: "defaultBrowserCheck" },
+  },
+  {
+    id: "PREF_OBSERVER_MESSAGE_94",
+    groups: ["cfr-message-provider"],
+    targeting: "true",
+    template: "infobar",
+    content: {
+      type: "global",
+      text: "This is a message triggered when a pref value changes",
+      buttons: [
+        {
+          label: "OK",
+          primary: true,
+          accessKey: "O",
+          action: {
+            type: "CANCEL",
+          },
+        },
+      ],
+    },
+    trigger: { id: "preferenceObserver", params: ["foo.bar"] },
+  },
 ];
 
 const CFRMessageProvider = {
   getMessages() {
-    return CFR_MESSAGES.filter(msg => !msg.exclude);
+    return Promise.resolve(CFR_MESSAGES.filter(msg => !msg.exclude));
   },
 };
 this.CFRMessageProvider = CFRMessageProvider;

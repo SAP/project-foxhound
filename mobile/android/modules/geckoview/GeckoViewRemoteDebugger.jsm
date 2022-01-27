@@ -19,7 +19,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 
 XPCOMUtils.defineLazyGetter(this, "require", () => {
   const { require } = ChromeUtils.import(
-    "resource://devtools/shared/Loader.jsm"
+    "resource://devtools/shared/loader/Loader.jsm"
   );
   return require;
 });
@@ -34,7 +34,7 @@ XPCOMUtils.defineLazyGetter(this, "SocketListener", () => {
   return SocketListener;
 });
 
-const { debug, warn } = GeckoViewUtils.initLogging("RemoteDebugger"); // eslint-disable-line no-unused-vars
+const { debug, warn } = GeckoViewUtils.initLogging("RemoteDebugger");
 
 var GeckoViewRemoteDebugger = {
   observe(aSubject, aTopic, aData) {
@@ -53,16 +53,6 @@ var GeckoViewRemoteDebugger = {
     debug`onInit`;
     this._isEnabled = false;
     this._usbDebugger = new USBRemoteDebugger();
-
-    // This lets Marionette start listening (when it's enabled).  Both
-    // GeckoView and Marionette do most of their initialization in
-    // "profile-after-change", and there is no order enforced between
-    // them.  Therefore we defer asking Marionette to startup until
-    // after all "profile-after-change" handlers (including this one)
-    // have completed.
-    Services.tm.dispatchToMainThread(() => {
-      Services.obs.notifyObservers(null, "marionette-startup-requested");
-    });
   },
 
   onEnable() {

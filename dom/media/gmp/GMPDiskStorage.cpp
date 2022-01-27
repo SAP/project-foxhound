@@ -16,8 +16,7 @@
 #include "nsContentCID.h"
 #include "nsServiceManagerUtils.h"
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 // We store the records for a given GMP as files in the profile dir.
 // $profileDir/gmp/$platform/$gmpName/storage/$nodeId/
@@ -78,8 +77,7 @@ class GMPDiskStorage : public GMPStorage {
 
   ~GMPDiskStorage() {
     // Close all open file handles.
-    for (auto iter = mRecords.ConstIter(); !iter.Done(); iter.Next()) {
-      Record* record = iter.UserData();
+    for (const auto& record : mRecords.Values()) {
       if (record->mFileDesc) {
         PR_Close(record->mFileDesc);
         record->mFileDesc = nullptr;
@@ -120,7 +118,8 @@ class GMPDiskStorage : public GMPStorage {
         continue;
       }
 
-      mRecords.Put(recordName, new Record(filename, recordName));
+      mRecords.InsertOrUpdate(recordName,
+                              MakeUnique<Record>(filename, recordName));
     }
 
     return NS_OK;
@@ -128,17 +127,24 @@ class GMPDiskStorage : public GMPStorage {
 
   GMPErr Open(const nsCString& aRecordName) override {
     MOZ_ASSERT(!IsOpen(aRecordName));
-    nsresult rv;
-    Record* record = nullptr;
-    if (!mRecords.Get(aRecordName, &record)) {
-      // New file.
-      nsAutoString filename;
-      rv = GetUnusedFilename(aRecordName, filename);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return GMPGenericErr;
-      }
-      record = new Record(filename, aRecordName);
-      mRecords.Put(aRecordName, record);
+
+    Record* const record =
+        mRecords.WithEntryHandle(aRecordName, [&](auto&& entry) -> Record* {
+          if (!entry) {
+            // New file.
+            nsAutoString filename;
+            nsresult rv = GetUnusedFilename(aRecordName, filename);
+            if (NS_WARN_IF(NS_FAILED(rv))) {
+              return nullptr;
+            }
+            return entry.Insert(MakeUnique<Record>(filename, aRecordName))
+                .get();
+          }
+
+          return entry->get();
+        });
+    if (!record) {
+      return GMPGenericErr;
     }
 
     MOZ_ASSERT(record);
@@ -147,7 +153,8 @@ class GMPDiskStorage : public GMPStorage {
       return GMPRecordInUse;
     }
 
-    rv = OpenStorageFile(record->mFilename, ReadWrite, &record->mFileDesc);
+    nsresult rv =
+        OpenStorageFile(record->mFilename, ReadWrite, &record->mFileDesc);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return GMPGenericErr;
     }
@@ -444,5 +451,4 @@ already_AddRefed<GMPStorage> CreateGMPDiskStorage(const nsCString& aNodeId,
   return storage.forget();
 }
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp

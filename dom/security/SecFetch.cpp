@@ -6,11 +6,14 @@
 
 #include "SecFetch.h"
 #include "nsIHttpChannel.h"
+#include "nsContentUtils.h"
 #include "nsIRedirectHistoryEntry.h"
 #include "nsIReferrerInfo.h"
 #include "mozIThirdPartyUtil.h"
 #include "nsMixedContentBlocker.h"
 #include "nsNetUtil.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 // Helper function which maps an internal content policy type
 // to the corresponding destination for the context of SecFetch.
@@ -24,6 +27,7 @@ nsCString MapInternalContentPolicyTypeToDest(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_MODULE_PRELOAD:
     case nsIContentPolicy::TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS:
     case nsIContentPolicy::TYPE_INTERNAL_CHROMEUTILS_COMPILED_SCRIPT:
+    case nsIContentPolicy::TYPE_INTERNAL_FRAME_MESSAGEMANAGER_SCRIPT:
     case nsIContentPolicy::TYPE_SCRIPT:
       return "script"_ns;
     case nsIContentPolicy::TYPE_INTERNAL_WORKER:
@@ -58,8 +62,6 @@ nsCString MapInternalContentPolicyTypeToDest(nsContentPolicyType aType) {
       return "iframe"_ns;
     case nsIContentPolicy::TYPE_INTERNAL_FRAME:
       return "frame"_ns;
-    case nsIContentPolicy::TYPE_REFRESH:
-      return "empty"_ns;
     case nsIContentPolicy::TYPE_PING:
       return "empty"_ns;
     case nsIContentPolicy::TYPE_XMLHTTPREQUEST:
@@ -75,6 +77,7 @@ nsCString MapInternalContentPolicyTypeToDest(nsContentPolicyType aType) {
       return "empty"_ns;
     case nsIContentPolicy::TYPE_FONT:
     case nsIContentPolicy::TYPE_INTERNAL_FONT_PRELOAD:
+    case nsIContentPolicy::TYPE_UA_FONT:
       return "font"_ns;
     case nsIContentPolicy::TYPE_MEDIA:
       return "empty"_ns;
@@ -93,6 +96,7 @@ nsCString MapInternalContentPolicyTypeToDest(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_BEACON:
       return "empty"_ns;
     case nsIContentPolicy::TYPE_FETCH:
+    case nsIContentPolicy::TYPE_INTERNAL_FETCH_PRELOAD:
       return "empty"_ns;
     case nsIContentPolicy::TYPE_WEB_MANIFEST:
       return "manifest"_ns;
@@ -100,12 +104,33 @@ nsCString MapInternalContentPolicyTypeToDest(nsContentPolicyType aType) {
       return "empty"_ns;
     case nsIContentPolicy::TYPE_SPECULATIVE:
       return "empty"_ns;
-    default:
-      MOZ_CRASH("Unhandled nsContentPolicyType value");
+    case nsIContentPolicy::TYPE_PROXIED_WEBRTC_MEDIA:
+      return "empty"_ns;
+    case nsIContentPolicy::TYPE_INVALID:
       break;
+      // Do not add default: so that compilers can catch the missing case.
   }
 
-  return "empty"_ns;
+  MOZ_CRASH("Unhandled nsContentPolicyType value");
+}
+
+// Helper function to determine if a ExpandedPrincipal is of the same-origin as
+// a URI in the sec-fetch context.
+void IsExpandedPrincipalSameOrigin(
+    nsCOMPtr<nsIExpandedPrincipal> aExpandedPrincipal, nsIURI* aURI,
+    bool aIsPrivateWin, bool* aRes) {
+  *aRes = false;
+  for (const auto& principal : aExpandedPrincipal->AllowList()) {
+    // Ignore extension principals to continue treating
+    // "moz-extension:"-requests as not "same-origin".
+    if (!mozilla::BasePrincipal::Cast(principal)->AddonPolicy()) {
+      // A ExpandedPrincipal usually has at most one ContentPrincipal, so we can
+      // check IsSameOrigin on it here and return early.
+      mozilla::BasePrincipal::Cast(principal)->IsSameOrigin(aURI, aIsPrivateWin,
+                                                            aRes);
+      return;
+    }
+  }
 }
 
 // Helper function to determine whether a request (including involved
@@ -115,11 +140,26 @@ bool IsSameOrigin(nsIHttpChannel* aHTTPChannel) {
   NS_GetFinalChannelURI(aHTTPChannel, getter_AddRefs(channelURI));
 
   nsCOMPtr<nsILoadInfo> loadInfo = aHTTPChannel->LoadInfo();
+
+  if (mozilla::BasePrincipal::Cast(loadInfo->TriggeringPrincipal())
+          ->AddonPolicy()) {
+    // If an extension triggered the load that has access to the URI then the
+    // load is considered as same-origin.
+    return mozilla::BasePrincipal::Cast(loadInfo->TriggeringPrincipal())
+        ->AddonAllowsLoad(channelURI);
+  }
+
   bool isPrivateWin = loadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
   bool isSameOrigin = false;
-  nsresult rv = loadInfo->TriggeringPrincipal()->IsSameOrigin(
-      channelURI, isPrivateWin, &isSameOrigin);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  if (nsContentUtils::IsExpandedPrincipal(loadInfo->TriggeringPrincipal())) {
+    nsCOMPtr<nsIExpandedPrincipal> ep =
+        do_QueryInterface(loadInfo->TriggeringPrincipal());
+    IsExpandedPrincipalSameOrigin(ep, channelURI, isPrivateWin, &isSameOrigin);
+  } else {
+    nsresult rv = loadInfo->TriggeringPrincipal()->IsSameOrigin(
+        channelURI, isPrivateWin, &isSameOrigin);
+    mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  }
 
   // if the initial request is not same-origin, we can return here
   // because we already know it's not a same-origin request
@@ -133,9 +173,9 @@ bool IsSameOrigin(nsIHttpChannel* aHTTPChannel) {
   for (nsIRedirectHistoryEntry* entry : loadInfo->RedirectChain()) {
     entry->GetPrincipal(getter_AddRefs(redirectPrincipal));
     if (redirectPrincipal) {
-      rv = redirectPrincipal->IsSameOrigin(channelURI, isPrivateWin,
-                                           &isSameOrigin);
-      Unused << NS_WARN_IF(NS_FAILED(rv));
+      nsresult rv = redirectPrincipal->IsSameOrigin(channelURI, isPrivateWin,
+                                                    &isSameOrigin);
+      mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
       if (!isSameOrigin) {
         return false;
       }
@@ -158,18 +198,20 @@ bool IsSameSite(nsIChannel* aHTTPChannel) {
   nsAutoCString hostDomain;
   nsCOMPtr<nsILoadInfo> loadInfo = aHTTPChannel->LoadInfo();
   nsresult rv = loadInfo->TriggeringPrincipal()->GetBaseDomain(hostDomain);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
 
   nsAutoCString channelDomain;
   nsCOMPtr<nsIURI> channelURI;
   NS_GetFinalChannelURI(aHTTPChannel, getter_AddRefs(channelURI));
   rv = thirdPartyUtil->GetBaseDomain(channelURI, channelDomain);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
 
   // if the initial request is not same-site, or not https, we can
   // return here because we already know it's not a same-site request
   if (!hostDomain.Equals(channelDomain) ||
-      !loadInfo->TriggeringPrincipal()->SchemeIs("https")) {
+      (!loadInfo->TriggeringPrincipal()->SchemeIs("https") &&
+       !nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackHost(
+           hostDomain))) {
     return false;
   }
 
@@ -194,14 +236,42 @@ bool IsSameSite(nsIChannel* aHTTPChannel) {
 // Helper function to determine whether a request was triggered
 // by the end user in the context of SecFetch.
 bool IsUserTriggeredForSecFetchSite(nsIHttpChannel* aHTTPChannel) {
+  /*
+   * The goal is to distinguish between "webby" navigations that are controlled
+   * by a given website (e.g. links, the window.location setter,form
+   * submissions, etc.), and those that are not (e.g. user interaction with a
+   * user agent’s address bar, bookmarks, etc).
+   */
   nsCOMPtr<nsILoadInfo> loadInfo = aHTTPChannel->LoadInfo();
-  nsContentPolicyType contentType = loadInfo->InternalContentPolicyType();
+  ExtContentPolicyType contentType = loadInfo->GetExternalContentPolicyType();
+
+  // A request issued by the browser is always user initiated.
+  if (loadInfo->TriggeringPrincipal()->IsSystemPrincipal() &&
+      contentType == ExtContentPolicy::TYPE_OTHER) {
+    return true;
+  }
 
   // only requests wich result in type "document" are subject to
   // user initiated actions in the context of SecFetch.
-  if (contentType != nsIContentPolicy::TYPE_DOCUMENT &&
-      contentType != nsIContentPolicy::TYPE_SUBDOCUMENT &&
-      contentType != nsIContentPolicy::TYPE_INTERNAL_IFRAME) {
+  if (contentType != ExtContentPolicy::TYPE_DOCUMENT &&
+      contentType != ExtContentPolicy::TYPE_SUBDOCUMENT) {
+    return false;
+  }
+
+  // The load is considered user triggered if it was triggered by an external
+  // application.
+  if (loadInfo->GetLoadTriggeredFromExternal()) {
+    return true;
+  }
+
+  // sec-fetch-site can only be user triggered if the load was user triggered.
+  if (!loadInfo->GetHasValidUserGestureActivation()) {
+    return false;
+  }
+
+  // We can assert that the navigation must be "webby" if the load was triggered
+  // by a meta refresh. See also Bug 1647128.
+  if (loadInfo->GetIsMetaRefresh()) {
     return false;
   }
 
@@ -220,22 +290,22 @@ bool IsUserTriggeredForSecFetchSite(nsIHttpChannel* aHTTPChannel) {
   return true;
 }
 
-void SecFetch::AddSecFetchDest(nsIHttpChannel* aHTTPChannel) {
+void mozilla::dom::SecFetch::AddSecFetchDest(nsIHttpChannel* aHTTPChannel) {
   nsCOMPtr<nsILoadInfo> loadInfo = aHTTPChannel->LoadInfo();
   nsContentPolicyType contentType = loadInfo->InternalContentPolicyType();
   nsCString dest = MapInternalContentPolicyTypeToDest(contentType);
 
   nsresult rv =
       aHTTPChannel->SetRequestHeader("Sec-Fetch-Dest"_ns, dest, false);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
 }
 
-void SecFetch::AddSecFetchMode(nsIHttpChannel* aHTTPChannel) {
+void mozilla::dom::SecFetch::AddSecFetchMode(nsIHttpChannel* aHTTPChannel) {
   nsAutoCString mode("no-cors");
 
   nsCOMPtr<nsILoadInfo> loadInfo = aHTTPChannel->LoadInfo();
   uint32_t securityMode = loadInfo->GetSecurityMode();
-  nsContentPolicyType externalType = loadInfo->GetExternalContentPolicyType();
+  ExtContentPolicyType externalType = loadInfo->GetExternalContentPolicyType();
 
   if (securityMode ==
           nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_INHERITS_SEC_CONTEXT ||
@@ -255,21 +325,20 @@ void SecFetch::AddSecFetchMode(nsIHttpChannel* aHTTPChannel) {
         "unhandled security mode");
   }
 
-  if (externalType == nsIContentPolicy::TYPE_DOCUMENT ||
-      externalType == nsIContentPolicy::TYPE_SUBDOCUMENT ||
-      externalType == nsIContentPolicy::TYPE_REFRESH ||
-      externalType == nsIContentPolicy::TYPE_OBJECT) {
+  if (externalType == ExtContentPolicy::TYPE_DOCUMENT ||
+      externalType == ExtContentPolicy::TYPE_SUBDOCUMENT ||
+      externalType == ExtContentPolicy::TYPE_OBJECT) {
     mode = "navigate"_ns;
-  } else if (externalType == nsIContentPolicy::TYPE_WEBSOCKET) {
+  } else if (externalType == ExtContentPolicy::TYPE_WEBSOCKET) {
     mode = "websocket"_ns;
   }
 
   nsresult rv =
       aHTTPChannel->SetRequestHeader("Sec-Fetch-Mode"_ns, mode, false);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
 }
 
-void SecFetch::AddSecFetchSite(nsIHttpChannel* aHTTPChannel) {
+void mozilla::dom::SecFetch::AddSecFetchSite(nsIHttpChannel* aHTTPChannel) {
   nsAutoCString site("same-origin");
 
   bool isSameOrigin = IsSameOrigin(aHTTPChannel);
@@ -288,31 +357,33 @@ void SecFetch::AddSecFetchSite(nsIHttpChannel* aHTTPChannel) {
 
   nsresult rv =
       aHTTPChannel->SetRequestHeader("Sec-Fetch-Site"_ns, site, false);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
 }
 
-void SecFetch::AddSecFetchUser(nsIHttpChannel* aHTTPChannel) {
+void mozilla::dom::SecFetch::AddSecFetchUser(nsIHttpChannel* aHTTPChannel) {
   nsCOMPtr<nsILoadInfo> loadInfo = aHTTPChannel->LoadInfo();
-  nsContentPolicyType externalType = loadInfo->GetExternalContentPolicyType();
+  ExtContentPolicyType externalType = loadInfo->GetExternalContentPolicyType();
 
   // sec-fetch-user only applies to loads of type document or subdocument
-  if (externalType != nsIContentPolicy::TYPE_DOCUMENT &&
-      externalType != nsIContentPolicy::TYPE_SUBDOCUMENT) {
+  if (externalType != ExtContentPolicy::TYPE_DOCUMENT &&
+      externalType != ExtContentPolicy::TYPE_SUBDOCUMENT) {
     return;
   }
 
-  // sec-fetch-user only applies if the request is user triggered
-  if (!loadInfo->GetHasValidUserGestureActivation()) {
+  // sec-fetch-user only applies if the request is user triggered.
+  // requests triggered by an external application are considerd user triggered.
+  if (!loadInfo->GetLoadTriggeredFromExternal() &&
+      !loadInfo->GetHasValidUserGestureActivation()) {
     return;
   }
 
   nsAutoCString user("?1");
   nsresult rv =
       aHTTPChannel->SetRequestHeader("Sec-Fetch-User"_ns, user, false);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
 }
 
-void SecFetch::AddSecFetchHeader(nsIHttpChannel* aHTTPChannel) {
+void mozilla::dom::SecFetch::AddSecFetchHeader(nsIHttpChannel* aHTTPChannel) {
   // if sec-fetch-* is prefed off, then there is nothing to do
   if (!StaticPrefs::dom_security_secFetch_enabled()) {
     return;

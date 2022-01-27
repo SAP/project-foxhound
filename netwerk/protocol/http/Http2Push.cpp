@@ -113,14 +113,8 @@ Http2PushedStream::Http2PushedStream(
     uint64_t aCurrentForegroundTabOuterContentWindowId)
     : Http2Stream(aTransaction, aSession, 0,
                   aCurrentForegroundTabOuterContentWindowId),
-      mConsumerStream(nullptr),
       mAssociatedTransaction(aAssociatedStream->Transaction()),
-      mBufferedPush(aTransaction),
-      mStatus(NS_OK),
-      mPushCompleted(false),
-      mDeferCleanupOnSuccess(true),
-      mDeferCleanupOnPush(false),
-      mOnPushFailed(false) {
+      mBufferedPush(aTransaction) {
   LOG3(("Http2PushedStream ctor this=%p 0x%X\n", this, aID));
   mStreamID = aID;
   MOZ_ASSERT(!(aID & 1));  // must be even to be a pushed stream
@@ -226,13 +220,14 @@ nsresult Http2PushedStream::ReadSegments(nsAHttpSegmentReader* reader, uint32_t,
 
   mozilla::OriginAttributes originAttributes;
   switch (mUpstreamState) {
-    case GENERATING_HEADERS:
+    case GENERATING_HEADERS: {
       // The request headers for this has been processed, so we need to verify
       // that :authority, :scheme, and :path MUST be present. :method MUST NOT
       // be present
       mSocketTransport->GetOriginAttributes(&originAttributes);
+      RefPtr<Http2Session> session = Session();
       CreatePushHashKey(mHeaderScheme, mHeaderHost, originAttributes,
-                        mSession->Serial(), mHeaderPath, mOrigin, mHashKey);
+                        session->Serial(), mHeaderPath, mOrigin, mHashKey);
 
       LOG3(("Http2PushStream 0x%X hash key %s\n", mStreamID, mHashKey.get()));
 
@@ -242,7 +237,7 @@ nsresult Http2PushedStream::ReadSegments(nsAHttpSegmentReader* reader, uint32_t,
       Http2Stream::mRequestHeadersDone = 1;
       Http2Stream::mOpenGenerated = 1;
       Http2Stream::ChangeState(UPSTREAM_COMPLETE);
-      break;
+    } break;
 
     case UPSTREAM_COMPLETE:
       // Let's just clear the stream's transmit buffer by pushing it into
@@ -273,7 +268,8 @@ void Http2PushedStream::AdjustInitialWindow() {
     Http2Stream::AdjustInitialWindow();
     // Http2PushedStream::ReadSegments is needed to call TransmitFrame()
     // and actually get this information into the session bytestream
-    mSession->TransactionHasDataToWrite(this);
+    RefPtr<Http2Session> session = Session();
+    session->TransactionHasDataToWrite(this);
   }
   // Otherwise, when we get hooked up, the initial window will get bumped
   // anyway, so we're good to go.
@@ -295,7 +291,8 @@ bool Http2PushedStream::GetHashKey(nsCString& key) {
 }
 
 void Http2PushedStream::ConnectPushedStream(Http2Stream* stream) {
-  mSession->ConnectPushedStream(stream);
+  RefPtr<Http2Session> session = Session();
+  session->ConnectPushedStream(stream);
 }
 
 bool Http2PushedStream::IsOrphaned(TimeStamp now) {
@@ -327,29 +324,30 @@ nsresult Http2PushedStream::GetBufferedData(char* buf, uint32_t count,
   nsresult rv = mBufferedPush->GetBufferedData(buf, count, countWritten);
   if (NS_FAILED(rv)) return rv;
 
-  if (!*countWritten)
+  if (!*countWritten) {
     rv = GetPushComplete() ? NS_BASE_STREAM_CLOSED : NS_BASE_STREAM_WOULD_BLOCK;
+  }
 
   return rv;
 }
 
-void Http2PushedStream::TopLevelOuterContentWindowIdChanged(uint64_t windowId) {
+void Http2PushedStream::TopBrowsingContextIdChanged(uint64_t id) {
   if (mConsumerStream) {
     // Pass through to our sink, who will handle things appropriately.
-    mConsumerStream->TopLevelOuterContentWindowIdChangedInternal(windowId);
+    mConsumerStream->TopBrowsingContextIdChanged(id);
     return;
   }
 
   MOZ_ASSERT(gHttpHandler->ActiveTabPriority());
 
-  mCurrentForegroundTabOuterContentWindowId = windowId;
-
-  if (!mSession->UseH2Deps()) {
+  mCurrentTopBrowsingContextId = id;
+  RefPtr<Http2Session> session = Session();
+  if (!session->UseH2Deps()) {
     return;
   }
 
   uint32_t oldDependency = mPriorityDependency;
-  if (mTransactionTabId != mCurrentForegroundTabOuterContentWindowId) {
+  if (mTransactionTabId != mCurrentTopBrowsingContextId) {
     mPriorityDependency = Http2Session::kBackgroundGroupID;
     nsHttp::NotifyActiveTabLoadOptimization();
   } else {
@@ -357,8 +355,7 @@ void Http2PushedStream::TopLevelOuterContentWindowIdChanged(uint64_t windowId) {
   }
 
   if (mPriorityDependency != oldDependency) {
-    mSession->SendPriorityFrame(mStreamID, mPriorityDependency,
-                                mPriorityWeight);
+    session->SendPriorityFrame(mStreamID, mPriorityDependency, mPriorityWeight);
   }
 }
 
@@ -370,14 +367,7 @@ void Http2PushedStream::TopLevelOuterContentWindowIdChanged(uint64_t windowId) {
 
 NS_IMPL_ISUPPORTS0(Http2PushTransactionBuffer)
 
-Http2PushTransactionBuffer::Http2PushTransactionBuffer()
-    : mStatus(NS_OK),
-      mRequestHead(nullptr),
-      mPushStream(nullptr),
-      mIsDone(false),
-      mBufferedHTTP1Size(kDefaultBufferSize),
-      mBufferedHTTP1Used(0),
-      mBufferedHTTP1Consumed(0) {
+Http2PushTransactionBuffer::Http2PushTransactionBuffer() {
   mBufferedHTTP1 = MakeUnique<char[]>(mBufferedHTTP1Size);
 }
 

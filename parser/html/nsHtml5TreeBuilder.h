@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2007 Henri Sivonen
- * Copyright (c) 2007-2015 Mozilla Foundation
+ * Copyright (c) 2007-2017 Mozilla Foundation
  * Portions of comments Copyright 2004-2008 Apple Computer, Inc., Mozilla
  * Foundation, and Opera Software ASA.
  *
@@ -31,31 +31,31 @@
 #ifndef nsHtml5TreeBuilder_h
 #define nsHtml5TreeBuilder_h
 
-#include "nsContentUtils.h"
-#include "nsAtom.h"
-#include "nsHtml5AtomTable.h"
-#include "nsHtml5String.h"
-#include "nsNameSpaceManager.h"
-#include "nsIContent.h"
-#include "nsTraceRefcnt.h"
 #include "jArray.h"
-#include "nsHtml5DocumentMode.h"
-#include "nsHtml5ArrayCopy.h"
-#include "nsHtml5Parser.h"
-#include "nsGkAtoms.h"
-#include "nsHtml5TreeOperation.h"
-#include "nsHtml5StateSnapshot.h"
-#include "nsHtml5StackNode.h"
-#include "nsHtml5TreeOpExecutor.h"
-#include "nsHtml5StreamParser.h"
-#include "nsAHtml5TreeBuilderState.h"
-#include "nsHtml5Highlighter.h"
-#include "nsHtml5PlainTextUtils.h"
-#include "nsHtml5ViewSourceUtils.h"
 #include "mozilla/ImportScanner.h"
 #include "mozilla/Likely.h"
-#include "nsIContentHandle.h"
+#include "nsAHtml5TreeBuilderState.h"
+#include "nsAtom.h"
+#include "nsContentUtils.h"
+#include "nsGkAtoms.h"
+#include "nsHtml5ArrayCopy.h"
+#include "nsHtml5AtomTable.h"
+#include "nsHtml5DocumentMode.h"
+#include "nsHtml5Highlighter.h"
 #include "nsHtml5OplessBuilder.h"
+#include "nsHtml5Parser.h"
+#include "nsHtml5PlainTextUtils.h"
+#include "nsHtml5StackNode.h"
+#include "nsHtml5StateSnapshot.h"
+#include "nsHtml5StreamParser.h"
+#include "nsHtml5String.h"
+#include "nsHtml5TreeOperation.h"
+#include "nsHtml5TreeOpExecutor.h"
+#include "nsHtml5ViewSourceUtils.h"
+#include "nsIContent.h"
+#include "nsIContentHandle.h"
+#include "nsNameSpaceManager.h"
+#include "nsTraceRefcnt.h"
 
 class nsHtml5StreamParser;
 
@@ -317,7 +317,7 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState {
 
  private:
   bool quirks;
-  bool isSrcdocDocument;
+  bool forceNoQuirks;
   inline nsHtml5ContentCreatorFunction htmlCreator(
       mozilla::dom::HTMLContentCreatorFunction htmlCreator) {
     nsHtml5ContentCreatorFunction creator;
@@ -339,6 +339,7 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState {
   void comment(char16_t* buf, int32_t start, int32_t length);
   void characters(const char16_t* buf, const StringTaint& taint, int32_t start, int32_t length);
   void zeroOriginatingReplacementCharacter();
+  void zeroOrReplacementCharacter();
   void eof();
   void endTokenization();
   void startTag(nsHtml5ElementName* elementName,
@@ -378,11 +379,11 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState {
   int32_t findLastInScopeHn();
   void generateImpliedEndTagsExceptFor(nsAtom* name);
   void generateImpliedEndTags();
+  void generateImpliedEndTagsThoroughly();
   bool isSecondOnStackBody();
   void documentModeInternal(nsHtml5DocumentMode m,
                             nsHtml5String publicIdentifier,
-                            nsHtml5String systemIdentifier,
-                            bool html4SpecificAdditionalErrorChecks);
+                            nsHtml5String systemIdentifier);
   bool isAlmostStandards(nsHtml5String publicIdentifier,
                          nsHtml5String systemIdentifier);
   bool isQuirky(nsAtom* name, nsHtml5String publicIdentifier,
@@ -554,6 +555,7 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState {
  public:
   bool isScriptingEnabled();
   void setScriptingEnabled(bool scriptingEnabled);
+  void setForceNoQuirks(bool forceNoQuirks);
   void setIsSrcdocDocument(bool isSrcdocDocument);
   void flushCharacters();
 

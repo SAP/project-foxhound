@@ -11,8 +11,9 @@ const PRIVATE_MESSAGE = "This is a private message";
 const PRIVATE_UNDEFINED_FN = "privateException";
 const PRIVATE_EXCEPTION = `${PRIVATE_UNDEFINED_FN} is not defined`;
 
-const NON_PRIVATE_TEST_URI = "data:text/html;charset=utf8,Not private";
-const PRIVATE_TEST_URI = `data:text/html;charset=utf8,Test console in private windows
+const NON_PRIVATE_TEST_URI =
+  "data:text/html;charset=utf8,<!DOCTYPE html>Not private";
+const PRIVATE_TEST_URI = `data:text/html;charset=utf8,<!DOCTYPE html>Test console in private windows
   <script>
     function logMessages() {
       /* Wrap the exception so we don't throw in ContentTask. */
@@ -27,6 +28,14 @@ add_task(async function() {
   await pushPref("devtools.browserconsole.contentMessages", true);
   await addTab(NON_PRIVATE_TEST_URI);
 
+  await pushPref("devtools.browsertoolbox.fission", false);
+  await testBrowserConsole();
+
+  await pushPref("devtools.browsertoolbox.fission", true);
+  await testBrowserConsole();
+});
+
+async function testBrowserConsole() {
   const privateWindow = await BrowserTestUtils.openNewBrowserWindow({
     private: true,
   });
@@ -68,14 +77,10 @@ add_task(async function() {
     "Messages are still displayed after closing and reopening the console"
   );
 
-  info("Test browser console");
+  info("Test Browser Console");
   await closeConsole(privateTab);
   info("web console closed");
   hud = await BrowserConsoleManager.toggleBrowserConsole();
-
-  // Make sure that the cached messages from private tabs are not displayed in the
-  // browser console.
-  assertNoPrivateMessages(hud);
 
   // Add a non-private message to the console.
   const onBrowserConsoleNonPrivateMessage = waitForMessage(
@@ -89,6 +94,13 @@ add_task(async function() {
   });
   await onBrowserConsoleNonPrivateMessage;
 
+  info(
+    "Check that cached messages from private tabs are not displayed in the browser console"
+  );
+  // We do the check at this moment, after we received the "live" message, so the browser
+  // console would have displayed any cached messages by now.
+  assertNoPrivateMessages(hud);
+
   const onBrowserConsolePrivateLogMessage = waitForMessage(
     hud,
     PRIVATE_MESSAGE
@@ -100,7 +112,9 @@ add_task(async function() {
   );
   logPrivateMessages(privateBrowser.selectedBrowser);
 
+  info("Wait for private log message");
   await onBrowserConsolePrivateLogMessage;
+  info("Wait for private error message");
   await onBrowserConsolePrivateErrorMessage;
   ok(true, "Messages are displayed as expected");
 
@@ -116,14 +130,17 @@ add_task(async function() {
   assertNoPrivateMessages(hud);
 
   info("close the browser console");
-  await BrowserConsoleManager.toggleBrowserConsole();
+  await safeCloseBrowserConsole();
 
   info("reopen the browser console");
   hud = await BrowserConsoleManager.toggleBrowserConsole();
   ok(hud, "browser console reopened");
 
   assertNoPrivateMessages(hud);
-});
+
+  info("close the browser console again");
+  await safeCloseBrowserConsole();
+}
 
 function logPrivateMessages(browser) {
   SpecialPowers.spawn(browser, [], () => content.wrappedJSObject.logMessages());
@@ -131,9 +148,13 @@ function logPrivateMessages(browser) {
 
 function assertNoPrivateMessages(hud) {
   is(
-    findMessage(hud, PRIVATE_MESSAGE),
+    findMessage(hud, PRIVATE_MESSAGE, ".message:not(.error)")?.textContent,
     undefined,
     "no console message displayed"
   );
-  is(findMessage(hud, PRIVATE_EXCEPTION), undefined, "no exception displayed");
+  is(
+    findMessage(hud, PRIVATE_EXCEPTION, ".message.error")?.textContent,
+    undefined,
+    "no exception displayed"
+  );
 }

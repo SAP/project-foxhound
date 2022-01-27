@@ -7,20 +7,24 @@
 #ifndef MOZILLA_GFX_RENDERBUFFERTEXTUREHOST_H
 #define MOZILLA_GFX_RENDERBUFFERTEXTUREHOST_H
 
-#include "RenderTextureHost.h"
+#include "RenderTextureHostSWGL.h"
 
 namespace mozilla {
 namespace wr {
 
-class RenderBufferTextureHost final : public RenderTextureHost {
+class RenderBufferTextureHost final : public RenderTextureHostSWGL {
  public:
   RenderBufferTextureHost(uint8_t* aBuffer,
                           const layers::BufferDescriptor& aDescriptor);
 
+  // RenderTextureHost
   wr::WrExternalImage Lock(uint8_t aChannelIndex, gl::GLContext* aGL,
                            wr::ImageRendering aRendering) override;
   void Unlock() override;
 
+  size_t Bytes() override {
+    return mSize.width * mSize.height * BytesPerPixel(mFormat);
+  }
   class RenderBufferData {
    public:
     RenderBufferData(uint8_t* aData, size_t aBufferSize)
@@ -30,6 +34,20 @@ class RenderBufferTextureHost final : public RenderTextureHost {
   };
 
   RenderBufferData GetBufferDataForRender(uint8_t aChannelIndex);
+
+  // RenderTextureHostSWGL
+  size_t GetPlaneCount() const override;
+
+  gfx::SurfaceFormat GetFormat() const override;
+
+  gfx::ColorDepth GetColorDepth() const override;
+
+  gfx::YUVRangedColorSpace GetYUVColorSpace() const override;
+
+  bool MapPlane(RenderCompositor* aCompositor, uint8_t aChannelIndex,
+                PlaneInfo& aPlaneInfo) override;
+
+  void UnmapPlanes() override;
 
  private:
   virtual ~RenderBufferTextureHost();

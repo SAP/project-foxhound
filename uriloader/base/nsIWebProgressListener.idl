@@ -211,21 +211,6 @@ interface nsIWebProgressListener : nsISupports
   const unsigned long STATE_LOADED_MIXED_DISPLAY_CONTENT  = 0x00000200;
 
   /**
-   * Diagnostic flags
-   *
-   * NOTE: IF YOU ARE ADDING MORE OF THESE FLAGS, MAKE SURE TO EDIT
-   * nsSecureBrowserUIImpl::CheckForBlockedContent().
-   *
-   * May be set in addition to other security state flags to indicate that
-   * some state is countered that deserves a warning or error, but does not
-   * change the top level security state of the connection.
-   *
-   * STATE_CERT_DISTRUST_IMMINENT
-   *   The certificate in use will be distrusted in the near future.
-   */
-  const unsigned long STATE_CERT_DISTRUST_IMMINENT    = 0x00010000;
-
-  /**
     * State bits for EV == Extended Validation == High Assurance
     *
     * These flags describe the level of identity verification
@@ -332,6 +317,13 @@ interface nsIWebProgressListener : nsISupports
    *
    * STATE_LOADED_SOCIALTRACKING_CONTENT
    *   SocialTracking content has been loaded.
+   *
+   * STATE_REPLACED_TRACKING_CONTENT
+   *   Tracking content which should be blocked from loading was replaced with a
+   *   shim.
+   *
+   * STATE_ALLOWED_TRACKING_CONTENT
+   *   Tracking content which should be blocked from loading was allowed.
    */
   const unsigned long STATE_BLOCKED_TRACKING_CONTENT        = 0x00001000;
   const unsigned long STATE_LOADED_LEVEL_1_TRACKING_CONTENT = 0x00002000;
@@ -352,6 +344,20 @@ interface nsIWebProgressListener : nsISupports
   const unsigned long STATE_COOKIES_BLOCKED_FOREIGN         = 0x00000080;
   const unsigned long STATE_BLOCKED_SOCIALTRACKING_CONTENT  = 0x00010000;
   const unsigned long STATE_LOADED_SOCIALTRACKING_CONTENT   = 0x00020000;
+  const unsigned long STATE_REPLACED_TRACKING_CONTENT       = 0x00000010;
+  const unsigned long STATE_ALLOWED_TRACKING_CONTENT        = 0x00000020;
+
+  /**
+   * Flag for HTTPS-Only Mode upgrades
+   *
+   * STATE_HTTPS_ONLY_MODE_UPGRADED
+   *   When a request has been upgraded by HTTPS-Only Mode
+   *
+   * STATE_HTTPS_ONLY_MODE_UPGRADE_FAILED
+   *   When an upgraded request failed.
+   */
+  const unsigned long STATE_HTTPS_ONLY_MODE_UPGRADED        = 0x00400000;
+  const unsigned long STATE_HTTPS_ONLY_MODE_UPGRADE_FAILED  = 0x00800000;
 
   /**
    * Notification indicating the state has changed for one of the requests
@@ -439,10 +445,16 @@ interface nsIWebProgressListener : nsISupports
    * LOCATION_CHANGE_RELOAD
    *   This flag is on when reloading the current page, either from
    *   location.reload() or the browser UI.
+   *
+   * LOCATION_CHANGE_HASHCHANGE
+   *   This flag is on for same-document location changes where only the URI's
+   *   reference fragment has changed. This flag implies
+   *   LOCATION_CHANGE_SAME_DOCUMENT.
    */
   const unsigned long LOCATION_CHANGE_SAME_DOCUMENT   = 0x00000001;
   const unsigned long LOCATION_CHANGE_ERROR_PAGE      = 0x00000002;
   const unsigned long LOCATION_CHANGE_RELOAD          = 0x00000004;
+  const unsigned long LOCATION_CHANGE_HASHCHANGE      = 0x00000008;
 
   /**
    * Called when the location of the window being watched changes.  This is not

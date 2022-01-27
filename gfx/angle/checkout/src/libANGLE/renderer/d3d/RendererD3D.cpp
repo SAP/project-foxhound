@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2014 The ANGLE Project Authors. All rights reserved.
+// Copyright 2014 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -96,21 +96,6 @@ gl::GraphicsResetStatus RendererD3D::getResetStatus()
 void RendererD3D::notifyDeviceLost()
 {
     mDisplay->notifyDeviceLost();
-}
-
-std::string RendererD3D::getVendorString() const
-{
-    LUID adapterLuid = {0};
-
-    if (getLUID(&adapterLuid))
-    {
-        char adapterLuidString[64];
-        sprintf_s(adapterLuidString, sizeof(adapterLuidString), "(adapter LUID: %08x%08x)",
-                  adapterLuid.HighPart, adapterLuid.LowPart);
-        return std::string(adapterLuidString);
-    }
-
-    return std::string("");
 }
 
 void RendererD3D::setGPUDisjoint()
@@ -240,7 +225,9 @@ GLenum DefaultGLErrorCode(HRESULT hr)
 {
     switch (hr)
     {
+#ifdef ANGLE_ENABLE_D3D9
         case D3DERR_OUTOFVIDEOMEMORY:
+#endif
         case E_OUTOFMEMORY:
             return GL_OUT_OF_MEMORY;
         default:

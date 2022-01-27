@@ -14,15 +14,17 @@
  * limitations under the License.
  */
 
-import { assert } from './assert';
-import { helper } from './helper';
-import { createJSHandle, JSHandle, ElementHandle } from './JSHandle';
-import { CDPSession } from './Connection';
-import { DOMWorld } from './DOMWorld';
-import { Frame } from './FrameManager';
-import Protocol from '../protocol';
-import { EvaluateHandleFn, SerializableOrJSHandle } from './EvalTypes';
-
+import { assert } from './assert.js';
+import { helper } from './helper.js';
+import { createJSHandle, JSHandle, ElementHandle } from './JSHandle.js';
+import { CDPSession } from './Connection.js';
+import { DOMWorld } from './DOMWorld.js';
+import { Frame } from './FrameManager.js';
+import { Protocol } from 'devtools-protocol';
+import { EvaluateHandleFn, SerializableOrJSHandle } from './EvalTypes.js';
+/**
+ * @public
+ */
 export const EVALUATION_SCRIPT_URL = '__puppeteer_evaluation_script__';
 const SOURCE_URL_REGEX = /^[\040\t]*\/\/[@#] sourceURL=\s*(\S*?)\s*$/m;
 
@@ -33,7 +35,7 @@ const SOURCE_URL_REGEX = /^[\040\t]*\/\/[@#] sourceURL=\s*(\S*?)\s*$/m;
  *   {@link https://developer.mozilla.org/en-US/docs/Web/HTML/Element/iframe |
  *   frame } has "default" execution context that is always created after frame is
  *   attached to DOM. This context is returned by the
- *   {@link frame.executionContext()} method.
+ *   {@link Frame.executionContext} method.
  * - {@link https://developer.chrome.com/extensions | Extension}'s content scripts
  *   create additional execution contexts.
  *
@@ -52,7 +54,14 @@ export class ExecutionContext {
    * @internal
    */
   _world: DOMWorld;
-  private _contextId: number;
+  /**
+   * @internal
+   */
+  _contextId: number;
+  /**
+   * @internal
+   */
+  _contextName: string;
 
   /**
    * @internal
@@ -65,6 +74,7 @@ export class ExecutionContext {
     this._client = client;
     this._world = world;
     this._contextId = contextPayload.id;
+    this._contextName = contextPayload.name;
   }
 
   /**
@@ -118,8 +128,8 @@ export class ExecutionContext {
    * await twoHandle.dispose();
    * console.log(result); // prints '3'.
    * ```
-   * @param pageFunction a function to be evaluated in the `executionContext`
-   * @param args argument to pass to the page function
+   * @param pageFunction - a function to be evaluated in the `executionContext`
+   * @param args - argument to pass to the page function
    *
    * @returns A promise that resolves to the return value of the given function.
    */
@@ -170,8 +180,8 @@ export class ExecutionContext {
    * await resultHandle.dispose();
    * ```
    *
-   * @param pageFunction a function to be evaluated in the `executionContext`
-   * @param args argument to pass to the page function
+   * @param pageFunction - a function to be evaluated in the `executionContext`
+   * @param args - argument to pass to the page function
    *
    * @returns A promise that resolves to the return value of the given function
    * as an in-page object (a {@link JSHandle}).
@@ -257,10 +267,8 @@ export class ExecutionContext {
         error.message += ' Are you passing a nested JSHandle?';
       throw error;
     }
-    const {
-      exceptionDetails,
-      result: remoteObject,
-    } = await callFunctionOnPromise.catch(rewriteError);
+    const { exceptionDetails, result: remoteObject } =
+      await callFunctionOnPromise.catch(rewriteError);
     if (exceptionDetails)
       throw new Error(
         'Evaluation failed: ' + helper.getExceptionMessage(exceptionDetails)
@@ -301,7 +309,7 @@ export class ExecutionContext {
       return { value: arg };
     }
 
-    function rewriteError(error: Error): Protocol.Runtime.evaluateReturnValue {
+    function rewriteError(error: Error): Protocol.Runtime.EvaluateResponse {
       if (error.message.includes('Object reference chain is too long'))
         return { result: { type: 'undefined' } };
       if (error.message.includes("Object couldn't be returned by value"))
@@ -336,7 +344,7 @@ export class ExecutionContext {
    * await mapPrototype.dispose();
    * ```
    *
-   * @param prototypeHandle a handle to the object prototype
+   * @param prototypeHandle - a handle to the object prototype
    *
    * @returns A handle to an array of objects with the given prototype.
    */

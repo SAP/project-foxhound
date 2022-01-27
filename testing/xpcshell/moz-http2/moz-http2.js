@@ -20,6 +20,7 @@ const ip = require(`${node_http2_root}/../node-ip`);
 const { fork } = require("child_process");
 const path = require("path");
 const zlib = require("zlib");
+const odoh = require(`${node_http2_root}/../odoh-wasm/pkg`);
 
 // Hook into the decompression code to log the decompressed name-value pairs
 var compression_module = node_http2_root + "/lib/protocol/compressor";
@@ -123,6 +124,12 @@ var m = {
     if (end < this.buf.length) {
       setTimeout(this.send.bind(this, res, end), 10);
     } else {
+      // Clear these variables so we can run the test again with --verify
+      if (res == this.mp1res) {
+        this.mp1res = null;
+      } else {
+        this.mp2res = null;
+      }
       res.end();
     }
   },
@@ -227,7 +234,8 @@ var didRst = false;
 var rstConnection = null;
 var illegalheader_conn = null;
 
-var cname_confirm = 0;
+var gDoHPortsLog = [];
+var gDoHNewConnLog = {};
 
 // eslint-disable-next-line complexity
 function handleRequest(req, res) {
@@ -241,6 +249,302 @@ function handleRequest(req, res) {
 
   // PushService tests.
   var pushPushServer1, pushPushServer2, pushPushServer3, pushPushServer4;
+
+  function createCNameContent(payload) {
+    let packet = dnsPacket.decode(payload);
+    if (
+      packet.questions[0].name == "cname.example.com" &&
+      packet.questions[0].type == "A"
+    ) {
+      return dnsPacket.encode({
+        id: 0,
+        type: "response",
+        flags: dnsPacket.RECURSION_DESIRED,
+        questions: [{ name: packet.questions[0].name, type: "A", class: "IN" }],
+        answers: [
+          {
+            name: packet.questions[0].name,
+            ttl: 55,
+            type: "CNAME",
+            flush: false,
+            data: "pointing-elsewhere.example.com",
+          },
+        ],
+      });
+    }
+    if (
+      packet.questions[0].name == "pointing-elsewhere.example.com" &&
+      packet.questions[0].type == "A"
+    ) {
+      return dnsPacket.encode({
+        id: 0,
+        type: "response",
+        flags: dnsPacket.RECURSION_DESIRED,
+        questions: [{ name: packet.questions[0].name, type: "A", class: "IN" }],
+        answers: [
+          {
+            name: packet.questions[0].name,
+            ttl: 55,
+            type: "A",
+            flush: false,
+            data: "99.88.77.66",
+          },
+        ],
+      });
+    }
+
+    return dnsPacket.encode({
+      id: 0,
+      type: "response",
+      flags: dnsPacket.RECURSION_DESIRED | dnsPacket.rcodes.toRcode("NXDOMAIN"),
+      questions: [
+        {
+          name: packet.questions[0].name,
+          type: packet.questions[0].type,
+          class: "IN",
+        },
+      ],
+      answers: [],
+    });
+  }
+
+  function createCNameARecord() {
+    // test23 asks for cname-a.example.com
+    // this responds with a CNAME to here.example.com *and* an A record
+    // for here.example.com
+    let rContent;
+
+    rContent = Buffer.from(
+      "0000" +
+      "0100" +
+      "0001" + // QDCOUNT
+      "0002" + // ANCOUNT
+      "00000000" + // NSCOUNT + ARCOUNT
+      "07636E616D652d61" + // cname-a
+      "076578616D706C6503636F6D00" + // .example.com
+      "00010001" + // question type (A) + question class (IN)
+      // answer record 1
+      "C00C" + // name pointer to cname-a.example.com
+      "0005" + // type (CNAME)
+      "0001" + // class
+      "00000037" + // TTL
+      "0012" + // RDLENGTH
+      "0468657265" + // here
+      "076578616D706C6503636F6D00" + // .example.com
+      // answer record 2, the A entry for the CNAME above
+      "0468657265" + // here
+      "076578616D706C6503636F6D00" + // .example.com
+      "0001" + // type (A)
+      "0001" + // class
+      "00000037" + // TTL
+      "0004" + // RDLENGTH
+        "09080706", // IPv4 address
+      "hex"
+    );
+
+    return rContent;
+  }
+
+  function responseType(packet, responseIP) {
+    if (
+      packet.questions.length > 0 &&
+      packet.questions[0].name == "confirm.example.com" &&
+      packet.questions[0].type == "NS"
+    ) {
+      return "NS";
+    }
+
+    return ip.isV4Format(responseIP) ? "A" : "AAAA";
+  }
+
+  function handleAuth() {
+    // There's a Set-Cookie: header in the response for "/dns" , which this
+    // request subsequently would include if the http channel wasn't
+    // anonymous. Thus, if there's a cookie in this request, we know Firefox
+    // mishaved. If there's not, we're fine.
+    if (req.headers.cookie) {
+      res.writeHead(403);
+      res.end("cookie for me, not for you");
+      return false;
+    }
+    if (req.headers.authorization != "user:password") {
+      res.writeHead(401);
+      res.end("bad boy!");
+      return false;
+    }
+
+    return true;
+  }
+
+  function createDNSAnswer(response, packet, responseIP, requestPayload) {
+    // This shuts down the connection so we can test if the client reconnects
+    if (
+      packet.questions.length > 0 &&
+      packet.questions[0].name == "closeme.com"
+    ) {
+      response.stream.connection.close("INTERNAL_ERROR", response.stream.id);
+      return null;
+    }
+
+    if (
+      packet.questions.length > 0 &&
+      packet.questions[0].name.endsWith(".pd")
+    ) {
+      // Bug 1543811: test edns padding extension. Return whether padding was
+      // included via the first half of the ip address (1.1 vs 2.2) and the
+      // size of the request in the second half of the ip address allowing to
+      // verify that the correct amount of padding was added.
+      if (
+        packet.additionals.length > 0 &&
+        packet.additionals[0].type == "OPT" &&
+        packet.additionals[0].options.some(o => o.type === "PADDING")
+      ) {
+        responseIP =
+          "1.1." +
+          ((requestPayload.length >> 8) & 0xff) +
+          "." +
+          (requestPayload.length & 0xff);
+      } else {
+        responseIP =
+          "2.2." +
+          ((requestPayload.length >> 8) & 0xff) +
+          "." +
+          (requestPayload.length & 0xff);
+      }
+    }
+
+    if (u.query.corruptedAnswer) {
+      // DNS response header is 12 bytes, we check for this minimum length
+      // at the start of decoding so this is the simplest way to force
+      // a decode error.
+      return "<12bytes";
+    }
+
+    function responseData() {
+      if (
+        packet.questions.length > 0 &&
+        packet.questions[0].name == "confirm.example.com" &&
+        packet.questions[0].type == "NS"
+      ) {
+        return "ns.example.com";
+      }
+
+      return responseIP;
+    }
+
+    let answers = [];
+    if (
+      responseIP != "none" &&
+      responseType(packet, responseIP) == packet.questions[0].type
+    ) {
+      answers.push({
+        name: u.query.hostname ? u.query.hostname : packet.questions[0].name,
+        ttl: 55,
+        type: responseType(packet, responseIP),
+        flush: false,
+        data: responseData(),
+      });
+    }
+
+    // for use with test_dns_by_type_resolve.js
+    if (packet.questions[0].type == "TXT") {
+      answers.push({
+        name: packet.questions[0].name,
+        type: packet.questions[0].type,
+        ttl: 55,
+        class: "IN",
+        flush: false,
+        data: Buffer.from(
+          "62586B67646D39705932556761584D6762586B676347467A63336476636D513D",
+          "hex"
+        ),
+      });
+    }
+
+    if (u.query.cnameloop) {
+      answers.push({
+        name: "cname.example.com",
+        type: "CNAME",
+        ttl: 55,
+        class: "IN",
+        flush: false,
+        data: "pointing-elsewhere.example.com",
+      });
+    }
+
+    if (req.headers["accept-language"] || req.headers["user-agent"]) {
+      // If we get this header, don't send back any response. This should
+      // cause the tests to fail. This is easier then actually sending back
+      // the header value into test_trr.js
+      answers = [];
+    }
+
+    let buf = dnsPacket.encode({
+      type: "response",
+      id: packet.id,
+      flags: dnsPacket.RECURSION_DESIRED,
+      questions: packet.questions,
+      answers,
+    });
+
+    return buf;
+  }
+
+  function getDelayFromPacket(packet, type) {
+    let delay = 0;
+    if (packet.questions[0].type == "A") {
+      delay = parseInt(u.query.delayIPv4);
+    } else if (packet.questions[0].type == "AAAA") {
+      delay = parseInt(u.query.delayIPv6);
+    }
+
+    if (u.query.slowConfirm && type == "NS") {
+      delay += 1000;
+    }
+
+    return delay;
+  }
+
+  function writeDNSResponse(response, buf, delay, contentType) {
+    function writeResponse(resp, buffer) {
+      resp.setHeader("Set-Cookie", "trackyou=yes; path=/; max-age=100000;");
+      resp.setHeader("Content-Type", contentType);
+      if (req.headers["accept-encoding"].includes("gzip")) {
+        zlib.gzip(buffer, function(err, result) {
+          resp.setHeader("Content-Encoding", "gzip");
+          resp.setHeader("Content-Length", result.length);
+          try {
+            resp.writeHead(200);
+            resp.end(result);
+          } catch (e) {
+            // connection was closed by the time we started writing.
+          }
+        });
+      } else {
+        resp.setHeader("Content-Length", buffer.length);
+        try {
+          resp.writeHead(200);
+          resp.write(buffer);
+          resp.end("");
+        } catch (e) {
+          // connection was closed by the time we started writing.
+        }
+      }
+    }
+
+    if (delay) {
+      setTimeout(
+        arg => {
+          writeResponse(arg[0], arg[1]);
+        },
+        delay,
+        [response, buf]
+      );
+      return;
+    }
+
+    writeResponse(response, buf);
+  }
 
   if (req.httpVersionMajor === 2) {
     res.setHeader("X-Connection-Http2", "yes");
@@ -475,11 +779,17 @@ function handleRequest(req, res) {
     }
 
     if (rstConnection === null || rstConnection !== req.stream.connection) {
-      res.setHeader("Connection", "close");
+      if (req.httpVersionMajor != 2) {
+        res.setHeader("Connection", "close");
+      }
       res.writeHead(400);
       res.end("WRONG CONNECTION, HOMIE!");
       return;
     }
+
+    // Clear these variables so we can run the test again with --verify
+    didRst = false;
+    rstConnection = null;
 
     if (req.httpVersionMajor != 2) {
       res.setHeader("Connection", "close");
@@ -551,35 +861,47 @@ function handleRequest(req, res) {
   // for use with test_http3.js
   else if (u.pathname === "/http3-test") {
     res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Alt-Svc", "h3-27=" + req.headers["x-altsvc"]);
+    res.setHeader("Alt-Svc", "h3-29=" + req.headers["x-altsvc"]);
+  }
+  // for use with test_http3.js
+  else if (u.pathname === "/http3-test2") {
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader(
+      "Alt-Svc",
+      "h2=foo2.example.com:8000,h3-29=" +
+        req.headers["x-altsvc"] +
+        ",h3-30=foo2.example.com:8443"
+    );
   }
   // for use with test_trr.js
   else if (u.pathname === "/dns-cname") {
     // asking for cname.example.com
-    let rContent;
-    if (0 == cname_confirm) {
-      // ... this sends a CNAME back to pointing-elsewhere.example.com
-      rContent = Buffer.from(
-        "00000100000100010000000005636E616D65076578616D706C6503636F6D0000050001C00C0005000100000037002012706F696E74696E672D656C73657768657265076578616D706C6503636F6D00",
-        "hex"
-      );
-      cname_confirm++;
-    } else {
-      // ... this sends an A 99.88.77.66 entry back for pointing-elsewhere.example.com
-      rContent = Buffer.from(
-        "00000100000100010000000012706F696E74696E672D656C73657768657265076578616D706C6503636F6D0000010001C00C0001000100000037000463584D42",
-        "hex"
-      );
+
+    function emitResponse(response, payload) {
+      let pcontent = createCNameContent(payload);
+      response.setHeader("Content-Type", "application/dns-message");
+      response.setHeader("Content-Length", pcontent.length);
+      response.writeHead(200);
+      response.write(pcontent);
+      response.end("");
     }
-    res.setHeader("Content-Type", "application/dns-message");
+
+    let payload = Buffer.from("");
+    req.on("data", function receiveData(chunk) {
+      payload = Buffer.concat([payload, chunk]);
+    });
+    req.on("end", function finishedData() {
+      emitResponse(res, payload);
+    });
+    return;
+  } else if (u.pathname == "/get-doh-req-port-log") {
+    let rContent = JSON.stringify(gDoHPortsLog);
+    res.setHeader("Content-Type", "text/plain");
     res.setHeader("Content-Length", rContent.length);
-    res.writeHead(200);
-    res.write(rContent);
-    res.end("");
+    res.writeHead(400);
+    res.end(rContent);
     return;
   } else if (u.pathname == "/doh") {
-    cname_confirm = 0; // back to first reply for dns-cname
-
     let responseIP = u.query.responseIP;
     if (!responseIP) {
       responseIP = "5.5.5.5";
@@ -610,20 +932,13 @@ function handleRequest(req, res) {
     }
 
     if (u.query.auth) {
-      // There's a Set-Cookie: header in the response for "/dns" , which this
-      // request subsequently would include if the http channel wasn't
-      // anonymous. Thus, if there's a cookie in this request, we know Firefox
-      // mishaved. If there's not, we're fine.
-      if (req.headers.cookie) {
-        res.writeHead(403);
-        res.end("cookie for me, not for you");
+      if (!handleAuth()) {
         return;
       }
-      if (req.headers.authorization != "user:password") {
-        res.writeHead(401);
-        res.end("bad boy!");
-        return;
-      }
+    }
+
+    if (u.query.noResponse) {
+      return;
     }
 
     if (u.query.push) {
@@ -665,144 +980,23 @@ function handleRequest(req, res) {
 
     let payload = Buffer.from("");
 
-    function emitResponse(response, requestPayload) {
-      let packet = dnsPacket.decode(requestPayload);
-
-      // This shuts down the connection so we can test if the client reconnects
-      if (
-        packet.questions.length > 0 &&
-        packet.questions[0].name == "closeme.com"
-      ) {
-        response.stream.connection.close("INTERNAL_ERROR", response.stream.id);
+    function emitResponse(response, requestPayload, decodedPacket, delay) {
+      let packet = decodedPacket || dnsPacket.decode(requestPayload);
+      let answer = createDNSAnswer(
+        response,
+        packet,
+        responseIP,
+        requestPayload
+      );
+      if (!answer) {
         return;
       }
-
-      function responseType() {
-        if (
-          packet.questions.length > 0 &&
-          packet.questions[0].name == "confirm.example.com" &&
-          packet.questions[0].type == "NS"
-        ) {
-          return "NS";
-        }
-
-        return ip.isV4Format(responseIP) ? "A" : "AAAA";
-      }
-
-      function responseData() {
-        if (
-          packet.questions.length > 0 &&
-          packet.questions[0].name == "confirm.example.com" &&
-          packet.questions[0].type == "NS"
-        ) {
-          return "ns.example.com";
-        }
-
-        return responseIP;
-      }
-
-      let answers = [];
-      if (responseIP != "none" && responseType() == packet.questions[0].type) {
-        answers.push({
-          name: u.query.hostname ? u.query.hostname : packet.questions[0].name,
-          ttl: 55,
-          type: responseType(),
-          flush: false,
-          data: responseData(),
-        });
-      }
-
-      // for use with test_esni_dns_fetch.js
-      if (packet.questions[0].type == "TXT") {
-        answers.push({
-          name: packet.questions[0].name,
-          type: packet.questions[0].type,
-          ttl: 55,
-          class: "IN",
-          flush: false,
-          data: Buffer.from(
-            "62586B67646D39705932556761584D6762586B676347467A63336476636D513D",
-            "hex"
-          ),
-        });
-      } else if (packet.questions[0].type == "HTTPSSVC") {
-        answers.push({
-          name: packet.questions[0].name,
-          type: packet.questions[0].type,
-          ttl: 55,
-          class: "IN",
-          flush: false,
-          data: {
-            priority: 1,
-            name: "some.domain.stuff.",
-            values: [{ key: "esniconfig", value: "testytestystringstring" }],
-          },
-        });
-      }
-
-      if (u.query.cnameloop) {
-        answers.push({
-          name: "cname.example.com",
-          type: "CNAME",
-          ttl: 55,
-          class: "IN",
-          flush: false,
-          data: "pointing-elsewhere.example.com",
-        });
-      }
-
-      if (req.headers["accept-language"] || req.headers["user-agent"]) {
-        // If we get this header, don't send back any response. This should
-        // cause the tests to fail. This is easier then actually sending back
-        // the header value into test_trr.js
-        answers = [];
-      }
-
-      let buf = dnsPacket.encode({
-        type: "response",
-        id: packet.id,
-        flags: dnsPacket.RECURSION_DESIRED,
-        questions: packet.questions,
-        answers,
-      });
-
-      function writeResponse(resp, buffer) {
-        resp.setHeader("Set-Cookie", "trackyou=yes; path=/; max-age=100000;");
-        resp.setHeader("Content-Type", "application/dns-message");
-        if (req.headers["accept-encoding"].includes("gzip")) {
-          zlib.gzip(buffer, function(err, result) {
-            resp.setHeader("Content-Encoding", "gzip");
-            resp.setHeader("Content-Length", result.length);
-            resp.writeHead(200);
-            res.end(result);
-          });
-        } else {
-          resp.setHeader("Content-Length", buffer.length);
-          resp.writeHead(200);
-          resp.write(buffer);
-          resp.end("");
-        }
-      }
-
-      let delay = undefined;
-      if (packet.questions[0].type == "A") {
-        delay = u.query.delayIPv4;
-      } else if (packet.questions[0].type == "AAAA") {
-        delay = u.query.delayIPv6;
-      }
-
-      if (delay) {
-        setTimeout(
-          arg => {
-            writeResponse(arg[0], arg[1]);
-          },
-          parseInt(delay),
-          [response, buf]
-        );
-        return;
-      }
-
-      writeResponse(response, buf);
+      writeDNSResponse(
+        response,
+        answer,
+        delay || getDelayFromPacket(packet, responseType(packet, responseIP)),
+        "application/dns-message"
+      );
     }
 
     if (u.query.dns) {
@@ -817,7 +1011,30 @@ function handleRequest(req, res) {
     req.on("end", function finishedData() {
       // parload is empty when we send redirect response.
       if (payload.length) {
-        emitResponse(res, payload);
+        let packet = dnsPacket.decode(payload);
+        let delay;
+        if (u.query.conncycle) {
+          let name = packet.questions[0].name;
+          if (name.startsWith("newconn")) {
+            // If we haven't seen a req for this newconn name before,
+            // or if we've seen one for the same name on the same port,
+            // synthesize a timeout.
+            if (
+              !gDoHNewConnLog[name] ||
+              gDoHNewConnLog[name] == req.remotePort
+            ) {
+              delay = 1000;
+            }
+            if (!gDoHNewConnLog[name]) {
+              gDoHNewConnLog[name] = req.remotePort;
+            }
+          }
+          gDoHPortsLog.push([packet.questions[0].name, req.remotePort]);
+        } else {
+          gDoHPortsLog = [];
+          gDoHNewConnLog = {};
+        }
+        emitResponse(res, payload, packet, delay);
       }
     });
     return;
@@ -839,13 +1056,14 @@ function handleRequest(req, res) {
           priority: 1,
           name: "h3pool",
           values: [
-            { key: "alpn", value: "h2,h3" },
+            { key: "alpn", value: ["h2", "h3"] },
             { key: "no-default-alpn" },
             { key: "port", value: 8888 },
             { key: "ipv4hint", value: "1.2.3.4" },
-            { key: "esniconfig", value: "123..." },
+            { key: "echconfig", value: "123..." },
             { key: "ipv6hint", value: "::1" },
             { key: 30, value: "somelargestring" },
+            { key: "odoh", value: "456..." },
           ],
         },
       });
@@ -861,8 +1079,9 @@ function handleRequest(req, res) {
           values: [
             { key: "alpn", value: "h2" },
             { key: "ipv4hint", value: ["1.2.3.4", "5.6.7.8"] },
-            { key: "esniconfig", value: "abc..." },
+            { key: "echconfig", value: "abc..." },
             { key: "ipv6hint", value: ["::1", "fe80::794f:6d2c:3d5e:7836"] },
+            { key: "odoh", value: "def..." },
           ],
         },
       });
@@ -893,51 +1112,292 @@ function handleRequest(req, res) {
       res.end("");
     });
     return;
-  } else if (u.pathname === "/dns-cname-a") {
-    // test23 asks for cname-a.example.com
-    // this responds with a CNAME to here.example.com *and* an A record
-    // for here.example.com
-    let rContent;
+  } else if (u.pathname === "/odohconfig") {
+    let payload = Buffer.from("");
+    req.on("data", function receiveData(chunk) {
+      payload = Buffer.concat([payload, chunk]);
+    });
+    req.on("end", function finishedData() {
+      let answers = [];
+      let odohconfig;
+      if (u.query.invalid) {
+        if (u.query.invalid === "empty") {
+          odohconfig = Buffer.from("");
+        } else if (u.query.invalid === "version") {
+          odohconfig = Buffer.from(
+            "002cff030028002000010001002021c8c16355091b28d521cb196627297955c1b607a3dcf1f136534578460d077d",
+            "hex"
+          );
+        } else if (u.query.invalid === "configLength") {
+          odohconfig = Buffer.from(
+            "002cff040028002000010001002021c8c16355091b28d521cb196627297955c1b607a3dcf1f136534578460d07",
+            "hex"
+          );
+        } else if (u.query.invalid === "totalLength") {
+          odohconfig = Buffer.from(
+            "012cff030028002000010001002021c8c16355091b28d521cb196627297955c1b607a3dcf1f136534578460d077d",
+            "hex"
+          );
+        } else if (u.query.invalid === "kemId") {
+          odohconfig = Buffer.from(
+            "002cff040028002100010001002021c8c16355091b28d521cb196627297955c1b607a3dcf1f136534578460d077d",
+            "hex"
+          );
+        }
+      } else {
+        odohconfig = odoh.get_odoh_config();
+      }
 
-    rContent = Buffer.from(
-      "0000" +
-      "0100" +
-      "0001" + // QDCOUNT
-      "0002" + // ANCOUNT
-      "00000000" + // NSCOUNT + ARCOUNT
-      "07636E616D652d61" + // cname-a
-      "076578616D706C6503636F6D00" + // .example.com
-      "00010001" + // question type (A) + question class (IN)
-      // answer record 1
-      "C00C" + // name pointer to cname-a.example.com
-      "0005" + // type (CNAME)
-      "0001" + // class
-      "00000037" + // TTL
-      "0012" + // RDLENGTH
-      "0468657265" + // here
-      "076578616D706C6503636F6D00" + // .example.com
-      // answer record 2, the A entry for the CNAME above
-      "0468657265" + // here
-      "076578616D706C6503636F6D00" + // .example.com
-      "0001" + // type (A)
-      "0001" + // class
-      "00000037" + // TTL
-      "0004" + // RDLENGTH
-        "09080706", // IPv4 address
-      "hex"
-    );
+      if (u.query.downloadFrom === "http") {
+        res.writeHead(200);
+        res.write(odohconfig);
+        res.end("");
+      } else {
+        var b64encoded = Buffer.from(odohconfig).toString("base64");
+        let packet = dnsPacket.decode(payload);
+        if (
+          u.query.failConfirmation == "true" &&
+          packet.questions[0].type == "NS" &&
+          packet.questions[0].name == "example.com"
+        ) {
+          res.writeHead(200);
+          res.write("<12bytes");
+          res.end("");
+          return;
+        }
+        if (packet.questions[0].type == "HTTPS") {
+          answers.push({
+            name: packet.questions[0].name,
+            type: packet.questions[0].type,
+            ttl: u.query.ttl ? u.query.ttl : 55,
+            class: "IN",
+            flush: false,
+            data: {
+              priority: 1,
+              name: packet.questions[0].name,
+              values: [
+                {
+                  key: "odoh",
+                  value: b64encoded,
+                  needBase64Decode: true,
+                },
+              ],
+            },
+          });
+        }
+
+        let buf = dnsPacket.encode({
+          type: "response",
+          id: packet.id,
+          flags: dnsPacket.RECURSION_DESIRED,
+          questions: packet.questions,
+          answers,
+        });
+
+        res.setHeader("Content-Type", "application/dns-message");
+        res.setHeader("Content-Length", buf.length);
+        res.writeHead(200);
+        res.write(buf);
+        res.end("");
+      }
+    });
+    return;
+  } else if (u.pathname === "/odoh") {
+    let responseIP = u.query.responseIP;
+    if (!responseIP) {
+      responseIP = "5.5.5.5";
+    }
+
+    if (u.query.auth) {
+      if (!handleAuth()) {
+        return;
+      }
+    }
+
+    if (u.query.noResponse) {
+      return;
+    }
+
+    let payload = Buffer.from("");
+
+    function emitResponse(response, requestPayload) {
+      let decryptedQuery = odoh.decrypt_query(requestPayload);
+      let packet = dnsPacket.decode(Buffer.from(decryptedQuery.buffer));
+      let answer = createDNSAnswer(
+        response,
+        packet,
+        responseIP,
+        requestPayload
+      );
+      if (!answer) {
+        return;
+      }
+
+      let encryptedResponse = odoh.create_response(answer);
+      writeDNSResponse(
+        response,
+        encryptedResponse,
+        getDelayFromPacket(packet, responseType(packet, responseIP)),
+        "application/oblivious-dns-message"
+      );
+    }
+
+    if (u.query.dns) {
+      payload = Buffer.from(u.query.dns, "base64");
+      emitResponse(res, payload);
+      return;
+    }
+
+    req.on("data", function receiveData(chunk) {
+      payload = Buffer.concat([payload, chunk]);
+    });
+    req.on("end", function finishedData() {
+      if (u.query.httpError) {
+        res.writeHead(404);
+        res.end("Not Found");
+        return;
+      }
+
+      if (u.query.cname) {
+        let decryptedQuery = odoh.decrypt_query(payload);
+        let rContent;
+        if (u.query.cname === "ARecord") {
+          rContent = createCNameARecord();
+        } else {
+          rContent = createCNameContent(Buffer.from(decryptedQuery.buffer));
+        }
+        let encryptedResponse = odoh.create_response(rContent);
+        res.setHeader("Content-Type", "application/oblivious-dns-message");
+        res.setHeader("Content-Length", encryptedResponse.length);
+        res.writeHead(200);
+        res.write(encryptedResponse);
+        res.end("");
+        return;
+      }
+      // parload is empty when we send redirect response.
+      if (payload.length) {
+        emitResponse(res, payload);
+      }
+    });
+    return;
+  } else if (u.pathname === "/httpssvc_as_altsvc") {
+    let payload = Buffer.from("");
+    req.on("data", function receiveData(chunk) {
+      payload = Buffer.concat([payload, chunk]);
+    });
+    req.on("end", function finishedData() {
+      let packet = dnsPacket.decode(payload);
+      let answers = [];
+      if (packet.questions[0].type == "HTTPS") {
+        let priority = 1;
+        // Set an invalid priority to test the case when receiving a corrupted
+        // response.
+        if (packet.questions[0].name === "foo.notexisted.com") {
+          priority = 0;
+        }
+        answers.push({
+          name: packet.questions[0].name,
+          type: packet.questions[0].type,
+          ttl: 55,
+          class: "IN",
+          flush: false,
+          data: {
+            priority,
+            name: "foo.example.com",
+            values: [
+              { key: "alpn", value: "h2" },
+              { key: "port", value: serverPort },
+              { key: 30, value: "somelargestring" },
+            ],
+          },
+        });
+      } else {
+        answers.push({
+          name: packet.questions[0].name,
+          type: "A",
+          ttl: 55,
+          flush: false,
+          data: "127.0.0.1",
+        });
+      }
+
+      let buf = dnsPacket.encode({
+        type: "response",
+        id: packet.id,
+        flags: dnsPacket.RECURSION_DESIRED,
+        questions: packet.questions,
+        answers,
+      });
+
+      res.setHeader("Content-Type", "application/dns-message");
+      res.setHeader("Content-Length", buf.length);
+      res.writeHead(200);
+      res.write(buf);
+      res.end("");
+    });
+    return;
+  } else if (u.pathname === "/httpssvc_use_iphint") {
+    let payload = Buffer.from("");
+    req.on("data", function receiveData(chunk) {
+      payload = Buffer.concat([payload, chunk]);
+    });
+    req.on("end", function finishedData() {
+      let packet = dnsPacket.decode(payload);
+      let answers = [];
+      answers.push({
+        name: packet.questions[0].name,
+        type: "HTTPS",
+        ttl: 55,
+        class: "IN",
+        flush: false,
+        data: {
+          priority: 1,
+          name: ".",
+          values: [
+            { key: "alpn", value: "h2" },
+            { key: "port", value: serverPort },
+            { key: "ipv4hint", value: "127.0.0.1" },
+          ],
+        },
+      });
+
+      let buf = dnsPacket.encode({
+        type: "response",
+        id: packet.id,
+        flags: dnsPacket.RECURSION_DESIRED,
+        questions: packet.questions,
+        answers,
+      });
+
+      res.setHeader("Content-Type", "application/dns-message");
+      res.setHeader("Content-Length", buf.length);
+      res.writeHead(200);
+      res.write(buf);
+      res.end("");
+    });
+    return;
+  } else if (u.pathname === "/dns-cname-a") {
+    let rContent = createCNameARecord();
     res.setHeader("Content-Type", "application/dns-message");
     res.setHeader("Content-Length", rContent.length);
     res.writeHead(200);
     res.write(rContent);
     res.end("");
     return;
-  } else if (u.pathname === "/dns-750ms") {
-    // it's just meant to be this slow - the test doesn't care about the actual response
+  } else if (u.pathname === "/websocket") {
+    res.setHeader("Upgrade", "websocket");
+    res.setHeader("Connection", "Upgrade");
+    var wshash = crypto.createHash("sha1");
+    wshash.update(req.headers["sec-websocket-key"]);
+    wshash.update("258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+    let key = wshash.digest("base64");
+    res.setHeader("Sec-WebSocket-Accept", key);
+    res.writeHead(101);
+    res.end("something....");
     return;
   }
-  // for use with test_esni_dns_fetch.js
-  else if (u.pathname === "/esni-dns-push") {
+  // for use with test_dns_by_type_resolve.js
+  else if (u.pathname === "/txt-dns-push") {
     // _esni_push.example.com has A entry 127.0.0.1
     let rContent = Buffer.from(
       "0000010000010001000000000A5F65736E695F70757368076578616D706C6503636F6D0000010001C00C000100010000003700047F000001",
@@ -1341,6 +1801,37 @@ function handleRequest(req, res) {
     });
     res.end();
     return;
+  } else if (u.pathname === "/redirect_to_http") {
+    res.setHeader(
+      "Location",
+      `http://test.httpsrr.redirect.com:${u.query.port}/redirect_to_http`
+    );
+    res.writeHead(307);
+    res.end("");
+    return;
+  } else if (u.pathname === "/103_response") {
+    let link_val = req.headers["link-to-set"];
+    if (link_val) {
+      res.setHeader("link", link_val);
+    }
+    res.setHeader("something", "something");
+    res.writeHead(103);
+
+    res.setHeader("Content-Type", "text/plain");
+    res.setHeader("Content-Length", "12");
+    res.writeHead(200);
+    res.write("data reached");
+    res.end();
+    return;
+  }
+
+  // response headers with invalid characters in the name
+  else if (u.pathname === "/invalid_response_header") {
+    res.setHeader("With Spaces", "Hello");
+    res.setHeader("Without-Spaces", "World");
+    res.writeHead(200);
+    res.end("");
+    return;
   }
 
   res.setHeader("Content-Type", "text/html");
@@ -1512,7 +2003,9 @@ function forkProcess() {
       forked.resolve(msg);
       forked.resolve = null;
     } else {
-      console.log(`forked process without handler sent: ${msg}`);
+      console.log(
+        `forked process without handler sent: ${JSON.stringify(msg)}`
+      );
       forked.errors += `forked process without handler sent: ${JSON.stringify(
         msg
       )}\n`;

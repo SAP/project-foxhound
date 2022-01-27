@@ -101,6 +101,10 @@ nsAppShellService::CreateHiddenWindow() {
     return NS_ERROR_FAILURE;
   }
 
+  if (mHiddenWindow) {
+    return NS_OK;
+  }
+
   nsCOMPtr<nsIFile> profileDir;
   NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
                          getter_AddRefs(profileDir));
@@ -136,7 +140,8 @@ nsAppShellService::CreateHiddenWindow() {
   nsCOMPtr<nsIDocShell> docShell;
   newWindow->GetDocShell(getter_AddRefs(docShell));
   if (docShell) {
-    docShell->SetIsActive(false);
+    Unused << docShell->GetBrowsingContext()->SetExplicitActive(
+        dom::ExplicitActiveStatus::Inactive);
   }
 
   mHiddenWindow.swap(newWindow);
@@ -285,9 +290,6 @@ WebBrowserChrome2Stub::SetDimensions(uint32_t flags, int32_t x, int32_t y,
 }
 
 NS_IMETHODIMP
-WebBrowserChrome2Stub::SetFocus() { return NS_ERROR_NOT_IMPLEMENTED; }
-
-NS_IMETHODIMP
 WebBrowserChrome2Stub::GetVisibility(bool* aVisibility) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -321,18 +323,8 @@ class BrowserDestroyer final : public Runnable {
         mContainer(aContainer) {}
 
   static nsresult Destroy(nsIWebBrowser* aBrowser) {
-    RefPtr<BrowsingContext> bc;
-    if (nsCOMPtr<nsIDocShell> docShell = do_GetInterface(aBrowser)) {
-      bc = docShell->GetBrowsingContext();
-    }
-
     nsCOMPtr<nsIBaseWindow> window(do_QueryInterface(aBrowser));
-    nsresult rv = window->Destroy();
-    MOZ_ASSERT(bc);
-    if (bc) {
-      bc->Detach();
-    }
-    return rv;
+    return window->Destroy();
   }
 
   NS_IMETHOD
@@ -615,6 +607,9 @@ nsresult nsAppShellService::JustCreateTopWindow(
   if (aChromeMask & nsIWebBrowserChrome::CHROME_FISSION_WINDOW)
     widgetInitData.mFissionWindow = true;
 
+  if (aChromeMask & nsIWebBrowserChrome::CHROME_REMOTE_WINDOW)
+    widgetInitData.mHasRemoteContent = true;
+
 #ifdef MOZ_WIDGET_GTK
   // Linux/Gtk PIP window support. It's Chrome Toplevel window, always on top
   // and without any bar.
@@ -766,12 +761,14 @@ nsresult nsAppShellService::JustCreateTopWindow(
       // Use the subject (or system) principal as the storage principal too
       // until the new window finishes navigating and gets a real storage
       // principal.
-      rv = docShell->CreateAboutBlankContentViewer(principal, principal,
-                                                   /* aCsp = */ nullptr);
+      rv = docShell->CreateAboutBlankContentViewer(
+          principal, principal, /* aCsp = */ nullptr, /* aBaseURI = */ nullptr,
+          /* aIsInitialDocument = */ true);
       NS_ENSURE_SUCCESS(rv, rv);
       RefPtr<Document> doc = docShell->GetDocument();
       NS_ENSURE_TRUE(!!doc, NS_ERROR_FAILURE);
-      doc->SetIsInitialDocument(true);
+      MOZ_ASSERT(doc->IsInitialDocument(),
+                 "Document should be an initial document");
     }
 
     // Begin loading the URL provided.

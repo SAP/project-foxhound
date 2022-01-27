@@ -11,13 +11,14 @@
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/net/HttpChannelChild.h"
 #include "mozilla/net/CookieServiceChild.h"
-#include "mozilla/net/FTPChannelChild.h"
 #include "mozilla/net/DataChannelChild.h"
+#ifdef MOZ_WIDGET_GTK
+#  include "mozilla/net/GIOChannelChild.h"
+#endif
 #include "mozilla/net/FileChannelChild.h"
 #include "mozilla/net/WebSocketChannelChild.h"
 #include "mozilla/net/WebSocketEventListenerChild.h"
 #include "mozilla/net/DNSRequestChild.h"
-#include "mozilla/net/ChannelDiverterChild.h"
 #include "mozilla/net/IPCTransportProvider.h"
 #include "mozilla/dom/network/TCPSocketChild.h"
 #include "mozilla/dom/network/TCPServerSocketChild.h"
@@ -72,7 +73,6 @@ void NeckoChild::InitNeckoChild() {
     }
     gNeckoChild = cpc->SendPNeckoConstructor();
     NS_ASSERTION(gNeckoChild, "PNecko Protocol init failed!");
-    SocketProcessBridgeChild::GetSocketProcessBridge();
   }
 }
 
@@ -127,21 +127,23 @@ bool NeckoChild::DeallocPAltDataOutputStreamChild(
   return true;
 }
 
-PFTPChannelChild* NeckoChild::AllocPFTPChannelChild(
+#ifdef MOZ_WIDGET_GTK
+PGIOChannelChild* NeckoChild::AllocPGIOChannelChild(
     PBrowserChild* aBrowser, const SerializedLoadContext& aSerialized,
-    const FTPChannelCreationArgs& aOpenArgs) {
-  // We don't allocate here: see FTPChannelChild::AsyncOpen()
-  MOZ_CRASH("AllocPFTPChannelChild should not be called");
+    const GIOChannelCreationArgs& aOpenArgs) {
+  // We don't allocate here: see GIOChannelChild::AsyncOpen()
+  MOZ_CRASH("AllocPGIOChannelChild should not be called");
   return nullptr;
 }
 
-bool NeckoChild::DeallocPFTPChannelChild(PFTPChannelChild* channel) {
-  MOZ_ASSERT(IsNeckoChild(), "DeallocPFTPChannelChild called by non-child!");
+bool NeckoChild::DeallocPGIOChannelChild(PGIOChannelChild* channel) {
+  MOZ_ASSERT(IsNeckoChild(), "DeallocPGIOChannelChild called by non-child!");
 
-  FTPChannelChild* child = static_cast<FTPChannelChild*>(channel);
+  GIOChannelChild* child = static_cast<GIOChannelChild*>(channel);
   child->ReleaseIPDLReference();
   return true;
 }
+#endif
 
 PCookieServiceChild* NeckoChild::AllocPCookieServiceChild() {
   // We don't allocate here: see CookieService::GetSingleton()
@@ -246,17 +248,6 @@ bool NeckoChild::DeallocPUDPSocketChild(PUDPSocketChild* child) {
   return true;
 }
 
-PChannelDiverterChild* NeckoChild::AllocPChannelDiverterChild(
-    const ChannelDiverterArgs& channel) {
-  return new ChannelDiverterChild();
-  ;
-}
-
-bool NeckoChild::DeallocPChannelDiverterChild(PChannelDiverterChild* child) {
-  delete static_cast<ChannelDiverterChild*>(child);
-  return true;
-}
-
 PTransportProviderChild* NeckoChild::AllocPTransportProviderChild() {
   // This refcount is transferred to the receiver of the message that
   // includes the PTransportProviderChild actor.
@@ -268,19 +259,6 @@ PTransportProviderChild* NeckoChild::AllocPTransportProviderChild() {
 bool NeckoChild::DeallocPTransportProviderChild(
     PTransportProviderChild* aActor) {
   return true;
-}
-
-mozilla::ipc::IPCResult NeckoChild::RecvAsyncAuthPromptForNestedFrame(
-    const TabId& aNestedFrameId, const nsCString& aUri, const nsString& aRealm,
-    const uint64_t& aCallbackId) {
-  RefPtr<dom::BrowserChild> browserChild =
-      dom::BrowserChild::FindBrowserChild(aNestedFrameId);
-  if (!browserChild) {
-    MOZ_CRASH();
-    return IPC_FAIL_NO_REASON(this);
-  }
-  browserChild->SendAsyncAuthPrompt(aUri, aRealm, aCallbackId);
-  return IPC_OK();
 }
 
 /* Predictor Messages */

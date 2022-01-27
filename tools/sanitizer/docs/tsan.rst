@@ -1,5 +1,5 @@
 Thread Sanitizer
-=================
+================
 
 What is Thread Sanitizer?
 --------------------------
@@ -14,6 +14,8 @@ TSan works can be found on `the Thread Sanitizer wiki <https://github.com/google
 
 A `meta bug called tsan <https://bugzilla.mozilla.org/show_bug.cgi?id=tsan>`__
 is maintained to keep track of all the bugs found with TSan.
+
+A `blog post on hacks.mozilla.org <https://hacks.mozilla.org/2021/04/eliminating-data-races-in-firefox-a-technical-report/>`__ describes this project.
 
 Note that unlike other sanitizers, TSan is currently **only supported on Linux**.
 
@@ -47,7 +49,7 @@ Creating Try builds
 
 If for some reason you can't use the pre-built binaries mentioned in the
 previous section (e.g. you need to test a patch), you can either build
-Firefox yourself (see the following section) or use the :ref:`try server <Try Server>`
+Firefox yourself (see the following section) or use the :ref:`try server <Pushing to Try>`
 to create the customized build for you. Pushing to try requires L1 commit
 access. If you don't have this access yet you can request access (see
 `Becoming A Mozilla
@@ -65,18 +67,33 @@ Creating local builds on Linux
 Build prerequisites
 ~~~~~~~~~~~~~~~~~~~
 
-LLVM/Clang
-^^^^^^^^^^
+LLVM/Clang/Rust
+^^^^^^^^^^^^^^^
 
 The TSan instrumentation is implemented as an LLVM pass and integrated
 into Clang. We strongly recommend that you use the Clang version supplied
 as part of the ``mach bootstrap`` process, as we backported several required
 fixes for TSan on Firefox.
 
-You also currently require a Rust Nightly toolchain because the usage of
-sanitizers is restricted to Nightly toolchains in Rust. Unlike for ASan,
-we really need to instrument *all* code, including Rust code, in order to
-avoid false positives.
+Sanitizer support in Rust is genuinely experimental,
+so our build system only works with a specially patched version of Rust
+that we build in our CI. To install that specific version (or update to a newer
+version), run the following in the root of your mozilla-central checkout:
+
+::
+
+    ./mach artifact toolchain --from-build linux64-rust-dev
+    rm -rf ~/.mozbuild/rustc-sanitizers
+    mv rustc ~/.mozbuild/rustc-sanitizers
+    rustup toolchain link gecko-sanitizers ~/.mozbuild/rustc-sanitizers
+    rustup override set gecko-sanitizers
+
+``mach artifact`` will always download the ``linux64-rust-dev`` toolchain associated
+with the current mozilla central commit you have checked out. The toolchain should
+mostly behave like a normal rust nightly but we don't recommend using it for anything
+other than building gecko, just in case. Also note that
+``~/.mozbuild/rustc-sanitizers`` is just a reasonable default location -- feel
+free to "install" the toolchain wherever you please.
 
 Building Firefox
 ~~~~~~~~~~~~~~~~
@@ -202,7 +219,7 @@ silence a race while a fix is developed as well as to permanently silence a
        and think twice before attempting to suppress a race.
 
 The runtime Suppression list is directly baked into Firefox at compile-time and
-located at ``mozglue/build/TsanOptions.cpp``.
+located at `mozglue/build/TsanOptions.cpp <https://searchfox.org/mozilla-central/source/mozglue/build/TsanOptions.cpp>`__.
 
 .. warning::
        **Important**: When adding a suppression, always make sure to include
@@ -256,6 +273,8 @@ Intermittent Race Reports
 Unfortunately, the TSan algorithm does not guarantee, that a race is detected 100% of the
 time. Intermittent failures with TSan are (to a certain degree) to be expected and the races
 involved should be filed and fixed to solve the problem.
+
+.. _Frequently Asked Questions about TSan:
 
 Frequently Asked Questions about TSan
 -------------------------------------

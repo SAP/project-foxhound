@@ -9,7 +9,9 @@
 
 #[macro_use]
 extern crate arrayref;
-extern crate memmap;
+extern crate memmap2;
+#[macro_use]
+extern crate log;
 
 use std::slice;
 use std::str;
@@ -17,7 +19,7 @@ use std::cmp::max;
 use std::fs::File;
 use std::mem;
 
-use memmap::Mmap;
+use memmap2::Mmap;
 
 // Make submodules available publicly.
 pub mod builder;
@@ -430,7 +432,7 @@ pub struct Hyphenator<'a>(&'a [u8]);
 impl Hyphenator<'_> {
     /// Return a Hyphenator that wraps the given buffer.
     /// This does *not* check that the given buffer is in fact a valid hyphenation table.
-    /// Use is_valid_hyphenator() to determine whether it is usable.
+    /// Use `is_valid_hyphenator()` to determine whether it is usable.
     /// (Calling hyphenation methods on a Hyphenator that wraps arbitrary,
     /// unvalidated data is not unsafe, but may panic.)
     pub fn new(buffer: &[u8]) -> Hyphenator {
@@ -617,11 +619,11 @@ impl Hyphenator<'_> {
 /// Load the compiled hyphenation file at `dic_path`, if present.
 ///
 /// Returns `None` if the specified file cannot be opened or mapped,
-/// otherwise returns a `memmap::Mmap` mapping the file.
+/// otherwise returns a `memmap2::Mmap` mapping the file.
 ///
 /// # Safety
 ///
-/// This is unsafe for the same reason Mmap::map() is unsafe:
+/// This is unsafe for the same reason `Mmap::map()` is unsafe:
 /// mapped_hyph does not guarantee safety if the mapped file is modified
 /// (e.g. by another process) while we're using it.
 ///

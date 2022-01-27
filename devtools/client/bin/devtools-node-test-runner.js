@@ -22,6 +22,7 @@ const path = require("path");
 const TEST_TYPES = {
   JEST: "jest",
   MOCHA: "mocha",
+  TYPESCRIPT: "typescript",
 };
 
 const SUITES = {
@@ -49,6 +50,14 @@ const SUITES = {
     path: "../netmonitor/test/node",
     type: TEST_TYPES.JEST,
   },
+  performance: {
+    path: "../performance-new",
+    type: TEST_TYPES.TYPESCRIPT,
+  },
+  shared_components: {
+    path: "../shared/components/test/node",
+    type: TEST_TYPES.JEST,
+  },
   webconsole: {
     path: "../webconsole/test/node",
     type: TEST_TYPES.MOCHA,
@@ -73,6 +82,8 @@ function getErrors(suite, out, err) {
       return getJestErrors(out, err);
     case TEST_TYPES.MOCHA:
       return getMochaErrors(out, err);
+    case TEST_TYPES.TYPESCRIPT:
+      return getTypescriptErrors(out, err);
     default:
       throw new Error("Unsupported suite type: " + SUITES[suite].type);
   }
@@ -108,6 +119,15 @@ function getMochaErrors(out, err) {
   return results.failures.map(
     failure => failure.fullTitle + " | " + failure.err.message
   );
+}
+
+function getTypescriptErrors(out, err) {
+  // Typescript error lines look like:
+  //   popup/panel.jsm.js(103,7): error TS2531: Object is possibly 'null'.
+  // Which means:
+  //   {file_path}({line},{col}): error TS{error_code}: {message}
+  const tsErrorRegex = /error TS\d+\:/;
+  return out.split("\n").filter(l => tsErrorRegex.test(l));
 }
 
 function runTests() {

@@ -11,7 +11,6 @@
 #include "ImageBridgeParent.h"  // for ImageBridgeParent
 #include "ImageContainer.h"     // for ImageContainer
 #include "Layers.h"             // for Layer, etc
-#include "ShadowLayers.h"       // for ShadowLayerForwarder
 #include "SynchronousTask.h"
 #include "mozilla/Assertions.h"        // for MOZ_ASSERT, etc
 #include "mozilla/Monitor.h"           // for Monitor, MonitorAutoLock
@@ -21,6 +20,7 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/gfx/Point.h"  // for IntSize
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/MessageChannel.h"         // for MessageChannel, etc
 #include "mozilla/ipc/Transport.h"              // for Transport
 #include "mozilla/layers/CompositableClient.h"  // for CompositableChild, etc
@@ -33,7 +33,7 @@
 #include "mozilla/media/MediaSystemResourceManager.h"  // for MediaSystemResourceManager
 #include "mozilla/media/MediaSystemResourceManagerChild.h"  // for MediaSystemResourceManagerChild
 #include "mozilla/mozalloc.h"  // for operator new, etc
-#include "mtransport/runnable_utils.h"
+#include "transport/runnable_utils.h"
 #include "nsContentUtils.h"
 #include "nsISupportsImpl.h"         // for ImageContainer::AddRef, etc
 #include "nsTArray.h"                // for AutoTArray, nsTArray, etc
@@ -42,6 +42,10 @@
 
 #if defined(XP_WIN)
 #  include "mozilla/gfx/DeviceManagerDx.h"
+#endif
+
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/layers/AndroidHardwareBuffer.h"
 #endif
 
 namespace mozilla {
@@ -109,6 +113,15 @@ void ImageBridgeChild::UseTextures(
     }
 
     bool readLocked = t.mTextureClient->OnForwardedToHost();
+
+    auto fenceFd = t.mTextureClient->GetInternalData()->GetAcquireFence();
+    if (fenceFd.IsValid()) {
+      mTxn->AddNoSwapEdit(CompositableOperation(
+          aCompositable->GetIPCHandle(),
+          OpDeliverAcquireFence(nullptr, t.mTextureClient->GetIPDLActor(),
+                                fenceFd)));
+    }
+
     textures.AppendElement(
         TimedTexture(nullptr, t.mTextureClient->GetIPDLActor(), t.mTimeStamp,
                      t.mPictureRect, t.mFrameID, t.mProducerID, readLocked));
@@ -120,17 +133,21 @@ void ImageBridgeChild::UseTextures(
                                             OpUseTexture(textures)));
 }
 
-void ImageBridgeChild::UseComponentAlphaTextures(
-    CompositableClient* aCompositable, TextureClient* aTextureOnBlack,
-    TextureClient* aTextureOnWhite) {
-  MOZ_CRASH("should not be called");
-}
-
 void ImageBridgeChild::HoldUntilCompositableRefReleasedIfNecessary(
     TextureClient* aClient) {
   if (!aClient) {
     return;
   }
+
+#ifdef MOZ_WIDGET_ANDROID
+  auto bufferId = aClient->GetInternalData()->GetBufferId();
+  if (bufferId.isSome()) {
+    MOZ_ASSERT(aClient->GetFlags() & TextureFlags::WAIT_HOST_USAGE_END);
+    AndroidHardwareBufferManager::Get()->HoldUntilNotifyNotUsed(
+        bufferId.ref(), GetFwdTransactionId(), /* aUsesImageBridge */ true);
+  }
+#endif
+
   // Wait ReleaseCompositableRef only when TextureFlags::RECYCLE or
   // TextureFlags::WAIT_HOST_USAGE_END is set on ImageBridge.
   bool waitNotifyNotUsed =
@@ -268,8 +285,7 @@ void ImageBridgeChild::Connect(CompositableClient* aCompositable,
 
   CompositableHandle handle(id);
   aCompositable->InitIPDL(handle);
-  SendNewCompositable(handle, aCompositable->GetTextureInfo(),
-                      GetCompositorBackendType());
+  SendNewCompositable(handle, aCompositable->GetTextureInfo());
 }
 
 void ImageBridgeChild::ForgetImageContainer(const CompositableHandle& aHandle) {
@@ -377,10 +393,6 @@ void ImageBridgeChild::EndTransaction() {
   cset.SetCapacity(mTxn->mOperations.size());
   if (!mTxn->mOperations.empty()) {
     cset.AppendElements(&mTxn->mOperations.front(), mTxn->mOperations.size());
-  }
-
-  if (!IsSameProcess()) {
-    ShadowLayerForwarder::PlatformSyncBeforeUpdate();
   }
 
   if (!SendUpdate(cset, mTxn->mDestroyedActors, GetFwdTransactionId())) {
@@ -610,8 +622,6 @@ void ImageBridgeChild::UpdateTextureFactoryIdentifier(
 
 #if defined(XP_WIN)
   RefPtr<ID3D11Device> device = gfx::DeviceManagerDx::Get()->GetImageDevice();
-  needsDrop |= !!mImageDevice && mImageDevice != device &&
-               GetCompositorBackendType() == LayersBackend::LAYERS_D3D11;
   mImageDevice = device;
 #endif
 
@@ -768,7 +778,7 @@ bool ImageBridgeChild::DeallocShmem(ipc::Shmem& aShmem) {
 }
 
 PTextureChild* ImageBridgeChild::AllocPTextureChild(
-    const SurfaceDescriptor&, const ReadLockDescriptor&, const LayersBackend&,
+    const SurfaceDescriptor&, ReadLockDescriptor&, const LayersBackend&,
     const TextureFlags&, const uint64_t& aSerial,
     const wr::MaybeExternalImageId& aExternalImageId) {
   MOZ_ASSERT(CanSend());
@@ -801,6 +811,21 @@ mozilla::ipc::IPCResult ImageBridgeChild::RecvParentAsyncMessages(
       case AsyncParentMessageData::TOpNotifyNotUsed: {
         const OpNotifyNotUsed& op = message.get_OpNotifyNotUsed();
         NotifyNotUsed(op.TextureId(), op.fwdTransactionId());
+        break;
+      }
+      case AsyncParentMessageData::TOpDeliverReleaseFence: {
+#ifdef MOZ_WIDGET_ANDROID
+        const OpDeliverReleaseFence& op = message.get_OpDeliverReleaseFence();
+        ipc::FileDescriptor fenceFd;
+        if (op.fenceFd().isSome()) {
+          fenceFd = *op.fenceFd();
+        }
+        AndroidHardwareBufferManager::Get()->NotifyNotUsed(
+            std::move(fenceFd), op.bufferId(), op.fwdTransactionId(),
+            op.usesImageBridge());
+#else
+        MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+#endif
         break;
       }
       default:
@@ -844,12 +869,13 @@ mozilla::ipc::IPCResult ImageBridgeChild::RecvReportFramesDropped(
 }
 
 PTextureChild* ImageBridgeChild::CreateTexture(
-    const SurfaceDescriptor& aSharedData, const ReadLockDescriptor& aReadLock,
+    const SurfaceDescriptor& aSharedData, ReadLockDescriptor&& aReadLock,
     LayersBackend aLayersBackend, TextureFlags aFlags, uint64_t aSerial,
     wr::MaybeExternalImageId& aExternalImageId, nsISerialEventTarget* aTarget) {
   MOZ_ASSERT(CanSend());
-  return SendPTextureConstructor(aSharedData, aReadLock, aLayersBackend, aFlags,
-                                 aSerial, aExternalImageId);
+  return SendPTextureConstructor(aSharedData, std::move(aReadLock),
+                                 aLayersBackend, aFlags, aSerial,
+                                 aExternalImageId);
 }
 
 static bool IBCAddOpDestroy(CompositableTransaction* aTxn,

@@ -140,7 +140,10 @@ class SearchEngineSelector {
     let result = [];
     let failed = false;
     try {
-      result = await this._remoteConfig.get();
+      result = await this._remoteConfig.get({
+        order: "id",
+        loadDumpIfNewer: true,
+      });
     } catch (ex) {
       logConsole.error(ex);
       failed = true;
@@ -171,23 +174,32 @@ class SearchEngineSelector {
   }
 
   /**
-   * @param {string} locale - Users locale.
-   * @param {string} region - Users region.
-   * @param {string} channel - The update channel the application is running on.
-   * @param {string} distroID - The distribution ID of the application.
+   * @param {object} options
+   * @param {string} options.locale
+   *   Users locale.
+   * @param {string} options.region
+   *   Users region.
+   * @param {string} [options.channel]
+   *   The update channel the application is running on.
+   * @param {string} [options.distroID]
+   *   The distribution ID of the application.
+   * @param {string} [options.experiment]
+   *   Any associated experiment id.
    * @returns {object}
    *   An object with "engines" field, a sorted list of engines and
    *   optionally "privateDefault" which is an object containing the engine
    *   details for the engine which should be the default in Private Browsing mode.
    */
-  async fetchEngineConfiguration(locale, region, channel, distroID) {
+  async fetchEngineConfiguration({
+    locale,
+    region,
+    channel = "default",
+    distroID,
+    experiment,
+  }) {
     if (!this._configuration) {
       await this.getEngineConfiguration();
     }
-    let experiment = Services.prefs.getCharPref(
-      "browser.search.experiment",
-      null
-    );
     let name = getAppInfo("name");
     let version = getAppInfo("version");
     logConsole.debug(
@@ -199,15 +211,34 @@ class SearchEngineSelector {
     for (let config of this._configuration) {
       const appliesTo = config.appliesTo || [];
       const applies = appliesTo.filter(section => {
-        if ("experiment" in section && experiment != section.experiment) {
-          return false;
+        if ("experiment" in section) {
+          if (experiment != section.experiment) {
+            return false;
+          }
+          if (section.override) {
+            return true;
+          }
         }
+
+        let shouldInclude = () => {
+          let included =
+            "included" in section &&
+            this._isInSection(lcRegion, lcLocale, section.included);
+          let excluded =
+            "excluded" in section &&
+            this._isInSection(lcRegion, lcLocale, section.excluded);
+          return included && !excluded;
+        };
+
         const distroExcluded =
           (distroID &&
             sectionIncludes(section, "excludedDistributions", distroID)) ||
           isDistroExcluded(section, "distributions", distroID);
 
         if (distroID && !distroExcluded && section.override) {
+          if ("included" in section || "excluded" in section) {
+            return shouldInclude();
+          }
           return true;
         }
 
@@ -220,13 +251,7 @@ class SearchEngineSelector {
         ) {
           return false;
         }
-        let included =
-          "included" in section &&
-          this._isInSection(lcRegion, lcLocale, section.included);
-        let excluded =
-          "excluded" in section &&
-          this._isInSection(lcRegion, lcLocale, section.excluded);
-        return included && !excluded;
+        return shouldInclude();
       });
 
       let baseConfig = this._copyObject({}, config);

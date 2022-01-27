@@ -10,7 +10,8 @@
 // in order to be referenced by any other spec or front module.
 
 // Declare in which spec module and front module a set of types are defined.
-// This array should be sorted by `spec` attribute.
+// This array should be sorted by `spec` attribute, and this is verified in the
+// test devtools/shared/protocol/tests/xpcshell/test_protocol_index.js
 const Types = (exports.__TypesForTests = [
   {
     types: [
@@ -43,6 +44,11 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/client/fronts/array-buffer",
   },
   {
+    types: ["breakpoint-list"],
+    spec: "devtools/shared/specs/breakpoint-list",
+    front: "devtools/client/fronts/breakpoint-list",
+  },
+  {
     types: ["changes"],
     spec: "devtools/shared/specs/changes",
     front: "devtools/client/fronts/changes",
@@ -51,11 +57,6 @@ const Types = (exports.__TypesForTests = [
     types: ["compatibility"],
     spec: "devtools/shared/specs/compatibility",
     front: "devtools/client/fronts/compatibility",
-  },
-  {
-    types: ["contentViewer"],
-    spec: "devtools/shared/specs/content-viewer",
-    front: "devtools/client/fronts/content-viewer",
   },
   {
     types: ["cssProperties"],
@@ -76,6 +77,11 @@ const Types = (exports.__TypesForTests = [
     types: ["webExtensionDescriptor"],
     spec: "devtools/shared/specs/descriptors/webextension",
     front: "devtools/client/fronts/descriptors/webextension",
+  },
+  {
+    types: ["workerDescriptor"],
+    spec: "devtools/shared/specs/descriptors/worker",
+    front: "devtools/client/fronts/descriptors/worker",
   },
   {
     types: ["device"],
@@ -109,7 +115,7 @@ const Types = (exports.__TypesForTests = [
     front: null,
   },
   {
-    types: ["highlighter", "customhighlighter"],
+    types: ["customhighlighter"],
     spec: "devtools/shared/specs/highlighters",
     front: "devtools/client/fronts/highlighters",
   },
@@ -129,14 +135,29 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/client/fronts/manifest",
   },
   {
+    types: ["mediarule"],
+    spec: "devtools/shared/specs/media-rule",
+    front: "devtools/client/fronts/media-rule",
+  },
+  {
     types: ["memory"],
     spec: "devtools/shared/specs/memory",
     front: "devtools/client/fronts/memory",
   },
   {
+    types: ["networkContent"],
+    spec: "devtools/shared/specs/network-content",
+    front: "devtools/client/fronts/network-content",
+  },
+  {
     types: ["netEvent"],
     spec: "devtools/shared/specs/network-event",
     front: null,
+  },
+  {
+    types: ["networkParent"],
+    spec: "devtools/shared/specs/network-parent",
+    front: "devtools/client/fronts/network-parent",
   },
   /* imageData isn't an actor but just a DictType */
   {
@@ -153,6 +174,11 @@ const Types = (exports.__TypesForTests = [
     types: ["obj", "object.descriptor"],
     spec: "devtools/shared/specs/object",
     front: null,
+  },
+  {
+    types: ["pagestyle"],
+    spec: "devtools/shared/specs/page-style",
+    front: "devtools/client/fronts/page-style",
   },
   {
     types: ["perf"],
@@ -173,6 +199,11 @@ const Types = (exports.__TypesForTests = [
     types: ["preference"],
     spec: "devtools/shared/specs/preference",
     front: "devtools/client/fronts/preference",
+  },
+  {
+    types: ["privatePropertiesIterator"],
+    spec: "devtools/shared/specs/private-properties-iterator",
+    front: "devtools/client/fronts/private-properties-iterator",
   },
   {
     types: ["propertyIterator"],
@@ -198,6 +229,11 @@ const Types = (exports.__TypesForTests = [
     types: ["screenshot"],
     spec: "devtools/shared/specs/screenshot",
     front: "devtools/client/fronts/screenshot",
+  },
+  {
+    types: ["screenshot-content"],
+    spec: "devtools/shared/specs/screenshot-content",
+    front: "devtools/client/fronts/screenshot-content",
   },
   {
     types: ["source"],
@@ -228,14 +264,19 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/client/fronts/string",
   },
   {
-    types: ["pagestyle", "domstylerule"],
-    spec: "devtools/shared/specs/styles",
-    front: "devtools/client/fronts/styles",
+    types: ["domstylerule"],
+    spec: "devtools/shared/specs/style-rule",
+    front: "devtools/client/fronts/style-rule",
   },
   {
-    types: ["mediarule", "stylesheet", "stylesheets"],
-    spec: "devtools/shared/specs/stylesheets",
-    front: "devtools/client/fronts/stylesheets",
+    types: ["stylesheet"],
+    spec: "devtools/shared/specs/style-sheet",
+    front: "devtools/client/fronts/style-sheet",
+  },
+  {
+    types: ["stylesheets"],
+    spec: "devtools/shared/specs/style-sheets",
+    front: "devtools/client/fronts/style-sheets",
   },
   {
     types: ["symbol"],
@@ -248,23 +289,13 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/client/fronts/symbol-iterator",
   },
   {
-    types: ["browsingContextTarget"],
-    spec: "devtools/shared/specs/targets/browsing-context",
-    front: "devtools/client/fronts/targets/browsing-context",
-  },
-  {
-    types: ["chromeWindowTarget"],
-    spec: "devtools/shared/specs/targets/chrome-window",
-    front: null,
+    types: ["target-configuration"],
+    spec: "devtools/shared/specs/target-configuration",
+    front: "devtools/client/fronts/target-configuration",
   },
   {
     types: ["contentProcessTarget"],
     spec: "devtools/shared/specs/targets/content-process",
-    front: null,
-  },
-  {
-    types: ["frameTarget"],
-    spec: "devtools/shared/specs/targets/frame",
     front: null,
   },
   {
@@ -278,6 +309,11 @@ const Types = (exports.__TypesForTests = [
     front: null,
   },
   {
+    types: ["windowGlobalTarget"],
+    spec: "devtools/shared/specs/targets/window-global",
+    front: "devtools/client/fronts/targets/window-global",
+  },
+  {
     types: ["workerTarget"],
     spec: "devtools/shared/specs/targets/worker",
     front: "devtools/client/fronts/targets/worker",
@@ -286,6 +322,11 @@ const Types = (exports.__TypesForTests = [
     types: ["thread"],
     spec: "devtools/shared/specs/thread",
     front: "devtools/client/fronts/thread",
+  },
+  {
+    types: ["thread-configuration"],
+    spec: "devtools/shared/specs/thread-configuration",
+    front: "devtools/client/fronts/thread-configuration",
   },
   {
     types: ["domwalker"],

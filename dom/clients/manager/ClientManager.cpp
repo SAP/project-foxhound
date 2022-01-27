@@ -13,11 +13,12 @@
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
+#include "mozilla/ClearOnShutdown.h"  // PastShutdownPhase
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsContentUtils.h"
 #include "prthread.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using mozilla::ipc::BackgroundChild;
 using mozilla::ipc::PBackgroundChild;
@@ -218,6 +219,15 @@ already_AddRefed<ClientManager> ClientManager::GetOrCreateForCurrentThread() {
   }
 
   MOZ_DIAGNOSTIC_ASSERT(cm);
+
+  if (StaticPrefs::dom_workers_testing_enabled()) {
+    // Check that the ClientManager instance associated to the current thread
+    // has not been kept alive when it was expected to have been already
+    // deallocated (e.g. due to a leak ClientManager's mShutdown can have ben
+    // set to true from its RevokeActor method but never fully deallocated and
+    // unset from the thread locals).
+    MOZ_DIAGNOSTIC_ASSERT(!cm->IsShutdown());
+  }
   return cm.forget();
 }
 
@@ -225,6 +235,42 @@ WorkerPrivate* ClientManager::GetWorkerPrivate() const {
   NS_ASSERT_OWNINGTHREAD(ClientManager);
   MOZ_DIAGNOSTIC_ASSERT(GetActor());
   return GetActor()->GetWorkerPrivate();
+}
+
+// Used to share logic between ExpectFutureSource and ForgetFutureSource.
+/* static */ bool ClientManager::ExpectOrForgetFutureSource(
+    const ClientInfo& aClientInfo,
+    bool (PClientManagerChild::*aMethod)(const IPCClientInfo&)) {
+  // Return earlier if called late in the XPCOM shutdown path,
+  // ClientManager would be already shutdown at the point.
+  if (NS_WARN_IF(PastShutdownPhase(ShutdownPhase::XPCOMShutdown))) {
+    return false;
+  }
+
+  bool rv = true;
+
+  RefPtr<ClientManager> mgr = ClientManager::GetOrCreateForCurrentThread();
+  mgr->MaybeExecute(
+      [&](ClientManagerChild* aActor) {
+        if (!(aActor->*aMethod)(aClientInfo.ToIPC())) {
+          rv = false;
+        }
+      },
+      [&] { rv = false; });
+
+  return rv;
+}
+
+/* static */ bool ClientManager::ExpectFutureSource(
+    const ClientInfo& aClientInfo) {
+  return ExpectOrForgetFutureSource(
+      aClientInfo, &PClientManagerChild::SendExpectFutureClientSource);
+}
+
+/* static */ bool ClientManager::ForgetFutureSource(
+    const ClientInfo& aClientInfo) {
+  return ExpectOrForgetFutureSource(
+      aClientInfo, &PClientManagerChild::SendForgetFutureClientSource);
 }
 
 // static
@@ -346,5 +392,4 @@ RefPtr<ClientOpPromise> ClientManager::OpenWindow(
   return mgr->StartOp(aArgs, aSerialEventTarget);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

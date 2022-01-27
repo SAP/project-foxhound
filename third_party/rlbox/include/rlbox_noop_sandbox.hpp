@@ -48,8 +48,11 @@ public:
   using T_LongLongType = long long;
   using T_LongType = long;
   using T_IntType = int;
-  using T_PointerType = uintptr_t;
+  using T_PointerType = void*;
   using T_ShortType = short;
+  // no-op sandbox can transfer buffers as there is no sandboxings
+  // Thus transfer is a noop
+  using can_grant_deny_access = void;
 
 private:
   RLBOX_SHARED_LOCK(callback_mutex);
@@ -71,7 +74,9 @@ private:
     using T_Func = T_Ret (*)(T_Args...);
     T_Func func;
     {
+#ifndef RLBOX_SINGLE_THREADED_INVOCATIONS
       RLBOX_ACQUIRE_SHARED_GUARD(lock, thread_data.sandbox->callback_mutex);
+#endif
       func = reinterpret_cast<T_Func>(thread_data.sandbox->callbacks[N]);
     }
     // Callbacks are invoked through function pointers, cannot use std::forward
@@ -88,45 +93,44 @@ protected:
   template<typename T>
   inline void* impl_get_unsandboxed_pointer(T_PointerType p) const
   {
-    return reinterpret_cast<void*>(static_cast<uintptr_t>(p));
+    return p;
   }
 
   template<typename T>
   inline T_PointerType impl_get_sandboxed_pointer(const void* p) const
   {
-    return static_cast<T_PointerType>(reinterpret_cast<uintptr_t>(p));
+    return const_cast<T_PointerType>(p);
   }
 
   template<typename T>
   static inline void* impl_get_unsandboxed_pointer_no_ctx(
     T_PointerType p,
     const void* /* example_unsandboxed_ptr */,
-    rlbox_noop_sandbox* (*/* expensive_sandbox_finder */)(
+    rlbox_noop_sandbox* (* // Func ptr
+                         /* param: expensive_sandbox_finder */)(
       const void* example_unsandboxed_ptr))
   {
-    return reinterpret_cast<void*>(static_cast<uintptr_t>(p));
+    return p;
   }
 
   template<typename T>
   static inline T_PointerType impl_get_sandboxed_pointer_no_ctx(
     const void* p,
     const void* /* example_unsandboxed_ptr */,
-    rlbox_noop_sandbox* (*/* expensive_sandbox_finder */)(
+    rlbox_noop_sandbox* (* // Func ptr
+                         /* param: expensive_sandbox_finder */)(
       const void* example_unsandboxed_ptr))
   {
-    return static_cast<T_PointerType>(reinterpret_cast<uintptr_t>(p));
+    return const_cast<T_PointerType>(p);
   }
 
   inline T_PointerType impl_malloc_in_sandbox(size_t size)
   {
-    void* p = std::malloc(size);
-    return reinterpret_cast<uintptr_t>(p);
+    void* p = malloc(size);
+    return p;
   }
 
-  inline void impl_free_in_sandbox(T_PointerType p)
-  {
-    std::free(reinterpret_cast<void*>(p));
-  }
+  inline void impl_free_in_sandbox(T_PointerType p) { free(p); }
 
   static inline bool impl_is_in_same_sandbox(const void*, const void*)
   {
@@ -176,7 +180,11 @@ protected:
 #ifdef RLBOX_EMBEDDER_PROVIDES_TLS_STATIC_VARIABLES
     auto& thread_data = *get_rlbox_noop_sandbox_thread_data();
 #endif
+    auto old_sandbox = thread_data.sandbox;
     thread_data.sandbox = this;
+    auto on_exit = detail::make_scope_exit([&] {
+      thread_data.sandbox = old_sandbox;
+    });
     return (*func_ptr)(params...);
   }
 
@@ -224,6 +232,22 @@ protected:
         break;
       }
     }
+  }
+
+  template<typename T>
+  inline T* impl_grant_access(T* src, size_t num, bool& success)
+  {
+    RLBOX_UNUSED(num);
+    success = true;
+    return src;
+  }
+
+  template<typename T>
+  inline T* impl_deny_access(T* src, size_t num, bool& success)
+  {
+    RLBOX_UNUSED(num);
+    success = true;
+    return src;
   }
 };
 

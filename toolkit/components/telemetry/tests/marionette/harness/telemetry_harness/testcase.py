@@ -6,7 +6,6 @@ import contextlib
 import os
 import re
 import textwrap
-import time
 
 from marionette_driver.addons import Addons
 from marionette_driver.errors import MarionetteException
@@ -15,7 +14,7 @@ from marionette_driver import By, keys
 from marionette_harness import MarionetteTestCase
 from marionette_harness.runner.mixins.window_manager import WindowManagerMixin
 
-from ping_server import PingServer
+from telemetry_harness.ping_server import PingServer
 
 
 CANARY_CLIENT_ID = "c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0"
@@ -48,13 +47,15 @@ class TelemetryTestCase(WindowManagerMixin, MarionetteTestCase):
     def disable_telemetry(self):
         """Disable the Firefox Data Collection and Use in the current browser."""
         self.marionette.instance.profile.set_persistent_preferences(
-            {"datareporting.healthreport.uploadEnabled": False})
+            {"datareporting.healthreport.uploadEnabled": False}
+        )
         self.marionette.set_pref("datareporting.healthreport.uploadEnabled", False)
 
     def enable_telemetry(self):
         """Enable the Firefox Data Collection and Use in the current browser."""
         self.marionette.instance.profile.set_persistent_preferences(
-            {"datareporting.healthreport.uploadEnabled": True})
+            {"datareporting.healthreport.uploadEnabled": True}
+        )
         self.marionette.set_pref("datareporting.healthreport.uploadEnabled", True)
 
     @contextlib.contextmanager
@@ -74,15 +75,32 @@ class TelemetryTestCase(WindowManagerMixin, MarionetteTestCase):
     def search(self, text):
         """Perform a search via the browser's URL bar."""
 
+        # Reload newtab to prevent urlbar from not accepting correct input
+        with self.marionette.using_context(self.marionette.CONTEXT_CONTENT):
+            self.marionette.navigate("about:newtab")
+
         with self.marionette.using_context(self.marionette.CONTEXT_CHROME):
             self.marionette.execute_script("gURLBar.select();")
             urlbar = self.marionette.find_element(By.ID, "urlbar-input")
             urlbar.send_keys(keys.Keys.DELETE)
             urlbar.send_keys(text + keys.Keys.ENTER)
-
-        # Wait for 0.1 seconds before proceeding to decrease the chance
-        # of Firefox being shut down before Telemetry is recorded
-        time.sleep(0.1)
+        # This script checks that the search terms used for searching
+        # appear in the URL when the page loads.
+        script = """\
+        let location = document.location.toString()
+        function validate(term){
+            return location.includes(term)
+        }
+        return arguments[0].every(validate)
+        """
+        # Wait for search page to load
+        with self.marionette.using_context(self.marionette.CONTEXT_CONTENT):
+            Wait(self.marionette, 30, 0.5).until(
+                lambda driver: driver.execute_script(
+                    script, script_args=[text.split()]
+                ),
+                message="Search terms not found, maybe the page didn't load?",
+            )
 
     def search_in_new_tab(self, text):
         """Open a new tab and perform a search via the browser's URL bar,
@@ -98,9 +116,7 @@ class TelemetryTestCase(WindowManagerMixin, MarionetteTestCase):
         self.assertNotEqual(value, "")
 
         # Check for client ID that is used when Telemetry upload is disabled
-        self.assertNotEqual(
-            value, CANARY_CLIENT_ID, msg="UUID is CANARY CLIENT ID"
-        )
+        self.assertNotEqual(value, CANARY_CLIENT_ID, msg="UUID is CANARY CLIENT ID")
 
         self.assertIsNotNone(
             re.match(UUID_PATTERN, value),
@@ -142,7 +158,7 @@ class TelemetryTestCase(WindowManagerMixin, MarionetteTestCase):
         try:
             Wait(self.marionette, 60).until(wait_func)
         except Exception as e:
-            self.fail("Error waiting for ping: {}".format(e.message))
+            self.fail("Error waiting for ping: {}".format(e))
 
         return filtered_pings[:count]
 
@@ -150,7 +166,9 @@ class TelemetryTestCase(WindowManagerMixin, MarionetteTestCase):
         """Call wait_for_pings() with the given action_func and ping_filter and
         return the first result.
         """
-        [ping] = self.wait_for_pings(action_func, ping_filter, 1, ping_server=ping_server)
+        [ping] = self.wait_for_pings(
+            action_func, ping_filter, 1, ping_server=ping_server
+        )
         return ping
 
     def restart_browser(self):
@@ -166,10 +184,23 @@ class TelemetryTestCase(WindowManagerMixin, MarionetteTestCase):
         return self.marionette.quit(in_app=True)
 
     def install_addon(self):
-        """Install a minimal addon and add its ID to self.addon_ids."""
+        """Install a minimal addon."""
+        addon_name = "helloworld"
+        self._install_addon(addon_name)
 
+    def install_dynamic_addon(self):
+        """Install a dynamic probe addon.
+
+        Source Code:
+        https://github.com/mozilla-extensions/dynamic-probe-telemetry-extension
+        """
+        addon_name = "dynamic_addon/dynamic-probe-telemetry-extension-signed.xpi"
+        self._install_addon(addon_name, temp=False)
+
+    def _install_addon(self, addon_name, temp=True):
+        """Logic to install addon and add its ID to self.addons.ids"""
         resources_dir = os.path.join(os.path.dirname(__file__), "resources")
-        addon_path = os.path.abspath(os.path.join(resources_dir, "helloworld"))
+        addon_path = os.path.abspath(os.path.join(resources_dir, addon_name))
 
         try:
             # Ensure the Environment has init'd so the installed addon
@@ -184,11 +215,9 @@ class TelemetryTestCase(WindowManagerMixin, MarionetteTestCase):
                 self.marionette.execute_async_script(textwrap.dedent(script))
 
             addons = Addons(self.marionette)
-            addon_id = addons.install(addon_path, temp=True)
+            addon_id = addons.install(addon_path, temp=temp)
         except MarionetteException as e:
-            self.fail(
-                "{} - Error installing addon: {} - ".format(e.cause, e.message)
-            )
+            self.fail("{} - Error installing addon: {} - ".format(e.cause, e))
         else:
             self.addon_ids.append(addon_id)
 

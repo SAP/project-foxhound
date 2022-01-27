@@ -6,7 +6,7 @@
 "use strict";
 
 const TEST_URI =
-  "data:text/html;charset=utf-8,Web Console HSTS invalid header test";
+  "data:text/html;charset=utf-8,<!DOCTYPE html>Web Console HSTS invalid header test";
 const SJS_URL =
   "https://example.com/browser/devtools/client/webconsole/" +
   "/test/browser/test_hsts-invalid-headers.sjs";
@@ -16,8 +16,6 @@ const LEARN_MORE_URI =
   DOCS_GA_PARAMS;
 
 add_task(async function() {
-  await pushPref("devtools.target-switching.enabled", true);
-
   const hud = await openNewTabAndConsole(TEST_URI);
 
   await navigateAndCheckWarningMessage(

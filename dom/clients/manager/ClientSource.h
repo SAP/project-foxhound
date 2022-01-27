@@ -10,7 +10,7 @@
 #include "mozilla/dom/ClientOpPromise.h"
 #include "mozilla/dom/ClientThing.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
-#include "mozilla/Result.h"
+#include "mozilla/ResultVariant.h"
 #include "mozilla/Variant.h"
 
 #ifdef XP_WIN
@@ -24,9 +24,10 @@ class nsISerialEventTarget;
 class nsPIDOMWindowInner;
 
 namespace mozilla {
+class ErrorResult;
+
 namespace dom {
 
-class ClientClaimArgs;
 class ClientControlledArgs;
 class ClientFocusArgs;
 class ClientGetInfoAndStateArgs;
@@ -77,7 +78,7 @@ class ClientSource final : public ClientThing<ClientSourceChild> {
 
   nsIGlobalObject* GetGlobal() const;
 
-  void MaybeCreateInitialDocument();
+  Result<bool, ErrorResult> MaybeCreateInitialDocument();
 
   Result<ClientState, ErrorResult> SnapshotWindowState();
 
@@ -140,8 +141,6 @@ class ClientSource final : public ClientThing<ClientSourceChild> {
   RefPtr<ClientOpPromise> Focus(const ClientFocusArgs& aArgs);
 
   RefPtr<ClientOpPromise> PostMessage(const ClientPostMessageArgs& aArgs);
-
-  RefPtr<ClientOpPromise> Claim(const ClientClaimArgs& aArgs);
 
   RefPtr<ClientOpPromise> GetInfoAndState(
       const ClientGetInfoAndStateArgs& aArgs);

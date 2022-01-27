@@ -9,7 +9,6 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/SocketCommonBinding.h"
 #include "nsIUDPSocket.h"
@@ -23,10 +22,15 @@ struct JSContext;
 //
 
 namespace mozilla {
+class ErrorResult;
+class LazyLogModule;
+
 namespace net {
 extern LazyLogModule gUDPSocketLog;
-#define UDPSOCKET_LOG(args) MOZ_LOG(gUDPSocketLog, LogLevel::Debug, args)
-#define UDPSOCKET_LOG_ENABLED() MOZ_LOG_TEST(gUDPSocketLog, LogLevel::Debug)
+#define UDPSOCKET_LOG(args) \
+  MOZ_LOG(::mozilla::net::gUDPSocketLog, LogLevel::Debug, args)
+#define UDPSOCKET_LOG_ENABLED() \
+  MOZ_LOG_TEST(::mozilla::net::gUDPSocketLog, LogLevel::Debug)
 }  // namespace net
 
 namespace dom {
@@ -66,7 +70,7 @@ class UDPSocket final : public DOMEventTargetHelper,
       return;
     }
 
-    aRetVal = NS_ConvertUTF8toUTF16(mRemoteAddress);
+    CopyUTF8toUTF16(mRemoteAddress, aRetVal);
   }
 
   Nullable<uint16_t> GetRemotePort() const { return mRemotePort; }

@@ -5,7 +5,10 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/MathAlgorithms.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/WritingModes.h"
 
 #include "NativeKeyBindings.h"
 #include "nsString.h"
@@ -14,6 +17,7 @@
 
 #include <gtk/gtk.h>
 #include <gdk/gdkkeysyms.h>
+#include <gdk/gdkkeysyms-compat.h>
 #include <gdk/gdk.h>
 
 namespace mozilla {
@@ -197,10 +201,20 @@ static void paste_clipboard_cb(GtkWidget* w, gpointer user_data) {
 }
 
 // GtkTextView-only signals
-static void select_all_cb(GtkWidget* w, gboolean select, gpointer user_data) {
-  AddCommand(Command::SelectAll);
-  g_signal_stop_emission_by_name(w, "select_all");
-  gHandled = true;
+static void select_all_cb(GtkWidget* aWidget, gboolean aSelect,
+                          gpointer aUserData) {
+  // We don't support "Unselect All" command.
+  // Note that if we'd support it, `Ctrl-Shift-a` will be mapped to it and
+  // overrides open `about:addons` shortcut.
+  if (aSelect) {
+    AddCommand(Command::SelectAll);
+  }
+  g_signal_stop_emission_by_name(aWidget, "select_all");
+  // Although we prevent the default of `GtkTExtView` with
+  // `g_signal_stop_emission_by_name`, but `gHandled` is used for asserting
+  // if it does not match with the emptiness of the command array.
+  // Therefore, we should not set it to `true` if we don't add a command.
+  gHandled |= aSelect;
 }
 
 NativeKeyBindings* NativeKeyBindings::sInstanceForSingleLineEditor = nullptr;
@@ -244,15 +258,8 @@ void NativeKeyBindings::Init(NativeKeyBindingsType aType) {
       break;
     default:
       mNativeTarget = gtk_text_view_new();
-      if (gtk_major_version > 2 ||
-          (gtk_major_version == 2 &&
-           (gtk_minor_version > 2 ||
-            (gtk_minor_version == 2 && gtk_micro_version >= 2)))) {
-        // select_all only exists in gtk >= 2.2.2.  Prior to that,
-        // ctrl+a is bound to (move to beginning, select to end).
-        g_signal_connect(mNativeTarget, "select_all", G_CALLBACK(select_all_cb),
-                         this);
-      }
+      g_signal_connect(mNativeTarget, "select_all", G_CALLBACK(select_all_cb),
+                       this);
       break;
   }
 
@@ -276,19 +283,41 @@ NativeKeyBindings::~NativeKeyBindings() {
 }
 
 void NativeKeyBindings::GetEditCommands(const WidgetKeyboardEvent& aEvent,
+                                        const Maybe<WritingMode>& aWritingMode,
                                         nsTArray<CommandInt>& aCommands) {
-  // If the native key event is set, it must be synthesized for tests.
-  // We just ignore such events because this behavior depends on system
-  // settings.
+  MOZ_ASSERT(!aEvent.mFlags.mIsSynthesizedForTests);
+  MOZ_ASSERT(aCommands.IsEmpty());
+
+  // It must be a DOM event dispached by chrome script.
   if (!aEvent.mNativeKeyEvent) {
-    // It must be synthesized event or dispatched DOM event from chrome.
     return;
   }
 
   guint keyval;
-
   if (aEvent.mCharCode) {
     keyval = gdk_unicode_to_keyval(aEvent.mCharCode);
+  } else if (aWritingMode.isSome() && aEvent.NeedsToRemapNavigationKey() &&
+             aWritingMode.ref().IsVertical()) {
+    // TODO: Use KeyNameIndex rather than legacy keyCode.
+    uint32_t remappedGeckoKeyCode =
+        aEvent.GetRemappedKeyCode(aWritingMode.ref());
+    switch (remappedGeckoKeyCode) {
+      case NS_VK_UP:
+        keyval = GDK_Up;
+        break;
+      case NS_VK_DOWN:
+        keyval = GDK_Down;
+        break;
+      case NS_VK_LEFT:
+        keyval = GDK_Left;
+        break;
+      case NS_VK_RIGHT:
+        keyval = GDK_Right;
+        break;
+      default:
+        MOZ_ASSERT_UNREACHABLE("Add a case for the new remapped key");
+        return;
+    }
   } else {
     keyval = static_cast<GdkEventKey*>(aEvent.mNativeKeyEvent)->keyval;
   }
@@ -306,6 +335,23 @@ void NativeKeyBindings::GetEditCommands(const WidgetKeyboardEvent& aEvent,
       if (GetEditCommandsInternal(aEvent, aCommands, keyval)) {
         return;
       }
+    }
+  }
+
+  // If the key event does not cause any commands, and we're for single line
+  // editor, let's check whether the key combination is for "select-all" in
+  // GtkTextView because the signal is not supported by GtkEntry.
+  if (aCommands.IsEmpty() && this == sInstanceForSingleLineEditor &&
+      StaticPrefs::ui_key_use_select_all_in_single_line_editor()) {
+    if (NativeKeyBindings* bindingsForMultilineEditor =
+            GetInstance(nsIWidget::NativeKeyBindingsForMultiLineEditor)) {
+      bindingsForMultilineEditor->GetEditCommands(aEvent, aWritingMode,
+                                                  aCommands);
+      if (aCommands.Length() == 1u &&
+          aCommands[0u] == static_cast<CommandInt>(Command::SelectAll)) {
+        return;
+      }
+      aCommands.Clear();
     }
   }
 
@@ -340,6 +386,143 @@ bool NativeKeyBindings::GetEditCommandsInternal(
   MOZ_ASSERT(!gHandled || !aCommands.IsEmpty());
 
   return gHandled;
+}
+
+// static
+void NativeKeyBindings::GetEditCommandsForTests(
+    NativeKeyBindingsType aType, const WidgetKeyboardEvent& aEvent,
+    const Maybe<WritingMode>& aWritingMode, nsTArray<CommandInt>& aCommands) {
+  MOZ_DIAGNOSTIC_ASSERT(aEvent.IsTrusted());
+
+  if (aEvent.IsAlt() || aEvent.IsMeta() || aEvent.IsOS()) {
+    return;
+  }
+
+  static const size_t kBackward = 0;
+  static const size_t kForward = 1;
+  const size_t extentSelection = aEvent.IsShift() ? 1 : 0;
+  // https://github.com/GNOME/gtk/blob/1f141c19533f4b3f397c3959ade673ce243b6138/gtk/gtktext.c#L1289
+  // https://github.com/GNOME/gtk/blob/c5dd34344f0c660ceffffb3bf9da43c263db16e1/gtk/gtktextview.c#L1534
+  Command command = Command::DoNothing;
+  const KeyNameIndex remappedKeyNameIndex =
+      aWritingMode.isSome() ? aEvent.GetRemappedKeyNameIndex(aWritingMode.ref())
+                            : aEvent.mKeyNameIndex;
+  switch (remappedKeyNameIndex) {
+    case KEY_NAME_INDEX_USE_STRING:
+      switch (aEvent.PseudoCharCode()) {
+        case 'a':
+        case 'A':
+          if (aEvent.IsControl()) {
+            command = Command::SelectAll;
+          }
+          break;
+        case 'c':
+        case 'C':
+          if (aEvent.IsControl() && !aEvent.IsShift()) {
+            command = Command::Copy;
+          }
+          break;
+        case 'u':
+        case 'U':
+          if (aType == nsIWidget::NativeKeyBindingsForSingleLineEditor &&
+              aEvent.IsControl() && !aEvent.IsShift()) {
+            command = sDeleteCommands[GTK_DELETE_PARAGRAPH_ENDS][kBackward];
+          }
+          break;
+        case 'v':
+        case 'V':
+          if (aEvent.IsControl() && !aEvent.IsShift()) {
+            command = Command::Paste;
+          }
+          break;
+        case 'x':
+        case 'X':
+          if (aEvent.IsControl() && !aEvent.IsShift()) {
+            command = Command::Cut;
+          }
+          break;
+        case '/':
+          if (aEvent.IsControl() && !aEvent.IsShift()) {
+            command = Command::SelectAll;
+          }
+          break;
+        default:
+          break;
+      }
+      break;
+    case KEY_NAME_INDEX_Insert:
+      if (aEvent.IsControl() && !aEvent.IsShift()) {
+        command = Command::Copy;
+      } else if (aEvent.IsShift() && !aEvent.IsControl()) {
+        command = Command::Paste;
+      }
+      break;
+    case KEY_NAME_INDEX_Delete:
+      if (aEvent.IsShift()) {
+        command = Command::Cut;
+        break;
+      }
+      [[fallthrough]];
+    case KEY_NAME_INDEX_Backspace: {
+      const size_t direction =
+          remappedKeyNameIndex == KEY_NAME_INDEX_Delete ? kForward : kBackward;
+      const GtkDeleteType amount =
+          aEvent.IsControl() && aEvent.IsShift()
+              ? GTK_DELETE_PARAGRAPH_ENDS
+              // FYI: Shift key for Backspace is ignored to help mis-typing.
+              : (aEvent.IsControl() ? GTK_DELETE_WORD_ENDS : GTK_DELETE_CHARS);
+      command = sDeleteCommands[amount][direction];
+      break;
+    }
+    case KEY_NAME_INDEX_ArrowLeft:
+    case KEY_NAME_INDEX_ArrowRight: {
+      const size_t direction = remappedKeyNameIndex == KEY_NAME_INDEX_ArrowRight
+                                   ? kForward
+                                   : kBackward;
+      const GtkMovementStep amount = aEvent.IsControl()
+                                         ? GTK_MOVEMENT_WORDS
+                                         : GTK_MOVEMENT_VISUAL_POSITIONS;
+      command = sMoveCommands[amount][extentSelection][direction];
+      break;
+    }
+    case KEY_NAME_INDEX_ArrowUp:
+    case KEY_NAME_INDEX_ArrowDown: {
+      const size_t direction = remappedKeyNameIndex == KEY_NAME_INDEX_ArrowDown
+                                   ? kForward
+                                   : kBackward;
+      const GtkMovementStep amount = aEvent.IsControl()
+                                         ? GTK_MOVEMENT_PARAGRAPHS
+                                         : GTK_MOVEMENT_DISPLAY_LINES;
+      command = sMoveCommands[amount][extentSelection][direction];
+      break;
+    }
+    case KEY_NAME_INDEX_Home:
+    case KEY_NAME_INDEX_End: {
+      const size_t direction =
+          remappedKeyNameIndex == KEY_NAME_INDEX_End ? kForward : kBackward;
+      const GtkMovementStep amount = aEvent.IsControl()
+                                         ? GTK_MOVEMENT_BUFFER_ENDS
+                                         : GTK_MOVEMENT_DISPLAY_LINE_ENDS;
+      command = sMoveCommands[amount][extentSelection][direction];
+      break;
+    }
+    case KEY_NAME_INDEX_PageUp:
+    case KEY_NAME_INDEX_PageDown: {
+      const size_t direction = remappedKeyNameIndex == KEY_NAME_INDEX_PageDown
+                                   ? kForward
+                                   : kBackward;
+      const GtkMovementStep amount = aEvent.IsControl()
+                                         ? GTK_MOVEMENT_HORIZONTAL_PAGES
+                                         : GTK_MOVEMENT_PAGES;
+      command = sMoveCommands[amount][extentSelection][direction];
+      break;
+    }
+    default:
+      break;
+  }
+  if (command != Command::DoNothing) {
+    aCommands.AppendElement(static_cast<CommandInt>(command));
+  }
 }
 
 }  // namespace widget

@@ -4,17 +4,20 @@
 
 package org.mozilla.geckoview.test
 
+import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate
 import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.*
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.AssertCalled
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.NullDelegate
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDisplay
-import org.mozilla.geckoview.test.util.Callbacks
 
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.RectF;
+import android.os.Build
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.filters.MediumTest
+import androidx.test.filters.SdkSuppress
 
 import org.hamcrest.Matcher
 import org.hamcrest.Matchers.*
@@ -29,7 +32,7 @@ import org.mozilla.geckoview.GeckoSession
 
 @MediumTest
 @RunWith(Parameterized::class)
-@WithDisplay(width = 100, height = 100)
+@WithDisplay(width = 400, height = 400)
 class SelectionActionDelegateTest : BaseSessionTest() {
     enum class ContentType {
         DIV, EDITABLE_ELEMENT, IFRAME
@@ -86,6 +89,30 @@ class SelectionActionDelegateTest : BaseSessionTest() {
         }
     }
 
+    @SdkSuppress(minSdkVersion = Build.VERSION_CODES.O)
+    @Test fun request_html() {
+        if (editable) {
+            withHtmlClipboard ("text", "<bold>text</bold>") {
+                if (type != ContentType.EDITABLE_ELEMENT) {
+                    testThat(selectedContent, {}, hasShowActionRequest(
+                            FLAG_IS_EDITABLE, arrayOf(ACTION_COLLAPSE_TO_START, ACTION_COLLAPSE_TO_END,
+                                                      ACTION_COPY, ACTION_CUT, ACTION_DELETE,
+                                                      ACTION_HIDE, ACTION_PASTE,
+                                                      ACTION_PASTE_AS_PLAIN_TEXT)))
+                } else {
+                    testThat(selectedContent, {}, hasShowActionRequest(
+                            FLAG_IS_EDITABLE, arrayOf(ACTION_COLLAPSE_TO_START, ACTION_COLLAPSE_TO_END,
+                                                      ACTION_COPY, ACTION_CUT, ACTION_DELETE,
+                                                      ACTION_HIDE, ACTION_PASTE)))
+                }
+            }
+        } else {
+            testThat(selectedContent, {}, hasShowActionRequest(
+                    0, arrayOf(ACTION_COPY, ACTION_HIDE, ACTION_SELECT_ALL,
+                                           ACTION_UNSELECT)))
+        }
+    }
+
     @Test fun request_collapsed() = assumingEditable(true) {
         withClipboard ("text") {
             testThat(collapsedContent, {}, hasShowActionRequest(
@@ -117,6 +144,15 @@ class SelectionActionDelegateTest : BaseSessionTest() {
     @Test fun paste() = assumingEditable(true) {
         withClipboard("pasted") {
             testThat(selectedContent, withResponse(ACTION_PASTE), changesContentTo("pasted"))
+        }
+    }
+
+    @SdkSuppress(minSdkVersion = Build.VERSION_CODES.O)
+    @Test fun pasteAsPlainText() = assumingEditable(true) {
+        assumeThat("Paste as plain text works on content editable", type, not(equalTo(ContentType.EDITABLE_ELEMENT)));
+
+        withHtmlClipboard("pasted", "<bold>pasted</bold>") {
+            testThat(selectedContent, withResponse(ACTION_PASTE_AS_PLAIN_TEXT), changesContentTo("pasted"))
         }
     }
 
@@ -171,7 +207,7 @@ class SelectionActionDelegateTest : BaseSessionTest() {
     @NullDelegate(GeckoSession.SelectionActionDelegate::class)
     @Test fun clearDelegate() {
         var counter = 0
-        mainSession.selectionActionDelegate = object : Callbacks.SelectionActionDelegate {
+        mainSession.selectionActionDelegate = object : SelectionActionDelegate {
             override fun onHideAction(session: GeckoSession, reason: Int) {
                 counter++
             }
@@ -182,6 +218,20 @@ class SelectionActionDelegateTest : BaseSessionTest() {
                    counter, equalTo(1))
     }
 
+    @Test fun compareClientRect() {
+        val jsCssReset = """(function() {
+            document.querySelector('${id}').style.display = "block";
+            document.querySelector('${id}').style.border = "0";
+            document.querySelector('${id}').style.padding = "0";
+        })()"""
+        val jsBorder10pxPadding10px = """(function() {
+            document.querySelector('${id}').style.display = "block";
+            document.querySelector('${id}').style.border = "10px solid";
+            document.querySelector('${id}').style.padding = "10px";
+        })()"""
+        val expectedDiff = RectF(20f, 20f, 20f, 20f) // left, top, right, bottom
+        testClientRect(selectedContent, jsCssReset, jsBorder10pxPadding10px, expectedDiff)
+    }
 
     /** Interface that defines behavior for a particular type of content */
     private interface SelectedContent {
@@ -209,14 +259,14 @@ class SelectionActionDelegateTest : BaseSessionTest() {
                 "geckoview.selection_action.show_on_focus" to true,
                 "layout.accessiblecaret.script_change_update_mode" to 2))
 
-        mainSession.delegateDuringNextWait(object : Callbacks.SelectionActionDelegate {
+        mainSession.delegateDuringNextWait(object : SelectionActionDelegate {
             override fun onShowActionRequest(session: GeckoSession, selection: GeckoSession.SelectionActionDelegate.Selection) {
                 respondingWith(selection)
             }
         })
 
         content.select()
-        mainSession.waitUntilCalled(object : Callbacks.SelectionActionDelegate {
+        mainSession.waitUntilCalled(object : SelectionActionDelegate {
             @AssertCalled(count = 1)
             override fun onShowActionRequest(session: GeckoSession, selection: Selection) {
                 assertThat("Initial content should match",
@@ -226,6 +276,52 @@ class SelectionActionDelegateTest : BaseSessionTest() {
 
         result(content)
         sideEffects.forEach { it(content) }
+    }
+
+    private fun testClientRect(content: SelectedContent,
+                               initialJsA: String,
+                               initialJsB: String,
+                               expectedDiff: RectF) {
+
+        // Show selection actions for collapsed selections, so we can test them.
+        // Also, always show accessible carets / selection actions for changes due to JS calls.
+        sessionRule.setPrefsUntilTestEnd(mapOf(
+                "geckoview.selection_action.show_on_focus" to true,
+                "layout.accessiblecaret.script_change_update_mode" to 2))
+
+        mainSession.loadTestPath(INPUTS_PATH)
+        mainSession.waitForPageStop()
+
+        val requestClientRect: (String) -> RectF = {
+            mainSession.reload()
+            mainSession.waitForPageStop()
+
+            mainSession.evaluateJS(it)
+            content.focus()
+
+            var clientRect = RectF()
+            content.select()
+            mainSession.waitUntilCalled(object : SelectionActionDelegate {
+                @AssertCalled(count = 1)
+                override fun onShowActionRequest(session: GeckoSession, selection: Selection) {
+                    clientRect = selection.clientRect!!
+                }
+            })
+
+            clientRect
+        }
+
+        val clientRectA = requestClientRect(initialJsA)
+        val clientRectB = requestClientRect(initialJsB)
+
+        val fuzzyEqual = { a: Float, b: Float, e: Float -> Math.abs(a + e - b) <= 1 }
+        val result = fuzzyEqual(clientRectA.top, clientRectB.top, expectedDiff.top)
+                  && fuzzyEqual(clientRectA.left, clientRectB.left, expectedDiff.left)
+                  && fuzzyEqual(clientRectA.width(), clientRectB.width(), expectedDiff.width())
+                  && fuzzyEqual(clientRectA.height(), clientRectB.height(), expectedDiff.height())
+
+        assertThat("Selection rect is not at expected location. a$clientRectA b$clientRectB",
+                   result, equalTo(true))
     }
 
 
@@ -240,6 +336,22 @@ class SelectionActionDelegateTest : BaseSessionTest() {
         val oldClip = clipboard.primaryClip
         try {
             clipboard.setPrimaryClip(ClipData.newPlainText("", content))
+
+            sessionRule.addExternalDelegateUntilTestEnd(
+                    ClipboardManager.OnPrimaryClipChangedListener::class,
+                    clipboard::addPrimaryClipChangedListener,
+                    clipboard::removePrimaryClipChangedListener,
+                    ClipboardManager.OnPrimaryClipChangedListener {})
+            lambda()
+        } finally {
+            clipboard.setPrimaryClip(oldClip ?: ClipData.newPlainText("", ""))
+        }
+    }
+
+    private fun withHtmlClipboard(plainText: String = "", html: String = "", lambda: () -> Unit) {
+        val oldClip = clipboard.primaryClip
+        try {
+            clipboard.setPrimaryClip(ClipData.newHtmlText("", plainText, html))
 
             sessionRule.addExternalDelegateUntilTestEnd(
                     ClipboardManager.OnPrimaryClipChangedListener::class,
@@ -375,7 +487,7 @@ class SelectionActionDelegateTest : BaseSessionTest() {
 
     private fun hasShowActionRequest(expectedFlags: Int,
                                      expectedActions: Array<out String>) = { it: SelectedContent ->
-        mainSession.forCallbacksDuringWait(object : Callbacks.SelectionActionDelegate {
+        mainSession.forCallbacksDuringWait(object : SelectionActionDelegate {
             @AssertCalled(count = 1)
             override fun onShowActionRequest(session: GeckoSession, selection: GeckoSession.SelectionActionDelegate.Selection) {
                 assertThat("Selection text should be valid",
@@ -401,7 +513,7 @@ class SelectionActionDelegateTest : BaseSessionTest() {
     private fun changesSelectionTo(text: String) = changesSelectionTo(equalTo(text))
 
     private fun changesSelectionTo(matcher: Matcher<String>) = { _: SelectedContent ->
-        sessionRule.waitUntilCalled(object : Callbacks.SelectionActionDelegate {
+        sessionRule.waitUntilCalled(object : SelectionActionDelegate {
             @AssertCalled(count = 1)
             override fun onShowActionRequest(session: GeckoSession, selection: Selection) {
                 assertThat("New selection text should match", selection.text, matcher)
@@ -410,7 +522,7 @@ class SelectionActionDelegateTest : BaseSessionTest() {
     }
 
     private fun clearsSelection() = { _: SelectedContent ->
-        sessionRule.waitUntilCalled(object : Callbacks.SelectionActionDelegate {
+        sessionRule.waitUntilCalled(object : SelectionActionDelegate {
             @AssertCalled(count = 1)
             override fun onHideAction(session: GeckoSession, reason: Int) {
                 assertThat("Hide reason should be correct",

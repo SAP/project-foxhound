@@ -4,12 +4,15 @@
 
 include protocol PBackground;
 
+include IPCNavigationPreloadState;
 include IPCServiceWorkerRegistrationDescriptor;
+
+include "ipc/ErrorIPCUtils.h";
 
 namespace mozilla {
 namespace dom {
 
-protocol PServiceWorkerRegistration
+[RefCounted] protocol PServiceWorkerRegistration
 {
   manager PBackground;
 
@@ -19,6 +22,11 @@ parent:
   async Unregister() returns (bool aSuccess, CopyableErrorResult aRv);
   async Update(nsCString aNewestWorkerScriptUrl) returns (
     IPCServiceWorkerRegistrationDescriptorOrCopyableErrorResult aResult);
+
+  // For NavigationPreload interface
+  async SetNavigationPreloadEnabled(bool aEnabled) returns (bool aSuccess);
+  async SetNavigationPreloadHeader(nsCString aHeader) returns (bool aSuccess);
+  async GetNavigationPreloadState() returns (IPCNavigationPreloadState? aState);
 
 child:
   async __delete__();

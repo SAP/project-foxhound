@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 // Preferences file used by the raptor harness
 /* globals user_pref */
 // prevents normandy from running updates during the tests
@@ -32,3 +36,23 @@ user_pref('javascript.options.asyncstack', false);
 // disable Firefox Telemetry (and some other things too)
 // https://bugzilla.mozilla.org/show_bug.cgi?id=1533879
 user_pref('datareporting.healthreport.uploadEnabled', false);
+
+// Telemetry initialization happens on a delay, that may elapse exactly in the
+// middle of some raptor tests. While it doesn't do a lot of expensive work, it
+// causes some I/O and thread creation, that can add noise to performance
+// profiles we use to analyze performance regressions.
+// https://bugzilla.mozilla.org/show_bug.cgi?id=1706180
+user_pref('toolkit.telemetry.initDelay', 99999999);
+
+// Explicitly turn off fission so we don't accidentally use the wrong default
+// value. This can be removed once harnesses and tasks assume fission by
+// default.
+user_pref("fission.autostart", false);
+
+// disable autoplay for raptor tests
+user_pref('media.autoplay.default', 5);
+user_pref('media.autoplay.ask-permission', true);
+user_pref('media.autoplay.blocking_policy', 1);
+user_pref('media.autoplay.block-webaudio', true);
+user_pref('media.allowed-to-play.enabled', false);
+user_pref('media.block-autoplay-until-in-foreground', true);

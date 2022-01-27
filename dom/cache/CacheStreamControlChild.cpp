@@ -17,9 +17,7 @@
 #include "mozilla/ipc/PFileDescriptorSetChild.h"
 #include "nsISupportsImpl.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 using mozilla::dom::OptionalFileDescriptorSet;
 using mozilla::ipc::AutoIPCStream;
@@ -110,8 +108,9 @@ void CacheStreamControlChild::OpenStream(const nsID& aId,
   SendOpenStream(aId)->Then(
       GetCurrentSerialEventTarget(), __func__,
       [aResolver,
-       holder = holder.clonePtr()](RefPtr<nsIInputStream>&& aOptionalStream) {
-        aResolver(nsCOMPtr<nsIInputStream>(std::move(aOptionalStream)));
+       holder = holder.clonePtr()](const Maybe<IPCStream>& aOptionalStream) {
+        nsCOMPtr<nsIInputStream> stream = DeserializeIPCStream(aOptionalStream);
+        aResolver(std::move(stream));
       },
       [aResolver, holder = holder.clonePtr()](ResponseRejectReason&& aReason) {
         aResolver(nullptr);
@@ -120,7 +119,8 @@ void CacheStreamControlChild::OpenStream(const nsID& aId,
 
 void CacheStreamControlChild::NoteClosedAfterForget(const nsID& aId) {
   NS_ASSERT_OWNINGTHREAD(CacheStreamControlChild);
-  Unused << SendNoteClosed(aId);
+
+  QM_WARNONLY_TRY(OkIf(SendNoteClosed(aId)));
 
   // A stream has closed.  If we delayed StartDestry() due to this stream
   // being read, then we should check to see if any of the remaining streams
@@ -144,18 +144,10 @@ void CacheStreamControlChild::ActorDestroy(ActorDestroyReason aReason) {
   RemoveWorkerRef();
 }
 
-mozilla::ipc::IPCResult CacheStreamControlChild::RecvClose(const nsID& aId) {
-  NS_ASSERT_OWNINGTHREAD(CacheStreamControlChild);
-  CloseReadStreams(aId);
-  return IPC_OK();
-}
-
 mozilla::ipc::IPCResult CacheStreamControlChild::RecvCloseAll() {
   NS_ASSERT_OWNINGTHREAD(CacheStreamControlChild);
   CloseAllReadStreams();
   return IPC_OK();
 }
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

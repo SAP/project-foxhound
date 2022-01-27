@@ -58,9 +58,9 @@ add_task(async function clickSuggestion() {
   EventUtils.synthesizeMouseAtCenter(element, {}, window);
   await loadPromise;
 
-  let formHistory = (await UrlbarTestUtils.formHistory.search()).map(
-    entry => entry.value
-  );
+  let formHistory = (
+    await UrlbarTestUtils.formHistory.search({ source: engineName })
+  ).map(entry => entry.value);
   Assert.deepEqual(
     formHistory,
     ["foofoo"],
@@ -113,9 +113,9 @@ async function testPressEnterOnSuggestion(
 
   if (!hasExpectedUrl) {
     await promiseFormHistory;
-    let formHistory = (await UrlbarTestUtils.formHistory.search()).map(
-      entry => entry.value
-    );
+    let formHistory = (
+      await UrlbarTestUtils.formHistory.search({ source: engineName })
+    ).map(entry => entry.value);
     Assert.deepEqual(
       formHistory,
       ["foofoo"],
@@ -132,7 +132,9 @@ add_task(async function plainEnterOnSuggestion() {
 });
 
 add_task(async function ctrlEnterOnSuggestion() {
-  await testPressEnterOnSuggestion("http://www.foofoo.com/", { ctrlKey: true });
+  await testPressEnterOnSuggestion("https://www.foofoo.com/", {
+    ctrlKey: true,
+  });
 });
 
 add_task(async function copySuggestionText() {
@@ -284,9 +286,11 @@ add_task(async function heuristicAddsFormHistory() {
   await loadPromise;
 
   await formHistoryPromise;
-  formHistory = (await UrlbarTestUtils.formHistory.search()).map(
-    entry => entry.value
-  );
+  formHistory = (
+    await UrlbarTestUtils.formHistory.search({
+      source: result.searchParams.engine,
+    })
+  ).map(entry => entry.value);
   Assert.deepEqual(
     formHistory,
     ["foo"],

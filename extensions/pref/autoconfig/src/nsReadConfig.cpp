@@ -6,12 +6,15 @@
 #include "nsReadConfig.h"
 #include "nsJSConfigTriggers.h"
 
+#include "mozilla/Logging.h"
 #include "mozilla/Components.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsIAppStartup.h"
+#include "nsIChannel.h"
 #include "nsContentUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsIFile.h"
+#include "nsIInputStream.h"
 #include "nsIObserverService.h"
 #include "nsIPrefBranch.h"
 #include "nsIPrefService.h"
@@ -103,7 +106,7 @@ NS_IMETHODIMP nsReadConfig::Observe(nsISupports* aSubject, const char* aTopic,
               components::AppStartup::Service();
           if (appStartup) {
             bool userAllowedQuit = true;
-            appStartup->Quit(nsIAppStartup::eAttemptQuit, &userAllowedQuit);
+            appStartup->Quit(nsIAppStartup::eAttemptQuit, 0, &userAllowedQuit);
           }
         }
       }
@@ -209,8 +212,9 @@ nsresult nsReadConfig::readConfigFile() {
     // .cfg to the filename by checking this post reading of the cfg file
     // this value can be set within the cfg file adding a level of security.
 
-    if (PL_strncmp(lockFileName.get(), lockVendor.get(), fileNameLen - 4) != 0)
+    if (strncmp(lockFileName.get(), lockVendor.get(), fileNameLen - 4) != 0) {
       return NS_ERROR_FAILURE;
+    }
   }
 
   // get the value of the autoconfig url

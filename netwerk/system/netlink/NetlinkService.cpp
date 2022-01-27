@@ -13,6 +13,7 @@
 #include "nsThreadUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "NetlinkService.h"
+#include "nsIThread.h"
 #include "nsString.h"
 #include "nsPrintfCString.h"
 #include "mozilla/Logging.h"
@@ -21,6 +22,7 @@
 
 #include "mozilla/Base64.h"
 #include "mozilla/FileUtils.h"
+#include "mozilla/FunctionTypeTraits.h"
 #include "mozilla/Services.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/Telemetry.h"
@@ -32,10 +34,19 @@
 #  include <resolv.h>
 #endif
 
-/* a shorter name that better explains what it does */
-#define EINTR_RETRY(x) MOZ_TEMP_FAILURE_RETRY(x)
-
 namespace mozilla::net {
+
+template <typename F>
+static auto eintr_retry(F&& func) ->
+    typename FunctionTypeTraits<decltype(func)>::ReturnType {
+  typename FunctionTypeTraits<decltype(func)>::ReturnType _rc;
+  do {
+    _rc = func();
+  } while (_rc == -1 && errno == EINTR);
+  return _rc;
+}
+
+#define EINTR_RETRY(expr) eintr_retry([&]() { return expr; })
 
 // period during which to absorb subsequent network change events, in
 // milliseconds
@@ -47,10 +58,10 @@ static LazyLogModule gNlSvcLog("NetlinkService");
 #undef LOG_ENABLED
 #define LOG_ENABLED() MOZ_LOG_TEST(gNlSvcLog, mozilla::LogLevel::Debug)
 
-typedef union {
+using in_common_addr = union {
   struct in_addr addr4;
   struct in6_addr addr6;
-} in_common_addr;
+};
 
 static void GetAddrStr(const in_common_addr* aAddr, uint8_t aFamily,
                        nsACString& _retval) {
@@ -165,7 +176,7 @@ class NetlinkAddress {
 
 class NetlinkNeighbor {
  public:
-  NetlinkNeighbor() : mHasMAC(false) {}
+  NetlinkNeighbor() = default;
 
   uint8_t Family() const { return mNeigh.ndm_family; }
   uint32_t GetIndex() const { return mNeigh.ndm_ifindex; }
@@ -228,10 +239,10 @@ class NetlinkNeighbor {
   }
 
  private:
-  bool mHasMAC;
-  uint8_t mMAC[ETH_ALEN];
-  in_common_addr mAddr;
-  struct ndmsg mNeigh;
+  bool mHasMAC{false};
+  uint8_t mMAC[ETH_ALEN]{};
+  in_common_addr mAddr{};
+  struct ndmsg mNeigh {};
 };
 
 class NetlinkLink {
@@ -277,7 +288,7 @@ class NetlinkLink {
 
  private:
   nsCString mName;
-  struct ifinfomsg mIface;
+  struct ifinfomsg mIface {};
 };
 
 class NetlinkRoute {
@@ -306,7 +317,7 @@ class NetlinkRoute {
   bool Equals(const NetlinkRoute& aOther) const {
     size_t addrSize = (mRtm.rtm_family == AF_INET) ? sizeof(mDstAddr.addr4)
                                                    : sizeof(mDstAddr.addr6);
-    if (memcmp(&mRtm, &(aOther.mRtm), sizeof(mRtm))) {
+    if (memcmp(&mRtm, &(aOther.mRtm), sizeof(mRtm)) != 0) {
       return false;
     }
     if (mHasOif != aOther.mHasOif || mOif != aOther.mOif) {
@@ -316,16 +327,16 @@ class NetlinkRoute {
       return false;
     }
     if ((mHasGWAddr != aOther.mHasGWAddr) ||
-        (mHasGWAddr && memcmp(&mGWAddr, &(aOther.mGWAddr), addrSize))) {
+        (mHasGWAddr && memcmp(&mGWAddr, &(aOther.mGWAddr), addrSize) != 0)) {
       return false;
     }
     if ((mHasDstAddr != aOther.mHasDstAddr) ||
-        (mHasDstAddr && memcmp(&mDstAddr, &(aOther.mDstAddr), addrSize))) {
+        (mHasDstAddr && memcmp(&mDstAddr, &(aOther.mDstAddr), addrSize) != 0)) {
       return false;
     }
     if ((mHasPrefSrcAddr != aOther.mHasPrefSrcAddr) ||
         (mHasPrefSrcAddr &&
-         memcmp(&mPrefSrcAddr, &(aOther.mPrefSrcAddr), addrSize))) {
+         memcmp(&mPrefSrcAddr, &(aOther.mPrefSrcAddr), addrSize) != 0)) {
       return false;
     }
     return true;
@@ -456,13 +467,13 @@ class NetlinkRoute {
   bool mHasOif : 1;
   bool mHasPrio : 1;
 
-  in_common_addr mGWAddr;
-  in_common_addr mDstAddr;
-  in_common_addr mPrefSrcAddr;
+  in_common_addr mGWAddr{};
+  in_common_addr mDstAddr{};
+  in_common_addr mPrefSrcAddr{};
 
-  uint32_t mOif;
-  uint32_t mPrio;
-  struct rtmsg mRtm;
+  uint32_t mOif{};
+  uint32_t mPrio{};
+  struct rtmsg mRtm {};
 };
 
 class NetlinkMsg {
@@ -470,7 +481,7 @@ class NetlinkMsg {
   static uint8_t const kGenMsg = 1;
   static uint8_t const kRtMsg = 2;
 
-  NetlinkMsg() : mIsPending(false) {}
+  NetlinkMsg() = default;
   virtual ~NetlinkMsg() = default;
 
   virtual bool Send(int aFD) = 0;
@@ -483,17 +494,17 @@ class NetlinkMsg {
   bool SendRequest(int aFD, void* aRequest, uint32_t aRequestLength) {
     MOZ_ASSERT(!mIsPending, "Request has been already sent!");
 
-    struct sockaddr_nl kernel;
+    struct sockaddr_nl kernel {};
     memset(&kernel, 0, sizeof(kernel));
     kernel.nl_family = AF_NETLINK;
     kernel.nl_groups = 0;
 
-    struct iovec io;
+    struct iovec io {};
     memset(&io, 0, sizeof(io));
     io.iov_base = aRequest;
     io.iov_len = aRequestLength;
 
-    struct msghdr rtnl_msg;
+    struct msghdr rtnl_msg {};
     memset(&rtnl_msg, 0, sizeof(rtnl_msg));
     rtnl_msg.msg_iov = &io;
     rtnl_msg.msg_iovlen = 1;
@@ -508,7 +519,7 @@ class NetlinkMsg {
     return mIsPending;
   }
 
-  bool mIsPending;
+  bool mIsPending{false};
 };
 
 class NetlinkGenMsg : public NetlinkMsg {
@@ -537,7 +548,7 @@ class NetlinkGenMsg : public NetlinkMsg {
   struct {
     struct nlmsghdr hdr;
     struct rtgenmsg gen;
-  } mReq;
+  } mReq{};
 };
 
 class NetlinkRtMsg : public NetlinkMsg {
@@ -580,7 +591,7 @@ class NetlinkRtMsg : public NetlinkMsg {
     struct nlmsghdr hdr;
     struct rtmsg rtm;
     unsigned char data[1024];
-  } mReq;
+  } mReq{};
 };
 
 NetlinkService::LinkInfo::LinkInfo(UniquePtr<NetlinkLink>&& aLink)
@@ -619,17 +630,7 @@ bool NetlinkService::LinkInfo::UpdateStatus() {
 
 NS_IMPL_ISUPPORTS(NetlinkService, nsIRunnable)
 
-NetlinkService::NetlinkService()
-    : mMutex("NetlinkService::mMutex"),
-      mInitialScanFinished(false),
-      mMsgId(0),
-      mLinkUp(true),
-      mRecalculateNetworkId(false),
-      mSendNetworkChangeEvent(false) {
-  mPid = getpid();
-  mShutdownPipe[0] = -1;
-  mShutdownPipe[1] = -1;
-}
+NetlinkService::NetlinkService() : mPid(getpid()) {}
 
 NetlinkService::~NetlinkService() {
   MOZ_ASSERT(!mThread, "NetlinkService thread shutdown failed");
@@ -647,17 +648,17 @@ void NetlinkService::OnNetlinkMessage(int aNetlinkSocket) {
   // for netlink messages.
   char buffer[4096];
 
-  struct sockaddr_nl kernel;
+  struct sockaddr_nl kernel {};
   memset(&kernel, 0, sizeof(kernel));
   kernel.nl_family = AF_NETLINK;
   kernel.nl_groups = 0;
 
-  struct iovec io;
+  struct iovec io {};
   memset(&io, 0, sizeof(io));
   io.iov_base = buffer;
   io.iov_len = sizeof(buffer);
 
-  struct msghdr rtnl_reply;
+  struct msghdr rtnl_reply {};
   memset(&rtnl_reply, 0, sizeof(rtnl_reply));
   rtnl_reply.msg_iov = &io;
   rtnl_reply.msg_iovlen = 1;
@@ -756,46 +757,46 @@ void NetlinkService::OnLinkMessage(struct nlmsghdr* aNlh) {
     return;
   }
 
-  uint32_t linkIndex = link->GetIndex();
-  nsAutoCString linkName;
-  link->GetName(linkName);
+  const uint32_t linkIndex = link->GetIndex();
+  mLinks.WithEntryHandle(linkIndex, [&](auto&& entry) {
+    nsAutoCString linkName;
+    link->GetName(linkName);
 
-  LinkInfo* linkInfo = nullptr;
-  mLinks.Get(linkIndex, &linkInfo);
+    if (aNlh->nlmsg_type == RTM_NEWLINK) {
+      if (!entry) {
+        LOG(("Creating new link [index=%u, name=%s, flags=%u, type=%u]",
+             linkIndex, linkName.get(), link->GetFlags(), link->GetType()));
+        entry.Insert(MakeUnique<LinkInfo>(std::move(link)));
+      } else {
+        LOG(("Updating link [index=%u, name=%s, flags=%u, type=%u]", linkIndex,
+             linkName.get(), link->GetFlags(), link->GetType()));
 
-  if (aNlh->nlmsg_type == RTM_NEWLINK) {
-    if (!linkInfo) {
-      LOG(("Creating new link [index=%u, name=%s, flags=%u, type=%u]",
-           linkIndex, linkName.get(), link->GetFlags(), link->GetType()));
-      linkInfo = new LinkInfo(std::move(link));
-      mLinks.Put(linkIndex, linkInfo);
-    } else {
-      LOG(("Updating link [index=%u, name=%s, flags=%u, type=%u]", linkIndex,
-           linkName.get(), link->GetFlags(), link->GetType()));
+        auto* linkInfo = entry->get();
 
-      // Check whether administrative state has changed.
-      if (linkInfo->mLink->GetFlags() & IFF_UP &&
-          !(link->GetFlags() & IFF_UP)) {
-        LOG(("  link went down"));
-        // If the link went down, remove all routes and neighbors, but keep
-        // addresses.
-        linkInfo->mDefaultRoutes.Clear();
-        linkInfo->mNeighbors.Clear();
+        // Check whether administrative state has changed.
+        if (linkInfo->mLink->GetFlags() & IFF_UP &&
+            !(link->GetFlags() & IFF_UP)) {
+          LOG(("  link went down"));
+          // If the link went down, remove all routes and neighbors, but keep
+          // addresses.
+          linkInfo->mDefaultRoutes.Clear();
+          linkInfo->mNeighbors.Clear();
+        }
+
+        linkInfo->mLink = std::move(link);
+        linkInfo->UpdateStatus();
       }
-
-      linkInfo->mLink = std::move(link);
-      linkInfo->UpdateStatus();
-    }
-  } else {
-    if (!linkInfo) {
-      // This can happen during startup
-      LOG(("Link info doesn't exist [index=%u, name=%s]", linkIndex,
-           linkName.get()));
     } else {
-      LOG(("Removing link [index=%u, name=%s]", linkIndex, linkName.get()));
-      mLinks.Remove(linkIndex);
+      if (!entry) {
+        // This can happen during startup
+        LOG(("Link info doesn't exist [index=%u, name=%s]", linkIndex,
+             linkName.get()));
+      } else {
+        LOG(("Removing link [index=%u, name=%s]", linkIndex, linkName.get()));
+        entry.Remove();
+      }
     }
-  }
+  });
 }
 
 void NetlinkService::OnAddrMessage(struct nlmsghdr* aNlh) {
@@ -823,9 +824,9 @@ void NetlinkService::OnAddrMessage(struct nlmsghdr* aNlh) {
 
   // There might be already an equal address in the array even in case of
   // RTM_NEWADDR message, e.g. when lifetime of IPv6 address is renewed. Equal
-  // in this case means that IP and prefix is the same but some attributes might
-  // be different. Remove existing equal address in case of RTM_DELADDR as well
-  // as RTM_NEWADDR message and add a new one in the latter case.
+  // in this case means that IP and prefix is the same but some attributes
+  // might be different. Remove existing equal address in case of RTM_DELADDR
+  // as well as RTM_NEWADDR message and add a new one in the latter case.
   for (uint32_t i = 0; i < linkInfo->mAddresses.Length(); ++i) {
     if (aNlh->nlmsg_type == RTM_NEWADDR &&
         linkInfo->mAddresses[i]->MsgEquals(*address)) {
@@ -883,7 +884,8 @@ void NetlinkService::OnAddrMessage(struct nlmsghdr* aNlh) {
 
   // Don't treat address changes during initial scan as a network change
   if (mInitialScanFinished) {
-    // Send network event change regardless of whether the ID has changed or not
+    // Send network event change regardless of whether the ID has changed or
+    // not
     mSendNetworkChangeEvent = true;
     TriggerNetworkIDCalculation();
   }
@@ -1048,7 +1050,7 @@ void NetlinkService::OnNeighborMessage(struct nlmsghdr* aNlh) {
       neigh->GetAsString(neighDbgStr);
       LOG(("Adding neighbor: %s", neighDbgStr.get()));
     }
-    linkInfo->mNeighbors.Put(key, neigh.release());
+    linkInfo->mNeighbors.InsertOrUpdate(key, std::move(neigh));
   } else {
     if (LOG_ENABLED()) {
       nsAutoCString neighDbgStr;
@@ -1156,7 +1158,7 @@ NetlinkService::Run() {
     return NS_ERROR_FAILURE;
   }
 
-  struct sockaddr_nl addr;
+  struct sockaddr_nl addr {};
   memset(&addr, 0, sizeof(addr));
 
   addr.nl_family = AF_NETLINK;
@@ -1303,9 +1305,9 @@ int NetlinkService::GetPollWait() {
 
   double period = (TimeStamp::Now() - mTriggerTime).ToMilliseconds();
   if (period >= kNetworkChangeCoalescingPeriod) {
-    // Coalescing time has elapsed, send route check messages to find out where
-    // IPv4 and IPv6 traffic is routed and calculate network ID after the
-    // response is received.
+    // Coalescing time has elapsed, send route check messages to find out
+    // where IPv4 and IPv6 traffic is routed and calculate network ID after
+    // the response is received.
     EnqueueRtMsg(AF_INET, &mRouteCheckIPv4);
     EnqueueRtMsg(AF_INET6, &mRouteCheckIPv6);
 
@@ -1342,8 +1344,7 @@ void NetlinkService::GetGWNeighboursForFamily(
     uint8_t aFamily, nsTArray<NetlinkNeighbor*>& aGwNeighbors) {
   LOG(("NetlinkService::GetGWNeighboursForFamily"));
   // Check only routes on links that are up
-  for (auto iter = mLinks.ConstIter(); !iter.Done(); iter.Next()) {
-    LinkInfo* linkInfo = iter.UserData();
+  for (const auto& linkInfo : mLinks.Values()) {
     nsAutoCString linkName;
     linkInfo->mLink->GetName(linkName);
 
@@ -1617,8 +1618,7 @@ bool NetlinkService::CalculateIDForFamily(uint8_t aFamily, SHA1Sum* aSHA1) {
     // still be detected below.
 
     // TODO: maybe we could get operator name via AndroidBridge
-    for (auto iter = mLinks.ConstIter(); !iter.Done(); iter.Next()) {
-      LinkInfo* linkInfo = iter.UserData();
+    for (const auto& linkInfo : mLinks.Values()) {
       if (linkInfo->mIsUp) {
         nsAutoCString linkName;
         linkInfo->mLink->GetName(linkName);
@@ -1674,27 +1674,85 @@ bool NetlinkService::CalculateIDForFamily(uint8_t aFamily, SHA1Sum* aSHA1) {
   return retval;
 }
 
-void NetlinkService::ComputeDNSSuffixList() {
+void NetlinkService::ExtractDNSProperties() {
   MOZ_ASSERT(!NS_IsMainThread(), "Must not be called on the main thread");
   nsTArray<nsCString> suffixList;
+  nsTArray<NetAddr> resolvers;
 #if defined(HAVE_RES_NINIT)
-  struct __res_state res;
-  if (res_ninit(&res) == 0) {
+  [&]() {
+    struct __res_state res {};
+    int ret = res_ninit(&res);
+    if (ret != 0) {
+      LOG(("Call to res_ninit failed: %d", ret));
+      return;
+    }
+
+    // Get DNS suffixes
     for (int i = 0; i < MAXDNSRCH; i++) {
       if (!res.dnsrch[i]) {
         break;
       }
       suffixList.AppendElement(nsCString(res.dnsrch[i]));
     }
+
+    // Get DNS resolvers
+    // Chromium's dns_config_service_posix.cc is the origin of this code
+    // Initially, glibc stores IPv6 in |_ext.nsaddrs| and IPv4 in |nsaddr_list|.
+    // In res_send.c:res_nsend, it merges |nsaddr_list| into |nsaddrs|,
+    // but we have to combine the two arrays ourselves.
+    for (int i = 0; i < res.nscount; ++i) {
+      const struct sockaddr* addr = nullptr;
+      size_t addr_len = 0;
+      if (res.nsaddr_list[i].sin_family) {  // The indicator used by res_nsend.
+        addr = reinterpret_cast<const struct sockaddr*>(&res.nsaddr_list[i]);
+        addr_len = sizeof res.nsaddr_list[i];
+      } else if (res._u._ext.nsaddrs[i]) {
+        addr = reinterpret_cast<const struct sockaddr*>(res._u._ext.nsaddrs[i]);
+        addr_len = sizeof *res._u._ext.nsaddrs[i];
+      } else {
+        LOG(("Bad ext struct"));
+        return;
+      }
+      const socklen_t kSockaddrInSize = sizeof(struct sockaddr_in);
+      const socklen_t kSockaddrIn6Size = sizeof(struct sockaddr_in6);
+
+      if ((addr->sa_family == AF_INET && addr_len < kSockaddrInSize) ||
+          (addr->sa_family == AF_INET6 && addr_len < kSockaddrIn6Size)) {
+        LOG(("Bad address size"));
+        return;
+      }
+
+      NetAddr ip;
+      if (addr->sa_family == AF_INET) {
+        const struct sockaddr_in* sin = (const struct sockaddr_in*)addr;
+        ip.inet.family = AF_INET;
+        ip.inet.ip = sin->sin_addr.s_addr;
+        ip.inet.port = sin->sin_port;
+      } else if (addr->sa_family == AF_INET6) {
+        const struct sockaddr_in6* sin6 = (const struct sockaddr_in6*)addr;
+        ip.inet6.family = AF_INET6;
+        memcpy(&ip.inet6.ip.u8, &sin6->sin6_addr, sizeof(ip.inet6.ip.u8));
+        ip.inet6.port = sin6->sin6_port;
+      } else {
+        MOZ_ASSERT_UNREACHABLE("Unexpected sa_family");
+        return;
+      }
+
+      resolvers.AppendElement(ip);
+    }
+
     res_nclose(&res);
-  }
+  }();
+
 #endif
   RefPtr<NetlinkServiceListener> listener;
   {
     MutexAutoLock lock(mMutex);
     listener = mListener;
     mDNSSuffixList = std::move(suffixList);
+    mDNSResolvers = std::move(resolvers);
   }
+
   if (listener) {
     listener->OnDnsSuffixListUpdated();
   }
@@ -1743,7 +1801,7 @@ void NetlinkService::CalculateNetworkID() {
   SHA1Sum sha1;
 
   UpdateLinkStatus();
-  ComputeDNSSuffixList();
+  ExtractDNSProperties();
 
   bool idChanged = false;
   bool found4 = CalculateIDForFamily(AF_INET, &sha1);
@@ -1823,6 +1881,16 @@ nsresult NetlinkService::GetDnsSuffixList(nsTArray<nsCString>& aDnsSuffixList) {
 #if defined(HAVE_RES_NINIT)
   MutexAutoLock lock(mMutex);
   aDnsSuffixList = mDNSSuffixList.Clone();
+  return NS_OK;
+#else
+  return NS_ERROR_NOT_IMPLEMENTED;
+#endif
+}
+
+nsresult NetlinkService::GetResolvers(nsTArray<NetAddr>& aResolvers) {
+#if defined(HAVE_RES_NINIT)
+  MutexAutoLock lock(mMutex);
+  aResolvers = mDNSResolvers.Clone();
   return NS_OK;
 #else
   return NS_ERROR_NOT_IMPLEMENTED;

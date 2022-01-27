@@ -7,25 +7,42 @@
 with Files("**"):
     BUG_COMPONENT = ("Firefox", "Theme")
 
-toolkit = CONFIG['MOZ_WIDGET_TOOLKIT']
+with Files("ThemeVariableMap.jsm"):
+    BUG_COMPONENT = ("WebExtensions", "Themes")
 
-if toolkit == 'cocoa':
-    DIRS += ['osx']
-elif toolkit == 'gtk':
-    DIRS += ['linux']
-else:
-    DIRS += ['windows']
-
-DIRS += [
-    'addons/dark',
-    'addons/light',
+EXTRA_JS_MODULES += [
+    "BuiltInThemeConfig.jsm",
+    "BuiltInThemes.jsm",
+    "ThemeVariableMap.jsm",
 ]
 
-with Files('osx/**'):
-    SCHEDULES.exclusive = ['macosx']
+BROWSER_CHROME_MANIFESTS += [
+    "test/browser/browser.ini",
+]
 
-with Files('linux/**'):
-    SCHEDULES.exclusive = ['linux']
+toolkit = CONFIG["MOZ_WIDGET_TOOLKIT"]
 
-with Files('windows/**'):
-    SCHEDULES.exclusive = ['windows']
+if toolkit == "windows":
+    EXTRA_JS_MODULES += [
+        "Windows8WindowFrameColor.jsm",
+    ]
+
+if toolkit == "cocoa":
+    DIRS += ["osx"]
+elif toolkit == "gtk":
+    DIRS += ["linux"]
+else:
+    DIRS += ["windows"]
+
+DIRS += [
+    "addons",
+]
+
+with Files("osx/**"):
+    SCHEDULES.exclusive = ["macosx"]
+
+with Files("linux/**"):
+    SCHEDULES.exclusive = ["linux"]
+
+with Files("windows/**"):
+    SCHEDULES.exclusive = ["windows"]

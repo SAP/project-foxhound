@@ -7,6 +7,7 @@
 var Services = require("Services");
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
 var { dumpn } = DevToolsUtils;
+const { Pool } = require("devtools/shared/protocol/Pool");
 
 loader.lazyRequireGetter(
   this,
@@ -41,11 +42,16 @@ function connectToFrame(connection, frame, onDestroy, { addonId } = {}) {
   return new Promise(resolve => {
     // Get messageManager from XUL browser (which might be a specialized tunnel for RDM)
     // or else fallback to asking the frameLoader itself.
-    let mm = frame.messageManager || frame.frameLoader.messageManager;
+    const mm = frame.messageManager || frame.frameLoader.messageManager;
     mm.loadFrameScript("resource://devtools/server/startup/frame.js", false);
 
+    const spawnInParentActorPool = new Pool(
+      connection,
+      "connectToFrame-spawnInParent"
+    );
+    connection.addActor(spawnInParentActorPool);
+
     const trackMessageManager = () => {
-      frame.addEventListener("DevTools:BrowserSwap", onBrowserSwap);
       mm.addMessageListener("debug:setup-in-parent", onSetupInParent);
       mm.addMessageListener(
         "debug:spawn-actor-in-parent",
@@ -54,11 +60,9 @@ function connectToFrame(connection, frame, onDestroy, { addonId } = {}) {
       if (!actor) {
         mm.addMessageListener("debug:actor", onActorCreated);
       }
-      DevToolsServer._childMessageManagers.add(mm);
     };
 
     const untrackMessageManager = () => {
-      frame.removeEventListener("DevTools:BrowserSwap", onBrowserSwap);
       mm.removeMessageListener("debug:setup-in-parent", onSetupInParent);
       mm.removeMessageListener(
         "debug:spawn-actor-in-parent",
@@ -67,7 +71,6 @@ function connectToFrame(connection, frame, onDestroy, { addonId } = {}) {
       if (!actor) {
         mm.removeMessageListener("debug:actor", onActorCreated);
       }
-      DevToolsServer._childMessageManagers.delete(mm);
     };
 
     let actor, childTransport;
@@ -139,7 +142,7 @@ function connectToFrame(connection, frame, onDestroy, { addonId } = {}) {
         instance.parentID = spawnedByActorID;
 
         // Manually set the actor ID in order to insert parent actorID as prefix
-        // in order to help identifying actor hiearchy via actor IDs.
+        // in order to help identifying actor hierarchy via actor IDs.
         // Remove `/` as it may confuse message forwarding between processes.
         const contentPrefix = spawnedByActorID
           .replace(connection.prefix, "")
@@ -147,7 +150,7 @@ function connectToFrame(connection, frame, onDestroy, { addonId } = {}) {
         instance.actorID = connection.allocID(
           contentPrefix + "/" + instance.typeName
         );
-        connection.addActor(instance);
+        spawnInParentActorPool.manage(instance);
 
         mm.sendAsyncMessage("debug:spawn-actor-in-parent:actor", {
           prefix: connPrefix,
@@ -178,7 +181,6 @@ function connectToFrame(connection, frame, onDestroy, { addonId } = {}) {
         // Pipe all the messages from content process actors back to the client
         // through the parent process connection.
         onPacket: connection.send.bind(connection),
-        onClosed() {},
       };
       childTransport.ready();
 
@@ -189,38 +191,6 @@ function connectToFrame(connection, frame, onDestroy, { addonId } = {}) {
       actor = msg.json.actor;
       resolve(actor);
     });
-
-    // Listen for browser frame swap
-    const onBrowserSwap = ({ detail: newFrame }) => {
-      // Remove listeners from old frame and mm
-      untrackMessageManager();
-      // Update frame and mm to point to the new browser frame
-      frame = newFrame;
-      // Get messageManager from XUL browser (which might be a specialized tunnel for
-      // RDM) or else fallback to asking the frameLoader itself.
-      mm = frame.messageManager || frame.frameLoader.messageManager;
-      // Add listeners to new frame and mm
-      trackMessageManager();
-
-      // provides hook to actor modules that need to exchange messages
-      // between e10s parent and child processes
-      parentModules.forEach(mod => {
-        if (mod.onBrowserSwap) {
-          mod.onBrowserSwap(mm);
-        }
-      });
-
-      // Also notify actors spawned in the parent process about the new message manager.
-      parentActors.forEach(parentActor => {
-        if (parentActor.onBrowserSwap) {
-          parentActor.onBrowserSwap(mm);
-        }
-      });
-
-      if (childTransport) {
-        childTransport.swapBrowser(mm);
-      }
-    };
 
     const destroy = DevToolsUtils.makeInfallible(function() {
       EventEmitter.off(connection, "closed", destroy);
@@ -242,6 +212,24 @@ function connectToFrame(connection, frame, onDestroy, { addonId } = {}) {
         prefix: connPrefix,
       });
 
+      // Destroy all actors created via spawnActorInParentProcess
+      // in case content wasn't able to destroy them via a message
+      spawnInParentActorPool.destroy();
+
+      if (actor) {
+        actor = null;
+      }
+
+      // Notify the tab descriptor about the destruction before the call to
+      // `cancelForwarding`, so that we notify about the target destruction
+      // *before* we purge all request for this prefix.
+      // When we purge the requests, we also destroy all related fronts,
+      // including the target front. This clears all event listeners
+      // and ultimately prevent target-destroyed from firing.
+      if (onDestroy) {
+        onDestroy(mm);
+      }
+
       if (childTransport) {
         // If we have a child transport, the actor has already
         // been created. We need to stop using this message manager.
@@ -262,17 +250,6 @@ function connectToFrame(connection, frame, onDestroy, { addonId } = {}) {
         // had a chance to be created, so we are not able to create
         // the actor.
         resolve(null);
-      }
-      if (actor) {
-        // The FrameTargetActor within the child process doesn't necessary
-        // have time to uninitialize itself when the frame is closed/killed.
-        // So ensure telling the client that the related actor is detached.
-        connection.send({ from: actor.actor, type: "tabDetached" });
-        actor = null;
-      }
-
-      if (onDestroy) {
-        onDestroy(mm);
       }
 
       // Cleanup all listeners

@@ -2,13 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-loader: taskgraph.loader.transform:loader
+loader: gecko_taskgraph.loader.transform:loader
 
 transforms:
-    - taskgraph.transforms.try_job:transforms
-    - taskgraph.transforms.source_test:transforms
-    - taskgraph.transforms.job:transforms
-    - taskgraph.transforms.task:transforms
+    - gecko_taskgraph.transforms.try_job:transforms
+    - gecko_taskgraph.transforms.source_test:transforms
+    - gecko_taskgraph.transforms.release_notifications:transforms
+    - gecko_taskgraph.transforms.job:transforms
+    - gecko_taskgraph.transforms.task:transforms
 
 kind-dependencies:
     - fetch
@@ -18,11 +19,9 @@ kind-dependencies:
 jobs-from:
     - clang.yml
     - codeql.yml
-    - coverity.yml
     - cram.yml
     - doc.yml
     - file-metadata.yml
-    - infer.yml
     - jsshell.yml
     - mozlint.yml
     - mozlint-android.yml
@@ -30,6 +29,7 @@ jobs-from:
     - python.yml
     - remote.yml
     - shadow-scheduler.yml
+    - taskgraph.yml
     - webidl.yml
     - wpt-manifest.yml
     - wpt-metadata.yml

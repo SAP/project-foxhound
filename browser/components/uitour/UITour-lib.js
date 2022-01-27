@@ -105,22 +105,15 @@ if (typeof Mozilla == "undefined") {
    * - appMenu
    * - backForward
    * - bookmarks
-   * - customize
-   * - devtools
    * - forget
    * - help
    * - home
-   * - library
-   * - pageActionButton
+   * - logins
    * - pageAction-bookmark
-   * - pageAction-copyURL
-   * - pageAction-emailLink
-   * - pageAction-sendToDevice
    * - pocket
    * - privateWindow
    * - quit
    * - readerMode-urlBar
-   * - screenshots
    * - search
    * - searchIcon
    * - selectedTabIcon

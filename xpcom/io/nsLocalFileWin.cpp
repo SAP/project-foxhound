@@ -6,12 +6,13 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/TextUtils.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/Utf8.h"
 
 #include "nsCOMPtr.h"
 #include "nsMemory.h"
-#include "GeckoProfiler.h"
 
 #include "nsLocalFile.h"
 #include "nsLocalFileCommon.h"
@@ -56,7 +57,6 @@
 #include "nsPIDOMWindow.h"
 #include "nsIWidget.h"
 #include "mozilla/ShellHeaderOnlyUtils.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/WidgetUtils.h"
 #include "WinUtils.h"
 
@@ -69,17 +69,17 @@ using mozilla::FilePreferences::kPathSeparator;
     if (mWorkingPath.IsEmpty()) return NS_ERROR_NOT_INITIALIZED; \
   } while (0)
 
-// CopyFileEx only supports unbuffered I/O in Windows Vista and above
-#ifndef COPY_FILE_NO_BUFFERING
-#  define COPY_FILE_NO_BUFFERING 0x00001000
-#endif
-
 #ifndef FILE_ATTRIBUTE_NOT_CONTENT_INDEXED
 #  define FILE_ATTRIBUTE_NOT_CONTENT_INDEXED 0x00002000
 #endif
 
 #ifndef DRIVE_REMOTE
 #  define DRIVE_REMOTE 4
+#endif
+
+// MinGW does not know about this error, ensure we do.
+#ifndef ERROR_DEVICE_HARDWARE_ERROR
+#  define ERROR_DEVICE_HARDWARE_ERROR 483L
 #endif
 
 namespace {
@@ -238,32 +238,39 @@ class nsDriveEnumerator : public nsSimpleEnumerator,
  * code will be logged to stderr. Error codes, names, and descriptions can be
  * found at the following MSDN page:
  * https://docs.microsoft.com/en-us/windows/win32/debug/system-error-codes
+ *
+ * \note When adding more mappings here, it must be checked if there's code that
+ * depends on the current generic NS_ERROR_MODULE_WIN32 mapping for such error
+ * codes.
  */
 static nsresult ConvertWinError(DWORD aWinErr) {
   nsresult rv;
 
   switch (aWinErr) {
     case ERROR_FILE_NOT_FOUND:
+      [[fallthrough]];  // to NS_ERROR_FILE_NOT_FOUND
     case ERROR_PATH_NOT_FOUND:
+      [[fallthrough]];  // to NS_ERROR_FILE_NOT_FOUND
     case ERROR_INVALID_DRIVE:
-    case ERROR_NOT_READY:
       rv = NS_ERROR_FILE_NOT_FOUND;
       break;
     case ERROR_ACCESS_DENIED:
+      [[fallthrough]];  // to NS_ERROR_FILE_ACCESS_DENIED
     case ERROR_NOT_SAME_DEVICE:
+      [[fallthrough]];  // to NS_ERROR_FILE_ACCESS_DENIED
+    case ERROR_CANNOT_MAKE:
       rv = NS_ERROR_FILE_ACCESS_DENIED;
       break;
     case ERROR_SHARING_VIOLATION:  // CreateFile without sharing flags
+      [[fallthrough]];             // to NS_ERROR_FILE_IS_LOCKED
     case ERROR_LOCK_VIOLATION:     // LockFile, LockFileEx
       rv = NS_ERROR_FILE_IS_LOCKED;
       break;
     case ERROR_NOT_ENOUGH_MEMORY:
-    case ERROR_INVALID_BLOCK:
-    case ERROR_INVALID_HANDLE:
-    case ERROR_ARENA_TRASHED:
       rv = NS_ERROR_OUT_OF_MEMORY;
       break;
     case ERROR_DIR_NOT_EMPTY:
+      [[fallthrough]];  // to NS_ERROR_FILE_DIR_NOT_EMPTY
     case ERROR_CURRENT_DIRECTORY:
       rv = NS_ERROR_FILE_DIR_NOT_EMPTY;
       break;
@@ -271,11 +278,13 @@ static nsresult ConvertWinError(DWORD aWinErr) {
       rv = NS_ERROR_FILE_READ_ONLY;
       break;
     case ERROR_HANDLE_DISK_FULL:
-      rv = NS_ERROR_FILE_TOO_BIG;
+      [[fallthrough]];  // to NS_ERROR_FILE_NO_DEVICE_SPACE
+    case ERROR_DISK_FULL:
+      rv = NS_ERROR_FILE_NO_DEVICE_SPACE;
       break;
     case ERROR_FILE_EXISTS:
+      [[fallthrough]];  // to NS_ERROR_FILE_ALREADY_EXISTS
     case ERROR_ALREADY_EXISTS:
-    case ERROR_CANNOT_MAKE:
       rv = NS_ERROR_FILE_ALREADY_EXISTS;
       break;
     case ERROR_FILENAME_EXCED_RANGE:
@@ -284,6 +293,29 @@ static nsresult ConvertWinError(DWORD aWinErr) {
     case ERROR_DIRECTORY:
       rv = NS_ERROR_FILE_NOT_DIRECTORY;
       break;
+    case ERROR_FILE_CORRUPT:
+      rv = NS_ERROR_FILE_FS_CORRUPTED;
+      break;
+    case ERROR_DEVICE_HARDWARE_ERROR:
+      [[fallthrough]];  // to NS_ERROR_FILE_DEVICE_FAILURE
+    case ERROR_DEVICE_NOT_CONNECTED:
+      [[fallthrough]];  // to NS_ERROR_FILE_DEVICE_FAILURE
+    case ERROR_IO_DEVICE:
+      rv = NS_ERROR_FILE_DEVICE_FAILURE;
+      break;
+    case ERROR_NOT_READY:
+      rv = NS_ERROR_FILE_DEVICE_TEMPORARY_FAILURE;
+      break;
+    case ERROR_INVALID_NAME:
+      rv = NS_ERROR_FILE_INVALID_PATH;
+      break;
+    case ERROR_INVALID_BLOCK:
+      [[fallthrough]];  // to NS_ERROR_FILE_INVALID_HANDLE
+    case ERROR_INVALID_HANDLE:
+      [[fallthrough]];  // to NS_ERROR_FILE_INVALID_HANDLE
+    case ERROR_ARENA_TRASHED:
+      rv = NS_ERROR_FILE_INVALID_HANDLE;
+      break;
     case 0:
       rv = NS_OK;
       break;
@@ -291,7 +323,8 @@ static nsresult ConvertWinError(DWORD aWinErr) {
       printf_stderr(
           "ConvertWinError received an unrecognized WinError: 0x%" PRIx32 "\n",
           static_cast<uint32_t>(aWinErr));
-      rv = NS_ERROR_FAILURE;
+      MOZ_ASSERT((aWinErr & 0xFFFF) == aWinErr);
+      rv = NS_ERROR_GENERATE_FAILURE(NS_ERROR_MODULE_WIN32, aWinErr & 0xFFFF);
       break;
   }
   return rv;
@@ -309,6 +342,109 @@ static __int64 MyFileSeek64(HANDLE aHandle, __int64 aDistance,
   }
 
   return li.QuadPart;
+}
+
+// Check whether a path is a volume root. Expects paths to be \-terminated.
+static bool IsRootPath(const nsAString& aPath) {
+  // Easy cases first:
+  if (aPath.Last() != L'\\') {
+    return false;
+  }
+  if (StringEndsWith(aPath, u":\\"_ns)) {
+    return true;
+  }
+
+  nsAString::const_iterator begin, end;
+  aPath.BeginReading(begin);
+  aPath.EndReading(end);
+  // We know we've got a trailing slash, skip that:
+  end--;
+  // Find the next last slash:
+  if (RFindInReadable(u"\\"_ns, begin, end)) {
+    // Reset iterator:
+    aPath.EndReading(end);
+    end--;
+    auto lastSegment = Substring(++begin, end);
+    if (lastSegment.IsEmpty()) {
+      return false;
+    }
+
+    // Check if we end with e.g. "c$", a drive letter in UNC or network shares
+    if (lastSegment.Last() == L'$' && lastSegment.Length() == 2 &&
+        IsAsciiAlpha(lastSegment.First())) {
+      return true;
+    }
+    // Volume GUID paths:
+    if (StringBeginsWith(lastSegment, u"Volume{"_ns) &&
+        lastSegment.Last() == L'}') {
+      return true;
+    }
+  }
+  return false;
+}
+
+static auto kSpecialNTFSFilesInRoot = {
+    u"$MFT"_ns,     u"$MFTMirr"_ns, u"$LogFile"_ns, u"$Volume"_ns,
+    u"$AttrDef"_ns, u"$Bitmap"_ns,  u"$Boot"_ns,    u"$BadClus"_ns,
+    u"$Secure"_ns,  u"$UpCase"_ns,  u"$Extend"_ns};
+static bool IsSpecialNTFSPath(const nsAString& aFilePath) {
+  nsAString::const_iterator begin, end;
+  aFilePath.BeginReading(begin);
+  aFilePath.EndReading(end);
+  auto iter = begin;
+  // Early exit if there's no '$' (common case)
+  if (!FindCharInReadable(L'$', iter, end)) {
+    return false;
+  }
+
+  iter = begin;
+  // Any use of ':$' is illegal in filenames anyway; while we support some
+  // ADS stuff (ie ":Zone.Identifier"), none of them use the ':$' syntax:
+  if (FindInReadable(u":$"_ns, iter, end)) {
+    return true;
+  }
+
+  auto normalized = mozilla::MakeUniqueFallible<wchar_t[]>(MAX_PATH);
+  if (!normalized) {
+    return true;
+  }
+  auto flatPath = PromiseFlatString(aFilePath);
+  auto fullPathRV =
+      GetFullPathNameW(flatPath.get(), MAX_PATH - 1, normalized.get(), nullptr);
+  if (fullPathRV == 0 || fullPathRV > MAX_PATH - 1) {
+    return false;
+  }
+
+  nsString normalizedPath(normalized.get());
+  normalizedPath.BeginReading(begin);
+  normalizedPath.EndReading(end);
+  iter = begin;
+  auto kDelimiters = u"\\:"_ns;
+  while (iter != end && FindCharInReadable(L'$', iter, end)) {
+    for (auto str : kSpecialNTFSFilesInRoot) {
+      if (StringBeginsWith(Substring(iter, end), str,
+                           nsCaseInsensitiveStringComparator)) {
+        // If we're enclosed by separators or the beginning/end of the string,
+        // this is one of the special files. Check if we're on a volume root.
+        auto iterCopy = iter;
+        iterCopy.advance(str.Length());
+        // We check for both \ and : here because the filename could be
+        // followd by a colon and a stream name/type, which shouldn't affect
+        // our check:
+        if (iterCopy == end || kDelimiters.Contains(*iterCopy)) {
+          iterCopy = iter;
+          // At the start of this path component, we don't need to care about
+          // colons: we would have caught those in the check for `:$` above.
+          if (iterCopy == begin || *(--iterCopy) == L'\\') {
+            return IsRootPath(Substring(begin, iter));
+          }
+        }
+      }
+    }
+    iter++;
+  }
+
+  return false;
 }
 
 //-----------------------------------------------------------------------------
@@ -642,8 +778,9 @@ class nsDirEnumerator final : public nsSimpleEnumerator,
       }
       if (name.IsEmpty()) {
         // end of dir entries
-        if (NS_FAILED(CloseDir(mDir))) {
-          return NS_ERROR_FAILURE;
+        rv = CloseDir(mDir);
+        if (NS_FAILED(rv)) {
+          return rv;
         }
 
         *aResult = false;
@@ -920,6 +1057,10 @@ nsLocalFile::InitWithPath(const nsAString& aFilePath) {
     }
   }
 
+  if (IsSpecialNTFSPath(aFilePath)) {
+    return NS_ERROR_FILE_UNRECOGNIZED_PATH;
+  }
+
   mWorkingPath = aFilePath;
   // kill any trailing '\'
   if (mWorkingPath.Last() == L'\\') {
@@ -1097,7 +1238,7 @@ static nsresult do_mkdir(nsIFile*, const nsString& aPath, uint32_t) {
 }
 
 NS_IMETHODIMP
-nsLocalFile::Create(uint32_t aType, uint32_t aAttributes) {
+nsLocalFile::Create(uint32_t aType, uint32_t aAttributes, bool aSkipAncestors) {
   if (aType != NORMAL_FILE_TYPE && aType != DIRECTORY_TYPE) {
     return NS_ERROR_FILE_UNKNOWN_TYPE;
   }
@@ -1106,7 +1247,8 @@ nsLocalFile::Create(uint32_t aType, uint32_t aAttributes) {
 
   nsresult rv = createFunc(this, mWorkingPath, aAttributes);
 
-  if (NS_SUCCEEDED(rv) || NS_ERROR_FILE_ALREADY_EXISTS == rv) {
+  if (NS_SUCCEEDED(rv) || NS_ERROR_FILE_ALREADY_EXISTS == rv ||
+      aSkipAncestors) {
     return rv;
   }
 
@@ -1234,6 +1376,12 @@ nsresult nsLocalFile::AppendInternal(const nsString& aNode,
 
   mWorkingPath.Append('\\');
   mWorkingPath.Append(aNode);
+
+  if (IsSpecialNTFSPath(mWorkingPath)) {
+    // Revert changes to mWorkingPath:
+    mWorkingPath.SetLength(mWorkingPath.Length() - aNode.Length() - 1);
+    return NS_ERROR_FILE_UNRECOGNIZED_PATH;
+  }
 
   return NS_OK;
 }
@@ -1441,10 +1589,17 @@ nsLocalFile::SetLeafName(const nsAString& aLeafName) {
 
   // cannot use nsCString::RFindChar() due to 0x5c problem
   int32_t offset = mWorkingPath.RFindChar(L'\\');
+  nsString newDir;
   if (offset) {
-    mWorkingPath.Truncate(offset + 1);
+    newDir = Substring(mWorkingPath, 0, offset + 1) + aLeafName;
+  } else {
+    newDir = mWorkingPath + aLeafName;
   }
-  mWorkingPath.Append(aLeafName);
+  if (IsSpecialNTFSPath(newDir)) {
+    return NS_ERROR_FILE_UNRECOGNIZED_PATH;
+  }
+
+  mWorkingPath.Assign(newDir);
 
   return NS_OK;
 }
@@ -1651,6 +1806,14 @@ nsresult nsLocalFile::CopySingleFile(nsIFile* aSourceFile, nsIFile* aDestParent,
 
     copyOK = ::CopyFileExW(filePath.get(), destPath.get(), nullptr, nullptr,
                            nullptr, dwCopyFlags);
+    // On Windows 10, copying without buffering has started failing, so try
+    // with buffering...
+    if (!copyOK && (dwCopyFlags & COPY_FILE_NO_BUFFERING) &&
+        GetLastError() == ERROR_INVALID_PARAMETER) {
+      dwCopyFlags &= ~COPY_FILE_NO_BUFFERING;
+      copyOK = ::CopyFileExW(filePath.get(), destPath.get(), nullptr, nullptr,
+                             nullptr, dwCopyFlags);
+    }
 
     if (move && copyOK) {
       DeleteFileW(filePath.get());
@@ -1908,15 +2071,15 @@ nsresult nsLocalFile::CopyMove(nsIFile* aParentDir, const nsAString& aNewName,
           return NS_ERROR_FAILURE;
         }
 
-        rv = file->MoveTo(target, EmptyString());
+        rv = file->MoveTo(target, u""_ns);
         if (NS_FAILED(rv)) {
           return rv;
         }
       } else {
         if (followSymlinks) {
-          rv = file->CopyToFollowingLinks(target, EmptyString());
+          rv = file->CopyToFollowingLinks(target, u""_ns);
         } else {
-          rv = file->CopyTo(target, EmptyString());
+          rv = file->CopyTo(target, u""_ns);
         }
         if (NS_FAILED(rv)) {
           return rv;
@@ -1977,6 +2140,12 @@ nsLocalFile::CopyToFollowingLinks(nsIFile* aNewParentDir,
 NS_IMETHODIMP
 nsLocalFile::MoveTo(nsIFile* aNewParentDir, const nsAString& aNewName) {
   return CopyMove(aNewParentDir, aNewName, Move);
+}
+
+NS_IMETHODIMP
+nsLocalFile::MoveToFollowingLinks(nsIFile* aNewParentDir,
+                                  const nsAString& aNewName) {
+  return CopyMove(aNewParentDir, aNewName, Move | FollowSymlinks);
 }
 
 NS_IMETHODIMP
@@ -2218,6 +2387,39 @@ nsLocalFile::SetLastModifiedTime(PRTime aLastModifiedTime) {
 NS_IMETHODIMP
 nsLocalFile::SetLastModifiedTimeOfLink(PRTime aLastModifiedTime) {
   return SetLastModifiedTime(aLastModifiedTime);
+}
+
+NS_IMETHODIMP
+nsLocalFile::GetCreationTime(PRTime* aCreationTime) {
+  CHECK_mWorkingPath();
+
+  if (NS_WARN_IF(!aCreationTime)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  nsresult rv = ResolveAndStat();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  *aCreationTime = mFileInfo64.creationTime / PR_USEC_PER_MSEC;
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsLocalFile::GetCreationTimeOfLink(PRTime* aCreationTime) {
+  CHECK_mWorkingPath();
+
+  if (NS_WARN_IF(!aCreationTime)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  PRFileInfo64 info;
+  nsresult rv = GetFileInfo(mWorkingPath, &info);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  *aCreationTime = info.creationTime / PR_USEC_PER_MSEC;
+
+  return NS_OK;
 }
 
 nsresult nsLocalFile::SetModDate(PRTime aLastModifiedTime,
@@ -3047,7 +3249,6 @@ nsLocalFile::Launch() {
   // Otherwise try ShellExecuteByExplorer first, and if it fails,
   // run ShellExecuteExW.
   if (!isExecutable) {
-    Telemetry::AutoTimer<Telemetry::SHELLEXECUTEBYEXPLORER_DURATION_MS> timer;
     mozilla::LauncherVoidResult shellExecuteOk =
         mozilla::ShellExecuteByExplorer(execPath, args, verbDefault,
                                         workingDirectoryPtr, showCmd);
@@ -3169,7 +3370,7 @@ nsLocalFile::CopyToNative(nsIFile* aNewParentDir, const nsACString& aNewName) {
   CHECK_mWorkingPath();
 
   if (aNewName.IsEmpty()) {
-    return CopyTo(aNewParentDir, EmptyString());
+    return CopyTo(aNewParentDir, u""_ns);
   }
 
   nsAutoString tmp;
@@ -3185,7 +3386,7 @@ NS_IMETHODIMP
 nsLocalFile::CopyToFollowingLinksNative(nsIFile* aNewParentDir,
                                         const nsACString& aNewName) {
   if (aNewName.IsEmpty()) {
-    return CopyToFollowingLinks(aNewParentDir, EmptyString());
+    return CopyToFollowingLinks(aNewParentDir, u""_ns);
   }
 
   nsAutoString tmp;
@@ -3203,13 +3404,32 @@ nsLocalFile::MoveToNative(nsIFile* aNewParentDir, const nsACString& aNewName) {
   CHECK_mWorkingPath();
 
   if (aNewName.IsEmpty()) {
-    return MoveTo(aNewParentDir, EmptyString());
+    return MoveTo(aNewParentDir, u""_ns);
   }
 
   nsAutoString tmp;
   nsresult rv = NS_CopyNativeToUnicode(aNewName, tmp);
   if (NS_SUCCEEDED(rv)) {
     return MoveTo(aNewParentDir, tmp);
+  }
+
+  return rv;
+}
+
+NS_IMETHODIMP
+nsLocalFile::MoveToFollowingLinksNative(nsIFile* aNewParentDir,
+                                        const nsACString& aNewName) {
+  // Check we are correctly initialized.
+  CHECK_mWorkingPath();
+
+  if (aNewName.IsEmpty()) {
+    return MoveToFollowingLinks(aNewParentDir, u""_ns);
+  }
+
+  nsAutoString tmp;
+  nsresult rv = NS_CopyNativeToUnicode(aNewName, tmp);
+  if (NS_SUCCEEDED(rv)) {
+    return MoveToFollowingLinks(aNewParentDir, tmp);
   }
 
   return rv;

@@ -7,6 +7,7 @@
 #ifndef nsIScrollbarMediator_h___
 #define nsIScrollbarMediator_h___
 
+#include "mozilla/ScrollTypes.h"
 #include "nsQueryFrame.h"
 #include "nsCoord.h"
 
@@ -43,6 +44,13 @@ class nsIScrollbarMediator : public nsQueryFrame {
                              ScrollSnapMode aSnap = DISABLE_SNAP) = 0;
   virtual void ScrollByLine(nsScrollbarFrame* aScrollbar, int32_t aDirection,
                             ScrollSnapMode aSnap = DISABLE_SNAP) = 0;
+
+  // Only implemented for nsGfxScrollFrame, not nsTreeBodyFrame.
+  virtual void ScrollByUnit(nsScrollbarFrame* aScrollbar,
+                            mozilla::ScrollMode aMode, int32_t aDirection,
+                            mozilla::ScrollUnit aUnit,
+                            ScrollSnapMode aSnap = DISABLE_SNAP) = 0;
+
   /**
    * RepeatButtonScroll is called when the scrollbar's button is held down. When
    * the button is first clicked the increment is set; RepeatButtonScroll adds

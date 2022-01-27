@@ -11,15 +11,16 @@
 
 #include <utility>
 
+#include "jit/InlineScriptTree.h"
 #include "jit/JitcodeMap.h"
-#include "jit/JitFrames.h"
 #include "jit/LIR.h"
 #include "jit/MacroAssembler.h"
 #include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
+#include "jit/SafepointIndex.h"
 #include "jit/Safepoints.h"
 #include "jit/Snapshots.h"
-#include "jit/VMFunctions.h"
+#include "vm/TraceLoggingTypes.h"
 
 namespace js {
 namespace jit {
@@ -109,9 +110,8 @@ class CodeGeneratorShared : public LElementVisitor {
     return gen->isProfilerInstrumentationEnabled();
   }
 
-  bool stringsCanBeInNursery() const { return gen->stringsCanBeInNursery(); }
-
-  bool bigIntsCanBeInNursery() const { return gen->bigIntsCanBeInNursery(); }
+  gc::InitialHeap initialStringHeap() const { return gen->initialStringHeap(); }
+  gc::InitialHeap initialBigIntHeap() const { return gen->initialBigIntHeap(); }
 
  protected:
   // The offset of the first instruction of the OSR entry block from the
@@ -125,18 +125,6 @@ class CodeGeneratorShared : public LElementVisitor {
   size_t getOsrEntryOffset() const {
     MOZ_RELEASE_ASSERT(osrEntryOffset_.isSome());
     return *osrEntryOffset_;
-  }
-
-  // The offset of the first instruction of the body.
-  // This skips the arguments type checks.
-  size_t skipArgCheckEntryOffset_;
-
-  inline void setSkipArgCheckEntryOffset(size_t offset) {
-    MOZ_ASSERT(skipArgCheckEntryOffset_ == 0);
-    skipArgCheckEntryOffset_ = offset;
-  }
-  inline size_t getSkipArgCheckEntryOffset() const {
-    return skipArgCheckEntryOffset_;
   }
 
   typedef js::Vector<CodegenSafepointIndex, 8, SystemAllocPolicy>
@@ -172,6 +160,10 @@ class CodeGeneratorShared : public LElementVisitor {
 
   inline Address ToAddress(const LAllocation& a) const;
   inline Address ToAddress(const LAllocation* a) const;
+
+  static inline Address ToAddress(Register elements, const LAllocation* index,
+                                  Scalar::Type type,
+                                  int32_t offsetAdjustment = 0);
 
   // Returns the offset from FP to address incoming stack arguments
   // when we use wasm stack argument abi (useWasmStackArgumentAbi()).
@@ -214,8 +206,7 @@ class CodeGeneratorShared : public LElementVisitor {
   };
 
  protected:
-  MOZ_MUST_USE
-  bool allocateData(size_t size, size_t* offset) {
+  [[nodiscard]] bool allocateData(size_t size, size_t* offset) {
     MOZ_ASSERT(size % sizeof(void*) == 0);
     *offset = runtimeData_.length();
     masm.propagateOOM(runtimeData_.appendN(0, size));
@@ -279,11 +270,10 @@ class CodeGeneratorShared : public LElementVisitor {
 
   OutOfLineCode* oolTruncateDouble(
       FloatRegister src, Register dest, MInstruction* mir,
-      wasm::BytecodeOffset callOffset = wasm::BytecodeOffset());
-  void emitTruncateDouble(FloatRegister src, Register dest,
-                          MTruncateToInt32* mir);
-  void emitTruncateFloat32(FloatRegister src, Register dest,
-                           MTruncateToInt32* mir);
+      wasm::BytecodeOffset callOffset = wasm::BytecodeOffset(),
+      bool preserveTls = false);
+  void emitTruncateDouble(FloatRegister src, Register dest, MInstruction* mir);
+  void emitTruncateFloat32(FloatRegister src, Register dest, MInstruction* mir);
 
   void emitPreBarrier(Register elements, const LAllocation* index);
   void emitPreBarrier(Address address);
@@ -377,6 +367,13 @@ class CodeGeneratorShared : public LElementVisitor {
   template <typename T>
   void pushArg(const T& t) {
     masm.Push(t);
+#ifdef DEBUG
+    pushedArgs_++;
+#endif
+  }
+
+  void pushArg(jsid id, Register temp) {
+    masm.Push(id, temp);
 #ifdef DEBUG
     pushedArgs_++;
 #endif
@@ -507,8 +504,6 @@ class OutOfLineCode : public TempObject {
   uint32_t framePushed() const { return framePushed_; }
   void setBytecodeSite(const BytecodeSite* site) { site_ = site; }
   const BytecodeSite* bytecodeSite() const { return site_; }
-  jsbytecode* pc() const { return site_->pc(); }
-  JSScript* script() const { return site_->script(); }
 };
 
 // For OOL paths that want a specific-typed code generator.
@@ -541,6 +536,16 @@ class OutOfLineWasmTruncateCheckBase : public OutOfLineCodeBase<CodeGen> {
         input_(input),
         output_(output),
         output64_(Register64::Invalid()),
+        flags_(mir->flags()),
+        bytecodeOffset_(mir->bytecodeOffset()) {}
+
+  OutOfLineWasmTruncateCheckBase(MWasmBuiltinTruncateToInt64* mir,
+                                 FloatRegister input, Register64 output)
+      : fromType_(mir->input()->type()),
+        toType_(MIRType::Int64),
+        input_(input),
+        output_(Register::Invalid()),
+        output64_(output),
         flags_(mir->flags()),
         bytecodeOffset_(mir->bytecodeOffset()) {}
 

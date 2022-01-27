@@ -14,13 +14,16 @@ include IPCServiceWorkerDescriptor;
 include IPCStream;
 include HttpChannelParams;
 
+include "mozilla/dom/ReferrerInfoUtils.h";
 include "mozilla/net/NeckoMessageUtils.h";
+
+using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
 
 namespace mozilla {
 namespace net {
 
 //-------------------------------------------------------------------
-refcounted protocol PHttpChannel
+[RefCounted] protocol PHttpChannel
 {
   manager PNecko;
 
@@ -29,8 +32,6 @@ parent:
   // see PNecko.ipdl
 
   async SetClassOfService(uint32_t cos);
-
-  async SetCacheTokenCachedCharset(nsCString charset);
 
   async Suspend();
   async Resume();
@@ -43,44 +44,18 @@ parent:
                         ChildLoadInfoForwarderArgs? targetLoadInfoForwarder,
                         uint32_t loadFlags, nsIReferrerInfo referrerInfo,
                         URIParams? apiRedirectTo,
-                        CorsPreflightArgs? corsPreflightArgs,
-                        bool chooseAppcache);
+                        CorsPreflightArgs? corsPreflightArgs);
 
   // For document loads we keep this protocol open after child's
   // OnStopRequest, and send this msg (instead of __delete__) to allow
   // partial cleanup on parent.
   async DocumentChannelCleanup(bool clearCacheEntry);
 
-  // This might have to be sync. If this fails we must fail the document load
-  // to avoid endless loop.
-  //
-  // Explanation: the document loaded was loaded from the offline cache. But
-  // the cache group id (the manifest URL) of the cache group it was loaded
-  // from is different then the manifest the document refers to in the html
-  // tag. If we detect this during the cache selection algorithm, we must not
-  // load this document from the offline cache group it was just loaded from.
-  // Marking the cache entry as foreign in its cache group will prevent
-  // the document to load from the bad offline cache group. After it is marked,
-  // we reload the document to take the effect. If we fail to mark the entry
-  // as foreign, we will end up in the same situation and reload again and
-  // again, indefinitely.
-  async MarkOfflineCacheEntryAsForeign();
-
-  // Divert OnDataAvailable to the parent.
-  async DivertOnDataAvailable(nsCString data,
-                              uint64_t  offset,
-                              uint32_t  count);
-
-  // Divert OnStopRequest to the parent.
-  async DivertOnStopRequest(nsresult statusCode);
-
-  // Child has no more events/messages to divert to the parent.
-  async DivertComplete();
-
   // Child has detected a CORS check failure, so needs to tell the parent
   // to remove any matching entry from the CORS preflight cache.
   async RemoveCorsPreflightCacheEntry(URIParams uri,
-                                      PrincipalInfo requestingPrincipal);
+                                      PrincipalInfo requestingPrincipal,
+                                      OriginAttributes originAttributes);
 
   // After receiving this message, the parent calls SendDeleteSelf, and makes
   // sure not to send any more messages after that.
@@ -88,9 +63,6 @@ parent:
 
   // Called to get the input stream when altData was delivered.
   async OpenOriginalCacheInputStream();
-
-  // Called to get the input stream when altData is available.
-  async OpenAltDataCacheInputStream(nsCString aType);
 
   // Tell the parent the amount bytes read by child for the e10s back pressure
   // flow control
@@ -134,9 +106,6 @@ child:
   // avoid races: see bug 591708).
   async DeleteSelf();
 
-  // Tell the child to issue a deprecation warning.
-  async IssueDeprecationWarning(uint32_t warning, bool asError);
-
   // When CORS blocks the request in the parent process, it doesn't have the
   // correct window ID, so send the message to the child for logging to the web
   // console.
@@ -147,21 +116,10 @@ child:
                             nsString url,
                             nsString contentType);
 
-  // See ADivertableParentChannel::CancelDiversion
-  async CancelDiversion();
-
   async OriginalCacheInputStreamAvailable(IPCStream? stream);
-
-  async AltDataCacheInputStreamAvailable(IPCStream? stream);
 
 
 both:
-  // After receiving this message, the parent also calls
-  // SendFinishInterceptedRedirect, and makes sure not to send any more messages
-  // after that. When receiving this message, the child will call
-  // Send__delete__() and complete the steps required to finish the redirect.
-  async FinishInterceptedRedirect();
-
   async SetPriority(int16_t priority);
 };
 

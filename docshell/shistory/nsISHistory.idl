@@ -15,10 +15,16 @@ webidl BrowsingContext;
 #include "nsTArrayForwardDeclare.h"
 #include "mozilla/Maybe.h"
 struct EntriesAndBrowsingContextData;
+namespace mozilla {
+namespace dom {
+class SHEntrySharedParentState;
+} // namespace dom
+} // namespace mozilla
 %}
 
 [ref] native nsDocshellIDArray(nsTArray<nsID>);
 native MaybeInt32(mozilla::Maybe<int32_t>);
+[ptr] native SHEntrySharedParentStatePtr(mozilla::dom::SHEntrySharedParentState);
 /**
  * An interface to the primary properties of the Session History
  * component. In an embedded browser environment, the nsIWebBrowser
@@ -87,7 +93,7 @@ interface nsISHistory: nsISupports
    * @throws                  <code>NS_ERROR_FAILURE</code> numEntries is
    *                          invalid or out of bounds with the size of history.
    */
-  void PurgeHistory(in long aNumEntries);
+  void purgeHistory(in long aNumEntries);
 
   /**
    * Called to register a listener for the session history component.
@@ -124,7 +130,7 @@ interface nsISHistory: nsISupports
    * Load the entry at the particular index.
    */
   [noscript]
-  void gotoIndex(in long aIndex);
+  void gotoIndex(in long aIndex, in boolean aUserActivation);
 
   /**
    * If an element exists at the particular index and
@@ -197,7 +203,8 @@ interface nsISHistory: nsISupports
    * Evict the content viewer associated with a bfcache entry that has timed
    * out.
    */
-  void evictExpiredContentViewerForEntry(in nsIBFCacheEntry aEntry);
+  [noscript, notxpcom]
+  void evictExpiredContentViewerForEntry(in SHEntrySharedParentStatePtr aEntry);
 
   /**
    * Evict all the content viewers in this session history
@@ -209,13 +216,13 @@ interface nsISHistory: nsISupports
    * expiration.
    */
   [noscript, notxpcom]
-  void addToExpirationTracker(in nsIBFCacheEntry aEntry);
+  void addToExpirationTracker(in SHEntrySharedParentStatePtr aEntry);
 
   /**
    * Remove a BFCache entry from expiration tracker.
    */
   [noscript, notxpcom]
-  void removeFromExpirationTracker(in nsIBFCacheEntry aEntry);
+  void removeFromExpirationTracker(in SHEntrySharedParentStatePtr aEntry);
 
   /**
    * Remove dynamic entries found at given index.
@@ -255,7 +262,7 @@ interface nsISHistory: nsISupports
    * Collect docshellIDs from aEntry's children and remove those
    * entries from history.
    *
-   * @param aEntry           Children docshellID's will be collected from 
+   * @param aEntry           Children docshellID's will be collected from
    *                         this entry and passed to RemoveEntries as aIDs.
   */
   [noscript, notxpcom]
@@ -265,20 +272,20 @@ interface nsISHistory: nsISupports
   void Reload(in unsigned long aReloadFlags);
 
   [notxpcom] void EnsureCorrectEntryAtCurrIndex(in nsISHEntry aEntry);
-  
+
   [notxpcom] void EvictContentViewersOrReplaceEntry(in nsISHEntry aNewSHEntry, in bool aReplace);
 
   nsISHEntry createEntry();
 
   [noscript] void AddToRootSessionHistory(in bool aCloneChildren, in nsISHEntry aOSHE,
-                                          in BrowsingContext aBC, in nsISHEntry aEntry,
+                                          in BrowsingContext aRootBC, in nsISHEntry aEntry,
                                           in unsigned long aLoadType,
                                           in bool aShouldPersist,
                                           out MaybeInt32 aPreviousEntryIndex,
                                           out MaybeInt32 aLoadedEntryIndex);
 
   [noscript] void AddChildSHEntryHelper(in nsISHEntry aCloneRef, in nsISHEntry aNewEntry,
-                                        in BrowsingContext aBC, in bool aCloneChildren);
+                                        in BrowsingContext aRootBC, in bool aCloneChildren);
 
   [noscript, notxpcom] boolean isEmptyOrHasEntriesForSingleTopLevelPage();
 };

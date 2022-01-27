@@ -7,7 +7,7 @@
 "use strict";
 
 const TEST_URI =
-  "data:text/html;charset=utf-8,Top-level await Browser Console test";
+  "data:text/html;charset=utf-8,<!DOCTYPE html>Top-level await Browser Console test";
 
 add_task(async function() {
   // Needed for the execute() function below
@@ -40,7 +40,4 @@ add_task(async function() {
       messagesText.includes(`Array [ "await1" ]`),
     "The output contains the the expected messages"
   );
-
-  info("Close the Browser console");
-  await BrowserConsoleManager.toggleBrowserConsole();
 });

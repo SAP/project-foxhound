@@ -7,8 +7,11 @@
 #include "jit/IonCompileTask.h"
 
 #include "jit/CodeGenerator.h"
+#include "jit/Ion.h"
+#include "jit/JitRuntime.h"
 #include "jit/JitScript.h"
 #include "jit/WarpSnapshot.h"
+#include "vm/HelperThreadState.h"
 #include "vm/JSScript.h"
 
 #include "vm/JSScript-inl.h"
@@ -16,7 +19,7 @@
 using namespace js;
 using namespace js::jit;
 
-void IonCompileTask::runTaskLocked(AutoLockHelperThreadState& locked) {
+void IonCompileTask::runHelperThreadTask(AutoLockHelperThreadState& locked) {
   // The build is taken by this thread. Unfreeze the LifoAlloc to allow
   // mutations.
   alloc().lifoAlloc()->setReadWrite();
@@ -57,24 +60,14 @@ void IonCompileTask::trace(JSTracer* trc) {
     return;
   }
 
-  if (JitOptions.warpBuilder) {
-    MOZ_ASSERT(snapshot_);
-    MOZ_ASSERT(!rootList_);
-    snapshot_->trace(trc);
-  } else {
-    MOZ_ASSERT(!snapshot_);
-    MOZ_ASSERT(rootList_);
-    rootList_->trace(trc);
-  }
+  snapshot_->trace(trc);
 }
 
-IonCompileTask::IonCompileTask(MIRGenerator& mirGen, bool scriptHasIonScript,
-                               CompilerConstraintList* constraints,
+IonCompileTask::IonCompileTask(JSContext* cx, MIRGenerator& mirGen,
                                WarpSnapshot* snapshot)
     : mirGen_(mirGen),
-      constraints_(constraints),
       snapshot_(snapshot),
-      scriptHasIonScript_(scriptHasIonScript) {}
+      isExecuting_(cx->isExecutingRef()) {}
 
 size_t IonCompileTask::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) {
   // See js::jit::FreeIonCompileTask.
@@ -170,6 +163,15 @@ void jit::FreeIonCompileTask(IonCompileTask* task) {
   js_delete(task->alloc().lifoAlloc());
 }
 
+void IonFreeTask::runHelperThreadTask(AutoLockHelperThreadState& locked) {
+  {
+    AutoUnlockHelperThreadState unlock(locked);
+    jit::FreeIonCompileTask(task_);
+  }
+
+  js_delete(this);
+}
+
 void jit::FinishOffThreadTask(JSRuntime* runtime, IonCompileTask* task,
                               const AutoLockHelperThreadState& locked) {
   MOZ_ASSERT(runtime);
@@ -187,18 +189,12 @@ void jit::FinishOffThreadTask(JSRuntime* runtime, IonCompileTask* task,
     runtime->jitRuntime()->ionLazyLinkListRemove(runtime, task);
   }
 
-  // Clear the recompiling flag of the old ionScript, since we continue to
-  // use the old ionScript if recompiling fails.
-  if (script->hasIonScript()) {
-    script->ionScript()->clearRecompiling();
-  }
-
   // Clean up if compilation did not succeed.
   if (script->isIonCompilingOffThread()) {
     script->jitScript()->clearIsIonCompilingOffThread(script);
 
-    AbortReasonOr<Ok> status = task->mirGen().getOffThreadStatus();
-    if (status.isErr() && status.unwrapErr() == AbortReason::Disable) {
+    const AbortReasonOr<Ok>& status = task->mirGen().getOffThreadStatus();
+    if (status.isErr() && status.inspectErr() == AbortReason::Disable) {
       script->disableIon();
     }
   }
@@ -207,39 +203,4 @@ void jit::FinishOffThreadTask(JSRuntime* runtime, IonCompileTask* task,
   if (!StartOffThreadIonFree(task, locked)) {
     FreeIonCompileTask(task);
   }
-}
-
-MOZ_MUST_USE bool jit::CreateMIRRootList(IonCompileTask& task) {
-  MOZ_ASSERT(!task.mirGen().outerInfo().isAnalysis());
-
-  TempAllocator& alloc = task.alloc();
-  MIRGraph& graph = task.mirGen().graph();
-
-  MRootList* roots = new (alloc.fallible()) MRootList(alloc);
-  if (!roots) {
-    return false;
-  }
-
-  JSScript* prevScript = nullptr;
-
-  for (ReversePostorderIterator block(graph.rpoBegin());
-       block != graph.rpoEnd(); block++) {
-    JSScript* script = block->info().script();
-    if (script != prevScript) {
-      if (!roots->append(script)) {
-        return false;
-      }
-      prevScript = script;
-    }
-
-    for (MInstructionIterator iter(block->begin()), end(block->end());
-         iter != end; iter++) {
-      if (!iter->appendRoots(*roots)) {
-        return false;
-      }
-    }
-  }
-
-  task.setRootList(*roots);
-  return true;
 }

@@ -114,7 +114,7 @@ struct cff1_top_dict_values_mod_t : cff1_top_dict_values_t
 struct top_dict_modifiers_t
 {
   top_dict_modifiers_t (const cff1_sub_table_info_t &info_,
-			   const unsigned int (&nameSIDs_)[name_dict_values_t::ValCount])
+			const unsigned int (&nameSIDs_)[name_dict_values_t::ValCount])
     : info (info_),
       nameSIDs (nameSIDs_)
   {}
@@ -402,12 +402,16 @@ struct cff_subset_plan {
   void plan_subset_encoding (const OT::cff1::accelerator_subset_t &acc, hb_subset_plan_t *plan)
   {
     const Encoding *encoding = acc.encoding;
-    unsigned int  size0, size1, supp_size;
+    unsigned int  size0, size1;
     hb_codepoint_t  code, last_code = CFF_UNDEF_CODE;
     hb_vector_t<hb_codepoint_t> supp_codes;
 
-    subset_enc_code_ranges.resize (0);
-    supp_size = 0;
+    if (unlikely (!subset_enc_code_ranges.resize (0)))
+    {
+      plan->check_success (false);
+      return;
+    }
+
     supp_codes.init ();
 
     subset_enc_num_codes = plan->num_output_glyphs () - 1;
@@ -443,7 +447,6 @@ struct cff_subset_plan {
 	  code_pair_t pair = { supp_codes[i], sid };
 	  subset_enc_supp_codes.push (pair);
 	}
-	supp_size += SuppEncoding::static_size * supp_codes.length;
       }
     }
     supp_codes.fini ();
@@ -465,7 +468,12 @@ struct cff_subset_plan {
     unsigned int  size0, size_ranges;
     hb_codepoint_t  sid, last_sid = CFF_UNDEF_CODE;
 
-    subset_charset_ranges.resize (0);
+    if (unlikely (!subset_charset_ranges.resize (0)))
+    {
+      plan->check_success (false);
+      return;
+    }
+
     unsigned int glyph;
     for (glyph = 1; glyph < plan->num_output_glyphs (); glyph++)
     {
@@ -535,8 +543,8 @@ struct cff_subset_plan {
 
     num_glyphs = plan->num_output_glyphs ();
     orig_fdcount = acc.fdCount;
-    drop_hints = plan->drop_hints;
-    desubroutinize = plan->desubroutinize;
+    drop_hints = plan->flags & HB_SUBSET_FLAGS_NO_HINTING;
+    desubroutinize = plan->flags & HB_SUBSET_FLAGS_DESUBROUTINIZE;
 
     /* check whether the subset renumbers any glyph IDs */
     gid_renum = false;
@@ -909,12 +917,6 @@ _hb_subset_cff1 (const OT::cff1::accelerator_subset_t  &acc,
   return _serialize_cff1 (c->serializer, cff_plan, acc, c->plan->num_output_glyphs ());
 }
 
-/**
- * hb_subset_cff1:
- * Subsets the CFF table according to a provided plan.
- *
- * Return value: subsetted cff table.
- **/
 bool
 hb_subset_cff1 (hb_subset_context_t *c)
 {

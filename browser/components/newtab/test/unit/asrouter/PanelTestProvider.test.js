@@ -1,29 +1,24 @@
 import { PanelTestProvider } from "lib/PanelTestProvider.jsm";
-import schema from "content-src/asrouter/schemas/panel/cfr-fxa-bookmark.schema.json";
 import update_schema from "content-src/asrouter/templates/OnboardingMessage/UpdateAction.schema.json";
 import whats_new_schema from "content-src/asrouter/templates/OnboardingMessage/WhatsNewMessage.schema.json";
-const messages = PanelTestProvider.getMessages();
+import spotlight_schema from "content-src/asrouter/templates/OnboardingMessage/Spotlight.schema.json";
 
 describe("PanelTestProvider", () => {
+  let messages;
+  beforeEach(async () => {
+    messages = await PanelTestProvider.getMessages();
+  });
   it("should have a message", () => {
     // Careful: when changing this number make sure that new messages also go
     // through schema verifications.
-    assert.lengthOf(messages, 18);
-  });
-  it("should be a valid message", () => {
-    const fxaMessages = messages.filter(
-      ({ template }) => template === "fxa_bookmark_panel"
-    );
-    for (let message of fxaMessages) {
-      assert.jsonSchema(message.content, schema);
-    }
+    assert.lengthOf(messages, 11);
   });
   it("should be a valid message", () => {
     const updateMessages = messages.filter(
       ({ template }) => template === "update_action"
     );
     for (let message of updateMessages) {
-      assert.jsonSchema(message.content, update_schema);
+      assert.jsonSchema(message, update_schema);
     }
   });
   it("should be a valid message", () => {
@@ -34,6 +29,14 @@ describe("PanelTestProvider", () => {
       assert.jsonSchema(message.content, whats_new_schema);
       // Not part of `message.content` so it can't be enforced through schema
       assert.property(message, "order");
+    }
+  });
+  it("should be a valid message", () => {
+    const spotlightMessages = messages.filter(
+      ({ template }) => template === "spotlight"
+    );
+    for (let message of spotlightMessages) {
+      assert.jsonSchema(message, spotlight_schema);
     }
   });
 });

@@ -11,8 +11,14 @@ mkdir -p $UPLOAD_DIR $STAGE
 
 cd $MOZ_FETCHES_DIR/libdmg-hfsplus
 
-cmake -DOPENSSL_USE_STATIC_LIBS=1 .
-make -j$(nproc)
+cmake \
+  -DCMAKE_C_COMPILER=$MOZ_FETCHES_DIR/clang/bin/clang \
+  -DCMAKE_CXX_COMPILER=$MOZ_FETCHES_DIR/clang/bin/clang++ \
+  -DCMAKE_SYSROOT=$MOZ_FETCHES_DIR/sysroot \
+  -DOPENSSL_USE_STATIC_LIBS=1 \
+  .
+
+make VERBOSE=1 -j$(nproc)
 
 # We only need the dmg and hfsplus tools.
 strip dmg/dmg hfs/hfsplus
@@ -25,4 +31,4 @@ cat >$STAGE/README<<EOF
 Source is available as a taskcluster artifact:
 $queue_base/task/$(python -c 'import json, os; print "{task}/artifacts/{artifact}".format(**next(f for f in json.loads(os.environ["MOZ_FETCHES"]) if "libdmg-hfsplus" in f["artifact"]))')
 EOF
-tar cf - -C $WORKSPACE `basename $STAGE` | xz > $UPLOAD_DIR/dmg.tar.xz
+tar caf $UPLOAD_DIR/dmg.tar.zst -C $WORKSPACE `basename $STAGE`

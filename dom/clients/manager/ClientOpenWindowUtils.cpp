@@ -12,6 +12,7 @@
 #include "mozilla/ResultExtensions.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
+#include "nsDocShellLoadState.h"
 #include "nsFocusManager.h"
 #include "nsIBrowserDOMWindow.h"
 #include "nsIDocShell.h"
@@ -40,8 +41,7 @@
 #  include "mozilla/java/GeckoRuntimeWrappers.h"
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -53,9 +53,9 @@ class WebProgressListener final : public nsIWebProgressListener,
   WebProgressListener(BrowsingContext* aBrowsingContext, nsIURI* aBaseURI,
                       already_AddRefed<ClientOpPromise::Private> aPromise)
       : mPromise(aPromise),
-        mBrowsingContext(aBrowsingContext),
-        mBaseURI(aBaseURI) {
-    MOZ_ASSERT(aBrowsingContext);
+        mBaseURI(aBaseURI),
+        mBrowserId(aBrowsingContext->GetBrowserId()) {
+    MOZ_ASSERT(mBrowserId != 0);
     MOZ_ASSERT(aBaseURI);
     MOZ_ASSERT(NS_IsMainThread());
   }
@@ -63,22 +63,17 @@ class WebProgressListener final : public nsIWebProgressListener,
   NS_IMETHOD
   OnStateChange(nsIWebProgress* aWebProgress, nsIRequest* aRequest,
                 uint32_t aStateFlags, nsresult aStatus) override {
-    MOZ_ASSERT(mBrowsingContext);
-
     if (!(aStateFlags & STATE_IS_WINDOW) ||
         !(aStateFlags & (STATE_STOP | STATE_TRANSFERRING))) {
       return NS_OK;
     }
 
-    // Our caller keeps a strong reference, so it is safe to remove the listener
-    // from ServiceWorkerPrivate.
-    nsCOMPtr<nsIWebProgress> webProgress =
-        mBrowsingContext->Canonical()->GetWebProgress();
-    webProgress->RemoveProgressListener(this);
-
     // Our browsing context may have been discarded before finishing the load,
     // this is a navigation error.
-    if (mBrowsingContext->IsDiscarded()) {
+    RefPtr<CanonicalBrowsingContext> browsingContext =
+        CanonicalBrowsingContext::Cast(
+            BrowsingContext::GetCurrentTopByBrowserId(mBrowserId));
+    if (!browsingContext || browsingContext->IsDiscarded()) {
       CopyableErrorResult rv;
       rv.ThrowInvalidStateError("Unable to open window");
       mPromise->Reject(rv, __func__);
@@ -86,15 +81,31 @@ class WebProgressListener final : public nsIWebProgressListener,
       return NS_OK;
     }
 
+    // Our caller keeps a strong reference, so it is safe to remove the listener
+    // from the BrowsingContext's nsIWebProgress.
+    auto RemoveListener = [&] {
+      nsCOMPtr<nsIWebProgress> webProgress = browsingContext->GetWebProgress();
+      webProgress->RemoveProgressListener(this);
+    };
+
     RefPtr<dom::WindowGlobalParent> wgp =
-        mBrowsingContext->Canonical()->GetCurrentWindowGlobal();
+        browsingContext->GetCurrentWindowGlobal();
     if (NS_WARN_IF(!wgp)) {
       CopyableErrorResult rv;
       rv.ThrowInvalidStateError("Unable to open window");
       mPromise->Reject(rv, __func__);
       mPromise = nullptr;
+      RemoveListener();
       return NS_OK;
     }
+
+    if (NS_WARN_IF(wgp->IsInitialDocument())) {
+      // This is the load of the initial document, which is not the document we
+      // care about for the purposes of checking same-originness of the URL.
+      return NS_OK;
+    }
+
+    RemoveListener();
 
     // Check same origin. If the origins do not match, resolve with null (per
     // step 7.2.7.1 of the openWindow spec).
@@ -104,7 +115,7 @@ class WebProgressListener final : public nsIWebProgressListener,
         wgp->DocumentPrincipal()->OriginAttributesRef().mPrivateBrowsingId > 0;
     nsresult rv = securityManager->CheckSameOriginURI(
         wgp->GetDocumentURI(), mBaseURI, false, isPrivateWin);
-    if (NS_FAILED(rv)) {
+    if (NS_WARN_IF(NS_FAILED(rv))) {
       mPromise->Resolve(CopyableErrorResult(), __func__);
       mPromise = nullptr;
       return NS_OK;
@@ -176,8 +187,8 @@ class WebProgressListener final : public nsIWebProgressListener,
   }
 
   RefPtr<ClientOpPromise::Private> mPromise;
-  RefPtr<BrowsingContext> mBrowsingContext;
   nsCOMPtr<nsIURI> mBaseURI;
+  uint64_t mBrowserId;
 };
 
 NS_IMPL_ISUPPORTS(WebProgressListener, nsIWebProgressListener,
@@ -431,5 +442,4 @@ RefPtr<ClientOpPromise> ClientOpenWindow(const ClientOpenWindowArgs& aArgs) {
   return promise;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

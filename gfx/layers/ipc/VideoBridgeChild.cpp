@@ -8,7 +8,8 @@
 #include "VideoBridgeParent.h"
 #include "CompositorThread.h"
 #include "mozilla/dom/ContentChild.h"
-#include "mtransport/runnable_utils.h"
+#include "mozilla/ipc/Endpoint.h"
+#include "transport/runnable_utils.h"
 #include "SynchronousTask.h"
 
 namespace mozilla {
@@ -144,7 +145,7 @@ bool VideoBridgeChild::DeallocShmem(ipc::Shmem& aShmem) {
 }
 
 PTextureChild* VideoBridgeChild::AllocPTextureChild(const SurfaceDescriptor&,
-                                                    const ReadLockDescriptor&,
+                                                    ReadLockDescriptor&,
                                                     const LayersBackend&,
                                                     const TextureFlags&,
                                                     const uint64_t& aSerial) {
@@ -163,12 +164,12 @@ void VideoBridgeChild::ActorDestroy(ActorDestroyReason aWhy) {
 void VideoBridgeChild::ActorDealloc() { mIPDLSelfRef = nullptr; }
 
 PTextureChild* VideoBridgeChild::CreateTexture(
-    const SurfaceDescriptor& aSharedData, const ReadLockDescriptor& aReadLock,
+    const SurfaceDescriptor& aSharedData, ReadLockDescriptor&& aReadLock,
     LayersBackend aLayersBackend, TextureFlags aFlags, uint64_t aSerial,
     wr::MaybeExternalImageId& aExternalImageId, nsISerialEventTarget* aTarget) {
   MOZ_ASSERT(CanSend());
-  return SendPTextureConstructor(aSharedData, aReadLock, aLayersBackend, aFlags,
-                                 aSerial);
+  return SendPTextureConstructor(aSharedData, std::move(aReadLock),
+                                 aLayersBackend, aFlags, aSerial);
 }
 
 bool VideoBridgeChild::IsSameProcess() const {

@@ -7,7 +7,8 @@ const { ComponentUtils } = ChromeUtils.import(
 
 const MLBF_RECORD = {
   id: "A blocklist entry that refers to a MLBF file",
-  last_modified: 1,
+  // Higher than any last_modified in addons-bloomfilters.json:
+  last_modified: Date.now(),
   attachment: {
     size: 32,
     hash: "6af648a5d6ce6dbee99b0aab1780d24d204977a6606ad670d5372ef22fac1052",
@@ -16,6 +17,16 @@ const MLBF_RECORD = {
   attachment_type: "bloomfilter-base",
   generation_time: 1577833200000,
 };
+
+function enable_blocklist_v2_instead_of_useMLBF() {
+  Blocklist.allowDeprecatedBlocklistV2 = true;
+  Services.prefs.setBoolPref("extensions.blocklist.useMLBF", false);
+  // Sanity check: blocklist v2 has been enabled.
+  Assert.ok(
+    !!Blocklist.ExtensionBlocklist._updateEntries,
+    "ExtensionBlocklistRS should have been enabled"
+  );
+}
 
 async function load_mlbf_record_as_blob() {
   const url = Services.io.newFileURI(
@@ -38,14 +49,4 @@ function getExtensionBlocklistMLBF() {
     "blocklist.useMLBF should be true"
   );
   return ExtensionBlocklistMLBF;
-}
-
-async function toggleStashPref(val, callbackAfterPrefChange = () => {}) {
-  const ExtensionBlocklistMLBF = getExtensionBlocklistMLBF();
-  Assert.ok(!ExtensionBlocklistMLBF._updatePromise, "no pending update");
-  Services.prefs.setBoolPref("extensions.blocklist.useMLBF.stashes", val);
-  callbackAfterPrefChange();
-  // A pref observer should trigger an update.
-  Assert.ok(ExtensionBlocklistMLBF._updatePromise, "update pending");
-  await Blocklist.ExtensionBlocklist._updatePromise;
 }

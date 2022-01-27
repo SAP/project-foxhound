@@ -80,23 +80,6 @@ function promiseFieldForUrl(aURI, aFieldName) {
   });
 }
 
-/**
- * Generic nsINavHistoryObserver that doesn't implement anything, but provides
- * dummy methods to prevent errors about an object not having a certain method.
- */
-function NavHistoryObserver() {}
-
-NavHistoryObserver.prototype = {
-  onBeginUpdateBatch() {},
-  onEndUpdateBatch() {},
-  onTitleChanged() {},
-  onDeleteURI() {},
-  onClearHistory() {},
-  onPageChanged() {},
-  onDeleteVisits() {},
-  QueryInterface: ChromeUtils.generateQI(["nsINavHistoryObserver"]),
-};
-
 function whenNewWindowLoaded(aOptions, aCallback) {
   BrowserTestUtils.waitForNewWindow().then(aCallback);
   OpenBrowserWindow(aOptions);

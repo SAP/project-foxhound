@@ -14,6 +14,7 @@
 #include "nsDebug.h"
 #include "nsError.h"
 #include "nsIChannel.h"
+#include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIHttpHeaderVisitor.h"
 #include "nsINetworkInterceptController.h"
@@ -22,11 +23,15 @@
 #include "nsIURI.h"
 #include "nsIUploadChannel2.h"
 #include "nsThreadUtils.h"
+#include "nsICacheInfoChannel.h"
+#include "nsNetUtil.h"
 
+#include "ServiceWorkerCloneData.h"
 #include "ServiceWorkerManager.h"
 #include "ServiceWorkerRegistrationInfo.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Result.h"
 #include "mozilla/ResultExtensions.h"
@@ -34,6 +39,7 @@
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StoragePrincipalHelper.h"
+#include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/DOMTypes.h"
@@ -44,8 +50,10 @@
 #include "mozilla/dom/RemoteWorkerControllerChild.h"
 #include "mozilla/dom/RemoteWorkerManager.h"  // RemoteWorkerManager::GetRemoteType
 #include "mozilla/dom/ServiceWorkerBinding.h"
+#include "mozilla/extensions/WebExtensionPolicy.h"  // WebExtensionPolicy
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
+#include "mozilla/ipc/URIUtils.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/RemoteLazyInputStreamStorage.h"
 
@@ -149,10 +157,21 @@ nsresult ServiceWorkerPrivateImpl::Initialize() {
   }
 
   nsCOMPtr<nsICookieJarSettings> cookieJarSettings =
-      net::CookieJarSettings::Create();
+      net::CookieJarSettings::Create(principal);
   MOZ_ASSERT(cookieJarSettings);
 
-  net::CookieJarSettings::Cast(cookieJarSettings)->SetPartitionKey(uri);
+  // We can populate the partitionKey from the originAttribute of the principal
+  // if it has partitionKey set. It's because ServiceWorker is using the foreign
+  // partitioned principal and it implies that it's a third-party service
+  // worker. So, the cookieJarSettings can directly use the partitionKey from
+  // it. For first-party case, we can populate the partitionKey from the
+  // principal URI.
+  if (!principal->OriginAttributesRef().mPartitionKey.IsEmpty()) {
+    net::CookieJarSettings::Cast(cookieJarSettings)
+        ->SetPartitionKey(principal->OriginAttributesRef().mPartitionKey);
+  } else {
+    net::CookieJarSettings::Cast(cookieJarSettings)->SetPartitionKey(uri);
+  }
 
   net::CookieJarSettingsArgs cjsData;
   net::CookieJarSettings::Cast(cookieJarSettings)->Serialize(cjsData);
@@ -188,10 +207,15 @@ nsresult ServiceWorkerPrivateImpl::Initialize() {
   }
 
   auto remoteType = RemoteWorkerManager::GetRemoteType(
-      principal, WorkerType::WorkerTypeService);
+      principal, WorkerKind::WorkerKindService);
   if (NS_WARN_IF(remoteType.isErr())) {
     return remoteType.unwrapErr();
   }
+
+  // Determind if the service worker is registered under a third-party context
+  // by checking if it's running under a partitioned principal.
+  bool isThirdPartyContextToTopWindow =
+      !principal->OriginAttributesRef().mPartitionKey.IsEmpty();
 
   mRemoteWorkerData = RemoteWorkerData(
       NS_ConvertUTF8toUTF16(mOuter->mInfo->ScriptSpec()), baseScriptURL,
@@ -211,7 +235,8 @@ nsresult ServiceWorkerPrivateImpl::Initialize() {
       // already_AddRefed<>. Let's set it to null.
       /* referrerInfo */ nullptr,
 
-      storageAccess, std::move(serviceWorkerData), regInfo->AgentClusterId(),
+      storageAccess, isThirdPartyContextToTopWindow,
+      std::move(serviceWorkerData), regInfo->AgentClusterId(),
       remoteType.unwrap());
 
   mRemoteWorkerData.referrerInfo() = MakeAndAddRef<ReferrerInfo>();
@@ -273,10 +298,25 @@ nsresult ServiceWorkerPrivateImpl::SpawnWorkerIfNeeded() {
     return NS_OK;
   }
 
+  mServiceWorkerLaunchTimeStart = TimeStamp::Now();
+
   PBackgroundChild* bgChild = BackgroundChild::GetForCurrentThread();
 
   if (NS_WARN_IF(!bgChild)) {
     return NS_ERROR_DOM_INVALID_STATE_ERR;
+  }
+
+  // If the worker principal is an extension principal, then we should not spawn
+  // a worker if there is no WebExtensionPolicy associated to that principal
+  // or if the WebExtensionPolicy is not active.
+  auto* principal = mOuter->mInfo->Principal();
+  if (principal->SchemeIs("moz-extension")) {
+    auto* addonPolicy = BasePrincipal::Cast(principal)->AddonPolicy();
+    if (!addonPolicy || !addonPolicy->Active()) {
+      NS_WARNING(
+          "Trying to wake up a service worker for a disabled webextension.");
+      return NS_ERROR_DOM_INVALID_STATE_ERR;
+    }
   }
 
   RefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
@@ -286,7 +326,7 @@ nsresult ServiceWorkerPrivateImpl::SpawnWorkerIfNeeded() {
   }
 
   RefPtr<ServiceWorkerRegistrationInfo> regInfo =
-      swm->GetRegistration(mOuter->mInfo->Principal(), mOuter->mInfo->Scope());
+      swm->GetRegistration(principal, mOuter->mInfo->Scope());
 
   if (NS_WARN_IF(!regInfo)) {
     return NS_ERROR_DOM_INVALID_STATE_ERR;
@@ -590,11 +630,13 @@ nsresult ServiceWorkerPrivateImpl::PendingPushEvent::Send() {
 ServiceWorkerPrivateImpl::PendingFetchEvent::PendingFetchEvent(
     ServiceWorkerPrivateImpl* aOwner,
     RefPtr<ServiceWorkerRegistrationInfo>&& aRegistration,
-    ServiceWorkerFetchEventOpArgs&& aArgs,
-    nsCOMPtr<nsIInterceptedChannel>&& aChannel)
+    ParentToParentServiceWorkerFetchEventOpArgs&& aArgs,
+    nsCOMPtr<nsIInterceptedChannel>&& aChannel,
+    RefPtr<FetchServiceResponsePromise>&& aPreloadResponseReadyPromise)
     : PendingFunctionalEvent(aOwner, std::move(aRegistration)),
       mArgs(std::move(aArgs)),
-      mChannel(std::move(aChannel)) {
+      mChannel(std::move(aChannel)),
+      mPreloadResponseReadyPromise(std::move(aPreloadResponseReadyPromise)) {
   AssertIsOnMainThread();
   MOZ_ASSERT(mChannel);
 }
@@ -604,8 +646,9 @@ nsresult ServiceWorkerPrivateImpl::PendingFetchEvent::Send() {
   MOZ_ASSERT(mOwner->mOuter);
   MOZ_ASSERT(mOwner->mOuter->mInfo);
 
-  return mOwner->SendFetchEventInternal(std::move(mRegistration),
-                                        std::move(mArgs), std::move(mChannel));
+  return mOwner->SendFetchEventInternal(
+      std::move(mRegistration), std::move(mArgs), std::move(mChannel),
+      std::move(mPreloadResponseReadyPromise));
 }
 
 ServiceWorkerPrivateImpl::PendingFetchEvent::~PendingFetchEvent() {
@@ -711,10 +754,7 @@ Result<IPCInternalRequest, nsresult> GetIPCInternalRequest(
   uint32_t loadFlags;
   MOZ_TRY(underlyingChannel->GetLoadFlags(&loadFlags));
 
-  nsCOMPtr<nsILoadInfo> loadInfo;
-  MOZ_TRY(underlyingChannel->GetLoadInfo(getter_AddRefs(loadInfo)));
-  MOZ_ASSERT(loadInfo);
-
+  nsCOMPtr<nsILoadInfo> loadInfo = underlyingChannel->LoadInfo();
   nsContentPolicyType contentPolicyType = loadInfo->InternalContentPolicyType();
 
   nsAutoString integrity;
@@ -821,15 +861,41 @@ nsresult ServiceWorkerPrivateImpl::SendFetchEvent(
 
   scopeExit.release();
 
-  ServiceWorkerFetchEventOpArgs args(
-      mOuter->mInfo->ScriptSpec(), std::move(request), nsString(aClientId),
-      nsString(aResultingClientId),
-      nsContentUtils::IsNonSubresourceRequest(channel));
+  bool isNonSubresourceRequest =
+      nsContentUtils::IsNonSubresourceRequest(channel);
+  bool preloadNavigation = isNonSubresourceRequest &&
+                           request.method().LowerCaseEqualsASCII("get") &&
+                           aRegistration->GetNavigationPreloadState().enabled();
+  if (preloadNavigation) {
+    // TODO: Need to trigger navigation preloading through FetchService
+    // 1. Clone the request for preload
+    // 2. Append Service-Worker-Navigation-Preload header with
+    //    registration->GetNavigationPreloadState().headerValue() on request's
+    //    header list.
+    // 3. Passing aChannel and cloned request to FetchService to perform fetch
+    //    with BypassServiceWorker flag
+    //
+    // Here we assume FetchService provides an interface as following to perform
+    // asynchronous fetch in the main thread of the parent process .
+    //
+    // RefPtr<FetchServiceResponsePromise> Fetch(
+    //     SafeRefPtr<InternalRequest>&&, nsCOMPtr<nsIInterceptedChannel>);
+  }
+
+  ParentToParentServiceWorkerFetchEventOpArgs args(
+      ServiceWorkerFetchEventOpArgsCommon(
+          mOuter->mInfo->ScriptSpec(), request, nsString(aClientId),
+          nsString(aResultingClientId), isNonSubresourceRequest,
+          preloadNavigation, mOuter->mInfo->TestingInjectCancellation()),
+      Nothing());
 
   if (mOuter->mInfo->State() == ServiceWorkerState::Activating) {
     UniquePtr<PendingFunctionalEvent> pendingEvent =
         MakeUnique<PendingFetchEvent>(this, std::move(aRegistration),
-                                      std::move(args), std::move(aChannel));
+                                      std::move(args), std::move(aChannel),
+                                      // The FetchServiceResponsePromise from
+                                      // FetchService
+                                      nullptr);
 
     mPendingFunctionalEvents.AppendElement(std::move(pendingEvent));
 
@@ -839,13 +905,17 @@ nsresult ServiceWorkerPrivateImpl::SendFetchEvent(
   MOZ_ASSERT(mOuter->mInfo->State() == ServiceWorkerState::Activated);
 
   return SendFetchEventInternal(std::move(aRegistration), std::move(args),
-                                std::move(aChannel));
+                                std::move(aChannel),
+                                // The FetchServiceResponsePromise from
+                                // FetchService
+                                nullptr);
 }
 
 nsresult ServiceWorkerPrivateImpl::SendFetchEventInternal(
     RefPtr<ServiceWorkerRegistrationInfo>&& aRegistration,
-    ServiceWorkerFetchEventOpArgs&& aArgs,
-    nsCOMPtr<nsIInterceptedChannel>&& aChannel) {
+    ParentToParentServiceWorkerFetchEventOpArgs&& aArgs,
+    nsCOMPtr<nsIInterceptedChannel>&& aChannel,
+    RefPtr<FetchServiceResponsePromise>&& aPreloadResponseReadyPromise) {
   AssertIsOnMainThread();
   MOZ_ASSERT(mOuter);
 
@@ -856,8 +926,8 @@ nsresult ServiceWorkerPrivateImpl::SendFetchEventInternal(
   }
 
   MOZ_TRY(SpawnWorkerIfNeeded());
-  MOZ_TRY(
-      MaybeStoreStreamForBackgroundThread(aChannel, aArgs.internalRequest()));
+  MOZ_TRY(MaybeStoreStreamForBackgroundThread(
+      aChannel, aArgs.common().internalRequest()));
 
   scopeExit.release();
 
@@ -867,7 +937,8 @@ nsresult ServiceWorkerPrivateImpl::SendFetchEventInternal(
 
   FetchEventOpChild::SendFetchEvent(
       mControllerChild->get(), std::move(aArgs), std::move(aChannel),
-      std::move(aRegistration), mOuter->CreateEventKeepAliveToken())
+      std::move(aRegistration), std::move(aPreloadResponseReadyPromise),
+      mOuter->CreateEventKeepAliveToken())
       ->Then(GetCurrentSerialEventTarget(), __func__,
              [holder = std::move(holder)](
                  const GenericPromise::ResolveOrRejectValue& aResult) {
@@ -986,6 +1057,9 @@ void ServiceWorkerPrivateImpl::CreationFailed() {
   MOZ_ASSERT(mOuter);
   MOZ_ASSERT(mControllerChild);
 
+  Telemetry::AccumulateTimeDelta(Telemetry::SERVICE_WORKER_LAUNCH_TIME_2,
+                                 mServiceWorkerLaunchTimeStart);
+
   Shutdown();
 }
 
@@ -994,6 +1068,9 @@ void ServiceWorkerPrivateImpl::CreationSucceeded() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mOuter);
   MOZ_ASSERT(mControllerChild);
+
+  Telemetry::AccumulateTimeDelta(Telemetry::SERVICE_WORKER_LAUNCH_TIME_2,
+                                 mServiceWorkerLaunchTimeStart);
 
   mOuter->RenewKeepAliveToken(ServiceWorkerPrivate::WakeUpReason::Unknown);
 }
@@ -1010,9 +1087,8 @@ void ServiceWorkerPrivateImpl::ErrorReceived(const ErrorValue& aError) {
   ServiceWorkerInfo* info = mOuter->mInfo;
 
   swm->HandleError(nullptr, info->Principal(), info->Scope(),
-                   NS_ConvertUTF8toUTF16(info->ScriptSpec()), EmptyString(),
-                   EmptyString(), EmptyString(), 0, 0,
-                   nsIScriptError::errorFlag, JSEXN_ERR);
+                   NS_ConvertUTF8toUTF16(info->ScriptSpec()), u""_ns, u""_ns,
+                   u""_ns, 0, 0, nsIScriptError::errorFlag, JSEXN_ERR);
 }
 
 void ServiceWorkerPrivateImpl::Terminated() {
@@ -1036,7 +1112,8 @@ nsresult ServiceWorkerPrivateImpl::ExecServiceWorkerOp(
   AssertIsOnMainThread();
   MOZ_ASSERT(mOuter);
   MOZ_ASSERT(
-      aArgs.type() != ServiceWorkerOpArgs::TServiceWorkerFetchEventOpArgs,
+      aArgs.type() !=
+          ServiceWorkerOpArgs::TParentToChildServiceWorkerFetchEventOpArgs,
       "FetchEvent operations should be sent through FetchEventOp(Proxy) "
       "actors!");
   MOZ_ASSERT(aSuccessCallback);

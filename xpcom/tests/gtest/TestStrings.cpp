@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "nsASCIIMask.h"
+#include "nsCharSeparatedTokenizer.h"
+#include "nsPrintfCString.h"
 #include "nsString.h"
 #include "nsStringBuffer.h"
 #include "nsReadableUtils.h"
@@ -43,7 +45,7 @@ using mozilla::BlackBox;
 using mozilla::fallible;
 using mozilla::IsAscii;
 using mozilla::IsUtf8;
-using mozilla::MakeSpan;
+using mozilla::Span;
 
 #define TestExample1                                                           \
   "Sed ut perspiciatis unde omnis iste natus error sit voluptatem "            \
@@ -168,11 +170,11 @@ class Strings : public ::testing::Test {
     mExample5Utf8.AssignASCII(TestExample5);
 
     // Use span to make the resulting string as ordinary as possible
-    mAsciiOneUtf8.Append(MakeSpan(mExample3Utf8).To(1));
-    mAsciiThreeUtf8.Append(MakeSpan(mExample3Utf8).To(3));
-    mAsciiFifteenUtf8.Append(MakeSpan(mExample3Utf8).To(15));
-    mAsciiHundredUtf8.Append(MakeSpan(mExample3Utf8).To(100));
-    mAsciiThousandUtf8.Append(MakeSpan(mExample3Utf8).To(1000));
+    mAsciiOneUtf8.Append(Span(mExample3Utf8).To(1));
+    mAsciiThreeUtf8.Append(Span(mExample3Utf8).To(3));
+    mAsciiFifteenUtf8.Append(Span(mExample3Utf8).To(15));
+    mAsciiHundredUtf8.Append(Span(mExample3Utf8).To(100));
+    mAsciiThousandUtf8.Append(Span(mExample3Utf8).To(1000));
 
     ReadFile("ar.txt", mArUtf8);
     ReadFile("de.txt", mDeUtf8);
@@ -208,65 +210,65 @@ class Strings : public ::testing::Test {
     LossyCopyUTF16toASCII(mDeEditUtf16, mDeEditLatin1);
 
     // Use span to make the resulting string as ordinary as possible
-    mArOneUtf16.Append(MakeSpan(mArUtf16).To(1));
-    mDeOneUtf16.Append(MakeSpan(mDeUtf16).To(1));
-    mDeEditOneUtf16.Append(MakeSpan(mDeEditUtf16).To(1));
-    mRuOneUtf16.Append(MakeSpan(mRuUtf16).To(1));
-    mThOneUtf16.Append(MakeSpan(mThUtf16).To(1));
-    mJaOneUtf16.Append(MakeSpan(mJaUtf16).To(1));
-    mKoOneUtf16.Append(MakeSpan(mKoUtf16).To(1));
-    mTrOneUtf16.Append(MakeSpan(mTrUtf16).To(1));
-    mViOneUtf16.Append(MakeSpan(mViUtf16).To(1));
+    mArOneUtf16.Append(Span(mArUtf16).To(1));
+    mDeOneUtf16.Append(Span(mDeUtf16).To(1));
+    mDeEditOneUtf16.Append(Span(mDeEditUtf16).To(1));
+    mRuOneUtf16.Append(Span(mRuUtf16).To(1));
+    mThOneUtf16.Append(Span(mThUtf16).To(1));
+    mJaOneUtf16.Append(Span(mJaUtf16).To(1));
+    mKoOneUtf16.Append(Span(mKoUtf16).To(1));
+    mTrOneUtf16.Append(Span(mTrUtf16).To(1));
+    mViOneUtf16.Append(Span(mViUtf16).To(1));
 
-    mDeEditOneLatin1.Append(MakeSpan(mDeEditLatin1).To(1));
+    mDeEditOneLatin1.Append(Span(mDeEditLatin1).To(1));
 
-    mArThreeUtf16.Append(MakeSpan(mArUtf16).To(3));
-    mDeThreeUtf16.Append(MakeSpan(mDeUtf16).To(3));
-    mDeEditThreeUtf16.Append(MakeSpan(mDeEditUtf16).To(3));
-    mRuThreeUtf16.Append(MakeSpan(mRuUtf16).To(3));
-    mThThreeUtf16.Append(MakeSpan(mThUtf16).To(3));
-    mJaThreeUtf16.Append(MakeSpan(mJaUtf16).To(3));
-    mKoThreeUtf16.Append(MakeSpan(mKoUtf16).To(3));
-    mTrThreeUtf16.Append(MakeSpan(mTrUtf16).To(3));
-    mViThreeUtf16.Append(MakeSpan(mViUtf16).To(3));
+    mArThreeUtf16.Append(Span(mArUtf16).To(3));
+    mDeThreeUtf16.Append(Span(mDeUtf16).To(3));
+    mDeEditThreeUtf16.Append(Span(mDeEditUtf16).To(3));
+    mRuThreeUtf16.Append(Span(mRuUtf16).To(3));
+    mThThreeUtf16.Append(Span(mThUtf16).To(3));
+    mJaThreeUtf16.Append(Span(mJaUtf16).To(3));
+    mKoThreeUtf16.Append(Span(mKoUtf16).To(3));
+    mTrThreeUtf16.Append(Span(mTrUtf16).To(3));
+    mViThreeUtf16.Append(Span(mViUtf16).To(3));
 
-    mDeEditThreeLatin1.Append(MakeSpan(mDeEditLatin1).To(3));
+    mDeEditThreeLatin1.Append(Span(mDeEditLatin1).To(3));
 
-    mArFifteenUtf16.Append(MakeSpan(mArUtf16).To(15));
-    mDeFifteenUtf16.Append(MakeSpan(mDeUtf16).To(15));
-    mDeEditFifteenUtf16.Append(MakeSpan(mDeEditUtf16).To(15));
-    mRuFifteenUtf16.Append(MakeSpan(mRuUtf16).To(15));
-    mThFifteenUtf16.Append(MakeSpan(mThUtf16).To(15));
-    mJaFifteenUtf16.Append(MakeSpan(mJaUtf16).To(15));
-    mKoFifteenUtf16.Append(MakeSpan(mKoUtf16).To(15));
-    mTrFifteenUtf16.Append(MakeSpan(mTrUtf16).To(15));
-    mViFifteenUtf16.Append(MakeSpan(mViUtf16).To(15));
+    mArFifteenUtf16.Append(Span(mArUtf16).To(15));
+    mDeFifteenUtf16.Append(Span(mDeUtf16).To(15));
+    mDeEditFifteenUtf16.Append(Span(mDeEditUtf16).To(15));
+    mRuFifteenUtf16.Append(Span(mRuUtf16).To(15));
+    mThFifteenUtf16.Append(Span(mThUtf16).To(15));
+    mJaFifteenUtf16.Append(Span(mJaUtf16).To(15));
+    mKoFifteenUtf16.Append(Span(mKoUtf16).To(15));
+    mTrFifteenUtf16.Append(Span(mTrUtf16).To(15));
+    mViFifteenUtf16.Append(Span(mViUtf16).To(15));
 
-    mDeEditFifteenLatin1.Append(MakeSpan(mDeEditLatin1).To(15));
+    mDeEditFifteenLatin1.Append(Span(mDeEditLatin1).To(15));
 
-    mArHundredUtf16.Append(MakeSpan(mArUtf16).To(100));
-    mDeHundredUtf16.Append(MakeSpan(mDeUtf16).To(100));
-    mDeEditHundredUtf16.Append(MakeSpan(mDeEditUtf16).To(100));
-    mRuHundredUtf16.Append(MakeSpan(mRuUtf16).To(100));
-    mThHundredUtf16.Append(MakeSpan(mThUtf16).To(100));
-    mJaHundredUtf16.Append(MakeSpan(mJaUtf16).To(100));
-    mKoHundredUtf16.Append(MakeSpan(mKoUtf16).To(100));
-    mTrHundredUtf16.Append(MakeSpan(mTrUtf16).To(100));
-    mViHundredUtf16.Append(MakeSpan(mViUtf16).To(100));
+    mArHundredUtf16.Append(Span(mArUtf16).To(100));
+    mDeHundredUtf16.Append(Span(mDeUtf16).To(100));
+    mDeEditHundredUtf16.Append(Span(mDeEditUtf16).To(100));
+    mRuHundredUtf16.Append(Span(mRuUtf16).To(100));
+    mThHundredUtf16.Append(Span(mThUtf16).To(100));
+    mJaHundredUtf16.Append(Span(mJaUtf16).To(100));
+    mKoHundredUtf16.Append(Span(mKoUtf16).To(100));
+    mTrHundredUtf16.Append(Span(mTrUtf16).To(100));
+    mViHundredUtf16.Append(Span(mViUtf16).To(100));
 
-    mDeEditHundredLatin1.Append(MakeSpan(mDeEditLatin1).To(100));
+    mDeEditHundredLatin1.Append(Span(mDeEditLatin1).To(100));
 
-    mArThousandUtf16.Append(MakeSpan(mArUtf16).To(1000));
-    mDeThousandUtf16.Append(MakeSpan(mDeUtf16).To(1000));
-    mDeEditThousandUtf16.Append(MakeSpan(mDeEditUtf16).To(1000));
-    mRuThousandUtf16.Append(MakeSpan(mRuUtf16).To(1000));
-    mThThousandUtf16.Append(MakeSpan(mThUtf16).To(1000));
-    mJaThousandUtf16.Append(MakeSpan(mJaUtf16).To(1000));
-    mKoThousandUtf16.Append(MakeSpan(mKoUtf16).To(1000));
-    mTrThousandUtf16.Append(MakeSpan(mTrUtf16).To(1000));
-    mViThousandUtf16.Append(MakeSpan(mViUtf16).To(1000));
+    mArThousandUtf16.Append(Span(mArUtf16).To(1000));
+    mDeThousandUtf16.Append(Span(mDeUtf16).To(1000));
+    mDeEditThousandUtf16.Append(Span(mDeEditUtf16).To(1000));
+    mRuThousandUtf16.Append(Span(mRuUtf16).To(1000));
+    mThThousandUtf16.Append(Span(mThUtf16).To(1000));
+    mJaThousandUtf16.Append(Span(mJaUtf16).To(1000));
+    mKoThousandUtf16.Append(Span(mKoUtf16).To(1000));
+    mTrThousandUtf16.Append(Span(mTrUtf16).To(1000));
+    mViThousandUtf16.Append(Span(mViUtf16).To(1000));
 
-    mDeEditThousandLatin1.Append(MakeSpan(mDeEditLatin1).To(1000));
+    mDeEditThousandLatin1.Append(Span(mDeEditLatin1).To(1000));
 
     CopyUTF16toUTF8(mArOneUtf16, mArOneUtf8);
     CopyUTF16toUTF8(mDeOneUtf16, mDeOneUtf8);
@@ -1086,6 +1088,14 @@ TEST_F(Strings, appendint64) {
   EXPECT_TRUE(str.Equals(maxint_plus1_expected_x));
 }
 
+TEST_F(Strings, inttotstring) {
+  EXPECT_EQ("42"_ns, IntToCString(42));
+  EXPECT_EQ(u"42"_ns, IntToString(42));
+
+  EXPECT_EQ("2a"_ns, IntToCString(42, 16));
+  EXPECT_EQ(u"2a"_ns, IntToString(42, 16));
+}
+
 TEST_F(Strings, appendfloat) {
   nsCString str;
   double bigdouble = 11223344556.66;
@@ -1388,12 +1398,14 @@ TEST_F(Strings, legacy_set_length_semantics) {
 #endif
 
 TEST_F(Strings, bulk_write) {
-  nsresult rv;
   nsCString s;
   const char* ptrTwoThousand;
   {
-    auto handle = s.BulkWrite(500, 0, true, rv);
-    EXPECT_EQ(rv, NS_OK);
+    auto handleOrErr = s.BulkWrite(500, 0, true);
+    EXPECT_TRUE(handleOrErr.isOk());
+
+    auto handle = handleOrErr.unwrap();
+
     auto span = handle.AsSpan();
     for (auto&& c : span) {
       c = 'a';
@@ -1418,11 +1430,10 @@ TEST_F(Strings, bulk_write) {
 }
 
 TEST_F(Strings, bulk_write_fail) {
-  nsresult rv;
   nsCString s;
   {
-    auto handle = s.BulkWrite(500, 0, true, rv);
-    EXPECT_EQ(rv, NS_OK);
+    auto handleOrErr = s.BulkWrite(500, 0, true);
+    EXPECT_TRUE(handleOrErr.isOk());
   }
   EXPECT_EQ(s.Length(), 3U);
   EXPECT_TRUE(s.Equals(u8"\uFFFD"));
@@ -1695,6 +1706,74 @@ TEST_F(Strings, Split) {
   EXPECT_EQ(counter, (size_t)2);
 }
 
+TEST_F(Strings, Join) {
+  // Join a sequence of strings.
+  {
+    // 8-bit strings
+    EXPECT_EQ(""_ns, StringJoin(","_ns, std::array<nsCString, 0>{}));
+    EXPECT_EQ("foo"_ns, StringJoin(","_ns, std::array{"foo"_ns}));
+    EXPECT_EQ("foo,bar"_ns, StringJoin(","_ns, std::array{"foo"_ns, "bar"_ns}));
+
+    // 16-bit strings
+    EXPECT_EQ(u""_ns, StringJoin(u","_ns, std::array<nsString, 0>{}));
+    EXPECT_EQ(u"foo"_ns, StringJoin(u","_ns, std::array{u"foo"_ns}));
+    EXPECT_EQ(u"foo,bar"_ns,
+              StringJoin(u","_ns, std::array{u"foo"_ns, u"bar"_ns}));
+  }
+
+  // Join a sequence of strings, appending.
+  {
+    // 8-bit string
+    {
+      nsAutoCString dst{"prefix:"_ns};
+      StringJoinAppend(dst, ","_ns, std::array{"foo"_ns, "bar"_ns});
+      EXPECT_EQ("prefix:foo,bar"_ns, dst);
+    }
+
+    // 16-bit string
+    {
+      nsAutoString dst{u"prefix:"_ns};
+      StringJoinAppend(dst, u","_ns, std::array{u"foo"_ns, u"bar"_ns});
+      EXPECT_EQ(u"prefix:foo,bar"_ns, dst);
+    }
+  }
+}
+
+TEST_F(Strings, JoinWithAppendingTransformation) {
+  const auto toCString = [](nsACString& dst, int val) { dst.AppendInt(val); };
+  const auto toString = [](nsAString& dst, int val) { dst.AppendInt(val); };
+
+  // Join a sequence of elements transformed to a string.
+  {
+    // 8-bit strings
+    EXPECT_EQ(""_ns, StringJoin(","_ns, std::array<int, 0>{}, toCString));
+    EXPECT_EQ("7"_ns, StringJoin(","_ns, std::array{7}, toCString));
+    EXPECT_EQ("7,42"_ns, StringJoin(","_ns, std::array{7, 42}, toCString));
+
+    // 16-bit strings
+    EXPECT_EQ(u""_ns, StringJoin(u","_ns, std::array<int, 0>{}, toString));
+    EXPECT_EQ(u"7"_ns, StringJoin(u","_ns, std::array{7}, toString));
+    EXPECT_EQ(u"7,42"_ns, StringJoin(u","_ns, std::array{7, 42}, toString));
+  }
+
+  // Join a sequence of elements transformed to a string, appending.
+  {
+    // 8-bit string
+    {
+      nsAutoCString dst{"prefix:"_ns};
+      StringJoinAppend(dst, ","_ns, std::array{7, 42}, toCString);
+      EXPECT_EQ("prefix:7,42"_ns, dst);
+    }
+
+    // 16-bit string
+    {
+      nsAutoString dst{u"prefix:"_ns};
+      StringJoinAppend(dst, u","_ns, std::array{7, 42}, toString);
+      EXPECT_EQ(u"prefix:7,42"_ns, dst);
+    }
+  }
+}
+
 constexpr bool TestSomeChars(char c) {
   return c == 'a' || c == 'c' || c == 'e' || c == '7' || c == 'G' || c == 'Z' ||
          c == '\b' || c == '?';
@@ -1939,6 +2018,12 @@ TEST_F(Strings, ConvertToSpan) {
   // from non-const string
   {
     auto span = Span{string};
+    static_assert(std::is_same_v<decltype(span), Span<const char16_t>>);
+  }
+
+  // get mutable data
+  {
+    auto span = string.GetMutableData();
     static_assert(std::is_same_v<decltype(span), Span<char16_t>>);
   }
 
@@ -1955,9 +2040,178 @@ TEST_F(Strings, ConvertToSpan) {
   // from non-const string
   {
     auto span = Span{cstring};
+    static_assert(std::is_same_v<decltype(span), Span<const char>>);
+  }
+
+  // get mutable data
+  {
+    auto span = cstring.GetMutableData();
     static_assert(std::is_same_v<decltype(span), Span<char>>);
   }
 }
+
+TEST_F(Strings, TokenizedRangeEmpty) {
+  // 8-bit strings
+  {
+    for (const auto& token : nsCCharSeparatedTokenizer(""_ns, ',').ToRange()) {
+      (void)token;
+      ADD_FAILURE();
+    }
+  }
+
+  // 16-bit strings
+  {
+    for (const auto& token : nsCharSeparatedTokenizer(u""_ns, ',').ToRange()) {
+      (void)token;
+      ADD_FAILURE();
+    }
+  }
+}
+
+TEST_F(Strings, TokenizedRangeWhitespaceOnly) {
+  // 8-bit strings
+  {
+    for (const auto& token : nsCCharSeparatedTokenizer(" "_ns, ',').ToRange()) {
+      (void)token;
+      ADD_FAILURE();
+    }
+  }
+
+  // 16-bit strings
+  {
+    for (const auto& token : nsCharSeparatedTokenizer(u" "_ns, ',').ToRange()) {
+      (void)token;
+      ADD_FAILURE();
+    }
+  }
+}
+
+TEST_F(Strings, TokenizedRangeNonEmpty) {
+  // 8-bit strings
+  {
+    nsTArray<nsCString> res;
+    for (const auto& token :
+         nsCCharSeparatedTokenizer("foo,bar"_ns, ',').ToRange()) {
+      res.EmplaceBack(token);
+    }
+
+    EXPECT_EQ(res, (nsTArray<nsCString>{"foo"_ns, "bar"_ns}));
+  }
+
+  // 16-bit strings
+  {
+    nsTArray<nsString> res;
+    for (const auto& token :
+         nsCharSeparatedTokenizer(u"foo,bar"_ns, ',').ToRange()) {
+      res.EmplaceBack(token);
+    }
+
+    EXPECT_EQ(res, (nsTArray<nsString>{u"foo"_ns, u"bar"_ns}));
+  }
+}
+
+// Macros for reducing verbosity of printf tests.
+#define create_printf_strings(format, ...)                 \
+  nsCString appendPrintfString;                            \
+  appendPrintfString.AppendPrintf(format, __VA_ARGS__);    \
+  const nsCString appendVprintfString(                     \
+      getAppendVprintfString(format, __VA_ARGS__));        \
+  const nsPrintfCString printfString(format, __VA_ARGS__); \
+  const nsVprintfCString vprintfString{getVprintfCString(format, __VA_ARGS__)};
+
+// We don't check every possible combination as we assume equality is
+// transitive.
+#define verify_printf_strings(expected)                                     \
+  EXPECT_TRUE(appendPrintfString.EqualsASCII(expected))                     \
+      << "appendPrintfString != expected:" << appendPrintfString.get()      \
+      << " != " << (expected);                                              \
+  EXPECT_TRUE(appendPrintfString.Equals(appendVprintfString))               \
+      << "appendPrintfString != appendVprintfString:"                       \
+      << appendPrintfString.get() << " != " << appendVprintfString;         \
+  EXPECT_TRUE(appendPrintfString.Equals(printfString))                      \
+      << "appendPrintfString != printfString:" << appendPrintfString.get()  \
+      << " != " << printfString;                                            \
+  EXPECT_TRUE(appendPrintfString.Equals(vprintfString))                     \
+      << "appendPrintfString != vprintfString:" << appendPrintfString.get() \
+      << " != " << vprintfString;
+
+TEST_F(Strings, printf) {
+  auto getAppendVprintfString = [](const char* aFormat, ...) {
+    // Helper to get a string with contents set via AppendVprint.
+    nsCString cString;
+    va_list ap;
+    va_start(ap, aFormat);
+    cString.AppendVprintf(aFormat, ap);
+    va_end(ap);
+    return cString;
+  };
+
+  auto getVprintfCString = [](const char* aFormat, ...) {
+    // Helper to get a nsVprintfCString.
+    va_list ap;
+    va_start(ap, aFormat);
+    const nsVprintfCString vprintfString(aFormat, ap);
+    va_end(ap);
+    return vprintfString;
+  };
+
+  {
+    const char* format = "Characters %c %%";
+    const char* expectedOutput = "Characters B %";
+    create_printf_strings(format, 'B');
+    verify_printf_strings(expectedOutput);
+  }
+  {
+    const char* format = "Strings %s %s";
+    const char* expectedOutput = "Strings foo bar";
+    create_printf_strings(format, "foo", "bar");
+    verify_printf_strings(expectedOutput);
+  }
+  {
+    const int signedThree = 3;
+    const unsigned int unsignedTen = 10;
+    const char* format = "Integers %i %.3d %.2u %o %x %X";
+    const char* expectedOutput = "Integers 3 003 10 12 a A";
+    create_printf_strings(format, signedThree, signedThree, unsignedTen,
+                          unsignedTen, unsignedTen, unsignedTen);
+    verify_printf_strings(expectedOutput);
+  }
+  {
+    const char* format = "Floats %f %.0f %e %.2E";
+    const char* expectedOutput = "Floats 1.500000 2 1.500000e+00 1.50E+00";
+    create_printf_strings(format, 1.5, 1.5, 1.5, 1.5);
+    verify_printf_strings(expectedOutput);
+  }
+  {
+    const char* expectedOutput = "Just a string";
+    const char* format = "%s";
+    create_printf_strings(format, "Just a string");
+    verify_printf_strings(expectedOutput);
+  }
+  {
+    const char* anotherString = "another string";
+    const char* format = "Just a string and %s";
+    const char* expectedOutput = "Just a string and another string";
+    create_printf_strings(format, anotherString);
+    verify_printf_strings(expectedOutput);
+  }
+  {
+    // This case tickles an unexpected overload resolution in MSVC where a
+    // va_list overload will be selected if available. See bug 1673670 and
+    // 1673917 for more detail.
+    char anotherString[] = "another string";
+    const char* format = "Just a string and %s";
+    const char* expectedOutput = "Just a string and another string";
+    // Calling with a non-const pointer triggers selection of va_list overload
+    // in MSVC at time of writing
+    create_printf_strings(format, (char*)anotherString);
+    verify_printf_strings(expectedOutput);
+  }
+}
+
+// We don't need these macros following the printf test.
+#undef verify_printf_strings
+#undef create_printf_strings
 
 // Note the five calls in the loop, so divide by 100k
 MOZ_GTEST_BENCH_F(Strings, PerfStripWhitespace, [this] {

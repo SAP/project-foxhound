@@ -10,16 +10,7 @@ const {
 } = require("devtools/shared/protocol");
 const { compatibilitySpec } = require("devtools/shared/specs/compatibility");
 
-class CompatibilityFront extends FrontClassWithSpec(compatibilitySpec) {
-  constructor(client, targetFront, parentFront) {
-    super(client, targetFront, parentFront);
-  }
-
-  // Update the object given a form representation off the wire.
-  form(json) {
-    this.actorID = json.actor;
-  }
-}
+class CompatibilityFront extends FrontClassWithSpec(compatibilitySpec) {}
 
 exports.CompatibilityFront = CompatibilityFront;
 registerFront(CompatibilityFront);

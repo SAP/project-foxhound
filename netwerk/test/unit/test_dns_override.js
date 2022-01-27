@@ -7,10 +7,7 @@ const override = Cc["@mozilla.org/network/native-dns-override;1"].getService(
   Ci.nsINativeDNSResolverOverride
 );
 const defaultOriginAttributes = {};
-const threadManager = Cc["@mozilla.org/thread-manager;1"].getService(
-  Ci.nsIThreadManager
-);
-const mainThread = threadManager.currentThread;
+const mainThread = Services.tm.currentThread;
 
 class Listener {
   constructor() {
@@ -33,11 +30,12 @@ class Listener {
   }
 
   async addresses() {
-    let [inRequest, inRecord, inStatus] = await this.promise;
+    let [, inRecord] = await this.promise;
     let addresses = [];
     if (!inRecord) {
       return addresses; // returns []
     }
+    inRecord.QueryInterface(Ci.nsIDNSAddrRecord);
     while (inRecord.hasMore()) {
       addresses.push(inRecord.getNextAddrAsString());
     }
@@ -79,7 +77,15 @@ add_task(async function test_bad_IPs() {
 add_task(async function test_ipv4() {
   let listener = new Listener();
   override.addIPOverride(DOMAIN, "1.2.3.4");
-  dns.asyncResolve(DOMAIN, 0, listener, mainThread, defaultOriginAttributes);
+  dns.asyncResolve(
+    DOMAIN,
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
+    0,
+    null,
+    listener,
+    mainThread,
+    defaultOriginAttributes
+  );
   Assert.equal(await listener.firstAddress(), "1.2.3.4");
 
   dns.clearCache(false);
@@ -89,7 +95,15 @@ add_task(async function test_ipv4() {
 add_task(async function test_ipv6() {
   let listener = new Listener();
   override.addIPOverride(DOMAIN, "fe80::6a99:9b2b:6ccc:6e1b");
-  dns.asyncResolve(DOMAIN, 0, listener, mainThread, defaultOriginAttributes);
+  dns.asyncResolve(
+    DOMAIN,
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
+    0,
+    null,
+    listener,
+    mainThread,
+    defaultOriginAttributes
+  );
   Assert.equal(await listener.firstAddress(), "fe80::6a99:9b2b:6ccc:6e1b");
 
   dns.clearCache(false);
@@ -99,14 +113,30 @@ add_task(async function test_ipv6() {
 add_task(async function test_clearOverrides() {
   let listener = new Listener();
   override.addIPOverride(DOMAIN, "1.2.3.4");
-  dns.asyncResolve(DOMAIN, 0, listener, mainThread, defaultOriginAttributes);
+  dns.asyncResolve(
+    DOMAIN,
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
+    0,
+    null,
+    listener,
+    mainThread,
+    defaultOriginAttributes
+  );
   Assert.equal(await listener.firstAddress(), "1.2.3.4");
 
   dns.clearCache(false);
   override.clearOverrides();
 
   listener = new Listener();
-  dns.asyncResolve(DOMAIN, 0, listener, mainThread, defaultOriginAttributes);
+  dns.asyncResolve(
+    DOMAIN,
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
+    0,
+    null,
+    listener,
+    mainThread,
+    defaultOriginAttributes
+  );
   Assert.notEqual(await listener.firstAddress(), "1.2.3.4");
 
   await new Promise(resolve => do_timeout(1000, resolve));
@@ -119,12 +149,28 @@ add_task(async function test_clearHostOverride() {
   override.addIPOverride(OTHER, "2.2.2.2");
   override.clearHostOverride(DOMAIN);
   let listener = new Listener();
-  dns.asyncResolve(DOMAIN, 0, listener, mainThread, defaultOriginAttributes);
+  dns.asyncResolve(
+    DOMAIN,
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
+    0,
+    null,
+    listener,
+    mainThread,
+    defaultOriginAttributes
+  );
 
   Assert.notEqual(await listener.firstAddress(), "2.2.2.2");
 
   listener = new Listener();
-  dns.asyncResolve(OTHER, 0, listener, mainThread, defaultOriginAttributes);
+  dns.asyncResolve(
+    OTHER,
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
+    0,
+    null,
+    listener,
+    mainThread,
+    defaultOriginAttributes
+  );
   Assert.equal(await listener.firstAddress(), "2.2.2.2");
 
   // Note: this test will use the actual system resolver. On windows we do a
@@ -145,7 +191,15 @@ add_task(async function test_multiple_IPs() {
   override.addIPOverride(DOMAIN, "::1");
   override.addIPOverride(DOMAIN, "fe80::6a99:9b2b:6ccc:6e1b");
   let listener = new Listener();
-  dns.asyncResolve(DOMAIN, 0, listener, mainThread, defaultOriginAttributes);
+  dns.asyncResolve(
+    DOMAIN,
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
+    0,
+    null,
+    listener,
+    mainThread,
+    defaultOriginAttributes
+  );
   Assert.deepEqual(await listener.addresses(), [
     "2.2.2.2",
     "1.1.1.1",
@@ -165,7 +219,9 @@ add_task(async function test_address_family_flags() {
   let listener = new Listener();
   dns.asyncResolve(
     DOMAIN,
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
     Ci.nsIDNSService.RESOLVE_DISABLE_IPV4,
+    null,
     listener,
     mainThread,
     defaultOriginAttributes
@@ -178,7 +234,9 @@ add_task(async function test_address_family_flags() {
   listener = new Listener();
   dns.asyncResolve(
     DOMAIN,
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
     Ci.nsIDNSService.RESOLVE_DISABLE_IPV6,
+    null,
     listener,
     mainThread,
     defaultOriginAttributes
@@ -192,8 +250,17 @@ add_task(async function test_address_family_flags() {
 add_task(async function test_cname_flag() {
   override.addIPOverride(DOMAIN, "2.2.2.2");
   let listener = new Listener();
-  dns.asyncResolve(DOMAIN, 0, listener, mainThread, defaultOriginAttributes);
-  let [inRequest, inRecord, inStatus] = await listener;
+  dns.asyncResolve(
+    DOMAIN,
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
+    0,
+    null,
+    listener,
+    mainThread,
+    defaultOriginAttributes
+  );
+  let [, inRecord] = await listener;
+  inRecord.QueryInterface(Ci.nsIDNSAddrRecord);
   Assert.throws(
     () => inRecord.canonicalName,
     /NS_ERROR_NOT_AVAILABLE/,
@@ -204,12 +271,15 @@ add_task(async function test_cname_flag() {
   listener = new Listener();
   dns.asyncResolve(
     DOMAIN,
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
     Ci.nsIDNSService.RESOLVE_CANONICAL_NAME,
+    null,
     listener,
     mainThread,
     defaultOriginAttributes
   );
-  [inRequest, inRecord, inStatus] = await listener;
+  [, inRecord] = await listener;
+  inRecord.QueryInterface(Ci.nsIDNSAddrRecord);
   Assert.equal(inRecord.canonicalName, DOMAIN, "No canonical name specified");
   Assert.equal(inRecord.getNextAddrAsString(), "2.2.2.2");
 
@@ -221,15 +291,35 @@ add_task(async function test_cname_flag() {
   listener = new Listener();
   dns.asyncResolve(
     DOMAIN,
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
     Ci.nsIDNSService.RESOLVE_CANONICAL_NAME,
+    null,
     listener,
     mainThread,
     defaultOriginAttributes
   );
-  [inRequest, inRecord, inStatus] = await listener;
+  [, inRecord] = await listener;
+  inRecord.QueryInterface(Ci.nsIDNSAddrRecord);
   Assert.equal(inRecord.canonicalName, OTHER, "Must have correct CNAME");
   Assert.equal(inRecord.getNextAddrAsString(), "2.2.2.2");
 
   dns.clearCache(false);
   override.clearOverrides();
+});
+
+add_task(async function test_nxdomain() {
+  override.addIPOverride(DOMAIN, "N/A");
+  let listener = new Listener();
+  dns.asyncResolve(
+    DOMAIN,
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
+    Ci.nsIDNSService.RESOLVE_CANONICAL_NAME,
+    null,
+    listener,
+    mainThread,
+    defaultOriginAttributes
+  );
+
+  let [, , inStatus] = await listener;
+  equal(inStatus, Cr.NS_ERROR_UNKNOWN_HOST);
 });

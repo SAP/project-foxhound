@@ -74,22 +74,25 @@ add_task(async function() {
 
 var initialValue;
 var initialRemoveHidden;
-function checkBookmarksPanel(phase) {
+async function checkBookmarksPanel(phase) {
   StarUI._createPanelIfNeeded();
   let popupElement = document.getElementById("editBookmarkPanel");
   let titleElement = document.getElementById("editBookmarkPanelTitle");
   let removeElement = document.getElementById("editBookmarkPanelRemoveButton");
+  await document.l10n.translateElements([titleElement]);
   switch (phase) {
     case 1:
     case 3:
-      return promisePopupShown(popupElement);
+      await promisePopupShown(popupElement);
+      break;
     case 2:
-      initialValue = titleElement.value;
+      initialValue = titleElement.textContent;
       initialRemoveHidden = removeElement.hidden;
-      return promisePopupHidden(popupElement);
+      await promisePopupHidden(popupElement);
+      break;
     case 4:
       Assert.equal(
-        titleElement.value,
+        titleElement.textContent,
         initialValue,
         "The bookmark panel's title should be the same"
       );
@@ -98,7 +101,9 @@ function checkBookmarksPanel(phase) {
         initialRemoveHidden,
         "The bookmark panel's visibility should not change"
       );
-      return promisePopupHidden(popupElement);
+      await promisePopupHidden(popupElement);
+      break;
+    default:
+      throw new Error("Unknown phase");
   }
-  return Promise.reject(new Error("Unknown phase"));
 }

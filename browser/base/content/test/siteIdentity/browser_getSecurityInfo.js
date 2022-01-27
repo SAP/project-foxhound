@@ -14,7 +14,7 @@ const IFRAME_PAGE =
 add_task(async function test() {
   await BrowserTestUtils.withNewTab("about:blank", async function(browser) {
     let loaded = BrowserTestUtils.waitForErrorPage(browser);
-    await BrowserTestUtils.loadURI(browser, "https://self-signed.example.com");
+    BrowserTestUtils.loadURI(browser, "https://self-signed.example.com");
     await loaded;
 
     let securityInfo = await browser.browsingContext.currentWindowGlobal.getSecurityInfo();
@@ -33,14 +33,14 @@ add_task(async function test() {
     );
 
     loaded = BrowserTestUtils.browserLoaded(browser);
-    await BrowserTestUtils.loadURI(browser, "http://example.com");
+    BrowserTestUtils.loadURI(browser, "http://example.com");
     await loaded;
 
     securityInfo = await browser.browsingContext.currentWindowGlobal.getSecurityInfo();
-    is(securityInfo, null, "Found no security info");
+    ok(!securityInfo, "Found no security info");
 
     loaded = BrowserTestUtils.browserLoaded(browser);
-    await BrowserTestUtils.loadURI(browser, "https://example.com");
+    BrowserTestUtils.loadURI(browser, "https://example.com");
     await loaded;
 
     securityInfo = await browser.browsingContext.currentWindowGlobal.getSecurityInfo();
@@ -55,12 +55,12 @@ add_task(async function test() {
     );
 
     loaded = BrowserTestUtils.browserLoaded(browser);
-    await BrowserTestUtils.loadURI(browser, IFRAME_PAGE);
+    BrowserTestUtils.loadURI(browser, IFRAME_PAGE);
     await loaded;
 
     // Get the info of the parent, which is HTTP.
     securityInfo = await browser.browsingContext.currentWindowGlobal.getSecurityInfo();
-    is(securityInfo, null, "Found no security info");
+    ok(!securityInfo, "Found no security info");
 
     // Get the info of the frame, which is HTTPS.
     securityInfo = await browser.browsingContext.children[0].currentWindowGlobal.getSecurityInfo();

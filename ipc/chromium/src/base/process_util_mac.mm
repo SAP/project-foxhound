@@ -12,6 +12,7 @@
 
 #include <string>
 
+#include "base/command_line.h"
 #include "base/eintr_wrapper.h"
 #include "base/logging.h"
 #include "mozilla/ipc/FileDescriptorShuffle.h"
@@ -39,6 +40,7 @@ bool LaunchApp(const std::vector<std::string>& argv, const LaunchOptions& option
 
   posix_spawn_file_actions_t file_actions;
   if (posix_spawn_file_actions_init(&file_actions) != 0) {
+    DLOG(WARNING) << "posix_spawn_file_actions_init failed";
     return false;
   }
   auto file_actions_guard =
@@ -47,6 +49,7 @@ bool LaunchApp(const std::vector<std::string>& argv, const LaunchOptions& option
   // Turn fds_to_remap array into a set of dup2 calls.
   mozilla::ipc::FileDescriptorShuffle shuffle;
   if (!shuffle.Init(options.fds_to_remap)) {
+    DLOG(WARNING) << "FileDescriptorShuffle::Init failed";
     return false;
   }
   for (const auto& fd_map : shuffle.Dup2Sequence()) {
@@ -54,6 +57,7 @@ bool LaunchApp(const std::vector<std::string>& argv, const LaunchOptions& option
     int dest_fd = fd_map.second;
 
     if (posix_spawn_file_actions_adddup2(&file_actions, src_fd, dest_fd) != 0) {
+      DLOG(WARNING) << "posix_spawn_file_actions_adddup2 failed";
       return false;
     }
   }
@@ -61,21 +65,38 @@ bool LaunchApp(const std::vector<std::string>& argv, const LaunchOptions& option
   // Initialize spawn attributes.
   posix_spawnattr_t spawnattr;
   if (posix_spawnattr_init(&spawnattr) != 0) {
+    DLOG(WARNING) << "posix_spawnattr_init failed";
     return false;
   }
   auto spawnattr_guard =
       mozilla::MakeScopeExit([&spawnattr] { posix_spawnattr_destroy(&spawnattr); });
 
+#if defined(XP_MACOSX) && defined(__aarch64__)
+  if (options.arch == PROCESS_ARCH_X86_64) {
+    cpu_type_t cpu_pref = CPU_TYPE_X86_64;
+    size_t count = 1;
+    size_t ocount = 0;
+    int rv;
+    rv = posix_spawnattr_setbinpref_np(&spawnattr, count, &cpu_pref, &ocount);
+    if ((rv != 0) || (ocount != count)) {
+      DLOG(WARNING) << "posix_spawnattr_setbinpref_np failed";
+      return false;
+    }
+  }
+#endif
+
   // Prevent the child process from inheriting any file descriptors
   // that aren't named in `file_actions`.  (This is an Apple-specific
   // extension to posix_spawn.)
   if (posix_spawnattr_setflags(&spawnattr, POSIX_SPAWN_CLOEXEC_DEFAULT) != 0) {
+    DLOG(WARNING) << "posix_spawnattr_setflags failed";
     return false;
   }
 
   // Exempt std{in,out,err} from being closed by POSIX_SPAWN_CLOEXEC_DEFAULT.
   for (int fd = 0; fd <= STDERR_FILENO; ++fd) {
     if (posix_spawn_file_actions_addinherit_np(&file_actions, fd) != 0) {
+      DLOG(WARNING) << "posix_spawn_file_actions_addinherit_np failed";
       return false;
     }
   }
@@ -86,6 +107,7 @@ bool LaunchApp(const std::vector<std::string>& argv, const LaunchOptions& option
 
   bool process_handle_valid = pid > 0;
   if (!spawn_succeeded || !process_handle_valid) {
+    DLOG(WARNING) << "posix_spawnp failed";
     retval = false;
   } else {
     gProcessLog.print("==> process %d launched child process %d\n", GetCurrentProcId(), pid);

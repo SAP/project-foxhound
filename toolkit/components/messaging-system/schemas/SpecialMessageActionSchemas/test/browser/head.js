@@ -6,6 +6,7 @@
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 
 ChromeUtils.defineModuleGetter(
   this,
@@ -16,7 +17,7 @@ ChromeUtils.defineModuleGetter(
 ChromeUtils.defineModuleGetter(
   this,
   "Ajv",
-  "resource://testing-common/ajv-4.1.1.js"
+  "resource://testing-common/ajv-6.12.6.js"
 );
 
 XPCOMUtils.defineLazyGetter(this, "fetchSMASchema", async () => {

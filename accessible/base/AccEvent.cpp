@@ -17,6 +17,7 @@
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/UserActivation.h"
 
+#include "nsComponentManagerUtils.h"
 #include "nsIMutableArray.h"
 
 using namespace mozilla;
@@ -33,13 +34,14 @@ static_assert(static_cast<bool>(eNoUserInput) == false &&
 ////////////////////////////////////////////////////////////////////////////////
 // AccEvent constructors
 
-AccEvent::AccEvent(uint32_t aEventType, Accessible* aAccessible,
+AccEvent::AccEvent(uint32_t aEventType, LocalAccessible* aAccessible,
                    EIsFromUserInput aIsFromUserInput, EEventRule aEventRule)
     : mEventType(aEventType), mEventRule(aEventRule), mAccessible(aAccessible) {
-  if (aIsFromUserInput == eAutoDetect)
+  if (aIsFromUserInput == eAutoDetect) {
     mIsFromUserInput = dom::UserActivation::IsHandlingUserInput();
-  else
+  } else {
     mIsFromUserInput = aIsFromUserInput == eFromUserInput ? true : false;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -78,7 +80,8 @@ NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(AccEvent, Release)
 // we are ready to fire the event and so we will no longer assert at that point
 // if the node was removed from the document. Either way, the AT won't work with
 // a defunct accessible so the behaviour should be equivalent.
-AccTextChangeEvent::AccTextChangeEvent(Accessible* aAccessible, int32_t aStart,
+AccTextChangeEvent::AccTextChangeEvent(LocalAccessible* aAccessible,
+                                       int32_t aStart,
                                        const nsAString& aModifiedText,
                                        bool aIsInserted,
                                        EIsFromUserInput aIsFromUserInput)
@@ -100,18 +103,18 @@ AccTextChangeEvent::AccTextChangeEvent(Accessible* aAccessible, int32_t aStart,
 // AccHideEvent
 ////////////////////////////////////////////////////////////////////////////////
 
-AccHideEvent::AccHideEvent(Accessible* aTarget, bool aNeedsShutdown)
+AccHideEvent::AccHideEvent(LocalAccessible* aTarget, bool aNeedsShutdown)
     : AccMutationEvent(::nsIAccessibleEvent::EVENT_HIDE, aTarget),
       mNeedsShutdown(aNeedsShutdown) {
-  mNextSibling = mAccessible->NextSibling();
-  mPrevSibling = mAccessible->PrevSibling();
+  mNextSibling = mAccessible->LocalNextSibling();
+  mPrevSibling = mAccessible->LocalPrevSibling();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // AccShowEvent
 ////////////////////////////////////////////////////////////////////////////////
 
-AccShowEvent::AccShowEvent(Accessible* aTarget)
+AccShowEvent::AccShowEvent(LocalAccessible* aTarget)
     : AccMutationEvent(::nsIAccessibleEvent::EVENT_SHOW, aTarget) {
   int32_t idx = aTarget->IndexInParent();
   MOZ_ASSERT(idx >= 0);
@@ -147,7 +150,8 @@ void AccTextSelChangeEvent::SelectionRanges(
 // AccSelChangeEvent
 ////////////////////////////////////////////////////////////////////////////////
 
-AccSelChangeEvent::AccSelChangeEvent(Accessible* aWidget, Accessible* aItem,
+AccSelChangeEvent::AccSelChangeEvent(LocalAccessible* aWidget,
+                                     LocalAccessible* aItem,
                                      SelChangeType aSelChangeType)
     : AccEvent(0, aItem, eAutoDetect, eCoalesceSelectionChange),
       mWidget(aWidget),
@@ -156,10 +160,11 @@ AccSelChangeEvent::AccSelChangeEvent(Accessible* aWidget, Accessible* aItem,
       mPreceedingCount(0),
       mPackedEvent(nullptr) {
   if (aSelChangeType == eSelectionAdd) {
-    if (mWidget->GetSelectedItem(1))
+    if (mWidget->GetSelectedItem(1)) {
       mEventType = nsIAccessibleEvent::EVENT_SELECTION_ADD;
-    else
+    } else {
       mEventType = nsIAccessibleEvent::EVENT_SELECTION;
+    }
   } else {
     mEventType = nsIAccessibleEvent::EVENT_SELECTION_REMOVE;
   }
@@ -169,7 +174,7 @@ AccSelChangeEvent::AccSelChangeEvent(Accessible* aWidget, Accessible* aItem,
 // AccTableChangeEvent
 ////////////////////////////////////////////////////////////////////////////////
 
-AccTableChangeEvent::AccTableChangeEvent(Accessible* aAccessible,
+AccTableChangeEvent::AccTableChangeEvent(LocalAccessible* aAccessible,
                                          uint32_t aEventType,
                                          int32_t aRowOrColIndex,
                                          int32_t aNumRowsOrCols)
@@ -181,10 +186,10 @@ AccTableChangeEvent::AccTableChangeEvent(Accessible* aAccessible,
 // AccVCChangeEvent
 ////////////////////////////////////////////////////////////////////////////////
 
-AccVCChangeEvent::AccVCChangeEvent(Accessible* aAccessible,
-                                   Accessible* aOldAccessible,
+AccVCChangeEvent::AccVCChangeEvent(LocalAccessible* aAccessible,
+                                   LocalAccessible* aOldAccessible,
                                    int32_t aOldStart, int32_t aOldEnd,
-                                   Accessible* aNewAccessible,
+                                   LocalAccessible* aNewAccessible,
                                    int32_t aNewStart, int32_t aNewEnd,
                                    int16_t aReason, int16_t aBoundaryType,
                                    EIsFromUserInput aIsFromUserInput)
@@ -201,7 +206,7 @@ AccVCChangeEvent::AccVCChangeEvent(Accessible* aAccessible,
 
 already_AddRefed<nsIAccessibleEvent> a11y::MakeXPCEvent(AccEvent* aEvent) {
   DocAccessible* doc = aEvent->Document();
-  Accessible* acc = aEvent->GetAccessible();
+  LocalAccessible* acc = aEvent->GetAccessible();
   nsINode* node = acc->GetNode();
   bool fromUser = aEvent->IsFromUserInput();
   uint32_t type = aEvent->GetEventType();
@@ -239,9 +244,9 @@ already_AddRefed<nsIAccessibleEvent> a11y::MakeXPCEvent(AccEvent* aEvent) {
 
   if (eventGroup & (1 << AccEvent::eCaretMoveEvent)) {
     AccCaretMoveEvent* cm = downcast_accEvent(aEvent);
-    xpEvent = new xpcAccCaretMoveEvent(type, ToXPC(acc), ToXPCDocument(doc),
-                                       node, fromUser, cm->GetCaretOffset(),
-                                       cm->IsSelectionCollapsed());
+    xpEvent = new xpcAccCaretMoveEvent(
+        type, ToXPC(acc), ToXPCDocument(doc), node, fromUser,
+        cm->GetCaretOffset(), cm->IsSelectionCollapsed(), cm->IsAtEndOfLine());
     return xpEvent.forget();
   }
 

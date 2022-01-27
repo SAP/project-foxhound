@@ -5,15 +5,23 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["TelemetryStorage"];
+var EXPORTED_SYMBOLS = ["TelemetryStorage", "Policy"];
 
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm", this);
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/osfile.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/Preferences.jsm", this);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const { TelemetryUtils } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryUtils.jsm"
+);
+const { Preferences } = ChromeUtils.import(
+  "resource://gre/modules/Preferences.jsm"
+);
 
 const LOGGER_NAME = "Toolkit.Telemetry";
 const LOGGER_PREFIX = "TelemetryStorage::";
@@ -110,6 +118,26 @@ var Policy = {
     AppConstants.platform == "android"
       ? PENDING_PINGS_QUOTA_BYTES_MOBILE
       : PENDING_PINGS_QUOTA_BYTES_DESKTOP,
+  /**
+   * @param {string} id The ID of the ping that will be written into the file. Can be "*" to
+   *                    make a pattern to find all pings for this installation.
+   * @return
+   *         {
+   *           directory: <nsIFile>, // Directory to save pings
+   *           file: <string>, // File name for this ping (or pattern for all pings)
+   *         }
+   */
+  getUninstallPingPath: id => {
+    // UpdRootD is e.g. C:\ProgramData\Mozilla\updates\<PATH HASH>
+    const updateDirectory = Services.dirsvc.get("UpdRootD", Ci.nsIFile);
+    const installPathHash = updateDirectory.leafName;
+
+    return {
+      // e.g. C:\ProgramData\Mozilla
+      directory: updateDirectory.parent.parent.clone(),
+      file: `uninstall_ping_${installPathHash}_${id}.json`,
+    };
+  },
 };
 
 /**
@@ -344,6 +372,31 @@ var TelemetryStorage = {
    */
   removeAbortedSessionPing() {
     return TelemetryStorageImpl.removeAbortedSessionPing();
+  },
+
+  /**
+   * Save an uninstall ping to disk, removing any old ones from this
+   * installation first.
+   * This is stored independently from other pings, and only read by
+   * the Windows uninstaller.
+   *
+   * WINDOWS ONLY, does nothing and resolves immediately on other platforms.
+   *
+   * @return {promise} Promise that is resolved when the ping has been saved.
+   */
+  saveUninstallPing(ping) {
+    return TelemetryStorageImpl.saveUninstallPing(ping);
+  },
+
+  /**
+   * Remove all uninstall pings from this installation.
+   *
+   * WINDOWS ONLY, does nothing and resolves immediately on other platforms.
+   *
+   * @return {promise} Promise that is resolved when the pings have been removed.
+   */
+  removeUninstallPings() {
+    return TelemetryStorageImpl.removeUninstallPings();
   },
 
   /**
@@ -1973,6 +2026,49 @@ var TelemetryStorageImpl = {
         }
       }
     });
+  },
+
+  async saveUninstallPing(ping) {
+    if (AppConstants.platform != "win") {
+      return;
+    }
+
+    // Remove any old pings from this install first.
+    await this.removeUninstallPings();
+
+    let { directory: pingFile, file } = Policy.getUninstallPingPath(ping.id);
+    pingFile.append(file);
+
+    await this.savePingToFile(ping, pingFile.path, /* overwrite */ true);
+  },
+
+  async removeUninstallPings() {
+    if (AppConstants.platform != "win") {
+      return;
+    }
+
+    const { directory, file } = Policy.getUninstallPingPath("*");
+
+    const iteratorOptions = { winPattern: file };
+    const iterator = new OS.File.DirectoryIterator(
+      directory.path,
+      iteratorOptions
+    );
+
+    await iterator.forEach(async entry => {
+      this._log.trace("removeUninstallPings - removing", entry.path);
+      try {
+        await OS.File.remove(entry.path);
+        this._log.trace("removeUninstallPings - success");
+      } catch (ex) {
+        if (ex.becauseNoSuchFile) {
+          this._log.trace("removeUninstallPings - no such file");
+        } else {
+          this._log.error("removeUninstallPings - error removing ping", ex);
+        }
+      }
+    });
+    iterator.close();
   },
 
   /**

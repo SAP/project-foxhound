@@ -135,11 +135,15 @@ mod isa;
 mod utils;
 mod wasm2clif;
 
-use log::{self, error, info};
+use log::{self, error};
+use std::ffi::CString;
+use std::fmt::Display;
+use std::os::raw::c_char;
 use std::ptr;
 
 use crate::bindings::{CompiledFunc, FuncCompileInput, ModuleEnvironment, StaticEnvironment};
 use crate::compile::BatchCompiler;
+use cranelift_codegen::CodegenError;
 
 /// Initializes all the process-wide Cranelift state. It must be called at least once, before any
 /// other use of this crate. It is not an issue if it is called more than once; subsequent calls
@@ -196,14 +200,26 @@ pub unsafe extern "C" fn cranelift_compiler_destroy(compiler: *mut BatchCompiler
     let _box = Box::from_raw(compiler);
 }
 
+fn error_to_cstring<D: Display>(err: D) -> *mut c_char {
+    use std::fmt::Write;
+    let mut s = String::new();
+    let _ = write!(&mut s, "{}", err);
+    let cstr = CString::new(s).unwrap();
+    cstr.into_raw()
+}
+
 /// Compile a single function.
 ///
 /// This is declared in `clifapi.h`.
+///
+/// If a Wasm validation error is returned in *error, then it *must* be later
+/// freed by `cranelift_compiler_free_error()`.
 #[no_mangle]
 pub unsafe extern "C" fn cranelift_compile_function(
     compiler: *mut BatchCompiler,
     data: *const FuncCompileInput,
     result: *mut CompiledFunc,
+    error: *mut *mut c_char,
 ) -> bool {
     let compiler = compiler.as_mut().unwrap();
     let data = data.as_ref().unwrap();
@@ -212,15 +228,27 @@ pub unsafe extern "C" fn cranelift_compile_function(
     compiler.clear();
 
     if let Err(e) = compiler.translate_wasm(data) {
-        error!("Wasm translation error: {}\n", e);
-        info!("Translated function: {}", compiler);
+        let cstr = error_to_cstring(e);
+        *error = cstr;
         return false;
     };
 
     if let Err(e) = compiler.compile(data.stackmaps()) {
-        error!("Cranelift compilation error: {}\n", e);
-        info!("Compiled function: {}", compiler);
-        return false;
+        // Make sure to panic on verifier errors, so that fuzzers see those. Other errors are about
+        // unsupported features or implementation limits, so just report them as a user-facing
+        // error.
+        match e {
+            CodegenError::Verifier(verifier_error) => {
+                panic!("Cranelift verifier error: {}", verifier_error);
+            }
+            CodegenError::ImplLimitExceeded
+            | CodegenError::CodeTooLarge
+            | CodegenError::Unsupported(_) => {
+                let cstr = error_to_cstring(e);
+                *error = cstr;
+                return false;
+            }
+        }
     };
 
     // TODO(bbouvier) if destroy is called while one of these objects is alive, you're going to
@@ -229,6 +257,12 @@ pub unsafe extern "C" fn cranelift_compile_function(
     result.reset(&compiler.current_func);
 
     true
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cranelift_compiler_free_error(s: *mut c_char) {
+    // Convert back into a `CString` and then let it drop.
+    let _cstr = CString::from_raw(s);
 }
 
 /// Returns true whether a platform (target ISA) is supported or not.

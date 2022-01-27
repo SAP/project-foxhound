@@ -14,6 +14,7 @@
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/css/Loader.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/dom/SRIMetadata.h"
 #include "mozilla/ipc/SharedMemory.h"
 #include "MainThreadUtils.h"
@@ -360,11 +361,7 @@ void GlobalStyleSheetCache::InitSharedSheetsInParent() {
     address = reinterpret_cast<void*>(uintptr_t(p) + kOffset);
   }
 
-  bool parentMapped = shm->Map(kSharedMemorySize, address);
-  Telemetry::Accumulate(Telemetry::SHARED_MEMORY_UA_SHEETS_MAPPED_PARENT,
-                        parentMapped);
-
-  if (!parentMapped) {
+  if (!shm->Map(kSharedMemorySize, address)) {
     // Failed to map at the address we computed for some reason.  Fall back
     // to just allocating at a location of the OS's choosing, and hope that
     // it works in the content process.
@@ -393,24 +390,19 @@ void GlobalStyleSheetCache::InitSharedSheetsInParent() {
   // Normally calling ToShared on UA sheets should not fail.  It happens
   // in practice in odd cases that seem like corrupted installations; see bug
   // 1621773.  On failure, return early and fall back to non-shared sheets.
-#define STYLE_SHEET(identifier_, url_, shared_)                         \
-  if (shared_) {                                                        \
-    StyleSheet* sheet = identifier_##Sheet();                           \
-    size_t i = size_t(UserAgentStyleSheetID::identifier_);              \
-    URLExtraData::sShared[i] = sheet->URLData();                        \
-    header->mSheets[i] = sheet->ToShared(builder.get(), message);       \
-    if (!header->mSheets[i]) {                                          \
-      CrashReporter::AppendAppNotesToCrashReport("\n"_ns + message);    \
-      Telemetry::Accumulate(                                            \
-          Telemetry::SHARED_MEMORY_UA_SHEETS_TOSHMEM_SUCCEEDED, false); \
-      return;                                                           \
-    }                                                                   \
+#define STYLE_SHEET(identifier_, url_, shared_)                      \
+  if (shared_) {                                                     \
+    StyleSheet* sheet = identifier_##Sheet();                        \
+    size_t i = size_t(UserAgentStyleSheetID::identifier_);           \
+    URLExtraData::sShared[i] = sheet->URLData();                     \
+    header->mSheets[i] = sheet->ToShared(builder.get(), message);    \
+    if (!header->mSheets[i]) {                                       \
+      CrashReporter::AppendAppNotesToCrashReport("\n"_ns + message); \
+      return;                                                        \
+    }                                                                \
   }
 #include "mozilla/UserAgentStyleSheetList.h"
 #undef STYLE_SHEET
-
-  Telemetry::Accumulate(Telemetry::SHARED_MEMORY_UA_SHEETS_TOSHMEM_SUCCEEDED,
-                        true);
 
   // Finished writing into the shared memory.  Freeze it, so that a process
   // can't confuse other processes by changing the UA style sheet contents.
@@ -423,10 +415,7 @@ void GlobalStyleSheetCache::InitSharedSheetsInParent() {
   // between the Freeze() and Map() call, we can just fall back to keeping our
   // own copy of the UA style sheets in the parent, and still try sending the
   // shared memory to the content processes.
-  bool parentRemapped = shm->Map(kSharedMemorySize, address);
-  Telemetry::Accumulate(
-      Telemetry::SHARED_MEMORY_UA_SHEETS_MAPPED_PARENT_AFTER_FREEZE,
-      parentRemapped);
+  shm->Map(kSharedMemorySize, address);
 
   // Record how must of the shared memory we have used, for memory reporting
   // later.  We round up to the nearest page since the free space at the end
@@ -547,10 +536,6 @@ RefPtr<StyleSheet> GlobalStyleSheetCache::LoadSheet(
 
   if (!gCSSLoader) {
     gCSSLoader = new Loader;
-    if (!gCSSLoader) {
-      ErrorLoadingSheet(aURI, "no Loader", eCrash);
-      return nullptr;
-    }
   }
 
   // Note: The parallel parsing code assume that UA sheets are always loaded
@@ -605,27 +590,17 @@ void GlobalStyleSheetCache::BuildPreferenceSheet(
       "@namespace svg url(http://www.w3.org/2000/svg);\n");
 
   // Rules for link styling.
-  nscolor linkColor = aPrefs.mLinkColor;
-  nscolor activeColor = aPrefs.mActiveLinkColor;
-  nscolor visitedColor = aPrefs.mVisitedLinkColor;
-
-  sheetText.AppendPrintf(
-      "*|*:link { color: #%02x%02x%02x; }\n"
-      "*|*:any-link:active { color: #%02x%02x%02x; }\n"
-      "*|*:visited { color: #%02x%02x%02x; }\n",
-      NS_GET_R_G_B(linkColor), NS_GET_R_G_B(activeColor),
-      NS_GET_R_G_B(visitedColor));
-
-  bool underlineLinks = aPrefs.mUnderlineLinks;
+  const bool underlineLinks = StaticPrefs::browser_underline_anchors();
   sheetText.AppendPrintf("*|*:any-link%s { text-decoration: %s; }\n",
                          underlineLinks ? ":not(svg|a)" : "",
                          underlineLinks ? "underline" : "none");
 
   // Rules for focus styling.
 
-  bool focusRingOnAnything = aPrefs.mFocusRingOnAnything;
-  uint8_t focusRingWidth = aPrefs.mFocusRingWidth;
-  uint8_t focusRingStyle = aPrefs.mFocusRingStyle;
+  const bool focusRingOnAnything =
+      StaticPrefs::browser_display_focus_ring_on_anything();
+  uint8_t focusRingWidth = StaticPrefs::browser_display_focus_ring_width();
+  uint8_t focusRingStyle = StaticPrefs::browser_display_focus_ring_style();
 
   if ((focusRingWidth != 1 && focusRingWidth <= 4) || focusRingOnAnything) {
     if (focusRingWidth != 1) {
@@ -647,20 +622,16 @@ void GlobalStyleSheetCache::BuildPreferenceSheet(
     }
 
     sheetText.AppendPrintf(
-        "%s { outline: %dpx %s !important; %s}\n",
+        "%s { outline: %dpx %s !important; }\n",
         focusRingOnAnything ? ":focus" : "*|*:link:focus, *|*:visited:focus",
         focusRingWidth,
-        focusRingStyle == 0 ?  // solid
-            "solid -moz-mac-focusring"
-                            : "dotted WindowText",
-        focusRingStyle == 0 ?  // solid
-            "-moz-outline-radius: 3px; outline-offset: 1px; "
-                            : "");
+        focusRingStyle == 0 ? "solid -moz-mac-focusring" : "dotted WindowText");
   }
 
-  if (aPrefs.mUseFocusColors) {
-    nscolor focusText = aPrefs.mFocusTextColor;
-    nscolor focusBG = aPrefs.mFocusBackgroundColor;
+  if (StaticPrefs::browser_display_use_focus_colors()) {
+    const auto& colors = aPrefs.mLightColors;
+    nscolor focusText = colors.mFocusText;
+    nscolor focusBG = colors.mFocusBackground;
     sheetText.AppendPrintf(
         "*:focus, *:focus > font { color: #%02x%02x%02x !important; "
         "background-color: #%02x%02x%02x !important; }\n",
@@ -679,30 +650,47 @@ void GlobalStyleSheetCache::BuildPreferenceSheet(
 #undef NS_GET_R_G_B
 }
 
+bool GlobalStyleSheetCache::AffectedByPref(const nsACString& aPref) {
+  const char* prefs[] = {
+      StaticPrefs::GetPrefName_browser_display_show_focus_rings(),
+      StaticPrefs::GetPrefName_browser_display_focus_ring_style(),
+      StaticPrefs::GetPrefName_browser_display_focus_ring_width(),
+      StaticPrefs::GetPrefName_browser_display_focus_ring_on_anything(),
+      StaticPrefs::GetPrefName_browser_display_use_focus_colors(),
+      StaticPrefs::GetPrefName_browser_underline_anchors(),
+  };
+
+  for (const char* pref : prefs) {
+    if (aPref.Equals(pref)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /* static */ void GlobalStyleSheetCache::SetSharedMemory(
-    const base::SharedMemoryHandle& aHandle, uintptr_t aAddress) {
+    base::SharedMemoryHandle aHandle, uintptr_t aAddress) {
   MOZ_ASSERT(!XRE_IsParentProcess());
   MOZ_ASSERT(!gStyleCache, "Too late, GlobalStyleSheetCache already created!");
   MOZ_ASSERT(!sSharedMemory, "Shouldn't call this more than once");
 
   auto shm = MakeUnique<base::SharedMemory>();
-  if (!shm->SetHandle(aHandle, /* read_only */ true)) {
+  if (!shm->SetHandle(std::move(aHandle), /* read_only */ true)) {
     return;
   }
 
-  bool contentMapped =
-      shm->Map(kSharedMemorySize, reinterpret_cast<void*>(aAddress));
-  Telemetry::Accumulate(Telemetry::SHARED_MEMORY_UA_SHEETS_MAPPED_CHILD,
-                        contentMapped);
-  if (contentMapped) {
+  if (shm->Map(kSharedMemorySize, reinterpret_cast<void*>(aAddress))) {
     sSharedMemory = shm.release();
   }
 }
 
-bool GlobalStyleSheetCache::ShareToProcess(base::ProcessId aProcessId,
-                                           base::SharedMemoryHandle* aHandle) {
+base::SharedMemoryHandle GlobalStyleSheetCache::CloneHandle() {
   MOZ_ASSERT(XRE_IsParentProcess());
-  return sSharedMemory && sSharedMemory->ShareToProcess(aProcessId, aHandle);
+  if (sSharedMemory) {
+    return sSharedMemory->CloneHandle();
+  }
+  return nullptr;
 }
 
 StaticRefPtr<GlobalStyleSheetCache> GlobalStyleSheetCache::gStyleCache;

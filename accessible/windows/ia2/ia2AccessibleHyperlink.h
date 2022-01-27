@@ -15,6 +15,8 @@
 
 namespace mozilla {
 namespace a11y {
+class Accessible;
+class AccessibleWrap;
 
 class ia2AccessibleHyperlink : public ia2AccessibleAction,
                                public IAccessibleHyperlink {
@@ -41,6 +43,10 @@ class ia2AccessibleHyperlink : public ia2AccessibleAction,
 
   virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_valid(
       /* [retval][out] */ boolean* valid);
+
+ private:
+  Accessible* Acc();
+  AccessibleWrap* LocalAcc();
 };
 
 }  // namespace a11y

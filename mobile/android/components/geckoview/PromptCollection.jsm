@@ -17,22 +17,33 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   GeckoViewPrompter: "resource://gre/modules/GeckoViewPrompter.jsm",
 });
 
-const { debug, warn } = GeckoViewUtils.initLogging("PromptCollection"); // eslint-disable-line no-unused-vars
+const { debug, warn } = GeckoViewUtils.initLogging("PromptCollection");
 
 class PromptCollection {
-  beforeUnloadCheck(browsingContext) {
+  confirmRepost(browsingContext) {
     const msg = {
-      type: "beforeUnload",
+      type: "repost",
     };
     const prompter = new GeckoViewPrompter(browsingContext);
     const result = prompter.showPrompt(msg);
     return !!result?.allow;
   }
-}
 
-PromptCollection.prototype.classID = Components.ID(
-  "{3e30d2a0-9934-11ea-bb37-0242ac130002}"
-);
+  asyncBeforeUnloadCheck(browsingContext) {
+    return new Promise(resolve => {
+      const msg = {
+        type: "beforeUnload",
+      };
+      const prompter = new GeckoViewPrompter(browsingContext);
+      prompter.asyncShowPrompt(msg, resolve);
+    }).then(result => !!result?.allow);
+  }
+
+  confirmFolderUpload() {
+    // Folder upload is not supported by GeckoView yet, see Bug 1674428.
+    return false;
+  }
+}
 
 PromptCollection.prototype.QueryInterface = ChromeUtils.generateQI([
   "nsIPromptCollection",

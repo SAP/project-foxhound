@@ -7,9 +7,8 @@ const FP_PREF = "privacy.trackingprotection.fingerprinting.enabled";
 const ST_PREF = "privacy.trackingprotection.socialtracking.enabled";
 const STC_PREF = "privacy.socialtracking.block_cookies.enabled";
 
-ChromeUtils.import(
-  "resource://testing-common/CustomizableUITestUtils.jsm",
-  this
+const { CustomizableUITestUtils } = ChromeUtils.import(
+  "resource://testing-common/CustomizableUITestUtils.jsm"
 );
 
 registerCleanupFunction(function() {
@@ -183,7 +182,7 @@ add_task(async function testCategorySections() {
     await closeProtectionsPanel();
 
     let categoryItems = [
-      "protections-popup-category-tracking-protection",
+      "protections-popup-category-trackers",
       "protections-popup-category-socialblock",
       "protections-popup-category-cookies",
       "protections-popup-category-cryptominers",
@@ -235,7 +234,7 @@ add_task(async function testCategorySections() {
  */
 add_task(async function testCategorySectionInitial() {
   let categoryItems = [
-    "protections-popup-category-tracking-protection",
+    "protections-popup-category-trackers",
     "protections-popup-category-socialblock",
     "protections-popup-category-cookies",
     "protections-popup-category-cryptominers",

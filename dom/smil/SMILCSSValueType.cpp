@@ -13,6 +13,7 @@
 #include "nsCSSProps.h"
 #include "nsCSSValue.h"
 #include "nsDebug.h"
+#include "nsPresContextInlines.h"
 #include "nsPresContext.h"
 #include "nsString.h"
 #include "nsStyleUtil.h"
@@ -33,8 +34,8 @@ using namespace mozilla::dom;
 
 namespace mozilla {
 
-typedef CopyableAutoTArray<RefPtr<RawServoAnimationValue>, 1>
-    ServoAnimationValues;
+using ServoAnimationValues =
+    CopyableAutoTArray<RefPtr<RawServoAnimationValue>, 1>;
 
 /*static*/
 SMILCSSValueType SMILCSSValueType::sSingleton;
@@ -425,7 +426,8 @@ static ServoAnimationValues ValueFromStringHelper(nsCSSPropertyID aPropID,
   ServoCSSParser::ParsingEnvironment env =
       ServoCSSParser::GetParsingEnvironment(doc);
   RefPtr<RawServoDeclarationBlock> servoDeclarationBlock =
-      ServoCSSParser::ParseProperty(aPropID, aString, env,
+      ServoCSSParser::ParseProperty(aPropID, NS_ConvertUTF16toUTF8(aString),
+                                    env,
                                     ParsingMode::AllowUnitlessLength |
                                         ParsingMode::AllowAllNumericValues);
   if (!servoDeclarationBlock) {
@@ -460,7 +462,7 @@ void SMILCSSValueType::ValueFromString(nsCSSPropertyID aPropID,
   }
 
   RefPtr<ComputedStyle> computedStyle =
-      nsComputedDOMStyle::GetComputedStyle(aTargetElement, nullptr);
+      nsComputedDOMStyle::GetComputedStyle(aTargetElement);
   if (!computedStyle) {
     return;
   }

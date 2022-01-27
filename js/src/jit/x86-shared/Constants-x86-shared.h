@@ -7,9 +7,9 @@
 #ifndef jit_x86_shared_Constants_x86_shared_h
 #define jit_x86_shared_Constants_x86_shared_h
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 
+#include <iterator>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -89,7 +89,7 @@ inline const char* XMMRegName(XMMRegisterID reg) {
                                       "%xmm15"
 #endif
   };
-  MOZ_ASSERT(size_t(reg) < mozilla::ArrayLength(names));
+  MOZ_ASSERT(size_t(reg) < std::size(names));
   return names[reg];
 }
 
@@ -115,7 +115,7 @@ inline const char* GPReg64Name(RegisterID reg) {
                                       "%r15"
 #  endif
   };
-  MOZ_ASSERT(size_t(reg) < mozilla::ArrayLength(names));
+  MOZ_ASSERT(size_t(reg) < std::size(names));
   return names[reg];
 }
 #endif
@@ -141,7 +141,7 @@ inline const char* GPReg32Name(RegisterID reg) {
                                       "%r15d"
 #endif
   };
-  MOZ_ASSERT(size_t(reg) < mozilla::ArrayLength(names));
+  MOZ_ASSERT(size_t(reg) < std::size(names));
   return names[reg];
 }
 
@@ -166,7 +166,7 @@ inline const char* GPReg16Name(RegisterID reg) {
                                       "%r15w"
 #endif
   };
-  MOZ_ASSERT(size_t(reg) < mozilla::ArrayLength(names));
+  MOZ_ASSERT(size_t(reg) < std::size(names));
   return names[reg];
 }
 
@@ -191,7 +191,7 @@ inline const char* GPReg8Name(RegisterID reg) {
                                       "%r15b"
 #endif
   };
-  MOZ_ASSERT(size_t(reg) < mozilla::ArrayLength(names));
+  MOZ_ASSERT(size_t(reg) < std::size(names));
   return names[reg];
 }
 
@@ -229,7 +229,7 @@ inline HRegisterID GetSubregH(RegisterID reg) {
 inline const char* HRegName8(HRegisterID reg) {
   static const char* const names[] = {"%ah", "%ch", "%dh", "%bh"};
   size_t index = reg - GetSubregH(rax);
-  MOZ_ASSERT(index < mozilla::ArrayLength(names));
+  MOZ_ASSERT(index < std::size(names));
   return names[index];
 }
 
@@ -259,7 +259,7 @@ inline const char* CCName(Condition cc) {
   static const char* const names[] = {"o ", "no", "b ", "ae", "e ", "ne",
                                       "be", "a ", "s ", "ns", "p ", "np",
                                       "l ", "ge", "le", "g "};
-  MOZ_ASSERT(size_t(cc) < mozilla::ArrayLength(names));
+  MOZ_ASSERT(size_t(cc) < std::size(names));
   return names[cc];
 }
 
@@ -275,12 +275,23 @@ enum ConditionCmp {
   ConditionCmp_ORD = 0x7,
 };
 
-// Rounding modes for ROUNDSD.
+// Rounding modes for ROUNDSS / ROUNDSD.
 enum RoundingMode {
   RoundToNearest = 0x0,
   RoundDown = 0x1,
   RoundUp = 0x2,
   RoundToZero = 0x3
+};
+
+// Rounding modes for ROUNDPS / ROUNDPD.  Note these are the same as for
+// RoundingMode above but incorporate the 'inexact' bit which says not to signal
+// exceptions for lost precision.  It's not obvious that this bit is needed; it
+// was however suggested in the wasm SIMD proposal that led to these encodings.
+enum class SSERoundingMode {
+  RoundToNearest = 0x08,
+  RoundDown = 0x09,
+  RoundUp = 0x0A,
+  RoundToZero = 0x0B
 };
 
 // Test whether the given address will fit in an address immediate field.

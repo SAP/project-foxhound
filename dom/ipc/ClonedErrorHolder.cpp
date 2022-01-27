@@ -229,9 +229,10 @@ JSObject* ClonedErrorHolder::ReadStructuredClone(
   return &errorVal.toObject();
 }
 
-static JS::UniqueTwoByteChars ToJSStringBuffer(JSContext* aCx,
-                                               const nsString& aStr) {
-  size_t nbytes = aStr.Length() * sizeof(char16_t);
+static JS::UniqueTwoByteChars ToNullTerminatedJSStringBuffer(
+    JSContext* aCx, const nsString& aStr) {
+  // Since nsString is null terminated, we can simply copy + 1 characters.
+  size_t nbytes = (aStr.Length() + 1) * sizeof(char16_t);
   JS::UniqueTwoByteChars buffer(static_cast<char16_t*>(JS_malloc(aCx, nbytes)));
   if (buffer) {
     memcpy(buffer.get(), aStr.get(), nbytes);
@@ -285,7 +286,7 @@ bool ClonedErrorHolder::ToErrorValue(JSContext* aCx,
     // crash. Make this code against robust against this by treating void
     // strings as the empty string.
     if (mFilename.IsVoid()) {
-      mFilename.Assign(EmptyCString());
+      mFilename.Assign(""_ns);
     }
 
     if (!ToJSString(aCx, mFilename, &filename) ||
@@ -301,7 +302,15 @@ bool ClonedErrorHolder::ToErrorValue(JSContext* aCx,
       JS::Rooted<JSObject*> errObj(aCx, &aResult.toObject());
       if (JSErrorReport* err = JS_ErrorFromException(aCx, errObj)) {
         NS_ConvertUTF8toUTF16 sourceLine(mSourceLine);
-        if (JS::UniqueTwoByteChars buffer = ToJSStringBuffer(aCx, sourceLine)) {
+        // Because this string ends up being consumed as an nsDependentString
+        // in nsXPCComponents_Utils::ReportError, this needs to be a null
+        // terminated string.
+        //
+        // See Bug 1699569.
+        if (mTokenOffset >= sourceLine.Length()) {
+          // Corrupt data, leave linebuf unset.
+        } else if (JS::UniqueTwoByteChars buffer =
+                ToNullTerminatedJSStringBuffer(aCx, sourceLine)) {
           err->initOwnedLinebuf(buffer.release(), sourceLine.Length(),
                                 mTokenOffset);
         } else {
@@ -332,6 +341,9 @@ bool ClonedErrorHolder::Holder::ReadStructuredCloneInternal(
   uint32_t length;
   uint32_t version;
   if (!JS_ReadUint32Pair(aReader, &length, &version)) {
+    return false;
+  }
+  if (length % 8 != 0) {
     return false;
   }
 

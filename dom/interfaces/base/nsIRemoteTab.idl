@@ -13,21 +13,6 @@ webidl WindowGlobalParent;
 interface nsIRemoteTab : nsISupports
 {
   /**
-   * Manages the docshell active state of the remote browser. Setting the
-   * docShell to be active will also cause it to render layers and upload
-   * them to the compositor. Setting the docShell as not active will clear
-   * those layers.
-   */
-  attribute boolean docShellIsActive;
-
-  /**
-   * Manages the flag of the remote docshell, which is used to determine if the
-   * media element in that remote docshell should be suspended when the docshell
-   * is inactive.
-   */
-  attribute boolean suspendMediaWhenInactive;
-
-  /**
    * When set to true, this tells the child to paint and upload layers to
    * the compositor. When set to false, previous layers are cleared from
    * the compositor, but only if preserveLayers is also set to false.
@@ -77,30 +62,16 @@ interface nsIRemoteTab : nsISupports
   void transmitPermissionsForPrincipal(in nsIPrincipal aPrincipal);
 
   /**
-   * True if any of the frames loaded in the tab have registered
-   * an onbeforeunload event handler.
+   * Similar to `nsIDocShell.createAboutBlankContentViewer` but on a remote
+   * frame.  The docShell must not yet have navigated away from the initial
+   * about:blank document when this method is called.
+   *
+   * @param aPrincipal the principal to use for the new document.
+   * @param aPartitionedPrincipal the partitioned principal to use for the new
+   *        document.
    */
-  readonly attribute boolean hasBeforeUnload;
-
-  /**
-   * Notify APZ to start autoscrolling.
-   * (aAnchorX, aAnchorY) are the coordinates of the autoscroll anchor,
-   * in CSS coordinates relative to the screen. aScrollId and
-   * aPresShellId identify the scroll frame that content chose to scroll.
-   * Returns whether we were successfully able to notify APZ.
-   * If this function returns true, APZ (which may live in another process)
-   * may still reject the autoscroll, but it's then APZ's reponsibility
-   * to notify content via an "autoscroll-rejected-by-apz" message.
-   */
-  boolean startApzAutoscroll(in float aAnchorX, in float aAnchorY,
-                             in nsViewID aScrollId, in uint32_t aPresShellId);
-
-  /**
-   * Notify APZ to stop autoscrolling.
-   * aScrollId and aPresShellId identify the scroll frame that is being
-   * autoscrolled.
-   */
-  void stopApzAutoscroll(in nsViewID aScrollId, in uint32_t aPresShellId);
+  void createAboutBlankContentViewer(in nsIPrincipal aPrincipal,
+                                     in nsIPrincipal aPartitionedPrincipal);
 
   cenum NavigationType : 8 {
     NAVIGATE_BACK = 0,

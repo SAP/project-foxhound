@@ -3,9 +3,8 @@
 
 "use strict";
 
-ChromeUtils.import(
-  "resource://testing-common/CustomizableUITestUtils.jsm",
-  this
+const { CustomizableUITestUtils } = ChromeUtils.import(
+  "resource://testing-common/CustomizableUITestUtils.jsm"
 );
 let gCUITestUtils = new CustomizableUITestUtils(window);
 
@@ -23,14 +22,9 @@ add_task(async function test_panelview_bookmarks_delete() {
 
   await gCUITestUtils.openMainMenu();
 
-  document.getElementById("appMenu-library-button").click();
-  let libraryView = document.getElementById("appMenu-libraryView");
-  let promise = BrowserTestUtils.waitForEvent(libraryView, "ViewShown");
-  await promise;
-
-  document.getElementById("appMenu-library-bookmarks-button").click();
+  document.getElementById("appMenu-bookmarks-button").click();
   let bookmarksView = document.getElementById("PanelUI-bookmarks");
-  promise = BrowserTestUtils.waitForEvent(bookmarksView, "ViewShown");
+  let promise = BrowserTestUtils.waitForEvent(bookmarksView, "ViewShown");
   await promise;
 
   let list = document.getElementById("panelMenu_bookmarksMenu");
@@ -54,8 +48,10 @@ add_task(async function test_panelview_bookmarks_delete() {
     });
     observer.observe(list, { childList: true });
   });
-  let placesContextDelete = document.getElementById("placesContext_delete");
-  EventUtils.synthesizeMouseAtCenter(placesContextDelete, {});
+  let placesContextDelete = document.getElementById(
+    "placesContext_deleteBookmark"
+  );
+  placesContext.activateItem(placesContextDelete, {});
   await promise;
 
   await gCUITestUtils.hideMainMenu();

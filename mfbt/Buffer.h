@@ -5,9 +5,10 @@
 #ifndef mozilla_Buffer_h
 #define mozilla_Buffer_h
 
-#include <algorithm>
+#include <cstddef>
 #include <iterator>
 
+#include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Span.h"
 #include "mozilla/UniquePtr.h"
@@ -143,12 +144,8 @@ class Buffer final {
     return Some(Buffer(std::move(data), aLength));
   }
 
-  mozilla::Span<const T> AsSpan() const {
-    return mozilla::MakeSpan(mData.get(), mLength);
-  }
-  mozilla::Span<T> AsWritableSpan() {
-    return mozilla::MakeSpan(mData.get(), mLength);
-  }
+  auto AsSpan() const { return mozilla::Span<const T>{mData.get(), mLength}; }
+  auto AsWritableSpan() { return mozilla::Span<T>{mData.get(), mLength}; }
   operator mozilla::Span<const T>() const { return AsSpan(); }
   operator mozilla::Span<T>() { return AsWritableSpan(); }
 

@@ -2,9 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
-import { escapeRegExp } from "lodash";
 import buildQuery from "../build-query";
 
 describe("build-query", () => {
@@ -234,7 +231,7 @@ describe("build-query", () => {
       { ignoreSpaces: true }
     );
 
-    expect(query.source).toBe(escapeRegExp("(?!\\s*.*)"));
+    expect(query.source).toBe("(?!\\s*.*)");
     expect(query.flags).toBe("");
     expect(query.global).toBe(false);
     expect(query.ignoreCase).toBe(false);
@@ -251,7 +248,7 @@ describe("build-query", () => {
       { isGlobal: true, ignoreSpaces: true }
     );
 
-    expect(query.source).toBe(escapeRegExp("(?!\\s*.*)"));
+    expect(query.source).toBe("(?!\\s*.*)");
     expect(query.flags).toBe("g");
     expect(query.global).toBe(true);
     expect(query.ignoreCase).toBe(false);

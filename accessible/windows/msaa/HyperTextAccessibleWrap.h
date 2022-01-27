@@ -9,32 +9,19 @@
 #define mozilla_a11y_HyperTextAccessibleWrap_h__
 
 #include "HyperTextAccessible.h"
-#include "ia2AccessibleEditableText.h"
-#include "ia2AccessibleHypertext.h"
-#include "IUnknownImpl.h"
 
 namespace mozilla {
-template <class T>
-class StaticAutoPtr;
-template <class T>
-class StaticRefPtr;
 
 namespace a11y {
 
-class HyperTextAccessibleWrap : public HyperTextAccessible,
-                                public ia2AccessibleHypertext,
-                                public ia2AccessibleEditableText {
+class HyperTextAccessibleWrap : public HyperTextAccessible {
  public:
-  HyperTextAccessibleWrap(nsIContent* aContent, DocAccessible* aDoc)
-      : HyperTextAccessible(aContent, aDoc) {}
-
-  // IUnknown
-  DECL_IUNKNOWN_INHERITED
+  using HyperTextAccessible::HyperTextAccessible;
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
-  // Accessible
+  // LocalAccessible
   virtual nsresult HandleAccEvent(AccEvent* aEvent);
 
  protected:

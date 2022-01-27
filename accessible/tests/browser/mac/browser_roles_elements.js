@@ -73,17 +73,66 @@ addAccessibleTask(
   <div id="timer" role="timer"></div>
   <div id="tooltip" role="tooltip"></div>
 
+  <!-- text entries -->
+  <div id="textbox_multiline" role="textbox" aria-multiline="true"></div>
+  <div id="textbox_singleline" role="textbox" aria-multiline="false"></div>
+  <textarea id="textArea"></textarea>
+  <input id="textInput">
+
   <!-- True HTML5 search box -->
   <input type="search" id="htmlSearch" />
 
   <!-- A button morphed into a toggle via ARIA -->
   <button id="toggle" aria-pressed="false"></button>
 
+  <!-- A button with a 'banana' role description -->
+  <button id="banana" aria-roledescription="banana"></button>
+
   <!-- Other elements -->
   <del id="deletion">Deleted text</del>
   <dl id="dl"><dt id="dt">term</dt><dd id="dd">definition</dd></dl>
   <hr id="hr" />
-  <ins id="insertion">Inserted text</ins>`,
+  <ins id="insertion">Inserted text</ins>
+  <meter id="meter" min="0" max="100" value="24">meter text here</meter>
+
+  <!-- Some SVG stuff -->
+  <svg xmlns="http://www.w3.org/2000/svg" version="1.1" id="svg"
+       xmlns:xlink="http://www.w3.org/1999/xlink">
+    <g id="g">
+      <title>g</title>
+    </g>
+    <rect width="300" height="100" id="rect"
+          style="fill:rgb(0,0,255);stroke-width:1;stroke:rgb(0,0,0)">
+      <title>rect</title>
+    </rect>
+    <circle cx="100" cy="50" r="40" stroke="black" id="circle"
+            stroke-width="2" fill="red">
+      <title>circle</title>
+    </circle>
+    <ellipse cx="300" cy="80" rx="100" ry="50" id="ellipse"
+             style="fill:yellow;stroke:purple;stroke-width:2">
+      <title>ellipse</title>
+    </ellipse>
+    <line x1="0" y1="0" x2="200" y2="200" id="line"
+          style="stroke:rgb(255,0,0);stroke-width:2">
+      <title>line</title>
+    </line>
+    <polygon points="200,10 250,190 160,210" id="polygon"
+             style="fill:lime;stroke:purple;stroke-width:1">
+      <title>polygon</title>
+    </polygon>
+    <polyline points="20,20 40,25 60,40 80,120 120,140 200,180" id="polyline"
+              style="fill:none;stroke:black;stroke-width:3" >
+      <title>polyline</title>
+    </polyline>
+    <path d="M150 0 L75 200 L225 200 Z" id="path">
+      <title>path</title>
+    </path>
+    <image x1="25" y1="80" width="50" height="20" id="image"
+           xlink:href="../moz.png">
+      <title>image</title>
+    </image>
+  </svg>`,
   (browser, accDoc) => {
     // WAI-ARIA landmark subroles, regardless of AXRole
     testRoleAndSubRole(accDoc, "application", null, "AXLandmarkApplication");
@@ -131,7 +180,13 @@ addAccessibleTask(
     testRoleAndSubRole(accDoc, "ariaStatus", "AXGroup", "AXApplicationStatus");
     testRoleAndSubRole(accDoc, "switch", "AXCheckBox", "AXSwitch");
     testRoleAndSubRole(accDoc, "timer", null, "AXApplicationTimer");
-    testRoleAndSubRole(accDoc, "tooltip", null, "AXUserInterfaceTooltip");
+    testRoleAndSubRole(accDoc, "tooltip", "AXGroup", "AXUserInterfaceTooltip");
+
+    // Text boxes
+    testRoleAndSubRole(accDoc, "textbox_multiline", "AXTextArea");
+    testRoleAndSubRole(accDoc, "textbox_singleline", "AXTextField");
+    testRoleAndSubRole(accDoc, "textArea", "AXTextArea");
+    testRoleAndSubRole(accDoc, "textInput", "AXTextField");
 
     // True HTML5 search field
     testRoleAndSubRole(accDoc, "htmlSearch", "AXTextField", "AXSearchField");
@@ -139,13 +194,35 @@ addAccessibleTask(
     // A button morphed into a toggle by ARIA
     testRoleAndSubRole(accDoc, "toggle", "AXCheckBox", "AXToggle");
 
+    // A banana button
+    testRoleAndSubRole(accDoc, "banana", "AXButton", null, "banana");
+
     // Other elements
     testRoleAndSubRole(accDoc, "deletion", "AXGroup", "AXDeleteStyleGroup");
-    testRoleAndSubRole(accDoc, "dl", "AXList", "AXDefinitionList");
+    testRoleAndSubRole(accDoc, "dl", "AXList", "AXDescriptionList");
     testRoleAndSubRole(accDoc, "dt", "AXGroup", "AXTerm");
-    testRoleAndSubRole(accDoc, "dd", "AXGroup", "AXDefinition");
+    testRoleAndSubRole(accDoc, "dd", "AXGroup", "AXDescription");
     testRoleAndSubRole(accDoc, "hr", "AXSplitter", "AXContentSeparator");
     testRoleAndSubRole(accDoc, "insertion", "AXGroup", "AXInsertStyleGroup");
+    testRoleAndSubRole(
+      accDoc,
+      "meter",
+      "AXLevelIndicator",
+      null,
+      "level indicator"
+    );
+
+    // Some SVG stuff
+    testRoleAndSubRole(accDoc, "svg", "AXImage");
+    testRoleAndSubRole(accDoc, "g", "AXGroup");
+    testRoleAndSubRole(accDoc, "rect", "AXImage");
+    testRoleAndSubRole(accDoc, "circle", "AXImage");
+    testRoleAndSubRole(accDoc, "ellipse", "AXImage");
+    testRoleAndSubRole(accDoc, "line", "AXImage");
+    testRoleAndSubRole(accDoc, "polygon", "AXImage");
+    testRoleAndSubRole(accDoc, "polyline", "AXImage");
+    testRoleAndSubRole(accDoc, "path", "AXImage");
+    testRoleAndSubRole(accDoc, "image", "AXImage");
   }
 );
 
@@ -202,3 +279,39 @@ addAccessibleTask(
     );
   }
 );
+
+addAccessibleTask(`<button>hello world</button>`, async (browser, accDoc) => {
+  const webArea = accDoc.nativeInterface.QueryInterface(
+    Ci.nsIAccessibleMacInterface
+  );
+
+  is(
+    webArea.getAttributeValue("AXRole"),
+    "AXWebArea",
+    "web area should be an AXWebArea"
+  );
+  ok(
+    !webArea.attributeNames.includes("AXSubrole"),
+    "AXWebArea should not have a subrole"
+  );
+
+  let roleChanged = waitForMacEvent("AXMozRoleChanged");
+  await SpecialPowers.spawn(browser, [], () => {
+    content.document.body.setAttribute("role", "application");
+  });
+  await roleChanged;
+
+  is(
+    webArea.getAttributeValue("AXRole"),
+    "AXWebArea",
+    "web area should retain AXWebArea role"
+  );
+  ok(
+    !webArea.attributeNames.includes("AXSubrole"),
+    "AXWebArea should not have a subrole"
+  );
+
+  let rootGroup = webArea.getAttributeValue("AXChildren")[0];
+  is(rootGroup.getAttributeValue("AXRole"), "AXGroup");
+  is(rootGroup.getAttributeValue("AXSubrole"), "AXLandmarkApplication");
+});

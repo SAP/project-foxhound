@@ -17,6 +17,7 @@
 #include "Units.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/UniquePtr.h"
 
 class nsViewManager;
 class nsIWidget;
@@ -37,14 +38,14 @@ class PresShell;
  * has a widget it must also have a view, but not all frames with views will
  * have widgets.
  *
- * Only five types of frames can have a view: root frames (ViewportFrame),
- * subdocument frames (nsSubDocumentFrame), plugin frames (nsPluginFrame),
+ * Only four types of frames can have a view: root frames (ViewportFrame),
+ * subdocument frames (nsSubDocumentFrame),
  * menu popup frames (nsMenuPopupFrame), and list control frames
  * (nsListControlFrame). Root frames and subdocument frames have views to link
  * the two documents together (the frame trees do not link up otherwise).
- * Plugin frames, menu popup frames, and list control frames have views because
- * they (sometimes) need to create widgets (although plugins with widgets might
- * be going away/gone?). Menu popup frames handles xul popups, which is anything
+ * Menu popup frames, and list control frames have views because
+ * they (sometimes) need to create widgets.
+ * Menu popup frames handles xul popups, which is anything
  * where we need content to go over top the main window at an os level. List
  * control frames handle select popups/dropdowns in non-e10s mode.
  *
@@ -57,10 +58,8 @@ class PresShell;
  * root frame is created, so the root view will not have a frame very early in
  * document creation.
  *
- * Subdocument frames and plugin frames have an anonymous (no frame associated
- * with it) inner view that is a child of their "outer" view. On a plugin frame
- * with a widget the inner view would be associated with the widget (as opposed
- * to the outer view).
+ * Subdocument frames have an anonymous (no frame associated
+ * with it) inner view that is a child of their "outer" view.
  *
  * On a subdocument frame the inner view serves as the parent of the
  * root view of the subdocument. The outer and inner view of the subdocument
@@ -141,7 +140,7 @@ class nsView final : public nsIWidgetListener {
    * @return the view the widget belongs to, or null if the widget doesn't
    * belong to any view.
    */
-  static nsView* GetViewFor(nsIWidget* aWidget);
+  static nsView* GetViewFor(const nsIWidget* aWidget);
 
   /**
    * Destroy the view.
@@ -433,14 +432,13 @@ class nsView final : public nsIWidgetListener {
     mNextSibling = aSibling;
   }
 
-  nsRegion* GetDirtyRegion() {
+  nsRegion& GetDirtyRegion() {
     if (!mDirtyRegion) {
       NS_ASSERTION(!mParent || GetFloating(),
                    "Only display roots should have dirty regions");
-      mDirtyRegion = new nsRegion();
-      NS_ASSERTION(mDirtyRegion, "Out of memory!");
+      mDirtyRegion = mozilla::MakeUnique<nsRegion>();
     }
-    return mDirtyRegion;
+    return *mDirtyRegion;
   }
 
   // nsIWidgetListener
@@ -549,7 +547,7 @@ class nsView final : public nsIWidgetListener {
   nsView* mNextSibling;
   nsView* mFirstChild;
   nsIFrame* mFrame;
-  nsRegion* mDirtyRegion;
+  mozilla::UniquePtr<nsRegion> mDirtyRegion;
   int32_t mZIndex;
   nsViewVisibility mVis;
   // position relative our parent view origin but in our appunits

@@ -48,16 +48,11 @@ var ShortcutUtils = {
    *
    * @param Node aElemKey
    *        The key element to get the modifiers from.
-   * @param boolean aNoCloverLeaf
-   *        Pass true to use a descriptive string instead of the cloverleaf symbol. (OS X only)
    * @return string
    *         A prettified and properly separated modifier keys string.
    */
-  prettifyShortcut(aElemKey, aNoCloverLeaf) {
-    let elemString = this.getModifierString(
-      aElemKey.getAttribute("modifiers"),
-      aNoCloverLeaf
-    );
+  prettifyShortcut(aElemKey) {
+    let elemString = this.getModifierString(aElemKey.getAttribute("modifiers"));
     let key = this.getKeyString(
       aElemKey.getAttribute("keycode"),
       aElemKey.getAttribute("key")
@@ -65,19 +60,13 @@ var ShortcutUtils = {
     return elemString + key;
   },
 
-  getModifierString(elemMod, aNoCloverLeaf) {
+  getModifierString(elemMod) {
     let elemString = "";
     let haveCloverLeaf = false;
 
     if (elemMod.match("accel")) {
       if (Services.appinfo.OS == "Darwin") {
-        // XXX bug 779642 Use "Cmd-" literal vs. cloverleaf meta-key until
-        // Orion adds variable height lines.
-        if (aNoCloverLeaf) {
-          elemString += "Cmd-";
-        } else {
-          haveCloverLeaf = true;
-        }
+        haveCloverLeaf = true;
       } else {
         elemString +=
           PlatformKeys.GetStringFromName("VK_CONTROL") +
@@ -134,6 +123,15 @@ var ShortcutUtils = {
     let key;
     if (keyCode) {
       keyCode = keyCode.toUpperCase();
+      if (AppConstants.platform == "macosx") {
+        // Return fancy Unicode symbols for some keys.
+        switch (keyCode) {
+          case "VK_LEFT":
+            return "\u2190"; // U+2190 LEFTWARDS ARROW
+          case "VK_RIGHT":
+            return "\u2192"; // U+2192 RIGHTWARDS ARROW
+        }
+      }
       try {
         let bundle = keyCode == "VK_RETURN" ? PlatformKeys : Keys;
         // Some keys might not exist in the locale file, which will throw.

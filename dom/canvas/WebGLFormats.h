@@ -15,7 +15,7 @@
 namespace mozilla {
 namespace webgl {
 
-typedef uint8_t EffectiveFormatValueT;
+using EffectiveFormatValueT = uint8_t;
 
 enum class EffectiveFormat : EffectiveFormatValueT {
   // GLES 3.0.4, p128-129, "Required Texture Formats"
@@ -188,6 +188,16 @@ enum class EffectiveFormat : EffectiveFormatValueT {
   Luminance16FAlpha16F,
   Luminance16F,
   Alpha16F,
+
+  // EXT_texture_norm16
+  R16,
+  RG16,
+  RGB16,
+  RGBA16,
+  R16_SNORM,
+  RG16_SNORM,
+  RGB16_SNORM,
+  RGBA16_SNORM,
 
   MAX,
 };

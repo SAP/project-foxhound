@@ -1,5 +1,3 @@
-extern crate rayon;
-
 use rayon::iter::plumbing::*;
 use rayon::prelude::*;
 
@@ -111,6 +109,12 @@ fn check_len<I: ExactSizeIterator>(iter: &I, len: usize) {
 // **** Base Producers ****
 
 #[test]
+fn array() {
+    let a = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    check(&a, || a);
+}
+
+#[test]
 fn empty() {
     let v = vec![42];
     check(&v[..0], rayon::iter::empty);
@@ -175,6 +179,15 @@ fn slice_chunks() {
 }
 
 #[test]
+fn slice_chunks_exact() {
+    let s: Vec<_> = (0..10).collect();
+    for len in 1..s.len() + 2 {
+        let v: Vec<_> = s.chunks_exact(len).collect();
+        check(&v, || s.par_chunks_exact(len));
+    }
+}
+
+#[test]
 fn slice_chunks_mut() {
     let mut s: Vec<_> = (0..10).collect();
     let mut v: Vec<_> = s.clone();
@@ -183,6 +196,19 @@ fn slice_chunks_mut() {
         map_triples(expected.len() + 1, |i, j, k| {
             Split::forward(s.par_chunks_mut(len), i, j, k, &expected);
             Split::reverse(s.par_chunks_mut(len), i, j, k, &expected);
+        });
+    }
+}
+
+#[test]
+fn slice_chunks_exact_mut() {
+    let mut s: Vec<_> = (0..10).collect();
+    let mut v: Vec<_> = s.clone();
+    for len in 1..s.len() + 2 {
+        let expected: Vec<_> = v.chunks_exact_mut(len).collect();
+        map_triples(expected.len() + 1, |i, j, k| {
+            Split::forward(s.par_chunks_exact_mut(len), i, j, k, &expected);
+            Split::reverse(s.par_chunks_exact_mut(len), i, j, k, &expected);
         });
     }
 }
@@ -224,6 +250,18 @@ fn copied() {
 fn enumerate() {
     let v: Vec<_> = (0..10).enumerate().collect();
     check(&v, || (0..10).into_par_iter().enumerate());
+}
+
+#[test]
+fn step_by() {
+    let v: Vec<_> = (0..10).step_by(2).collect();
+    check(&v, || (0..10).into_par_iter().step_by(2))
+}
+
+#[test]
+fn step_by_unaligned() {
+    let v: Vec<_> = (0..10).step_by(3).collect();
+    check(&v, || (0..10).into_par_iter().step_by(3))
 }
 
 #[test]

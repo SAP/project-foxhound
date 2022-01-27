@@ -29,9 +29,10 @@ var tests = [
     // Result: Element language.
     [ "en-GB", "", "en-GB" ],
     [ "en-gb", "", "en-GB" ],
-    // Result: Random en-*.
+    // Result: Random en-* or en-US (if application locale is en-US).
     [ "en-ZA-not-avail", "", "*" ],
     [ "en-generic",      "", "*" ],
+    [ "en",              "", "*" ],
     // Result: Locale.
     [ "ko-not-avail",    "", "en-US" ],
 
@@ -48,6 +49,7 @@ var tests = [
   ];
 
 var loadCount = 0;
+var retrying = false;
 var script;
 
 var loadListener = async function(evt) {
@@ -102,6 +104,7 @@ function continueTest(evt) {
   var editor = SpecialPowers.wrap(elem).editor;
   editor.setSpellcheckUserOverride(true);
   var inlineSpellChecker = editor.getInlineSpellChecker(true);
+  const is_en_US = SpecialPowers.Services.locale.appLocaleAsBCP47 == "en-US";
 
   SpecialPowers.Cu.import(
     "resource://testing-common/AsyncSpellCheckTestHelper.jsm")
@@ -111,14 +114,29 @@ function continueTest(evt) {
       var dict = spellchecker.GetCurrentDictionary();
     } catch (e) {}
 
-    if (tests[loadCount][2] != "*") {
-      is(dict, tests[loadCount][2], "expected " + tests[loadCount][2]);
+    if (!dict && !retrying) {
+      // It's possible for an asynchronous font-list update to cause a reflow
+      // that disrupts the async spell-check and results in not getting a
+      // current dictionary here; if that happens, we retry the same testcase
+      // by reloading the iframe without bumping loadCount.
+      info(`No current dictionary: retrying testcase ${loadCount}`);
+      retrying = true;
     } else {
-      var gotEn = (dict == "en-GB" || dict == "en-AU" || dict == "en-US");
-      is(gotEn, true, "expected en-AU or en-GB or en-US");
+      if (tests[loadCount][2] != "*") {
+        is(dict, tests[loadCount][2], "expected " + tests[loadCount][2]);
+      } else if (is_en_US && tests[loadCount][0].startsWith("en")) {
+        // Current application locale is en-US and content lang is en or
+        // en-unknown, so we should use en-US dictionary as default.
+        is(dict, "en-US", "expected en-US that is application locale");
+      } else {
+        var gotEn = (dict == "en-GB" || dict == "en-AU" || dict == "en-US");
+        is(gotEn, true, "expected en-AU or en-GB or en-US");
+      }
+
+      loadCount++;
+      retrying = false;
     }
 
-    loadCount++;
     if (loadCount < tests.length) {
       // Load the iframe again.
       content.src = "http://mochi.test:8888/tests/editor/spellchecker/tests/bug1200533_subframe.html?firstload=false";

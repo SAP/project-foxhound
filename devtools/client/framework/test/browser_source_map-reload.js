@@ -5,9 +5,9 @@
 
 "use strict";
 
-const INITIAL_URL = URL_ROOT + "doc_empty-tab-01.html";
-const PAGE_URL = URL_ROOT + "doc_reload.html";
-const JS_URL = URL_ROOT + "sjs_code_reload.sjs";
+const INITIAL_URL = URL_ROOT_SSL + "doc_empty-tab-01.html";
+const PAGE_URL = URL_ROOT_SSL + "doc_reload.html";
+const JS_URL = URL_ROOT_SSL + "sjs_code_reload.sjs";
 
 const ORIGINAL_URL_1 = "webpack:///code_reload_1.js";
 const ORIGINAL_URL_2 = "webpack:///code_reload_2.js";
@@ -35,7 +35,7 @@ add_task(async function() {
   // Reload the page.  The sjs ensures that a different source file
   // will be loaded.
   sourceSeen = waitForSourceLoad(toolbox, JS_URL);
-  await refreshTab();
+  await reloadBrowser();
   await sourceSeen;
 
   info(
@@ -49,5 +49,4 @@ add_task(async function() {
 
   await toolbox.destroy();
   gBrowser.removeCurrentTab();
-  finish();
 });

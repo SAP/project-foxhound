@@ -5,7 +5,8 @@
 
 #include "nsAccUtils.h"
 
-#include "Accessible-inl.h"
+#include "LocalAccessible-inl.h"
+#include "AccAttributes.h"
 #include "ARIAMap.h"
 #include "nsAccessibilityService.h"
 #include "nsCoreUtils.h"
@@ -17,63 +18,38 @@
 #include "TextLeafAccessible.h"
 
 #include "nsIDOMXULContainerElement.h"
-#include "nsIPersistentProperties2.h"
+#include "nsISimpleEnumerator.h"
 #include "mozilla/a11y/PDocAccessibleChild.h"
+#include "mozilla/a11y/RemoteAccessible.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/StaticPrefs_accessibility.h"
 #include "nsAccessibilityService.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
 
-void nsAccUtils::GetAccAttr(nsIPersistentProperties* aAttributes,
-                            nsAtom* aAttrName, nsAString& aAttrValue) {
-  aAttrValue.Truncate();
-
-  aAttributes->GetStringProperty(nsAtomCString(aAttrName), aAttrValue);
-}
-
-void nsAccUtils::SetAccAttr(nsIPersistentProperties* aAttributes,
-                            nsAtom* aAttrName, const nsAString& aAttrValue) {
-  nsAutoString oldValue;
-  aAttributes->SetStringProperty(nsAtomCString(aAttrName), aAttrValue,
-                                 oldValue);
-}
-
-void nsAccUtils::SetAccAttr(nsIPersistentProperties* aAttributes,
-                            nsAtom* aAttrName, nsAtom* aAttrValue) {
-  nsAutoString oldValue;
-  aAttributes->SetStringProperty(nsAtomCString(aAttrName),
-                                 nsAtomString(aAttrValue), oldValue);
-}
-
-void nsAccUtils::SetAccGroupAttrs(nsIPersistentProperties* aAttributes,
-                                  int32_t aLevel, int32_t aSetSize,
-                                  int32_t aPosInSet) {
+void nsAccUtils::SetAccGroupAttrs(AccAttributes* aAttributes, int32_t aLevel,
+                                  int32_t aSetSize, int32_t aPosInSet) {
   nsAutoString value;
 
   if (aLevel) {
-    value.AppendInt(aLevel);
-    SetAccAttr(aAttributes, nsGkAtoms::level, value);
+    aAttributes->SetAttribute(nsGkAtoms::level, aLevel);
   }
 
   if (aSetSize && aPosInSet) {
-    value.Truncate();
-    value.AppendInt(aPosInSet);
-    SetAccAttr(aAttributes, nsGkAtoms::posinset, value);
-
-    value.Truncate();
-    value.AppendInt(aSetSize);
-    SetAccAttr(aAttributes, nsGkAtoms::setsize, value);
+    aAttributes->SetAttribute(nsGkAtoms::posinset, aPosInSet);
+    aAttributes->SetAttribute(nsGkAtoms::setsize, aSetSize);
   }
 }
 
-int32_t nsAccUtils::GetDefaultLevel(const Accessible* aAccessible) {
+int32_t nsAccUtils::GetDefaultLevel(const LocalAccessible* aAccessible) {
   roles::Role role = aAccessible->Role();
 
   if (role == roles::OUTLINEITEM) return 1;
 
   if (role == roles::ROW) {
-    Accessible* parent = aAccessible->Parent();
+    LocalAccessible* parent = aAccessible->LocalParent();
     // It is a row inside flatten treegrid. Group level is always 1 until it
     // is overriden by aria-level attribute.
     if (parent && parent->Role() == roles::TREE_TABLE) return 1;
@@ -82,7 +58,7 @@ int32_t nsAccUtils::GetDefaultLevel(const Accessible* aAccessible) {
   return 0;
 }
 
-int32_t nsAccUtils::GetARIAOrDefaultLevel(const Accessible* aAccessible) {
+int32_t nsAccUtils::GetARIAOrDefaultLevel(const LocalAccessible* aAccessible) {
   int32_t level = 0;
   nsCoreUtils::GetUIntAttr(aAccessible->GetContent(), nsGkAtoms::aria_level,
                            &level);
@@ -115,8 +91,8 @@ int32_t nsAccUtils::GetLevelForXULContainerItem(nsIContent* aContent) {
   return level;
 }
 
-void nsAccUtils::SetLiveContainerAttributes(
-    nsIPersistentProperties* aAttributes, nsIContent* aStartContent) {
+void nsAccUtils::SetLiveContainerAttributes(AccAttributes* aAttributes,
+                                            nsIContent* aStartContent) {
   nsAutoString live, relevant, busy;
   dom::Document* doc = aStartContent->GetComposedDoc();
   if (!doc) {
@@ -129,8 +105,10 @@ void nsAccUtils::SetLiveContainerAttributes(
     if (relevant.IsEmpty() &&
         HasDefinedARIAToken(ancestor, nsGkAtoms::aria_relevant) &&
         ancestor->AsElement()->GetAttr(kNameSpaceID_None,
-                                       nsGkAtoms::aria_relevant, relevant))
-      SetAccAttr(aAttributes, nsGkAtoms::containerRelevant, relevant);
+                                       nsGkAtoms::aria_relevant, relevant)) {
+      aAttributes->SetAttributeStringCopy(nsGkAtoms::containerRelevant,
+                                          relevant);
+    }
 
     // container-live, and container-live-role attributes
     if (live.IsEmpty()) {
@@ -144,15 +122,15 @@ void nsAccUtils::SetLiveContainerAttributes(
       } else if (role) {
         GetLiveAttrValue(role->liveAttRule, live);
       } else if (nsStaticAtom* value = GetAccService()->MarkupAttribute(
-                     ancestor, nsGkAtoms::live)) {
+                     ancestor, nsGkAtoms::aria_live)) {
         value->ToString(live);
       }
 
       if (!live.IsEmpty()) {
-        SetAccAttr(aAttributes, nsGkAtoms::containerLive, live);
+        aAttributes->SetAttributeStringCopy(nsGkAtoms::containerLive, live);
         if (role) {
-          SetAccAttr(aAttributes, nsGkAtoms::containerLiveRole,
-                     role->ARIARoleString());
+          aAttributes->SetAttribute(nsGkAtoms::containerLiveRole,
+                                    role->roleAtom);
         }
       }
     }
@@ -161,14 +139,15 @@ void nsAccUtils::SetLiveContainerAttributes(
     if (ancestor->IsElement() && ancestor->AsElement()->AttrValueIs(
                                      kNameSpaceID_None, nsGkAtoms::aria_atomic,
                                      nsGkAtoms::_true, eCaseMatters)) {
-      SetAccAttr(aAttributes, nsGkAtoms::containerAtomic, u"true"_ns);
+      aAttributes->SetAttribute(nsGkAtoms::containerAtomic, true);
     }
 
     // container-busy attribute
     if (busy.IsEmpty() && HasDefinedARIAToken(ancestor, nsGkAtoms::aria_busy) &&
         ancestor->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::aria_busy,
-                                       busy))
-      SetAccAttr(aAttributes, nsGkAtoms::containerBusy, busy);
+                                       busy)) {
+      aAttributes->SetAttributeStringCopy(nsGkAtoms::containerBusy, busy);
+    }
 
     if (ancestor == topEl) {
       break;
@@ -230,35 +209,36 @@ nsStaticAtom* nsAccUtils::NormalizeARIAToken(dom::Element* aElement,
   return nullptr;
 }
 
-Accessible* nsAccUtils::GetSelectableContainer(Accessible* aAccessible,
-                                               uint64_t aState) {
+LocalAccessible* nsAccUtils::GetSelectableContainer(
+    LocalAccessible* aAccessible, uint64_t aState) {
   if (!aAccessible) return nullptr;
 
   if (!(aState & states::SELECTABLE)) return nullptr;
 
-  Accessible* parent = aAccessible;
-  while ((parent = parent->Parent()) && !parent->IsSelect()) {
+  LocalAccessible* parent = aAccessible;
+  while ((parent = parent->LocalParent()) && !parent->IsSelect()) {
     if (parent->Role() == roles::PANE) return nullptr;
   }
   return parent;
 }
 
-bool nsAccUtils::IsDOMAttrTrue(const Accessible* aAccessible, nsAtom* aAttr) {
+bool nsAccUtils::IsDOMAttrTrue(const LocalAccessible* aAccessible,
+                               nsAtom* aAttr) {
   dom::Element* el = aAccessible->Elm();
   return el && el->AttrValueIs(kNameSpaceID_None, aAttr, nsGkAtoms::_true,
                                eCaseMatters);
 }
 
-Accessible* nsAccUtils::TableFor(Accessible* aRow) {
+LocalAccessible* nsAccUtils::TableFor(LocalAccessible* aRow) {
   if (aRow) {
-    Accessible* table = aRow->Parent();
+    LocalAccessible* table = aRow->LocalParent();
     if (table) {
       roles::Role tableRole = table->Role();
       const nsRoleMapEntry* roleMapEntry = table->ARIARoleMap();
       if (tableRole == roles::GROUPING ||  // if there's a rowgroup.
           (table->IsGenericHyperText() && !roleMapEntry &&
            !table->IsTable())) {  // or there is a wrapping text container
-        table = table->Parent();
+        table = table->LocalParent();
         if (table) tableRole = table->Role();
       }
 
@@ -275,14 +255,15 @@ Accessible* nsAccUtils::TableFor(Accessible* aRow) {
 HyperTextAccessible* nsAccUtils::GetTextContainer(nsINode* aNode) {
   // Get text accessible containing the result node.
   DocAccessible* doc = GetAccService()->GetDocAccessible(aNode->OwnerDoc());
-  Accessible* accessible = doc ? doc->GetAccessibleOrContainer(aNode) : nullptr;
+  LocalAccessible* accessible =
+      doc ? doc->GetAccessibleOrContainer(aNode) : nullptr;
   if (!accessible) return nullptr;
 
   do {
     HyperTextAccessible* textAcc = accessible->AsHyperText();
     if (textAcc) return textAcc;
 
-    accessible = accessible->Parent();
+    accessible = accessible->LocalParent();
   } while (accessible);
 
   return nullptr;
@@ -290,7 +271,7 @@ HyperTextAccessible* nsAccUtils::GetTextContainer(nsINode* aNode) {
 
 nsIntPoint nsAccUtils::ConvertToScreenCoords(int32_t aX, int32_t aY,
                                              uint32_t aCoordinateType,
-                                             Accessible* aAccessible) {
+                                             LocalAccessible* aAccessible) {
   nsIntPoint coords(aX, aY);
 
   switch (aCoordinateType) {
@@ -316,7 +297,7 @@ nsIntPoint nsAccUtils::ConvertToScreenCoords(int32_t aX, int32_t aY,
 
 void nsAccUtils::ConvertScreenCoordsTo(int32_t* aX, int32_t* aY,
                                        uint32_t aCoordinateType,
-                                       Accessible* aAccessible) {
+                                       LocalAccessible* aAccessible) {
   switch (aCoordinateType) {
     case nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE:
       break;
@@ -341,8 +322,8 @@ void nsAccUtils::ConvertScreenCoordsTo(int32_t* aX, int32_t* aY,
   }
 }
 
-nsIntPoint nsAccUtils::GetScreenCoordsForParent(Accessible* aAccessible) {
-  Accessible* parent = aAccessible->Parent();
+nsIntPoint nsAccUtils::GetScreenCoordsForParent(LocalAccessible* aAccessible) {
+  LocalAccessible* parent = aAccessible->LocalParent();
   if (!parent) return nsIntPoint(0, 0);
 
   nsIFrame* parentFrame = parent->GetFrame();
@@ -361,6 +342,9 @@ bool nsAccUtils::GetLiveAttrValue(uint32_t aRule, nsAString& aValue) {
     case ePoliteLiveAttr:
       aValue = u"polite"_ns;
       return true;
+    case eAssertiveLiveAttr:
+      aValue = u"assertive"_ns;
+      return true;
   }
 
   return false;
@@ -368,7 +352,7 @@ bool nsAccUtils::GetLiveAttrValue(uint32_t aRule, nsAString& aValue) {
 
 #ifdef DEBUG
 
-bool nsAccUtils::IsTextInterfaceSupportCorrect(Accessible* aAccessible) {
+bool nsAccUtils::IsTextInterfaceSupportCorrect(LocalAccessible* aAccessible) {
   // Don't test for accessible docs, it makes us create accessibles too
   // early and fire mutation events before we need to
   if (aAccessible->IsDoc()) return true;
@@ -376,8 +360,8 @@ bool nsAccUtils::IsTextInterfaceSupportCorrect(Accessible* aAccessible) {
   bool foundText = false;
   uint32_t childCount = aAccessible->ChildCount();
   for (uint32_t childIdx = 0; childIdx < childCount; childIdx++) {
-    Accessible* child = aAccessible->GetChildAt(childIdx);
-    if (child->IsText()) {
+    LocalAccessible* child = aAccessible->LocalChildAt(childIdx);
+    if (child && child->IsText()) {
       foundText = true;
       break;
     }
@@ -392,8 +376,19 @@ uint32_t nsAccUtils::TextLength(Accessible* aAccessible) {
     return 1;
   }
 
-  TextLeafAccessible* textLeaf = aAccessible->AsTextLeaf();
-  if (textLeaf) return textLeaf->Text().Length();
+  if (LocalAccessible* localAcc = aAccessible->AsLocal()) {
+    TextLeafAccessible* textLeaf = localAcc->AsTextLeaf();
+    if (textLeaf) {
+      return textLeaf->Text().Length();
+    }
+  } else if (aAccessible->IsText()) {
+    MOZ_ASSERT(StaticPrefs::accessibility_cache_enabled_AtStartup(),
+               "Shouldn't be called on a RemoteAccessible unless the cache is "
+               "enabled");
+    RemoteAccessible* remoteAcc = aAccessible->AsRemote();
+    MOZ_ASSERT(remoteAcc);
+    return remoteAcc->GetCachedTextLength();
+  }
 
   // For list bullets (or anything other accessible which would compute its own
   // text. They don't have their own frame.
@@ -404,9 +399,9 @@ uint32_t nsAccUtils::TextLength(Accessible* aAccessible) {
   return text.Length();
 }
 
-bool nsAccUtils::MustPrune(AccessibleOrProxy aAccessible) {
-  MOZ_ASSERT(!aAccessible.IsNull());
-  roles::Role role = aAccessible.Role();
+bool nsAccUtils::MustPrune(Accessible* aAccessible) {
+  MOZ_ASSERT(aAccessible);
+  roles::Role role = aAccessible->Role();
 
   if (role == roles::SLIDER) {
     // Always prune the tree for sliders, as it doesn't make sense for a
@@ -424,49 +419,17 @@ bool nsAccUtils::MustPrune(AccessibleOrProxy aAccessible) {
     return false;
   }
 
-  if (aAccessible.ChildCount() != 1) {
+  if (aAccessible->ChildCount() != 1) {
     // If the accessible has more than one child, don't prune it.
     return false;
   }
 
-  roles::Role childRole = aAccessible.FirstChild().Role();
+  roles::Role childRole = aAccessible->FirstChild()->Role();
   // If the accessible's child is a text leaf, prune the accessible.
   return childRole == roles::TEXT_LEAF || childRole == roles::STATICTEXT;
 }
 
-bool nsAccUtils::PersistentPropertiesToArray(nsIPersistentProperties* aProps,
-                                             nsTArray<Attribute>* aAttributes) {
-  if (!aProps) {
-    return true;
-  }
-  nsCOMPtr<nsISimpleEnumerator> propEnum;
-  nsresult rv = aProps->Enumerate(getter_AddRefs(propEnum));
-  NS_ENSURE_SUCCESS(rv, false);
-
-  bool hasMore;
-  while (NS_SUCCEEDED(propEnum->HasMoreElements(&hasMore)) && hasMore) {
-    nsCOMPtr<nsISupports> sup;
-    rv = propEnum->GetNext(getter_AddRefs(sup));
-    NS_ENSURE_SUCCESS(rv, false);
-
-    nsCOMPtr<nsIPropertyElement> propElem(do_QueryInterface(sup));
-    NS_ENSURE_TRUE(propElem, false);
-
-    nsAutoCString name;
-    rv = propElem->GetKey(name);
-    NS_ENSURE_SUCCESS(rv, false);
-
-    nsAutoString value;
-    rv = propElem->GetValue(value);
-    NS_ENSURE_SUCCESS(rv, false);
-
-    aAttributes->AppendElement(Attribute(name, value));
-  }
-
-  return true;
-}
-
-bool nsAccUtils::IsARIALive(const Accessible* aAccessible) {
+bool nsAccUtils::IsARIALive(const LocalAccessible* aAccessible) {
   // Get computed aria-live property based on the closest container with the
   // attribute. Inner nodes override outer nodes within the same
   // document.
@@ -493,7 +456,7 @@ bool nsAccUtils::IsARIALive(const Accessible* aAccessible) {
     } else if (role) {
       GetLiveAttrValue(role->liveAttRule, live);
     } else if (nsStaticAtom* value = GetAccService()->MarkupAttribute(
-                   ancestor, nsGkAtoms::live)) {
+                   ancestor, nsGkAtoms::aria_live)) {
       value->ToString(live);
     }
     if (!live.IsEmpty() && !live.EqualsLiteral("off")) {

@@ -3,12 +3,14 @@
  */
 "use strict";
 
-const { L10nRegistry } = ChromeUtils.import(
-  "resource://gre/modules/L10nRegistry.jsm"
-);
-
 const { ExtensionUtils } = ChromeUtils.import(
   "resource://gre/modules/ExtensionUtils.jsm"
+);
+
+XPCOMUtils.defineLazyGetter(this, "resourceProtocol", () =>
+  Services.io
+    .getProtocolHandler("resource")
+    .QueryInterface(Ci.nsIResProtocolHandler)
 );
 
 Services.prefs.setBoolPref(PREF_EM_CHECK_UPDATE_SECURITY, false);
@@ -153,7 +155,9 @@ add_task(async function test_basic_lifecycle() {
 
   // Make sure that `und` locale is not installed.
   equal(
-    L10nRegistry.getAvailableLocales().includes("und"),
+    L10nRegistry.getInstance()
+      .getAvailableLocales()
+      .includes("und"),
     false,
     "und not installed"
   );
@@ -170,7 +174,9 @@ add_task(async function test_basic_lifecycle() {
 
   // Now make sure that `und` locale is available.
   equal(
-    L10nRegistry.getAvailableLocales().includes("und"),
+    L10nRegistry.getInstance()
+      .getAvailableLocales()
+      .includes("und"),
     true,
     "und is installed"
   );
@@ -184,7 +190,9 @@ add_task(async function test_basic_lifecycle() {
 
   // It is not available after the langpack has been disabled.
   equal(
-    L10nRegistry.getAvailableLocales().includes("und"),
+    L10nRegistry.getInstance()
+      .getAvailableLocales()
+      .includes("und"),
     false,
     "und not installed"
   );
@@ -200,7 +208,9 @@ add_task(async function test_basic_lifecycle() {
 
   // After re-enabling it, the `und` locale is available again.
   equal(
-    L10nRegistry.getAvailableLocales().includes("und"),
+    L10nRegistry.getInstance()
+      .getAvailableLocales()
+      .includes("und"),
     true,
     "und is installed"
   );
@@ -214,7 +224,9 @@ add_task(async function test_basic_lifecycle() {
 
   // After the langpack has been uninstalled, no more `und` in locales.
   equal(
-    L10nRegistry.getAvailableLocales().includes("und"),
+    L10nRegistry.getInstance()
+      .getAvailableLocales()
+      .includes("und"),
     false,
     "und not installed"
   );
@@ -237,7 +249,7 @@ add_task(async function test_locale_registries() {
 
   {
     // Toolkit string
-    let bundles = L10nRegistry.generateBundlesSync(
+    let bundles = L10nRegistry.getInstance().generateBundlesSync(
       ["und"],
       ["toolkit_test.ftl"]
     );
@@ -248,7 +260,10 @@ add_task(async function test_locale_registries() {
 
   {
     // Browser string
-    let bundles = L10nRegistry.generateBundlesSync(["und"], ["browser.ftl"]);
+    let bundles = L10nRegistry.getInstance().generateBundlesSync(
+      ["und"],
+      ["browser.ftl"]
+    );
     let bundle0 = bundles.next().value;
     ok(bundle0);
     equal(bundle0.hasMessage("message-browser"), true);
@@ -283,14 +298,20 @@ add_task(async function test_locale_registries_async() {
 
   {
     // Toolkit string
-    let bundles = L10nRegistry.generateBundles(["und"], ["toolkit_test.ftl"]);
+    let bundles = L10nRegistry.getInstance().generateBundles(
+      ["und"],
+      ["toolkit_test.ftl"]
+    );
     let bundle0 = (await bundles.next()).value;
     equal(bundle0.hasMessage("message-id1"), true);
   }
 
   {
     // Browser string
-    let bundles = L10nRegistry.generateBundles(["und"], ["browser.ftl"]);
+    let bundles = L10nRegistry.getInstance().generateBundles(
+      ["und"],
+      ["browser.ftl"]
+    );
     let bundle0 = (await bundles.next()).value;
     equal(bundle0.hasMessage("message-browser"), true);
   }
@@ -299,10 +320,54 @@ add_task(async function test_locale_registries_async() {
   await promiseShutdownManager();
 });
 
+add_task(async function test_langpack_app_shutdown() {
+  let langpackId = `langpack-und-${AppConstants.MOZ_BUILD_APP.replace(
+    "/",
+    "-"
+  )}`;
+  let check = (yes, msg) => {
+    equal(resourceProtocol.hasSubstitution(langpackId), yes, msg);
+  };
+
+  await promiseStartupManager();
+
+  check(false, "no initial resource substitution");
+
+  await Promise.all([
+    promiseLangpackStartup(),
+    AddonTestUtils.promiseInstallXPI(ADDONS.langpack_1),
+  ]);
+
+  check(true, "langpack resource available after startup");
+
+  await promiseShutdownManager();
+
+  check(true, "langpack resource available after app shutdown");
+
+  await promiseStartupManager();
+
+  let addon = await AddonManager.getAddonByID(ID);
+  await addon.uninstall();
+
+  check(false, "langpack resource removed during shutdown for uninstall");
+
+  await promiseShutdownManager();
+});
+
 add_task(async function test_amazing_disappearing_langpacks() {
   let check = yes => {
-    equal(L10nRegistry.getAvailableLocales().includes("und"), yes);
-    equal(Services.locale.availableLocales.includes("und"), yes);
+    equal(
+      L10nRegistry.getInstance()
+        .getAvailableLocales()
+        .includes("und"),
+      yes,
+      "check L10nRegistry"
+    );
+    equal(
+      Services.locale.availableLocales.includes("und"),
+      yes,
+      "check availableLocales"
+    );
   };
 
   await promiseStartupManager();
@@ -474,6 +539,50 @@ add_task(async function test_staged_langpack_for_app_update_not_found() {
   addon = await promiseAddonByID(ID);
   Assert.ok(!addon.isActive);
   Assert.equal(addon.version, "1.0");
+
+  await addon.uninstall();
+  await promiseShutdownManager();
+  Services.locale.requestedLocales = originalLocales;
+});
+
+/**
+ * This test verifies that a compat update with an invalid max_version
+ * will be disabled, at least allowing Firefox to startup without failures.
+ */
+add_task(async function test_staged_langpack_compat_startup() {
+  let originalLocales = Services.locale.requestedLocales;
+
+  await promiseStartupManager("58");
+  let [, { addon }] = await Promise.all([
+    promiseLangpackStartup(),
+    AddonTestUtils.promiseInstallXPI(ADDONS.langpack_1),
+  ]);
+  Assert.ok(addon.isActive);
+  await promiseLocaleChanged(["und"]);
+
+  // Mimick a compatibility update
+  let compatUpdate = {
+    targetApplications: [
+      {
+        id: "toolkit@mozilla.org",
+        minVersion: "58",
+        maxVersion: "*",
+      },
+    ],
+  };
+  addon.__AddonInternal__.applyCompatibilityUpdate(compatUpdate);
+
+  await promiseRestartManager("59");
+
+  addon = await promiseAddonByID(ID);
+  Assert.ok(!addon.isActive, "addon is not active after upgrade");
+  ok(!addon.isCompatible, "compatibility update fixed");
+
+  await promiseRestartManager("58");
+
+  addon = await promiseAddonByID(ID);
+  Assert.ok(addon.isActive, "addon is active after downgrade");
+  ok(addon.isCompatible, "compatibility update fixed");
 
   await addon.uninstall();
   await promiseShutdownManager();

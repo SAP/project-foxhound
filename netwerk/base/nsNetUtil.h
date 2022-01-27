@@ -9,6 +9,7 @@
 
 #include <functional>
 #include "mozilla/Maybe.h"
+#include "mozilla/ResultExtensions.h"
 #include "nsCOMPtr.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -26,6 +27,7 @@
 #include "nsReadableUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
+#include "nsTArray.h"
 
 class nsIPrincipal;
 class nsIAsyncStreamCopier;
@@ -80,7 +82,7 @@ already_AddRefed<nsINetUtil> do_GetNetUtil(nsresult* error = nullptr);
 // private little helper function... don't call this directly!
 nsresult net_EnsureIOService(nsIIOService** ios, nsCOMPtr<nsIIOService>& grip);
 
-nsresult NS_NewURI(nsIURI** result, const nsACString& spec,
+nsresult NS_NewURI(nsIURI** aURI, const nsACString& spec,
                    const char* charset = nullptr, nsIURI* baseURI = nullptr);
 
 nsresult NS_NewURI(nsIURI** result, const nsACString& spec,
@@ -101,6 +103,21 @@ nsresult NS_NewFileURI(
     nsIURI** result, nsIFile* spec,
     nsIIOService* ioService =
         nullptr);  // pass in nsIIOService to optimize callers
+
+// Functions for adding additional encoding to a URL for compatibility with
+// Apple's NSURL class URLWithString method.
+//
+// @param aResult
+//        Out parameter for the encoded URL spec
+// @param aSpec
+//        The spec for the URL to be encoded
+nsresult NS_GetSpecWithNSURLEncoding(nsACString& aResult,
+                                     const nsACString& aSpec);
+// @param aResult
+//        Out parameter for the encoded URI
+// @param aSpec
+//        The spec for the URL to be encoded
+nsresult NS_NewURIWithNSURLEncoding(nsIURI** aResult, const nsACString& aSpec);
 
 // These methods will only mutate the URI if the ref of aInput doesn't already
 // match the ref we are trying to set.
@@ -293,12 +310,13 @@ nsresult NS_NewInputStreamChannelInternal(
     nsIPrincipal* aLoadingPrincipal, nsIPrincipal* aTriggeringPrincipal,
     nsSecurityFlags aSecurityFlags, nsContentPolicyType aContentPolicyType);
 
-nsresult NS_NewInputStreamChannel(
-    nsIChannel** outChannel, nsIURI* aUri,
-    already_AddRefed<nsIInputStream> aStream, nsIPrincipal* aLoadingPrincipal,
-    nsSecurityFlags aSecurityFlags, nsContentPolicyType aContentPolicyType,
-    const nsACString& aContentType = EmptyCString(),
-    const nsACString& aContentCharset = EmptyCString());
+nsresult NS_NewInputStreamChannel(nsIChannel** outChannel, nsIURI* aUri,
+                                  already_AddRefed<nsIInputStream> aStream,
+                                  nsIPrincipal* aLoadingPrincipal,
+                                  nsSecurityFlags aSecurityFlags,
+                                  nsContentPolicyType aContentPolicyType,
+                                  const nsACString& aContentType = ""_ns,
+                                  const nsACString& aContentCharset = ""_ns);
 
 nsresult NS_NewInputStreamChannelInternal(
     nsIChannel** outChannel, nsIURI* aUri, const nsAString& aData,
@@ -463,9 +481,17 @@ nsresult NS_NewLocalFileInputStream(nsIInputStream** result, nsIFile* file,
                                     int32_t ioFlags = -1, int32_t perm = -1,
                                     int32_t behaviorFlags = 0);
 
+mozilla::Result<nsCOMPtr<nsIInputStream>, nsresult> NS_NewLocalFileInputStream(
+    nsIFile* file, int32_t ioFlags = -1, int32_t perm = -1,
+    int32_t behaviorFlags = 0);
+
 nsresult NS_NewLocalFileOutputStream(nsIOutputStream** result, nsIFile* file,
                                      int32_t ioFlags = -1, int32_t perm = -1,
                                      int32_t behaviorFlags = 0);
+
+mozilla::Result<nsCOMPtr<nsIOutputStream>, nsresult>
+NS_NewLocalFileOutputStream(nsIFile* file, int32_t ioFlags = -1,
+                            int32_t perm = -1, int32_t behaviorFlags = 0);
 
 nsresult NS_NewLocalFileOutputStream(nsIOutputStream** result,
                                      const mozilla::ipc::FileDescriptor& fd);
@@ -485,9 +511,16 @@ nsresult NS_NewLocalFileStream(nsIFileStream** result, nsIFile* file,
                                int32_t ioFlags = -1, int32_t perm = -1,
                                int32_t behaviorFlags = 0);
 
+mozilla::Result<nsCOMPtr<nsIFileStream>, nsresult> NS_NewLocalFileStream(
+    nsIFile* file, int32_t ioFlags = -1, int32_t perm = -1,
+    int32_t behaviorFlags = 0);
+
 [[nodiscard]] nsresult NS_NewBufferedInputStream(
     nsIInputStream** aResult, already_AddRefed<nsIInputStream> aInputStream,
     uint32_t aBufferSize);
+
+mozilla::Result<nsCOMPtr<nsIInputStream>, nsresult> NS_NewBufferedInputStream(
+    already_AddRefed<nsIInputStream> aInputStream, uint32_t aBufferSize);
 
 // note: the resulting stream can be QI'ed to nsISafeOutputStream iff the
 // provided stream supports it.
@@ -610,11 +643,6 @@ bool NS_IsSafeMethodNav(nsIChannel* aChannel);
 // Unique first-party domain for separating about uri.
 #define ABOUT_URI_FIRST_PARTY_DOMAIN \
   "about.ef2a7dd5-93bc-417f-a698-142c3116864f.mozilla"
-
-/**
- * Determines whether appcache should be checked for a given principal.
- */
-bool NS_ShouldCheckAppCache(nsIPrincipal* aPrincipal);
 
 /**
  * Wraps an nsIAuthPrompt so that it can be used as an nsIAuthPrompt2. This
@@ -797,12 +825,8 @@ nsresult NS_MaybeOpenChannelUsingAsyncOpen(nsIChannel* aChannel,
  *
  * See: https://mikewest.github.io/corpp/#parsing
  */
-inline nsILoadInfo::CrossOriginEmbedderPolicy
-NS_GetCrossOriginEmbedderPolicyFromHeader(const nsACString& aHeader) {
-  return aHeader.EqualsLiteral("require-corp")
-             ? nsILoadInfo::EMBEDDER_POLICY_REQUIRE_CORP
-             : nsILoadInfo::EMBEDDER_POLICY_NULL;
-}
+nsILoadInfo::CrossOriginEmbedderPolicy
+NS_GetCrossOriginEmbedderPolicyFromHeader(const nsACString& aHeader);
 
 /** Given the first (disposition) token from a Content-Disposition header,
  * tell whether it indicates the content is inline or attachment
@@ -967,5 +991,40 @@ bool SchemeIsResource(nsIURI* aURI);
 bool SchemeIsFTP(nsIURI* aURI);
 }  // namespace net
 }  // namespace mozilla
+
+/**
+ * Returns true if the |aInput| in is part of the root domain of |aHost|.
+ * For example, if |aInput| is "www.mozilla.org", and we pass in
+ * "mozilla.org" as |aHost|, this will return true.  It would return false
+ * the other way around.
+ *
+ * @param aInput The host to be analyzed.
+ * @param aHost  The host to compare to.
+ */
+nsresult NS_HasRootDomain(const nsACString& aInput, const nsACString& aHost,
+                          bool* aResult);
+
+void CheckForBrokenChromeURL(nsILoadInfo* aLoadInfo, nsIURI* aURI);
+
+struct LinkHeader {
+  nsString mHref;
+  nsString mRel;
+  nsString mTitle;
+  nsString mIntegrity;
+  nsString mSrcset;
+  nsString mSizes;
+  nsString mType;
+  nsString mMedia;
+  nsString mAnchor;
+  nsString mCrossOrigin;
+  nsString mReferrerPolicy;
+  nsString mAs;
+
+  LinkHeader();
+  void Reset();
+  bool operator==(const LinkHeader& rhs) const;
+};
+
+nsTArray<LinkHeader> ParseLinkHeader(const nsAString& aLinkData);
 
 #endif  // !nsNetUtil_h__

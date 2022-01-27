@@ -13,6 +13,18 @@ class ClickAction(object):
         self.protocol.click.element(element)
 
 
+class DeleteAllCookiesAction(object):
+    name = "delete_all_cookies"
+
+    def __init__(self, logger, protocol):
+        self.logger = logger
+        self.protocol = protocol
+
+    def __call__(self, payload):
+        self.logger.debug("Deleting all cookies")
+        self.protocol.cookies.delete_all_cookies()
+
+
 class SendKeysAction(object):
     name = "send_keys"
 
@@ -26,6 +38,29 @@ class SendKeysAction(object):
         element = self.protocol.select.element_by_selector(selector)
         self.logger.debug("Sending keys to element: %s" % selector)
         self.protocol.send_keys.send_keys(element, keys)
+
+
+class MinimizeWindowAction(object):
+    name = "minimize_window"
+
+    def __init__(self, logger, protocol):
+        self.logger = logger
+        self.protocol = protocol
+
+    def __call__(self, payload):
+        return self.protocol.window.minimize()
+
+
+class SetWindowRectAction(object):
+    name = "set_window_rect"
+
+    def __init__(self, logger, protocol):
+        self.logger = logger
+        self.protocol = protocol
+
+    def __call__(self, payload):
+        rect = payload["rect"]
+        self.protocol.window.set_rect(rect)
 
 
 class ActionSequenceAction(object):
@@ -43,12 +78,12 @@ class ActionSequenceAction(object):
                 for action in actionSequence["actions"]:
                     if (action["type"] == "pointerMove" and
                         isinstance(action["origin"], dict)):
-                        action["origin"] = self.get_element(action["origin"]["selector"], action["frame"]["frame"])
+                        action["origin"] = self.get_element(action["origin"]["selector"])
         self.protocol.action_sequence.send_actions({"actions": actions})
 
-    def get_element(self, element_selector, frame):
-        element = self.protocol.select.element_by_selector(element_selector, frame)
-        return element
+    def get_element(self, element_selector):
+        return self.protocol.select.element_by_selector(element_selector)
+
 
 class GenerateTestReportAction(object):
     name = "generate_test_report"
@@ -169,9 +204,23 @@ class SetUserVerifiedAction(object):
             "Setting user verified flag on authenticator %s to %s" % (authenticator_id, uv["isUserVerified"]))
         return self.protocol.virtual_authenticator.set_user_verified(authenticator_id, uv)
 
+class SetSPCTransactionModeAction(object):
+    name = "set_spc_transaction_mode"
+
+    def __init__(self, logger, protocol):
+        self.logger = logger
+        self.protocol = protocol
+
+    def __call__(self, payload):
+        mode = payload["mode"]
+        self.logger.debug("Setting SPC transaction mode to %s" % mode)
+        return self.protocol.spc_transactions.set_spc_transaction_mode(mode)
 
 actions = [ClickAction,
+           DeleteAllCookiesAction,
            SendKeysAction,
+           MinimizeWindowAction,
+           SetWindowRectAction,
            ActionSequenceAction,
            GenerateTestReportAction,
            SetPermissionAction,
@@ -181,4 +230,5 @@ actions = [ClickAction,
            GetCredentialsAction,
            RemoveCredentialAction,
            RemoveAllCredentialsAction,
-           SetUserVerifiedAction]
+           SetUserVerifiedAction,
+           SetSPCTransactionModeAction]

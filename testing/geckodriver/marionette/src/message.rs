@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 use serde::de::{self, SeqAccess, Unexpected, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
@@ -209,7 +213,7 @@ mod tests {
         let json =
             json!([0, 42, "WebDriver:FindElement", {"using": "css selector", "value": "value"}]);
         let find_element = webdriver::Command::FindElement(webdriver::Locator {
-            using: webdriver::Selector::CSS,
+            using: webdriver::Selector::Css,
             value: "value".into(),
         });
         let req = Request(42, Command::WebDriver(find_element));

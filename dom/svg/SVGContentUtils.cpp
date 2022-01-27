@@ -27,7 +27,6 @@
 #include "nsLayoutUtils.h"
 #include "nsMathUtils.h"
 #include "nsWhitespaceTokenizer.h"
-#include "SVGAnimationElement.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
 #include "SVGGeometryProperty.h"
 #include "nsContentUtils.h"
@@ -144,13 +143,6 @@ SVGSVGElement* SVGContentUtils::GetOuterSVGElement(SVGElement* aSVGElement) {
     return static_cast<SVGSVGElement*>(element);
   }
   return nullptr;
-}
-
-void SVGContentUtils::ActivateByHyperlink(nsIContent* aContent) {
-  MOZ_ASSERT(aContent->IsNodeOfType(nsINode::eANIMATION),
-             "Expecting an animation element");
-
-  static_cast<SVGAnimationElement*>(aContent)->ActivateByHyperlink();
 }
 
 enum DashState {
@@ -340,8 +332,15 @@ Float SVGContentUtils::GetStrokeWidth(SVGElement* aElement,
     if (styleSVG->mStrokeWidth.IsContextValue()) {
       res = aContextPaint ? aContextPaint->GetStrokeWidth() : 1.0;
     } else {
-      res = SVGContentUtils::CoordToFloat(
-          aElement, styleSVG->mStrokeWidth.AsLengthPercentage());
+      auto& lp = styleSVG->mStrokeWidth.AsLengthPercentage();
+      if (lp.HasPercent() && aElement) {
+        auto counter =
+            aElement->IsSVGElement(nsGkAtoms::text)
+                ? UseCounter::eUseCounter_custom_PercentageStrokeWidthInSVGText
+                : UseCounter::eUseCounter_custom_PercentageStrokeWidthInSVG;
+        aElement->OwnerDoc()->SetUseCounter(counter);
+      }
+      res = SVGContentUtils::CoordToFloat(aElement, lp);
     }
   };
 
@@ -369,7 +368,7 @@ float SVGContentUtils::GetFontSize(Element* aElement) {
   }
 
   if (RefPtr<ComputedStyle> style =
-          nsComputedDOMStyle::GetComputedStyleNoFlush(aElement, nullptr)) {
+          nsComputedDOMStyle::GetComputedStyleNoFlush(aElement)) {
     return GetFontSize(style, pc);
   }
 
@@ -407,7 +406,7 @@ float SVGContentUtils::GetFontXHeight(Element* aElement) {
   }
 
   if (RefPtr<ComputedStyle> style =
-          nsComputedDOMStyle::GetComputedStyleNoFlush(aElement, nullptr)) {
+          nsComputedDOMStyle::GetComputedStyleNoFlush(aElement)) {
     return GetFontXHeight(style, pc);
   }
 
@@ -808,10 +807,11 @@ bool SVGContentUtils::ParseInteger(const nsAString& aString, int32_t& aValue) {
 }
 
 float SVGContentUtils::CoordToFloat(SVGElement* aContent,
-                                    const LengthPercentage& aLength) {
+                                    const LengthPercentage& aLength,
+                                    uint8_t aCtxType) {
   float result = aLength.ResolveToCSSPixelsWith([&] {
     SVGViewportElement* ctx = aContent->GetCtx();
-    return CSSCoord(ctx ? ctx->GetLength(SVGContentUtils::XY) : 0.0f);
+    return CSSCoord(ctx ? ctx->GetLength(aCtxType) : 0.0f);
   });
   if (aLength.IsCalc()) {
     const auto& calc = aLength.AsCalc();

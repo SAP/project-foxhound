@@ -9,6 +9,30 @@
 #include "nsGenConList.h"
 #include "nsLayoutUtils.h"
 #include "nsIContent.h"
+#include "nsIFrame.h"
+
+void nsGenConNode::CheckFrameAssertions() {
+  NS_ASSERTION(
+      mContentIndex < int32_t(mPseudoFrame->StyleContent()->ContentCount()) ||
+          // Special-case for the USE node created for the legacy markers,
+          // which don't use the content property.
+          mContentIndex == 0,
+      "index out of range");
+  // We allow negative values of mContentIndex for 'counter-reset' and
+  // 'counter-increment'.
+
+  NS_ASSERTION(mContentIndex < 0 ||
+                   mPseudoFrame->Style()->GetPseudoType() ==
+                       mozilla::PseudoStyleType::before ||
+                   mPseudoFrame->Style()->GetPseudoType() ==
+                       mozilla::PseudoStyleType::after ||
+                   mPseudoFrame->Style()->GetPseudoType() ==
+                       mozilla::PseudoStyleType::marker,
+               "not CSS generated content and not counter change");
+  NS_ASSERTION(mContentIndex < 0 ||
+                   mPseudoFrame->HasAnyStateBits(NS_FRAME_GENERATED_CONTENT),
+               "not generated content and not counter change");
+}
 
 void nsGenConList::Clear() {
   // Delete entire list.
@@ -26,7 +50,7 @@ bool nsGenConList::DestroyNodesFor(nsIFrame* aFrame) {
   // each frame is mapped to only one (nsIContent, pseudoType) pair,
   // and the nodes in the linked list are put in the tree order based
   // on that pair and offset inside frame.
-  nsGenConNode* node = mNodes.GetAndRemove(aFrame).valueOr(nullptr);
+  nsGenConNode* node = mNodes.Extract(aFrame).valueOr(nullptr);
   if (!node) {
     return false;
   }
@@ -168,7 +192,7 @@ void nsGenConList::Insert(nsGenConNode* aNode) {
       }
     }
 #endif
-    mNodes.Put(aNode->mPseudoFrame, aNode);
+    mNodes.InsertOrUpdate(aNode->mPseudoFrame, aNode);
   } else {
 #ifdef DEBUG
     nsGenConNode* frameFirstNode = mNodes.Get(aNode->mPseudoFrame);

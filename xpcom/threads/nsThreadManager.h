@@ -7,11 +7,19 @@
 #ifndef nsThreadManager_h__
 #define nsThreadManager_h__
 
-#include "mozilla/Mutex.h"
 #include "nsIThreadManager.h"
 #include "nsThread.h"
+#include "mozilla/ShutdownPhase.h"
 
 class nsIRunnable;
+class nsIEventTarget;
+class nsISerialEventTarget;
+class nsIThread;
+
+namespace mozilla {
+class IdleTaskManager;
+class SynchronizedEventQueue;
+}  // namespace mozilla
 
 class BackgroundEventTarget;
 
@@ -21,8 +29,6 @@ class nsThreadManager : public nsIThreadManager {
   NS_DECL_NSITHREADMANAGER
 
   static nsThreadManager& get();
-
-  static void InitializeShutdownObserver();
 
   nsresult Init();
 
@@ -61,9 +67,13 @@ class nsThreadManager : public nsIThreadManager {
   already_AddRefed<nsISerialEventTarget> CreateBackgroundTaskQueue(
       const char* aName);
 
-  // Returns the maximal number of threads that have been in existence
-  // simultaneously during the execution of the thread manager.
-  uint32_t GetHighestNumberOfThreads();
+  // For each background TaskQueue cancel pending DelayedRunnables, and prohibit
+  // creating future DelayedRunnables for them, since we'll soon be shutting
+  // them down.
+  // Pending DelayedRunnables are canceled on their respective TaskQueue.
+  // We block main thread until they are all done, but spin the eventloop in the
+  // meantime.
+  void CancelBackgroundDelayedRunnables();
 
   ~nsThreadManager();
 
@@ -79,12 +89,15 @@ class nsThreadManager : public nsIThreadManager {
  private:
   nsThreadManager();
 
-  nsresult SpinEventLoopUntilInternal(nsINestedEventLoopCondition* aCondition,
-                                      bool aCheckingShutdown);
+  nsresult SpinEventLoopUntilInternal(
+      const nsACString& aVeryGoodReasonToDoThis,
+      nsINestedEventLoopCondition* aCondition,
+      mozilla::ShutdownPhase aShutdownPhaseToCheck);
 
   static void ReleaseThread(void* aData);
 
   unsigned mCurThreadIndex;  // thread-local-storage index
+  RefPtr<mozilla::IdleTaskManager> mIdleTaskManager;
   RefPtr<nsThread> mMainThread;
   PRThread* mMainPRThread;
   mozilla::Atomic<bool, mozilla::SequentiallyConsistent> mInitialized;

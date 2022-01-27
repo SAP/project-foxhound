@@ -12,6 +12,7 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Printf.h"
+#include "mozilla/ResultExtensions.h"
 
 #include "nsASCIIMask.h"
 
@@ -66,15 +67,13 @@ inline const nsTAutoString<T>* AsAutoString(const nsTSubstring<T>* aStr) {
 }
 
 template <typename T>
-mozilla::BulkWriteHandle<T> nsTSubstring<T>::BulkWrite(
-    size_type aCapacity, size_type aPrefixToPreserve, bool aAllowShrinking,
-    nsresult& aRv) {
+mozilla::Result<mozilla::BulkWriteHandle<T>, nsresult>
+nsTSubstring<T>::BulkWrite(size_type aCapacity, size_type aPrefixToPreserve,
+                           bool aAllowShrinking) {
   auto r = StartBulkWriteImpl(aCapacity, aPrefixToPreserve, aAllowShrinking);
   if (MOZ_UNLIKELY(r.isErr())) {
-    aRv = r.unwrapErr();
-    return mozilla::BulkWriteHandle<T>(nullptr, 0);
+    return r.propagateErr();
   }
-  aRv = NS_OK;
   return mozilla::BulkWriteHandle<T>(this, r.unwrap());
 }
 
@@ -1299,7 +1298,7 @@ void nsTSubstring<T>::AppendPrintf(const char* aFormat, ...) {
 }
 
 template <typename T>
-void nsTSubstring<T>::AppendPrintf(const char* aFormat, va_list aAp) {
+void nsTSubstring<T>::AppendVprintf(const char* aFormat, va_list aAp) {
   PrintfAppend<T> appender(this);
   bool r = appender.vprint(aFormat, aAp);
   if (!r) {
@@ -1384,64 +1383,13 @@ static int FormatWithoutTrailingZeros(char (&aBuf)[40], double aDouble,
                                       int aPrecision) {
   static const DoubleToStringConverter converter(
       DoubleToStringConverter::UNIQUE_ZERO |
+          DoubleToStringConverter::NO_TRAILING_ZERO |
           DoubleToStringConverter::EMIT_POSITIVE_EXPONENT_SIGN,
       "Infinity", "NaN", 'e', -6, 21, 6, 1);
   double_conversion::StringBuilder builder(aBuf, sizeof(aBuf));
-  bool exponential_notation = false;
-  converter.ToPrecision(aDouble, aPrecision, &exponential_notation, &builder);
+  converter.ToPrecision(aDouble, aPrecision, &builder);
   int length = builder.position();
-  char* formattedDouble = builder.Finalize();
-
-  // If we have a shorter string than aPrecision, it means we have a special
-  // value (NaN or Infinity).  All other numbers will be formatted with at
-  // least aPrecision digits.
-  if (length <= aPrecision) {
-    return length;
-  }
-
-  char* end = formattedDouble + length;
-  char* decimalPoint = strchr(aBuf, '.');
-  // No trailing zeros to remove.
-  if (!decimalPoint) {
-    return length;
-  }
-
-  if (MOZ_UNLIKELY(exponential_notation)) {
-    // We need to check for cases like 1.00000e-10 (yes, this is
-    // disgusting).
-    char* exponent = end - 1;
-    for (;; --exponent) {
-      if (*exponent == 'e') {
-        break;
-      }
-    }
-    char* zerosBeforeExponent = exponent - 1;
-    for (; zerosBeforeExponent != decimalPoint; --zerosBeforeExponent) {
-      if (*zerosBeforeExponent != '0') {
-        break;
-      }
-    }
-    if (zerosBeforeExponent == decimalPoint) {
-      --zerosBeforeExponent;
-    }
-    // Slide the exponent to the left over the trailing zeros.  Don't
-    // worry about copying the trailing NUL character.
-    size_t exponentSize = end - exponent;
-    memmove(zerosBeforeExponent + 1, exponent, exponentSize);
-    length -= exponent - (zerosBeforeExponent + 1);
-  } else {
-    char* trailingZeros = end - 1;
-    for (; trailingZeros != decimalPoint; --trailingZeros) {
-      if (*trailingZeros != '0') {
-        break;
-      }
-    }
-    if (trailingZeros == decimalPoint) {
-      --trailingZeros;
-    }
-    length -= end - (trailingZeros + 1);
-  }
-
+  builder.Finalize();
   return length;
 }
 
@@ -1509,44 +1457,11 @@ size_t nsTSubstring<T>::SizeOfIncludingThisEvenIfShared(
 }
 
 template <typename T>
-inline nsTSubstringSplitter<T>::nsTSubstringSplitter(
-    const nsTSubstring<T>* aStr, char_type aDelim)
-    : mStr(aStr), mArray(nullptr), mDelim(aDelim) {
-  if (mStr->IsEmpty()) {
-    mArraySize = 0;
-    return;
-  }
-
-  size_type delimCount = mStr->CountChar(aDelim);
-  mArraySize = delimCount + 1;
-  mArray.reset(new nsTDependentSubstring<T>[mArraySize]);
-
-  size_t seenParts = 0;
-  size_type start = 0;
-  do {
-    MOZ_ASSERT(seenParts < mArraySize);
-    int32_t offset = mStr->FindChar(aDelim, start);
-    if (offset != -1) {
-      size_type length = static_cast<size_type>(offset) - start;
-      mArray[seenParts++].Rebind(mStr->Data() + start, length);
-      start = static_cast<size_type>(offset) + 1;
-    } else {
-      // Get the remainder
-      mArray[seenParts++].Rebind(mStr->Data() + start, mStr->Length() - start);
-      break;
-    }
-  } while (start < mStr->Length());
-}
-
-template <typename T>
 nsTSubstringSplitter<T> nsTSubstring<T>::Split(const char_type aChar) const {
-  return nsTSubstringSplitter<T>(this, aChar);
-}
-
-template <typename T>
-const nsTDependentSubstring<T>&
-nsTSubstringSplitter<T>::nsTSubstringSplit_Iter::operator*() const {
-  return mObj.Get(mPos);
+  return nsTSubstringSplitter<T>(
+      nsTCharSeparatedTokenizerTemplate<
+          NS_TokenizerIgnoreNothing, T,
+          nsTokenizerFlags::IncludeEmptyTokenAtEnd>(*this, aChar));
 }
 
 // Common logic for nsTSubstring<T>::ToInteger and nsTSubstring<T>::ToInteger64.

@@ -4,6 +4,8 @@
 
 #include "CacheIOThread.h"
 #include "CacheFileIOManager.h"
+#include "CacheLog.h"
+#include "CacheObserver.h"
 
 #include "nsIRunnable.h"
 #include "nsISupportsImpl.h"
@@ -13,26 +15,22 @@
 #include "nsThreadUtils.h"
 #include "mozilla/EventQueue.h"
 #include "mozilla/IOInterposer.h"
+#include "mozilla/ProfilerLabels.h"
 #include "mozilla/ThreadEventQueue.h"
-#include "GeckoProfiler.h"
+#include "mozilla/Telemetry.h"
+#include "mozilla/TelemetryHistogramEnums.h"
 
 #ifdef XP_WIN
 #  include <windows.h>
 #endif
 
-#ifdef MOZ_TASK_TRACER
-#  include "GeckoTaskTracer.h"
-#  include "TracedTaskCommon.h"
-#endif
-
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 namespace {  // anon
 
 class CacheIOTelemetry {
  public:
-  typedef CacheIOThread::EventQueue::size_type size_type;
+  using size_type = CacheIOThread::EventQueue::size_type;
   static size_type mMinLengthToReport[CacheIOThread::LAST_LEVEL];
   static void Report(uint32_t aLevel, size_type aLength);
 };
@@ -114,7 +112,7 @@ class BlockingIOWatcher {
 #ifdef XP_WIN
 
 BlockingIOWatcher::BlockingIOWatcher() : mThread(NULL), mEvent(NULL) {
-  HMODULE kernel32_dll = GetModuleHandle("kernel32.dll");
+  HMODULE kernel32_dll = GetModuleHandleW(L"kernel32.dll");
   if (!kernel32_dll) {
     return;
   }
@@ -203,22 +201,7 @@ CacheIOThread* CacheIOThread::sSelf = nullptr;
 
 NS_IMPL_ISUPPORTS(CacheIOThread, nsIThreadObserver)
 
-CacheIOThread::CacheIOThread()
-    : mMonitor("CacheIOThread"),
-      mThread(nullptr),
-      mXPCOMThread(nullptr),
-      mLowestLevelWaiting(LAST_LEVEL),
-      mCurrentlyExecutingLevel(0),
-      mHasXPCOMEvents(false),
-      mRerunCurrentEvent(false),
-      mShutdown(false),
-      mIOCancelableEvents(0),
-      mEventCounter(0)
-#ifdef DEBUG
-      ,
-      mInsideLoop(true)
-#endif
-{
+CacheIOThread::CacheIOThread() {
   for (auto& item : mQueueLength) {
     item = 0;
   }
@@ -248,12 +231,21 @@ nsresult CacheIOThread::Init() {
     mBlockingIOWatcher = MakeUnique<detail::BlockingIOWatcher>();
   }
 
+  // Increase the reference count while spawning a new thread.
+  // If PR_CreateThread succeeds, we will forget this reference and the thread
+  // will be responsible to release it when it completes.
+  RefPtr<CacheIOThread> self = this;
   mThread =
       PR_CreateThread(PR_USER_THREAD, ThreadFunc, this, PR_PRIORITY_NORMAL,
                       PR_GLOBAL_THREAD, PR_JOINABLE_THREAD, 128 * 1024);
   if (!mThread) {
     return NS_ERROR_FAILURE;
   }
+
+  // IMPORTANT: The thread now owns this reference, so it's important that we
+  // leak it here, otherwise we'll end up with a bad refcount.
+  // See the dont_AddRef in ThreadFunc().
+  Unused << self.forget().take();
 
   return NS_OK;
 }
@@ -273,8 +265,9 @@ nsresult CacheIOThread::Dispatch(already_AddRefed<nsIRunnable> aRunnable,
 
   MonitorAutoLock lock(mMonitor);
 
-  if (mShutdown && (PR_GetCurrentThread() != mThread))
+  if (mShutdown && (PR_GetCurrentThread() != mThread)) {
     return NS_ERROR_UNEXPECTED;
+  }
 
   return DispatchInternal(runnable.forget(), aLevel);
 }
@@ -285,8 +278,9 @@ nsresult CacheIOThread::DispatchAfterPendingOpens(nsIRunnable* aRunnable) {
 
   MonitorAutoLock lock(mMonitor);
 
-  if (mShutdown && (PR_GetCurrentThread() != mThread))
+  if (mShutdown && (PR_GetCurrentThread() != mThread)) {
     return NS_ERROR_UNEXPECTED;
+  }
 
   // Move everything from later executed OPEN level to the OPEN_PRIORITY level
   // where we post the (eviction) runnable.
@@ -301,12 +295,6 @@ nsresult CacheIOThread::DispatchAfterPendingOpens(nsIRunnable* aRunnable) {
 nsresult CacheIOThread::DispatchInternal(
     already_AddRefed<nsIRunnable> aRunnable, uint32_t aLevel) {
   nsCOMPtr<nsIRunnable> runnable(aRunnable);
-#ifdef MOZ_TASK_TRACER
-  if (tasktracer::IsStartLogging()) {
-    runnable = tasktracer::CreateTracedRunnable(runnable.forget());
-    (static_cast<tasktracer::TracedRunnable*>(runnable.get()))->DispatchTask();
-  }
-#endif
 
   LogRunnable::LogDispatch(runnable.get());
 
@@ -412,7 +400,9 @@ void CacheIOThread::ThreadFunc(void* aClosure) {
   NS_SetCurrentThreadName("Cache2 I/O");
 
   mozilla::IOInterposer::RegisterCurrentThread();
-  CacheIOThread* thread = static_cast<CacheIOThread*>(aClosure);
+  // We hold on to this reference for the duration of the thread.
+  RefPtr<CacheIOThread> thread =
+      dont_AddRef(static_cast<CacheIOThread*>(aClosure));
   thread->ThreadFunc();
   mozilla::IOInterposer::UnregisterCurrentThread();
 }
@@ -426,8 +416,8 @@ void CacheIOThread::ThreadFunc() {
     MOZ_ASSERT(mBlockingIOWatcher);
     mBlockingIOWatcher->InitThread();
 
-    auto queue = MakeRefPtr<ThreadEventQueue<mozilla::EventQueue>>(
-        MakeUnique<mozilla::EventQueue>());
+    auto queue =
+        MakeRefPtr<ThreadEventQueue>(MakeUnique<mozilla::EventQueue>());
     nsCOMPtr<nsIThread> xpcomThread =
         nsThreadManager::get().CreateCurrentThread(queue,
                                                    nsThread::NOT_MAIN_THREAD);
@@ -503,8 +493,7 @@ void CacheIOThread::ThreadFunc() {
 }
 
 void CacheIOThread::LoopOneLevel(uint32_t aLevel) {
-  EventQueue events;
-  events.SwapElements(mEventQueue[aLevel]);
+  EventQueue events = std::move(mEventQueue[aLevel]);
   EventQueue::size_type length = events.Length();
 
   mCurrentlyExecutingLevel = aLevel;
@@ -570,7 +559,7 @@ void CacheIOThread::LoopOneLevel(uint32_t aLevel) {
     // pretended earlier.
     events.AppendElements(std::move(mEventQueue[aLevel]));
     // And finally move everything back to the main queue.
-    events.SwapElements(mEventQueue[aLevel]);
+    mEventQueue[aLevel] = std::move(events);
   }
 }
 
@@ -638,5 +627,4 @@ CacheIOThread::Cancelable::~Cancelable() {
   }
 }
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net

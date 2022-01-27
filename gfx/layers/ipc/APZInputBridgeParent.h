@@ -18,7 +18,8 @@ class APZInputBridgeParent : public PAPZInputBridgeParent {
   NS_INLINE_DECL_REFCOUNTING(APZInputBridgeParent, final)
 
  public:
-  explicit APZInputBridgeParent(const LayersId& aLayersId);
+  static RefPtr<APZInputBridgeParent> Create(
+      const LayersId& aLayersId, Endpoint<PAPZInputBridgeParent>&& aEndpoint);
 
   mozilla::ipc::IPCResult RecvReceiveMultiTouchInputEvent(
       const MultiTouchInput& aEvent, APZEventResult* aOutResult,
@@ -49,7 +50,8 @@ class APZInputBridgeParent : public PAPZInputBridgeParent {
       KeyboardInput* aOutEvent);
 
   mozilla::ipc::IPCResult RecvUpdateWheelTransaction(
-      const LayoutDeviceIntPoint& aRefPoint, const EventMessage& aEventMessage);
+      const LayoutDeviceIntPoint& aRefPoint, const EventMessage& aEventMessage,
+      const Maybe<ScrollableLayerGuid>& aTargetGuid);
 
   mozilla::ipc::IPCResult RecvProcessUnhandledEvent(
       const LayoutDeviceIntPoint& aRefPoint, LayoutDeviceIntPoint* aOutRefPoint,
@@ -59,6 +61,7 @@ class APZInputBridgeParent : public PAPZInputBridgeParent {
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
  protected:
+  explicit APZInputBridgeParent(const LayersId& aLayersId);
   virtual ~APZInputBridgeParent();
 
  private:

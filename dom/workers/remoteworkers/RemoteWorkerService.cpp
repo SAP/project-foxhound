@@ -11,6 +11,7 @@
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/PBackgroundParent.h"
+#include "mozilla/SchedulerGroup.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
@@ -131,11 +132,13 @@ void RemoteWorkerService::InitializeOnTargetThread() {
 void RemoteWorkerService::ShutdownOnTargetThread() {
   MOZ_ASSERT(mThread);
   MOZ_ASSERT(mThread->IsOnCurrentThread());
-  MOZ_ASSERT(mActor);
 
-  // Here we need to shutdown the IPC protocol.
-  mActor->Send__delete__(mActor);
-  mActor = nullptr;
+  // If mActor is nullptr it means that initialization failed.
+  if (mActor) {
+    // Here we need to shutdown the IPC protocol.
+    mActor->Send__delete__(mActor);
+    mActor = nullptr;
+  }
 
   // Then we can terminate the thread on the main-thread.
   RefPtr<RemoteWorkerService> self = this;

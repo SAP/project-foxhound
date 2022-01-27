@@ -5,11 +5,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"  // mozilla::ArrayLength
 #include "mozilla/Assertions.h"  // MOZ_RELEASE_ASSERT
 #include "mozilla/Utf8.h"        // mozilla::Utf8Unit
 
 #include <algorithm>  // std::all_of, std::equal, std::move, std::transform
+#include <iterator>   // std::size
 #include <memory>     // std::uninitialized_fill_n
 #include <stddef.h>   // size_t
 #include <stdint.h>   // uint32_t
@@ -17,21 +17,26 @@
 #include "jsapi.h"  // JS_EnsureLinearString, JS_GC, JS_Get{Latin1,TwoByte}LinearStringChars, JS_GetStringLength, JS_ValueToFunction
 #include "jstypes.h"  // JS_PUBLIC_API
 
+#include "gc/GC.h"                        // js::gc::FinishGC
 #include "js/CompilationAndEvaluation.h"  // JS::Evaluate
 #include "js/CompileOptions.h"            // JS::CompileOptions
 #include "js/Conversions.h"               // JS::ToString
 #include "js/MemoryFunctions.h"           // JS_malloc
-#include "js/RootingAPI.h"                // JS::MutableHandle, JS::Rooted
-#include "js/SourceText.h"                // JS::SourceOwnership, JS::SourceText
-#include "js/UniquePtr.h"                 // js::UniquePtr
-#include "js/Utility.h"                   // JS::FreePolicy
-#include "js/Value.h"  // JS::NullValue, JS::ObjectValue, JS::Value
+#include "js/OffThreadScriptCompilation.h"  // JS::CompileOffThread, JS::OffThreadToken, JS::FinishOffThreadScript
+#include "js/RootingAPI.h"  // JS::MutableHandle, JS::Rooted
+#include "js/SourceText.h"  // JS::SourceOwnership, JS::SourceText
+#include "js/String.h"  // JS::GetLatin1LinearStringChars, JS::GetTwoByteLinearStringChars, JS::StringHasLatin1Chars
+#include "js/UniquePtr.h"  // js::UniquePtr
+#include "js/Utility.h"    // JS::FreePolicy
+#include "js/Value.h"      // JS::NullValue, JS::ObjectValue, JS::Value
 #include "jsapi-tests/tests.h"
-#include "vm/Compression.h"  // js::Compressor::CHUNK_SIZE
-#include "vm/JSFunction.h"   // JSFunction::getOrCreateScript
+#include "util/Text.h"         // js_strlen
+#include "vm/Compression.h"    // js::Compressor::CHUNK_SIZE
+#include "vm/HelperThreads.h"  // js::RunPendingSourceCompressions
+#include "vm/JSFunction.h"     // JSFunction::getOrCreateScript
 #include "vm/JSScript.h"  // JSScript, js::ScriptSource::MinimumCompressibleLength, js::SynchronouslyCompressSource
+#include "vm/Monitor.h"   // js::Monitor, js::AutoLockMonitor
 
-using mozilla::ArrayLength;
 using mozilla::Utf8Unit;
 
 struct JS_PUBLIC_API JSContext;
@@ -84,8 +89,7 @@ static JSFunction* EvaluateChars(JSContext* cx, Source<Unit> chars, size_t len,
   JS::Rooted<JS::Value> rval(cx);
   const char16_t name[] = {char16_t(functionName)};
   JS::SourceText<char16_t> srcbuf;
-  if (!srcbuf.init(cx, name, ArrayLength(name),
-                   JS::SourceOwnership::Borrowed)) {
+  if (!srcbuf.init(cx, name, std::size(name), JS::SourceOwnership::Borrowed)) {
     return nullptr;
   }
   if (!JS::Evaluate(cx, options, srcbuf, &rval)) {
@@ -108,14 +112,14 @@ static void CompressSourceSync(JS::Handle<JSFunction*> fun, JSContext* cx) {
 }
 
 static constexpr char FunctionStart[] = "function @() {";
-constexpr size_t FunctionStartLength = ArrayLength(FunctionStart) - 1;
+constexpr size_t FunctionStartLength = js_strlen(FunctionStart);
 constexpr size_t FunctionNameOffset = 9;
 
 static_assert(FunctionStart[FunctionNameOffset] == '@',
               "offset must correctly point at the function name location");
 
 static constexpr char FunctionEnd[] = "return 42; }";
-constexpr size_t FunctionEndLength = ArrayLength(FunctionEnd) - 1;
+constexpr size_t FunctionEndLength = js_strlen(FunctionEnd);
 
 template <typename Unit>
 static void WriteFunctionOfSizeAtOffset(Source<Unit>& source,
@@ -185,11 +189,11 @@ static bool IsExpectedFunctionString(JS::Handle<JSString*> str,
   };
 
   bool hasExpectedContents;
-  if (JS_StringHasLatin1Chars(str)) {
-    const JS::Latin1Char* chars = JS_GetLatin1LinearStringChars(nogc, lstr);
+  if (JS::StringHasLatin1Chars(str)) {
+    const JS::Latin1Char* chars = JS::GetLatin1LinearStringChars(nogc, lstr);
     hasExpectedContents = CheckContents(chars);
   } else {
-    const char16_t* chars = JS_GetTwoByteLinearStringChars(nogc, lstr);
+    const char16_t* chars = JS::GetTwoByteLinearStringChars(nogc, lstr);
     hasExpectedContents = CheckContents(chars);
   }
 
@@ -468,3 +472,73 @@ bool run() {
   return true;
 }
 END_TEST(testScriptSourceCompression_spansMultipleMiddleChunks)
+
+BEGIN_TEST(testScriptSourceCompression_automatic) {
+  constexpr size_t len = MinimumCompressibleLength + 55;
+  auto chars = MakeSourceAllWhitespace<char16_t>(cx, len);
+  CHECK(chars);
+
+  JS::SourceText<char16_t> source;
+  CHECK(source.init(cx, std::move(chars), len));
+
+  JS::CompileOptions options(cx);
+  JS::Rooted<JSScript*> script(cx, JS::Compile(cx, options, source));
+  CHECK(script);
+
+  // Check that source compression was triggered by the compile. If the
+  // off-thread source compression system is globally disabled, the source will
+  // remain uncompressed.
+  js::RunPendingSourceCompressions(cx->runtime());
+  bool expected = js::IsOffThreadSourceCompressionEnabled();
+  CHECK(script->scriptSource()->hasCompressedSource() == expected);
+
+  return true;
+}
+END_TEST(testScriptSourceCompression_automatic)
+
+BEGIN_TEST(testScriptSourceCompression_offThread) {
+  constexpr size_t len = MinimumCompressibleLength + 55;
+  auto chars = MakeSourceAllWhitespace<char16_t>(cx, len);
+  CHECK(chars);
+
+  JS::SourceText<char16_t> source;
+  CHECK(source.init(cx, std::move(chars), len));
+
+  js::Monitor monitor(js::mutexid::ShellOffThreadState);
+  JS::CompileOptions options(cx);
+  JS::OffThreadToken* token;
+
+  // Force off-thread even though if this is a small file.
+  options.forceAsync = true;
+
+  CHECK(token = JS::CompileOffThread(cx, options, source, callback, &monitor));
+
+  {
+    // Finish any active GC in case it is blocking off-thread work.
+    js::gc::FinishGC(cx);
+
+    js::AutoLockMonitor lock(monitor);
+    lock.wait();
+  }
+
+  JS::Rooted<JSScript*> script(cx, JS::FinishOffThreadScript(cx, token));
+  CHECK(script);
+
+  // Check that source compression was triggered by the compile. If the
+  // off-thread source compression system is globally disabled, the source will
+  // remain uncompressed.
+  js::RunPendingSourceCompressions(cx->runtime());
+  bool expected = js::IsOffThreadSourceCompressionEnabled();
+  CHECK(script->scriptSource()->hasCompressedSource() == expected);
+
+  return true;
+}
+
+static void callback(JS::OffThreadToken* token, void* context) {
+  js::Monitor& monitor = *static_cast<js::Monitor*>(context);
+
+  js::AutoLockMonitor lock(monitor);
+  lock.notify();
+}
+
+END_TEST(testScriptSourceCompression_offThread)

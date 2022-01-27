@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 tk{
     Keys{
         calendar{"Senenama"}
@@ -53,7 +54,7 @@ tk{
         bo{"tibet dili"}
         br{"breton dili"}
         brx{"bodo dili"}
-        bs{"boşnak dili"}
+        bs{"bosniýa dili"}
         bug{"bugiý dili"}
         byn{"blin dili"}
         ca{"katalan dili"}
@@ -82,6 +83,7 @@ tk{
         de_CH{"ýokarky nemes dili (Şweýsariýa)"}
         dgr{"dogrib dili"}
         dje{"zarma dili"}
+        doi{"Dogri"}
         dsb{"aşaky lužits dili"}
         dua{"duala dili"}
         dv{"diwehi dili"}
@@ -167,7 +169,7 @@ tk{
         kea{"kabuwerdianu dili"}
         kfo{"koro dili"}
         kha{"khasi dili"}
-        khq{"koýra-Çini dili"}
+        khq{"koýra-çini dili"}
         ki{"kikuýu dili"}
         kj{"kwanýama dili"}
         kk{"gazak dili"}
@@ -261,6 +263,7 @@ tk{
         nmg{"kwasio dili"}
         nn{"norwegiýa nýunorsk dili"}
         nnh{"ngembun dili"}
+        no{"norweg dili"}
         nog{"nogaý dili"}
         nqo{"nko dili"}
         nr{"günorta ndebele dili"}
@@ -278,7 +281,7 @@ tk{
         pam{"kapampangan dili"}
         pap{"papýamento dili"}
         pau{"palau dili"}
-        pcm{"nigeriý-pijin dili"}
+        pcm{"nigeriýa-pijin dili"}
         pl{"polýak dili"}
         prg{"prussiýa dili"}
         ps{"peştun dili"}
@@ -288,12 +291,12 @@ tk{
         quc{"kiçe dili"}
         rap{"rapanuý dili"}
         rar{"kuk dili"}
+        rhg{"rohinýa dili"}
         rm{"retoroman dili"}
         rn{"rundi dili"}
         ro{"rumyn dili"}
         ro_MD{"moldaw dili"}
         rof{"rombo dili"}
-        root{"kök"}
         ru{"rus dili"}
         rup{"arumyn dili"}
         rw{"kinýaruanda dili"}
@@ -535,7 +538,6 @@ tk{
             tibt{"Tibet sanlary"}
         }
     }
-    Version{"37"}
     characterLabelPattern{
         all{"{0} — ähli"}
         category-list{"{0}: {1}"}
@@ -550,6 +552,8 @@ tk{
             one{"{0} ştrih"}
             other{"{0} ştrih"}
         }
+        subscript{"aşaky indeks {0}"}
+        superscript{"ýokarky indeks {0}"}
     }
     codePatterns{
         language{"Dil: {0}"}

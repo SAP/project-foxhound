@@ -2,11 +2,11 @@
 
 class MyError {}
 
-function assertThrowsMyError(f)
+async function assertThrowsMyError(f)
 {
     let caught = false;
     try {
-        f();
+        await f();
     } catch (e) {
         caught = true;
         assertEq(e.constructor, MyError);
@@ -14,23 +14,20 @@ function assertThrowsMyError(f)
     assertEq(caught, true);
 }
 
-let moduleRepo = {};
-setModuleResolveHook(function(module, specifier) {
-    return moduleRepo[specifier];
-});
-
-moduleRepo["a"] = parseModule(`
+registerModule("a", parseModule(`
     throw new MyError();
-`);
+`));
 
-let c = moduleRepo["c"] = parseModule(`
+let c = registerModule("c", parseModule(`
     import "a";
-`);
+`));
 c.declarationInstantiation();
 assertThrowsMyError(() => c.evaluation());
 
-let b = moduleRepo['b'] = parseModule(`
+let b = registerModule('b', parseModule(`
     import * as ns0 from 'a'
-`);
+`));
 b.declarationInstantiation();
 assertThrowsMyError(() => b.evaluation(b));
+
+drainJobQueue();

@@ -7,48 +7,6 @@ const TWO_DAYS = 2 * 24 * 3600 * 1000;
 
 const MESSAGES = () => [
   {
-    id: "SIMPLE_FXA_BOOKMARK_TEST_FLUENT",
-    template: "fxa_bookmark_panel",
-    content: {
-      title: { string_id: "cfr-doorhanger-bookmark-fxa-header" },
-      text: { string_id: "cfr-doorhanger-bookmark-fxa-body" },
-      cta: { string_id: "cfr-doorhanger-bookmark-fxa-link-text" },
-      color: "white",
-      background_color_1: "#7d31ae",
-      background_color_2: "#5033be",
-      info_icon: {
-        tooltiptext: {
-          string_id: "cfr-doorhanger-bookmark-fxa-info-icon-tooltip",
-        },
-      },
-      close_button: {
-        tooltiptext: {
-          string_id: "cfr-doorhanger-bookmark-fxa-close-btn-tooltip",
-        },
-      },
-    },
-    trigger: { id: "bookmark-panel" },
-  },
-  {
-    id: "SIMPLE_FXA_BOOKMARK_TEST_NON_FLUENT",
-    template: "fxa_bookmark_panel",
-    content: {
-      title: "Bookmark Message Title",
-      text: "Bookmark Message Body",
-      cta: "Sync bookmarks now",
-      color: "white",
-      background_color_1: "#7d31ae",
-      background_color_2: "#5033be",
-      info_icon: {
-        tooltiptext: "Toggle tooltip",
-      },
-      close_button: {
-        tooltiptext: "Close tooltip",
-      },
-    },
-    trigger: { id: "bookmark-panel" },
-  },
-  {
     id: "WNP_THANK_YOU",
     template: "update_action",
     content: {
@@ -64,115 +22,18 @@ const MESSAGES = () => [
     trigger: { id: "momentsUpdate" },
   },
   {
-    id: "WHATS_NEW_AWESOMEBAR_74",
-    template: "whatsnew_panel_message",
-    order: 1,
-    content: {
-      bucket_id: "WHATS_NEW_AWESOMEBAR_74",
-      published_date: 1581675076835,
-      title: { string_id: "cfr-whatsnew-searchbar-title" },
-      icon_url: "chrome://browser/skin/search-glass.svg",
-      icon_alt: { string_id: "cfr-whatsnew-searchbar-icon-alt-text" },
-      body: { string_id: "cfr-whatsnew-searchbar-body-topsites" },
-      cta_url:
-        "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/address-bar-search",
-      cta_type: "OPEN_URL",
-      link_text: { string_id: "cfr-whatsnew-pip-cta" },
-    },
-    targeting: `firefoxVersion >= 74`,
-    trigger: { id: "whatsNewPanelOpened" },
-  },
-  {
-    id: "WHATS_NEW_PIP_76",
-    template: "whatsnew_panel_message",
-    order: 3,
-    content: {
-      bucket_id: "WHATS_NEW_76",
-      published_date: 1586859903200,
-      title: { string_id: "cfr-whatsnew-pip-fullscreen-header" },
-      icon_url:
-        "resource://activity-stream/data/content/assets/remote/pip-message-icon.svg",
-      icon_alt: { string_id: "cfr-whatsnew-pip-fullscreen-icon-alt" },
-      body: { string_id: "cfr-whatsnew-pip-fullscreen-body" },
-      cta_url:
-        "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/about-p2p",
-      cta_type: "OPEN_URL",
-      link_text: { string_id: "cfr-whatsnew-pip-cta" },
-    },
-    targeting: `firefoxVersion >= 76`,
-    trigger: { id: "whatsNewPanelOpened" },
-  },
-  {
-    id: "WHATS_NEW_VULNERABLE_PASSWORDS",
-    template: "whatsnew_panel_message",
-    order: 2,
-    content: {
-      bucket_id: "WHATS_NEW_76",
-      published_date: 1586859903200,
-      title: { string_id: "cfr-whatsnew-passwords-header" },
-      icon_url: "chrome://browser/content/logos/lockwise.svg",
-      icon_alt: { string_id: "cfr-whatsnew-passwords-icon-alt" },
-      body: { string_id: "cfr-whatsnew-passwords-body" },
-      cta_url:
-        "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/lockwise-alerts",
-      cta_type: "OPEN_URL",
-      link_text: { string_id: "cfr-whatsnew-pip-cta" },
-    },
-    targeting: `firefoxVersion >= 76`,
-    trigger: { id: "whatsNewPanelOpened" },
-  },
-  {
-    id: "WHATS_NEW_PERMISSION_PROMPT_72",
-    template: "whatsnew_panel_message",
-    order: 5,
-    content: {
-      bucket_id: "WHATS_NEW_72",
-      published_date: 1574776601000,
-      title: { string_id: "cfr-whatsnew-permission-prompt-header" },
-      body: { string_id: "cfr-whatsnew-permission-prompt-body" },
-      cta_url:
-        "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/whats-new-notifications",
-      cta_type: "OPEN_URL",
-      link_text: { string_id: "cfr-whatsnew-permission-prompt-cta" },
-    },
-    targeting: `firefoxVersion >= 72`,
-    trigger: { id: "whatsNewPanelOpened" },
-  },
-  {
-    id: "WHATS_NEW_FINGERPRINTER_COUNTER_72",
-    template: "whatsnew_panel_message",
-    order: 6,
-    content: {
-      bucket_id: "WHATS_NEW_72",
-      published_date: 1574776601000,
-      layout: "tracking-protections",
-      layout_title_content_variable: "fingerprinterCount",
-      title: { string_id: "cfr-whatsnew-fingerprinter-counter-header" },
-      subtitle: { string_id: "cfr-whatsnew-tracking-blocked-subtitle" },
-      icon_url:
-        "resource://activity-stream/data/content/assets/protection-report-icon.png",
-      icon_alt: "",
-      body: { string_id: "cfr-whatsnew-fingerprinter-counter-body" },
-      link_text: { string_id: "cfr-whatsnew-tracking-blocked-link-text" },
-      cta_url: "",
-      cta_type: "OPEN_PROTECTION_REPORT",
-    },
-    targeting: `firefoxVersion >= 72`,
-    trigger: { id: "whatsNewPanelOpened" },
-  },
-  {
     id: "WHATS_NEW_FINGERPRINTER_COUNTER_ALT",
     template: "whatsnew_panel_message",
     order: 6,
     content: {
       bucket_id: "WHATS_NEW_72",
       published_date: 1574776601000,
-      title: { string_id: "cfr-whatsnew-fingerprinter-counter-header-alt" },
+      title: "Title",
       icon_url:
-        "resource://activity-stream/data/content/assets/protection-report-icon.png",
-      icon_alt: "",
-      body: { string_id: "cfr-whatsnew-fingerprinter-counter-body-alt" },
-      link_text: { string_id: "cfr-whatsnew-tracking-blocked-link-text" },
+        "chrome://activity-stream/content/data/content/assets/protection-report-icon.png",
+      icon_alt: { string_id: "cfr-badge-reader-label-newfeature" },
+      body: "Message body",
+      link_text: "Click here",
       cta_url: "",
       cta_type: "OPEN_PROTECTION_REPORT",
     },
@@ -188,7 +49,7 @@ const MESSAGES = () => [
       published_date: 1560969794394,
       title: "Protection Is Our Focus",
       icon_url:
-        "resource://activity-stream/data/content/assets/whatsnew-send-icon.png",
+        "chrome://activity-stream/content/data/content/assets/whatsnew-send-icon.png",
       icon_alt: "Firefox Send Logo",
       body:
         "The New Enhanced Tracking Protection, gives you the best level of protection and performance. Discover how this version is the safest version of firefox ever made.",
@@ -216,6 +77,68 @@ const MESSAGES = () => [
     trigger: { id: "whatsNewPanelOpened" },
   },
   {
+    id: "WHATS_NEW_SEARCH_SHORTCUTS_84",
+    template: "whatsnew_panel_message",
+    order: 2,
+    content: {
+      bucket_id: "WHATS_NEW_SEARCH_SHORTCUTS_84",
+      published_date: 1560969794394,
+      title: "Title",
+      icon_url: "chrome://global/skin/icons/check.svg",
+      icon_alt: "",
+      body: "Message content",
+      cta_url:
+        "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/search-shortcuts",
+      cta_type: "OPEN_URL",
+      link_text: "Click here",
+    },
+    targeting: "firefoxVersion >= 84",
+    trigger: {
+      id: "whatsNewPanelOpened",
+    },
+  },
+  {
+    id: "WHATS_NEW_PIONEER_82",
+    template: "whatsnew_panel_message",
+    order: 1,
+    content: {
+      bucket_id: "WHATS_NEW_PIONEER_82",
+      published_date: 1603152000000,
+      title: "Put your data to work for a better internet",
+      icon_url: "",
+      icon_alt: "",
+      body:
+        "Contribute your data to Mozilla's Pioneer program to help researchers understand pressing technology issues like misinformation, data privacy, and ethical AI.",
+      cta_url: "pioneer",
+      cta_where: "tab",
+      cta_type: "OPEN_ABOUT_PAGE",
+      link_text: "Join Pioneer",
+    },
+    targeting: "firefoxVersion >= 82",
+    trigger: {
+      id: "whatsNewPanelOpened",
+    },
+  },
+  {
+    id: "WHATS_NEW_MEDIA_SESSION_82",
+    template: "whatsnew_panel_message",
+    order: 3,
+    content: {
+      bucket_id: "WHATS_NEW_MEDIA_SESSION_82",
+      published_date: 1603152000000,
+      title: "Title",
+      body: "Message content",
+      cta_url:
+        "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/media-keyboard-control",
+      cta_type: "OPEN_URL",
+      link_text: "Click here",
+    },
+    targeting: "firefoxVersion >= 82",
+    trigger: {
+      id: "whatsNewPanelOpened",
+    },
+  },
+  {
     id: "WHATS_NEW_69_1",
     template: "whatsnew_panel_message",
     order: 1,
@@ -233,238 +156,9 @@ const MESSAGES = () => [
     trigger: { id: "whatsNewPanelOpened" },
   },
   {
-    id: "WHATS_NEW_70_3",
-    template: "whatsnew_panel_message",
-    order: 2,
-    content: {
-      bucket_id: "WHATS_NEW_70_3",
-      published_date: 1560969794394,
-      layout: "tracking-protections",
-      layout_title_content_variable: "blockedCount",
-      title: { string_id: "cfr-whatsnew-tracking-blocked-title" },
-      subtitle: { string_id: "cfr-whatsnew-tracking-blocked-subtitle" },
-      icon_url:
-        "resource://activity-stream/data/content/assets/protection-report-icon.png",
-      icon_alt: "Protection Report icon",
-      body: { string_id: "cfr-whatsnew-tracking-protect-body" },
-      link_text: { string_id: "cfr-whatsnew-tracking-blocked-link-text" },
-      cta_url: "",
-      cta_type: "OPEN_PROTECTION_REPORT",
-    },
-    targeting: `firefoxVersion > 69 && totalBlockedCount > 0`,
-    trigger: { id: "whatsNewPanelOpened" },
-  },
-  {
-    id: "BOOKMARK_CFR",
-    template: "cfr_doorhanger",
-    groups: ["cfr-fxa"],
-    content: {
-      layout: "icon_and_message",
-      category: "cfrFeatures",
-      notification_text: { string_id: "cfr-doorhanger-feature-notification" },
-      heading_text: { string_id: "cfr-doorhanger-sync-bookmarks-header" },
-      info_icon: {
-        label: { string_id: "cfr-doorhanger-extension-sumo-link" },
-        sumo_path: "https://example.com",
-      },
-      text: { string_id: "cfr-doorhanger-sync-bookmarks-body" },
-      icon: "chrome://branding/content/icon64.png",
-      buttons: {
-        primary: {
-          label: { string_id: "cfr-doorhanger-sync-bookmarks-ok-button" },
-          action: {
-            type: "OPEN_PREFERENCES_PAGE",
-            data: { category: "sync" },
-          },
-        },
-        secondary: [
-          {
-            label: { string_id: "cfr-doorhanger-extension-cancel-button" },
-            action: { type: "CANCEL" },
-          },
-          {
-            label: {
-              string_id: "cfr-doorhanger-extension-never-show-recommendation",
-            },
-          },
-          {
-            label: {
-              string_id: "cfr-doorhanger-extension-manage-settings-button",
-            },
-            action: {
-              type: "OPEN_PREFERENCES_PAGE",
-              data: { category: "general-cfrfeatures" },
-            },
-          },
-        ],
-      },
-    },
-    targeting: "true",
-    trigger: {
-      id: "openBookmarkedURL",
-    },
-  },
-  {
-    id: "PDF_URL_FFX_SEND",
-    template: "cfr_doorhanger",
-    content: {
-      layout: "icon_and_message",
-      category: "cfrFeatures",
-      notification_text: { string_id: "cfr-doorhanger-extension-notification" },
-      heading_text: { string_id: "cfr-doorhanger-firefox-send-header" },
-      info_icon: {
-        label: { string_id: "cfr-doorhanger-extension-sumo-link" },
-        sumo_path: "https://example.com",
-      },
-      text: { string_id: "cfr-doorhanger-firefox-send-body" },
-      icon: "chrome://branding/content/icon64.png",
-      buttons: {
-        primary: {
-          label: { string_id: "cfr-doorhanger-firefox-send-ok-button" },
-          action: {
-            type: "OPEN_URL",
-            data: {
-              args:
-                "https://send.firefox.com/login/?utm_source=activity-stream&entrypoint=activity-stream-cfr-pdf",
-              where: "tabshifted",
-            },
-          },
-        },
-        secondary: [
-          {
-            label: { string_id: "cfr-doorhanger-extension-cancel-button" },
-            action: { type: "CANCEL" },
-          },
-          {
-            label: {
-              string_id: "cfr-doorhanger-extension-never-show-recommendation",
-            },
-          },
-          {
-            label: {
-              string_id: "cfr-doorhanger-extension-manage-settings-button",
-            },
-            action: {
-              type: "OPEN_PREFERENCES_PAGE",
-              data: { category: "general-cfrfeatures" },
-            },
-          },
-        ],
-      },
-    },
-    targeting: "true",
-    trigger: {
-      id: "openURL",
-      patterns: ["*://*/*.pdf"],
-    },
-  },
-  {
-    id: "SEND_TAB_CFR",
-    template: "cfr_doorhanger",
-    content: {
-      layout: "icon_and_message",
-      category: "cfrFeatures",
-      notification_text: { string_id: "cfr-doorhanger-extension-notification" },
-      heading_text: { string_id: "cfr-doorhanger-send-tab-header" },
-      info_icon: {
-        label: { string_id: "cfr-doorhanger-extension-sumo-link" },
-        sumo_path: "https://example.com",
-      },
-      text: { string_id: "cfr-doorhanger-send-tab-body" },
-      icon: "chrome://branding/content/icon64.png",
-      buttons: {
-        primary: {
-          label: { string_id: "cfr-doorhanger-send-tab-ok-button" },
-          action: {
-            type: "HIGHLIGHT_FEATURE",
-            data: { args: "pageAction-sendToDevice" },
-          },
-        },
-        secondary: [
-          {
-            label: { string_id: "cfr-doorhanger-extension-cancel-button" },
-            action: { type: "CANCEL" },
-          },
-          {
-            label: {
-              string_id: "cfr-doorhanger-extension-never-show-recommendation",
-            },
-          },
-          {
-            label: {
-              string_id: "cfr-doorhanger-extension-manage-settings-button",
-            },
-            action: {
-              type: "OPEN_PREFERENCES_PAGE",
-              data: { category: "general-cfrfeatures" },
-            },
-          },
-        ],
-      },
-    },
-    targeting: "true",
-    trigger: {
-      // Match any URL that has a Reader Mode icon
-      id: "openArticleURL",
-      patterns: ["*://*/*"],
-    },
-  },
-  {
-    id: "SEND_RECIPE_TAB_CFR",
-    template: "cfr_doorhanger",
-    // Higher priority because this has the same targeting rules as
-    // SEND_TAB_CFR but is more specific
-    priority: 1,
-    content: {
-      layout: "icon_and_message",
-      category: "cfrFeatures",
-      notification_text: { string_id: "cfr-doorhanger-extension-notification" },
-      heading_text: { string_id: "cfr-doorhanger-send-tab-recipe-header" },
-      info_icon: {
-        label: { string_id: "cfr-doorhanger-extension-sumo-link" },
-        sumo_path: "https://example.com",
-      },
-      text: { string_id: "cfr-doorhanger-send-tab-body" },
-      icon: "chrome://branding/content/icon64.png",
-      buttons: {
-        primary: {
-          label: { string_id: "cfr-doorhanger-send-tab-ok-button" },
-          action: {
-            type: "HIGHLIGHT_FEATURE",
-            data: { args: "pageAction-sendToDevice" },
-          },
-        },
-        secondary: [
-          {
-            label: { string_id: "cfr-doorhanger-extension-cancel-button" },
-            action: { type: "CANCEL" },
-          },
-          {
-            label: {
-              string_id: "cfr-doorhanger-extension-never-show-recommendation",
-            },
-          },
-          {
-            label: {
-              string_id: "cfr-doorhanger-extension-manage-settings-button",
-            },
-            action: {
-              type: "OPEN_PREFERENCES_PAGE",
-              data: { category: "general-cfrfeatures" },
-            },
-          },
-        ],
-      },
-    },
-    targeting: "true",
-    trigger: {
-      id: "openArticleURL",
-      params: ["www.allrecipes.com", "allrecipes.com"],
-    },
-  },
-  {
     id: "PERSONALIZED_CFR_MESSAGE",
     template: "cfr_doorhanger",
+    groups: ["cfr"],
     content: {
       layout: "icon_and_message",
       category: "cfrFeatures",
@@ -516,14 +210,111 @@ const MESSAGES = () => [
       patterns: ["*://*/*.pdf"],
     },
   },
+  {
+    id: "SPOTLIGHT_MESSAGE_93",
+    template: "spotlight",
+    groups: ["panel-test-provider"],
+    content: {
+      template: "logo-and-content",
+      logoImageURL: "chrome://browser/content/logos/vpn-promo-logo.svg",
+      body: {
+        title: {
+          label: {
+            string_id: "spotlight-public-wifi-vpn-header",
+          },
+        },
+        text: {
+          label: {
+            string_id: "spotlight-public-wifi-vpn-body",
+          },
+        },
+        primary: {
+          label: {
+            string_id: "spotlight-public-wifi-vpn-primary-button",
+          },
+          action: {
+            type: "OPEN_URL",
+            data: {
+              args: "https://www.mozilla.org/en-US/products/vpn/",
+              where: "tabshifted",
+            },
+          },
+        },
+        secondary: {
+          label: {
+            string_id: "spotlight-public-wifi-vpn-link",
+          },
+          action: {
+            type: "CANCEL",
+          },
+        },
+      },
+    },
+    frequency: { lifetime: 3 },
+    trigger: { id: "defaultBrowserCheck" },
+  },
+  {
+    id: "TCP_SPOTLIGHT_MESSAGE_95",
+    groups: ["panel-test-provider"],
+    template: "spotlight",
+    content: {
+      template: "logo-and-content",
+      logo: {
+        imageURL: "chrome://branding/content/about-logo@2x.png",
+        size: "64px",
+      },
+      body: {
+        title: {
+          label: {
+            string_id: "spotlight-total-cookie-protection-header",
+          },
+          size: "24px",
+        },
+        text: {
+          label: {
+            string_id: "spotlight-total-cookie-protection-body",
+          },
+          size: "20px",
+        },
+        primary: {
+          label: {
+            string_id: "spotlight-total-cookie-protection-primary-button",
+          },
+          action: {
+            type: "ENABLE_TOTAL_COOKIE_PROTECTION",
+          },
+        },
+        secondary: {
+          label: {
+            string_id: "spotlight-total-cookie-protection-secondary-button",
+          },
+          action: {
+            type: "ENABLE_TOTAL_COOKIE_PROTECTION_SECTION_AND_OPT_OUT",
+          },
+        },
+      },
+      extra: {
+        expanded: {
+          label: {
+            string_id: "spotlight-total-cookie-protection-expanded",
+          },
+          size: "13px",
+        },
+      },
+    },
+    frequency: { lifetime: 3 },
+    trigger: { id: "defaultBrowserCheck" },
+  },
 ];
 
 const PanelTestProvider = {
   getMessages() {
-    return MESSAGES().map(message => ({
-      ...message,
-      targeting: `providerCohorts.panel_local_testing == "SHOW_TEST"`,
-    }));
+    return Promise.resolve(
+      MESSAGES().map(message => ({
+        ...message,
+        targeting: `providerCohorts.panel_local_testing == "SHOW_TEST"`,
+      }))
+    );
   },
 };
 this.PanelTestProvider = PanelTestProvider;

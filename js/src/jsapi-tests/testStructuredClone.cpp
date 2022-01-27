@@ -4,11 +4,31 @@
 
 #include "builtin/TestingFunctions.h"
 #include "js/ArrayBuffer.h"  // JS::{IsArrayBufferObject,GetArrayBufferLengthAndData,NewExternalArrayBuffer}
+#include "js/GlobalObject.h"        // JS_NewGlobalObject
+#include "js/PropertyAndElement.h"  // JS_GetProperty, JS_SetProperty
 #include "js/StructuredClone.h"
 
 #include "jsapi-tests/tests.h"
 
 using namespace js;
+
+#ifdef DEBUG
+// Skip test, since it will abort with an assert in buf->Init(7).
+#else
+BEGIN_TEST(testStructuredClone_invalidLength) {
+  auto buf = js::MakeUnique<JSStructuredCloneData>(
+      JS::StructuredCloneScope::DifferentProcess);
+  CHECK(buf);
+  CHECK(buf->Init(7));
+  RootedValue clone(cx);
+  JS::CloneDataPolicy policy;
+  CHECK(!JS_ReadStructuredClone(cx, *buf, JS_STRUCTURED_CLONE_VERSION,
+                                JS::StructuredCloneScope::DifferentProcess,
+                                &clone, policy, nullptr, nullptr));
+  return true;
+}
+END_TEST(testStructuredClone_invalidLength)
+#endif
 
 BEGIN_TEST(testStructuredClone_object) {
   JS::RootedObject g1(cx, createGlobal());
@@ -112,7 +132,7 @@ BEGIN_TEST(testStructuredClone_externalArrayBuffer) {
     JS::RootedObject obj(cx, &v2.toObject());
     CHECK(&v1.toObject() != obj);
 
-    uint32_t len;
+    size_t len;
     bool isShared;
     uint8_t* clonedData;
     JS::GetArrayBufferLengthAndData(obj, &len, &isShared, &clonedData);
@@ -157,7 +177,7 @@ bool testStructuredCloneCopy(JS::StructuredCloneScope scope) {
   CHECK(bufferOut);
   CHECK(JS::IsArrayBufferObject(bufferOut));
 
-  uint32_t len;
+  size_t len;
   bool isShared;
   uint8_t* clonedData;
   JS::GetArrayBufferLengthAndData(bufferOut, &len, &isShared, &clonedData);

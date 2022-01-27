@@ -166,9 +166,9 @@ var PermissionPromptPrototype = {
   },
 
   /**
-   * These are the options that will be passed to the
-   * PopupNotification when it is shown. See the documentation
-   * for PopupNotification for more details.
+   * These are the options that will be passed to the PopupNotification when it
+   * is shown. See the documentation of `PopupNotifications_show` in
+   * PopupNotifications.jsm for details.
    *
    * Note that prompt() will automatically set displayURI to
    * be the URI of the requesting pricipal, unless the displayURI is exactly
@@ -193,7 +193,7 @@ var PermissionPromptPrototype = {
 
   /**
    * If true, the prompt will be cancelled automatically unless
-   * request.isHandlingUserInput is true.
+   * request.hasValidTransientUserGestureActivation is true.
    */
   get requiresUserInput() {
     return false;
@@ -209,7 +209,7 @@ var PermissionPromptPrototype = {
    * then you need to make sure its ID has the "-notification" suffix,
    * and then return the prefix here.
    *
-   * See PopupNotification.jsm for more details.
+   * See PopupNotifications.jsm for more details.
    *
    * @return {string}
    *         The unique ID that will be used to as the
@@ -230,9 +230,8 @@ var PermissionPromptPrototype = {
   },
 
   /**
-   * The message to show to the user in the PopupNotification. A string
-   * with "<>" as a placeholder that is usually replaced by an addon name
-   * or a host name, formatted in bold, to describe the permission that is being requested.
+   * The message to show to the user in the PopupNotification, see
+   * `PopupNotifications_show` in PopupNotifications.jsm.
    *
    * Subclasses must override this.
    *
@@ -396,17 +395,11 @@ var PermissionPromptPrototype = {
 
       if (
         state == SitePermissions.ALLOW &&
-        !this.request.maybeUnsafePermissionDelegate
+        !this.request.isRequestDelegatedToUnsafeThirdParty
       ) {
         this.allow();
         return;
       }
-
-      // Tell the browser to refresh the identity block display in case there
-      // are expired permission states.
-      this.browser.dispatchEvent(
-        new this.browser.ownerGlobal.CustomEvent("PermissionStateChange")
-      );
     } else if (this.permissionKey) {
       // If we're reading a permission which already has a temporary value,
       // see if we can use the temporary value.
@@ -422,7 +415,10 @@ var PermissionPromptPrototype = {
       }
     }
 
-    if (this.requiresUserInput && !this.request.isHandlingUserInput) {
+    if (
+      this.requiresUserInput &&
+      !this.request.hasValidTransientUserGestureActivation
+    ) {
       if (this.postPromptEnabled) {
         this.postPrompt();
       }
@@ -717,7 +713,7 @@ GeolocationPermissionPrompt.prototype = {
       };
     }
 
-    if (this.request.maybeUnsafePermissionDelegate) {
+    if (this.request.isRequestDelegatedToUnsafeThirdParty) {
       // Second name should be the third party origin
       options.secondName = this.getPrincipalName(this.request.principal);
       options.checkbox = { show: false };
@@ -742,17 +738,17 @@ GeolocationPermissionPrompt.prototype = {
 
   get message() {
     if (this.principal.schemeIs("file")) {
-      return gBrowserBundle.GetStringFromName("geolocation.shareWithFile3");
+      return gBrowserBundle.GetStringFromName("geolocation.shareWithFile4");
     }
 
-    if (this.request.maybeUnsafePermissionDelegate) {
+    if (this.request.isRequestDelegatedToUnsafeThirdParty) {
       return gBrowserBundle.formatStringFromName(
-        "geolocation.shareWithSiteUnsafeDelegation",
+        "geolocation.shareWithSiteUnsafeDelegation2",
         ["<>", "{}"]
       );
     }
 
-    return gBrowserBundle.formatStringFromName("geolocation.shareWithSite3", [
+    return gBrowserBundle.formatStringFromName("geolocation.shareWithSite4", [
       "<>",
     ]);
   },
@@ -760,18 +756,16 @@ GeolocationPermissionPrompt.prototype = {
   get promptActions() {
     return [
       {
-        label: gBrowserBundle.GetStringFromName("geolocation.allowLocation"),
+        label: gBrowserBundle.GetStringFromName("geolocation.allow"),
         accessKey: gBrowserBundle.GetStringFromName(
-          "geolocation.allowLocation.accesskey"
+          "geolocation.allow.accesskey"
         ),
         action: SitePermissions.ALLOW,
       },
       {
-        label: gBrowserBundle.GetStringFromName(
-          "geolocation.dontAllowLocation"
-        ),
+        label: gBrowserBundle.GetStringFromName("geolocation.block"),
         accessKey: gBrowserBundle.GetStringFromName(
-          "geolocation.dontAllowLocation.accesskey"
+          "geolocation.block.accesskey"
         ),
         action: SitePermissions.BLOCK,
       },
@@ -784,13 +778,6 @@ GeolocationPermissionPrompt.prototype = {
       return;
     }
     gBrowser.updateBrowserSharing(this.browser, { geo: state });
-
-    let devicePermOrigins = this.browser.getDevicePermissionOrigins("geo");
-    if (!state) {
-      devicePermOrigins.delete(this.principal.origin);
-      return;
-    }
-    devicePermOrigins.add(this.principal.origin);
 
     // Update last access timestamp
     let host;
@@ -879,22 +866,22 @@ XRPermissionPrompt.prototype = {
 
   get message() {
     if (this.principal.schemeIs("file")) {
-      return gBrowserBundle.GetStringFromName("xr.shareWithFile3");
+      return gBrowserBundle.GetStringFromName("xr.shareWithFile4");
     }
 
-    return gBrowserBundle.formatStringFromName("xr.shareWithSite3", ["<>"]);
+    return gBrowserBundle.formatStringFromName("xr.shareWithSite4", ["<>"]);
   },
 
   get promptActions() {
     return [
       {
-        label: gBrowserBundle.GetStringFromName("xr.allow"),
-        accessKey: gBrowserBundle.GetStringFromName("xr.allow.accesskey"),
+        label: gBrowserBundle.GetStringFromName("xr.allow2"),
+        accessKey: gBrowserBundle.GetStringFromName("xr.allow2.accesskey"),
         action: SitePermissions.ALLOW,
       },
       {
-        label: gBrowserBundle.GetStringFromName("xr.dontAllow"),
-        accessKey: gBrowserBundle.GetStringFromName("xr.dontAllow.accesskey"),
+        label: gBrowserBundle.GetStringFromName("xr.block"),
+        accessKey: gBrowserBundle.GetStringFromName("xr.block.accesskey"),
         action: SitePermissions.BLOCK,
       },
     ];
@@ -988,7 +975,7 @@ DesktopNotificationPermissionPrompt.prototype = {
 
   get message() {
     return gBrowserBundle.formatStringFromName(
-      "webNotifications.receiveFromSite2",
+      "webNotifications.receiveFromSite3",
       ["<>"]
     );
   },
@@ -996,9 +983,9 @@ DesktopNotificationPermissionPrompt.prototype = {
   get promptActions() {
     let actions = [
       {
-        label: gBrowserBundle.GetStringFromName("webNotifications.allow"),
+        label: gBrowserBundle.GetStringFromName("webNotifications.allow2"),
         accessKey: gBrowserBundle.GetStringFromName(
-          "webNotifications.allow.accesskey"
+          "webNotifications.allow2.accesskey"
         ),
         action: SitePermissions.ALLOW,
         scope: SitePermissions.SCOPE_PERSISTENT,
@@ -1013,13 +1000,19 @@ DesktopNotificationPermissionPrompt.prototype = {
         action: SitePermissions.BLOCK,
       });
     }
+
+    let isBrowserPrivate = PrivateBrowsingUtils.isBrowserPrivate(this.browser);
     actions.push({
-      label: gBrowserBundle.GetStringFromName("webNotifications.never"),
-      accessKey: gBrowserBundle.GetStringFromName(
-        "webNotifications.never.accesskey"
-      ),
+      label: isBrowserPrivate
+        ? gBrowserBundle.GetStringFromName("webNotifications.block")
+        : gBrowserBundle.GetStringFromName("webNotifications.alwaysBlock"),
+      accessKey: isBrowserPrivate
+        ? gBrowserBundle.GetStringFromName("webNotifications.block.accesskey")
+        : gBrowserBundle.GetStringFromName(
+            "webNotifications.alwaysBlock.accesskey"
+          ),
       action: SitePermissions.BLOCK,
-      scope: PrivateBrowsingUtils.isBrowserPrivate(this.browser)
+      scope: isBrowserPrivate
         ? SitePermissions.SCOPE_SESSION
         : SitePermissions.SCOPE_PERSISTENT,
     });
@@ -1027,22 +1020,29 @@ DesktopNotificationPermissionPrompt.prototype = {
   },
 
   get postPromptActions() {
-    return [
+    let actions = [
       {
-        label: gBrowserBundle.GetStringFromName("webNotifications.allow"),
+        label: gBrowserBundle.GetStringFromName("webNotifications.allow2"),
         accessKey: gBrowserBundle.GetStringFromName(
-          "webNotifications.allow.accesskey"
+          "webNotifications.allow2.accesskey"
         ),
         action: SitePermissions.ALLOW,
       },
-      {
-        label: gBrowserBundle.GetStringFromName("webNotifications.never"),
-        accessKey: gBrowserBundle.GetStringFromName(
-          "webNotifications.never.accesskey"
-        ),
-        action: SitePermissions.BLOCK,
-      },
     ];
+
+    let isBrowserPrivate = PrivateBrowsingUtils.isBrowserPrivate(this.browser);
+    actions.push({
+      label: isBrowserPrivate
+        ? gBrowserBundle.GetStringFromName("webNotifications.block")
+        : gBrowserBundle.GetStringFromName("webNotifications.alwaysBlock"),
+      accessKey: isBrowserPrivate
+        ? gBrowserBundle.GetStringFromName("webNotifications.block.accesskey")
+        : gBrowserBundle.GetStringFromName(
+            "webNotifications.alwaysBlock.accesskey"
+          ),
+      action: SitePermissions.BLOCK,
+    });
+    return actions;
   },
 };
 
@@ -1091,7 +1091,7 @@ PersistentStoragePermissionPrompt.prototype = {
 
   get message() {
     return gBrowserBundle.formatStringFromName(
-      "persistentStorage.allowWithSite",
+      "persistentStorage.allowWithSite2",
       ["<>"]
     );
   },
@@ -1108,22 +1108,12 @@ PersistentStoragePermissionPrompt.prototype = {
       },
       {
         label: gBrowserBundle.GetStringFromName(
-          "persistentStorage.notNow.label"
+          "persistentStorage.block.label"
         ),
         accessKey: gBrowserBundle.GetStringFromName(
-          "persistentStorage.notNow.accesskey"
-        ),
-        action: Ci.nsIPermissionManager.DENY_ACTION,
-      },
-      {
-        label: gBrowserBundle.GetStringFromName(
-          "persistentStorage.neverAllow.label"
-        ),
-        accessKey: gBrowserBundle.GetStringFromName(
-          "persistentStorage.neverAllow.accesskey"
+          "persistentStorage.block.accesskey"
         ),
         action: SitePermissions.BLOCK,
-        scope: SitePermissions.SCOPE_PERSISTENT,
       },
     ];
   },
@@ -1199,24 +1189,18 @@ MIDIPermissionPrompt.prototype = {
     let message;
     if (this.principal.schemeIs("file")) {
       if (this.isSysexPerm) {
-        message = gBrowserBundle.formatStringFromName(
-          "midi.shareSysexWithFile.message"
-        );
+        message = gBrowserBundle.GetStringFromName("midi.shareSysexWithFile");
       } else {
-        message = gBrowserBundle.formatStringFromName(
-          "midi.shareWithFile.message"
-        );
+        message = gBrowserBundle.GetStringFromName("midi.shareWithFile");
       }
     } else if (this.isSysexPerm) {
-      message = gBrowserBundle.formatStringFromName(
-        "midi.shareSysexWithSite.message",
-        ["<>"]
-      );
+      message = gBrowserBundle.formatStringFromName("midi.shareSysexWithSite", [
+        "<>",
+      ]);
     } else {
-      message = gBrowserBundle.formatStringFromName(
-        "midi.shareWithSite.message",
-        ["<>"]
-      );
+      message = gBrowserBundle.formatStringFromName("midi.shareWithSite", [
+        "<>",
+      ]);
     }
     return message;
   },
@@ -1224,13 +1208,13 @@ MIDIPermissionPrompt.prototype = {
   get promptActions() {
     return [
       {
-        label: gBrowserBundle.GetStringFromName("midi.Allow.label"),
-        accessKey: gBrowserBundle.GetStringFromName("midi.Allow.accesskey"),
+        label: gBrowserBundle.GetStringFromName("midi.allow.label"),
+        accessKey: gBrowserBundle.GetStringFromName("midi.allow.accesskey"),
         action: Ci.nsIPermissionManager.ALLOW_ACTION,
       },
       {
-        label: gBrowserBundle.GetStringFromName("midi.DontAllow.label"),
-        accessKey: gBrowserBundle.GetStringFromName("midi.DontAllow.accesskey"),
+        label: gBrowserBundle.GetStringFromName("midi.block.label"),
+        accessKey: gBrowserBundle.GetStringFromName("midi.block.accesskey"),
         action: Ci.nsIPermissionManager.DENY_ACTION,
       },
     ];
@@ -1256,7 +1240,7 @@ StorageAccessPermissionPrompt.prototype = {
 
   get permissionKey() {
     // Make sure this name is unique per each third-party tracker
-    return "storage-access-" + this.principal.origin;
+    return `3rdPartyStorage${SitePermissions.PERM_KEY_DELIMITER}${this.principal.origin}`;
   },
 
   prettifyHostPort(hostport) {
@@ -1274,13 +1258,12 @@ StorageAccessPermissionPrompt.prototype = {
       "third-party-cookies";
     let hostPort = this.prettifyHostPort(this.principal.hostPort);
     let hintText = gBrowserBundle.formatStringFromName(
-      "storageAccess.hintText",
+      "storageAccess1.hintText",
       [hostPort]
     );
     return {
       learnMoreURL,
       displayURI: false,
-      name: hostPort,
       hintText,
       escAction: "secondarybuttoncommand",
     };
@@ -1295,10 +1278,9 @@ StorageAccessPermissionPrompt.prototype = {
   },
 
   get message() {
-    return gBrowserBundle.formatStringFromName("storageAccess3.message", [
-      "<>",
-      this.prettifyHostPort(this.topLevelPrincipal.hostPort),
+    return gBrowserBundle.formatStringFromName("storageAccess4.message", [
       this.prettifyHostPort(this.principal.hostPort),
+      this.prettifyHostPort(this.topLevelPrincipal.hostPort),
     ]);
   },
 
@@ -1307,9 +1289,9 @@ StorageAccessPermissionPrompt.prototype = {
 
     return [
       {
-        label: gBrowserBundle.GetStringFromName("storageAccess.Allow.label"),
+        label: gBrowserBundle.GetStringFromName("storageAccess1.Allow.label"),
         accessKey: gBrowserBundle.GetStringFromName(
-          "storageAccess.Allow.accesskey"
+          "storageAccess1.Allow.accesskey"
         ),
         action: Ci.nsIPermissionManager.ALLOW_ACTION,
         callback(state) {
@@ -1318,10 +1300,10 @@ StorageAccessPermissionPrompt.prototype = {
       },
       {
         label: gBrowserBundle.GetStringFromName(
-          "storageAccess.DontAllow.label"
+          "storageAccess1.DontAllow.label"
         ),
         accessKey: gBrowserBundle.GetStringFromName(
-          "storageAccess.DontAllow.accesskey"
+          "storageAccess1.DontAllow.accesskey"
         ),
         action: Ci.nsIPermissionManager.DENY_ACTION,
         callback(state) {

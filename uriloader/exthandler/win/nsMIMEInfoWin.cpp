@@ -13,8 +13,7 @@
 #include <shellapi.h>
 #include "nsIMutableArray.h"
 #include "nsTArray.h"
-#include "shlobj.h"
-#include "windows.h"
+#include <shlobj.h>
 #include "nsIWindowsRegKey.h"
 #include "nsUnicharUtils.h"
 #include "nsITextToSubURI.h"
@@ -22,7 +21,6 @@
 #include "mozilla/CmdLineAndEnvUtils.h"
 #include "mozilla/ShellHeaderOnlyUtils.h"
 #include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/UrlmonHeaderOnlyUtils.h"
 #include "mozilla/UniquePtrExtensions.h"
 
@@ -74,20 +72,16 @@ nsresult nsMIMEInfoWin::ShellExecuteWithIFile(nsIFile* aExecutable, int aArgc,
   // It does not work in a special environment such as Citrix.  In such a case
   // we fall back to launching an application as a child process.  We need to
   // find a way to handle the combination of these interop issues.
-  {
-    Telemetry::AutoTimer<Telemetry::SHELLEXECUTEBYEXPLORER_DURATION_MS> timer;
-    mozilla::LauncherVoidResult shellExecuteOk =
-        mozilla::ShellExecuteByExplorer(execPathBStr, assembledArgs.get(),
-                                        verbDefault, workingDir, showCmd);
-    if (shellExecuteOk.isOk()) {
-      return NS_OK;
-    }
+  mozilla::LauncherVoidResult shellExecuteOk = mozilla::ShellExecuteByExplorer(
+      execPathBStr, assembledArgs.get(), verbDefault, workingDir, showCmd);
+  if (shellExecuteOk.isErr()) {
+    // No need to pass assembledArgs to LaunchWithIProcess.  aArgv will be
+    // processed in nsProcess::RunProcess.
+    return LaunchWithIProcess(aExecutable, aArgc,
+                              reinterpret_cast<const char16_t**>(aArgv));
   }
 
-  // No need to pass assembledArgs to LaunchWithIProcess.  aArgv will be
-  // processed in nsProcess::RunProcess.
-  return LaunchWithIProcess(aExecutable, aArgc,
-                            reinterpret_cast<const char16_t**>(aArgv));
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -327,14 +321,11 @@ nsresult nsMIMEInfoWin::LoadUriInternal(nsIURI* aURL) {
     // ShellExecuteByExplorer.  Thus we skip it and go straight to
     // ShellExecuteExW for Thunderbird.
 #ifndef MOZ_THUNDERBIRD
-    {
-      Telemetry::AutoTimer<Telemetry::SHELLEXECUTEBYEXPLORER_DURATION_MS> timer;
-      mozilla::LauncherVoidResult shellExecuteOk =
-          mozilla::ShellExecuteByExplorer(validatedUri.inspect(), args, verb,
-                                          workingDir, showCmd);
-      if (shellExecuteOk.isOk()) {
-        return NS_OK;
-      }
+    mozilla::LauncherVoidResult shellExecuteOk =
+        mozilla::ShellExecuteByExplorer(validatedUri.inspect(), args, verb,
+                                        workingDir, showCmd);
+    if (shellExecuteOk.isOk()) {
+      return NS_OK;
     }
 #endif  // MOZ_THUNDERBIRD
 
@@ -411,8 +402,7 @@ bool nsMIMEInfoWin::GetAppsVerbCommandHandler(const nsAString& appExeName,
   if (NS_FAILED(rv)) return false;
 
   nsAutoString appFilesystemCommand;
-  if (NS_SUCCEEDED(
-          appKey->ReadStringValue(EmptyString(), appFilesystemCommand))) {
+  if (NS_SUCCEEDED(appKey->ReadStringValue(u""_ns, appFilesystemCommand))) {
     // Expand environment vars, clean up any misc.
     if (!nsLocalFile::CleanupCmdHandlerPath(appFilesystemCommand)) return false;
 
@@ -471,8 +461,7 @@ bool nsMIMEInfoWin::GetDllLaunchInfo(nsIFile* aDll, nsIFile* aFile,
   if (NS_FAILED(rv)) return false;
 
   nsAutoString appFilesystemCommand;
-  if (NS_SUCCEEDED(
-          appKey->ReadStringValue(EmptyString(), appFilesystemCommand))) {
+  if (NS_SUCCEEDED(appKey->ReadStringValue(u""_ns, appFilesystemCommand))) {
     // Replace embedded environment variables.
     uint32_t bufLength =
         ::ExpandEnvironmentStringsW(appFilesystemCommand.get(), nullptr, 0);
@@ -538,8 +527,7 @@ bool nsMIMEInfoWin::GetProgIDVerbCommandHandler(const nsAString& appProgIDName,
   if (NS_FAILED(rv)) return false;
 
   nsAutoString appFilesystemCommand;
-  if (NS_SUCCEEDED(
-          appKey->ReadStringValue(EmptyString(), appFilesystemCommand))) {
+  if (NS_SUCCEEDED(appKey->ReadStringValue(u""_ns, appFilesystemCommand))) {
     // Expand environment vars, clean up any misc.
     if (!nsLocalFile::CleanupCmdHandlerPath(appFilesystemCommand)) return false;
 
@@ -639,7 +627,7 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray** _retval) {
                         nsIWindowsRegKey::ACCESS_QUERY_VALUE);
       if (NS_SUCCEEDED(rv)) {
         nsAutoString mimeFileExt;
-        if (NS_SUCCEEDED(regKey->ReadStringValue(EmptyString(), mimeFileExt))) {
+        if (NS_SUCCEEDED(regKey->ReadStringValue(u""_ns, mimeFileExt))) {
           CopyUTF16toUTF8(mimeFileExt, fileExt);
           extKnown = false;
         }
@@ -665,7 +653,7 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray** _retval) {
                      workingRegistryPath, nsIWindowsRegKey::ACCESS_QUERY_VALUE);
     if (NS_SUCCEEDED(rv)) {
       nsAutoString appProgId;
-      if (NS_SUCCEEDED(regKey->ReadStringValue(EmptyString(), appProgId))) {
+      if (NS_SUCCEEDED(regKey->ReadStringValue(u""_ns, appProgId))) {
         // Bug 358297 - ignore the embedded internet explorer handler
         if (appProgId != u"XPSViewer.Document"_ns) {
           nsAutoString appFilesystemCommand;

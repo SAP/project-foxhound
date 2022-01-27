@@ -1,0 +1,13 @@
+{
+  "ui:order": [
+    "telemetryId",
+    "searchPageRegexp",
+    "queryParamName",
+    "codeParamName",
+    "taggedCodes",
+    "organicCodes",
+    "followOnParamNames",
+    "followOnCookies",
+    "extraAdServersRegexps"
+  ]
+}

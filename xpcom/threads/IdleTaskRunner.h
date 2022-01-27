@@ -9,18 +9,22 @@
 
 #include "mozilla/TimeStamp.h"
 #include "mozilla/TaskCategory.h"
+#include "mozilla/TaskController.h"
 #include "nsThreadUtils.h"
 #include <functional>
 
 namespace mozilla {
 
-// A general purpose repeating callback runner (it can be configured
-// to a one-time runner, too.) If it is running repeatedly,
-// one has to either explicitly Cancel() the runner or have
-// MayContinueProcessing() callback return false to completely remove
-// the runner.
-class IdleTaskRunner final : public IdleRunnable {
+class IdleTaskRunnerTask;
+
+// A general purpose repeating callback runner (it can be configured to a
+// one-time runner, too.) If it is running repeatedly, one has to either
+// explicitly Cancel() the runner or have MayStopProcessing() callback return
+// true to completely remove the runner.
+class IdleTaskRunner {
  public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(IdleTaskRunner)
+
   // Return true if some meaningful work was done.
   using CallbackType = std::function<bool(TimeStamp aDeadline)>;
 
@@ -30,38 +34,77 @@ class IdleTaskRunner final : public IdleRunnable {
   using MayStopProcessingCallbackType = std::function<bool()>;
 
  public:
+  // An IdleTaskRunner has (up to) three phases:
+  //
+  //  - (duration aStartDelay) waiting to run (aStartDelay can be zero)
+  //
+  //  - (duration aMaxDelay) attempting to find a long enough amount of idle
+  //    time, at least aMinimumUsefulBudget
+  //
+  //  - overdue for idle time, run as soon as possible
+  //
+  // If aRepeating is true, then aStartDelay applies only to the first run; the
+  // second run will attempt to run in the first idle slice that is long
+  // enough.
+  //
+  // All durations are in milliseconds.
+  //
   static already_AddRefed<IdleTaskRunner> Create(
-      const CallbackType& aCallback, const char* aRunnableName, uint32_t aDelay,
-      int64_t aBudget, bool aRepeating,
+      const CallbackType& aCallback, const char* aRunnableName,
+      TimeDuration aStartDelay, TimeDuration aMaxDelay,
+      TimeDuration aMinimumUsefulBudget, bool aRepeating,
       const MayStopProcessingCallbackType& aMayStopProcessing);
 
-  NS_IMETHOD Run() override;
+  void Run();
 
-  void SetDeadline(mozilla::TimeStamp aDeadline) override;
-  void SetTimer(uint32_t aDelay, nsIEventTarget* aTarget) override;
+  // (Used by the task triggering code.) Record the end of the current idle
+  // period, or null if not running during idle time.
+  void SetIdleDeadline(mozilla::TimeStamp aDeadline);
 
-  nsresult Cancel() override;
+  void SetTimer(TimeDuration aDelay, nsIEventTarget* aTarget);
+
+  // Update the minimum idle time that this callback would be invoked for.
+  void SetMinimumUsefulBudget(int64_t aMinimumUsefulBudget);
+
+  void Cancel();
+
   void Schedule(bool aAllowIdleDispatch);
+
+  const char* GetName() { return mName; }
 
  private:
   explicit IdleTaskRunner(
-      const CallbackType& aCallback, const char* aRunnableName, uint32_t aDelay,
-      int64_t aBudget, bool aRepeating,
+      const CallbackType& aCallback, const char* aRunnableName,
+      TimeDuration aStartDelay, TimeDuration aMaxDelay,
+      TimeDuration aMinimumUsefulBudget, bool aRepeating,
       const MayStopProcessingCallbackType& aMayStopProcessing);
   ~IdleTaskRunner();
   void CancelTimer();
-  void SetTimerInternal(uint32_t aDelay);
+  void SetTimerInternal(TimeDuration aDelay);
 
   nsCOMPtr<nsITimer> mTimer;
   nsCOMPtr<nsITimer> mScheduleTimer;
   CallbackType mCallback;
-  uint32_t mDelay;
+
+  // Do not run until this time.
+  const mozilla::TimeStamp mStartTime;
+
+  // Wait this long for idle time before giving up and running a non-idle
+  // callback.
+  TimeDuration mMaxDelay;
+
+  // If running during idle time, the expected end of the current idle period.
+  // The null timestamp when the run is triggered by aMaxDelay instead of idle.
   TimeStamp mDeadline;
-  TimeDuration mBudget;
+
+  // The least duration worth calling the callback for during idle time.
+  TimeDuration mMinimumUsefulBudget;
+
   bool mRepeating;
   bool mTimerActive;
   MayStopProcessingCallbackType mMayStopProcessing;
   const char* mName;
+  RefPtr<IdleTaskRunnerTask> mTask;
 };
 
 }  // end of namespace mozilla.

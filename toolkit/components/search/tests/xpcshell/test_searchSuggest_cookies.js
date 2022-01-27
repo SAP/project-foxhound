@@ -24,8 +24,7 @@ function countCacheEntries() {
   info("Enumerating cache entries");
   return new Promise(resolve => {
     let storage = Services.cache2.diskCacheStorage(
-      Services.loadContextInfo.default,
-      false
+      Services.loadContextInfo.default
     );
     storage.asyncVisitStorage(
       {
@@ -77,28 +76,22 @@ add_task(async function setup() {
   server.registerContentType("sjs", "sjs");
 
   let unicodeName = ["\u30a8", "\u30c9"].join("");
-  let engines = await addTestEngines([
-    {
-      name: unicodeName,
-      xmlFileName:
-        "engineMaker.sjs?" +
-        JSON.stringify({
-          baseURL: gDataUrl,
-          name: unicodeName,
-          method: "GET",
-        }),
-    },
-    {
-      name: "engine two",
-      xmlFileName:
-        "engineMaker.sjs?" +
-        JSON.stringify({
-          baseURL: gDataUrl,
-          name: "engine two",
-          method: "GET",
-        }),
-    },
-  ]);
+  let engines = [
+    await SearchTestUtils.promiseNewSearchEngine(
+      `${gDataUrl}engineMaker.sjs?${JSON.stringify({
+        baseURL: gDataUrl,
+        name: unicodeName,
+        method: "GET",
+      })}`
+    ),
+    await SearchTestUtils.promiseNewSearchEngine(
+      `${gDataUrl}engineMaker.sjs?${JSON.stringify({
+        baseURL: gDataUrl,
+        name: "engine two",
+        method: "GET",
+      })}`
+    ),
+  ];
 
   // Clean up all the data.
   await new Promise(resolve =>

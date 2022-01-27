@@ -147,17 +147,17 @@ async function showCol(id) {
 
   info(`Showing ${id}`);
   ok(
-    columnWrapper.hasAttribute("hidden"),
+    BrowserTestUtils.is_hidden(columnWrapper),
     "Column is hidden before showing it"
   );
 
-  click(menuItem);
+  table.menupopup.activateItem(menuItem);
   const toShow = await event;
   await onPopupHidden;
 
   is(toShow, id, `#${id} was selected to be shown`);
   ok(
-    !columnWrapper.hasAttribute("hidden"),
+    BrowserTestUtils.is_visible(columnWrapper),
     "Column is not hidden after showing it"
   );
 }
@@ -172,16 +172,15 @@ async function hideCol(id) {
 
   info(`selecting to hide #${id}`);
   ok(
-    !columnWrapper.hasAttribute("hidden"),
+    BrowserTestUtils.is_visible(columnWrapper),
     `Column #${id} is not hidden before hiding it`
   );
-  click(menuItem);
+  table.menupopup.activateItem(menuItem);
   const toHide = await event;
   await onPopupHidden;
   is(toHide, id, `#${id} was selected to be hidden`);
-  is(
-    columnWrapper.getAttribute("hidden"),
-    "true",
+  ok(
+    BrowserTestUtils.is_hidden(columnWrapper),
     `Column #${id} is hidden after hiding it`
   );
 }

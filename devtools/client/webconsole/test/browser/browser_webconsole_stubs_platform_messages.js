@@ -5,7 +5,7 @@
 
 const {
   STUBS_UPDATE_ENV,
-  createResourceWatcherForTarget,
+  createCommandsForMainProcess,
   getCleanedPacket,
   getSerializedPacket,
   getStubFile,
@@ -40,9 +40,13 @@ add_task(async function() {
 
   let failed = false;
   for (const [key, packet] of generatedStubs) {
-    const packetStr = getSerializedPacket(packet);
+    const packetStr = getSerializedPacket(packet, {
+      sortKeys: true,
+      replaceActorIds: true,
+    });
     const existingPacketStr = getSerializedPacket(
-      existingStubs.rawPackets.get(key)
+      existingStubs.rawPackets.get(key),
+      { sortKeys: true, replaceActorIds: true }
     );
     is(packetStr, existingPacketStr, `"${key}" packet has expected value`);
     failed = failed || packetStr !== existingPacketStr;
@@ -58,32 +62,22 @@ add_task(async function() {
 async function generatePlatformMessagesStubs() {
   const stubs = new Map();
 
-  // Instantiate a minimal server
-  const { DevToolsClient } = require("devtools/client/devtools-client");
-  const { DevToolsServer } = require("devtools/server/devtools-server");
-  DevToolsServer.init();
-  DevToolsServer.allowChromeProcess = true;
-  if (!DevToolsServer.createRootActor) {
-    DevToolsServer.registerAllActors();
-  }
-  const transport = DevToolsServer.connectPipe();
-  const client = new DevToolsClient(transport);
-  await client.connect();
-  const mainProcessDescriptor = await client.mainRoot.getMainProcess();
-  const target = await mainProcessDescriptor.getTarget();
-
-  const resourceWatcher = await createResourceWatcherForTarget(target);
+  const commands = await createCommandsForMainProcess();
+  await commands.targetCommand.startListening();
+  const resourceCommand = commands.resourceCommand;
 
   // The resource-watcher only supports a single call to watch/unwatch per
   // instance, so we attach a unique watch callback, which will forward the
   // resource to `handlePlatformMessage`, dynamically updated for each command.
   let handlePlatformMessage = function() {};
 
-  const onPlatformMessageAvailable = ({ resource }) => {
-    handlePlatformMessage(resource);
+  const onPlatformMessageAvailable = resources => {
+    for (const resource of resources) {
+      handlePlatformMessage(resource);
+    }
   };
-  await resourceWatcher.watchResources(
-    [resourceWatcher.TYPES.PLATFORM_MESSAGE],
+  await resourceCommand.watchResources(
+    [resourceCommand.TYPES.PLATFORM_MESSAGE],
     {
       onAvailable: onPlatformMessageAvailable,
     }
@@ -100,8 +94,7 @@ async function generatePlatformMessagesStubs() {
     stubs.set(key, getCleanedPacket(key, packet));
   }
 
-  resourceWatcher.targetList.stopListening();
-  await client.close();
+  await commands.destroy();
 
   return stubs;
 }

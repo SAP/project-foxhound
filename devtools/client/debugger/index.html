@@ -19,10 +19,22 @@
       type="text/css"
       href="chrome://devtools/content/shared/sourceeditor/codemirror/mozilla.css"
     />
+    <!-- Needed for the ObjectInspector -->
     <link
       rel="stylesheet"
       type="text/css"
       href="chrome://devtools/content/shared/components/reps/reps.css"
+    />
+    <!-- Needed for the ObjectInspector and the Source Tree -->
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="chrome://devtools/content/shared/components/Tree.css"
+    />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="chrome://devtools/content/shared/components/object-inspector/components/ObjectInspector.css"
     />
     <link
       rel="stylesheet"
@@ -37,14 +49,14 @@
   </head>
 
   <body>
-    <div id="mount"></div>
+    <main id="mount" class="theme-body"></main>
     <script
       src="chrome://devtools/content/shared/theme-switching.js"
     ></script>
     <script>
       try {
         const { BrowserLoader } = ChromeUtils.import(
-          "resource://devtools/client/shared/browser-loader.js"
+          "resource://devtools/shared/loader/browser-loader.js"
         );
         const { require } = BrowserLoader({
           baseURI: "resource://devtools/client/debugger",

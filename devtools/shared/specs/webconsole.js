@@ -12,14 +12,13 @@ const {
   Arg,
 } = require("devtools/shared/protocol");
 
-types.addDictType("console.traits", {
-  evaluateJSAsync: "boolean",
-});
-
 types.addDictType("console.startlisteners", {
   startedListeners: "array:string",
   nativeConsoleAPI: "nullable:boolean",
-  traits: "console.traits",
+});
+
+types.addDictType("console.stoplisteners", {
+  stoppedListeners: "array:string",
 });
 
 types.addDictType("console.autocomplete", {
@@ -74,6 +73,7 @@ const webconsoleSpecPrototype = {
     },
     consoleAPICall: {
       message: Option(0, "json"),
+      clonedFromContentProcess: Option(0, "nullable:boolean"),
     },
     reflowActivity: {
       interruptible: Option(0, "boolean"),
@@ -128,7 +128,7 @@ const webconsoleSpecPrototype = {
       request: {
         listeners: Arg(0, "nullable:array:string"),
       },
-      response: RetVal("array:string"),
+      response: RetVal("console.stoplisteners"),
     },
     /**
      * Retrieve the cached messages from the server.
@@ -248,7 +248,9 @@ const webconsoleSpecPrototype = {
     },
     getBlockedUrls: {
       request: {},
-      response: RetVal("array:string"),
+      response: {
+        blockedUrls: RetVal("array:string"),
+      },
     },
   },
 };

@@ -8,9 +8,13 @@
 // TODO:
 // * find out how the Chrome implementation deals with conflicts
 
-/* exported extensionIdToCollectionId */
+// TODO bug 1637465: Remove the Kinto-based storage implementation.
 
-var EXPORTED_SYMBOLS = ["ExtensionStorageSync", "extensionStorageSync"];
+var EXPORTED_SYMBOLS = [
+  "ExtensionStorageSync",
+  "KintoStorageTestUtils",
+  "extensionStorageSync",
+];
 
 const global = this;
 
@@ -55,6 +59,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Kinto: "resource://services-common/kinto-offline-client.js",
   FirefoxAdapter: "resource://services-common/kinto-storage-adapter.js",
   Observers: "resource://services-common/observers.js",
+  Services: "resource://gre/modules/Services.jsm",
   Utils: "resource://services-sync/util.js",
 });
 
@@ -143,7 +148,8 @@ function ciphertextHMAC(keyBundle, id, IV, ciphertext) {
  * @returns {string} sha256 of the user's kB as a hex string
  */
 const getKBHash = async function(fxaService) {
-  return (await fxaService.keys.getKeys()).kExtKbHash;
+  const key = await fxaService.keys.getKeyForScope(STORAGE_SYNC_SCOPE);
+  return fxaService.keys.kidAsHex(key);
 };
 
 /**
@@ -272,12 +278,8 @@ class KeyRingEncryptionRemoteTransformer extends EncryptionRemoteTransformer {
     throwIfNoFxA(this._fxaService, "encrypting chrome.storage.sync records");
     const self = this;
     return (async function() {
-      let keys = await self._fxaService.keys.getKeys();
-      if (!keys.kExtSync) {
-        throw new Error("user doesn't have kExtSync");
-      }
-
-      return BulkKeyBundle.fromHexKey(keys.kExtSync);
+      let key = await self._fxaService.keys.getKeyForScope(STORAGE_SYNC_SCOPE);
+      return BulkKeyBundle.fromJWK(key);
     })();
   }
   // Pass through the kbHash field from the unencrypted record. If
@@ -500,10 +502,7 @@ class CryptoCollection {
       // This is a new keyring. Invent an ID for this record. If this
       // changes, it means a client replaced the keyring, so we need to
       // reupload everything.
-      const uuidgen = Cc["@mozilla.org/uuid-generator;1"].getService(
-        Ci.nsIUUIDGenerator
-      );
-      const uuid = uuidgen.generateUUID().toString();
+      const uuid = Services.uuid.generateUUID().toString();
       data = { uuid, id: STORAGE_SYNC_CRYPTO_KEYRING_RECORD_ID };
     }
     return data;
@@ -1373,3 +1372,14 @@ class ExtensionStorageSync {
 }
 this.ExtensionStorageSync = ExtensionStorageSync;
 extensionStorageSync = new ExtensionStorageSync(_fxaService);
+
+// For test use only.
+const KintoStorageTestUtils = {
+  CollectionKeyEncryptionRemoteTransformer,
+  CryptoCollection,
+  EncryptionRemoteTransformer,
+  KeyRingEncryptionRemoteTransformer,
+  cleanUpForContext,
+  idToKey,
+  keyToId,
+};

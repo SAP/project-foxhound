@@ -2,23 +2,26 @@ import argparse
 from . import browser
 
 latest_channels = {
+    'android_weblayer': 'dev',
+    'android_webview': 'dev',
     'firefox': 'nightly',
-    'chrome': 'dev',
+    'chrome': 'nightly',
     'chrome_android': 'dev',
     'edgechromium': 'dev',
     'safari': 'preview',
-    'servo': 'nightly'
+    'servo': 'nightly',
+    'webkitgtk_minibrowser': 'nightly'
 }
 
 channel_by_name = {
     'stable': 'stable',
     'release': 'stable',
     'beta': 'beta',
+    'dev': 'dev',
+    'canary': 'canary',
     'nightly': latest_channels,
-    'dev': latest_channels,
     'preview': latest_channels,
     'experimental': latest_channels,
-    'canary': 'canary',
 }
 
 channel_args = argparse.ArgumentParser(add_help=False)

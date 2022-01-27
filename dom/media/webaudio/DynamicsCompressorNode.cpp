@@ -14,8 +14,7 @@
 
 using WebCore::DynamicsCompressor;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(DynamicsCompressorNode, AudioNode,
                                    mThreshold, mKnee, mRatio, mAttack, mRelease)
@@ -163,16 +162,16 @@ DynamicsCompressorNode::DynamicsCompressorNode(AudioContext* aContext)
     : AudioNode(aContext, 2, ChannelCountMode::Clamped_max,
                 ChannelInterpretation::Speakers),
       mReduction(0) {
-  CreateAudioParam(mThreshold, DynamicsCompressorNodeEngine::THRESHOLD,
-                   u"threshold", -24.f, -100.f, 0.f);
-  CreateAudioParam(mKnee, DynamicsCompressorNodeEngine::KNEE, u"knee", 30.f,
-                   0.f, 40.f);
-  CreateAudioParam(mRatio, DynamicsCompressorNodeEngine::RATIO, u"ratio", 12.f,
-                   1.f, 20.f);
-  CreateAudioParam(mAttack, DynamicsCompressorNodeEngine::ATTACK, u"attack",
-                   0.003f, 0.f, 1.f);
-  CreateAudioParam(mRelease, DynamicsCompressorNodeEngine::RELEASE, u"release",
-                   0.25f, 0.f, 1.f);
+  mThreshold = CreateAudioParam(DynamicsCompressorNodeEngine::THRESHOLD,
+                                u"threshold"_ns, -24.f, -100.f, 0.f);
+  mKnee = CreateAudioParam(DynamicsCompressorNodeEngine::KNEE, u"knee"_ns, 30.f,
+                           0.f, 40.f);
+  mRatio = CreateAudioParam(DynamicsCompressorNodeEngine::RATIO, u"ratio"_ns,
+                            12.f, 1.f, 20.f);
+  mAttack = CreateAudioParam(DynamicsCompressorNodeEngine::ATTACK, u"attack"_ns,
+                             0.003f, 0.f, 1.f);
+  mRelease = CreateAudioParam(DynamicsCompressorNodeEngine::RELEASE,
+                              u"release"_ns, 0.25f, 0.f, 1.f);
   DynamicsCompressorNodeEngine* engine =
       new DynamicsCompressorNodeEngine(this, aContext->Destination());
   mTrack = AudioNodeTrack::Create(
@@ -191,11 +190,11 @@ already_AddRefed<DynamicsCompressorNode> DynamicsCompressorNode::Create(
     return nullptr;
   }
 
-  audioNode->Attack()->SetValue(aOptions.mAttack);
-  audioNode->Knee()->SetValue(aOptions.mKnee);
-  audioNode->Ratio()->SetValue(aOptions.mRatio);
-  audioNode->GetRelease()->SetValue(aOptions.mRelease);
-  audioNode->Threshold()->SetValue(aOptions.mThreshold);
+  audioNode->Attack()->SetInitialValue(aOptions.mAttack);
+  audioNode->Knee()->SetInitialValue(aOptions.mKnee);
+  audioNode->Ratio()->SetInitialValue(aOptions.mRatio);
+  audioNode->GetRelease()->SetInitialValue(aOptions.mRelease);
+  audioNode->Threshold()->SetInitialValue(aOptions.mThreshold);
 
   return audioNode.forget();
 }
@@ -221,5 +220,4 @@ JSObject* DynamicsCompressorNode::WrapObject(
   return DynamicsCompressorNode_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -6,9 +6,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gc/Zone.h"
-#include "js/Array.h"  // JS::GetArrayLength
+#include "js/Array.h"               // JS::GetArrayLength
+#include "js/GlobalObject.h"        // JS_NewGlobalObject
+#include "js/PropertyAndElement.h"  // JS_DefineProperty
+#include "js/WeakMap.h"
 #include "jsapi-tests/tests.h"
 #include "vm/Realm.h"
+
+using namespace js;
 
 JSObject* keyDelegate = nullptr;
 
@@ -62,11 +67,9 @@ bool checkSize(JS::HandleObject map, uint32_t expected) {
 END_TEST(testWeakMap_basicOperations)
 
 BEGIN_TEST(testWeakMap_keyDelegates) {
-#ifdef JS_GC_ZEAL
   AutoLeaveZeal nozeal(cx);
-#endif /* JS_GC_ZEAL */
 
-  JS_SetGCParameter(cx, JSGC_MODE, JSGC_MODE_ZONE_INCREMENTAL);
+  AutoGCParameter param(cx, JSGC_INCREMENTAL_GC_ENABLED, true);
   JS_GC(cx);
   JS::RootedObject map(cx, JS::NewWeakMapObject(cx));
   CHECK(map);
@@ -96,11 +99,7 @@ BEGIN_TEST(testWeakMap_keyDelegates) {
    * zone to finish marking before the delegate zone.
    */
   CHECK(newCCW(map, delegateRoot));
-  js::SliceBudget budget(js::WorkBudget(1000000));
-  cx->runtime()->gc.startDebugGC(GC_NORMAL, budget);
-  if (JS::IsIncrementalGCInProgress(cx)) {
-    cx->runtime()->gc.finishGC(JS::GCReason::DEBUG_GC);
-  }
+  performIncrementalGC();
 #ifdef DEBUG
   CHECK(map->zone()->lastSweepGroupIndex() <
         delegateRoot->zone()->lastSweepGroupIndex());
@@ -111,15 +110,12 @@ BEGIN_TEST(testWeakMap_keyDelegates) {
   CHECK(SetWeakMapEntry(cx, map, key, val));
   CHECK(checkSize(map, 1));
 
-  /* Check the delegate keeps the entry alive even if the key is not reachable.
+  /*
+   * Check the delegate keeps the entry alive even if the key is not reachable.
    */
   key = nullptr;
   CHECK(newCCW(map, delegateRoot));
-  budget = js::SliceBudget(js::WorkBudget(100000));
-  cx->runtime()->gc.startDebugGC(GC_NORMAL, budget);
-  if (JS::IsIncrementalGCInProgress(cx)) {
-    cx->runtime()->gc.finishGC(JS::GCReason::DEBUG_GC);
-  }
+  performIncrementalGC();
   CHECK(checkSize(map, 1));
 
   /*
@@ -152,7 +148,7 @@ static size_t DelegateObjectMoved(JSObject* obj, JSObject* old) {
 
 JSObject* newKey() {
   static const JSClass keyClass = {
-      "keyWithDelegate", JSCLASS_HAS_PRIVATE | JSCLASS_HAS_RESERVED_SLOTS(1),
+      "keyWithDelegate", JSCLASS_HAS_RESERVED_SLOTS(1),
       JS_NULL_CLASS_OPS, JS_NULL_CLASS_SPEC,
       JS_NULL_CLASS_EXT, JS_NULL_OBJECT_OPS};
 
@@ -241,5 +237,20 @@ bool checkSize(JS::HandleObject map, uint32_t expected) {
   CHECK(length == expected);
 
   return true;
+}
+
+void performIncrementalGC() {
+  JSRuntime* rt = cx->runtime();
+  js::SliceBudget budget(js::WorkBudget(1000));
+  rt->gc.startDebugGC(JS::GCOptions::Normal, budget);
+
+  // Wait until we've started marking before finishing the GC
+  // non-incrementally.
+  while (rt->gc.state() == gc::State::Prepare) {
+    rt->gc.debugGCSlice(budget);
+  }
+  if (JS::IsIncrementalGCInProgress(cx)) {
+    rt->gc.finishGC(JS::GCReason::DEBUG_GC);
+  }
 }
 END_TEST(testWeakMap_keyDelegates)

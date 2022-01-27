@@ -114,15 +114,15 @@ add_task(async function testDuplicateTabLazily() {
   });
 
   extension.onMessage("duplicate-tab", tabId => {
-    let {
+    const {
       Management: {
         global: { tabTracker },
       },
-    } = ChromeUtils.import("resource://gre/modules/Extension.jsm", null);
+    } = ChromeUtils.import("resource://gre/modules/Extension.jsm");
 
     let tab = tabTracker.getTab(tabId);
     // This is a bit of a hack to load a tab in the background.
-    let newTab = gBrowser.duplicateTab(tab, true);
+    let newTab = gBrowser.duplicateTab(tab, true, { skipLoad: true });
 
     BrowserTestUtils.waitForEvent(newTab, "SSTabRestored", () => true).then(
       () => {

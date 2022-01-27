@@ -7,6 +7,7 @@
 #define _mozilla_dom_ServiceWorkerUtils_h
 
 #include "mozilla/MozPromise.h"
+#include "mozilla/dom/IPCNavigationPreloadState.h"
 #include "mozilla/dom/ServiceWorkerRegistrationDescriptor.h"
 #include "nsTArray.h"
 
@@ -15,33 +16,37 @@ class nsIURI;
 namespace mozilla {
 
 class CopyableErrorResult;
+class ErrorResult;
 
 namespace dom {
 
 class ClientInfo;
 class ServiceWorkerRegistrationData;
 class ServiceWorkerRegistrationDescriptor;
+struct NavigationPreloadState;
 
-typedef MozPromise<ServiceWorkerRegistrationDescriptor, CopyableErrorResult,
-                   false>
-    ServiceWorkerRegistrationPromise;
+using ServiceWorkerRegistrationPromise =
+    MozPromise<ServiceWorkerRegistrationDescriptor, CopyableErrorResult, false>;
 
-typedef MozPromise<CopyableTArray<ServiceWorkerRegistrationDescriptor>,
-                   CopyableErrorResult, false>
-    ServiceWorkerRegistrationListPromise;
+using ServiceWorkerRegistrationListPromise =
+    MozPromise<CopyableTArray<ServiceWorkerRegistrationDescriptor>,
+               CopyableErrorResult, false>;
 
-typedef std::function<void(const ServiceWorkerRegistrationDescriptor&)>
-    ServiceWorkerRegistrationCallback;
+using NavigationPreloadStatePromise =
+    MozPromise<IPCNavigationPreloadState, CopyableErrorResult, false>;
 
-typedef std::function<void(
-    const nsTArray<ServiceWorkerRegistrationDescriptor>&)>
-    ServiceWorkerRegistrationListCallback;
+using ServiceWorkerRegistrationCallback =
+    std::function<void(const ServiceWorkerRegistrationDescriptor&)>;
 
-typedef std::function<void(bool)> ServiceWorkerBoolCallback;
+using ServiceWorkerRegistrationListCallback =
+    std::function<void(const nsTArray<ServiceWorkerRegistrationDescriptor>&)>;
 
-typedef std::function<void(ErrorResult&&)> ServiceWorkerFailureCallback;
+using ServiceWorkerBoolCallback = std::function<void(bool)>;
 
-bool ServiceWorkerParentInterceptEnabled();
+using ServiceWorkerFailureCallback = std::function<void(ErrorResult&&)>;
+
+using NavigationPreloadGetStateCallback =
+    std::function<void(NavigationPreloadState&&)>;
 
 bool ServiceWorkerRegistrationDataIsValid(
     const ServiceWorkerRegistrationData& aData);

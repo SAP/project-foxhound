@@ -19,7 +19,8 @@ import {
   getTestState,
   setupTestBrowserHooks,
   setupTestPageAndContextHooks,
-} from './mocha-utils';
+  itFailsFirefox,
+} from './mocha-utils'; // eslint-disable-line import/extensions
 
 describe('JSHandle', function () {
   setupTestBrowserHooks();
@@ -36,7 +37,10 @@ describe('JSHandle', function () {
       const { page } = getTestState();
 
       const navigatorHandle = await page.evaluateHandle(() => navigator);
-      const text = await page.evaluate((e) => e.userAgent, navigatorHandle);
+      const text = await page.evaluate(
+        (e: Navigator) => e.userAgent,
+        navigatorHandle
+      );
       expect(text).toContain('Mozilla');
     });
     it('should accept object handle to primitive types', async () => {
@@ -74,7 +78,9 @@ describe('JSHandle', function () {
         globalThis.FOO = 123;
         return window;
       });
-      expect(await page.evaluate((e) => e.FOO, aHandle)).toBe(123);
+      expect(await page.evaluate((e: { FOO: number }) => e.FOO, aHandle)).toBe(
+        123
+      );
     });
     it('should work with primitives', async () => {
       const { page } = getTestState();
@@ -83,7 +89,9 @@ describe('JSHandle', function () {
         globalThis.FOO = 123;
         return window;
       });
-      expect(await page.evaluate((e) => e.FOO, aHandle)).toBe(123);
+      expect(await page.evaluate((e: { FOO: number }) => e.FOO, aHandle)).toBe(
+        123
+      );
     });
   });
 
@@ -106,9 +114,26 @@ describe('JSHandle', function () {
       const { page } = getTestState();
 
       const aHandle = await page.evaluateHandle(() => ({ foo: 'bar' }));
-      const json = await aHandle.jsonValue();
+      const json = await aHandle.jsonValue<Record<string, string>>();
       expect(json).toEqual({ foo: 'bar' });
     });
+
+    it('works with jsonValues that are not objects', async () => {
+      const { page } = getTestState();
+
+      const aHandle = await page.evaluateHandle(() => ['a', 'b']);
+      const json = await aHandle.jsonValue<string[]>();
+      expect(json).toEqual(['a', 'b']);
+    });
+
+    it('works with jsonValues that are primitives', async () => {
+      const { page } = getTestState();
+
+      const aHandle = await page.evaluateHandle(() => 'foo');
+      const json = await aHandle.jsonValue<string>();
+      expect(json).toEqual('foo');
+    });
+
     it('should not work with dates', async () => {
       const { page } = getTestState();
 
@@ -192,7 +217,10 @@ describe('JSHandle', function () {
       const element = aHandle.asElement();
       expect(element).toBeTruthy();
       expect(
-        await page.evaluate((e) => e.nodeType === Node.TEXT_NODE, element)
+        await page.evaluate(
+          (e: HTMLElement) => e.nodeType === Node.TEXT_NODE,
+          element
+        )
       );
     });
   });

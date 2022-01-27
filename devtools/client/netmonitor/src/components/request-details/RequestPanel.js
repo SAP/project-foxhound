@@ -18,6 +18,7 @@ const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
 const {
   fetchNetworkUpdatePacket,
   parseFormData,
+  parseJSON,
 } = require("devtools/client/netmonitor/src/utils/request-utils");
 const {
   sortObjectKeys,
@@ -37,9 +38,6 @@ const PropertiesView = createFactory(
 const SearchBox = createFactory(
   require("devtools/client/shared/components/SearchBox")
 );
-const Accordion = createFactory(
-  require("devtools/client/shared/components/Accordion")
-);
 
 loader.lazyGetter(this, "SourcePreview", function() {
   return createFactory(
@@ -47,13 +45,14 @@ loader.lazyGetter(this, "SourcePreview", function() {
   );
 });
 
-const { div } = dom;
+const { div, input, label, span, h2 } = dom;
 
 const JSON_SCOPE_NAME = L10N.getStr("jsonScopeName");
-const REQUEST_EMPTY_TEXT = L10N.getStr("paramsEmptyText");
+const REQUEST_EMPTY_TEXT = L10N.getStr("paramsNoPayloadText");
 const REQUEST_FILTER_TEXT = L10N.getStr("paramsFilterText");
 const REQUEST_FORM_DATA = L10N.getStr("paramsFormData");
 const REQUEST_POST_PAYLOAD = L10N.getStr("paramsPostPayload");
+const RAW_REQUEST_PAYLOAD = L10N.getStr("netmonitor.request.raw");
 const REQUEST_TRUNCATED = L10N.getStr("requestTruncated");
 
 /**
@@ -75,7 +74,13 @@ class RequestPanel extends Component {
     super(props);
     this.state = {
       filterText: "",
+      rawRequestPayloadDisplayed: !!props.targetSearchResult,
     };
+
+    this.toggleRawRequestPayload = this.toggleRawRequestPayload.bind(this);
+    this.renderRawRequestPayloadBtn = this.renderRawRequestPayloadBtn.bind(
+      this
+    );
   }
 
   componentDidMount() {
@@ -92,20 +97,28 @@ class RequestPanel extends Component {
       "requestPostData",
     ]);
     updateFormDataSections(nextProps);
+
+    if (nextProps.targetSearchResult !== null) {
+      this.setState({
+        rawRequestPayloadDisplayed: !!nextProps.targetSearchResult,
+      });
+    }
   }
 
   /**
    * Update only if:
    * 1) The rendered object has changed
    * 2) The filter text has changed
+   * 2) The display got toggled between formatted and raw data
    * 3) The user selected another search result target.
    */
   shouldComponentUpdate(nextProps, nextState) {
     return (
       this.props.request !== nextProps.request ||
       this.state.filterText !== nextState.filterText ||
-      (this.props.targetSearchResult !== nextProps.targetSearchResult &&
-        nextProps.targetSearchResult !== null)
+      this.state.rawRequestPayloadDisplayed !==
+        nextState.rawRequestPayloadDisplayed ||
+      this.props.targetSearchResult !== nextProps.targetSearchResult
     );
   }
 
@@ -136,18 +149,46 @@ class RequestPanel extends Component {
     }, {});
   }
 
-  parseJSON(postData) {
-    try {
-      return JSON.parse(postData);
-    } catch (err) {
-      // Continue regardless of parsing error
-    }
-    return null;
+  toggleRawRequestPayload() {
+    this.setState({
+      rawRequestPayloadDisplayed: !this.state.rawRequestPayloadDisplayed,
+    });
+  }
+
+  renderRawRequestPayloadBtn(key, checked, onChange) {
+    return [
+      label(
+        {
+          key: `${key}RawRequestPayloadBtn`,
+          className: "raw-data-toggle",
+          htmlFor: `raw-${key}-checkbox`,
+          onClick: event => {
+            // stop the header click event
+            event.stopPropagation();
+          },
+        },
+        span({ className: "raw-data-toggle-label" }, RAW_REQUEST_PAYLOAD),
+        span(
+          { className: "raw-data-toggle-input" },
+          input({
+            id: `raw-${key}-checkbox`,
+            checked,
+            className: "devtools-checkbox-toggle",
+            onChange,
+            type: "checkbox",
+          })
+        )
+      ),
+    ];
+  }
+
+  renderRequestPayload(component, componentProps) {
+    return component(componentProps);
   }
 
   render() {
     const { request, targetSearchResult } = this.props;
-    const { filterText } = this.state;
+    const { filterText, rawRequestPayloadDisplayed } = this.state;
     const { formDataSections, mimeType, requestPostData } = request;
     const postData = requestPostData ? requestPostData.postData.text : null;
 
@@ -155,23 +196,25 @@ class RequestPanel extends Component {
       return div({ className: "empty-notice" }, REQUEST_EMPTY_TEXT);
     }
 
+    let component;
+    let componentProps;
+    let requestPayloadLabel = REQUEST_POST_PAYLOAD;
+    let hasFormattedDisplay = false;
+
     let error;
-    const items = [];
+
     // Form Data section
     if (formDataSections && formDataSections.length > 0) {
       const sections = formDataSections.filter(str => /\S/.test(str)).join("&");
-      items.push({
-        component: PropertiesView,
-        componentProps: {
-          object: this.getProperties(parseFormData(sections)),
-          filterText,
-          targetSearchResult,
-          defaultSelectFirstNode: false,
-        },
-        header: REQUEST_FORM_DATA,
-        id: "requestFormData",
-        opened: true,
-      });
+      component = PropertiesView;
+      componentProps = {
+        object: this.getProperties(parseFormData(sections)),
+        filterText,
+        targetSearchResult,
+        defaultSelectFirstNode: false,
+      };
+      requestPayloadLabel = REQUEST_FORM_DATA;
+      hasFormattedDisplay = true;
     }
 
     // Request payload section
@@ -187,36 +230,32 @@ class RequestPanel extends Component {
 
     if (formDataSections && formDataSections.length === 0 && postData) {
       if (!error) {
-        const json = this.parseJSON(postData);
+        const json = parseJSON(postData).json;
         if (json) {
-          items.push({
-            component: PropertiesView,
-            componentProps: {
-              object: sortObjectKeys(json),
-              filterText,
-              targetSearchResult,
-              defaultSelectFirstNode: false,
-            },
-            header: JSON_SCOPE_NAME,
-            id: "jsonScopeName",
-            opened: true,
-          });
+          component = PropertiesView;
+          componentProps = {
+            object: sortObjectKeys(json),
+            filterText,
+            targetSearchResult,
+            defaultSelectFirstNode: false,
+          };
+          requestPayloadLabel = JSON_SCOPE_NAME;
+          hasFormattedDisplay = true;
         }
       }
     }
 
-    if (postData) {
-      items.push({
-        component: SourcePreview,
-        componentProps: {
-          text: postData,
-          mode: mimeType.replace(/;.+/, ""),
-          targetSearchResult,
-        },
-        header: REQUEST_POST_PAYLOAD,
-        id: "requestPostPayload",
-        opened: true,
-      });
+    if (
+      (!hasFormattedDisplay || this.state.rawRequestPayloadDisplayed) &&
+      postData
+    ) {
+      component = SourcePreview;
+      componentProps = {
+        text: postData,
+        mode: mimeType?.replace(/;.+/, ""),
+        targetSearchResult,
+      };
+      requestPayloadLabel = REQUEST_POST_PAYLOAD;
     }
 
     return div(
@@ -231,7 +270,22 @@ class RequestPanel extends Component {
           placeholder: REQUEST_FILTER_TEXT,
         })
       ),
-      Accordion({ items })
+      h2({ className: "data-header", role: "heading" }, [
+        span(
+          {
+            key: "data-label",
+            className: "data-label",
+          },
+          requestPayloadLabel
+        ),
+        hasFormattedDisplay &&
+          this.renderRawRequestPayloadBtn(
+            "request",
+            rawRequestPayloadDisplayed,
+            this.toggleRawRequestPayload
+          ),
+      ]),
+      this.renderRequestPayload(component, componentProps)
     );
   }
 }

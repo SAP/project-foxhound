@@ -197,7 +197,7 @@
 
     function listItemReframe() {
       testAccessibleTree("li",{ LISTITEM: [
-        { STATICTEXT: [] },
+        { LISTITEM_MARKER: [] },
         { TEXT_LEAF: [] },
       ] });
 
@@ -206,7 +206,7 @@
       window.windowUtils.advanceTimeAndRefresh(100);
 
       testAccessibleTree("li",{ LISTITEM: [
-        { STATICTEXT: [] },
+        { LISTITEM_MARKER: [] },
         { TEXT_LEAF: [] },
       ] });
 
@@ -307,6 +307,74 @@
       ] });
     }
 
+    // Slack seems to often restyle containers and change children
+    // simultaneously, this results in an insertion queue filled with
+    // redundant insertions and unparented nodes.
+    // This test duplicates some of this.
+    async function testSlack() {
+      let msg = "testSlack";
+      info(msg);
+
+      window.windowUtils.advanceTimeAndRefresh(100);
+      let event = waitForEvent(EVENT_REORDER, "c14", "testSlack");
+
+      let keyContainer = document.querySelector("#c14 .intermediate");
+      keyContainer.style.display = "inline-block";
+      document.body.offsetTop; // Flush layout.
+
+      let one = document.querySelector("#c14 [aria-label='one']");
+      let three = document.querySelector("#c14 [aria-label='three']");
+      one.remove();
+      three.remove();
+      // insert one first
+      keyContainer.firstChild.before(one.cloneNode());
+      // insert three last
+      keyContainer.lastChild.after(three.cloneNode());
+
+      keyContainer.style.display = "flex";
+      document.body.offsetTop; // Flush layout.
+
+      window.windowUtils.restoreNormalRefresh();
+
+      await event;
+
+      is(getAccessible("c14").name, "one two three", "subtree has correct order");
+    }
+
+    // Ensure that a node is removed when visibility: hidden is set but the
+    // layout frame is reconstructed; e.g. because of position: fixed. Also
+    // ensure that visible children aren't clobbered.
+    async function visibilityHiddenWithReframe() {
+      let msg = "visibilityHiddenWithReframe";
+      info(msg);
+
+      testAccessibleTree("c15", { SECTION: [ // c15
+        { SECTION: [ // c15_inner
+          { TEXT_LEAF: [] }, // Text
+          { PARAGRAPH: [
+            { TEXT_LEAF: [] } // Para
+          ] },
+          { HEADING: [ // c15_visible
+            { TEXT_LEAF: [] } // Visible
+          ] }, // c15_visible
+        ] } // c15_inner
+      ] });
+
+      let events = waitForOrderedEvents([
+          [EVENT_HIDE, "c15_inner"],
+          [EVENT_SHOW, "c15_visible"],
+          [EVENT_REORDER, "c15"],
+        ], msg);
+      getNode("c15_inner").style = "visibility: hidden; position: fixed;";
+      await events;
+
+      testAccessibleTree("c15", { SECTION: [ // c15
+        { HEADING: [ // c15_visible
+          { TEXT_LEAF: [] } // Visible
+        ] }, // c15_visible
+      ] });
+    }
+
     async function doTest() {
       await hideDivFromInsideSpan();
 
@@ -333,6 +401,10 @@
       await embedBecomesOuterDoc();
 
       await testCSSGeneratedContentRemovedFromButton();
+
+      await testSlack();
+
+      await visibilityHiddenWithReframe();
 
       SimpleTest.finish();
     }
@@ -366,7 +438,7 @@
 
   <div id="c6">
     <div id="scrollarea" style="overflow:hidden;">
-      <div><div><button id="b1">Hello</button></div><div style="display: none"><button id="b2">Goodbye</button></div></div>
+      <div><div role="none"><button id="b1">Hello</button></div><div role="none" style="display: none"><button id="b2">Goodbye</button></div></div>
     </div>
   </div>
 
@@ -405,6 +477,19 @@
     </style>
     <button id="b13" class="before" onclick="this.className = ''; this.insertAdjacentElement('afterend', document.createElement('hr'))">go</button>
   </div>
+
+  <div role="heading" id="c14" data-qa="virtual-list-item">
+    <div class="intermediate">
+      <div role="img" aria-label="one"></div> two <div role="img"
+        aria-label="three"></div>
+    </div>
+  </div>
+
+  <div id="c15"><div id="c15_inner">
+    Text
+    <p>Para</p>
+    <h1 id="c15_visible" style="visibility: visible;">Visible</h1>
+  </div></div>
 
   <div id="eventdump"></div>
 </body>

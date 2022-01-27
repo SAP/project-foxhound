@@ -45,12 +45,10 @@ const TELEMETRY_SIMULATION_ACTIVATED =
   "devtools.accessibility.simulation_activated";
 const SIMULATION_MENU_LABELS = {
   NONE: "accessibility.filter.none",
-  [SIMULATION_TYPE.DEUTERANOMALY]: "accessibility.simulation.deuteranomaly",
-  [SIMULATION_TYPE.PROTANOMALY]: "accessibility.simulation.protanomaly",
+  [SIMULATION_TYPE.ACHROMATOPSIA]: "accessibility.simulation.achromatopsia",
   [SIMULATION_TYPE.PROTANOPIA]: "accessibility.simulation.protanopia",
   [SIMULATION_TYPE.DEUTERANOPIA]: "accessibility.simulation.deuteranopia",
   [SIMULATION_TYPE.TRITANOPIA]: "accessibility.simulation.tritanopia",
-  [SIMULATION_TYPE.TRITANOMALY]: "accessibility.simulation.tritanomaly",
   [SIMULATION_TYPE.CONTRAST_LOSS]: "accessibility.simulation.contrastLoss",
   DOCUMENTATION: "accessibility.documentation.label",
 };
@@ -108,7 +106,7 @@ class SimulationMenuButton extends Component {
         checked: !currSimulation,
         onClick: this.disableSimulation,
       }),
-      hr(),
+      hr({ key: "hr-1" }),
       // Simulation options
       ...Object.keys(SIMULATION_TYPE).map(simType =>
         MenuItem({
@@ -118,7 +116,7 @@ class SimulationMenuButton extends Component {
           onClick: this.toggleSimulation.bind(this, simType),
         })
       ),
-      hr(),
+      hr({ key: "hr-2" }),
       // Documentation link
       MenuItem({
         className: "link",

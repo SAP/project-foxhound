@@ -1,7 +1,5 @@
 use super::*;
 
-use cocoa_foundation::foundation::{NSRange, NSUInteger};
-
 bitflags! {
     #[allow(non_upper_case_globals)]
     pub struct MTLIndirectCommandType: NSUInteger {
@@ -109,7 +107,7 @@ impl IndirectCommandBufferRef {
         unsafe { msg_send![self, indirectComputeCommandAtIndex: index] }
     }
 
-    pub fn reset_with_range(&self, range: NSRange) {
+    pub fn reset_with_range(&self, range: crate::NSRange) {
         unsafe { msg_send![self, resetWithRange: range] }
     }
 }

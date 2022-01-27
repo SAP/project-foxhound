@@ -12,8 +12,7 @@
 #include "WebAudioUtils.h"
 #include "blink/PeriodicWave.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(OscillatorNode, AudioScheduledSourceNode,
                                    mPeriodicWave, mFrequency, mDetune)
@@ -372,10 +371,10 @@ OscillatorNode::OscillatorNode(AudioContext* aContext)
                                ChannelInterpretation::Speakers),
       mType(OscillatorType::Sine),
       mStartCalled(false) {
-  CreateAudioParam(mFrequency, OscillatorNodeEngine::FREQUENCY, u"frequency",
-                   440.0f, -(aContext->SampleRate() / 2),
-                   aContext->SampleRate() / 2);
-  CreateAudioParam(mDetune, OscillatorNodeEngine::DETUNE, u"detune", 0.0f);
+  mFrequency = CreateAudioParam(
+      OscillatorNodeEngine::FREQUENCY, u"frequency"_ns, 440.0f,
+      -(aContext->SampleRate() / 2), aContext->SampleRate() / 2);
+  mDetune = CreateAudioParam(OscillatorNodeEngine::DETUNE, u"detune"_ns, 0.0f);
   OscillatorNodeEngine* engine =
       new OscillatorNodeEngine(this, aContext->Destination());
   mTrack = AudioNodeTrack::Create(aContext, engine,
@@ -396,8 +395,8 @@ already_AddRefed<OscillatorNode> OscillatorNode::Create(
     return nullptr;
   }
 
-  audioNode->Frequency()->SetValue(aOptions.mFrequency);
-  audioNode->Detune()->SetValue(aOptions.mDetune);
+  audioNode->Frequency()->SetInitialValue(aOptions.mFrequency);
+  audioNode->Detune()->SetInitialValue(aOptions.mDetune);
 
   if (aOptions.mPeriodicWave.WasPassed()) {
     audioNode->SetPeriodicWave(aOptions.mPeriodicWave.Value());
@@ -538,5 +537,4 @@ void OscillatorNode::NotifyMainThreadTrackEnded() {
   MarkInactive();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -13,24 +13,17 @@ const CONTENT_PROCESS_PAGE = "http://example.com/";
 
 async function testOnNavigatedEvent(uri, tab, toolbox, extension) {
   const onNavigated = extension.awaitMessage("network-onNavigated");
-  const onSwitched = toolbox.targetList.once("switched-target");
-  await BrowserTestUtils.loadURI(tab.linkedBrowser, uri);
+  const onSwitched = toolbox.commands.targetCommand.once("switched-target");
+  BrowserTestUtils.loadURI(tab.linkedBrowser, uri);
   await onSwitched;
   const result = await onNavigated;
   is(result, uri, "devtools.network.onNavigated works correctly");
-}
-
-async function pushPref(preferenceName, value) {
-  const options = { set: [[preferenceName, value]] };
-  await SpecialPowers.pushPrefEnv(options);
 }
 
 /**
  * This test checks whether network works well even target-switching happens.
  */
 add_task(async () => {
-  await pushPref("devtools.target-switching.enabled", true);
-
   const tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
     CONTENT_PROCESS_PAGE
@@ -64,7 +57,7 @@ add_task(async () => {
   await extension.startup();
 
   info("Open the developer toolbox");
-  const { toolbox } = await openToolboxForTab(tab);
+  const toolbox = await openToolboxForTab(tab);
 
   info("Wait the devtools page load");
   await extension.awaitMessage("devtools-page-loaded");

@@ -58,12 +58,6 @@ ChromeUtils.defineModuleGetter(
   "NetUtil",
   "resource://gre/modules/NetUtil.jsm"
 );
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm"
-);
 ChromeUtils.defineModuleGetter(
   this,
   "Services",
@@ -119,6 +113,12 @@ XPCOMUtils.defineLazyGetter(this, "gParentalControlsService", function() {
   return null;
 });
 
+ChromeUtils.defineModuleGetter(
+  this,
+  "DownloadSpamProtection",
+  "resource:///modules/DownloadSpamProtection.jsm"
+);
+
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "gApplicationReputationService",
@@ -167,6 +167,7 @@ const kObserverTopics = [
   "network:offline-about-to-go-offline",
   "network:offline-status-changed",
   "xpcom-will-shutdown",
+  "blocked-automatic-download",
 ];
 
 /**
@@ -264,7 +265,7 @@ var DownloadIntegration = {
 
     this._store = new DownloadStore(
       list,
-      OS.Path.join(OS.Constants.Path.profileDir, "downloads.json")
+      PathUtils.join(await PathUtils.getProfileDir(), "downloads.json")
     );
     this._store.onsaveitem = this.shouldPersistDownload.bind(this);
 
@@ -371,8 +372,11 @@ var DownloadIntegration = {
             Ci.nsIFile
           );
           directoryPath = directory.path;
-          await OS.File.makeDir(directoryPath, { ignoreExisting: true });
+          await IOUtils.makeDirectory(directoryPath, {
+            createAncestors: false,
+          });
         } catch (ex) {
+          Cu.reportError(ex);
           // Either the preference isn't set or the directory cannot be created.
           directoryPath = await this.getSystemDownloadsDirectory();
         }
@@ -497,7 +501,7 @@ var DownloadIntegration = {
           referrerInfo: aDownload.source.referrerInfo,
           fileSize: aDownload.currentBytes,
           sha256Hash: hash,
-          suggestedFileName: OS.Path.basename(aDownload.target.path),
+          suggestedFileName: PathUtils.filename(aDownload.target.path),
           signatureInfo: sigInfo,
           redirects: channelRedirects,
         },
@@ -604,40 +608,30 @@ var DownloadIntegration = {
         // whatever reason.
         zone = Ci.mozIDownloadPlatform.ZONE_INTERNET;
       }
-      try {
-        // Don't write zone IDs for Local, Intranet, or Trusted sites
-        // to match Windows behavior.
-        if (zone >= Ci.mozIDownloadPlatform.ZONE_INTERNET) {
-          let streamPath = aDownload.target.path + ":Zone.Identifier";
-          let stream = await OS.File.open(
-            streamPath,
-            { create: true },
-            { winAllowLengthBeyondMaxPathWithCaveats: true }
-          );
-          try {
-            let zoneId = "[ZoneTransfer]\r\nZoneId=" + zone + "\r\n";
-            let { url, isPrivate, referrerInfo } = aDownload.source;
-            if (!isPrivate) {
-              let referrer = referrerInfo
-                ? referrerInfo.computedReferrerSpec
-                : "";
-              zoneId +=
-                this._zoneIdKey("ReferrerUrl", referrer) +
-                this._zoneIdKey("HostUrl", url, "about:internet");
-            }
-            await stream.write(new TextEncoder().encode(zoneId));
-          } finally {
-            await stream.close();
+      // Don't write zone IDs for Local, Intranet, or Trusted sites
+      // to match Windows behavior.
+      if (zone >= Ci.mozIDownloadPlatform.ZONE_INTERNET) {
+        let path = aDownload.target.path + ":Zone.Identifier";
+        try {
+          let zoneId = "[ZoneTransfer]\r\nZoneId=" + zone + "\r\n";
+          let { url, isPrivate, referrerInfo } = aDownload.source;
+          if (!isPrivate) {
+            let referrer = referrerInfo
+              ? referrerInfo.computedReferrerSpec
+              : "";
+            zoneId +=
+              this._zoneIdKey("ReferrerUrl", referrer) +
+              this._zoneIdKey("HostUrl", url, "about:internet");
           }
-        }
-      } catch (ex) {
-        // If writing to the stream fails, we ignore the error and continue.
-        // The Windows API error 123 (ERROR_INVALID_NAME) is expected to
-        // occur when working on a file system that does not support
-        // Alternate Data Streams, like FAT32, thus we don't report this
-        // specific error.
-        if (!(ex instanceof OS.File.Error) || ex.winLastError != 123) {
-          Cu.reportError(ex);
+          await IOUtils.writeUTF8(
+            PathUtils.toExtendedWindowsPath(path),
+            zoneId
+          );
+        } catch (ex) {
+          // If writing to the file fails, we ignore the error and continue.
+          if (!(ex instanceof DOMException)) {
+            Cu.reportError(ex);
+          }
         }
       }
     }
@@ -655,31 +649,27 @@ var DownloadIntegration = {
       let isTemporaryDownload =
         aDownload.launchWhenSucceeded &&
         (aDownload.source.isPrivate ||
-          Services.prefs.getBoolPref(
+          (Services.prefs.getBoolPref(
             "browser.helperApps.deleteTempFileOnExit"
-          ));
+          ) &&
+            !Services.prefs.getBoolPref(
+              "browser.download.improvements_to_download_panel"
+            )));
       // Permanently downloaded files are made accessible by other users on
       // this system, while temporary downloads are marked as read-only.
-      let options = {};
+      let unixMode;
       if (isTemporaryDownload) {
-        options.unixMode = 0o400;
-        options.winAttributes = { readOnly: true };
+        unixMode = 0o400;
       } else {
-        options.unixMode = 0o666;
+        unixMode = 0o666;
       }
       // On Unix, the umask of the process is respected.
-      await OS.File.setPermissions(aDownload.target.path, options);
+      await IOUtils.setPermissions(aDownload.target.path, unixMode);
     } catch (ex) {
       // We should report errors with making the permissions less restrictive
       // or marking the file as read-only on Unix and Mac, but this should not
       // prevent the download from completing.
-      // The setPermissions API error EPERM is expected to occur when working
-      // on a file system that does not support file permissions, like FAT32,
-      // thus we don't report this error.
-      if (
-        !(ex instanceof OS.File.Error) ||
-        ex.unixErrno != OS.Constants.libc.EPERM
-      ) {
+      if (!(ex instanceof DOMException)) {
         Cu.reportError(ex);
       }
     }
@@ -696,6 +686,21 @@ var DownloadIntegration = {
       aDownload.contentType,
       aDownload.source.isPrivate
     );
+  },
+
+  /**
+   * Decide whether a download of this type, opened from the downloads
+   * list, should open internally.
+   *
+   * @param aMimeType
+   *        The MIME type of the file, as a string
+   * @param [optional] aExtension
+   *        The file extension, which can match instead of the MIME type.
+   */
+  shouldViewDownloadInternally(aMimeType, aExtension) {
+    // Refuse all files by default, this is meant to be replaced with a check
+    // for specific types via Integration.downloads.register().
+    return false;
   },
 
   /**
@@ -794,8 +799,6 @@ var DownloadIntegration = {
       return;
     }
 
-    const PDF_CONTENT_TYPE = "application/pdf";
-
     if (!useSystemDefault && mimeInfo) {
       useSystemDefault = mimeInfo.preferredAction == mimeInfo.useSystemDefault;
     }
@@ -804,8 +807,7 @@ var DownloadIntegration = {
       if (
         aDownload.handleInternally ||
         (mimeInfo &&
-          (mimeInfo.type == PDF_CONTENT_TYPE ||
-            fileExtension?.toLowerCase() == "pdf") &&
+          this.shouldViewDownloadInternally(mimeInfo.type, fileExtension) &&
           !mimeInfo.alwaysAskBeforeHandling &&
           mimeInfo.preferredAction === Ci.nsIHandlerInfo.handleInternally &&
           !aDownload.launchWhenSucceeded)
@@ -824,6 +826,20 @@ var DownloadIntegration = {
     // launchWhenSucceeded bit so future attempts to open the download can go
     // through Firefox when possible.
     aDownload.launchWhenSucceeded = false;
+
+    // When a file has no extension, and there's an executable file with the
+    // same name in the same folder, Windows shell can get confused.
+    // For this reason we show the file in the containing folder instead of
+    // trying to open it.
+    // We also don't trust mimeinfo, it could be a type we can forward to a
+    // system handler, but it could also be an executable type, and we
+    // don't have an exhaustive list with all of them.
+    if (!fileExtension && AppConstants.platform == "win") {
+      // We can't check for the existance of a same-name file with every
+      // possible executable extension, so this is a catch-all.
+      this.showContainingDirectory(aDownload.target.path);
+      return;
+    }
 
     // No custom application chosen, let's launch the file with the default
     // handler. First, let's try to launch it through the MIME service.
@@ -844,7 +860,10 @@ var DownloadIntegration = {
 
     // If our previous attempts failed, try sending it through
     // the system's external "file:" URL handler.
-    gExternalProtocolService.loadURI(NetUtil.newURI(file));
+    gExternalProtocolService.loadURI(
+      NetUtil.newURI(file),
+      Services.scriptSecurityManager.getSystemPrincipal()
+    );
   },
 
   /**
@@ -861,6 +880,8 @@ var DownloadIntegration = {
 
   /**
    * Launches the specified file, unless overridden by regression tests.
+   * @note Always use launchDownload() from the outside of this module, it is
+   *       both more powerful and safer.
    */
   launchFile(file, mimeInfo) {
     if (mimeInfo) {
@@ -910,7 +931,10 @@ var DownloadIntegration = {
 
     // If launch also fails (probably because it's not implemented), let
     // the OS handler try to open the parent.
-    gExternalProtocolService.loadURI(NetUtil.newURI(parent));
+    gExternalProtocolService.loadURI(
+      NetUtil.newURI(parent),
+      Services.scriptSecurityManager.getSystemPrincipal()
+    );
   },
 
   /**
@@ -924,15 +948,15 @@ var DownloadIntegration = {
     // We read the name of the directory from the list of translated strings
     // that is kept by the UI helper module, even if this string is not strictly
     // displayed in the user interface.
-    let directoryPath = OS.Path.join(
+    let directoryPath = PathUtils.join(
       this._getDirectory(aName),
       DownloadUIHelper.strings.downloadsFolder
     );
 
     // Create the Downloads folder and ignore if it already exists.
-    return OS.File.makeDir(directoryPath, { ignoreExisting: true }).then(
-      () => directoryPath
-    );
+    return IOUtils.makeDirectory(directoryPath, {
+      createAncestors: false,
+    }).then(() => directoryPath);
   },
 
   /**
@@ -942,6 +966,13 @@ var DownloadIntegration = {
    */
   _getDirectory(name) {
     return Services.dirsvc.get(name, Ci.nsIFile).path;
+  },
+  /**
+   * Initializes the DownloadSpamProtection instance.
+   * This is used to observe and group multiple automatic downloads.
+   */
+  _initializeDownloadSpamProtection() {
+    this.downloadSpamProtection = new DownloadSpamProtection();
   },
 
   /**
@@ -1192,6 +1223,15 @@ var DownloadObserver = {
           Services.obs.removeObserver(this, topic);
         }
         break;
+      case "blocked-automatic-download":
+        if (
+          AppConstants.MOZ_BUILD_APP == "browser" &&
+          !DownloadIntegration.downloadSpamProtection
+        ) {
+          DownloadIntegration._initializeDownloadSpamProtection();
+        }
+        DownloadIntegration.downloadSpamProtection.update(aData);
+        break;
     }
   },
 
@@ -1210,7 +1250,14 @@ var DownloadObserver = {
  */
 var DownloadHistoryObserver = function(aList) {
   this._list = aList;
-  PlacesUtils.history.addObserver(this);
+
+  const placesObserver = new PlacesWeakCallbackWrapper(
+    this.handlePlacesEvents.bind(this)
+  );
+  PlacesObservers.addListener(
+    ["history-cleared", "page-removed"],
+    placesObserver
+  );
 };
 
 DownloadHistoryObserver.prototype = {
@@ -1219,25 +1266,24 @@ DownloadHistoryObserver.prototype = {
    */
   _list: null,
 
-  QueryInterface: ChromeUtils.generateQI(["nsINavHistoryObserver"]),
-
-  // nsINavHistoryObserver
-  onDeleteURI: function DL_onDeleteURI(aURI, aGUID) {
-    this._list.removeFinished(download =>
-      aURI.equals(NetUtil.newURI(download.source.url))
-    );
+  handlePlacesEvents(events) {
+    for (const event of events) {
+      switch (event.type) {
+        case "history-cleared": {
+          this._list.removeFinished();
+          break;
+        }
+        case "page-removed": {
+          if (event.isRemovedFromStore) {
+            this._list.removeFinished(
+              download => event.url === download.source.url
+            );
+          }
+          break;
+        }
+      }
+    }
   },
-
-  // nsINavHistoryObserver
-  onClearHistory: function DL_onClearHistory() {
-    this._list.removeFinished();
-  },
-
-  onTitleChanged() {},
-  onBeginUpdateBatch() {},
-  onEndUpdateBatch() {},
-  onPageChanged() {},
-  onDeleteVisits() {},
 };
 
 /**

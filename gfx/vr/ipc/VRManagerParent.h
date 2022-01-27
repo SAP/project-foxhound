@@ -48,7 +48,6 @@ class VRManagerParent final : public PVRManagerParent {
   bool DeallocPVRLayerParent(PVRLayerParent* actor);
 
   virtual void ActorDestroy(ActorDestroyReason why) override;
-  void OnChannelConnected(int32_t pid) override;
 
   mozilla::ipc::IPCResult RecvDetectRuntimes();
   mozilla::ipc::IPCResult RecvRefreshDisplays();
@@ -58,12 +57,12 @@ class VRManagerParent final : public PVRManagerParent {
       const bool& aHaveEventListener);
   mozilla::ipc::IPCResult RecvControllerListenerAdded();
   mozilla::ipc::IPCResult RecvControllerListenerRemoved();
-  mozilla::ipc::IPCResult RecvVibrateHaptic(const uint32_t& aControllerIdx,
-                                            const uint32_t& aHapticIndex,
-                                            const double& aIntensity,
-                                            const double& aDuration,
-                                            const uint32_t& aPromiseID);
-  mozilla::ipc::IPCResult RecvStopVibrateHaptic(const uint32_t& aControllerIdx);
+  mozilla::ipc::IPCResult RecvVibrateHaptic(
+      const mozilla::dom::GamepadHandle& aGamepadHandle,
+      const uint32_t& aHapticIndex, const double& aIntensity,
+      const double& aDuration, const uint32_t& aPromiseID);
+  mozilla::ipc::IPCResult RecvStopVibrateHaptic(
+      const mozilla::dom::GamepadHandle& aGamepadHandle);
   mozilla::ipc::IPCResult RecvStartVRNavigation(const uint32_t& aDeviceID);
   mozilla::ipc::IPCResult RecvStopVRNavigation(const uint32_t& aDeviceID,
                                                const TimeDuration& aTimeout);
@@ -74,6 +73,7 @@ class VRManagerParent final : public PVRManagerParent {
   mozilla::ipc::IPCResult RecvResetPuppet();
 
  private:
+  void ActorAlloc() override;
   void ActorDealloc() override;
   void RegisterWithManager();
   void UnregisterFromManager();

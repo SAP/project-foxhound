@@ -4,22 +4,38 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-SOURCES += [
-    'nsGIOProtocolHandler.cpp',
-]
-
 XPCOM_MANIFESTS += [
-    'components.conf',
+    "components.conf",
 ]
 
 EXPORTS += [
-  'nsGIOProtocolHandler.h',
+    "nsGIOProtocolHandler.h",
 ]
 
-FINAL_LIBRARY = 'xul'
+EXPORTS.mozilla.net += [
+    "GIOChannelChild.h",
+    "GIOChannelParent.h",
+]
 
-CXXFLAGS += CONFIG['TK_CFLAGS']
+UNIFIED_SOURCES += [
+    "GIOChannelChild.cpp",
+    "GIOChannelParent.cpp",
+    "nsGIOProtocolHandler.cpp",
+]
 
-with Files('**'):
-    BUG_COMPONENT = ('Core', 'Widget: Gtk')
+IPDL_SOURCES = [
+    "PGIOChannel.ipdl",
+]
 
+include("/ipc/chromium/chromium-config.mozbuild")
+
+LOCAL_INCLUDES += [
+    "/netwerk/base",
+]
+
+FINAL_LIBRARY = "xul"
+
+CXXFLAGS += CONFIG["TK_CFLAGS"]
+
+with Files("**"):
+    BUG_COMPONENT = ("Core", "Widget: Gtk")

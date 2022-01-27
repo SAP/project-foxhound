@@ -12,9 +12,11 @@
 #include "js/SavedFrameAPI.h"
 #include "xpcpublic.h"
 #include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "nsJSPrincipals.h"
 #include "nsPIDOMWindow.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
@@ -22,8 +24,7 @@
 #include "WorkerPrivate.h"
 #include "nsContentUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // Throw the given exception value if it's safe.  If it's not safe, then
 // synthesize and throw a new exception value for NS_ERROR_UNEXPECTED.  The
@@ -158,6 +159,7 @@ already_AddRefed<Exception> CreateException(nsresult aRv,
   switch (NS_ERROR_GET_MODULE(aRv)) {
     case NS_ERROR_MODULE_DOM:
     case NS_ERROR_MODULE_SVG:
+    case NS_ERROR_MODULE_DOM_FILE:
     case NS_ERROR_MODULE_DOM_XPATH:
     case NS_ERROR_MODULE_DOM_INDEXEDDB:
     case NS_ERROR_MODULE_DOM_FILEHANDLE:
@@ -174,7 +176,7 @@ already_AddRefed<Exception> CreateException(nsresult aRv,
 
   // If not, use the default.
   RefPtr<Exception> exception =
-      new Exception(aMessage, aRv, EmptyCString(), nullptr, nullptr);
+      new Exception(aMessage, aRv, ""_ns, nullptr, nullptr);
   return exception.forget();
 }
 
@@ -754,5 +756,4 @@ already_AddRefed<nsIStackFrame> CreateStack(JSContext* aCx,
 }
 
 }  // namespace exceptions
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

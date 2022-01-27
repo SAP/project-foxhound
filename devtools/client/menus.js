@@ -27,16 +27,13 @@
 
 const { Cu } = require("chrome");
 
+loader.lazyRequireGetter(this, "Services", "Services");
+loader.lazyRequireGetter(this, "flags", "devtools/shared/flags");
+
 loader.lazyRequireGetter(
   this,
   "gDevToolsBrowser",
   "devtools/client/framework/devtools-browser",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "TargetFactory",
-  "devtools/client/framework/target",
   true
 );
 loader.lazyRequireGetter(
@@ -50,16 +47,17 @@ loader.lazyRequireGetter(
   "devtools/client/shared/link",
   true
 );
+loader.lazyRequireGetter(
+  this,
+  "CommandsFactory",
+  "devtools/shared/commands/commands-factory",
+  true
+);
 
 loader.lazyImporter(
   this,
   "BrowserToolboxLauncher",
   "resource://devtools/client/framework/browser-toolbox/Launcher.jsm"
-);
-loader.lazyRequireGetter(
-  this,
-  "ResponsiveUIManager",
-  "devtools/client/responsive/manager"
 );
 loader.lazyRequireGetter(
   this,
@@ -70,7 +68,7 @@ loader.lazyRequireGetter(
 exports.menuitems = [
   {
     id: "menu_devToolbox",
-    l10nKey: "devToolboxMenuItem",
+    l10nKey: "webDeveloperToolsMenu",
     async oncommand(event) {
       try {
         const window = event.target.ownerDocument.defaultView;
@@ -82,7 +80,6 @@ exports.menuitems = [
     keyId: "toggleToolbox",
     checkbox: true,
   },
-  { id: "menu_devtools_separator", separator: true },
   {
     id: "menu_devtools_remotedebugging",
     l10nKey: "devtoolsRemoteDebugging",
@@ -135,8 +132,16 @@ exports.menuitems = [
     l10nKey: "eyedropper",
     async oncommand(event) {
       const window = event.target.ownerDocument.defaultView;
-      const target = await TargetFactory.forTab(window.gBrowser.selectedTab);
-      await target.attach();
+
+      // The eyedropper might be used without a toolbox, so it should use a
+      // dedicated commands instance.
+      // See Bug 1701004.
+      const commands = await CommandsFactory.forTab(
+        window.gBrowser.selectedTab
+      );
+      await commands.targetCommand.startListening();
+
+      const target = commands.targetCommand.targetFront;
       const inspectorFront = await target.getFront("inspector");
 
       // If RDM is active, disable touch simulation events if they're enabled.
@@ -163,14 +168,27 @@ exports.menuitems = [
         });
       }
 
+      // Destroy the dedicated commands instance when the color picking is
+      // finished.
+      inspectorFront.once("color-picked", () => commands.destroy());
+      inspectorFront.once("color-pick-canceled", () => commands.destroy());
+
       inspectorFront.pickColorFromPage({ copyOnSelect: true, fromMenu: true });
+
+      if (flags.testing) {
+        // Used in devtools/client/inspector/test/browser_inspector_eyedropper_ruleview.js
+        Services.obs.notifyObservers(
+          { wrappedJSObject: target },
+          "color-picker-command-handled"
+        );
+      }
     },
     checkbox: true,
   },
-  { separator: true, id: "devToolsEndSeparator" },
   {
-    id: "getMoreDevtools",
-    l10nKey: "getMoreDevtoolsCmd",
+    id: "extensionsForDevelopers",
+    l10nKey: "extensionsForDevelopersCmd",
+    appMenuL10nId: "appmenu-developer-tools-extensions",
     oncommand(event) {
       openDocLink(
         "https://addons.mozilla.org/firefox/collections/mozilla/webdeveloper/"

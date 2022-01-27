@@ -1,10 +1,12 @@
 // This file defines the `Triple` type and support code shared by all targets.
 
+use crate::data_model::CDataModel;
 use crate::parse_error::ParseError;
 use crate::targets::{
     default_binary_format, Architecture, ArmArchitecture, BinaryFormat, Environment,
     OperatingSystem, Vendor,
 };
+#[cfg(not(feature = "std"))]
 use alloc::borrow::ToOwned;
 use core::fmt;
 use core::str::FromStr;
@@ -50,8 +52,8 @@ impl PointerWidth {
 
 /// The calling convention, which specifies things like which registers are
 /// used for passing arguments, which registers are callee-saved, and so on.
+#[cfg_attr(feature = "rust_1_40", non_exhaustive)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-#[allow(missing_docs)]
 pub enum CallingConvention {
     /// "System V", which is used on most Unix-like platfoms. Note that the
     /// specific conventions vary between hardware architectures; for example,
@@ -68,10 +70,20 @@ pub enum CallingConvention {
     /// Windows documentation often just calls the Windows x64 calling convention
     /// (though the compiler still recognizes "fastcall" as an alias for it).
     WindowsFastcall,
+
+    /// Apple Aarch64 platforms use their own variant of the common Aarch64
+    /// calling convention.
+    ///
+    /// <https://developer.apple.com/documentation/xcode/writing_arm64_code_for_apple_platforms>
+    AppleAarch64,
 }
 
 /// A target "triple". Historically such things had three fields, though they've
 /// added additional fields over time.
+///
+/// Note that `Triple` doesn't implement `Default` itself. If you want a type
+/// which defaults to the host triple, or defaults to unknown-unknown-unknown,
+/// use `DefaultToHost` or `DefaultToUnknown`, respectively.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Triple {
     /// The "architecture" (and sometimes the subarchitecture).
@@ -101,17 +113,22 @@ impl Triple {
     /// Return the default calling convention for the given target triple.
     pub fn default_calling_convention(&self) -> Result<CallingConvention, ()> {
         Ok(match self.operating_system {
+            OperatingSystem::Darwin
+            | OperatingSystem::Ios
+            | OperatingSystem::Tvos
+            | OperatingSystem::MacOSX { .. } => match self.architecture {
+                Architecture::Aarch64(_) => CallingConvention::AppleAarch64,
+                _ => CallingConvention::SystemV,
+            },
             OperatingSystem::Bitrig
             | OperatingSystem::Cloudabi
-            | OperatingSystem::Darwin
             | OperatingSystem::Dragonfly
             | OperatingSystem::Freebsd
             | OperatingSystem::Fuchsia
             | OperatingSystem::Haiku
-            | OperatingSystem::Ios
+            | OperatingSystem::Hermit
             | OperatingSystem::L4re
             | OperatingSystem::Linux
-            | OperatingSystem::MacOSX { .. }
             | OperatingSystem::Netbsd
             | OperatingSystem::Openbsd
             | OperatingSystem::Redox
@@ -127,10 +144,41 @@ impl Triple {
             _ => return Err(()),
         })
     }
-}
 
-impl Default for Triple {
-    fn default() -> Self {
+    /// The C data model for a given target. If the model is not known, returns `Err(())`.
+    pub fn data_model(&self) -> Result<CDataModel, ()> {
+        match self.pointer_width()? {
+            PointerWidth::U64 => {
+                if self.operating_system == OperatingSystem::Windows {
+                    Ok(CDataModel::LLP64)
+                } else if self.default_calling_convention() == Ok(CallingConvention::SystemV)
+                    || self.architecture == Architecture::Wasm64
+                {
+                    Ok(CDataModel::LP64)
+                } else {
+                    Err(())
+                }
+            }
+            PointerWidth::U32 => {
+                if self.operating_system == OperatingSystem::Windows
+                    || self.default_calling_convention() == Ok(CallingConvention::SystemV)
+                    || self.architecture == Architecture::Wasm32
+                {
+                    Ok(CDataModel::ILP32)
+                } else {
+                    Err(())
+                }
+            }
+            // TODO: on 16-bit machines there is usually a distinction
+            // between near-pointers and far-pointers.
+            // Additionally, code pointers sometimes have a different size than data pointers.
+            // We don't handle this case.
+            PointerWidth::U16 => Err(()),
+        }
+    }
+
+    /// Return a `Triple` with all unknown fields.
+    pub fn unknown() -> Self {
         Self {
             architecture: Architecture::Unknown,
             vendor: Vendor::Unknown,
@@ -138,36 +186,6 @@ impl Default for Triple {
             environment: Environment::Unknown,
             binary_format: BinaryFormat::Unknown,
         }
-    }
-}
-
-impl Default for Architecture {
-    fn default() -> Self {
-        Architecture::Unknown
-    }
-}
-
-impl Default for Vendor {
-    fn default() -> Self {
-        Vendor::Unknown
-    }
-}
-
-impl Default for OperatingSystem {
-    fn default() -> Self {
-        OperatingSystem::Unknown
-    }
-}
-
-impl Default for Environment {
-    fn default() -> Self {
-        Environment::Unknown
-    }
-}
-
-impl Default for BinaryFormat {
-    fn default() -> Self {
-        BinaryFormat::Unknown
     }
 }
 
@@ -185,7 +203,9 @@ impl fmt::Display for Triple {
                 || self.operating_system == OperatingSystem::Wasi
                 || (self.operating_system == OperatingSystem::None_
                     && (self.architecture == Architecture::Arm(ArmArchitecture::Armebv7r)
+                        || self.architecture == Architecture::Arm(ArmArchitecture::Armv7a)
                         || self.architecture == Architecture::Arm(ArmArchitecture::Armv7r)
+                        || self.architecture == Architecture::Arm(ArmArchitecture::Thumbv4t)
                         || self.architecture == Architecture::Arm(ArmArchitecture::Thumbv6m)
                         || self.architecture == Architecture::Arm(ArmArchitecture::Thumbv7em)
                         || self.architecture == Architecture::Arm(ArmArchitecture::Thumbv7m)
@@ -218,7 +238,7 @@ impl FromStr for Triple {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split('-');
-        let mut result = Self::default();
+        let mut result = Self::unknown();
         let mut current_part;
 
         current_part = parts.next();
@@ -344,22 +364,50 @@ mod tests {
     fn defaults() {
         assert_eq!(
             Triple::from_str("unknown-unknown-unknown"),
-            Ok(Triple::default())
+            Ok(Triple::unknown())
         );
         assert_eq!(
             Triple::from_str("unknown-unknown-unknown-unknown"),
-            Ok(Triple::default())
+            Ok(Triple::unknown())
         );
         assert_eq!(
             Triple::from_str("unknown-unknown-unknown-unknown-unknown"),
-            Ok(Triple::default())
+            Ok(Triple::unknown())
         );
     }
 
     #[test]
     fn unknown_properties() {
-        assert_eq!(Triple::default().endianness(), Err(()));
-        assert_eq!(Triple::default().pointer_width(), Err(()));
-        assert_eq!(Triple::default().default_calling_convention(), Err(()));
+        assert_eq!(Triple::unknown().endianness(), Err(()));
+        assert_eq!(Triple::unknown().pointer_width(), Err(()));
+        assert_eq!(Triple::unknown().default_calling_convention(), Err(()));
+    }
+
+    #[test]
+    fn apple_calling_convention() {
+        for triple in &[
+            "aarch64-apple-darwin",
+            "aarch64-apple-ios",
+            "aarch64-apple-ios-macabi",
+            "aarch64-apple-tvos",
+        ] {
+            assert_eq!(
+                Triple::from_str(triple)
+                    .unwrap()
+                    .default_calling_convention()
+                    .unwrap(),
+                CallingConvention::AppleAarch64
+            );
+        }
+
+        for triple in &["aarch64-linux-android", "x86_64-apple-ios"] {
+            assert_eq!(
+                Triple::from_str(triple)
+                    .unwrap()
+                    .default_calling_convention()
+                    .unwrap(),
+                CallingConvention::SystemV
+            );
+        }
     }
 }

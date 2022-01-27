@@ -1,8 +1,7 @@
-#![allow(dead_code)]
 use crate::prelude::*;
-use crate::version::{EntryV1_0, InstanceV1_0};
 use crate::vk;
 use crate::RawPtr;
+use crate::{EntryCustom, Instance};
 use std::ffi::CStr;
 use std::mem;
 
@@ -13,11 +12,11 @@ pub struct AndroidSurface {
 }
 
 impl AndroidSurface {
-    pub fn new<E: EntryV1_0, I: InstanceV1_0>(entry: &E, instance: &I) -> AndroidSurface {
+    pub fn new<L>(entry: &EntryCustom<L>, instance: &Instance) -> Self {
         let surface_fn = vk::KhrAndroidSurfaceFn::load(|name| unsafe {
             mem::transmute(entry.get_instance_proc_addr(instance.handle(), name.as_ptr()))
         });
-        AndroidSurface {
+        Self {
             handle: instance.handle(),
             android_surface_fn: surface_fn,
         }
@@ -34,16 +33,14 @@ impl AndroidSurface {
         allocation_callbacks: Option<&vk::AllocationCallbacks>,
     ) -> VkResult<vk::SurfaceKHR> {
         let mut surface = mem::zeroed();
-        let err_code = self.android_surface_fn.create_android_surface_khr(
-            self.handle,
-            create_info,
-            allocation_callbacks.as_raw_ptr(),
-            &mut surface,
-        );
-        match err_code {
-            vk::Result::SUCCESS => Ok(surface),
-            _ => Err(err_code),
-        }
+        self.android_surface_fn
+            .create_android_surface_khr(
+                self.handle,
+                create_info,
+                allocation_callbacks.as_raw_ptr(),
+                &mut surface,
+            )
+            .result_with_success(surface)
     }
 
     pub fn fp(&self) -> &vk::KhrAndroidSurfaceFn {

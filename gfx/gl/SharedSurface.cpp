@@ -31,14 +31,13 @@
 #  include "SharedSurfaceIO.h"
 #endif
 
-#ifdef MOZ_X11
-#  include "GLXLibrary.h"
-#  include "SharedSurfaceGLX.h"
-#endif
-
 #ifdef MOZ_WAYLAND
 #  include "gfxPlatformGtk.h"
 #  include "SharedSurfaceDMABUF.h"
+#endif
+
+#ifdef MOZ_WIDGET_ANDROID
+#  include "SharedSurfaceAndroidHardwareBuffer.h"
 #endif
 
 namespace mozilla {
@@ -78,6 +77,7 @@ void SharedSurface::UnlockProd() {
 UniquePtr<SurfaceFactory> SurfaceFactory::Create(
     GLContext* const pGl, const layers::TextureType consumerType) {
   auto& gl = *pGl;
+
   switch (consumerType) {
     case layers::TextureType::D3D11:
 #ifdef XP_WIN
@@ -97,32 +97,25 @@ UniquePtr<SurfaceFactory> SurfaceFactory::Create(
       return nullptr;
 #endif
 
-    case layers::TextureType::X11:
-#ifdef MOZ_X11
-      if (gl.GetContextType() != GLContextType::GLX) return nullptr;
-      if (!sGLXLibrary.UseTextureFromPixmap()) return nullptr;
-      return MakeUnique<SurfaceFactory_GLXDrawable>(gl);
-#else
-      return nullptr;
-#endif
-
     case layers::TextureType::DMABUF:
 #ifdef MOZ_WAYLAND
       if (gl.GetContextType() == GLContextType::EGL &&
-          gfxPlatformGtk::GetPlatform()->UseDMABufWebGL()) {
+          widget::GetDMABufDevice()->IsDMABufWebGLEnabled()) {
         return SurfaceFactory_DMABUF::Create(gl);
       }
 #endif
       return nullptr;
 
-    case layers::TextureType::AndroidHardwareBuffer:
-      return nullptr;
-
     case layers::TextureType::AndroidNativeWindow:
 #ifdef MOZ_WIDGET_ANDROID
-      if (XRE_IsParentProcess() && !StaticPrefs::webgl_enable_surface_texture())
-        return nullptr;
       return MakeUnique<SurfaceFactory_SurfaceTexture>(gl);
+#else
+      return nullptr;
+#endif
+
+    case layers::TextureType::AndroidHardwareBuffer:
+#ifdef MOZ_WIDGET_ANDROID
+      return SurfaceFactory_AndroidHardwareBuffer::Create(gl);
 #else
       return nullptr;
 #endif
@@ -136,10 +129,15 @@ UniquePtr<SurfaceFactory> SurfaceFactory::Create(
       return nullptr;
 
     case layers::TextureType::Unknown:
-    case layers::TextureType::DIB:
     case layers::TextureType::Last:
       break;
   }
+
+#ifdef MOZ_X11
+  // Silence a warning.
+  Unused << gl;
+#endif
+
   return nullptr;
 }
 

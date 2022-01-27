@@ -4,9 +4,12 @@
 
 const EXPORTED_SYMBOLS = ["SendTab", "FxAccountsCommands"];
 
-const { COMMAND_SENDTAB, COMMAND_SENDTAB_TAIL, log } = ChromeUtils.import(
-  "resource://gre/modules/FxAccountsCommon.js"
-);
+const {
+  COMMAND_SENDTAB,
+  COMMAND_SENDTAB_TAIL,
+  SCOPE_OLD_SYNC,
+  log,
+} = ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
 ChromeUtils.defineModuleGetter(
   this,
   "PushCrypto",
@@ -40,13 +43,13 @@ class FxAccountsCommands {
     ) {
       return {};
     }
-    const sendTabKey = await this.sendTab.getEncryptedKey();
-    if (!sendTabKey) {
+    const encryptedSendTabKeys = await this.sendTab.getEncryptedSendTabKeys();
+    if (!encryptedSendTabKeys) {
       // This will happen if the account is not verified yet.
       return {};
     }
     return {
-      [COMMAND_SENDTAB]: sendTabKey,
+      [COMMAND_SENDTAB]: encryptedSendTabKeys,
     };
   }
 
@@ -54,19 +57,6 @@ class FxAccountsCommands {
     const { sessionToken } = await this._fxai.getUserAccountData([
       "sessionToken",
     ]);
-    let pushState;
-    if (!device.pushCallback) {
-      pushState = "noCallback";
-    } else if (device.pushEndpointExpired) {
-      pushState = "expiredCallback";
-    } else {
-      pushState = "ok";
-    }
-    Services.telemetry.keyedScalarAdd(
-      "identity.fxaccounts.push_state_command_target",
-      pushState,
-      1
-    );
     const client = this._fxai.fxAccountsClient;
     const now = Date.now();
     if (now < this._invokeRateLimitExpiry) {
@@ -83,7 +73,8 @@ class FxAccountsCommands {
         payload
       );
       if (!info.enqueued || !info.notified) {
-        log.warn("Sending was only partially successful", info);
+        // We want an error log here to help diagnose users who report failure.
+        log.error("Sending was only partially successful", info);
       } else {
         log.info("Successfully sent", info);
       }
@@ -109,7 +100,6 @@ class FxAccountsCommands {
     // Whether the call to `pollDeviceCommands` was initiated by a Push message from the FxA
     // servers in response to a message being received or simply scheduled in order
     // to fetch missed messages.
-    const scheduledFetch = notifiedIndex == 0;
     if (
       !Services.prefs.getBoolPref("identity.fxaccounts.commands.enabled", true)
     ) {
@@ -136,12 +126,6 @@ class FxAccountsCommands {
           device: { ...device, lastCommandIndex: index },
         });
         log.info(`Handling ${messages.length} messages`);
-        if (scheduledFetch) {
-          Services.telemetry.scalarAdd(
-            "identity.fxaccounts.missed_commands_fetched",
-            messages.length
-          );
-        }
         await this._handleCommands(messages, notifiedIndex);
       }
     });
@@ -233,9 +217,16 @@ class FxAccountsCommands {
 /**
  * Send Tab is built on top of FxA commands.
  *
- * Devices exchange keys wrapped in kSync between themselves (getEncryptedKey)
- * during the device registration flow. The FxA server can theorically never
- * retrieve the send tab keys since it doesn't know kSync.
+ * Devices exchange keys wrapped in the oldsync key between themselves (getEncryptedSendTabKeys)
+ * during the device registration flow. The FxA server can theoretically never
+ * retrieve the send tab keys since it doesn't know the oldsync key.
+ *
+ * Note about the keys:
+ * The server has the `pushPublicKey`. The FxA server encrypt the send-tab payload again using the
+ * push keys - after the client has encrypted the payload using the send-tab keys.
+ * The push keys are different from the send-tab keys. The FxA server uses
+ * the push keys to deliver the tabs using same mechanism we use for web-push.
+ * However, clients use the send-tab keys for end-to-end encryption.
  */
 class SendTab {
   constructor(commands, fxAccountsInternal) {
@@ -328,7 +319,9 @@ class SendTab {
     if (!bundle) {
       throw new Error(`Device ${device.id} does not have send tab keys.`);
     }
-    const { kSync, kXCS: ourKid } = await this._fxai.keys.getKeys();
+    const oldsyncKey = await this._fxai.keys.getKeyForScope(SCOPE_OLD_SYNC);
+    // Older clients expect this to be hex, due to pre-JWK sync key ids :-(
+    const ourKid = this._fxai.keys.kidAsHex(oldsyncKey);
     const { kid: theirKid } = JSON.parse(
       device.availableCommands[COMMAND_SENDTAB]
     );
@@ -338,7 +331,7 @@ class SendTab {
     const json = JSON.parse(bundle);
     const wrapper = new CryptoWrapper();
     wrapper.deserialize({ payload: json });
-    const syncKeyBundle = BulkKeyBundle.fromHexKey(kSync);
+    const syncKeyBundle = BulkKeyBundle.fromJWK(oldsyncKey);
     let { publicKey, authSecret } = await wrapper.decrypt(syncKeyBundle);
     authSecret = urlsafeBase64Decode(authSecret);
     publicKey = urlsafeBase64Decode(publicKey);
@@ -351,13 +344,17 @@ class SendTab {
     return urlsafeBase64Encode(encrypted);
   }
 
-  async _getPersistedKeys() {
+  async _getPersistedSendTabKeys() {
     const { device } = await this._fxai.getUserAccountData(["device"]);
     return device && device.sendTabKeys;
   }
 
   async _decrypt(ciphertext) {
-    let { privateKey, publicKey, authSecret } = await this._getPersistedKeys();
+    let {
+      privateKey,
+      publicKey,
+      authSecret,
+    } = await this._getPersistedSendTabKeys();
     publicKey = urlsafeBase64Decode(publicKey);
     authSecret = urlsafeBase64Decode(authSecret);
     ciphertext = new Uint8Array(urlsafeBase64Decode(ciphertext));
@@ -371,7 +368,7 @@ class SendTab {
     );
   }
 
-  async _generateAndPersistKeys() {
+  async _generateAndPersistSendTabKeys() {
     let [publicKey, privateKey] = await PushCrypto.generateKeys();
     publicKey = urlsafeBase64Encode(publicKey);
     let authSecret = PushCrypto.generateAuthenticationSecret();
@@ -393,49 +390,72 @@ class SendTab {
     return sendTabKeys;
   }
 
-  async getEncryptedKey() {
-    let sendTabKeys = await this._getPersistedKeys();
+  async _getPersistedEncryptedSendTabKey() {
+    const { encryptedSendTabKeys } = await this._fxai.getUserAccountData([
+      "encryptedSendTabKeys",
+    ]);
+    return encryptedSendTabKeys;
+  }
+
+  async _generateAndPersistEncryptedSendTabKey() {
+    let sendTabKeys = await this._getPersistedSendTabKeys();
     if (!sendTabKeys) {
-      sendTabKeys = await this._generateAndPersistKeys();
+      log.info("Could not find sendtab keys, generating them");
+      sendTabKeys = await this._generateAndPersistSendTabKeys();
     }
     // Strip the private key from the bundle to encrypt.
     const keyToEncrypt = {
       publicKey: sendTabKeys.publicKey,
       authSecret: sendTabKeys.authSecret,
     };
-    // getEncryptedKey() will be called as part of device registration, which
-    // happens immediately after signup/signin, so there's a good chance we
-    // don't yet have kSync et. al. Unverified users will be unable to fetch
-    // keys, meaning they will end up registering the device twice (once without
-    // sendtab support, then once with sendtab support when they verify), but
-    // that's OK.
-    if (!(await this._fxai.keys.canGetKeys())) {
+    if (!(await this._fxai.keys.canGetKeyForScope(SCOPE_OLD_SYNC))) {
       log.info("Can't fetch keys, so unable to determine sendtab keys");
       return null;
     }
-    let kSync, kXCS;
+    let oldsyncKey;
     try {
-      ({ kSync, kXCS } = await this._fxai.keys.getKeys());
-      if (!kSync || !kXCS) {
-        log.warn(
-          "Fetched the keys but didn't get any, so unable to determine sendtab keys"
-        );
-        return null;
-      }
+      oldsyncKey = await this._fxai.keys.getKeyForScope(SCOPE_OLD_SYNC);
     } catch (ex) {
       log.warn("Failed to fetch keys, so unable to determine sendtab keys", ex);
       return null;
     }
     const wrapper = new CryptoWrapper();
     wrapper.cleartext = keyToEncrypt;
-    const keyBundle = BulkKeyBundle.fromHexKey(kSync);
+    const keyBundle = BulkKeyBundle.fromJWK(oldsyncKey);
     await wrapper.encrypt(keyBundle);
-    return JSON.stringify({
-      kid: kXCS,
+    const encryptedSendTabKeys = JSON.stringify({
+      // Older clients expect this to be hex, due to pre-JWK sync key ids :-(
+      kid: this._fxai.keys.kidAsHex(oldsyncKey),
       IV: wrapper.IV,
       hmac: wrapper.hmac,
       ciphertext: wrapper.ciphertext,
     });
+    await this._fxai.withCurrentAccountState(async state => {
+      await state.updateUserAccountData({
+        encryptedSendTabKeys,
+      });
+    });
+    return encryptedSendTabKeys;
+  }
+
+  async getEncryptedSendTabKeys() {
+    let encryptedSendTabKeys = await this._getPersistedEncryptedSendTabKey();
+    if (!encryptedSendTabKeys) {
+      log.info("Generating and persisting encrypted sendtab keys");
+      // `_generateAndPersistEncryptedKeys` requires the sync key
+      // which cannot be accessed if the login manager is locked
+      // (i.e when the primary password is locked) or if the sync keys
+      // aren't accessible (account isn't verified)
+      // so this function could fail to retrieve the keys
+      // however, device registration will trigger when the account
+      // is verified, so it's OK
+      // Note that it's okay to persist those keys, because they are
+      // already persisted in plaintext and the encrypted bundle
+      // does not include the sync-key (the sync key is used to encrypt
+      // it though)
+      encryptedSendTabKeys = await this._generateAndPersistEncryptedSendTabKey();
+    }
+    return encryptedSendTabKeys;
   }
 }
 

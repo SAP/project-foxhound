@@ -6,16 +6,19 @@
 
 #include "ExpandedPrincipal.h"
 #include "nsIClassInfoImpl.h"
+#include "nsIObjectInputStream.h"
+#include "nsReadableUtils.h"
 #include "mozilla/Base64.h"
+#include "json/json.h"
 
 using namespace mozilla;
 
 NS_IMPL_CLASSINFO(ExpandedPrincipal, nullptr, nsIClassInfo::MAIN_THREAD_ONLY,
                   NS_EXPANDEDPRINCIPAL_CID)
 NS_IMPL_QUERY_INTERFACE_CI(ExpandedPrincipal, nsIPrincipal,
-                           nsIExpandedPrincipal, nsISerializable)
+                           nsIExpandedPrincipal)
 NS_IMPL_CI_INTERFACE_GETTER(ExpandedPrincipal, nsIPrincipal,
-                            nsIExpandedPrincipal, nsISerializable)
+                            nsIExpandedPrincipal)
 
 struct OriginComparator {
   bool LessThan(nsIPrincipal* a, nsIPrincipal* b) const {
@@ -40,40 +43,38 @@ struct OriginComparator {
 };
 
 ExpandedPrincipal::ExpandedPrincipal(
-    nsTArray<nsCOMPtr<nsIPrincipal>>& aAllowList)
-    : BasePrincipal(eExpandedPrincipal) {
-  // We force the principals to be sorted by origin so that ExpandedPrincipal
-  // origins can have a canonical form.
-  OriginComparator c;
-  for (size_t i = 0; i < aAllowList.Length(); ++i) {
-    mPrincipals.InsertElementSorted(aAllowList[i], c);
-  }
-}
+    nsTArray<nsCOMPtr<nsIPrincipal>>&& aPrincipals,
+    const nsACString& aOriginNoSuffix, const OriginAttributes& aAttrs)
+    : BasePrincipal(eExpandedPrincipal, aOriginNoSuffix, aAttrs),
+      mPrincipals(std::move(aPrincipals)) {}
 
-ExpandedPrincipal::ExpandedPrincipal() : BasePrincipal(eExpandedPrincipal) {}
-
-ExpandedPrincipal::~ExpandedPrincipal() {}
+ExpandedPrincipal::~ExpandedPrincipal() = default;
 
 already_AddRefed<ExpandedPrincipal> ExpandedPrincipal::Create(
-    nsTArray<nsCOMPtr<nsIPrincipal>>& aAllowList,
+    const nsTArray<nsCOMPtr<nsIPrincipal>>& aAllowList,
     const OriginAttributes& aAttrs) {
-  RefPtr<ExpandedPrincipal> ep = new ExpandedPrincipal(aAllowList);
+  // We force the principals to be sorted by origin so that ExpandedPrincipal
+  // origins can have a canonical form.
+  nsTArray<nsCOMPtr<nsIPrincipal>> principals;
+  OriginComparator c;
+  for (size_t i = 0; i < aAllowList.Length(); ++i) {
+    principals.InsertElementSorted(aAllowList[i], c);
+  }
 
   nsAutoCString origin;
   origin.AssignLiteral("[Expanded Principal [");
-  for (size_t i = 0; i < ep->mPrincipals.Length(); ++i) {
-    if (i != 0) {
-      origin.AppendLiteral(", ");
-    }
-
-    nsAutoCString subOrigin;
-    DebugOnly<nsresult> rv = ep->mPrincipals.ElementAt(i)->GetOrigin(subOrigin);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-    origin.Append(subOrigin);
-  }
+  StringJoinAppend(
+      origin, ", "_ns, principals,
+      [](nsACString& dest, const nsCOMPtr<nsIPrincipal>& principal) {
+        nsAutoCString subOrigin;
+        DebugOnly<nsresult> rv = principal->GetOrigin(subOrigin);
+        MOZ_ASSERT(NS_SUCCEEDED(rv));
+        dest.Append(subOrigin);
+      });
   origin.AppendLiteral("]]");
 
-  ep->FinishInit(origin, aAttrs);
+  RefPtr<ExpandedPrincipal> ep =
+      new ExpandedPrincipal(std::move(principals), origin, aAttrs);
   return ep.forget();
 }
 
@@ -222,7 +223,7 @@ nsresult ExpandedPrincipal::GetScriptLocation(nsACString& aStr) {
 static const uint32_t kSerializationVersion = 1;
 
 NS_IMETHODIMP
-ExpandedPrincipal::Read(nsIObjectInputStream* aStream) {
+ExpandedPrincipal::Deserializer::Read(nsIObjectInputStream* aStream) {
   uint32_t version;
   nsresult rv = aStream->Read32(&version);
   if (version != kSerializationVersion) {
@@ -237,7 +238,8 @@ ExpandedPrincipal::Read(nsIObjectInputStream* aStream) {
     return rv;
   }
 
-  if (!mPrincipals.SetCapacity(count, fallible)) {
+  nsTArray<nsCOMPtr<nsIPrincipal>> principals;
+  if (!principals.SetCapacity(count, fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
@@ -256,16 +258,10 @@ ExpandedPrincipal::Read(nsIObjectInputStream* aStream) {
 
     // Play it safe and InsertElementSorted, in case the sort order
     // changed for some bizarre reason.
-    mPrincipals.InsertElementSorted(std::move(principal), c);
+    principals.InsertElementSorted(std::move(principal), c);
   }
 
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-ExpandedPrincipal::Write(nsIObjectOutputStream* aStream) {
-  // Read is used still for legacy principals
-  MOZ_RELEASE_ASSERT(false, "Old style serialization is removed");
+  mPrincipal = ExpandedPrincipal::Create(principals, OriginAttributes());
   return NS_OK;
 }
 
@@ -296,17 +292,15 @@ nsresult ExpandedPrincipal::PopulateJSONObject(Json::Value& aObject) {
   for (auto& principal : mPrincipals) {
     nsAutoCString JSON;
     BasePrincipal::Cast(principal)->ToJSON(JSON);
-    // Values currently only copes with strings so encode into base64 to allow a
-    // CSV safely.
-    nsAutoCString result;
-    nsresult rv;
-    rv = Base64Encode(JSON, result);
-    NS_ENSURE_SUCCESS(rv, rv);
     // This is blank for the first run through so the last in the list doesn't
     // add a separator
     principalList.Append(sep);
-    principalList.Append(result);
     sep = ',';
+    // Values currently only copes with strings so encode into base64 to allow a
+    // CSV safely.
+    nsresult rv;
+    rv = Base64EncodeAppend(JSON, principalList);
+    NS_ENSURE_SUCCESS(rv, rv);
   }
   aObject[std::to_string(eSpecs)] = principalList.get();
 

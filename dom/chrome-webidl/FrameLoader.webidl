@@ -68,17 +68,6 @@ interface FrameLoader {
   void deactivateRemoteFrame();
 
   /**
-   * @see nsIDOMWindowUtils sendMouseEvent.
-   */
-  [Throws]
-  void sendCrossProcessMouseEvent(DOMString aType,
-                                  float aX,
-                                  float aY,
-                                  long aButton,
-                                  long aClickCount,
-                                  long aModifiers);
-
-  /**
    * Activate event forwarding from client (remote frame) to parent.
    */
   [Throws]
@@ -88,13 +77,6 @@ interface FrameLoader {
   readonly attribute MessageSender? messageManager;
 
   /**
-   * Request that the next time a remote layer transaction has been
-   * received by the Compositor, a MozAfterRemoteFrame event be sent
-   * to the window.
-   */
-  void requestNotifyAfterRemotePaint();
-
-  /**
    * Force a remote browser to recompute its dimension and screen position.
    */
   [Throws]
@@ -102,9 +84,11 @@ interface FrameLoader {
 
   /**
    * Force a TabStateFlush from native sessionStoreListeners.
-   * Return true if the flush requires async ipc call.
+   * Returns a promise that resolves when all session store data has been
+   * flushed.
    */
-  boolean requestTabStateFlush(unsigned long aFlushId);
+  [Throws]
+  Promise<void> requestTabStateFlush();
 
   /**
    * Force Epoch update in native sessionStoreListeners.
@@ -114,19 +98,33 @@ interface FrameLoader {
   /**
    * Request a session history update in native sessionStoreListeners.
    */
-  void requestSHistoryUpdate(boolean aImmediately);
+  void requestSHistoryUpdate();
 
   /**
-   * Print the current document.
+   * Creates a print preview document in this frame, or updates the existing
+   * print preview document with new print settings.
    *
-   * @param aOuterWindowID the ID of the outer window to print
-   * @param aPrintSettings optional print settings to use; printSilent can be
-   *                       set to prevent prompting.
-   * @return A Promise that resolves once printing is finished.
+   * @param aPrintSettings The print settings to use to layout the print
+   *   preview document.
+   * @param aSourceBrowsingContext Optionally, the browsing context that
+   *   contains the document from which the print preview is to be generated,
+   *   which must be in the same process as the browsing context of the frame
+   *   loader itself.
+   *
+   *   This should only be passed on the first call.  It should not be passed
+   *   for any subsequent calls that are made to update the existing print
+   *   preview document with a new print settings object.
+   * @return A Promise that resolves with a PrintPreviewSuccessInfo on success.
    */
-  [Throws]
-  Promise<void> print(unsigned long long aOuterWindowID,
-                      nsIPrintSettings aPrintSettings);
+  [ChromeOnly, Throws]
+  Promise<unsigned long> printPreview(nsIPrintSettings aPrintSettings,
+                                      BrowsingContext? aSourceBrowsingContext);
+
+  /**
+   * Inform the print preview document that we're done with it.
+   */
+  [ChromeOnly]
+  void exitPrintPreview();
 
   /**
    * The element which owns this frame loader.
@@ -203,6 +201,54 @@ interface mixin WebBrowserPersistable
   [Throws]
   void startPersistence(BrowsingContext? aContext,
                         nsIWebBrowserPersistDocumentReceiver aRecv);
+};
+
+enum PrintPreviewOrientation {
+    "landscape",
+    "portrait",
+    "unspecified"
+};
+
+/**
+ * Interface for the object that's used to resolve the Promise returned from
+ * FrameLoader.printPreview() if that method successfully creates the print
+ * preview document/successfully updates it with new settings.
+ */
+[GenerateConversionToJS]
+dictionary PrintPreviewSuccessInfo {
+  /**
+   * The total number of sheets of paper required to print, taking into account
+   * the provided nsIPrintSettings.  This takes into account page range
+   * selection, the pages-per-sheet, whether duplex printing is enabled, etc.
+   */
+  unsigned long sheetCount = 0;
+
+  /**
+   * The total number of virtual pages, not taking into account page range
+   * selection, the pages-per-sheet, whether duplex printing is enabled, etc.
+   */
+  unsigned long totalPageCount = 0;
+
+  /**
+   * Whether the preview is empty because of page range selection.
+   */
+  boolean isEmpty = false;
+
+  /**
+   * Whether the document or any subdocument has a selection that can be
+   * printed.
+   */
+  boolean hasSelection = false;
+
+  /**
+   * Whether the previewed document has a selection itself.
+   */
+  boolean hasSelfSelection = false;
+
+  /**
+   * Specified orientation of the document, or "unspecified".
+   */
+  PrintPreviewOrientation orientation = "unspecified";
 };
 
 FrameLoader includes WebBrowserPersistable;

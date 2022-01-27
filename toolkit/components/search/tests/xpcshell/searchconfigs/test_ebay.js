@@ -66,16 +66,21 @@ const test = new SearchConfigTest({
           matches: ["en-US"],
         },
       },
+      {
+        regions: ["gb"],
+        locales: {
+          matches: ["sco"],
+        },
+      },
     ],
   },
-  searchUrlBase: "https://rover.ebay.com/rover/1/",
   suggestionUrlBase: "https://autosug.ebay.com/autosug",
   details: [
     {
       // Note: These should be based on region, but we don't currently enforce that.
       // Note: the order here is important. A region/locale match higher up in the
       // list will override a region/locale match lower down.
-      domain: "befr.ebay.be",
+      domain: "www.befr.ebay.be",
       telemetryId: "ebay-be",
       included: [
         {
@@ -85,11 +90,11 @@ const test = new SearchConfigTest({
           },
         },
       ],
-      searchUrlEnd: "1553-53471-19255-0/1",
+      searchUrlCode: "mkrid=1553-53471-19255-0",
       suggestUrlCode: "sId=23",
     },
     {
-      domain: "ebay.at",
+      domain: "www.ebay.at",
       telemetryId: "ebay-at",
       included: [
         {
@@ -97,11 +102,11 @@ const test = new SearchConfigTest({
           locales: { matches: ["de", "dsb", "hsb"] },
         },
       ],
-      searchUrlEnd: "5221-53469-19255-0/1",
+      searchUrlCode: "mkrid=5221-53469-19255-0",
       suggestUrlCode: "sId=16",
     },
     {
-      domain: "ebay.ca",
+      domain: "www.ebay.ca",
       telemetryId: "ebay-ca",
       included: [
         {
@@ -126,11 +131,11 @@ const test = new SearchConfigTest({
           },
         },
       ],
-      searchUrlEnd: "706-53473-19255-0/1",
+      searchUrlCode: "mkrid=706-53473-19255-0",
       suggestUrlCode: "sId=2",
     },
     {
-      domain: "ebay.ch",
+      domain: "www.ebay.ch",
       telemetryId: "ebay-ch",
       included: [
         {
@@ -154,11 +159,11 @@ const test = new SearchConfigTest({
           },
         },
       ],
-      searchUrlEnd: "5222-53480-19255-0/1",
+      searchUrlCode: "mkrid=5222-53480-19255-0",
       suggestUrlCode: "sId=193",
     },
     {
-      domain: "ebay.com",
+      domain: "www.ebay.com",
       telemetryId: "ebay",
       included: [
         {
@@ -166,11 +171,11 @@ const test = new SearchConfigTest({
         },
       ],
       excluded: [{ regions: ["au", "be", "ca", "ch", "gb", "ie", "nl"] }],
-      searchUrlEnd: "711-53200-19255-0/1",
+      searchUrlCode: "mkrid=711-53200-19255-0",
       suggestUrlCode: "sId=0",
     },
     {
-      domain: "ebay.com.au",
+      domain: "www.ebay.com.au",
       telemetryId: "ebay-au",
       included: [
         {
@@ -178,11 +183,11 @@ const test = new SearchConfigTest({
           locales: { matches: ["cy", "unknown", "en-GB", "en-US", "gd"] },
         },
       ],
-      searchUrlEnd: "705-53470-19255-0/1",
+      searchUrlCode: "mkrid=705-53470-19255-0",
       suggestUrlCode: "sId=15",
     },
     {
-      domain: "ebay.ie",
+      domain: "www.ebay.ie",
       telemetryId: "ebay-ie",
       included: [
         {
@@ -193,27 +198,27 @@ const test = new SearchConfigTest({
           locales: { matches: ["cy", "unknown", "en-GB", "en-US", "gd"] },
         },
       ],
-      searchUrlEnd: "5282-53468-19255-0/1",
+      searchUrlCode: "mkrid=5282-53468-19255-0",
       suggestUrlCode: "sId=205",
     },
     {
-      domain: "ebay.co.uk",
+      domain: "www.ebay.co.uk",
       telemetryId: "ebay-uk",
       included: [
         {
           locales: { matches: DOMAIN_LOCALES["ebay-uk"] },
         },
         {
-          locales: { matches: ["unknown", "en-US"] },
+          locales: { matches: ["unknown", "en-US", "sco"] },
           regions: ["gb"],
         },
       ],
       excluded: [{ regions: ["au", "ie"] }],
-      searchUrlEnd: "710-53481-19255-0/1",
+      searchUrlCode: "mkrid=710-53481-19255-0",
       suggestUrlCode: "sId=3",
     },
     {
-      domain: "ebay.de",
+      domain: "www.ebay.de",
       telemetryId: "ebay-de",
       included: [
         {
@@ -221,11 +226,11 @@ const test = new SearchConfigTest({
         },
       ],
       excluded: [{ regions: ["at", "ch"] }],
-      searchUrlEnd: "707-53477-19255-0/1",
+      searchUrlCode: "mkrid=707-53477-19255-0",
       suggestUrlCode: "sId=77",
     },
     {
-      domain: "ebay.es",
+      domain: "www.ebay.es",
       telemetryId: "ebay-es",
       included: [
         {
@@ -234,11 +239,11 @@ const test = new SearchConfigTest({
           },
         },
       ],
-      searchUrlEnd: "1185-53479-19255-0/1",
+      searchUrlCode: "mkrid=1185-53479-19255-0",
       suggestUrlCode: "sId=186",
     },
     {
-      domain: "ebay.fr",
+      domain: "www.ebay.fr",
       telemetryId: "ebay-fr",
       included: [
         {
@@ -246,22 +251,22 @@ const test = new SearchConfigTest({
         },
       ],
       excluded: [{ regions: ["be", "ca", "ch"] }],
-      searchUrlEnd: "709-53476-19255-0/1",
+      searchUrlCode: "mkrid=709-53476-19255-0",
       suggestUrlCode: "sId=71",
     },
     {
-      domain: "ebay.it",
+      domain: "www.ebay.it",
       telemetryId: "ebay-it",
       included: [
         {
           locales: { matches: DOMAIN_LOCALES["ebay-it"] },
         },
       ],
-      searchUrlEnd: "724-53478-19255-0/1",
+      searchUrlCode: "mkrid=724-53478-19255-0",
       suggestUrlCode: "sId=101",
     },
     {
-      domain: "ebay.nl",
+      domain: "www.ebay.nl",
       telemetryId: "ebay-nl",
       included: [
         {
@@ -273,7 +278,7 @@ const test = new SearchConfigTest({
         },
       ],
       excluded: [{ regions: ["be"] }],
-      searchUrlEnd: "1346-53482-19255-0/1",
+      searchUrlCode: "mkrid=1346-53482-19255-0",
       suggestUrlCode: "sId=146",
     },
   ],
@@ -284,15 +289,5 @@ add_task(async function setup() {
 });
 
 add_task(async function test_searchConfig_ebay() {
-  await test.run(true);
-  // Only applies to the default locale fallback for the legacy config.
-  // Note: when we remove the legacy config, we should remove the "unknown"
-  // references in the 'details' section of the test above.
-  test._config.available.included[0].locales.matches.push("unknown");
-  // In the legacy configuration, eBay was turned on for most regions with en-US
-  // locale by default, but turned off by abSearch.
-  test._config.available.included[1].regions = availableRegions.filter(
-    region => !["by", "kz", "ru", "tr"].includes(region)
-  );
-  await test.run(false);
+  await test.run();
 });

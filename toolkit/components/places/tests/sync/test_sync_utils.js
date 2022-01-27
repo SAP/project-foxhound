@@ -4,8 +4,6 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/Preferences.jsm"
 );
 
-const SYNC_PARENT_ANNO = "sync/parent";
-
 var makeGuid = PlacesUtils.history.makeGuid;
 
 function shuffle(array) {
@@ -83,11 +81,6 @@ var populateTree = async function populate(parentGuid, ...items) {
   }
 
   return guids;
-};
-
-var recordIdToId = async function recordIdToId(recordId) {
-  let guid = await PlacesSyncUtils.bookmarks.recordIdToGuid(recordId);
-  return PlacesUtils.promiseItemId(guid);
 };
 
 var moveSyncedBookmarksToUnsyncedParent = async function() {
@@ -193,6 +186,7 @@ add_task(async function test_determineNonSyncableGuids() {
     { uri: "https://www.mozilla.org/en-US/", transition: TRANSITION_TYPED },
     { uri: "http://getfirefox.com/", transition: TRANSITION_LINK },
     { uri: "http://getthunderbird.com/", transition: TRANSITION_FRAMED_LINK },
+    { uri: "http://downloads.com/", transition: TRANSITION_DOWNLOAD },
   ];
   for (let visit of arrayOfVisits) {
     await PlacesTestUtils.addVisits(visit);
@@ -212,9 +206,10 @@ add_task(async function test_determineNonSyncableGuids() {
     guids
   );
 
+  let filtered = [TRANSITION_FRAMED_LINK, TRANSITION_DOWNLOAD];
   // Check if the filtered visits are of type TRANSITION_FRAMED_LINK.
   for (let visit of arrayOfVisits) {
-    if (visit.transition === TRANSITION_FRAMED_LINK) {
+    if (filtered.includes(visit.transition)) {
       ok(
         filteredGuids.includes(dictURLGuid[visit.uri]),
         "This url should be one of the filtered guids."
@@ -446,6 +441,32 @@ add_task(async function test_getAllURLs() {
   await PlacesUtils.history.clear();
 });
 
+add_task(async function test_getAllURLs_skips_downloads() {
+  // Add some visits of the following URLs.
+  let arrayOfURLsToVisit = [
+    "https://www.mozilla.org/en-US/",
+    { uri: "http://downloads.com/", transition: TRANSITION_DOWNLOAD },
+  ];
+  for (let url of arrayOfURLsToVisit) {
+    await PlacesTestUtils.addVisits(url);
+  }
+
+  // Get all URLs.
+  let allURLs = await PlacesSyncUtils.history.getAllURLs({
+    since: new Date(Date.now() - 2592000000),
+    limit: 5000,
+  });
+
+  // Should be only the non-download
+  equal(allURLs.length, 1, "Should only get one URL back.");
+
+  // Check that the correct URLs were retrived.
+  equal(allURLs[0], arrayOfURLsToVisit[0], "Should get back our non-download.");
+
+  // Remove the visits added during this test.
+  await PlacesUtils.history.clear();
+});
+
 add_task(async function test_order() {
   info("Insert some bookmarks");
   let guids = await populateTree(
@@ -549,185 +570,6 @@ add_task(async function test_order() {
   await PlacesSyncUtils.bookmarks.reset();
 });
 
-add_task(async function test_dedupe() {
-  await ignoreChangedRoots();
-
-  let parentFolder = await PlacesSyncUtils.bookmarks.insert({
-    kind: "folder",
-    recordId: makeGuid(),
-    parentRecordId: "menu",
-  });
-  let differentParentFolder = await PlacesSyncUtils.bookmarks.insert({
-    kind: "folder",
-    recordId: makeGuid(),
-    parentRecordId: "menu",
-  });
-  let mozBmk = await PlacesSyncUtils.bookmarks.insert({
-    kind: "bookmark",
-    recordId: makeGuid(),
-    parentRecordId: parentFolder.recordId,
-    url: "https://mozilla.org",
-  });
-  let fxBmk = await PlacesSyncUtils.bookmarks.insert({
-    kind: "bookmark",
-    recordId: makeGuid(),
-    parentRecordId: parentFolder.recordId,
-    url: "http://getfirefox.com",
-  });
-  let tbBmk = await PlacesSyncUtils.bookmarks.insert({
-    kind: "bookmark",
-    recordId: makeGuid(),
-    parentRecordId: parentFolder.recordId,
-    url: "http://getthunderbird.com",
-  });
-
-  await Assert.rejects(
-    PlacesSyncUtils.bookmarks.dedupe(makeGuid(), makeGuid(), makeGuid()),
-    /does not exist/,
-    "Should reject attempts to de-dupe nonexistent items"
-  );
-  await Assert.rejects(
-    PlacesSyncUtils.bookmarks.dedupe("menu", makeGuid(), "places"),
-    /Cannot de-dupe local root/,
-    "Should reject attempts to de-dupe local roots"
-  );
-
-  info("De-dupe with same remote parent");
-  {
-    let localId = await PlacesUtils.promiseItemId(mozBmk.recordId);
-    let newRemoteRecordId = makeGuid();
-
-    let changes = await PlacesSyncUtils.bookmarks.dedupe(
-      mozBmk.recordId,
-      newRemoteRecordId,
-      parentFolder.recordId
-    );
-    deepEqual(
-      Object.keys(changes).sort(),
-      [
-        parentFolder.recordId, // Parent.
-        mozBmk.recordId, // Tombstone for old sync ID.
-      ].sort(),
-      "Should bump change counter of parent"
-    );
-    ok(
-      changes[mozBmk.recordId].tombstone,
-      "Should write tombstone for old local sync ID"
-    );
-    ok(
-      Object.values(changes).every(change => change.counter === 1),
-      "Change counter for every bookmark should be 1"
-    );
-
-    ok(
-      !(await PlacesUtils.bookmarks.fetch(mozBmk.recordId)),
-      "Bookmark with old local sync ID should not exist"
-    );
-    await Assert.rejects(
-      PlacesUtils.promiseItemId(mozBmk.recordId),
-      /no item found for the given GUID/,
-      "Should invalidate GUID cache entry for old local sync ID"
-    );
-
-    let newMozBmk = await PlacesUtils.bookmarks.fetch(newRemoteRecordId);
-    equal(
-      newMozBmk.guid,
-      newRemoteRecordId,
-      "Should change local sync ID to remote sync ID"
-    );
-    equal(
-      await PlacesUtils.promiseItemId(newRemoteRecordId),
-      localId,
-      "Should add new remote sync ID to GUID cache"
-    );
-
-    await setChangesSynced(changes);
-  }
-
-  info("De-dupe with different remote parent");
-  {
-    let localId = await PlacesUtils.promiseItemId(fxBmk.recordId);
-    let newRemoteRecordId = makeGuid();
-
-    let changes = await PlacesSyncUtils.bookmarks.dedupe(
-      fxBmk.recordId,
-      newRemoteRecordId,
-      differentParentFolder.recordId
-    );
-    deepEqual(
-      Object.keys(changes).sort(),
-      [
-        parentFolder.recordId, // Old local parent.
-        differentParentFolder.recordId, // New remote parent.
-        fxBmk.recordId, // Tombstone for old sync ID.
-      ].sort(),
-      "Should bump change counter of old parent and new parent"
-    );
-    ok(
-      changes[fxBmk.recordId].tombstone,
-      "Should write tombstone for old local sync ID"
-    );
-    ok(
-      Object.values(changes).every(change => change.counter === 1),
-      "Change counter for every bookmark should be 1"
-    );
-
-    let newFxBmk = await PlacesUtils.bookmarks.fetch(newRemoteRecordId);
-    equal(
-      newFxBmk.parentGuid,
-      parentFolder.recordId,
-      "De-duping should not move bookmark to new parent"
-    );
-    equal(
-      await PlacesUtils.promiseItemId(newRemoteRecordId),
-      localId,
-      "De-duping with different remote parent should cache new sync ID"
-    );
-
-    await setChangesSynced(changes);
-  }
-
-  info("De-dupe with nonexistent remote parent");
-  {
-    let localId = await PlacesUtils.promiseItemId(tbBmk.recordId);
-    let newRemoteRecordId = makeGuid();
-    let remoteParentRecordId = makeGuid();
-
-    let changes = await PlacesSyncUtils.bookmarks.dedupe(
-      tbBmk.recordId,
-      newRemoteRecordId,
-      remoteParentRecordId
-    );
-    deepEqual(
-      Object.keys(changes).sort(),
-      [
-        parentFolder.recordId, // Old local parent.
-        tbBmk.recordId, // Tombstone for old sync ID.
-      ].sort(),
-      "Should bump change counter of old parent"
-    );
-    ok(
-      changes[tbBmk.recordId].tombstone,
-      "Should write tombstone for old local sync ID"
-    );
-    ok(
-      Object.values(changes).every(change => change.counter === 1),
-      "Change counter for every bookmark should be 1"
-    );
-
-    equal(
-      await PlacesUtils.promiseItemId(newRemoteRecordId),
-      localId,
-      "De-duping with nonexistent remote parent should cache new sync ID"
-    );
-
-    await setChangesSynced(changes);
-  }
-
-  await PlacesUtils.bookmarks.eraseEverything();
-  await PlacesSyncUtils.bookmarks.reset();
-});
-
 add_task(async function test_order_roots() {
   let oldOrder = await PlacesSyncUtils.bookmarks.fetchChildRecordIds(
     PlacesUtils.bookmarks.rootGuid
@@ -745,103 +587,29 @@ add_task(async function test_order_roots() {
   await PlacesSyncUtils.bookmarks.reset();
 });
 
-add_task(async function test_update_tags() {
-  info("Insert item without tags");
-  let item = await PlacesSyncUtils.bookmarks.insert({
-    kind: "bookmark",
-    url: "https://mozilla.org",
-    recordId: makeGuid(),
-    parentRecordId: "menu",
-  });
-
-  info("Add tags");
-  {
-    let updatedItem = await PlacesSyncUtils.bookmarks.update({
-      recordId: item.recordId,
-      tags: ["foo", "bar"],
-    });
-    deepEqual(updatedItem.tags, ["foo", "bar"], "Should return new tags");
-    assertURLHasTags(
-      "https://mozilla.org",
-      ["bar", "foo"],
-      "Should set new tags for URL"
-    );
-  }
-
-  info("Add new tag, remove existing tag");
-  {
-    let updatedItem = await PlacesSyncUtils.bookmarks.update({
-      recordId: item.recordId,
-      tags: ["foo", "baz"],
-    });
-    deepEqual(updatedItem.tags, ["foo", "baz"], "Should return updated tags");
-    assertURLHasTags(
-      "https://mozilla.org",
-      ["baz", "foo"],
-      "Should update tags for URL"
-    );
-    await assertTagForURLs("bar", [], "Should remove existing tag");
-  }
-
-  info("Tags with whitespace");
-  {
-    let updatedItem = await PlacesSyncUtils.bookmarks.update({
-      recordId: item.recordId,
-      tags: [" leading", "trailing ", " baz ", " "],
-    });
-    deepEqual(
-      updatedItem.tags,
-      ["leading", "trailing", "baz"],
-      "Should return filtered tags"
-    );
-    assertURLHasTags(
-      "https://mozilla.org",
-      ["baz", "leading", "trailing"],
-      "Should trim whitespace and filter blank tags"
-    );
-  }
-
-  info("Remove all tags");
-  {
-    let updatedItem = await PlacesSyncUtils.bookmarks.update({
-      recordId: item.recordId,
-      tags: null,
-    });
-    deepEqual(updatedItem.tags, [], "Should return empty tag array");
-    assertURLHasTags(
-      "https://mozilla.org",
-      [],
-      "Should remove all existing tags"
-    );
-  }
-
-  await PlacesUtils.bookmarks.eraseEverything();
-  await PlacesSyncUtils.bookmarks.reset();
-});
-
 add_task(async function test_pullChanges_tags() {
   await ignoreChangedRoots();
 
   info("Insert untagged items with same URL");
-  let firstItem = await PlacesSyncUtils.bookmarks.insert({
+  let firstItem = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     recordId: makeGuid(),
     parentRecordId: "menu",
     url: "https://example.org",
   });
-  let secondItem = await PlacesSyncUtils.bookmarks.insert({
+  let secondItem = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     recordId: makeGuid(),
     parentRecordId: "menu",
     url: "https://example.org",
   });
-  let untaggedItem = await PlacesSyncUtils.bookmarks.insert({
+  let untaggedItem = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     recordId: makeGuid(),
     parentRecordId: "menu",
     url: "https://bugzilla.org",
   });
-  let taggedItem = await PlacesSyncUtils.bookmarks.insert({
+  let taggedItem = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     recordId: makeGuid(),
     parentRecordId: "menu",
@@ -969,186 +737,11 @@ add_task(async function test_pullChanges_tags() {
   await PlacesSyncUtils.bookmarks.reset();
 });
 
-add_task(async function test_update_keyword() {
-  info("Insert item without keyword");
-  let item = await PlacesSyncUtils.bookmarks.insert({
-    kind: "bookmark",
-    parentRecordId: "menu",
-    url: "https://mozilla.org",
-    recordId: makeGuid(),
-  });
-
-  info("Add item keyword");
-  {
-    let updatedItem = await PlacesSyncUtils.bookmarks.update({
-      recordId: item.recordId,
-      keyword: "moz",
-    });
-    equal(updatedItem.keyword, "moz", "Should return new keyword");
-    let entryByKeyword = await PlacesUtils.keywords.fetch("moz");
-    equal(
-      entryByKeyword.url.href,
-      "https://mozilla.org/",
-      "Should set new keyword for URL"
-    );
-    let entryByURL = await PlacesUtils.keywords.fetch({
-      url: "https://mozilla.org",
-    });
-    equal(
-      entryByURL.keyword,
-      "moz",
-      "Looking up URL should return new keyword"
-    );
-  }
-
-  info("Change item keyword");
-  {
-    let updatedItem = await PlacesSyncUtils.bookmarks.update({
-      recordId: item.recordId,
-      keyword: "m",
-    });
-    equal(updatedItem.keyword, "m", "Should return updated keyword");
-    let newEntry = await PlacesUtils.keywords.fetch("m");
-    equal(
-      newEntry.url.href,
-      "https://mozilla.org/",
-      "Should update keyword for URL"
-    );
-    let oldEntry = await PlacesUtils.keywords.fetch("moz");
-    ok(!oldEntry, "Should remove old keyword");
-  }
-
-  info("Remove existing keyword");
-  {
-    let updatedItem = await PlacesSyncUtils.bookmarks.update({
-      recordId: item.recordId,
-      keyword: null,
-    });
-    ok(
-      !updatedItem.keyword,
-      "Should not include removed keyword in properties"
-    );
-    let entry = await PlacesUtils.keywords.fetch({
-      url: "https://mozilla.org",
-    });
-    ok(!entry, "Should remove new keyword from URL");
-  }
-
-  info("Remove keyword for item without keyword");
-  {
-    await PlacesSyncUtils.bookmarks.update({
-      recordId: item.recordId,
-      keyword: null,
-    });
-    let entry = await PlacesUtils.keywords.fetch({
-      url: "https://mozilla.org",
-    });
-    ok(
-      !entry,
-      "Removing keyword for URL without existing keyword should succeed"
-    );
-  }
-
-  let item2;
-  info("Insert removes other item's keyword if they are the same");
-  {
-    let updatedItem = await PlacesSyncUtils.bookmarks.update({
-      recordId: item.recordId,
-      keyword: "test",
-    });
-    equal(updatedItem.keyword, "test", "Initial update succeeds");
-    item2 = await PlacesSyncUtils.bookmarks.insert({
-      kind: "bookmark",
-      parentRecordId: "menu",
-      url: "https://mozilla.org/1",
-      recordId: makeGuid(),
-      keyword: "test",
-    });
-    equal(item2.keyword, "test", "insert with existing should succeed");
-    updatedItem = await PlacesSyncUtils.bookmarks.fetch(item.recordId);
-    ok(!updatedItem.keyword, "initial item no longer has keyword");
-    let entry = await PlacesUtils.keywords.fetch({
-      url: "https://mozilla.org",
-    });
-    ok(!entry, "Direct check for original url keyword gives nothing");
-    let newEntry = await PlacesUtils.keywords.fetch("test");
-    ok(newEntry, "Keyword should exist for new item");
-    equal(
-      newEntry.url.href,
-      "https://mozilla.org/1",
-      "Keyword should point to new url"
-    );
-  }
-
-  info("Insert updates other item's keyword if they are the same url");
-  {
-    let updatedItem = await PlacesSyncUtils.bookmarks.update({
-      recordId: item.recordId,
-      keyword: "test2",
-    });
-    equal(updatedItem.keyword, "test2", "Initial update succeeds");
-    let newItem = await PlacesSyncUtils.bookmarks.insert({
-      kind: "bookmark",
-      parentRecordId: "menu",
-      url: "https://mozilla.org",
-      recordId: makeGuid(),
-      keyword: "test3",
-    });
-    equal(newItem.keyword, "test3", "insert with existing should succeed");
-    updatedItem = await PlacesSyncUtils.bookmarks.fetch(item.recordId);
-    equal(updatedItem.keyword, "test3", "initial item has new keyword");
-  }
-
-  info("Update removes other item's keyword if they are the same");
-  {
-    let updatedItem = await PlacesSyncUtils.bookmarks.update({
-      recordId: item.recordId,
-      keyword: "test4",
-    });
-    equal(updatedItem.keyword, "test4", "Initial update succeeds");
-    let updatedItem2 = await PlacesSyncUtils.bookmarks.update({
-      recordId: item2.recordId,
-      keyword: "test4",
-    });
-    equal(updatedItem2.keyword, "test4", "New update succeeds");
-    updatedItem = await PlacesSyncUtils.bookmarks.fetch(item.recordId);
-    ok(!updatedItem.keyword, "initial item no longer has keyword");
-    let entry = await PlacesUtils.keywords.fetch({
-      url: "https://mozilla.org",
-    });
-    ok(!entry, "Direct check for original url keyword gives nothing");
-    let newEntry = await PlacesUtils.keywords.fetch("test4");
-    ok(newEntry, "Keyword should exist for new item");
-    equal(
-      newEntry.url.href,
-      "https://mozilla.org/1",
-      "Keyword should point to new url"
-    );
-  }
-
-  info("Update url updates it's keyword if url already has keyword");
-  {
-    let updatedItem = await PlacesSyncUtils.bookmarks.update({
-      recordId: item.recordId,
-      keyword: "test4",
-    });
-    equal(updatedItem.keyword, "test4", "Initial update succeeds");
-    let updatedItem2 = await PlacesSyncUtils.bookmarks.update({
-      recordId: item2.recordId,
-      keyword: "test5",
-    });
-    equal(updatedItem2.keyword, "test5", "New update succeeds");
-  }
-
-  await PlacesUtils.bookmarks.eraseEverything();
-  await PlacesSyncUtils.bookmarks.reset();
-});
-
 add_task(async function test_conflicting_keywords() {
   await ignoreChangedRoots();
 
   info("Insert bookmark with new keyword");
-  let tbBmk = await PlacesSyncUtils.bookmarks.insert({
+  let tbBmk = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     recordId: makeGuid(),
     parentRecordId: "unfiled",
@@ -1175,7 +768,7 @@ add_task(async function test_conflicting_keywords() {
   }
 
   info("Insert bookmark with same URL and different keyword");
-  let dupeTbBmk = await PlacesSyncUtils.bookmarks.insert({
+  let dupeTbBmk = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     recordId: makeGuid(),
     parentRecordId: "toolbar",
@@ -1207,71 +800,6 @@ add_task(async function test_conflicting_keywords() {
     await setChangesSynced(changes);
   }
 
-  info("Update bookmark with different keyword");
-  await PlacesSyncUtils.bookmarks.update({
-    kind: "bookmark",
-    recordId: tbBmk.recordId,
-    url: "http://getthunderbird.com",
-    keyword: "thunderbird",
-  });
-  {
-    let oldKeywordByURL = await PlacesUtils.keywords.fetch("tb");
-    ok(
-      !oldKeywordByURL,
-      "Should remove old entry when updating bookmark keyword"
-    );
-    let entryByKeyword = await PlacesUtils.keywords.fetch("thunderbird");
-    equal(
-      entryByKeyword.url.href,
-      "http://getthunderbird.com/",
-      "Should return updated keyword entry by URL"
-    );
-    let entryByURL = await PlacesUtils.keywords.fetch({
-      url: "http://getthunderbird.com",
-    });
-    equal(
-      entryByURL.keyword,
-      "thunderbird",
-      "Should return entry by updated keyword"
-    );
-    let changes = await PlacesSyncUtils.bookmarks.pullChanges();
-    deepEqual(
-      Object.keys(changes).sort(),
-      [tbBmk.recordId, dupeTbBmk.recordId].sort(),
-      "Should bump change counter for bookmarks with updated keyword"
-    );
-    await setChangesSynced(changes);
-  }
-
-  await PlacesUtils.bookmarks.eraseEverything();
-  await PlacesSyncUtils.bookmarks.reset();
-});
-
-add_task(async function test_update_move_root() {
-  info("Move root to same parent");
-  {
-    // This should be a no-op.
-    let sameRoot = await PlacesSyncUtils.bookmarks.update({
-      recordId: "menu",
-      parentRecordId: "places",
-    });
-    equal(sameRoot.recordId, "menu", "Menu root GUID should not change");
-    equal(
-      sameRoot.parentRecordId,
-      "places",
-      "Parent Places root GUID should not change"
-    );
-  }
-
-  info("Try reparenting root");
-  await Assert.rejects(
-    PlacesSyncUtils.bookmarks.update({
-      recordId: "menu",
-      parentRecordId: "toolbar",
-    }),
-    /Cannot move Places root/
-  );
-
   await PlacesUtils.bookmarks.eraseEverything();
   await PlacesSyncUtils.bookmarks.reset();
 });
@@ -1279,7 +807,7 @@ add_task(async function test_update_move_root() {
 add_task(async function test_insert() {
   info("Insert bookmark");
   {
-    let item = await PlacesSyncUtils.bookmarks.insert({
+    let item = await PlacesSyncUtils.test.bookmarks.insert({
       kind: "bookmark",
       recordId: makeGuid(),
       parentRecordId: "menu",
@@ -1295,7 +823,7 @@ add_task(async function test_insert() {
 
   info("Insert query");
   {
-    let item = await PlacesSyncUtils.bookmarks.insert({
+    let item = await PlacesSyncUtils.test.bookmarks.insert({
       kind: "query",
       recordId: makeGuid(),
       parentRecordId: "menu",
@@ -1312,7 +840,7 @@ add_task(async function test_insert() {
 
   info("Insert folder");
   {
-    let item = await PlacesSyncUtils.bookmarks.insert({
+    let item = await PlacesSyncUtils.test.bookmarks.insert({
       kind: "folder",
       recordId: makeGuid(),
       parentRecordId: "menu",
@@ -1328,7 +856,7 @@ add_task(async function test_insert() {
 
   info("Insert separator");
   {
-    let item = await PlacesSyncUtils.bookmarks.insert({
+    let item = await PlacesSyncUtils.test.bookmarks.insert({
       kind: "separator",
       recordId: makeGuid(),
       parentRecordId: "menu",
@@ -1371,7 +899,7 @@ add_task(async function test_insert_tags() {
         tags: ["baz", "qux"],
         title: "bar",
       },
-    ].map(info => PlacesSyncUtils.bookmarks.insert(info))
+    ].map(info => PlacesSyncUtils.test.bookmarks.insert(info))
   );
 
   await assertTagForURLs(
@@ -1401,7 +929,7 @@ add_task(async function test_insert_tags() {
 
 add_task(async function test_insert_tags_whitespace() {
   info("Untrimmed and blank tags");
-  let taggedBlanks = await PlacesSyncUtils.bookmarks.insert({
+  let taggedBlanks = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     url: "https://example.org",
     recordId: makeGuid(),
@@ -1420,7 +948,7 @@ add_task(async function test_insert_tags_whitespace() {
   );
 
   info("Dupe tags");
-  let taggedDupes = await PlacesSyncUtils.bookmarks.insert({
+  let taggedDupes = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     url: "https://example.net",
     recordId: makeGuid(),
@@ -1462,7 +990,7 @@ add_task(async function test_insert_tags_whitespace() {
 add_task(async function test_insert_keyword() {
   info("Insert item with new keyword");
   {
-    await PlacesSyncUtils.bookmarks.insert({
+    await PlacesSyncUtils.test.bookmarks.insert({
       kind: "bookmark",
       parentRecordId: "menu",
       url: "https://example.com",
@@ -1479,7 +1007,7 @@ add_task(async function test_insert_keyword() {
 
   info("Insert item with existing keyword");
   {
-    await PlacesSyncUtils.bookmarks.insert({
+    await PlacesSyncUtils.test.bookmarks.insert({
       kind: "bookmark",
       parentRecordId: "menu",
       url: "https://mozilla.org",
@@ -1515,7 +1043,7 @@ add_task(async function test_insert_tag_query() {
 
   info("Insert tag query for non existing tag");
   {
-    let query = await PlacesSyncUtils.bookmarks.insert({
+    let query = await PlacesSyncUtils.test.bookmarks.insert({
       kind: "query",
       recordId: makeGuid(),
       parentRecordId: "toolbar",
@@ -1537,7 +1065,7 @@ add_task(async function test_insert_tag_query() {
   info("Insert tag query for existing tag");
   {
     let url = "place:type=7&folder=90&maxResults=15";
-    let query = await PlacesSyncUtils.bookmarks.insert({
+    let query = await PlacesSyncUtils.test.bookmarks.insert({
       kind: "query",
       recordId: makeGuid(),
       parentRecordId: "menu",
@@ -1569,312 +1097,32 @@ add_task(async function test_insert_tag_query() {
   await PlacesSyncUtils.bookmarks.reset();
 });
 
-add_task(async function test_insert_orphans() {
-  await ignoreChangedRoots();
-
-  let grandParentGuid = makeGuid();
-  let parentGuid = makeGuid();
-  let childGuid = makeGuid();
-  let childId;
-
-  info("Insert an orphaned child");
-  {
-    let child = await PlacesSyncUtils.bookmarks.insert({
-      kind: "bookmark",
-      parentRecordId: parentGuid,
-      recordId: childGuid,
-      url: "https://mozilla.org",
-    });
-    equal(
-      child.recordId,
-      childGuid,
-      "Should insert orphan with requested GUID"
-    );
-    equal(child.parentRecordId, "unfiled", "Should reparent orphan to unfiled");
-
-    childId = await PlacesUtils.promiseItemId(childGuid);
-    equal(
-      PlacesUtils.annotations.getItemAnnotation(childId, SYNC_PARENT_ANNO),
-      parentGuid,
-      "Should set anno to missing parent GUID"
-    );
-  }
-
-  info("Insert the grandparent");
-  await PlacesSyncUtils.bookmarks.insert({
-    kind: "folder",
-    parentRecordId: "menu",
-    recordId: grandParentGuid,
-  });
-  equal(
-    PlacesUtils.annotations.getItemAnnotation(childId, SYNC_PARENT_ANNO),
-    parentGuid,
-    "Child should still have orphan anno"
-  );
-
-  info("Insert the missing parent");
-  {
-    let parent = await PlacesSyncUtils.bookmarks.insert({
-      kind: "folder",
-      parentRecordId: grandParentGuid,
-      recordId: parentGuid,
-    });
-    equal(
-      parent.recordId,
-      parentGuid,
-      "Should insert parent with requested GUID"
-    );
-    equal(
-      parent.parentRecordId,
-      grandParentGuid,
-      "Parent should be child of grandparent"
-    );
-    ok(
-      !PlacesUtils.annotations.itemHasAnnotation(childId, SYNC_PARENT_ANNO),
-      "Orphan anno should be removed after reparenting"
-    );
-
-    let child = await PlacesUtils.bookmarks.fetch({ guid: childGuid });
-    equal(
-      child.parentGuid,
-      parentGuid,
-      "Should reparent child after inserting missing parent"
-    );
-  }
-
-  await PlacesUtils.bookmarks.eraseEverything();
-  await PlacesSyncUtils.bookmarks.reset();
-});
-
-add_task(async function test_move_orphans() {
-  let nonexistentRecordId = makeGuid();
-  let fxBmk = await PlacesSyncUtils.bookmarks.insert({
-    kind: "bookmark",
-    recordId: makeGuid(),
-    parentRecordId: nonexistentRecordId,
-    url: "http://getfirefox.com",
-  });
-  let tbBmk = await PlacesSyncUtils.bookmarks.insert({
-    kind: "bookmark",
-    recordId: makeGuid(),
-    parentRecordId: nonexistentRecordId,
-    url: "http://getthunderbird.com",
-  });
-
-  info("Verify synced orphan annos match");
-  {
-    let orphanGuids = await PlacesSyncUtils.bookmarks.fetchGuidsWithAnno(
-      SYNC_PARENT_ANNO,
-      nonexistentRecordId
-    );
-    deepEqual(
-      orphanGuids.sort(),
-      [fxBmk.recordId, tbBmk.recordId].sort(),
-      "Orphaned bookmarks should match before moving"
-    );
-  }
-
-  info("Move synced orphan using async API");
-  {
-    await PlacesUtils.bookmarks.update({
-      guid: fxBmk.recordId,
-      parentGuid: PlacesUtils.bookmarks.menuGuid,
-      index: PlacesUtils.bookmarks.DEFAULT_INDEX,
-    });
-    let orphanGuids = await PlacesSyncUtils.bookmarks.fetchGuidsWithAnno(
-      SYNC_PARENT_ANNO,
-      nonexistentRecordId
-    );
-    deepEqual(
-      orphanGuids,
-      [tbBmk.recordId],
-      "Should remove orphan annos from updated bookmark"
-    );
-  }
-
-  await PlacesUtils.bookmarks.eraseEverything();
-  await PlacesSyncUtils.bookmarks.reset();
-});
-
-add_task(async function test_reorder_orphans() {
-  let nonexistentRecordId = makeGuid();
-  let fxBmk = await PlacesSyncUtils.bookmarks.insert({
-    kind: "bookmark",
-    recordId: makeGuid(),
-    parentRecordId: nonexistentRecordId,
-    url: "http://getfirefox.com",
-  });
-  let tbBmk = await PlacesSyncUtils.bookmarks.insert({
-    kind: "bookmark",
-    recordId: makeGuid(),
-    parentRecordId: nonexistentRecordId,
-    url: "http://getthunderbird.com",
-  });
-  let mozBmk = await PlacesSyncUtils.bookmarks.insert({
-    kind: "bookmark",
-    recordId: makeGuid(),
-    parentRecordId: nonexistentRecordId,
-    url: "https://mozilla.org",
-  });
-
-  info("Verify synced orphan annos match");
-  {
-    let orphanGuids = await PlacesSyncUtils.bookmarks.fetchGuidsWithAnno(
-      SYNC_PARENT_ANNO,
-      nonexistentRecordId
-    );
-    deepEqual(
-      orphanGuids.sort(),
-      [fxBmk.recordId, tbBmk.recordId, mozBmk.recordId].sort(),
-      "Orphaned bookmarks should match before reordering"
-    );
-  }
-
-  info("Reorder synced orphans");
-  {
-    await PlacesUtils.bookmarks.reorder(PlacesUtils.bookmarks.unfiledGuid, [
-      tbBmk.recordId,
-      fxBmk.recordId,
-    ]);
-    let orphanGuids = await PlacesSyncUtils.bookmarks.fetchGuidsWithAnno(
-      SYNC_PARENT_ANNO,
-      nonexistentRecordId
-    );
-    deepEqual(
-      orphanGuids,
-      [mozBmk.recordId],
-      "Should remove orphan annos from explicitly reordered bookmarks"
-    );
-  }
-
-  await PlacesUtils.bookmarks.eraseEverything();
-  await PlacesSyncUtils.bookmarks.reset();
-});
-
-add_task(async function test_set_orphan_indices() {
-  let nonexistentRecordId = makeGuid();
-  let fxBmk = await PlacesSyncUtils.bookmarks.insert({
-    kind: "bookmark",
-    recordId: makeGuid(),
-    parentRecordId: nonexistentRecordId,
-    url: "http://getfirefox.com",
-  });
-  let tbBmk = await PlacesSyncUtils.bookmarks.insert({
-    kind: "bookmark",
-    recordId: makeGuid(),
-    parentRecordId: nonexistentRecordId,
-    url: "http://getthunderbird.com",
-  });
-
-  info("Verify synced orphan annos match");
-  {
-    let orphanGuids = await PlacesSyncUtils.bookmarks.fetchGuidsWithAnno(
-      SYNC_PARENT_ANNO,
-      nonexistentRecordId
-    );
-    deepEqual(
-      orphanGuids.sort(),
-      [fxBmk.recordId, tbBmk.recordId].sort(),
-      "Orphaned bookmarks should match before changing indices"
-    );
-  }
-
-  await PlacesUtils.bookmarks.eraseEverything();
-  await PlacesSyncUtils.bookmarks.reset();
-});
-
-add_task(async function test_unsynced_orphans() {
-  let nonexistentRecordId = makeGuid();
-  let newBmk = await PlacesSyncUtils.bookmarks.insert({
-    kind: "bookmark",
-    recordId: makeGuid(),
-    parentRecordId: nonexistentRecordId,
-    url: "http://getfirefox.com",
-  });
-  let unknownBmk = await PlacesSyncUtils.bookmarks.insert({
-    kind: "bookmark",
-    recordId: makeGuid(),
-    parentRecordId: nonexistentRecordId,
-    url: "http://getthunderbird.com",
-  });
-  await PlacesTestUtils.setBookmarkSyncFields(
-    {
-      guid: newBmk.recordId,
-      syncStatus: PlacesUtils.bookmarks.SYNC_STATUS.NEW,
-    },
-    {
-      guid: unknownBmk.recordId,
-      syncStatus: PlacesUtils.bookmarks.SYNC_STATUS.UNKNOWN,
-    }
-  );
-
-  info("Move unsynced orphan");
-  {
-    let unknownGuid = await PlacesSyncUtils.bookmarks.recordIdToGuid(
-      unknownBmk.recordId
-    );
-    await PlacesUtils.bookmarks.update({
-      guid: unknownGuid,
-      parentGuid: PlacesUtils.bookmarks.toolbarGuid,
-      index: PlacesUtils.bookmarks.DEFAULT_INDEX,
-    });
-    let orphanGuids = await PlacesSyncUtils.bookmarks.fetchGuidsWithAnno(
-      SYNC_PARENT_ANNO,
-      nonexistentRecordId
-    );
-    deepEqual(
-      orphanGuids.sort(),
-      [newBmk.recordId].sort(),
-      "Should remove orphan annos from moved unsynced bookmark"
-    );
-  }
-
-  info("Reorder unsynced orphans");
-  {
-    await PlacesUtils.bookmarks.reorder(PlacesUtils.bookmarks.unfiledGuid, [
-      newBmk.recordId,
-    ]);
-    let orphanGuids = await PlacesSyncUtils.bookmarks.fetchGuidsWithAnno(
-      SYNC_PARENT_ANNO,
-      nonexistentRecordId
-    );
-    deepEqual(
-      orphanGuids,
-      [],
-      "Should remove orphan annos from reordered unsynced bookmarks"
-    );
-  }
-
-  await PlacesUtils.bookmarks.eraseEverything();
-  await PlacesSyncUtils.bookmarks.reset();
-});
-
 add_task(async function test_fetch() {
-  let folder = await PlacesSyncUtils.bookmarks.insert({
+  let folder = await PlacesSyncUtils.test.bookmarks.insert({
     recordId: makeGuid(),
     parentRecordId: "menu",
     kind: "folder",
   });
-  let bmk = await PlacesSyncUtils.bookmarks.insert({
+  let bmk = await PlacesSyncUtils.test.bookmarks.insert({
     recordId: makeGuid(),
     parentRecordId: "menu",
     kind: "bookmark",
     url: "https://example.com",
     tags: ["taggy"],
   });
-  let folderBmk = await PlacesSyncUtils.bookmarks.insert({
+  let folderBmk = await PlacesSyncUtils.test.bookmarks.insert({
     recordId: makeGuid(),
     parentRecordId: folder.recordId,
     kind: "bookmark",
     url: "https://example.org",
     keyword: "kw",
   });
-  let folderSep = await PlacesSyncUtils.bookmarks.insert({
+  let folderSep = await PlacesSyncUtils.test.bookmarks.insert({
     recordId: makeGuid(),
     parentRecordId: folder.recordId,
     kind: "separator",
   });
-  let tagQuery = await PlacesSyncUtils.bookmarks.insert({
+  let tagQuery = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "query",
     recordId: makeGuid(),
     parentRecordId: "toolbar",
@@ -2654,77 +1902,28 @@ add_task(async function test_changes_between_pull_and_push() {
   await PlacesSyncUtils.bookmarks.reset();
 });
 
-add_task(async function test_touch() {
-  await ignoreChangedRoots();
-
-  strictEqual(
-    await PlacesSyncUtils.bookmarks.touch(makeGuid()),
-    null,
-    "Should not revive nonexistent items"
-  );
-
-  {
-    let folder = await PlacesSyncUtils.bookmarks.insert({
-      kind: "folder",
-      recordId: makeGuid(),
-      parentRecordId: "menu",
-    });
-    strictEqual(
-      await PlacesSyncUtils.bookmarks.touch(folder.recordId),
-      null,
-      "Should not revive folders"
-    );
-  }
-
-  {
-    let bmk = await PlacesSyncUtils.bookmarks.insert({
-      kind: "bookmark",
-      recordId: makeGuid(),
-      parentRecordId: "menu",
-      url: "https://mozilla.org",
-    });
-
-    let changes = await PlacesSyncUtils.bookmarks.touch(bmk.recordId);
-    deepEqual(
-      Object.keys(changes).sort(),
-      [bmk.recordId, "menu"].sort(),
-      "Should return change records for revived bookmark and parent"
-    );
-    equal(
-      changes[bmk.recordId].counter,
-      1,
-      "Change counter for revived bookmark should be 1"
-    );
-
-    await setChangesSynced(changes);
-  }
-
-  await PlacesUtils.bookmarks.eraseEverything();
-  await PlacesSyncUtils.bookmarks.reset();
-});
-
 add_task(async function test_separator() {
   await ignoreChangedRoots();
 
-  await PlacesSyncUtils.bookmarks.insert({
+  await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     parentRecordId: "menu",
     recordId: makeGuid(),
     url: "https://example.com",
   });
-  let childBmk = await PlacesSyncUtils.bookmarks.insert({
+  let childBmk = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     parentRecordId: "menu",
     recordId: makeGuid(),
     url: "https://foo.bar",
   });
   let separatorRecordId = makeGuid();
-  let separator = await PlacesSyncUtils.bookmarks.insert({
+  let separator = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "separator",
     parentRecordId: "menu",
     recordId: separatorRecordId,
   });
-  await PlacesSyncUtils.bookmarks.insert({
+  await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     parentRecordId: "menu",
     recordId: makeGuid(),
@@ -2775,23 +1974,23 @@ add_task(async function test_remove() {
   await ignoreChangedRoots();
 
   info("Insert subtree for removal");
-  let parentFolder = await PlacesSyncUtils.bookmarks.insert({
+  let parentFolder = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "folder",
     parentRecordId: "menu",
     recordId: makeGuid(),
   });
-  let childBmk = await PlacesSyncUtils.bookmarks.insert({
+  let childBmk = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     parentRecordId: parentFolder.recordId,
     recordId: makeGuid(),
     url: "https://example.com",
   });
-  let childFolder = await PlacesSyncUtils.bookmarks.insert({
+  let childFolder = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "folder",
     parentRecordId: parentFolder.recordId,
     recordId: makeGuid(),
   });
-  let grandChildBmk = await PlacesSyncUtils.bookmarks.insert({
+  let grandChildBmk = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     parentRecordId: childFolder.recordId,
     recordId: makeGuid(),
@@ -2842,64 +2041,68 @@ add_task(async function test_remove_partial() {
   await ignoreChangedRoots();
 
   info("Insert subtree for partial removal");
-  let parentFolder = await PlacesSyncUtils.bookmarks.insert({
+  let parentFolder = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "folder",
     parentRecordId: PlacesUtils.bookmarks.menuGuid,
     recordId: makeGuid(),
   });
-  let prevSiblingBmk = await PlacesSyncUtils.bookmarks.insert({
+  let prevSiblingBmk = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     parentRecordId: parentFolder.recordId,
     recordId: makeGuid(),
     url: "https://example.net",
   });
-  let childBmk = await PlacesSyncUtils.bookmarks.insert({
+  let childBmk = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     parentRecordId: parentFolder.recordId,
     recordId: makeGuid(),
     url: "https://example.com",
   });
-  let nextSiblingBmk = await PlacesSyncUtils.bookmarks.insert({
+  let nextSiblingBmk = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     parentRecordId: parentFolder.recordId,
     recordId: makeGuid(),
     url: "https://example.org",
   });
-  let childFolder = await PlacesSyncUtils.bookmarks.insert({
+  let childFolder = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "folder",
     parentRecordId: parentFolder.recordId,
     recordId: makeGuid(),
   });
-  let grandChildBmk = await PlacesSyncUtils.bookmarks.insert({
+  let grandChildBmk = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     parentRecordId: parentFolder.recordId,
     recordId: makeGuid(),
     url: "https://example.edu",
   });
-  let grandChildSiblingBmk = await PlacesSyncUtils.bookmarks.insert({
+  let grandChildSiblingBmk = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     parentRecordId: parentFolder.recordId,
     recordId: makeGuid(),
     url: "https://mozilla.org",
   });
-  let grandChildFolder = await PlacesSyncUtils.bookmarks.insert({
+  let grandChildFolder = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "folder",
     parentRecordId: childFolder.recordId,
     recordId: makeGuid(),
   });
-  let greatGrandChildPrevSiblingBmk = await PlacesSyncUtils.bookmarks.insert({
-    kind: "bookmark",
-    parentRecordId: grandChildFolder.recordId,
-    recordId: makeGuid(),
-    url: "http://getfirefox.com",
-  });
-  let greatGrandChildNextSiblingBmk = await PlacesSyncUtils.bookmarks.insert({
-    kind: "bookmark",
-    parentRecordId: grandChildFolder.recordId,
-    recordId: makeGuid(),
-    url: "http://getthunderbird.com",
-  });
-  let menuBmk = await PlacesSyncUtils.bookmarks.insert({
+  let greatGrandChildPrevSiblingBmk = await PlacesSyncUtils.test.bookmarks.insert(
+    {
+      kind: "bookmark",
+      parentRecordId: grandChildFolder.recordId,
+      recordId: makeGuid(),
+      url: "http://getfirefox.com",
+    }
+  );
+  let greatGrandChildNextSiblingBmk = await PlacesSyncUtils.test.bookmarks.insert(
+    {
+      kind: "bookmark",
+      parentRecordId: grandChildFolder.recordId,
+      recordId: makeGuid(),
+      url: "http://getthunderbird.com",
+    }
+  );
+  let menuBmk = await PlacesSyncUtils.test.bookmarks.insert({
     kind: "bookmark",
     parentRecordId: "menu",
     recordId: makeGuid(),

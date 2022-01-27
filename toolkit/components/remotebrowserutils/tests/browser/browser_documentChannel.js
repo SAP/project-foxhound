@@ -10,14 +10,6 @@ const FILE_DUMMY = fileURL("dummy_page.html");
 const DATA_URL = "data:text/html,Hello%2C World!";
 const DATA_STRING = "Hello, World!";
 
-const DOCUMENT_CHANNEL_PREF = "browser.tabs.documentchannel";
-
-async function setPref() {
-  await SpecialPowers.pushPrefEnv({
-    set: [[DOCUMENT_CHANNEL_PREF, true]],
-  });
-}
-
 async function performLoad(browser, opts, action) {
   let loadedPromise = BrowserTestUtils.browserLoaded(
     browser,
@@ -67,7 +59,7 @@ const EXTENSION_DATA = {
       async details => {
         browser.test.log("webRequest onBeforeRequest");
         let isRedirect =
-          details.originUrl == browser.extension.getURL("redirect.html") &&
+          details.originUrl == browser.runtime.getURL("redirect.html") &&
           details.url.endsWith("print_postdata.sjs");
         let url = this.extUrl ? this.extUrl : details.url + "?redirected";
         return isRedirect ? { redirectUrl: url } : {};
@@ -148,21 +140,15 @@ async function postFrom(start, target) {
   );
 }
 
-async function loadAndGetProcessID(browser, target, expectedProcessSwitch) {
+async function loadAndGetProcessID(browser, target) {
   info(`Performing GET load: ${target}`);
   await performLoad(
     browser,
     {
       maybeErrorPage: true,
     },
-    async () => {
+    () => {
       BrowserTestUtils.loadURI(browser, target);
-      if (expectedProcessSwitch) {
-        await BrowserTestUtils.waitForEvent(
-          gBrowser.getTabForBrowser(browser),
-          "SSTabRestored"
-        );
-      }
     }
   );
 
@@ -195,11 +181,7 @@ async function testLoadAndRedirect(
 
       info(`firstProcessID: ${firstProcessID}`);
 
-      let secondProcessID = await loadAndGetProcessID(
-        browser,
-        target,
-        expectedProcessSwitch
-      );
+      let secondProcessID = await loadAndGetProcessID(browser, target);
 
       info(`secondProcessID: ${secondProcessID}`);
       Assert.equal(firstProcessID != secondProcessID, expectedProcessSwitch);
@@ -208,11 +190,7 @@ async function testLoadAndRedirect(
         return;
       }
 
-      let thirdProcessID = await loadAndGetProcessID(
-        browser,
-        add307(target),
-        expectedProcessSwitch
-      );
+      let thirdProcessID = await loadAndGetProcessID(browser, add307(target));
 
       info(`thirdProcessID: ${thirdProcessID}`);
       Assert.equal(firstProcessID != thirdProcessID, expectedProcessSwitch);
@@ -222,27 +200,23 @@ async function testLoadAndRedirect(
 }
 
 add_task(async function test_enabled() {
-  await setPref();
+  // Force only one webIsolated content process to ensure same-origin loads
+  // always end in the same process.
+  await SpecialPowers.pushPrefEnv({
+    set: [["dom.ipc.processCount.webIsolated", 1]],
+  });
 
-  // With the pref enabled, URIs should correctly switch processes & the POST
+  // URIs should correctly switch processes & the POST
   // should succeed.
   info("ENABLED -- FILE -- raw URI load");
   let resp = await postFrom(FILE_DUMMY, PRINT_POSTDATA);
-  if (SpecialPowers.useRemoteSubframes) {
-    ok(E10SUtils.isWebRemoteType(resp.remoteType), "process switch");
-  } else {
-    is(resp.remoteType, E10SUtils.FILE_REMOTE_TYPE, "No process switch");
-  }
+  ok(E10SUtils.isWebRemoteType(resp.remoteType), "process switch");
   is(resp.location, PRINT_POSTDATA, "correct location");
   is(resp.body, "initialRemoteType=file", "correct POST body");
 
   info("ENABLED -- FILE -- 307-redirect URI load");
   let resp307 = await postFrom(FILE_DUMMY, add307(PRINT_POSTDATA));
-  if (SpecialPowers.useRemoteSubframes) {
-    ok(E10SUtils.isWebRemoteType(resp307.remoteType), "process switch");
-  } else {
-    is(resp307.remoteType, E10SUtils.FILE_REMOTE_TYPE, "No process switch");
-  }
+  ok(E10SUtils.isWebRemoteType(resp307.remoteType), "process switch");
   is(resp307.location, PRINT_POSTDATA, "correct location");
   is(resp307.body, "initialRemoteType=file", "correct POST body");
 
@@ -289,8 +263,6 @@ async function sendMessage(ext, method, url) {
 
 // TODO: Currently no test framework for ftp://.
 add_task(async function test_protocol() {
-  await setPref();
-
   // TODO: Processes should be switched due to navigation of different origins.
   await testLoadAndRedirect("data:,foo", false, true);
 
@@ -305,8 +277,7 @@ add_task(async function test_protocol() {
       PRINT_POSTDATA
     );
 
-    // TODO: Processes should be switched due to navigation of different origins.
-    is(respExtRedirect.remoteType, "extension", "process switch");
+    ok(E10SUtils.isWebRemoteType(respExtRedirect.remoteType), "process switch");
     is(respExtRedirect.location, DATA_URL, "correct location");
     is(respExtRedirect.body, DATA_STRING, "correct POST body");
   });

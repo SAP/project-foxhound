@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 import * as t from "@babel/types";
 
 import createSimplePath from "./utils/simple-path";
@@ -25,67 +23,7 @@ import { inferClassName } from "./utils/inferClassName";
 import getFunctionName from "./utils/getFunctionName";
 import { getFramework } from "./frameworks";
 
-import type { SimplePath, Node, TraversalAncestors } from "./utils/simple-path";
-import type { SourceId } from "../../types";
-import type { AstPosition, AstLocation } from "./types";
-
-export type SymbolDeclaration = {
-  name: string,
-  location: AstLocation,
-  generatedLocation?: AstPosition,
-};
-
-export type ClassDeclaration = SymbolDeclaration & {
-  parent: ?{|
-    name: string,
-    location: AstLocation,
-  |},
-};
-
-export type FunctionDeclaration = SymbolDeclaration & {
-  parameterNames: string[],
-  klass: string | null,
-  identifier: Object,
-  index: number,
-};
-
-export type CallDeclaration = SymbolDeclaration & {
-  values: string[],
-};
-
-export type MemberDeclaration = SymbolDeclaration & {
-  computed: Boolean,
-  expression: string,
-};
-
-export type IdentifierDeclaration = {
-  name: string,
-  location: AstLocation,
-  expression: string,
-};
-export type ImportDeclaration = {
-  source: string,
-  location: AstLocation,
-  specifiers: string[],
-};
-
-export type SymbolDeclarations = {|
-  classes: Array<ClassDeclaration>,
-  functions: Array<FunctionDeclaration>,
-  memberExpressions: Array<MemberDeclaration>,
-  callExpressions: Array<CallDeclaration>,
-  objectProperties: Array<IdentifierDeclaration>,
-  identifiers: Array<IdentifierDeclaration>,
-  imports: Array<ImportDeclaration>,
-  comments: Array<SymbolDeclaration>,
-  literals: Array<IdentifierDeclaration>,
-  hasJsx: boolean,
-  hasTypes: boolean,
-  framework: ?string,
-  loading: false,
-|};
-
-let symbolDeclarations: Map<string, SymbolDeclarations> = new Map();
+let symbolDeclarations = new Map();
 
 function getUniqueIdentifiers(identifiers) {
   const newIdentifiers = [];
@@ -102,7 +40,7 @@ function getUniqueIdentifiers(identifiers) {
 }
 
 // eslint-disable-next-line complexity
-function extractSymbol(path: SimplePath, symbols, state) {
+function extractSymbol(path, symbols, state) {
   if (isFunction(path)) {
     const name = getFunctionName(path.node, path.parent);
 
@@ -168,7 +106,9 @@ function extractSymbol(path: SimplePath, symbols, state) {
   if (t.isMemberExpression(path) || t.isOptionalMemberExpression(path)) {
     const { start, end } = path.node.property.loc;
     symbols.memberExpressions.push({
-      name: path.node.property.name,
+      name: t.isPrivateName(path.node.property)
+        ? `#${path.node.property.id.name}`
+        : path.node.property.name,
       location: { start, end },
       expression: getSnippet(path),
       computed: path.node.computed,
@@ -263,7 +203,7 @@ function extractSymbol(path: SimplePath, symbols, state) {
   }
 }
 
-function extractSymbols(sourceId): SymbolDeclarations {
+function extractSymbols(sourceId) {
   const symbols = {
     functions: [],
     callExpressions: [],
@@ -285,7 +225,7 @@ function extractSymbols(sourceId): SymbolDeclarations {
   };
 
   const ast = traverseAst(sourceId, {
-    enter(node: Node, ancestors: TraversalAncestors) {
+    enter(node, ancestors) {
       try {
         const path = createSimplePath(ancestors);
         if (path) {
@@ -305,12 +245,7 @@ function extractSymbols(sourceId): SymbolDeclarations {
   return symbols;
 }
 
-function extendSnippet(
-  name: string,
-  expression: string,
-  path?: { node: Node },
-  prevPath?: SimplePath
-) {
+function extendSnippet(name, expression, path, prevPath) {
   const computed = path?.node.computed;
   const optional = path?.node.optional;
   const prevComputed = prevPath?.node.computed;
@@ -347,13 +282,11 @@ function extendSnippet(
   return `${name}.${expression}`;
 }
 
-function getMemberSnippet(
-  node: Node,
-  expression: string = "",
-  optional = false
-) {
+function getMemberSnippet(node, expression = "", optional = false) {
   if (t.isMemberExpression(node) || t.isOptionalMemberExpression(node)) {
-    const name = node.property.name;
+    const name = t.isPrivateName(node.property)
+      ? `#${node.property.id.name}`
+      : node.property.name;
     const snippet = getMemberSnippet(
       node.object,
       extendSnippet(name, expression, { node }),
@@ -383,11 +316,7 @@ function getMemberSnippet(
   return expression;
 }
 
-function getObjectSnippet(
-  path: ?SimplePath,
-  prevPath?: SimplePath,
-  expression?: string = ""
-) {
+function getObjectSnippet(path, prevPath, expression = "") {
   if (!path) {
     return expression;
   }
@@ -402,11 +331,7 @@ function getObjectSnippet(
   return getSnippet(nextPath, nextPrevPath, extendedExpression);
 }
 
-function getArraySnippet(
-  path: SimplePath,
-  prevPath: SimplePath,
-  expression: string
-) {
+function getArraySnippet(path, prevPath, expression) {
   if (!prevPath.parentPath) {
     throw new Error("Assertion failure - path should exist");
   }
@@ -420,11 +345,7 @@ function getArraySnippet(
   return getSnippet(nextPath, nextPrevPath, extendedExpression);
 }
 
-function getSnippet(
-  path: SimplePath | null,
-  prevPath?: SimplePath,
-  expression?: string = ""
-): string {
+function getSnippet(path, prevPath, expression = "") {
   if (!path) {
     return expression;
   }
@@ -491,7 +412,7 @@ export function clearSymbols() {
   symbolDeclarations = new Map();
 }
 
-export function getSymbols(sourceId: SourceId): SymbolDeclarations {
+export function getSymbols(sourceId) {
   if (symbolDeclarations.has(sourceId)) {
     const symbols = symbolDeclarations.get(sourceId);
     if (symbols) {

@@ -6,7 +6,7 @@
 "use strict";
 
 const { require, loader } = ChromeUtils.import(
-  "resource://devtools/shared/Loader.jsm"
+  "resource://devtools/shared/loader/Loader.jsm"
 );
 
 try {
@@ -95,6 +95,9 @@ const key = (id, win = window) => {
   // transfering the profile data. Hopefully this should help to reduce our
   // intermittents for the performance tests.
   Services.prefs.setIntPref(PrefUtils.PROFILER_BUFFER_SIZE_PREF, 100000);
+
+  // Force the old panel
+  Services.prefs.setBoolPref("devtools.performance.new-panel-enabled", false);
 
   registerCleanupFunction(() => {
     info("finish() was called, cleaning up...");

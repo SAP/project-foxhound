@@ -1,5 +1,4 @@
 import { CFRMessageProvider } from "lib/CFRMessageProvider.jsm";
-const messages = CFRMessageProvider.getMessages();
 
 const REGULAR_IDS = [
   "FACEBOOK_CONTAINER",
@@ -11,8 +10,12 @@ const REGULAR_IDS = [
 ];
 
 describe("CFRMessageProvider", () => {
-  it("should have a total of 12 messages", () => {
-    assert.lengthOf(messages, 12);
+  let messages;
+  beforeEach(async () => {
+    messages = await CFRMessageProvider.getMessages();
+  });
+  it("should have a total of 10 messages", () => {
+    assert.lengthOf(messages, 11);
   });
   it("should have one message each for the three regular addons", () => {
     for (const id of REGULAR_IDS) {
@@ -25,34 +28,5 @@ describe("CFRMessageProvider", () => {
       );
       assert.notInclude(cohort3.targeting, `providerCohorts.cfr`);
     }
-  });
-  it("should always have xpinstallEnabled as targeting if it is an addon", () => {
-    for (const message of messages) {
-      // Ensure that the CFR messages that are recommending an addon have this targeting.
-      // In the future when we can do targeting based on category, this test will change.
-      // See bug 1494778 and 1497653
-      if (!message.content.layout) {
-        assert.include(message.targeting, `(xpinstallEnabled == true)`);
-      }
-    }
-  });
-  it("should restrict all messages to `en` locale for now (PIN TAB is handled separately)", () => {
-    for (const message of messages.filter(m => !m.content.layout)) {
-      assert.include(message.targeting, `localeLanguageCode == "en"`);
-    }
-  });
-  it("should restrict locale for PIN_TAB message", () => {
-    const pinTabMessage = messages.find(m => m.id === "PIN_TAB");
-
-    // 6 en-* locales, fr and de
-    assert.lengthOf(pinTabMessage.targeting.match(/en-|fr|de/g), 8);
-  });
-  it("should contain `www.` version of the hosts", () => {
-    const pinTabMessage = messages.find(m => m.id === "PIN_TAB");
-
-    assert.isTrue(
-      !!pinTabMessage.trigger.params.filter(host => host.startsWith("www."))
-        .length
-    );
   });
 });

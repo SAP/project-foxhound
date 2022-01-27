@@ -7,7 +7,7 @@
 #ifndef vm_DataViewObject_h
 #define vm_DataViewObject_h
 
-#include "mozilla/Attributes.h"
+#include "mozilla/CheckedInt.h"
 
 #include "gc/Barrier.h"
 #include "js/Class.h"
@@ -27,8 +27,6 @@ class DataViewObject : public ArrayBufferViewObject {
  private:
   static const ClassSpec classSpec_;
 
-  static JSObject* CreatePrototype(JSContext* cx, JSProtoKey key);
-
   static bool is(HandleValue v) {
     return v.isObject() && v.toObject().hasClass(&class_);
   }
@@ -47,36 +45,29 @@ class DataViewObject : public ArrayBufferViewObject {
 
   static bool getAndCheckConstructorArgs(JSContext* cx, HandleObject bufobj,
                                          const CallArgs& args,
-                                         uint32_t* byteOffset,
-                                         uint32_t* byteLength);
+                                         size_t* byteOffset,
+                                         size_t* byteLength);
   static bool constructSameCompartment(JSContext* cx, HandleObject bufobj,
                                        const CallArgs& args);
   static bool constructWrapped(JSContext* cx, HandleObject bufobj,
                                const CallArgs& args);
 
   static DataViewObject* create(
-      JSContext* cx, uint32_t byteOffset, uint32_t byteLength,
+      JSContext* cx, size_t byteOffset, size_t byteLength,
       Handle<ArrayBufferObjectMaybeShared*> arrayBuffer, HandleObject proto);
 
  public:
   static const JSClass class_;
   static const JSClass protoClass_;
 
-  static Value byteOffsetValue(const DataViewObject* view) {
-    Value v = view->getFixedSlot(BYTEOFFSET_SLOT);
-    MOZ_ASSERT(v.toInt32() >= 0);
-    return v;
+  size_t byteLength() const {
+    return size_t(getFixedSlot(LENGTH_SLOT).toPrivate());
   }
 
-  static Value byteLengthValue(const DataViewObject* view) {
-    Value v = view->getFixedSlot(LENGTH_SLOT);
-    MOZ_ASSERT(v.toInt32() >= 0);
-    return v;
+  Value byteLengthValue() const {
+    size_t len = byteLength();
+    return NumberValue(len);
   }
-
-  uint32_t byteOffset() const { return byteOffsetValue(this).toInt32(); }
-
-  uint32_t byteLength() const { return byteLengthValue(this).toInt32(); }
 
   template <typename NativeType>
   bool offsetIsInBounds(uint64_t offset) const {
@@ -84,7 +75,9 @@ class DataViewObject : public ArrayBufferViewObject {
   }
   bool offsetIsInBounds(uint32_t byteSize, uint64_t offset) const {
     MOZ_ASSERT(byteSize <= 8);
-    return offset <= UINT32_MAX - byteSize && offset + byteSize <= byteLength();
+    mozilla::CheckedInt<uint64_t> endOffset(offset);
+    endOffset += byteSize;
+    return endOffset.isValid() && endOffset.value() <= byteLength();
   }
 
   static bool isOriginalByteOffsetGetter(Native native) {

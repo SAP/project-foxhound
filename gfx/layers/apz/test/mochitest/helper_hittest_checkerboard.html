@@ -17,7 +17,7 @@
 </body>
 <script type="application/javascript">
 
-function* test(testDriver) {
+async function test() {
   var config = getHitTestConfig();
   var utils = config.utils;
 
@@ -28,16 +28,14 @@ function* test(testDriver) {
   // scrollframe scrolls all the way to the bottom of its range, where it's
   // sure to checkerboard.
   utils.setDisplayPortForElement(0, 0, 300, 1000, scroller, 1);
-  yield waitForApzFlushedRepaints(testDriver);
+  await promiseApzFlushedRepaints();
   var scrollY = scroller.scrollTopMax;
   utils.setAsyncScrollOffset(scroller, 0, scrollY);
-  if (config.isWebRender) {
-    // Tick the refresh driver once to make sure the compositor has applied the
-    // async scroll offset (for APZ hit-testing this doesn't matter, but for
-    // WebRender hit-testing we need to make sure WR has the latest info).
-    utils.advanceTimeAndRefresh(16);
-    utils.restoreNormalRefresh();
-  }
+  // Tick the refresh driver once to make sure the compositor has applied the
+  // async scroll offset (for WebRender hit-testing we need to make sure WR has
+  // the latest info).
+  utils.advanceTimeAndRefresh(16);
+  utils.restoreNormalRefresh();
 
   var scrollerViewId = utils.getViewId(scroller);
 
@@ -49,11 +47,11 @@ function* test(testDriver) {
                  scrollerViewId,
                  utils.getLayersId(),
                  "active scrollframe");
-
-  subtestDone();
 }
 
-waitUntilApzStable().then(runContinuation(test));
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
 
 </script>
 </html>

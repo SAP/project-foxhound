@@ -7,7 +7,7 @@
 #ifndef DOM_SVG_SVGFEMERGEELEMENT_H_
 #define DOM_SVG_SVGFEMERGEELEMENT_H_
 
-#include "SVGFilters.h"
+#include "mozilla/dom/SVGFilters.h"
 
 nsresult NS_NewSVGFEMergeElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -41,6 +41,8 @@ class SVGFEMergeElement : public SVGFEMergeElementBase {
 
   // nsIContent
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+
+  virtual nsresult BindToTree(BindContext& aCtx, nsINode& aParent) override;
 
  protected:
   virtual StringAttributesInfo GetStringInfo() override;

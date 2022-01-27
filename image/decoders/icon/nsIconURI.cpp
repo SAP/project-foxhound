@@ -11,6 +11,7 @@
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/Sprintf.h"
 
+#include "nsIClassInfoImpl.h"
 #include "nsIIOService.h"
 #include "nsISerializable.h"
 #include "nsIObjectInputStream.h"
@@ -35,20 +36,18 @@ using namespace mozilla::ipc;
 
 static NS_DEFINE_CID(kThisIconURIImplementationCID,
                      NS_THIS_ICONURI_IMPLEMENTATION_CID);
-static NS_DEFINE_CID(kIconURICID, NS_ICONURI_CID);
 
-// helper function for parsing out attributes like size, and contentType
-// from the icon url.
-static void extractAttributeValue(const char* aSearchString,
-                                  const char* aAttributeName,
-                                  nsCString& aResult);
+static const char* const kSizeStrings[] = {"button", "toolbar", "toolbarsmall",
+                                           "menu",   "dnd",     "dialog"};
 
-static const char* kSizeStrings[] = {"button", "toolbar", "toolbarsmall",
-                                     "menu",   "dnd",     "dialog"};
-
-static const char* kStateStrings[] = {"normal", "disabled"};
+static const char* const kStateStrings[] = {"normal", "disabled"};
 
 ////////////////////////////////////////////////////////////////////////////////
+
+NS_IMPL_CLASSINFO(nsMozIconURI, nullptr, nsIClassInfo::THREADSAFE,
+                  NS_ICONURI_CID)
+// Empty CI getter. We only need nsIClassInfo for Serialization
+NS_IMPL_CI_INTERFACE_GETTER0(nsMozIconURI)
 
 nsMozIconURI::nsMozIconURI()
     : mSize(DEFAULT_IMAGE_SIZE), mIconSize(-1), mIconState(-1) {}
@@ -67,7 +66,7 @@ NS_INTERFACE_MAP_BEGIN(nsMozIconURI)
   NS_INTERFACE_MAP_ENTRY(nsIURI)
   NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsINestedURI, mIconURL)
   NS_INTERFACE_MAP_ENTRY(nsISerializable)
-  NS_INTERFACE_MAP_ENTRY(nsIClassInfo)
+  NS_IMPL_QUERY_CLASSINFO(nsMozIconURI)
 NS_INTERFACE_MAP_END
 
 #define MOZICON_SCHEME "moz-icon:"
@@ -158,14 +157,15 @@ nsMozIconURI::Mutate(nsIURIMutator** aMutator) {
   return NS_OK;
 }
 
+// helper function for parsing out attributes like size, and contentType
+// from the icon url.
 // takes a string like ?size=32&contentType=text/html and returns a new string
 // containing just the attribute value. i.e you could pass in this string with
 // an attribute name of 'size=', this will return 32
 // Assumption: attribute pairs in the string are separated by '&'.
-void extractAttributeValue(const char* aSearchString,
-                           const char* aAttributeName, nsCString& aResult) {
-  // NS_ENSURE_ARG_POINTER(extractAttributeValue);
-
+static void extractAttributeValue(const char* aSearchString,
+                                  const char* aAttributeName,
+                                  nsCString& aResult) {
   aResult.Truncate();
 
   if (aSearchString && aAttributeName) {
@@ -650,54 +650,4 @@ nsMozIconURI::Write(nsIObjectOutputStream* aStream) {
   nsresult rv = GetSpec(spec);
   NS_ENSURE_SUCCESS(rv, rv);
   return aStream->WriteStringZ(spec.get());
-}
-
-//----------------------------------------------------------------------------
-// nsSimpleURI::nsIClassInfo
-//----------------------------------------------------------------------------
-
-NS_IMETHODIMP
-nsMozIconURI::GetInterfaces(nsTArray<nsIID>& array) {
-  array.Clear();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsMozIconURI::GetScriptableHelper(nsIXPCScriptable** _retval) {
-  *_retval = nullptr;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsMozIconURI::GetContractID(nsACString& aContractID) {
-  // Make sure to modify any subclasses as needed if this ever
-  // changes.
-  aContractID.SetIsVoid(true);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsMozIconURI::GetClassDescription(nsACString& aClassDescription) {
-  aClassDescription.SetIsVoid(true);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsMozIconURI::GetClassID(nsCID** aClassID) {
-  // Make sure to modify any subclasses as needed if this ever
-  // changes to not call the virtual GetClassIDNoAlloc.
-  *aClassID = (nsCID*)moz_xmalloc(sizeof(nsCID));
-  return GetClassIDNoAlloc(*aClassID);
-}
-
-NS_IMETHODIMP
-nsMozIconURI::GetFlags(uint32_t* aFlags) {
-  *aFlags = nsIClassInfo::MAIN_THREAD_ONLY;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsMozIconURI::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
-  *aClassIDNoAlloc = kIconURICID;
-  return NS_OK;
 }

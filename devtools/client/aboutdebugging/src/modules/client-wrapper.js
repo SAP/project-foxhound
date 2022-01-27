@@ -127,8 +127,8 @@ class ClientWrapper {
     }
   }
 
-  async listTabs(options) {
-    return this.client.mainRoot.listTabs(options);
+  async listTabs() {
+    return this.client.mainRoot.listTabs();
   }
 
   async listAddons(options) {
@@ -166,7 +166,7 @@ class ClientWrapper {
   }
 
   isClosed() {
-    return this.client._closed;
+    return this.client._transportClosed;
   }
 
   // This method will be mocked to return a dummy URL during mochitests
@@ -180,7 +180,7 @@ class ClientWrapper {
    */
   async loadPerformanceProfiler(win, openAboutProfiling) {
     const perfFront = await this.getFront("perf");
-    win.gInit(perfFront, "devtools-remote", openAboutProfiling);
+    await win.gInit(perfFront, "devtools-remote", openAboutProfiling);
   }
 
   /**
@@ -189,7 +189,14 @@ class ClientWrapper {
    */
   async loadAboutProfiling(win, openRemoteDevTools) {
     const perfFront = await this.getFront("perf");
-    win.gInit(perfFront, "aboutprofiling-remote", openRemoteDevTools);
+    const isSupportedPlatform = await perfFront.isSupportedPlatform();
+    const supportedFeatures = await perfFront.getSupportedFeatures();
+    await win.gInit(
+      "aboutprofiling-remote",
+      isSupportedPlatform,
+      supportedFeatures,
+      openRemoteDevTools
+    );
   }
 }
 

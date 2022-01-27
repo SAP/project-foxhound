@@ -7,13 +7,16 @@
 #ifndef jit_RegisterSets_h
 #define jit_RegisterSets_h
 
+#include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/MathAlgorithms.h"
 
 #include <new>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "jit/JitAllocPolicy.h"
+#include "jit/IonTypes.h"
 #include "jit/Registers.h"
+#include "js/Value.h"
 
 namespace js {
 namespace jit {
@@ -22,6 +25,7 @@ struct AnyRegister {
   using Code = uint8_t;
 
   static const uint8_t Total = Registers::Total + FloatRegisters::Total;
+  static const uint8_t FirstFloatReg = Registers::Total;
   static const uint8_t Invalid = UINT8_MAX;
 
   static_assert(size_t(Registers::Total) + FloatRegisters::Total <= UINT8_MAX,
@@ -130,6 +134,9 @@ class ValueOperand {
     return type_ == reg || payload_ == reg;
   }
   constexpr Register payloadOrValueReg() const { return payloadReg(); }
+  bool hasVolatileReg() const {
+    return type_.volatile_() || payload_.volatile_();
+  }
   constexpr bool operator==(const ValueOperand& o) const {
     return type_ == o.type_ && payload_ == o.payload_;
   }
@@ -147,6 +154,7 @@ class ValueOperand {
   constexpr Register64 toRegister64() const { return Register64(valueReg()); }
   constexpr bool aliases(Register reg) const { return value_ == reg; }
   constexpr Register payloadOrValueReg() const { return valueReg(); }
+  bool hasVolatileReg() const { return value_.volatile_(); }
   constexpr bool operator==(const ValueOperand& o) const {
     return value_ == o.value_;
   }
@@ -167,7 +175,16 @@ class TypedOrValueRegister {
 
   union U {
     AnyRegister::Code typed;
-    ValueOperand value;
+#if defined(JS_PUNBOX64)
+    Register::Code value;
+#elif defined(JS_NUNBOX32)
+    struct {
+      Register::Code valueType;
+      Register::Code valuePayload;
+    } s;
+#else
+#  error "Bad architecture"
+#endif
   } data;
 
  public:
@@ -179,7 +196,14 @@ class TypedOrValueRegister {
 
   MOZ_IMPLICIT TypedOrValueRegister(ValueOperand value)
       : type_(MIRType::Value) {
-    data.value = value;
+#if defined(JS_PUNBOX64)
+    data.value = value.valueReg().code();
+#elif defined(JS_NUNBOX32)
+    data.s.valueType = value.typeReg().code();
+    data.s.valuePayload = value.payloadReg().code();
+#else
+#  error "Bad architecture"
+#endif
   }
 
   MIRType type() const { return type_; }
@@ -197,7 +221,14 @@ class TypedOrValueRegister {
 
   ValueOperand valueReg() const {
     MOZ_ASSERT(hasValue());
-    return data.value;
+#if defined(JS_PUNBOX64)
+    return ValueOperand(Register::FromCode(data.value));
+#elif defined(JS_NUNBOX32)
+    return ValueOperand(Register::FromCode(data.s.valueType),
+                        Register::FromCode(data.s.valuePayload));
+#else
+#  error "Bad architecture"
+#endif
   }
 
   AnyRegister scratchReg() {
@@ -228,9 +259,9 @@ class ConstantOrRegister {
  public:
   ConstantOrRegister() = delete;
 
-  MOZ_IMPLICIT ConstantOrRegister(const Value& value) : constant_(true) {
+  MOZ_IMPLICIT ConstantOrRegister(const JS::Value& value) : constant_(true) {
     MOZ_ASSERT(constant());
-    new (&data.constant) Value(value);
+    new (&data.constant) JS::Value(value);
   }
 
   MOZ_IMPLICIT ConstantOrRegister(TypedOrValueRegister reg) : constant_(false) {
@@ -240,7 +271,7 @@ class ConstantOrRegister {
 
   bool constant() const { return constant_; }
 
-  Value value() const {
+  JS::Value value() const {
     MOZ_ASSERT(constant());
     return data.constant;
   }

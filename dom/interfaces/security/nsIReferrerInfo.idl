@@ -6,7 +6,9 @@
 #include "nsISerializable.idl"
 
 %{C++
-#include "mozilla/dom/ReferrerPolicyBinding.h"
+namespace mozilla::dom {
+enum class ReferrerPolicy : uint8_t;
+}
 %}
 
 interface nsIURI;
@@ -123,7 +125,6 @@ interface nsIReferrerInfo : nsISerializable
    * @param aSendReferrer sendReferrer of the created object, defaults to false
    * @param aOriginalReferrer the original referrer, defaults to null.
    */
-  [implicit_jscontext]
   void init(in nsIReferrerInfo_ReferrerPolicyIDL aReferrerPolicy,
            [optional] in boolean aSendReferrer,
            [optional] in nsIURI aOriginalReferrer);

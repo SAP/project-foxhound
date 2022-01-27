@@ -4,7 +4,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/storage.h"
-#include "mozilla/dom/URLSearchParams.h"
 #include "nsString.h"
 #include "nsUnicharUtils.h"
 #include "nsWhitespaceTokenizer.h"
@@ -19,6 +18,7 @@
 #include "nsNavHistory.h"
 #include "mozilla/Likely.h"
 #include "mozilla/Utf8.h"
+#include "nsURLHelper.h"
 #include "nsVariant.h"
 
 // Maximum number of chars to search through.
@@ -238,28 +238,6 @@ getSharedUTF8String(mozIStorageValueArray* aValues, uint32_t aIndex) {
   }
   return nsDependentCString(str, len);
 }
-
-class MOZ_STACK_CLASS GetQueryParamIterator final
-    : public URLParams::ForEachIterator {
- public:
-  explicit GetQueryParamIterator(const nsCString& aParamName,
-                                 nsVariant* aResult)
-      : mParamName(aParamName), mResult(aResult) {}
-
-  bool URLParamsIterator(const nsAString& aName,
-                         const nsAString& aValue) override {
-    NS_ConvertUTF16toUTF8 name(aName);
-    if (!mParamName.Equals(name)) {
-      return true;
-    }
-    mResult->SetAsAString(aValue);
-    return false;
-  }
-
- private:
-  const nsCString& mParamName;
-  nsVariant* mResult;
-};
 
 /**
  * Gets the length of the prefix in a URI spec.  "Prefix" is defined to be the
@@ -835,7 +813,7 @@ GetUnreversedHostFunction::OnFunctionCall(mozIStorageValueArray* aArguments,
     ReverseString(src, dest);
     result->SetAsAString(dest);
   } else {
-    result->SetAsAString(EmptyString());
+    result->SetAsAString(u""_ns);
   }
   result.forget(_result);
   return NS_OK;
@@ -879,54 +857,6 @@ FixupURLFunction::OnFunctionCall(mozIStorageValueArray* aArguments,
   }
 
   result->SetAsAString(src);
-  result.forget(_result);
-  return NS_OK;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-//// Frecency Changed Notification Function
-
-/* static */
-nsresult FrecencyNotificationFunction::create(mozIStorageConnection* aDBConn) {
-  RefPtr<FrecencyNotificationFunction> function =
-      new FrecencyNotificationFunction();
-  nsresult rv = aDBConn->CreateFunction("notify_frecency"_ns, 5, function);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return NS_OK;
-}
-
-NS_IMPL_ISUPPORTS(FrecencyNotificationFunction, mozIStorageFunction)
-
-NS_IMETHODIMP
-FrecencyNotificationFunction::OnFunctionCall(mozIStorageValueArray* aArgs,
-                                             nsIVariant** _result) {
-  uint32_t numArgs;
-  nsresult rv = aArgs->GetNumEntries(&numArgs);
-  NS_ENSURE_SUCCESS(rv, rv);
-  MOZ_ASSERT(numArgs == 5);
-
-  int32_t newFrecency = aArgs->AsInt32(0);
-
-  nsAutoCString spec;
-  rv = aArgs->GetUTF8String(1, spec);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsAutoCString guid;
-  rv = aArgs->GetUTF8String(2, guid);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  bool hidden = static_cast<bool>(aArgs->AsInt32(3));
-  PRTime lastVisitDate = static_cast<PRTime>(aArgs->AsInt64(4));
-
-  const nsNavHistory* navHistory = nsNavHistory::GetConstHistoryService();
-  NS_ENSURE_STATE(navHistory);
-  navHistory->DispatchFrecencyChangedNotification(spec, newFrecency, guid,
-                                                  hidden, lastVisitDate);
-
-  RefPtr<nsVariant> result = new nsVariant();
-  rv = result->SetAsInt32(newFrecency);
-  NS_ENSURE_SUCCESS(rv, rv);
   result.forget(_result);
   return NS_OK;
 }
@@ -1003,8 +933,16 @@ GetQueryParamFunction::OnFunctionCall(mozIStorageValueArray* aArguments,
 
   RefPtr<nsVariant> result = new nsVariant();
   if (!queryString.IsEmpty() && !paramName.IsEmpty()) {
-    GetQueryParamIterator iterator(paramName, result);
-    URLParams::Parse(queryString, iterator);
+    URLParams::Parse(
+        queryString,
+        [&paramName, &result](const nsAString& aName, const nsAString& aValue) {
+          NS_ConvertUTF16toUTF8 name(aName);
+          if (!paramName.Equals(name)) {
+            return true;
+          }
+          result->SetAsAString(aValue);
+          return false;
+        });
   }
 
   result.forget(_result);
@@ -1191,39 +1129,6 @@ IsFrecencyDecayingFunction::OnFunctionCall(mozIStorageValueArray* aArgs,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-//// sqrt function
-
-/* static */
-nsresult SqrtFunction::create(mozIStorageConnection* aDBConn) {
-  RefPtr<SqrtFunction> function = new SqrtFunction();
-  nsresult rv = aDBConn->CreateFunction("sqrt"_ns, 1, function);
-  NS_ENSURE_SUCCESS(rv, rv);
-  return NS_OK;
-}
-
-NS_IMPL_ISUPPORTS(SqrtFunction, mozIStorageFunction)
-
-NS_IMETHODIMP
-SqrtFunction::OnFunctionCall(mozIStorageValueArray* aArgs,
-                             nsIVariant** _result) {
-  MOZ_ASSERT(aArgs);
-
-  uint32_t numArgs;
-  nsresult rv = aArgs->GetNumEntries(&numArgs);
-  NS_ENSURE_SUCCESS(rv, rv);
-  MOZ_ASSERT(numArgs == 1);
-
-  double value = aArgs->AsDouble(0);
-
-  RefPtr<nsVariant> result = new nsVariant();
-  rv = result->SetAsDouble(sqrt(value));
-  NS_ENSURE_SUCCESS(rv, rv);
-  result.forget(_result);
-
-  return NS_OK;
-}
-
-////////////////////////////////////////////////////////////////////////////////
 //// Note Sync Change Function
 
 /* static */
@@ -1242,6 +1147,30 @@ NoteSyncChangeFunction::OnFunctionCall(mozIStorageValueArray* aArgs,
                                        nsIVariant** _result) {
   nsNavBookmarks::NoteSyncChange();
   *_result = nullptr;
+  return NS_OK;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//// Invalidate days of history Function
+
+/* static */
+nsresult InvalidateDaysOfHistoryFunction::create(
+    mozIStorageConnection* aDBConn) {
+  RefPtr<InvalidateDaysOfHistoryFunction> function =
+      new InvalidateDaysOfHistoryFunction();
+  nsresult rv =
+      aDBConn->CreateFunction("invalidate_days_of_history"_ns, 0, function);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+NS_IMPL_ISUPPORTS(InvalidateDaysOfHistoryFunction, mozIStorageFunction)
+
+NS_IMETHODIMP
+InvalidateDaysOfHistoryFunction::OnFunctionCall(mozIStorageValueArray* aArgs,
+                                                nsIVariant** _result) {
+  nsNavHistory::InvalidateDaysOfHistory();
   return NS_OK;
 }
 

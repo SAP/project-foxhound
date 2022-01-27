@@ -16,10 +16,10 @@ namespace wr {
 class RenderCompositorOGL : public RenderCompositor {
  public:
   static UniquePtr<RenderCompositor> Create(
-      RefPtr<widget::CompositorWidget>&& aWidget);
+      const RefPtr<widget::CompositorWidget>& aWidget, nsACString& aError);
 
   RenderCompositorOGL(RefPtr<gl::GLContext>&& aGL,
-                      RefPtr<widget::CompositorWidget>&& aWidget);
+                      const RefPtr<widget::CompositorWidget>& aWidget);
   virtual ~RenderCompositorOGL();
 
   bool BeginFrame() override;
@@ -27,19 +27,20 @@ class RenderCompositorOGL : public RenderCompositor {
   void Pause() override;
   bool Resume() override;
 
-  bool UsePartialPresent() override { return mUsePartialPresent; }
-  uint32_t GetMaxPartialPresentRects() override;
-
   gl::GLContext* gl() const override { return mGL; }
 
   LayoutDeviceIntSize GetBufferSize() override;
 
-  // Interface for wr::Compositor
-  CompositorCapabilities GetCompositorCapabilities() override;
+  // Interface for partial present
+  bool UsePartialPresent() override;
+  bool RequestFullRender() override;
+  uint32_t GetMaxPartialPresentRects() override;
+  bool ShouldDrawPreviousPartialPresentRegions() override;
+  size_t GetBufferAge() const override;
 
  protected:
   RefPtr<gl::GLContext> mGL;
-  bool mUsePartialPresent;
+  bool mIsEGL;
 };
 
 }  // namespace wr

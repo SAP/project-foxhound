@@ -11,14 +11,13 @@ root_dir=$MOZ_FETCHES_DIR
 build_dir=$GECKO_PATH/build
 data_dir=$GECKO_PATH/build/unix/build-gcc
 
-sixgill_rev=f31866457f60
+sixgill_rev=832ce6037dd8
 sixgill_repo=https://hg.mozilla.org/users/sfink_mozilla.com/sixgill
 
 . $data_dir/build-gcc.sh
 
 mkdir $root_dir/gcc-source || true
 pushd $root_dir/gcc-source
-ln -sf ../binutils-source binutils
 ln -sf ../gmp-source gmp
 ln -sf ../isl-source isl
 ln -sf ../mpc-source mpc

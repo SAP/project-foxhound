@@ -26,6 +26,28 @@ function getMacAccessible(accOrElmOrID) {
 }
 
 /**
+ * Test a11yUtils announcements are exposed to VO
+ */
+add_task(async () => {
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "data:text/html,"
+  );
+  const alert = document.getElementById("a11y-announcement");
+  ok(alert, "Found alert to send announcements");
+
+  const alerted = waitForMacEvent("AXAnnouncementRequested", (iface, data) => {
+    return data.AXAnnouncementKey == "hello world";
+  });
+
+  A11yUtils.announce({
+    raw: "hello world",
+  });
+  await alerted;
+  await BrowserTestUtils.removeTab(tab);
+});
+
+/**
  * Test browser tabs
  */
 add_task(async () => {
@@ -123,39 +145,207 @@ add_task(async () => {
       // 3. Content area (#tabbrowser-tabpanels)
       // 4. Some fullscreen pointer grabber (#fullscreen-and-pointerlock-wrapper)
       // 5. Accessibility announcements dialog (#a11y-announcement)
-      is(rootChildCount(), 5, "Root with no popups has 5 children");
+      let baseRootChildCount = 5;
+      is(
+        rootChildCount(),
+        baseRootChildCount,
+        "Root with no popups has 5 children"
+      );
 
       // Open a context menu
       const menu = document.getElementById("contentAreaContextMenu");
-      EventUtils.synthesizeMouseAtCenter(document.body, {
-        type: "contextmenu",
-      });
-      await BrowserTestUtils.waitForPopupEvent(menu, "shown");
+      if (
+        Services.prefs.getBoolPref("widget.macos.native-context-menus", false)
+      ) {
+        // Native context menu - do not expect accessibility notifications.
+        let popupshown = BrowserTestUtils.waitForPopupEvent(menu, "shown");
+        EventUtils.synthesizeMouseAtCenter(document.body, {
+          type: "contextmenu",
+        });
+        await popupshown;
 
-      // Now root has 6 children
-      is(rootChildCount(), 6, "Root has 6 children");
+        is(
+          rootChildCount(),
+          baseRootChildCount,
+          "Native context menus do not show up in the root children"
+        );
 
-      // Close context menu
-      EventUtils.synthesizeKey("KEY_Escape");
-      await BrowserTestUtils.waitForPopupEvent(menu, "hidden");
+        // Close context menu
+        let popuphidden = BrowserTestUtils.waitForPopupEvent(menu, "hidden");
+        menu.hidePopup();
+        await popuphidden;
+      } else {
+        // Non-native menu
+        EventUtils.synthesizeMouseAtCenter(document.body, {
+          type: "contextmenu",
+        });
+        await waitForMacEvent("AXMenuOpened");
 
-      // We're back to 5
-      is(rootChildCount(), 5, "Root has 5 children");
+        // Now root has 1 more child
+        is(rootChildCount(), baseRootChildCount + 1, "Root has 1 more child");
+
+        // Close context menu
+        let closed = waitForMacEvent("AXMenuClosed", "contentAreaContextMenu");
+        EventUtils.synthesizeKey("KEY_Escape");
+        await BrowserTestUtils.waitForPopupEvent(menu, "hidden");
+        await closed;
+      }
+
+      // We're back to base child count
+      is(rootChildCount(), baseRootChildCount, "Root has original child count");
 
       // Open site identity popup
-      document.getElementById("identity-box").click();
+      document.getElementById("identity-icon-box").click();
       const identityPopup = document.getElementById("identity-popup");
       await BrowserTestUtils.waitForPopupEvent(identityPopup, "shown");
 
-      // Now root has 6 children
-      is(rootChildCount(), 6, "Root has 6 children");
+      // Now root has another child
+      is(rootChildCount(), baseRootChildCount + 1, "Root has another child");
 
       // Close popup
       EventUtils.synthesizeKey("KEY_Escape");
       await BrowserTestUtils.waitForPopupEvent(identityPopup, "hidden");
 
-      // We're back to 5
-      is(rootChildCount(), 5, "Root has 5 children");
+      // We're back to the base child count
+      is(rootChildCount(), baseRootChildCount, "Root has the base child count");
+    }
+  );
+});
+
+/**
+ * Tests for location bar
+ */
+add_task(async () => {
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: "http://example.com",
+    },
+    async browser => {
+      let input = await getMacAccessible("urlbar-input");
+      is(
+        input.getAttributeValue("AXValue"),
+        "example.com",
+        "Location bar has correct value"
+      );
+    }
+  );
+});
+
+/**
+ * Test context menu
+ */
+add_task(async () => {
+  if (Services.prefs.getBoolPref("widget.macos.native-context-menus", false)) {
+    ok(true, "We cannot inspect native context menu contents; skip this test.");
+    return;
+  }
+
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url:
+        'data:text/html,<a id="exampleLink" href="https://example.com">link</a>',
+    },
+    async browser => {
+      if (!Services.search.isInitialized) {
+        let aStatus = await Services.search.init();
+        Assert.ok(Components.isSuccessCode(aStatus));
+        Assert.ok(Services.search.isInitialized);
+      }
+
+      const hasContainers =
+        Services.prefs.getBoolPref("privacy.userContext.enabled") &&
+        !!ContextualIdentityService.getPublicIdentities().length;
+      info(`${hasContainers ? "Do" : "Don't"} expect containers item.`);
+      const hasInspectA11y =
+        Services.prefs.getBoolPref("devtools.everOpened", false) ||
+        Services.prefs.getIntPref("devtools.selfxss.count", 0) > 0;
+      info(`${hasInspectA11y ? "Do" : "Don't"} expect inspect a11y item.`);
+
+      // synthesize a right click on the link to open the link context menu
+      let menu = document.getElementById("contentAreaContextMenu");
+      await BrowserTestUtils.synthesizeMouseAtCenter(
+        "#exampleLink",
+        { type: "contextmenu" },
+        browser
+      );
+      await waitForMacEvent("AXMenuOpened");
+
+      menu = await getMacAccessible(menu);
+      let menuChildren = menu.getAttributeValue("AXChildren");
+      const expectedChildCount = 12 + +hasContainers + +hasInspectA11y;
+      is(
+        menuChildren.length,
+        expectedChildCount,
+        `Context menu on link contains ${expectedChildCount} items.`
+      );
+      // items at indicies 3, 9, and 11 are the splitters when containers exist
+      // everything else should be a menu item, otherwise indicies of splitters are
+      // 3, 8, and 10
+      const splitterIndicies = hasContainers ? [4, 9, 11] : [3, 8, 10];
+      for (let i = 0; i < menuChildren.length; i++) {
+        if (splitterIndicies.includes(i)) {
+          is(
+            menuChildren[i].getAttributeValue("AXRole"),
+            "AXSplitter",
+            "found splitter in menu"
+          );
+        } else {
+          is(
+            menuChildren[i].getAttributeValue("AXRole"),
+            "AXMenuItem",
+            "found menu item in menu"
+          );
+        }
+      }
+
+      // check the containers sub menu in depth if it exists
+      if (hasContainers) {
+        is(
+          menuChildren[1].getAttributeValue("AXVisibleChildren"),
+          null,
+          "Submenu 1 has no visible chldren when hidden"
+        );
+
+        // focus the first submenu
+        EventUtils.synthesizeKey("KEY_ArrowDown");
+        EventUtils.synthesizeKey("KEY_ArrowDown");
+        EventUtils.synthesizeKey("KEY_ArrowRight");
+        await waitForMacEvent("AXMenuOpened");
+
+        // after the submenu is opened, refetch it
+        menu = document.getElementById("contentAreaContextMenu");
+        menu = await getMacAccessible(menu);
+        menuChildren = menu.getAttributeValue("AXChildren");
+
+        // verify submenu-menuitem's attributes
+        is(
+          menuChildren[1].getAttributeValue("AXChildren").length,
+          1,
+          "Submenu 1 has one child when open"
+        );
+        const subMenu = menuChildren[1].getAttributeValue("AXChildren")[0];
+        is(
+          subMenu.getAttributeValue("AXRole"),
+          "AXMenu",
+          "submenu has role of menu"
+        );
+        const subMenuChildren = subMenu.getAttributeValue("AXChildren");
+        is(subMenuChildren.length, 4, "sub menu has 4 children");
+        is(
+          subMenu.getAttributeValue("AXVisibleChildren").length,
+          4,
+          "submenu has 4 visible children"
+        );
+
+        // close context menu
+        EventUtils.synthesizeKey("KEY_Escape");
+        await waitForMacEvent("AXMenuClosed");
+      }
+
+      EventUtils.synthesizeKey("KEY_Escape");
+      await waitForMacEvent("AXMenuClosed");
     }
   );
 });

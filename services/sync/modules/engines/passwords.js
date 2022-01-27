@@ -90,6 +90,28 @@ PasswordEngine.prototype = {
 
   syncPriority: 2,
 
+  // Metadata for syncing is stored in the login manager
+  async ensureCurrentSyncID(newSyncID) {
+    return Services.logins.ensureCurrentSyncID(newSyncID);
+  },
+
+  async getLastSync() {
+    let legacyValue = await super.getLastSync();
+    if (legacyValue) {
+      await this.setLastSync(legacyValue);
+      Svc.Prefs.reset(this.name + ".lastSync");
+      this._log.debug(
+        `migrated timestamp of ${legacyValue} to the logins store`
+      );
+      return legacyValue;
+    }
+    return Services.logins.getLastSync();
+  },
+
+  async setLastSync(timestamp) {
+    await Services.logins.setLastSync(timestamp);
+  },
+
   async _syncFinish() {
     await SyncEngine.prototype._syncFinish.call(this);
 
@@ -358,7 +380,7 @@ PasswordStore.prototype = {
   },
 
   async wipe() {
-    Services.logins.removeAllLogins();
+    Services.logins.removeAllUserFacingLogins();
   },
 };
 
@@ -410,8 +432,18 @@ PasswordTracker.prototype = {
         }
         break;
 
+      // Bug 1613620: We iterate through the removed logins and track them to ensure
+      // the logins are deleted across synced devices/accounts
       case "removeAllLogins":
-        this._log.trace(data);
+        subject.QueryInterface(Ci.nsIArrayExtensions);
+        let count = subject.Count();
+        for (let i = 0; i < count; i++) {
+          let currentSubject = subject.GetElementAt(i);
+          let tracked = await this._trackLogin(currentSubject);
+          if (tracked) {
+            this._log.trace(data + ": " + currentSubject.guid);
+          }
+        }
         this.score += SCORE_INCREMENT_XLARGE;
         break;
     }

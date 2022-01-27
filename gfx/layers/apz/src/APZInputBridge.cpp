@@ -6,8 +6,10 @@
 
 #include "mozilla/layers/APZInputBridge.h"
 
+#include "AsyncPanZoomController.h"
 #include "InputData.h"                      // for MouseInput, etc
 #include "InputBlockState.h"                // for InputBlockState
+#include "OverscrollHandoffState.h"         // for OverscrollHandoffState
 #include "mozilla/dom/WheelEventBinding.h"  // for WheelEvent constants
 #include "mozilla/EventStateManager.h"      // for EventStateManager
 #include "mozilla/layers/APZThreadUtils.h"  // for AssertOnControllerThread, etc
@@ -25,9 +27,76 @@ namespace layers {
 
 APZEventResult::APZEventResult()
     : mStatus(nsEventStatus_eIgnore),
-      mTargetIsRoot(false),
-      mInputBlockId(InputBlockState::NO_BLOCK_ID),
-      mHitRegionWithApzAwareListeners(false) {}
+      mInputBlockId(InputBlockState::NO_BLOCK_ID) {}
+
+APZEventResult::APZEventResult(
+    const RefPtr<AsyncPanZoomController>& aInitialTarget,
+    TargetConfirmationFlags aFlags)
+    : APZEventResult() {
+  mHandledResult = [&]() -> Maybe<APZHandledResult> {
+    if (!aInitialTarget->IsRootContent()) {
+      // If the initial target is not the root, this will definitely not be
+      // handled by the root. (The confirmed target is either the initial
+      // target, or a descendant.)
+      return Some(
+          APZHandledResult{APZHandledPlace::HandledByContent, aInitialTarget});
+    }
+
+    if (!aFlags.mDispatchToContent) {
+      // If the initial target is the root and we don't need to dispatch to
+      // content, the event will definitely be handled by the root.
+      return Some(
+          APZHandledResult{APZHandledPlace::HandledByRoot, aInitialTarget});
+    }
+
+    // Otherwise, we're not sure.
+    return Nothing();
+  }();
+  aInitialTarget->GetGuid(&mTargetGuid);
+}
+
+void APZEventResult::SetStatusAsConsumeDoDefault(
+    const InputBlockState& aBlock) {
+  SetStatusAsConsumeDoDefault(aBlock.GetTargetApzc());
+}
+
+void APZEventResult::SetStatusAsConsumeDoDefault(
+    const RefPtr<AsyncPanZoomController>& aTarget) {
+  mStatus = nsEventStatus_eConsumeDoDefault;
+  mHandledResult =
+      Some(aTarget && aTarget->IsRootContent()
+               ? APZHandledResult{APZHandledPlace::HandledByRoot, aTarget}
+               : APZHandledResult{APZHandledPlace::HandledByContent, aTarget});
+}
+
+void APZEventResult::SetStatusAsConsumeDoDefaultWithTargetConfirmationFlags(
+    const InputBlockState& aBlock, TargetConfirmationFlags aFlags,
+    const AsyncPanZoomController& aTarget) {
+  mStatus = nsEventStatus_eConsumeDoDefault;
+
+  if (!aTarget.IsRootContent()) {
+    auto [result, rootApzc] =
+        aBlock.GetOverscrollHandoffChain()->ScrollingDownWillMoveDynamicToolbar(
+            &aTarget);
+    if (result) {
+      MOZ_ASSERT(rootApzc && rootApzc->IsRootContent());
+      // The event is actually consumed by a non-root APZC but scroll
+      // positions in all relevant APZCs are at the bottom edge, so if there's
+      // still contents covered by the dynamic toolbar we need to move the
+      // dynamic toolbar to make the covered contents visible, thus we need
+      // to tell it to GeckoView so we handle it as if it's consumed in the
+      // root APZC.
+      // IMPORTANT NOTE: If the incoming TargetConfirmationFlags has
+      // mDispatchToContent, we need to change it to Nothing() so that
+      // GeckoView can properly wait for results from the content on the
+      // main-thread.
+      mHandledResult = aFlags.mDispatchToContent
+                           ? Nothing()
+                           : Some(APZHandledResult{
+                                 APZHandledPlace::HandledByRoot, rootApzc});
+    }
+  }
+}
 
 static bool WillHandleMouseEvent(const WidgetMouseEventBase& aEvent) {
   return aEvent.mMessage == eMouseMove || aEvent.mMessage == eMouseDown ||
@@ -56,12 +125,6 @@ APZEventResult APZInputBridge::ReceiveInputEvent(WidgetInputEvent& aEvent) {
     case eMouseEventClass:
     case eDragEventClass: {
       WidgetMouseEvent& mouseEvent = *aEvent.AsMouseEvent();
-
-      // Note, we call this before having transformed the reference point.
-      if (mouseEvent.IsReal()) {
-        UpdateWheelTransaction(mouseEvent.mRefPoint, mouseEvent.mMessage);
-      }
-
       if (WillHandleMouseEvent(mouseEvent)) {
         MouseInput input(mouseEvent);
         input.mOrigin =
@@ -73,8 +136,36 @@ APZEventResult APZInputBridge::ReceiveInputEvent(WidgetInputEvent& aEvent) {
         mouseEvent.mRefPoint.y = input.mOrigin.y;
         mouseEvent.mFlags.mHandledByAPZ = input.mHandledByAPZ;
         mouseEvent.mFocusSequenceNumber = input.mFocusSequenceNumber;
+#ifdef XP_MACOSX
+        // It's not assumed that the click event has already been prevented,
+        // except mousedown event with ctrl key is pressed where we prevent
+        // click event from widget on Mac platform.
+        MOZ_ASSERT_IF(!mouseEvent.IsControl() ||
+                          mouseEvent.mMessage != eMouseDown ||
+                          mouseEvent.mButton != MouseButton::ePrimary,
+                      !mouseEvent.mClickEventPrevented);
+#else
+        MOZ_ASSERT(
+            !mouseEvent.mClickEventPrevented,
+            "It's not assumed that the click event has already been prevented");
+#endif
+        mouseEvent.mClickEventPrevented |= input.mPreventClickEvent;
+        MOZ_ASSERT_IF(mouseEvent.mClickEventPrevented,
+                      mouseEvent.mMessage == eMouseDown ||
+                          mouseEvent.mMessage == eMouseUp);
         aEvent.mLayersId = input.mLayersId;
+
+        if (mouseEvent.IsReal()) {
+          UpdateWheelTransaction(mouseEvent.mRefPoint, mouseEvent.mMessage,
+                                 Some(result.mTargetGuid));
+        }
+
         return result;
+      }
+
+      if (mouseEvent.IsReal()) {
+        UpdateWheelTransaction(mouseEvent.mRefPoint, mouseEvent.mMessage,
+                               Nothing());
       }
 
       ProcessUnhandledEvent(&mouseEvent.mRefPoint, &result.mTargetGuid,
@@ -161,10 +252,10 @@ APZEventResult APZInputBridge::ReceiveInputEvent(WidgetInputEvent& aEvent) {
         }
       }
 
-      UpdateWheelTransaction(aEvent.mRefPoint, aEvent.mMessage);
+      UpdateWheelTransaction(aEvent.mRefPoint, aEvent.mMessage, Nothing());
       ProcessUnhandledEvent(&aEvent.mRefPoint, &result.mTargetGuid,
                             &aEvent.mFocusSequenceNumber, &aEvent.mLayersId);
-      result.mStatus = nsEventStatus_eIgnore;
+      MOZ_ASSERT(result.GetStatus() == nsEventStatus_eIgnore);
       return result;
     }
     case eKeyboardEventClass: {
@@ -179,7 +270,7 @@ APZEventResult APZInputBridge::ReceiveInputEvent(WidgetInputEvent& aEvent) {
       return result;
     }
     default: {
-      UpdateWheelTransaction(aEvent.mRefPoint, aEvent.mMessage);
+      UpdateWheelTransaction(aEvent.mRefPoint, aEvent.mMessage, Nothing());
       ProcessUnhandledEvent(&aEvent.mRefPoint, &result.mTargetGuid,
                             &aEvent.mFocusSequenceNumber, &aEvent.mLayersId);
       return result;
@@ -187,8 +278,101 @@ APZEventResult APZInputBridge::ReceiveInputEvent(WidgetInputEvent& aEvent) {
   }
 
   MOZ_ASSERT_UNREACHABLE("Invalid WidgetInputEvent type.");
-  result.mStatus = nsEventStatus_eConsumeNoDefault;
+  result.SetStatusAsConsumeNoDefault();
   return result;
+}
+
+APZHandledResult::APZHandledResult(APZHandledPlace aPlace,
+                                   const AsyncPanZoomController* aTarget)
+    : mPlace(aPlace) {
+  MOZ_ASSERT(aTarget);
+  switch (aPlace) {
+    case APZHandledPlace::Unhandled:
+      break;
+    case APZHandledPlace::HandledByContent:
+      if (aTarget) {
+        mScrollableDirections = aTarget->ScrollableDirections();
+        mOverscrollDirections = aTarget->GetAllowedHandoffDirections();
+      }
+      break;
+    case APZHandledPlace::HandledByRoot: {
+      MOZ_ASSERT(aTarget->IsRootContent());
+      if (aTarget) {
+        mScrollableDirections = aTarget->ScrollableDirections();
+        mOverscrollDirections = aTarget->GetAllowedHandoffDirections();
+      }
+      break;
+    }
+    default:
+      MOZ_ASSERT_UNREACHABLE("Invalid APZHandledPlace");
+      break;
+  }
+}
+
+std::ostream& operator<<(std::ostream& aOut, const SideBits& aSideBits) {
+  if ((aSideBits & SideBits::eAll) == SideBits::eAll) {
+    aOut << "all";
+  } else {
+    AutoTArray<nsCString, 4> strings;
+    if (aSideBits & SideBits::eTop) {
+      strings.AppendElement("top"_ns);
+    }
+    if (aSideBits & SideBits::eRight) {
+      strings.AppendElement("right"_ns);
+    }
+    if (aSideBits & SideBits::eBottom) {
+      strings.AppendElement("bottom"_ns);
+    }
+    if (aSideBits & SideBits::eLeft) {
+      strings.AppendElement("left"_ns);
+    }
+    aOut << strings;
+  }
+  return aOut;
+}
+
+std::ostream& operator<<(std::ostream& aOut,
+                         const ScrollDirections& aScrollDirections) {
+  if (aScrollDirections.contains(EitherScrollDirection)) {
+    aOut << "either";
+  } else if (aScrollDirections.contains(HorizontalScrollDirection)) {
+    aOut << "horizontal";
+  } else if (aScrollDirections.contains(VerticalScrollDirection)) {
+    aOut << "vertical";
+  } else {
+    aOut << "none";
+  }
+  return aOut;
+}
+
+std::ostream& operator<<(std::ostream& aOut,
+                         const APZHandledPlace& aHandledPlace) {
+  switch (aHandledPlace) {
+    case APZHandledPlace::Unhandled:
+      aOut << "unhandled";
+      break;
+    case APZHandledPlace::HandledByRoot: {
+      aOut << "handled-by-root";
+      break;
+    }
+    case APZHandledPlace::HandledByContent: {
+      aOut << "handled-by-content";
+      break;
+    }
+    case APZHandledPlace::Invalid: {
+      aOut << "INVALID";
+      break;
+    }
+  }
+  return aOut;
+}
+
+std::ostream& operator<<(std::ostream& aOut,
+                         const APZHandledResult& aHandledResult) {
+  aOut << "handled: " << aHandledResult.mPlace << ", ";
+  aOut << "scrollable: " << aHandledResult.mScrollableDirections << ", ";
+  aOut << "overscroll: " << aHandledResult.mOverscrollDirections << std::endl;
+  return aOut;
 }
 
 }  // namespace layers

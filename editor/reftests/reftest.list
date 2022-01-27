@@ -1,5 +1,5 @@
-# include the XUL reftests
-include xul/reftest.list
+# include the XUL reftests, except on Android which doesn't have XUL.
+skip-if(Android) include xul/reftest.list
 
 != newline-1.html newline-ref.html
 == newline-2.html newline-ref.html
@@ -68,14 +68,14 @@ skip-if(Android) needs-focus != spellcheck-textarea-attr-dynamic-override-inheri
 skip-if(Android) needs-focus != spellcheck-textarea-property-dynamic-override.html spellcheck-textarea-ref.html
 skip-if(Android) needs-focus != spellcheck-textarea-property-dynamic-override-inherit.html spellcheck-textarea-ref.html
 needs-focus == caret_on_focus.html caret_on_focus-ref.html
-needs-focus != caret_on_textarea_lastline.html caret_on_textarea_lastline-ref.html
+needs-focus fails-if(useDrawSnapshot) != caret_on_textarea_lastline.html caret_on_textarea_lastline-ref.html
 fuzzy-if(Android,0-1,0-1) needs-focus == input-text-onfocus-reframe.html input-text-onfocus-reframe-ref.html
-fuzzy-if(skiaContent,0-3,0-1) needs-focus == input-text-notheme-onfocus-reframe.html input-text-notheme-onfocus-reframe-ref.html
+fuzzy(0-3,0-1) fuzzy-if(!nativeThemePref,0-5,0-1) needs-focus == input-text-notheme-onfocus-reframe.html input-text-notheme-onfocus-reframe-ref.html
 needs-focus == caret_after_reframe.html caret_after_reframe-ref.html
 == nobogusnode-1.html nobogusnode-ref.html
 == nobogusnode-2.html nobogusnode-ref.html
 # Android turns off spellchecker (Bug 1541697)
-skip-if(Android) == spellcheck-hyphen-valid.html spellcheck-hyphen-valid-ref.html
+skip-if(Android) fuzzy-if(!nativeThemePref,0-3,0-1) == spellcheck-hyphen-valid.html spellcheck-hyphen-valid-ref.html
 skip-if(Android) needs-focus != spellcheck-hyphen-invalid.html spellcheck-hyphen-invalid-ref.html
 skip-if(Android) == spellcheck-slash-valid.html spellcheck-slash-valid-ref.html
 skip-if(Android) == spellcheck-period-valid.html spellcheck-period-valid-ref.html
@@ -85,12 +85,12 @@ skip-if(Android) == spellcheck-hyphen-multiple-valid.html spellcheck-hyphen-mult
 skip-if(Android) needs-focus != spellcheck-hyphen-multiple-invalid.html spellcheck-hyphen-multiple-invalid-ref.html
 skip-if(Android) == spellcheck-dotafterquote-valid.html spellcheck-dotafterquote-valid-ref.html
 skip-if(Android) == spellcheck-url-valid.html spellcheck-url-valid-ref.html
-skip-if(Android) needs-focus == spellcheck-non-latin-arabic.html spellcheck-non-latin-arabic-ref.html
+skip-if(Android) fuzzy-if(!nativeThemePref,0-32,0-1) needs-focus == spellcheck-non-latin-arabic.html spellcheck-non-latin-arabic-ref.html
 skip-if(Android) needs-focus == spellcheck-non-latin-chinese-simplified.html spellcheck-non-latin-chinese-simplified-ref.html
 skip-if(Android) needs-focus == spellcheck-non-latin-chinese-traditional.html spellcheck-non-latin-chinese-traditional-ref.html
 skip-if(Android) needs-focus == spellcheck-non-latin-hebrew.html spellcheck-non-latin-hebrew-ref.html
 skip-if(Android) needs-focus == spellcheck-non-latin-japanese.html spellcheck-non-latin-japanese-ref.html
-skip-if(Android) needs-focus == spellcheck-non-latin-korean.html spellcheck-non-latin-korean-ref.html
+skip-if(Android) fuzzy-if(!nativeThemePref,0-3,0-1) needs-focus == spellcheck-non-latin-korean.html spellcheck-non-latin-korean-ref.html
 == unneeded_scroll.html unneeded_scroll-ref.html
 == caret_on_presshell_reinit.html caret_on_presshell_reinit-ref.html
 fuzzy-if(browserIsRemote,0-255,0-3) asserts-if(browserIsRemote,0-3) == caret_on_presshell_reinit-2.html caret_on_presshell_reinit-ref.html # bug 959132 for assertions
@@ -116,12 +116,12 @@ needs-focus == 462758-grabbers-resizers.html 462758-grabbers-resizers-ref.html
 # Android turns off spellchecker (Bug 1541697)
 skip-if(Android) needs-focus == spellcheck-superscript-1.html spellcheck-superscript-1-ref.html
 skip-if(Android) needs-focus != spellcheck-superscript-2.html spellcheck-superscript-2-ref.html
-fuzzy-if(skiaContent,0-1,0-3400) needs-focus pref(layout.accessiblecaret.enabled,false) pref(layout.accessiblecaret.enabled_on_touch,false) == 824080-1.html 824080-1-ref.html
+fuzzy(0-1,0-3400) needs-focus pref(layout.accessiblecaret.enabled,false) pref(layout.accessiblecaret.enabled_on_touch,false) == 824080-1.html 824080-1-ref.html
 fuzzy-if(OSX,0-1,0-1) needs-focus pref(layout.accessiblecaret.enabled,false) pref(layout.accessiblecaret.enabled_on_touch,false) == 824080-2.html 824080-2-ref.html #Bug 1313253
 fuzzy-if(OSX,0-1,0-1) needs-focus pref(layout.accessiblecaret.enabled,false) pref(layout.accessiblecaret.enabled_on_touch,false) == 824080-3.html 824080-3-ref.html #Bug 1312951
 needs-focus != 824080-2.html 824080-3.html
-fuzzy-if(skiaContent,0-1,0-3200) needs-focus pref(layout.accessiblecaret.enabled,false) pref(layout.accessiblecaret.enabled_on_touch,false) == 824080-4.html 824080-4-ref.html
-fuzzy-if(skiaContent,0-2,0-1800) needs-focus pref(layout.accessiblecaret.enabled,false) pref(layout.accessiblecaret.enabled_on_touch,false) == 824080-5.html 824080-5-ref.html
+fuzzy(0-1,0-3200) needs-focus pref(layout.accessiblecaret.enabled,false) pref(layout.accessiblecaret.enabled_on_touch,false) == 824080-4.html 824080-4-ref.html
+fuzzy(0-2,0-1800) needs-focus pref(layout.accessiblecaret.enabled,false) pref(layout.accessiblecaret.enabled_on_touch,false) == 824080-5.html 824080-5-ref.html
 needs-focus != 824080-4.html 824080-5.html
 needs-focus == 824080-6.html 824080-6-ref.html
 needs-focus pref(layout.accessiblecaret.enabled,false) pref(layout.accessiblecaret.enabled_on_touch,false) == 824080-7.html 824080-7-ref.html
@@ -147,10 +147,11 @@ skip-if(Android) == spellcheck-contenteditable-property-dynamic-override.html sp
 skip-if(Android) == spellcheck-contenteditable-property-dynamic-override-inherit.html spellcheck-contenteditable-disabled-ref.html
 == 911201.html 911201-ref.html
 needs-focus == 969773.html 969773-ref.html
-fuzzy-if(skiaContent,0-1,0-220) == 997805.html 997805-ref.html
-fuzzy-if(skiaContent,0-1,0-220) skip-if(verify&&OSX) == 1088158.html 1088158-ref.html
+fuzzy(0-1,0-220) == 997805.html 997805-ref.html
+fuzzy(0-1,0-220) == 1088158.html 1088158-ref.html
 fuzzy-if(Android,0-1,0-1) needs-focus == 1443902-1.html 1443902-1-ref.html
 fuzzy-if(Android,0-1,0-1) needs-focus == 1443902-2.html 1443902-2-ref.html
 fuzzy-if(Android,0-1,0-1) needs-focus == 1443902-3.html 1443902-3-ref.html
 fuzzy-if(Android,0-1,0-1) needs-focus == 1443902-4.html 1443902-4-ref.html
 == exec-command-indent-ws.html exec-command-indent-ws-ref.html
+needs-focus == inline-table-editor-position-after-updating-table-size-from-input-event-listener.html inline-table-editor-position-after-updating-table-size-from-input-event-listener-ref.html

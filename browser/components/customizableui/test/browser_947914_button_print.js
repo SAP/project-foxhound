@@ -7,6 +7,9 @@
 const isOSX = Services.appinfo.OS === "Darwin";
 
 add_task(async function() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["print.tab_modal.enabled", false]],
+  });
   CustomizableUI.addWidgetToArea(
     "print-button",
     CustomizableUI.AREA_FIXED_OVERFLOW_PANEL
@@ -25,7 +28,7 @@ add_task(async function() {
       await document.getElementById("nav-bar").overflowable.show();
       info("Menu panel was opened");
 
-      await waitForCondition(
+      await TestUtils.waitForCondition(
         () => document.getElementById("print-button") != null
       );
 
@@ -39,14 +42,14 @@ add_task(async function() {
         info("Menu panel was closed");
       } else {
         printButton.click();
-        await waitForCondition(() => gInPrintPreviewMode);
+        await TestUtils.waitForCondition(() => gInPrintPreviewMode);
 
         ok(gInPrintPreviewMode, "Entered print preview mode");
 
         // close print preview
         if (gInPrintPreviewMode) {
           PrintUtils.exitPrintPreview();
-          await waitForCondition(() => !window.gInPrintPreviewMode);
+          await TestUtils.waitForCondition(() => !window.gInPrintPreviewMode);
           info("Exited print preview");
         }
       }

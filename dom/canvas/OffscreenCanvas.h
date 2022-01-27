@@ -8,6 +8,7 @@
 #define MOZILLA_DOM_OFFSCREENCANVAS_H_
 
 #include "gfxTypes.h"
+#include "mozilla/dom/ImageEncoder.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/RefPtr.h"
@@ -19,6 +20,10 @@ struct JSContext;
 namespace mozilla {
 
 class ErrorResult;
+
+namespace gfx {
+class SourceSurface;
+}
 
 namespace layers {
 class CanvasClient;
@@ -149,10 +154,10 @@ class OffscreenCanvas final : public DOMEventTargetHelper,
 
   layers::ImageContainer* GetImageContainer();
 
+  bool ShouldResistFingerprinting() const;
+
  private:
   ~OffscreenCanvas();
-
-  nsCOMPtr<nsIGlobalObject> GetGlobalObject();
 
   void CanvasAttrChanged() {
     mAttrDirty = true;

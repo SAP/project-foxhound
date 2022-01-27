@@ -12,7 +12,6 @@ const {
 } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const { connect } = require("devtools/client/shared/vendor/react-redux");
 const { getStr } = require("devtools/client/inspector/layout/utils/l10n");
 
 const FlexContainer = createFactory(
@@ -24,33 +23,28 @@ const FlexItemSelector = createFactory(
 
 const Types = require("devtools/client/inspector/flexbox/types");
 
+const {
+  toggleFlexboxHighlighter,
+} = require("devtools/client/inspector/flexbox/actions/flexbox-highlighter");
+
 class Header extends PureComponent {
   static get propTypes() {
     return {
+      color: PropTypes.string.isRequired,
+      dispatch: PropTypes.func.isRequired,
       flexContainer: PropTypes.shape(Types.flexContainer).isRequired,
       getSwatchColorPickerTooltip: PropTypes.func.isRequired,
       highlighted: PropTypes.bool.isRequired,
-      onHideBoxModelHighlighter: PropTypes.func.isRequired,
       onSetFlexboxOverlayColor: PropTypes.func.isRequired,
-      onShowBoxModelHighlighterForNode: PropTypes.func.isRequired,
-      onToggleFlexboxHighlighter: PropTypes.func.isRequired,
       setSelectedNode: PropTypes.func.isRequired,
     };
   }
 
-  constructor(props) {
-    super(props);
-    this.onFlexboxCheckboxClick = this.onFlexboxCheckboxClick.bind(this);
-  }
-
-  onFlexboxCheckboxClick() {
-    this.props.onToggleFlexboxHighlighter(this.props.flexContainer.nodeFront);
-  }
-
   renderFlexboxHighlighterToggle() {
+    const { dispatch, flexContainer, highlighted } = this.props;
     // Don't show the flexbox highlighter toggle for the parent flex container of the
     // selected element.
-    if (this.props.flexContainer.isFlexItemContainer) {
+    if (flexContainer.isFlexItemContainer) {
       return null;
     }
 
@@ -61,8 +55,9 @@ class Header extends PureComponent {
       dom.input({
         id: "flexbox-checkbox-toggle",
         className: "devtools-checkbox-toggle",
-        checked: this.props.highlighted,
-        onChange: this.onFlexboxCheckboxClick,
+        checked: highlighted,
+        onChange: () =>
+          dispatch(toggleFlexboxHighlighter(flexContainer.nodeFront, "layout")),
         title: getStr("flexbox.togglesFlexboxHighlighter2"),
         type: "checkbox",
       })
@@ -75,19 +70,19 @@ class Header extends PureComponent {
     }
 
     const {
+      color,
+      dispatch,
       flexContainer,
       getSwatchColorPickerTooltip,
-      onHideBoxModelHighlighter,
       onSetFlexboxOverlayColor,
-      onShowBoxModelHighlighterForNode,
     } = this.props;
 
     return FlexContainer({
+      color,
+      dispatch,
       flexContainer,
       getSwatchColorPickerTooltip,
-      onHideBoxModelHighlighter,
       onSetFlexboxOverlayColor,
-      onShowBoxModelHighlighterForNode,
     });
   }
 
@@ -142,10 +137,4 @@ class Header extends PureComponent {
   }
 }
 
-const mapStateToProps = state => {
-  return {
-    highlighted: state.flexbox.highlighted,
-  };
-};
-
-module.exports = connect(mapStateToProps)(Header);
+module.exports = Header;

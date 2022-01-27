@@ -6,6 +6,7 @@
 #ifndef __FORKSERVICE_CHILD_H_
 #define __FORKSERVICE_CHILD_H_
 
+#include "base/process_util.h"
 #include "nsIObserver.h"
 #include "nsString.h"
 #include "mozilla/ipc/MiniTransceiver.h"
@@ -58,16 +59,21 @@ class ForkServiceChild {
   /**
    * Return the singleton.
    */
-  static ForkServiceChild* Get() { return sForkServiceChild.get(); }
+  static ForkServiceChild* Get() {
+    auto child = sForkServiceChild.get();
+    return child == nullptr || child->mFailed ? nullptr : child;
+  }
 
  private:
   // Called when a message is received.
   void OnMessageReceived(IPC::Message&& message);
+  void OnError();
 
   UniquePtr<MiniTransceiver> mTcver;
   static UniquePtr<ForkServiceChild> sForkServiceChild;
   pid_t mRecvPid;
   bool mWaitForHello;
+  bool mFailed;  // The forkserver has crashed or disconnected.
   GeckoChildProcessHost* mProcess;
 };
 
@@ -83,7 +89,10 @@ class ForkServerLauncher : public nsIObserver {
   static already_AddRefed<ForkServerLauncher> Create();
 
  private:
+  friend class ForkServiceChild;
   virtual ~ForkServerLauncher();
+
+  static void RestartForkServer();
 
   static bool mHaveStartedClient;
   static StaticRefPtr<ForkServerLauncher> mSingleton;

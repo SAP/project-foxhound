@@ -12,14 +12,13 @@ const { XPCOMUtils } = ChromeUtils.import(
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 XPCOMUtils.defineLazyModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.jsm",
-  BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
+  BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.jsm",
   FormHistory: "resource://gre/modules/FormHistory.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.jsm",
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
-  URLBAR_SELECTED_RESULT_TYPES: "resource:///modules/BrowserUsageTelemetry.jsm",
 });
 
 const TELEMETRY_1ST_RESULT = "PLACES_AUTOCOMPLETE_1ST_RESULT_TIME_MS";
@@ -180,10 +179,13 @@ class UrlbarController {
       TelemetryStopwatch.finish(TELEMETRY_6_FIRST_RESULTS, queryContext);
     }
 
-    if (queryContext.lastResultCount == 0 && queryContext.results.length) {
-      if (queryContext.results[0].autofill) {
-        this.input.autofillFirstResult(queryContext.results[0]);
+    if (queryContext.firstResultChanged) {
+      // Notify the input so it can make adjustments based on the first result.
+      if (this.input.onFirstResult(queryContext.results[0])) {
+        // The input canceled the query and started a new one.
+        return;
       }
+
       // The first time we receive results try to connect to the heuristic
       // result.
       this.speculativeConnect(
@@ -311,42 +313,37 @@ class UrlbarController {
         break;
       case KeyEvent.DOM_VK_RETURN:
         if (executeAction) {
-          if (
-            this.view.oneOffsRefresh &&
-            this.view.oneOffSearchButtons.selectedButton?.engine
-          ) {
-            this.input.setSearchMode(
-              this.view.oneOffSearchButtons.selectedButton.engine
-            );
-            this.view.oneOffSearchButtons.selectedButton = null;
-            this.input.startQuery({
-              allowAutofill: false,
-              event,
-            });
-          } else {
-            this.input.handleCommand(event);
-          }
+          this.input.handleCommand(event);
         }
         event.preventDefault();
         break;
       case KeyEvent.DOM_VK_TAB:
         // It's always possible to tab through results when the urlbar was
         // focused with the mouse, or has a search string.
+        // We allow tabbing without a search string when in search mode preview,
+        // since that means the user has interacted with the Urlbar since
+        // opening it.
         // When there's no search string, we want to focus the next toolbar item
         // instead, for accessibility reasons.
         let allowTabbingThroughResults =
           this.input.focusedViaMousedown ||
+          this.input.searchMode?.isPreview ||
           (this.input.value &&
             this.input.getAttribute("pageproxystate") != "valid");
         if (
-          this.view.isOpen &&
+          // Even if the view is closed, we may be waiting results, and in
+          // such a case we don't want to tab out of the urlbar.
+          (this.view.isOpen || !executeAction) &&
           !event.ctrlKey &&
           !event.altKey &&
           allowTabbingThroughResults
         ) {
           if (executeAction) {
             this.userSelectionBehavior = "tab";
-            this.view.selectBy(1, { reverse: event.shiftKey });
+            this.view.selectBy(1, {
+              reverse: event.shiftKey,
+              userPressedTab: true,
+            });
           }
           event.preventDefault();
         }
@@ -387,10 +384,14 @@ class UrlbarController {
         }
         event.preventDefault();
         break;
-      case KeyEvent.DOM_VK_LEFT:
       case KeyEvent.DOM_VK_RIGHT:
-      case KeyEvent.DOM_VK_HOME:
       case KeyEvent.DOM_VK_END:
+        this.input.maybeConfirmSearchModeFromResult({
+          entry: "typed",
+        });
+      // Fall through.
+      case KeyEvent.DOM_VK_LEFT:
+      case KeyEvent.DOM_VK_HOME:
         this.view.removeAccessibleFocus();
         break;
       case KeyEvent.DOM_VK_BACK_SPACE:
@@ -400,13 +401,12 @@ class UrlbarController {
           this.input.selectionEnd == 0 &&
           !event.shiftKey
         ) {
-          this.input.setSearchMode(null);
-          if (this.input.value) {
-            this.input.startQuery({
-              allowAutofill: false,
-              event,
-            });
-          }
+          this.input.searchMode = null;
+          this.input.view.oneOffSearchButtons.selectedButton = null;
+          this.input.startQuery({
+            allowAutofill: false,
+            event,
+          });
         }
       // Fall through.
       case KeyEvent.DOM_VK_DELETE:
@@ -518,8 +518,9 @@ class UrlbarController {
       // will happen when you press the Enter key.  Treat it as no selection.
       selectedResult = resultIndex > 0 || !result.heuristic ? resultIndex : -1;
     }
-    BrowserUsageTelemetry.recordUrlbarSelectedResultMethod(
+    BrowserSearchTelemetry.recordSearchSuggestionSelectionMethod(
       event,
+      "urlbar",
       selectedResult,
       this._userSelectionBehavior
     );
@@ -530,84 +531,49 @@ class UrlbarController {
 
     // Do not modify existing telemetry types.  To add a new type:
     //
-    // * Set telemetryType appropriately below.
-    // * Add the type to BrowserUsageTelemetry.URLBAR_SELECTED_RESULT_TYPES.
-    // * See n_values in Histograms.json for FX_URLBAR_SELECTED_RESULT_TYPE_2
-    //   and FX_URLBAR_SELECTED_RESULT_INDEX_BY_TYPE_2.  If your new type causes
-    //   the number of types to become larger than n_values, you'll need to
-    //   replace these histograms with new ones.  See "Changing a histogram" in
-    //   the histogram telemetry doc for more.
+    // * Set telemetryType appropriately. Since telemetryType is used as the
+    //   probe name, it must be alphanumeric with optional underscores.
+    // * Add a new keyed scalar probe into the urlbar.picked category for the
+    //   newly added telemetryType.
     // * Add a test named browser_UsageTelemetry_urlbar_newType.js to
     //   browser/modules/test/browser.
-    let telemetryType;
-    switch (result.type) {
-      case UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
-        telemetryType = "switchtab";
-        break;
-      case UrlbarUtils.RESULT_TYPE.SEARCH:
-        if (result.source == UrlbarUtils.RESULT_SOURCE.HISTORY) {
-          telemetryType = "formhistory";
-        } else {
-          telemetryType = result.payload.suggestion
-            ? "searchsuggestion"
-            : "searchengine";
-        }
-        break;
-      case UrlbarUtils.RESULT_TYPE.URL:
-        if (result.autofill) {
-          telemetryType = "autofill";
-        } else if (
-          result.source == UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL &&
-          result.heuristic
-        ) {
-          telemetryType = "visiturl";
-        } else {
-          telemetryType =
-            result.source == UrlbarUtils.RESULT_SOURCE.BOOKMARKS
-              ? "bookmark"
-              : "history";
-        }
-        break;
-      case UrlbarUtils.RESULT_TYPE.KEYWORD:
-        telemetryType = "keyword";
-        break;
-      case UrlbarUtils.RESULT_TYPE.OMNIBOX:
-        telemetryType = "extension";
-        break;
-      case UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
-        telemetryType = "remotetab";
-        break;
-      case UrlbarUtils.RESULT_TYPE.TIP:
-        telemetryType = "tip";
-        break;
-      case UrlbarUtils.RESULT_TYPE.DYNAMIC:
-        telemetryType = "dynamic";
-        break;
-      default:
-        Cu.reportError(`Unknown Result Type ${result.type}`);
-        return;
-    }
-    // The "topsite" type overrides the above ones, because it starts from a
-    // unique user interaction, that we want to count apart.
-    if (result.providerName == "UrlbarProviderTopSites") {
-      telemetryType = "topsite";
+    //
+    // The "topsite" type overrides the other ones, because it starts from a
+    // unique user interaction, that we want to count apart. We do this here
+    // rather than in telemetryTypeFromResult because other consumers, like
+    // events telemetry, are reporting this information separately.
+    let telemetryType =
+      result.providerName == "UrlbarProviderTopSites"
+        ? "topsite"
+        : UrlbarUtils.telemetryTypeFromResult(result);
+    Services.telemetry.keyedScalarAdd(
+      `urlbar.picked.${telemetryType}`,
+      resultIndex,
+      1
+    );
+    if (this.input.searchMode && !this.input.searchMode.isPreview) {
+      Services.telemetry.keyedScalarAdd(
+        `urlbar.picked.searchmode.${this.input.searchMode.entry}`,
+        resultIndex,
+        1
+      );
     }
 
+    // These histograms should be removed after a deprecation time where we'll
+    // confirm goodness of the new scalar above.
+    if (!(telemetryType in UrlbarUtils.SELECTED_RESULT_TYPES)) {
+      Cu.reportError(`Unsupported telemetry type ${telemetryType}`);
+      return;
+    }
     Services.telemetry
       .getHistogramById("FX_URLBAR_SELECTED_RESULT_INDEX")
       .add(resultIndex);
-    if (telemetryType in URLBAR_SELECTED_RESULT_TYPES) {
-      Services.telemetry
-        .getHistogramById("FX_URLBAR_SELECTED_RESULT_TYPE_2")
-        .add(URLBAR_SELECTED_RESULT_TYPES[telemetryType]);
-      Services.telemetry
-        .getKeyedHistogramById("FX_URLBAR_SELECTED_RESULT_INDEX_BY_TYPE_2")
-        .add(telemetryType, resultIndex);
-    } else {
-      Cu.reportError(
-        "Unknown FX_URLBAR_SELECTED_RESULT_TYPE_2 type: " + telemetryType
-      );
-    }
+    Services.telemetry
+      .getHistogramById("FX_URLBAR_SELECTED_RESULT_TYPE_2")
+      .add(UrlbarUtils.SELECTED_RESULT_TYPES[telemetryType]);
+    Services.telemetry
+      .getKeyedHistogramById("FX_URLBAR_SELECTED_RESULT_INDEX_BY_TYPE_2")
+      .add(telemetryType, resultIndex);
   }
 
   /**
@@ -641,11 +607,15 @@ class UrlbarController {
     queryContext.results.splice(index, 1);
     this.notify(NOTIFICATIONS.QUERY_RESULT_REMOVED, index);
 
-    // form history
+    // Form history or url restyled as search.
     if (selectedResult.type == UrlbarUtils.RESULT_TYPE.SEARCH) {
       if (!queryContext.formHistoryName) {
         return false;
       }
+      // Generate the search url to remove it from browsing history.
+      let { url } = UrlbarUtils.getUrlFromResult(selectedResult);
+      PlacesUtils.history.remove(url).catch(Cu.reportError);
+      // Now remove form history.
       FormHistory.update(
         {
           op: "remove",
@@ -661,7 +631,7 @@ class UrlbarController {
       return true;
     }
 
-    // Places history
+    // Remove browsing history entries from Places.
     PlacesUtils.history
       .remove(selectedResult.payload.url)
       .catch(Cu.reportError);
@@ -742,6 +712,7 @@ class TelemetryEvent {
       return;
     }
     const validEvents = [
+      "click",
       "command",
       "drop",
       "input",
@@ -772,7 +743,12 @@ class TelemetryEvent {
       searchString,
     };
 
-    this._controller.manager.notifyEngagementChange(this._isPrivate, "start");
+    let { queryContext } = this._controller._lastQueryContextWrapper || {};
+    this._controller.manager.notifyEngagementChange(
+      this._isPrivate,
+      "start",
+      queryContext
+    );
   }
 
   /**
@@ -789,9 +765,11 @@ class TelemetryEvent {
    * @param {string} details.selIndex Index of the selected result, undefined
    *        for "blur".
    * @param {string} details.selType type of the selected element, undefined
-   *        for "blur". One of "none", "autofill", "visit", "bookmark",
-   *        "history", "keyword", "search", "searchsuggestion", "switchtab",
-   *         "remotetab", "extension", "oneoff".
+   *        for "blur". One of "unknown", "autofill", "visiturl", "bookmark",
+   *        "history", "keyword", "searchengine", "searchsuggestion",
+   *        "switchtab", "remotetab", "extension", "oneoff".
+   * @param {string} details.provider The name of the provider for the selected
+   *        result.
    * @note event can be null, that usually happens for paste&go or drop&go.
    *       If there's no _startEventInfo this is a no-op.
    */
@@ -810,9 +788,11 @@ class TelemetryEvent {
   _internalRecord(event, details) {
     if (!this._category || !this._startEventInfo) {
       if (this._discarded && this._category) {
+        let { queryContext } = this._controller._lastQueryContextWrapper || {};
         this._controller.manager.notifyEngagementChange(
           this._isPrivate,
-          "discard"
+          "discard",
+          queryContext
         );
       }
       return;
@@ -873,6 +853,7 @@ class TelemetryEvent {
     if (method == "engagement") {
       extra.selIndex = details.selIndex.toString();
       extra.selType = details.selType;
+      extra.provider = details.provider || "";
     }
 
     // We invoke recordEvent regardless, if recording is disabled this won't
@@ -885,7 +866,13 @@ class TelemetryEvent {
       extra
     );
 
-    this._controller.manager.notifyEngagementChange(this._isPrivate, method);
+    let { queryContext } = this._controller._lastQueryContextWrapper || {};
+    this._controller.manager.notifyEngagementChange(
+      this._isPrivate,
+      method,
+      queryContext,
+      details
+    );
   }
 
   /**
@@ -901,7 +888,7 @@ class TelemetryEvent {
   }
 
   /**
-   * Extracts a type from an element, to be used in the telemetry event.
+   * Extracts a telemetry type from an element for event telemetry.
    * @param {Element} element The element to analyze.
    * @returns {string} a string type for the telemetry event.
    */
@@ -910,40 +897,15 @@ class TelemetryEvent {
       return "none";
     }
     let row = element.closest(".urlbarView-row");
-    if (row.result) {
-      switch (row.result.type) {
-        case UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
-          return "switchtab";
-        case UrlbarUtils.RESULT_TYPE.SEARCH:
-          if (row.result.source == UrlbarUtils.RESULT_SOURCE.HISTORY) {
-            return "formhistory";
-          }
-          return row.result.payload.suggestion ? "searchsuggestion" : "search";
-        case UrlbarUtils.RESULT_TYPE.URL:
-          if (row.result.autofill) {
-            return "autofill";
-          }
-          if (row.result.heuristic) {
-            return "visit";
-          }
-          return row.result.source == UrlbarUtils.RESULT_SOURCE.BOOKMARKS
-            ? "bookmark"
-            : "history";
-        case UrlbarUtils.RESULT_TYPE.KEYWORD:
-          return "keyword";
-        case UrlbarUtils.RESULT_TYPE.OMNIBOX:
-          return "extension";
-        case UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
-          return "remotetab";
-        case UrlbarUtils.RESULT_TYPE.TIP:
-          if (element.classList.contains("urlbarView-tip-help")) {
-            return "tiphelp";
-          }
-          return "tip";
-        case UrlbarUtils.RESULT_TYPE.DYNAMIC:
-          return "dynamic";
+    if (row.result && row.result.providerName != "UrlbarProviderTopSites") {
+      // Element handlers go here.
+      if (element.classList.contains("urlbarView-help")) {
+        return row.result.type == UrlbarUtils.RESULT_TYPE.TIP
+          ? "tiphelp"
+          : "help";
       }
     }
-    return "none";
+    // Now handle the result.
+    return UrlbarUtils.telemetryTypeFromResult(row.result);
   }
 }

@@ -9,13 +9,16 @@
 
 #include "nsIChannelClassifierService.h"
 #include "mozilla/net/UrlClassifierCommon.h"
+#include "nsCOMPtr.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 namespace net {
 
 enum class ChannelBlockDecision {
   Blocked,
-  Unblocked,
+  Replaced,
+  Allowed,
 };
 
 class UrlClassifierBlockedChannel final
@@ -29,6 +32,8 @@ class UrlClassifierBlockedChannel final
   bool IsUnblocked() const {
     return mDecision != ChannelBlockDecision::Blocked;
   }
+
+  ChannelBlockDecision GetDecision() { return mDecision; };
 
   void SetReason(const nsACString& aFeatureName, const nsACString& aTableName);
 

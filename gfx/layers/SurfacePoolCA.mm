@@ -11,6 +11,8 @@
 #include <unordered_set>
 #include <utility>
 
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_gfx.h"
 
@@ -69,28 +71,23 @@ void SurfacePoolCA::LockedPool::DestroyGLResourcesForContext(GLContext* aGL) {
 template <typename F>
 void SurfacePoolCA::LockedPool::MutateEntryStorage(const char* aMutationType,
                                                    const gfx::IntSize& aSize, F aFn) {
-#ifdef MOZ_GECKO_PROFILER
-  size_t inUseCountBefore = mInUseEntries.size();
-  size_t pendingCountBefore = mPendingEntries.Length();
-  size_t availableCountBefore = mAvailableEntries.Length();
-  TimeStamp before = TimeStamp::NowUnfuzzed();
-#endif
+  [[maybe_unused]] size_t inUseCountBefore = mInUseEntries.size();
+  [[maybe_unused]] size_t pendingCountBefore = mPendingEntries.Length();
+  [[maybe_unused]] size_t availableCountBefore = mAvailableEntries.Length();
+  [[maybe_unused]] TimeStamp before = TimeStamp::Now();
 
   aFn();
 
-#ifdef MOZ_GECKO_PROFILER
-  if (profiler_thread_is_being_profiled()) {
-    profiler_add_text_marker(
-        "SurfacePool",
-        nsPrintfCString("%d -> %d in use | %d -> %d waiting for | %d -> %d available | %s %dx%d | "
-                        "%dMB total memory",
+  if (profiler_thread_is_being_profiled_for_markers()) {
+    PROFILER_MARKER_TEXT(
+        "SurfacePool", GRAPHICS, MarkerTiming::IntervalUntilNowFrom(before),
+        nsPrintfCString("%d -> %d in use | %d -> %d waiting for | %d -> %d "
+                        "available | %s %dx%d | %dMB total memory",
                         int(inUseCountBefore), int(mInUseEntries.size()), int(pendingCountBefore),
                         int(mPendingEntries.Length()), int(availableCountBefore),
                         int(mAvailableEntries.Length()), aMutationType, aSize.width, aSize.height,
-                        int(EstimateTotalMemory() / 1000 / 1000)),
-        JS::ProfilingCategoryPair::GRAPHICS, before, TimeStamp::NowUnfuzzed());
+                        int(EstimateTotalMemory() / 1000 / 1000)));
   }
-#endif
 }
 
 template <typename F>
@@ -149,6 +146,7 @@ CFTypeRefPtr<IOSurfaceRef> SurfacePoolCA::LockedPool::ObtainSurfaceFromPool(cons
                                     });
   if (iterToRecycle != mAvailableEntries.end()) {
     CFTypeRefPtr<IOSurfaceRef> surface = iterToRecycle->mIOSurface;
+    MOZ_RELEASE_ASSERT(surface.get(), "Available surfaces should be non-null.");
     // Move the entry from mAvailableEntries to mInUseEntries.
     MutateEntryStorage("Recycle", aSize, [&]() {
       mInUseEntries.insert({surface, std::move(*iterToRecycle)});
@@ -156,14 +154,6 @@ CFTypeRefPtr<IOSurfaceRef> SurfacePoolCA::LockedPool::ObtainSurfaceFromPool(cons
     });
     return surface;
   }
-
-  // Add enough padding so that SWGL can safely read up to one SIMD vector worth
-  // of bytes at the last pixel, which it does for performance reasons.
-  //
-  // This in turn also requires specifying a properly aligned bytes per row
-  // value so odd-sized surfaces like a tooltip still work.
-  size_t bytesPerRow = IOSurfaceAlignProperty(kIOSurfaceBytesPerRow, aSize.width * 4);
-  size_t allocSize = IOSurfaceAlignProperty(kIOSurfaceAllocSize, bytesPerRow * aSize.height + 16);
 
   AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING("IOSurface creation", GRAPHICS_TileAllocation,
                                         nsPrintfCString("%dx%d", aSize.width, aSize.height));
@@ -173,10 +163,11 @@ CFTypeRefPtr<IOSurfaceRef> SurfacePoolCA::LockedPool::ObtainSurfaceFromPool(cons
         (__bridge NSString*)kIOSurfaceHeight : @(aSize.height),
         (__bridge NSString*)kIOSurfacePixelFormat : @(kCVPixelFormatType_32BGRA),
         (__bridge NSString*)kIOSurfaceBytesPerElement : @(4),
-        (__bridge NSString*)kIOSurfaceBytesPerRow : @(bytesPerRow),
-        (__bridge NSString*)kIOSurfaceAllocSize : @(allocSize),
       }));
   if (surface) {
+    if (StaticPrefs::gfx_color_management_native_srgb()) {
+      IOSurfaceSetValue(surface.get(), CFSTR("IOSurfaceColorSpace"), kCGColorSpaceSRGB);
+    }
     // Create a new entry in mInUseEntries.
     MutateEntryStorage("Create", aSize, [&]() {
       mInUseEntries.insert({surface, SurfacePoolEntry{aSize, surface, {}}});
@@ -197,6 +188,8 @@ void SurfacePoolCA::LockedPool::ReturnSurfaceToPool(CFTypeRefPtr<IOSurfaceRef> a
     });
   } else {
     // Move the entry from mInUseEntries to mAvailableEntries.
+    MOZ_RELEASE_ASSERT(inUseEntryIter->second.mIOSurface.get(),
+                       "In use surfaces should be non-null.");
     MutateEntryStorage("Retain", IntSize(inUseEntryIter->second.mSize), [&]() {
       mAvailableEntries.AppendElement(std::move(inUseEntryIter->second));
       mInUseEntries.erase(inUseEntryIter);
@@ -242,6 +235,8 @@ uint64_t SurfacePoolCA::LockedPool::CollectPendingSurfaces(uint64_t aCheckGenera
     } else {
       // The surface has become unused!
       // Move the entry from mPendingEntries to mAvailableEntries.
+      MOZ_RELEASE_ASSERT(pendingSurf.mEntry.mIOSurface.get(),
+                         "Pending surfaces should be non-null.");
       MutateEntryStorage("Stop waiting for", IntSize(pendingSurf.mEntry.mSize), [&]() {
         mAvailableEntries.AppendElement(std::move(pendingSurf.mEntry));
         mPendingEntries.RemoveElementAt(i);
@@ -284,11 +279,9 @@ Maybe<GLuint> SurfacePoolCA::LockedPool::GetFramebufferForSurface(
 
   // No usable existing framebuffer, we need to create one.
 
-#ifdef MOZ_GECKO_PROFILER
   AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING(
       "Framebuffer creation", GRAPHICS_TileAllocation,
       nsPrintfCString("%dx%d", entry.mSize.width, entry.mSize.height));
-#endif
 
   RefPtr<GLContextCGL> cgl = GLContextCGL::Cast(aGL);
   MOZ_RELEASE_ASSERT(cgl, "Unexpected GLContext type");

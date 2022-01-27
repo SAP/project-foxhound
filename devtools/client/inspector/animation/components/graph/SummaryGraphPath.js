@@ -35,7 +35,6 @@ class SummaryGraphPath extends Component {
   static get propTypes() {
     return {
       animation: PropTypes.object.isRequired,
-      emitEventForTest: PropTypes.func.isRequired,
       getAnimatedPropertyMap: PropTypes.object.isRequired,
       simulateAnimation: PropTypes.func.isRequired,
       timeScale: PropTypes.object.isRequired,
@@ -168,19 +167,14 @@ class SummaryGraphPath extends Component {
     return true;
   }
 
-  async updateState(props) {
-    const {
-      animation,
-      emitEventForTest,
-      getAnimatedPropertyMap,
-      timeScale,
-    } = props;
+  updateState(props) {
+    const { animation, getAnimatedPropertyMap, timeScale } = props;
 
     let animatedPropertyMap = null;
     let thisEl = null;
 
     try {
-      animatedPropertyMap = await getAnimatedPropertyMap(animation);
+      animatedPropertyMap = getAnimatedPropertyMap(animation);
       thisEl = ReactDOM.findDOMNode(this);
     } catch (e) {
       // Expected if we've already been destroyed or other node have been selected
@@ -201,8 +195,6 @@ class SummaryGraphPath extends Component {
       isStateUpdating: false,
       keyframesList,
     });
-
-    emitEventForTest("animation-summary-graph-rendered");
   }
 
   render() {

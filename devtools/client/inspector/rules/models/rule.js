@@ -4,16 +4,17 @@
 
 "use strict";
 
-const promise = require("promise");
+const {
+  style: { ELEMENT_STYLE },
+} = require("devtools/shared/constants");
 const CssLogic = require("devtools/shared/inspector/css-logic");
-const { ELEMENT_STYLE } = require("devtools/shared/specs/styles");
 const TextProperty = require("devtools/client/inspector/rules/models/text-property");
 const Services = require("Services");
 
 loader.lazyRequireGetter(
   this,
-  "updateSourceLink",
-  "devtools/client/inspector/rules/actions/rules",
+  "getTargetBrowsers",
+  "devtools/client/inspector/shared/compatibility-user-settings",
   true
 );
 loader.lazyRequireGetter(
@@ -56,6 +57,7 @@ class Rule {
   constructor(elementStyle, options) {
     this.elementStyle = elementStyle;
     this.domRule = options.rule;
+    this.compatibilityIssues = null;
     this.matchedSelectors = options.matchedSelectors || [];
     this.pseudoElement = options.pseudoElement || "";
     this.isSystem = options.isSystem;
@@ -75,18 +77,9 @@ class Rule {
     this.textProps = this.textProps.concat(this._getDisabledProperties());
 
     this.getUniqueSelector = this.getUniqueSelector.bind(this);
-    this.onDeclarationsUpdated = this.onDeclarationsUpdated.bind(this);
-    this.onLocationChanged = this.onLocationChanged.bind(this);
     this.onStyleRuleFrontUpdated = this.onStyleRuleFrontUpdated.bind(this);
-    this.updateOriginalLocation = this.updateOriginalLocation.bind(this);
 
-    // Added in Firefox 72 for backwards compatibility of initial fix for Bug 1557689.
-    // See follow-up fix in Bug 1593944.
-    if (this.domRule.traits.emitsRuleUpdatedEvent) {
-      this.domRule.on("rule-updated", this.onStyleRuleFrontUpdated);
-    } else {
-      this.domRule.on("declarations-updated", this.onDeclarationsUpdated);
-    }
+    this.domRule.on("rule-updated", this.onStyleRuleFrontUpdated);
   }
 
   destroy() {
@@ -94,14 +87,8 @@ class Rule {
       this._unsubscribeSourceMap();
     }
 
-    // Added in Firefox 72
-    if (this.domRule.traits.emitsRuleUpdatedEvent) {
-      this.domRule.off("rule-updated", this.onStyleRuleFrontUpdated);
-    } else {
-      this.domRule.off("declarations-updated", this.onDeclarationsUpdated);
-    }
-
-    this.domRule.off("location-changed", this.onLocationChanged);
+    this.domRule.off("rule-updated", this.onStyleRuleFrontUpdated);
+    this.compatibilityIssues = null;
   }
 
   get declarations() {
@@ -236,6 +223,37 @@ class Rule {
   }
 
   /**
+   * Get the declaration block issues from the compatibility actor
+   * @returns An Array of JSON objects with compatibility information in following form:
+   *    {
+   *      // Type of compatibility issue
+   *      type: <string>,
+   *      // The CSS declaration that has compatibility issues
+   *      property: <string>,
+   *      // Alias to the given CSS property
+   *      alias: <Array>,
+   *      // Link to MDN documentation for the particular CSS rule
+   *      url: <string>,
+   *      deprecated: <boolean>,
+   *      experimental: <boolean>,
+   *      // An array of all the browsers that don't support the given CSS rule
+   *      unsupportedBrowsers: <Array>,
+   *    }
+   */
+  async getCompatibilityIssues() {
+    if (!this.compatibilityIssues) {
+      const targetBrowsers = getTargetBrowsers();
+      const compatibility = await this.inspector.inspectorFront.getCompatibilityFront();
+      this.compatibilityIssues = await compatibility.getCSSDeclarationBlockIssues(
+        this.domRule.declarations,
+        targetBrowsers
+      );
+    }
+
+    return this.compatibilityIssues;
+  }
+
+  /**
    * Returns the TextProperty with the given id or undefined if it cannot be found.
    *
    * @param {String|null} id
@@ -260,7 +278,7 @@ class Rule {
       }`;
     }
 
-    const currentLocation = this._originalLocation || this.generatedLocation;
+    const currentLocation = this.generatedLocation;
 
     let sourceText = currentLocation.url;
     if (shortenURL) {
@@ -293,7 +311,7 @@ class Rule {
       selector = await this.inherited.getUniqueSelector();
     } else {
       // This is an inline style from the current node.
-      selector = this.inspector.selectionCssSelector;
+      selector = await this.inspector.selection.nodeFront.getUniqueSelector();
     }
 
     return selector;
@@ -455,8 +473,7 @@ class Rule {
   applyProperties(modifier) {
     // If there is already a pending modification, we have to wait
     // until it settles before applying the next modification.
-    const resultPromise = promise
-      .resolve(this._applyingModifications)
+    const resultPromise = Promise.resolve(this._applyingModifications)
       .then(() => {
         const modifications = this.domRule.startModifyingProperties(
           this.cssProperties
@@ -616,20 +633,7 @@ class Rule {
     const textProps = [];
     const store = this.elementStyle.store;
 
-    // Starting with FF49, StyleRuleActors provide parsed declarations.
-    let props = this.domRule.declarations;
-    if (!props.length) {
-      // If the authored text has an invalid property, it will show up
-      // as nameless.  Skip these as we don't currently have a good
-      // way to display them.
-      props = parseNamedDeclarations(
-        this.cssProperties.isKnown,
-        this.domRule.authoredText,
-        true
-      );
-    }
-
-    for (const prop of props) {
+    for (const prop of this.domRule.declarations) {
       const name = prop.name;
       // In an inherited rule, we only show inherited properties.
       // However, we must keep all properties in order for rule
@@ -885,91 +889,6 @@ class Rule {
       }
     }
     return false;
-  }
-
-  /**
-   * TODO: Remove after Firefox 75. Keep until then for backwards-compatibility for Bug
-   * 1557689 which has an updated fix from Bug 1593944.
-   * Handler for "declarations-updated" events fired from the StyleRuleActor for a
-   * CSS rule when the status of any of its CSS declarations change.
-   *
-   * Check whether the used/unused status of any declaration has changed and update the
-   * inactive CSS indicator in the UI accordingly.
-   *
-   * @param {Array} declarations
-   *        List of objects describing all CSS declarations of this CSS rule.
-   *        @See StyleRuleActor._declarations
-   */
-  onDeclarationsUpdated(declarations) {
-    this.textProps.forEach((textProp, index) => {
-      const isUsedPrevious = textProp.isUsed().used;
-      const isUsedCurrent = declarations[index].isUsed.used;
-
-      // Skip if property used state did not change.
-      if (isUsedPrevious === isUsedCurrent) {
-        return;
-      }
-
-      // Replace the method called by TextPropertyEditor to check whether the CSS
-      // declaration is used with the updated declaration's `isUsed` object.
-      // TODO: convert from Object to Boolean. See Bug 1574471
-      textProp.isUsed = () => declarations[index].isUsed;
-
-      // Reflect the new active/inactive flag state in the UI.
-      textProp.editor.updatePropertyUsedIndicator();
-    });
-  }
-
-  /**
-   * Handler for "location-changed" events fired from the StyleRuleActor. This could
-   * occur by adding a new declaration to the rule. Updates the source location of the
-   * rule. This will overwrite the source map location.
-   */
-  onLocationChanged() {
-    // Clear the cached generated location data so the generatedLocation getter
-    // can rebuild it when needed.
-    this._generatedLocation = null;
-
-    this.store.dispatch(
-      updateSourceLink(this.domRule.actorID, this.sourceLink)
-    );
-  }
-
-  /**
-   * Subscribes the rule to the source map service to map the the original source
-   * location.
-   */
-  subscribeToLocationChange() {
-    const { sheet, line, column } = this.generatedLocation;
-
-    if (sheet && !this.isSystem && this.domRule.type !== ELEMENT_STYLE) {
-      // Subscribe returns an unsubscribe function that can be called on destroy.
-      if (this._unsubscribeSourceMap) {
-        this._unsubscribeSourceMap();
-      }
-      this._unsubscribeSourceMap = this.sourceMapURLService.subscribeByID(
-        sheet.actorID,
-        line,
-        column,
-        this.updateOriginalLocation
-      );
-    }
-
-    this.domRule.on("location-changed", this.onLocationChanged);
-  }
-
-  /**
-   * Handler for any location changes called from the SourceMapURLService and can also be
-   * called from onLocationChanged(). Updates the source location for the rule.
-   *
-   * @param  {Object | null} url/line/column
-   *         The original URL/line/column position of this sheet or null.
-   */
-  updateOriginalLocation(originalLocation) {
-    this._originalLocation = originalLocation;
-    this.store.dispatch(
-      updateSourceLink(this.domRule.actorID, this.sourceLink)
-    );
   }
 }
 

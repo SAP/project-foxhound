@@ -293,3 +293,13 @@ add_task(async function oncePerSession() {
     await checkTab(window, url, UrlbarProviderSearchTips.TIP_TYPE.NONE);
   });
 });
+
+// The one-off search buttons should not be shown when
+// a search tip is shown even though the search string is empty.
+add_task(async function shortcut_buttons_with_tip() {
+  await checkTab(
+    window,
+    "about:newtab",
+    UrlbarProviderSearchTips.TIP_TYPE.ONBOARD
+  );
+});

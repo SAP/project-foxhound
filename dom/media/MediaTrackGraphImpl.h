@@ -11,6 +11,7 @@
 #include "AudioMixer.h"
 #include "GraphDriver.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
@@ -33,6 +34,55 @@ class AudioContextOperationControlMessage;
 template <typename T>
 class LinkedList;
 class GraphRunner;
+
+// MediaTrack subclass storing the raw audio data from microphone.
+class NativeInputTrack : public ProcessedMediaTrack {
+  ~NativeInputTrack() = default;
+  explicit NativeInputTrack(TrackRate aSampleRate)
+      : ProcessedMediaTrack(aSampleRate, MediaSegment::AUDIO,
+                            new AudioSegment()) {}
+
+ public:
+  // Main Thread API
+  static NativeInputTrack* Create(MediaTrackGraphImpl* aGraph);
+
+  size_t AddUser();
+  size_t RemoveUser();
+
+  // Graph Thread APIs, for ProcessedMediaTrack
+  void DestroyImpl() override;
+  void ProcessInput(GraphTime aFrom, GraphTime aTo, uint32_t aFlags) override;
+  uint32_t NumberOfChannels() const override;
+
+  // Graph thread APIs: Redirect calls from GraphDriver to mDataUsers
+  void NotifyOutputData(MediaTrackGraphImpl* aGraph, AudioDataValue* aBuffer,
+                        size_t aFrames, TrackRate aRate, uint32_t aChannels);
+  void NotifyInputStopped(MediaTrackGraphImpl* aGraph);
+  void NotifyInputData(MediaTrackGraphImpl* aGraph,
+                       const AudioDataValue* aBuffer, size_t aFrames,
+                       TrackRate aRate, uint32_t aChannels,
+                       uint32_t aAlreadyBuffered);
+  void DeviceChanged(MediaTrackGraphImpl* aGraph);
+
+  // Any thread
+  NativeInputTrack* AsNativeInputTrack() override { return this; }
+
+ public:
+  // Only accessed on the graph thread.
+  nsTArray<RefPtr<AudioDataListener>> mDataUsers;
+
+ private:
+  // Queue the audio input data coming from NotifyInputData. Used in graph
+  // thread only.
+  AudioInputSamples mInputData;
+
+  // Only accessed on the graph thread.
+  uint32_t mInputChannels = 0;
+
+  // Only accessed on the main thread.
+  // When this becomes zero, this NativeInputTrack is no longer needed.
+  int32_t mUserCount = 0;
+};
 
 /**
  * A per-track update message passed from the media graph thread to the
@@ -117,7 +167,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
                                GraphRunType aRunTypeRequested,
                                TrackRate aSampleRate, uint32_t aChannelCount,
                                CubebUtils::AudioDeviceID aOutputDeviceID,
-                               AbstractThread* aWindow);
+                               nsISerialEventTarget* aWindow);
 
   // Intended only for assertions, either on graph thread or not running (in
   // which case we must be on the main thread).
@@ -131,7 +181,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * True if we're on aDriver's thread, or if we're on mGraphRunner's thread
    * and mGraphRunner is currently run by aDriver.
    */
-  bool InDriverIteration(GraphDriver* aDriver) override;
+  bool InDriverIteration(const GraphDriver* aDriver) const override;
 #endif
 
   /**
@@ -163,7 +213,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * Append a ControlMessage to the message queue. This queue is drained
    * during RunInStableState; the messages will run on the graph thread.
    */
-  void AppendMessage(UniquePtr<ControlMessage> aMessage);
+  virtual void AppendMessage(UniquePtr<ControlMessage> aMessage);
 
   /**
    * Dispatches a runnable from any thread to the correct main thread for this
@@ -182,9 +232,10 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
 
   /**
    * Sets mShutdownBlocker and makes it block shutdown.
-   * Main thread only. Not idempotent.
+   * Main thread only. Not idempotent. Returns true if a blocker was added,
+   * false if this failed.
    */
-  void AddShutdownBlocker();
+  bool AddShutdownBlocker();
 
   /**
    * Removes mShutdownBlocker and unblocks shutdown.
@@ -222,14 +273,14 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * OneIterationImpl is called directly. Output from the graph gets mixed into
    * aMixer, if it is non-null.
    */
-  IterationResult OneIteration(GraphTime aStateEnd, GraphTime aIterationEnd,
+  IterationResult OneIteration(GraphTime aStateTime, GraphTime aIterationEnd,
                                AudioMixer* aMixer) override;
 
   /**
    * Returns true if this MediaTrackGraph should keep running
    */
-  IterationResult OneIterationImpl(GraphTime aStateEnd, GraphTime aIterationEnd,
-                                   AudioMixer* aMixer);
+  IterationResult OneIterationImpl(GraphTime aStateTime,
+                                   GraphTime aIterationEnd, AudioMixer* aMixer);
 
   /**
    * Called from the driver, when the graph thread is about to stop, to tell
@@ -388,24 +439,32 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   };
   TrackTime PlayAudio(AudioMixer* aMixer, const TrackKeyAndVolume& aTkv,
                       GraphTime aPlayedTime);
+
+  /* Called on the main thread when AudioInputTrack requests audio data from an
+   * input device aID. */
+  ProcessedMediaTrack* GetDeviceTrack(CubebUtils::AudioDeviceID aID);
+
   /* Runs off a message on the graph thread when something requests audio from
    * an input audio device of ID aID, and delivers the input audio frames to
    * aListener. */
   void OpenAudioInputImpl(CubebUtils::AudioDeviceID aID,
-                          AudioDataListener* aListener);
+                          AudioDataListener* aListener,
+                          NativeInputTrack* aInputTrack);
   /* Called on the main thread when something requests audio from an input
    * audio device aID. */
   virtual nsresult OpenAudioInput(CubebUtils::AudioDeviceID aID,
                                   AudioDataListener* aListener) override;
+
   /* Runs off a message on the graph when input audio from aID is not needed
    * anymore, for a particular track. It can be that other tracks still need
    * audio from this audio input device. */
-  void CloseAudioInputImpl(Maybe<CubebUtils::AudioDeviceID>& aID,
-                           AudioDataListener* aListener);
+  void CloseAudioInputImpl(CubebUtils::AudioDeviceID aID,
+                           AudioDataListener* aListener,
+                           NativeInputTrack* aInputTrack);
   /* Called on the main thread when input audio from aID is not needed
    * anymore, for a particular track. It can be that other tracks still need
    * audio from this audio input device. */
-  virtual void CloseAudioInput(Maybe<CubebUtils::AudioDeviceID>& aID,
+  virtual void CloseAudioInput(CubebUtils::AudioDeviceID aID,
                                AudioDataListener* aListener) override;
 
   /* Add or remove an audio output for this track. All tracks that have an
@@ -424,13 +483,14 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * This is the mixed audio output of this MediaTrackGraph. */
   void NotifyOutputData(AudioDataValue* aBuffer, size_t aFrames,
                         TrackRate aRate, uint32_t aChannels) override;
-  /* Called on the graph thread before the first Notify*Data after an
-   * AudioCallbackDriver starts. */
-  void NotifyStarted() override;
+  /* Called on the graph thread after an AudioCallbackDriver with an input
+   * stream has stopped. */
+  void NotifyInputStopped() override;
   /* Called on the graph thread when there is new input data for listeners. This
    * is the raw audio input for this MediaTrackGraph. */
   void NotifyInputData(const AudioDataValue* aBuffer, size_t aFrames,
-                       TrackRate aRate, uint32_t aChannels) override;
+                       TrackRate aRate, uint32_t aChannels,
+                       uint32_t aAlreadyBuffered) override;
   /* Called every time there are changes to input/output audio devices like
    * plug/unplug etc. This can be called on any thread, and posts a message to
    * the main thread so that it can post a message to the graph thread. */
@@ -495,12 +555,12 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
     MOZ_ASSERT(OnGraphThreadOrNotRunning());
 
 #ifdef ANDROID
-    if (!mInputDeviceUsers.GetValue(mInputDeviceID)) {
+    if (!mDeviceTrackMap.Contains(mInputDeviceID)) {
       return 0;
     }
 #else
     if (!mInputDeviceID) {
-      MOZ_ASSERT(mInputDeviceUsers.Count() == 0,
+      MOZ_ASSERT(mDeviceTrackMap.Count() == 0,
                  "If running on a platform other than android,"
                  "an explicit device id should be present");
       return 0;
@@ -509,10 +569,12 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
     uint32_t maxInputChannels = 0;
     // When/if we decide to support multiple input device per graph, this needs
     // loop over them.
-    nsTArray<RefPtr<AudioDataListener>>* listeners =
-        mInputDeviceUsers.GetValue(mInputDeviceID);
-    MOZ_ASSERT(listeners);
-    for (const auto& listener : *listeners) {
+    auto result = mDeviceTrackMap.Lookup(mInputDeviceID);
+    MOZ_ASSERT(result);
+    if (!result) {
+      return maxInputChannels;
+    }
+    for (const auto& listener : result.Data()->mDataUsers) {
       maxInputChannels = std::max(maxInputChannels,
                                   listener->RequestedInputChannelCount(this));
     }
@@ -522,18 +584,17 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   AudioInputType AudioInputDevicePreference() {
     MOZ_ASSERT(OnGraphThreadOrNotRunning());
 
-    if (!mInputDeviceUsers.GetValue(mInputDeviceID)) {
+    auto result = mDeviceTrackMap.Lookup(mInputDeviceID);
+    if (!result) {
       return AudioInputType::Unknown;
     }
     bool voiceInput = false;
     // When/if we decide to support multiple input device per graph, this needs
     // loop over them.
-    nsTArray<RefPtr<AudioDataListener>>* listeners =
-        mInputDeviceUsers.GetValue(mInputDeviceID);
-    MOZ_ASSERT(listeners);
 
     // If at least one track is considered to be voice,
-    for (const auto& listener : *listeners) {
+    // XXX This could use short-circuit evaluation resp. std::any_of.
+    for (const auto& listener : result.Data()->mDataUsers) {
       voiceInput |= listener->IsVoiceInput(this);
     }
     if (voiceInput) {
@@ -758,20 +819,24 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   /**
    * Devices to use for cubeb input & output, or nullptr for default device.
    * A MediaTrackGraph always has an output (even if silent).
-   * If `mInputDeviceUsers.Count() != 0`, this MediaTrackGraph wants audio
+   * If `mDeviceTrackMap.Count() != 0`, this MediaTrackGraph wants audio
    * input.
+   *
+   * All mInputDeviceID access is on the graph thread except for reads via
+   * InputDeviceID(), which are racy but used only for comparison.
    *
    * In any case, the number of channels to use can be queried (on the graph
    * thread) by AudioInputChannelCount() and AudioOutputChannelCount().
    */
-  CubebUtils::AudioDeviceID mInputDeviceID;
+  std::atomic<CubebUtils::AudioDeviceID> mInputDeviceID;
   CubebUtils::AudioDeviceID mOutputDeviceID;
-  // Maps AudioDeviceID to an array of their users (that are listeners). This is
-  // used to deliver audio input frames and to notify the listeners that the
-  // audio device that delivers the audio frames has changed.
-  // This is only touched on the graph thread.
-  nsDataHashtable<nsVoidPtrHashKey, nsTArray<RefPtr<AudioDataListener>>>
-      mInputDeviceUsers;
+
+  // Maps AudioDeviceID to a device track that delivers audio input/output
+  // data and send device-changed signals to its listeners.  This is only
+  // touched on the graph thread. The NativeInputTrack* here is used for
+  // for bookkeeping on the graph thread. The owner of the NativeInputTrack is
+  // mDeviceTracks, which is only touched by main thread.
+  nsTHashMap<CubebUtils::AudioDeviceID, NativeInputTrack*> mDeviceTrackMap;
 
   /**
    * List of resume operations waiting for a switch to an AudioCallbackDriver.
@@ -970,15 +1035,16 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * blocking order.
    */
   bool mTrackOrderDirty;
-  const RefPtr<AbstractThread> mAbstractMainThread;
+  const RefPtr<nsISerialEventTarget> mMainThread;
 
   // used to limit graph shutdown time
   // Only accessed on the main thread.
   nsCOMPtr<nsITimer> mShutdownTimer;
 
- private:
+ protected:
   virtual ~MediaTrackGraphImpl();
 
+ private:
   MOZ_DEFINE_MALLOC_SIZE_OF(MallocSizeOf)
 
   /**
@@ -1042,6 +1108,11 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * ctor, and the read/write only on the graph thread.
    */
   uint32_t mMaxOutputChannelCount;
+
+  /*
+   * Hold the NativeInputTrack for a certain device
+   */
+  nsTHashMap<CubebUtils::AudioDeviceID, RefPtr<NativeInputTrack>> mDeviceTracks;
 };
 
 }  // namespace mozilla

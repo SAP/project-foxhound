@@ -78,7 +78,7 @@ class ActionsManager {
 
       // If the recipe doesn't have matching capabilities, then a missing action
       // is expected. In this case, don't send an error
-    } else if (suitability !== BaseAction.suitability.CAPABILITES_MISMATCH) {
+    } else if (suitability !== BaseAction.suitability.CAPABILITIES_MISMATCH) {
       log.error(
         `Could not execute recipe ${recipe.name}:`,
         `Action ${recipe.action} is either missing or invalid.`
@@ -87,7 +87,7 @@ class ActionsManager {
     }
   }
 
-  async finalize() {
+  async finalize(options) {
     if (this.finalized) {
       throw new Error("ActionsManager has already been finalized");
     }
@@ -95,7 +95,7 @@ class ActionsManager {
 
     // Finalize local actions
     for (const action of Object.values(this.localActions)) {
-      action.finalize();
+      action.finalize(options);
     }
   }
 }

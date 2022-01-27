@@ -13,7 +13,9 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Casting.h"
 
+#include "frontend/TokenStream.h"
 #include "gc/Zone.h"
+#include "irregexp/imported/regexp-ast.h"
 #include "irregexp/imported/regexp-bytecode-generator.h"
 #include "irregexp/imported/regexp-compiler.h"
 #include "irregexp/imported/regexp-interpreter.h"
@@ -22,8 +24,11 @@
 #include "irregexp/imported/regexp-parser.h"
 #include "irregexp/imported/regexp-stack.h"
 #include "irregexp/imported/regexp.h"
+#include "irregexp/RegExpNativeMacroAssembler.h"
 #include "irregexp/RegExpShim.h"
 #include "jit/JitCommon.h"
+#include "js/friend/ErrorMessages.h"  // JSMSG_*
+#include "js/friend/StackLimits.h"    // js::ReportOverRecursed
 #include "util/StringBuffer.h"
 #include "vm/MatchPairs.h"
 #include "vm/RegExpShared.h"
@@ -40,7 +45,7 @@ using mozilla::Some;
 using frontend::DummyTokenStream;
 using frontend::TokenStreamAnyChars;
 
-using v8::internal::DisallowHeapAllocation;
+using v8::internal::DisallowGarbageCollection;
 using v8::internal::FlatStringReader;
 using v8::internal::HandleScope;
 using v8::internal::InputOutputData;
@@ -106,6 +111,10 @@ static uint32_t ErrorNumber(RegExpError err) {
       // and off in the middle of a regular expression. Unless it
       // becomes standardized, SM does not support this feature.
       MOZ_CRASH("Mode modifiers not supported");
+    case RegExpError::kNotLinear:
+      // V8 has an experimental non-backtracking engine. We do not
+      // support it yet.
+      MOZ_CRASH("Non-backtracking execution not supported");
     case RegExpError::kTooManyCaptures:
       return JSMSG_TOO_MANY_PARENS;
     case RegExpError::kInvalidCaptureGroupName:
@@ -230,14 +239,20 @@ static void ReportSyntaxError(TokenStreamAnyChars& ts,
   // Create the windowed string, not including the potential line
   // terminator.
   StringBuffer windowBuf(ts.context());
-  if (!windowBuf.append(windowStart, windowEnd)) return;
+  if (!windowBuf.append(windowStart, windowEnd)) {
+    return;
+  }
 
   // The line of context must be null-terminated, and StringBuffer doesn't
   // make that happen unless we force it to.
-  if (!windowBuf.append('\0')) return;
+  if (!windowBuf.append('\0')) {
+    return;
+  }
 
   err.lineOfContext.reset(windowBuf.stealChars());
-  if (!err.lineOfContext) return;
+  if (!err.lineOfContext) {
+    return;
+  }
 
   err.lineLength = windowLength;
   err.tokenOffset = offset - (windowStart - start);
@@ -268,7 +283,7 @@ static bool CheckPatternSyntaxImpl(JSContext* cx, FlatStringReader* pattern,
   Zone zone(allocScope.alloc());
 
   HandleScope handleScope(cx->isolate);
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   return RegExpParser::VerifyRegExpSyntax(cx->isolate, &zone, pattern, flags,
                                           result, no_gc);
 }
@@ -353,18 +368,103 @@ static void SampleCharacters(FlatStringReader* sample_subject,
   }
 }
 
+// Recursively walking the AST for a deeply nested regexp (like
+// `/(a(a(a(a(a(a(a(...(a)...))))))))/`) may overflow the stack while
+// compiling. To avoid this, we use V8's implementation of the Visitor
+// pattern to walk the AST first with an overly large stack frame.
+class RegExpDepthCheck final : public v8::internal::RegExpVisitor {
+ public:
+  explicit RegExpDepthCheck(JSContext* cx) : cx_(cx) {}
+
+  bool check(v8::internal::RegExpTree* root) {
+    return !!root->Accept(this, nullptr);
+  }
+
+  // Leaf nodes with no children
+#define LEAF_DEPTH(Kind)                                                \
+  void* Visit##Kind(v8::internal::RegExp##Kind* node, void*) override { \
+    uint8_t padding[FRAME_PADDING];                                     \
+    dummy_ = padding; /* Prevent padding from being optimized away.*/   \
+    AutoCheckRecursionLimit recursion(cx_);                             \
+    return (void*)recursion.checkDontReport(cx_);                       \
+  }
+
+  LEAF_DEPTH(Assertion)
+  LEAF_DEPTH(Atom)
+  LEAF_DEPTH(BackReference)
+  LEAF_DEPTH(CharacterClass)
+  LEAF_DEPTH(Empty)
+  LEAF_DEPTH(Text)
+#undef LEAF_DEPTH
+
+  // Wrapper nodes with one child
+#define WRAPPER_DEPTH(Kind)                                             \
+  void* Visit##Kind(v8::internal::RegExp##Kind* node, void*) override { \
+    uint8_t padding[FRAME_PADDING];                                     \
+    dummy_ = padding; /* Prevent padding from being optimized away.*/   \
+    AutoCheckRecursionLimit recursion(cx_);                             \
+    if (!recursion.checkDontReport(cx_)) {                              \
+      return nullptr;                                                   \
+    }                                                                   \
+    return node->body()->Accept(this, nullptr);                         \
+  }
+
+  WRAPPER_DEPTH(Capture)
+  WRAPPER_DEPTH(Group)
+  WRAPPER_DEPTH(Lookaround)
+  WRAPPER_DEPTH(Quantifier)
+#undef WRAPPER_DEPTH
+
+  void* VisitAlternative(v8::internal::RegExpAlternative* node,
+                         void*) override {
+    uint8_t padding[FRAME_PADDING];
+    dummy_ = padding; /* Prevent padding from being optimized away.*/
+    AutoCheckRecursionLimit recursion(cx_);
+    if (!recursion.checkDontReport(cx_)) {
+      return nullptr;
+    }
+    for (auto* child : *node->nodes()) {
+      if (!child->Accept(this, nullptr)) {
+        return nullptr;
+      }
+    }
+    return (void*)true;
+  }
+  void* VisitDisjunction(v8::internal::RegExpDisjunction* node,
+                         void*) override {
+    uint8_t padding[FRAME_PADDING];
+    dummy_ = padding; /* Prevent padding from being optimized away.*/
+    AutoCheckRecursionLimit recursion(cx_);
+    if (!recursion.checkDontReport(cx_)) {
+      return nullptr;
+    }
+    for (auto* child : *node->alternatives()) {
+      if (!child->Accept(this, nullptr)) {
+        return nullptr;
+      }
+    }
+    return (void*)true;
+  }
+
+ private:
+  JSContext* cx_;
+  void* dummy_ = nullptr;
+
+  // This size is picked to be comfortably larger than any
+  // RegExp*::ToNode stack frame.
+  static const size_t FRAME_PADDING = 256;
+};
+
 enum class AssembleResult {
   Success,
   TooLarge,
   OutOfMemory,
 };
 
-static MOZ_MUST_USE AssembleResult Assemble(JSContext* cx,
-                                            RegExpCompiler* compiler,
-                                            RegExpCompileData* data,
-                                            MutableHandleRegExpShared re,
-                                            HandleAtom pattern, Zone* zone,
-                                            bool useNativeCode, bool isLatin1) {
+[[nodiscard]] static AssembleResult Assemble(
+    JSContext* cx, RegExpCompiler* compiler, RegExpCompileData* data,
+    MutableHandleRegExpShared re, HandleAtom pattern, Zone* zone,
+    bool useNativeCode, bool isLatin1) {
   // Because we create a StackMacroAssembler, this function is not allowed
   // to GC. If needed, we allocate and throw errors in the caller.
   Maybe<jit::JitContext> jctx;
@@ -378,6 +478,12 @@ static MOZ_MUST_USE AssembleResult Assemble(JSContext* cx,
     // which needs a jit context.
     jctx.emplace(cx, nullptr);
     stack_masm.emplace();
+#ifdef DEBUG
+    // It would be much preferable to use `class AutoCreatedBy` here, but we
+    // may be operating without an assembler at all if `useNativeCode` is
+    // `false`, so there's no place to put such a call.
+    stack_masm.ref().pushCreator("Assemble() in RegExpAPI.cpp");
+#endif
     uint32_t num_capture_registers = re->pairCount() * 2;
     masm = MakeUnique<SMRegExpMacroAssembler>(cx, stack_masm.ref(), zone, mode,
                                               num_capture_registers);
@@ -385,6 +491,7 @@ static MOZ_MUST_USE AssembleResult Assemble(JSContext* cx,
     masm = MakeUnique<RegExpBytecodeGenerator>(cx->isolate, zone);
   }
   if (!masm) {
+    ReportOutOfMemory(cx);
     return AssembleResult::OutOfMemory;
   }
 
@@ -433,6 +540,14 @@ static MOZ_MUST_USE AssembleResult Assemble(JSContext* cx,
   V8HandleString wrappedPattern(v8::internal::String(pattern), cx->isolate);
   RegExpCompiler::CompilationResult result = compiler->Assemble(
       cx->isolate, masm_ptr, data->node, data->capture_count, wrappedPattern);
+
+  if (useNativeCode) {
+#ifdef DEBUG
+    // See comment referencing `pushCreator` above.
+    stack_masm.ref().popCreator();
+#endif
+  }
+
   if (!result.Succeeded()) {
     MOZ_ASSERT(result.error == RegExpError::kTooLarge);
     return AssembleResult::TooLarge;
@@ -451,6 +566,7 @@ static MOZ_MUST_USE AssembleResult Assemble(JSContext* cx,
         static_cast<SMRegExpMacroAssembler*>(masm.get())->tables();
     for (uint32_t i = 0; i < tables.length(); i++) {
       if (!re->addTable(std::move(tables[i]))) {
+        ReportOutOfMemory(cx);
         return AssembleResult::OutOfMemory;
       }
     }
@@ -486,6 +602,13 @@ bool CompilePattern(JSContext* cx, MutableHandleRegExpShared re,
       ReportSyntaxError(dummyTokenStream, data, pattern);
       return false;
     }
+  }
+
+  // Avoid stack overflow while recursively walking the AST.
+  RegExpDepthCheck depthCheck(cx);
+  if (!depthCheck.check(data.tree)) {
+    JS_ReportErrorASCII(cx, "regexp too big");
+    return false;
   }
 
   if (re->kind() == RegExpShared::Kind::Unparsed) {
@@ -550,7 +673,7 @@ bool CompilePattern(JSContext* cx, MutableHandleRegExpShared re,
       JS_ReportErrorASCII(cx, "regexp too big");
       return false;
     case AssembleResult::OutOfMemory:
-      ReportOutOfMemory(cx);
+      MOZ_ASSERT(cx->isThrowingOutOfMemory());
       return false;
     case AssembleResult::Success:
       break;
@@ -582,6 +705,8 @@ RegExpRunStatus ExecuteRaw(jit::JitCode* code, const CharT* chars,
 RegExpRunStatus Interpret(JSContext* cx, MutableHandleRegExpShared re,
                           HandleLinearString input, size_t startIndex,
                           VectorMatchPairs* matches) {
+  MOZ_ASSERT(re->getByteCode(input->hasLatin1Chars()));
+
   HandleScope handleScope(cx->isolate);
   V8HandleRegExp wrappedRegExp(v8::internal::JSRegExp(re), cx->isolate);
   V8HandleString wrappedInput(v8::internal::String(input), cx->isolate);
@@ -639,6 +764,37 @@ RegExpRunStatus ExecuteForFuzzing(JSContext* cx, HandleAtom pattern,
   }
   return RegExpShared::execute(cx, &re, input, startIndex, matches);
 }
+
+bool GrowBacktrackStack(RegExpStack* regexp_stack) {
+  return SMRegExpMacroAssembler::GrowBacktrackStack(regexp_stack);
+}
+
+uint32_t CaseInsensitiveCompareNonUnicode(const char16_t* substring1,
+                                          const char16_t* substring2,
+                                          size_t byteLength) {
+  return SMRegExpMacroAssembler::CaseInsensitiveCompareNonUnicode(
+      substring1, substring2, byteLength);
+}
+
+uint32_t CaseInsensitiveCompareUnicode(const char16_t* substring1,
+                                       const char16_t* substring2,
+                                       size_t byteLength) {
+  return SMRegExpMacroAssembler::CaseInsensitiveCompareUnicode(
+      substring1, substring2, byteLength);
+}
+
+#ifdef DEBUG
+bool IsolateShouldSimulateInterrupt(Isolate* isolate) {
+  return isolate->shouldSimulateInterrupt_ != 0;
+}
+
+void IsolateSetShouldSimulateInterrupt(Isolate* isolate) {
+  isolate->shouldSimulateInterrupt_ = 1;
+}
+void IsolateClearShouldSimulateInterrupt(Isolate* isolate) {
+  isolate->shouldSimulateInterrupt_ = 0;
+}
+#endif
 
 }  // namespace irregexp
 }  // namespace js

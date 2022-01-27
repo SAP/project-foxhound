@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 /**
  * Redux actions for the sources state
  * @module actions/sources
@@ -35,35 +33,17 @@ import {
   getSelectedLocation,
   getSelectedSource,
   canPrettyPrintSource,
+  getIsCurrentThreadPaused,
 } from "../../selectors";
 
-import type {
-  SourceLocation,
-  PartialPosition,
-  SourceId,
-  Source,
-  Context,
-  URL,
-} from "../../types";
-import type { ThunkArgs } from "../types";
-import type { SourceAction } from "../types/SourceAction";
-
-export const setSelectedLocation = (
-  cx: Context,
-  source: Source,
-  location: SourceLocation
-): SourceAction => ({
+export const setSelectedLocation = (cx, source, location) => ({
   type: "SET_SELECTED_LOCATION",
   cx,
   source,
   location,
 });
 
-export const setPendingSelectedLocation = (
-  cx: Context,
-  url: URL,
-  options?: PartialPosition
-): SourceAction => ({
+export const setPendingSelectedLocation = (cx, url, options) => ({
   type: "SET_PENDING_SELECTED_LOCATION",
   cx,
   url,
@@ -71,7 +51,7 @@ export const setPendingSelectedLocation = (
   column: options?.column,
 });
 
-export const clearSelectedLocation = (cx: Context): SourceAction => ({
+export const clearSelectedLocation = cx => ({
   type: "CLEAR_SELECTED_LOCATION",
   cx,
 });
@@ -87,12 +67,8 @@ export const clearSelectedLocation = (cx: Context): SourceAction => ({
  * @memberof actions/sources
  * @static
  */
-export function selectSourceURL(
-  cx: Context,
-  url: URL,
-  options?: PartialPosition
-) {
-  return async ({ dispatch, getState, sourceMaps }: ThunkArgs) => {
+export function selectSourceURL(cx, url, options) {
+  return async ({ dispatch, getState, sourceMaps }) => {
     const source = getSourceByURL(getState(), url);
     if (!source) {
       return dispatch(setPendingSelectedLocation(cx, url, options));
@@ -108,12 +84,8 @@ export function selectSourceURL(
  * @memberof actions/sources
  * @static
  */
-export function selectSource(
-  cx: Context,
-  sourceId: SourceId,
-  options: PartialPosition = {}
-) {
-  return async ({ dispatch }: ThunkArgs) => {
+export function selectSource(cx, sourceId, options = {}) {
+  return async ({ dispatch }) => {
     const location = createLocation({ ...options, sourceId });
     return dispatch(selectSpecificLocation(cx, location));
   };
@@ -123,12 +95,8 @@ export function selectSource(
  * @memberof actions/sources
  * @static
  */
-export function selectLocation(
-  cx: Context,
-  location: SourceLocation,
-  { keepContext = true }: Object = {}
-) {
-  return async ({ dispatch, getState, sourceMaps, client }: ThunkArgs) => {
+export function selectLocation(cx, location, { keepContext = true } = {}) {
+  return async ({ dispatch, getState, sourceMaps, client }) => {
     const currentSource = getSelectedSource(getState());
 
     if (!client) {
@@ -192,7 +160,7 @@ export function selectLocation(
     await dispatch(setSymbols({ cx, source: loadedSource }));
     dispatch(setInScopeLines(cx));
 
-    if (cx.isPaused) {
+    if (getIsCurrentThreadPaused(getState())) {
       await dispatch(mapDisplayNames(cx));
     }
 
@@ -208,7 +176,7 @@ export function selectLocation(
  * @memberof actions/sources
  * @static
  */
-export function selectSpecificLocation(cx: Context, location: SourceLocation) {
+export function selectSpecificLocation(cx, location) {
   return selectLocation(cx, location, { keepContext: false });
 }
 
@@ -216,8 +184,8 @@ export function selectSpecificLocation(cx: Context, location: SourceLocation) {
  * @memberof actions/sources
  * @static
  */
-export function jumpToMappedLocation(cx: Context, location: SourceLocation) {
-  return async function({ dispatch, getState, client, sourceMaps }: ThunkArgs) {
+export function jumpToMappedLocation(cx, location) {
+  return async function({ dispatch, getState, client, sourceMaps }) {
     if (!client) {
       return;
     }
@@ -228,8 +196,8 @@ export function jumpToMappedLocation(cx: Context, location: SourceLocation) {
   };
 }
 
-export function jumpToMappedSelectedLocation(cx: Context) {
-  return async function({ dispatch, getState }: ThunkArgs) {
+export function jumpToMappedSelectedLocation(cx) {
+  return async function({ dispatch, getState }) {
     const location = getSelectedLocation(getState());
     if (!location) {
       return;

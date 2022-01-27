@@ -7,9 +7,10 @@
 #include "DocAccessibleChild.h"
 
 #include "nsAccessibilityService.h"
-#include "Accessible-inl.h"
+#include "LocalAccessible-inl.h"
 #include "mozilla/a11y/PlatformChild.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/StaticPrefs_accessibility.h"
 #include "RootAccessible.h"
 
 namespace mozilla {
@@ -22,10 +23,16 @@ DocAccessibleChild::DocAccessibleChild(DocAccessible* aDoc, IProtocol* aManager)
   MOZ_COUNT_CTOR_INHERITED(DocAccessibleChild, DocAccessibleChildBase);
   if (!sPlatformChild) {
     sPlatformChild = new PlatformChild();
-    ClearOnShutdown(&sPlatformChild, ShutdownPhase::Shutdown);
+    ClearOnShutdown(&sPlatformChild, ShutdownPhase::XPCOMShutdown);
   }
 
   SetManager(aManager);
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    // If the cache is enabled, we don't need to care whether this is
+    // constructed in the parent process. We must still set this flag because we
+    // defer sending any events unless it is set.
+    SetConstructedInParentProcess();
+  }
 }
 
 DocAccessibleChild::~DocAccessibleChild() {
@@ -157,10 +164,10 @@ bool DocAccessibleChild::SendStateChangeEvent(const uint64_t& aID,
 }
 
 LayoutDeviceIntRect DocAccessibleChild::GetCaretRectFor(const uint64_t& aID) {
-  Accessible* target;
+  LocalAccessible* target;
 
   if (aID) {
-    target = reinterpret_cast<Accessible*>(aID);
+    target = reinterpret_cast<LocalAccessible*>(aID);
   } else {
     target = mDoc;
   }
@@ -192,21 +199,23 @@ bool DocAccessibleChild::SendFocusEvent(const uint64_t& aID,
 
 bool DocAccessibleChild::SendCaretMoveEvent(const uint64_t& aID,
                                             const int32_t& aOffset,
-                                            const bool& aIsSelectionCollapsed) {
+                                            const bool& aIsSelectionCollapsed,
+                                            const bool& aIsAtEndOfLine) {
   return SendCaretMoveEvent(aID, GetCaretRectFor(aID), aOffset,
-                            aIsSelectionCollapsed);
+                            aIsSelectionCollapsed, aIsAtEndOfLine);
 }
 
 bool DocAccessibleChild::SendCaretMoveEvent(
     const uint64_t& aID, const LayoutDeviceIntRect& aCaretRect,
-    const int32_t& aOffset, const bool& aIsSelectionCollapsed) {
+    const int32_t& aOffset, const bool& aIsSelectionCollapsed,
+    const bool& aIsAtEndOfLine) {
   if (IsConstructedInParentProcess()) {
-    return PDocAccessibleChild::SendCaretMoveEvent(aID, aCaretRect, aOffset,
-                                                   aIsSelectionCollapsed);
+    return PDocAccessibleChild::SendCaretMoveEvent(
+        aID, aCaretRect, aOffset, aIsSelectionCollapsed, aIsAtEndOfLine);
   }
 
   PushDeferredEvent(MakeUnique<SerializedCaretMove>(
-      this, aID, aCaretRect, aOffset, aIsSelectionCollapsed));
+      this, aID, aCaretRect, aOffset, aIsSelectionCollapsed, aIsAtEndOfLine));
   return true;
 }
 
@@ -304,16 +313,18 @@ ipc::IPCResult DocAccessibleChild::RecvRestoreFocus() {
 
 void DocAccessibleChild::SetEmbedderOnBridge(dom::BrowserBridgeChild* aBridge,
                                              uint64_t aID) {
-  if (CanSend()) {
-    aBridge->SendSetEmbedderAccessible(this, aID);
-  } else {
-    // This DocAccessibleChild hasn't sent the constructor to the parent
-    // process yet. This happens if the top level document hasn't received its
-    // parent COM proxy yet, in which case sending constructors for child
-    // documents gets deferred. We must also defer sending this as an embedder.
-    MOZ_ASSERT(!IsConstructedInParentProcess());
-    PushDeferredEvent(MakeUnique<SerializedSetEmbedder>(aBridge, this, aID));
+  DocAccessibleChild* doc = aID ? this : nullptr;
+  if (IsConstructedInParentProcess()) {
+    MOZ_ASSERT(CanSend());
+    aBridge->SetEmbedderAccessible(doc, aID);
+    return;
   }
+  // Even though this doesn't fire an event, we must ensure this is sent in
+  // the correct order with insertions/removals, which are deferred until
+  // we are notified about parent process construction. Otherwise, the
+  // parent process might bind a child document to the wrong accessible if
+  // ids get reused.
+  PushDeferredEvent(MakeUnique<SerializedSetEmbedder>(aBridge, doc, aID));
 }
 
 }  // namespace a11y

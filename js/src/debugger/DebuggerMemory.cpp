@@ -12,11 +12,14 @@
 #include <stdlib.h>
 #include <utility>
 
+#include "jsapi.h"
+
 #include "builtin/MapObject.h"
 #include "debugger/Debugger.h"
 #include "gc/Marking.h"
 #include "js/AllocPolicy.h"
 #include "js/Debug.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/PropertySpec.h"
 #include "js/TracingAPI.h"
 #include "js/UbiNode.h"
@@ -67,7 +70,7 @@ bool DebuggerMemory::construct(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 /* static */ const JSClass DebuggerMemory::class_ = {
-    "Memory", JSCLASS_HAS_PRIVATE | JSCLASS_HAS_RESERVED_SLOTS(JSSLOT_COUNT)};
+    "Memory", JSCLASS_HAS_RESERVED_SLOTS(JSSLOT_COUNT)};
 
 /* static */
 DebuggerMemory* DebuggerMemory::checkThis(JSContext* cx, CallArgs& args) {
@@ -203,10 +206,10 @@ bool DebuggerMemory::CallData::drainAllocationsLog() {
   if (!result) {
     return false;
   }
-  result->ensureDenseInitializedLength(cx, 0, length);
+  result->ensureDenseInitializedLength(0, length);
 
   for (size_t i = 0; i < length; i++) {
-    RootedPlainObject obj(cx, NewBuiltinClassInstance<PlainObject>(cx));
+    RootedPlainObject obj(cx, NewPlainObject(cx));
     if (!obj) {
       return false;
     }
@@ -236,14 +239,6 @@ bool DebuggerMemory::CallData::drainAllocationsLog() {
     }
     RootedValue classNameValue(cx, StringValue(className));
     if (!DefineDataProperty(cx, obj, cx->names().class_, classNameValue)) {
-      return false;
-    }
-
-    RootedValue ctorName(cx, NullValue());
-    if (entry.ctorName) {
-      ctorName.setString(entry.ctorName);
-    }
-    if (!DefineDataProperty(cx, obj, cx->names().constructor, ctorName)) {
       return false;
     }
 
@@ -399,6 +394,7 @@ bool DebuggerMemory::CallData::takeCensus() {
 
   JS::ubi::RootedCount rootCount(cx, rootType->makeCount());
   if (!rootCount) {
+    ReportOutOfMemory(cx);
     return false;
   }
   JS::ubi::CensusHandler handler(census, rootCount,
@@ -411,6 +407,7 @@ bool DebuggerMemory::CallData::takeCensus() {
   for (WeakGlobalObjectSet::Range r = dbg->allDebuggees(); !r.empty();
        r.popFront()) {
     if (!census.targetZones.put(r.front()->zone())) {
+      ReportOutOfMemory(cx);
       return false;
     }
   }

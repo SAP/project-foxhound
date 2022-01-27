@@ -61,82 +61,7 @@ var security = {
         Ci.nsIWebProgressListener.STATE_LOADED_MIXED_DISPLAY_CONTENT);
     var isEV = ui.state & Ci.nsIWebProgressListener.STATE_IDENTITY_EV_TOPLEVEL;
 
-    let secInfo = await window.opener.gBrowser.selectedBrowser.browsingContext.currentWindowGlobal.getSecurityInfo();
-    if (secInfo) {
-      secInfo.QueryInterface(Ci.nsITransportSecurityInfo);
-      let cert = secInfo.serverCert;
-      let issuerName = null;
-      if (cert) {
-        issuerName = cert.issuerOrganization || cert.issuerName;
-      }
-
-      let certChainArray = [];
-      if (secInfo.succeededCertChain.length) {
-        certChainArray = secInfo.succeededCertChain;
-      } else {
-        certChainArray = secInfo.failedCertChain;
-      }
-
-      var retval = {
-        cAName: issuerName,
-        encryptionAlgorithm: undefined,
-        encryptionStrength: undefined,
-        version: undefined,
-        isBroken,
-        isMixed,
-        isEV,
-        cert,
-        certChain: certChainArray,
-        certificateTransparency: undefined,
-      };
-
-      var version;
-      try {
-        retval.encryptionAlgorithm = secInfo.cipherName;
-        retval.encryptionStrength = secInfo.secretKeyLength;
-        version = secInfo.protocolVersion;
-      } catch (e) {}
-
-      switch (version) {
-        case Ci.nsITransportSecurityInfo.SSL_VERSION_3:
-          retval.version = "SSL 3";
-          break;
-        case Ci.nsITransportSecurityInfo.TLS_VERSION_1:
-          retval.version = "TLS 1.0";
-          break;
-        case Ci.nsITransportSecurityInfo.TLS_VERSION_1_1:
-          retval.version = "TLS 1.1";
-          break;
-        case Ci.nsITransportSecurityInfo.TLS_VERSION_1_2:
-          retval.version = "TLS 1.2";
-          break;
-        case Ci.nsITransportSecurityInfo.TLS_VERSION_1_3:
-          retval.version = "TLS 1.3";
-          break;
-      }
-
-      // Select the status text to display for Certificate Transparency.
-      // Since we do not yet enforce the CT Policy on secure connections,
-      // we must not complain on policy discompliance (it might be viewed
-      // as a security issue by the user).
-      switch (secInfo.certificateTransparencyStatus) {
-        case Ci.nsITransportSecurityInfo
-          .CERTIFICATE_TRANSPARENCY_NOT_APPLICABLE:
-        case Ci.nsITransportSecurityInfo
-          .CERTIFICATE_TRANSPARENCY_POLICY_NOT_ENOUGH_SCTS:
-        case Ci.nsITransportSecurityInfo
-          .CERTIFICATE_TRANSPARENCY_POLICY_NOT_DIVERSE_SCTS:
-          retval.certificateTransparency = null;
-          break;
-        case Ci.nsITransportSecurityInfo
-          .CERTIFICATE_TRANSPARENCY_POLICY_COMPLIANT:
-          retval.certificateTransparency = "Compliant";
-          break;
-      }
-
-      return retval;
-    }
-    return {
+    let retval = {
       cAName: "",
       encryptionAlgorithm: "",
       encryptionStrength: 0,
@@ -147,6 +72,90 @@ var security = {
       cert: null,
       certificateTransparency: null,
     };
+
+    // Only show certificate info for secure contexts. This prevents us from
+    // showing certificate data for http origins when using a proxy.
+    // https://searchfox.org/mozilla-central/rev/9c72508fcf2bba709a5b5b9eae9da35e0c707baa/security/manager/ssl/nsSecureBrowserUI.cpp#62-64
+    if (!ui.isSecureContext) {
+      return retval;
+    }
+
+    let secInfo = await window.opener.gBrowser.selectedBrowser.browsingContext.currentWindowGlobal.getSecurityInfo();
+    if (!secInfo) {
+      return retval;
+    }
+
+    secInfo.QueryInterface(Ci.nsITransportSecurityInfo);
+    let cert = secInfo.serverCert;
+    let issuerName = null;
+    if (cert) {
+      issuerName = cert.issuerOrganization || cert.issuerName;
+    }
+
+    let certChainArray = [];
+    if (secInfo.succeededCertChain.length) {
+      certChainArray = secInfo.succeededCertChain;
+    } else {
+      certChainArray = secInfo.failedCertChain;
+    }
+
+    retval = {
+      cAName: issuerName,
+      encryptionAlgorithm: undefined,
+      encryptionStrength: undefined,
+      version: undefined,
+      isBroken,
+      isMixed,
+      isEV,
+      cert,
+      certChain: certChainArray,
+      certificateTransparency: undefined,
+    };
+
+    var version;
+    try {
+      retval.encryptionAlgorithm = secInfo.cipherName;
+      retval.encryptionStrength = secInfo.secretKeyLength;
+      version = secInfo.protocolVersion;
+    } catch (e) {}
+
+    switch (version) {
+      case Ci.nsITransportSecurityInfo.SSL_VERSION_3:
+        retval.version = "SSL 3";
+        break;
+      case Ci.nsITransportSecurityInfo.TLS_VERSION_1:
+        retval.version = "TLS 1.0";
+        break;
+      case Ci.nsITransportSecurityInfo.TLS_VERSION_1_1:
+        retval.version = "TLS 1.1";
+        break;
+      case Ci.nsITransportSecurityInfo.TLS_VERSION_1_2:
+        retval.version = "TLS 1.2";
+        break;
+      case Ci.nsITransportSecurityInfo.TLS_VERSION_1_3:
+        retval.version = "TLS 1.3";
+        break;
+    }
+
+    // Select the status text to display for Certificate Transparency.
+    // Since we do not yet enforce the CT Policy on secure connections,
+    // we must not complain on policy discompliance (it might be viewed
+    // as a security issue by the user).
+    switch (secInfo.certificateTransparencyStatus) {
+      case Ci.nsITransportSecurityInfo.CERTIFICATE_TRANSPARENCY_NOT_APPLICABLE:
+      case Ci.nsITransportSecurityInfo
+        .CERTIFICATE_TRANSPARENCY_POLICY_NOT_ENOUGH_SCTS:
+      case Ci.nsITransportSecurityInfo
+        .CERTIFICATE_TRANSPARENCY_POLICY_NOT_DIVERSE_SCTS:
+        retval.certificateTransparency = null;
+        break;
+      case Ci.nsITransportSecurityInfo
+        .CERTIFICATE_TRANSPARENCY_POLICY_COMPLIANT:
+        retval.certificateTransparency = "Compliant";
+        break;
+    }
+
+    return retval;
   },
 
   // Find the secureBrowserUI object (if present)
@@ -159,9 +168,7 @@ var security = {
 
   async _updateSiteDataInfo() {
     // Save site data info for deleting.
-    this.siteData = await SiteDataManager.getSites(
-      SiteDataManager.getBaseDomainFromHost(this.uri.host)
-    );
+    this.siteData = await SiteDataManager.getSite(this.uri.host);
 
     let clearSiteDataButton = document.getElementById(
       "security-clear-sitedata"
@@ -170,17 +177,16 @@ var security = {
       "security-privacy-sitedata-value"
     );
 
-    if (!this.siteData.length) {
+    if (!this.siteData) {
       document.l10n.setAttributes(siteDataLabel, "security-site-data-no");
       clearSiteDataButton.setAttribute("disabled", "true");
       return;
     }
 
-    let usage = this.siteData.reduce((acc, site) => acc + site.usage, 0);
+    let { usage } = this.siteData;
     if (usage > 0) {
       let size = DownloadUtils.convertByteUnits(usage);
-      let hasCookies = this.siteData.some(site => !!site.cookies.length);
-      if (hasCookies) {
+      if (this.siteData.cookies.length) {
         document.l10n.setAttributes(
           siteDataLabel,
           "security-site-data-cookies",
@@ -193,7 +199,7 @@ var security = {
         });
       }
     } else {
-      // We're storing cookies, else the list would have been empty.
+      // We're storing cookies, else getSite would have returned null.
       document.l10n.setAttributes(
         siteDataLabel,
         "security-site-data-cookies-only"
@@ -207,10 +213,12 @@ var security = {
    * Clear Site Data and Cookies
    */
   clearSiteData() {
-    if (this.siteData && this.siteData.length) {
-      let hosts = this.siteData.map(site => site.host);
-      if (SiteDataManager.promptSiteDataRemoval(window, hosts)) {
-        SiteDataManager.remove(hosts).then(() => this._updateSiteDataInfo());
+    if (this.siteData) {
+      let { baseDomain } = this.siteData;
+      if (SiteDataManager.promptSiteDataRemoval(window, [baseDomain])) {
+        SiteDataManager.remove(baseDomain).then(() =>
+          this._updateSiteDataInfo()
+        );
       }
     }
   },

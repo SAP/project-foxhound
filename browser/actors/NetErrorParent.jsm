@@ -12,9 +12,6 @@ const { XPCOMUtils } = ChromeUtils.import(
 const { PrivateBrowsingUtils } = ChromeUtils.import(
   "resource://gre/modules/PrivateBrowsingUtils.jsm"
 );
-const { SessionStore } = ChromeUtils.import(
-  "resource:///modules/sessionstore/SessionStore.jsm"
-);
 const { HomePage } = ChromeUtils.import("resource:///modules/HomePage.jsm");
 
 const { TelemetryController } = ChromeUtils.import(
@@ -70,7 +67,7 @@ class NetErrorParent extends JSWindowActorParent {
     this.captivePortalObserver = new CaptivePortalObserver(this);
   }
 
-  willDestroy() {
+  didDestroy() {
     if (this.captivePortalObserver) {
       this.captivePortalObserver.stop();
     }
@@ -106,18 +103,6 @@ class NetErrorParent extends JSWindowActorParent {
     return false;
   }
 
-  async reportTLSError(bcID, host, port) {
-    let securityInfo = await BrowsingContext.get(
-      bcID
-    ).currentWindowGlobal.getSecurityInfo();
-    securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
-
-    let errorReporter = Cc["@mozilla.org/securityreporter;1"].getService(
-      Ci.nsISecurityReporter
-    );
-    errorReporter.reportTLSError(securityInfo, host, port);
-  }
-
   async ReportBlockingError(bcID, scheme, host, port, path, xfoAndCspInfo) {
     // For reporting X-Frame-Options error and CSP: frame-ancestors errors, We
     // are collecting 4 pieces of information.
@@ -136,8 +121,8 @@ class NetErrorParent extends JSWindowActorParent {
     let topURI = topBC.currentWindowGlobal.documentURI;
 
     // Get the URLs without query strings.
-    let frame_uri = `${scheme}//${host}${port == -1 ? "" : ":" + port}${path}`;
-    let top_uri = `${topURI.scheme}//${topURI.hostPort}${topURI.filePath}`;
+    let frame_uri = `${scheme}://${host}${port == -1 ? "" : ":" + port}${path}`;
+    let top_uri = `${topURI.scheme}://${topURI.hostPort}${topURI.filePath}`;
 
     TelemetryController.submitExternalPing(
       "xfocsp-error-report",
@@ -157,11 +142,10 @@ class NetErrorParent extends JSWindowActorParent {
    * infected, so we can get them somewhere safe.
    */
   getDefaultHomePage(win) {
-    let url = win.BROWSER_NEW_TAB_URL;
     if (PrivateBrowsingUtils.isWindowPrivate(win)) {
-      return url;
+      return win.BROWSER_NEW_TAB_URL;
     }
-    url = HomePage.getDefault();
+    let url = HomePage.getDefault();
     // If url is a pipe-delimited set of pages, just take the first one.
     if (url.includes("|")) {
       url = url.split("|")[0];
@@ -177,20 +161,15 @@ class NetErrorParent extends JSWindowActorParent {
    * or a default start page so that even when their own homepage is on a server
    * that has certificate errors, we can get them somewhere safe.
    */
-  goBackFromErrorPage(win) {
-    if (!win.gBrowser) {
-      return;
-    }
-
-    let state = JSON.parse(SessionStore.getTabState(win.gBrowser.selectedTab));
-    if (state.index == 1) {
+  goBackFromErrorPage(browser) {
+    if (!browser.canGoBack) {
       // If the unsafe page is the first or the only one in history, go to the
       // start page.
-      win.gBrowser.loadURI(this.getDefaultHomePage(win), {
+      browser.loadURI(this.getDefaultHomePage(browser.ownerGlobal), {
         triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
       });
     } else {
-      win.gBrowser.goBack();
+      browser.goBack();
     }
   }
 
@@ -275,6 +254,20 @@ class NetErrorParent extends JSWindowActorParent {
     request.send(null);
   }
 
+  displayOfflineSupportPage(supportPageSlug) {
+    const AVAILABLE_PAGES = ["connection-not-secure", "time-errors"];
+    if (!AVAILABLE_PAGES.includes(supportPageSlug)) {
+      console.log(
+        `[Not supported] Offline support is not yet available for ${supportPageSlug} errors.`
+      );
+      return;
+    }
+
+    let offlinePagePath = `chrome://browser/content/certerror/supportpages/${supportPageSlug}.html`;
+    let triggeringPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
+    this.browser.loadURI(offlinePagePath, { triggeringPrincipal });
+  }
+
   receiveMessage(message) {
     switch (message.name) {
       case "Browser:EnableOnlineMode":
@@ -283,7 +276,7 @@ class NetErrorParent extends JSWindowActorParent {
         this.browser.reload();
         break;
       case "Browser:OpenCaptivePortalPage":
-        Services.obs.notifyObservers(null, "ensure-captive-portal-tab");
+        this.browser.ownerGlobal.CaptivePortalWatcher.ensureCaptivePortalTab();
         break;
       case "Browser:PrimeMitm":
         this.primeMitm(this.browser);
@@ -302,7 +295,7 @@ class NetErrorParent extends JSWindowActorParent {
         this.browser.reload();
         break;
       case "Browser:SSLErrorGoBack":
-        this.goBackFromErrorPage(this.browser.ownerGlobal);
+        this.goBackFromErrorPage(this.browser);
         break;
       case "Browser:SSLErrorReportTelemetry":
         let reportStatus = message.data.reportStatus;
@@ -316,13 +309,6 @@ class NetErrorParent extends JSWindowActorParent {
           hasChangedCertPrefs,
         });
         break;
-      case "ReportTLSError":
-        this.reportTLSError(
-          this.browsingContext.id,
-          message.data.host,
-          message.data.port
-        );
-        break;
       case "ReportBlockingError":
         this.ReportBlockingError(
           this.browsingContext.id,
@@ -333,7 +319,9 @@ class NetErrorParent extends JSWindowActorParent {
           message.data.xfoAndCspInfo
         );
         break;
-
+      case "DisplayOfflineSupportPage":
+        this.displayOfflineSupportPage(message.data.supportPageSlug);
+        break;
       case "Browser:CertExceptionError":
         switch (message.data.elementId) {
           case "viewCertificate": {

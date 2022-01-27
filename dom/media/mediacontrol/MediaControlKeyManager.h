@@ -7,6 +7,7 @@
 
 #include "MediaControlKeySource.h"
 #include "MediaEventSource.h"
+#include "nsIObserver.h"
 
 namespace mozilla {
 namespace dom {
@@ -24,24 +25,18 @@ class MediaControlKeyManager final : public MediaControlKeySource,
  public:
   NS_INLINE_DECL_REFCOUNTING(MediaControlKeyManager, override)
 
-  MediaControlKeyManager() = default;
+  MediaControlKeyManager();
 
   // MediaControlKeySource methods
   bool Open() override;
+  void Close() override;
   bool IsOpened() const override;
-
-  void SetControlledTabBrowsingContextId(
-      Maybe<uint64_t> aTopLevelBrowsingContextId) override;
 
   void SetPlaybackState(MediaSessionPlaybackState aState) override;
   MediaSessionPlaybackState GetPlaybackState() const override;
 
   // MediaControlKeyListener methods
   void OnActionPerformed(const MediaControlAction& aAction) override;
-
-  // The callback function for monitoring the media controller amount changed
-  // event.
-  void ControllerAmountChanged(uint64_t aControllerAmount);
 
   void SetMediaMetadata(const MediaMetadataBase& aMetadata) override;
   void SetSupportedMediaKeys(const MediaKeysArray& aSupportedKeys) override;
@@ -51,10 +46,25 @@ class MediaControlKeyManager final : public MediaControlKeySource,
 
  private:
   ~MediaControlKeyManager();
-  void StartMonitoringControlKeys();
+  void Shutdown();
+
+  class Observer final : public nsIObserver {
+   public:
+    NS_DECL_ISUPPORTS
+    NS_DECL_NSIOBSERVER
+    explicit Observer(MediaControlKeyManager* aManager);
+
+   protected:
+    virtual ~Observer() = default;
+
+    MediaControlKeyManager* MOZ_OWNING_REF mManager;
+  };
+  RefPtr<Observer> mObserver;
+  void OnPreferenceChange();
+
+  bool StartMonitoringControlKeys();
   void StopMonitoringControlKeys();
   RefPtr<MediaControlKeySource> mEventSource;
-  MediaEventListener mControllerAmountChangedListener;
   MediaMetadataBase mMetadata;
   nsTArray<MediaControlKey> mSupportedKeys;
 };

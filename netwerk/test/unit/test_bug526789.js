@@ -4,14 +4,14 @@
 "use strict";
 
 add_task(async () => {
-  var cs = Cc["@mozilla.org/cookieService;1"].getService(Ci.nsICookieService);
-  var cm = Cc["@mozilla.org/cookiemanager;1"].getService(Ci.nsICookieManager);
+  var cm = Services.cookies;
   var expiry = (Date.now() + 1000) * 1000;
 
   cm.removeAll();
 
   // Allow all cookies.
   Services.prefs.setIntPref("network.cookie.cookieBehavior", 0);
+  Services.prefs.setBoolPref("dom.security.https_first", false);
 
   // test that variants of 'baz.com' get normalized appropriately, but that
   // malformed hosts are rejected
@@ -146,10 +146,7 @@ add_task(async () => {
   });
 
   var uri = NetUtil.newURI("http://baz.com/");
-  const principal = Services.scriptSecurityManager.createContentPrincipal(
-    uri,
-    {}
-  );
+  Services.scriptSecurityManager.createContentPrincipal(uri, {});
 
   Assert.equal(uri.asciiHost, "baz.com");
 
@@ -245,17 +242,12 @@ add_task(async () => {
 });
 
 function getCookieCount() {
-  var count = 0;
-  var cm = Cc["@mozilla.org/cookiemanager;1"].getService(Ci.nsICookieManager);
-  for (let cookie of cm.cookies) {
-    ++count;
-  }
-  return count;
+  var cm = Services.cookies;
+  return cm.cookies.length;
 }
 
 async function testDomainCookie(uriString, domain) {
-  var cs = Cc["@mozilla.org/cookieService;1"].getService(Ci.nsICookieService);
-  var cm = Cc["@mozilla.org/cookiemanager;1"].getService(Ci.nsICookieManager);
+  var cm = Services.cookies;
 
   cm.removeAll();
 
@@ -281,8 +273,7 @@ async function testDomainCookie(uriString, domain) {
 }
 
 async function testTrailingDotCookie(uriString, domain) {
-  var cs = Cc["@mozilla.org/cookieService;1"].getService(Ci.nsICookieService);
-  var cm = Cc["@mozilla.org/cookiemanager;1"].getService(Ci.nsICookieManager);
+  var cm = Services.cookies;
 
   cm.removeAll();
 
@@ -294,4 +285,5 @@ async function testTrailingDotCookie(uriString, domain) {
   Assert.equal(cm.countCookiesFromHost(domain), 0);
   Assert.equal(cm.countCookiesFromHost(domain + "."), 0);
   cm.removeAll();
+  Services.prefs.clearUserPref("dom.security.https_first");
 }

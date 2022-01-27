@@ -9,7 +9,6 @@
 
 #include "vm/SavedStacks.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 
@@ -18,7 +17,6 @@
 #include <utility>
 
 #include "jsapi.h"
-#include "jsfriendapi.h"
 #include "jsmath.h"
 #include "jsnum.h"
 
@@ -28,9 +26,13 @@
 #include "gc/Policy.h"
 #include "gc/Rooting.h"
 #include "js/CharacterEncoding.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/PropertyAndElement.h"    // JS_DefineProperty, JS_GetProperty
 #include "js/PropertySpec.h"
 #include "js/SavedFrameAPI.h"
+#include "js/Stack.h"
 #include "js/Vector.h"
+#include "util/DifferentialTesting.h"
 #include "util/StringBuffer.h"
 #include "vm/GeckoProfiler.h"
 #include "vm/JSScript.h"
@@ -69,7 +71,7 @@ void LiveSavedFrameCache::trace(JSTracer* trc) {
   }
 }
 
-bool LiveSavedFrameCache::insert(JSContext* cx, FramePtr& framePtr,
+bool LiveSavedFrameCache::insert(JSContext* cx, FramePtr&& framePtr,
                                  const jsbytecode* pc,
                                  HandleSavedFrame savedFrame) {
   MOZ_ASSERT(savedFrame);
@@ -195,9 +197,9 @@ struct MOZ_STACK_CLASS SavedFrame::Lookup {
         activation(activation) {
     MOZ_ASSERT(source);
     MOZ_ASSERT_IF(framePtr.isSome(), activation);
-#ifdef JS_MORE_DETERMINISTIC
-    column = 0;
-#endif
+    if (js::SupportDifferentialTesting()) {
+      this->column = 0;
+    }
   }
 
   explicit Lookup(SavedFrame& savedFrame)
@@ -373,7 +375,7 @@ const ClassSpec SavedFrame::classSpec_ = {
 
 /* static */ const JSClass SavedFrame::class_ = {
     "SavedFrame",
-    JSCLASS_HAS_PRIVATE | JSCLASS_HAS_RESERVED_SLOTS(SavedFrame::JSSLOT_COUNT) |
+    JSCLASS_HAS_RESERVED_SLOTS(SavedFrame::JSSLOT_COUNT) |
         JSCLASS_HAS_CACHED_PROTO(JSProto_SavedFrame) |
         JSCLASS_FOREGROUND_FINALIZE,
     &SavedFrameClassOps, &SavedFrame::classSpec_};
@@ -484,9 +486,9 @@ void SavedFrame::initLine(uint32_t line) {
 }
 
 void SavedFrame::initColumn(uint32_t column) {
-#ifdef JS_MORE_DETERMINISTIC
-  column = 0;
-#endif
+  if (js::SupportDifferentialTesting()) {
+    column = 0;
+  }
   initReservedSlot(JSSLOT_COLUMN, PrivateUint32Value(column));
 }
 
@@ -663,7 +665,7 @@ static SavedFrame* GetFirstSubsumedFrame(JSContext* cx,
                               frame, selfHosted, skippedAsync);
 }
 
-JS_FRIEND_API JSObject* GetFirstSubsumedSavedFrame(
+JS_PUBLIC_API JSObject* GetFirstSubsumedSavedFrame(
     JSContext* cx, JSPrincipals* principals, HandleObject savedFrame,
     JS::SavedFrameSelfHosted selfHosted) {
   if (!savedFrame) {
@@ -686,9 +688,9 @@ JS_FRIEND_API JSObject* GetFirstSubsumedSavedFrame(
                               skippedAsync);
 }
 
-static MOZ_MUST_USE bool SavedFrame_checkThis(JSContext* cx, CallArgs& args,
-                                              const char* fnName,
-                                              MutableHandleObject frame) {
+[[nodiscard]] static bool SavedFrame_checkThis(JSContext* cx, CallArgs& args,
+                                               const char* fnName,
+                                               MutableHandleObject frame) {
   const Value& thisValue = args.thisv();
 
   if (!thisValue.isObject()) {
@@ -1072,7 +1074,7 @@ JS_PUBLIC_API bool BuildStackString(JSContext* cx, JSPrincipals* principals,
           }
           break;
         case js::StackFormat::Default:
-          MOZ_MAKE_COMPILER_ASSUME_IS_UNREACHABLE("Unexpected value");
+          MOZ_CRASH("Unexpected value");
           break;
       }
 
@@ -1493,7 +1495,6 @@ bool SavedStacks::insertFrames(JSContext* cx, MutableHandleSavedFrame frame,
                                 nullptr,  // parent (not known yet)
                                 principals, iter.mutedErrors(), framePtr,
                                 iter.pc(), &activation)) {
-      ReportOutOfMemory(cx);
       return false;
     }
 
@@ -1536,11 +1537,10 @@ bool SavedStacks::insertFrames(JSContext* cx, MutableHandleSavedFrame frame,
       // Translate our capture into a frame count limit for
       // adoptAsyncStack, which will impose further limits.
       Maybe<size_t> maxFrames =
-          !capture.is<JS::MaxFrames>()
+          !capture.is<JS::MaxFrames>() ? Nothing()
+          : capture.as<JS::MaxFrames>().maxFrames == 0
               ? Nothing()
-              : capture.as<JS::MaxFrames>().maxFrames == 0
-                    ? Nothing()
-                    : Some(capture.as<JS::MaxFrames>().maxFrames);
+              : Some(capture.as<JS::MaxFrames>().maxFrames);
 
       // Clip the stack if needed, attach the async cause string to the
       // top frame, and copy it into our compartment if necessary.

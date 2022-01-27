@@ -21,9 +21,11 @@
  */
 function testWindows(windowsToOpen, expectedResults) {
   return (async function() {
+    let num = 0;
     for (let winData of windowsToOpen) {
       let features = "chrome,dialog=no," + (winData.isPopup ? "all=no" : "all");
-      let url = "http://example.com/?window=" + windowsToOpen.length;
+      let url = "http://example.com/?window=" + num;
+      num = num + 1;
 
       let openWindowPromise = BrowserTestUtils.waitForNewWindow({ url });
       openDialog(AppConstants.BROWSER_CHROME_URL, "", features, url);
@@ -31,7 +33,7 @@ function testWindows(windowsToOpen, expectedResults) {
       await BrowserTestUtils.closeWindow(win);
     }
 
-    let closedWindowData = JSON.parse(ss.getClosedWindowData());
+    let closedWindowData = ss.getClosedWindowData();
     let numPopups = closedWindowData.filter(function(el, i, arr) {
       return el.isPopup;
     }).length;

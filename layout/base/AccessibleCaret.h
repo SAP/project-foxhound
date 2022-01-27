@@ -9,7 +9,6 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/AnonymousContent.h"
-#include "mozilla/dom/Element.h"
 #include "nsCOMPtr.h"
 #include "nsIDOMEventListener.h"
 #include "nsIFrame.h"  // for WeakFrame only
@@ -26,6 +25,7 @@ struct nsPoint;
 namespace mozilla {
 class PresShell;
 namespace dom {
+class Element;
 class Event;
 }  // namespace dom
 
@@ -159,7 +159,7 @@ class AccessibleCaret {
     return mCaretElementHolder->GetElementById(sCaretImageElementId);
   }
 
-  nsIFrame* RootFrame() const { return mPresShell->GetRootFrame(); }
+  nsIFrame* RootFrame() const;
 
   nsIFrame* CustomContentContainerFrame() const;
 
@@ -205,11 +205,12 @@ class AccessibleCaret {
 
   RefPtr<dom::AnonymousContent> mCaretElementHolder;
 
-  // mImaginaryCaretRect is relative to root frame.
+  // This cached rect is relative to the root frame, and is used in
+  // LogicalPosition() when dragging a caret.
   nsRect mImaginaryCaretRect;
 
-  // Cached mImaginaryCaretRect relative to the custom content container. This
-  // is used in SetPosition() to check whether the caret position has changed.
+  // This cached rect is relative to the custom content container, and is used
+  // in SetPosition() to check whether the caret position has changed.
   nsRect mImaginaryCaretRectInContainerFrame;
 
   // The reference frame we used to calculate mImaginaryCaretRect and

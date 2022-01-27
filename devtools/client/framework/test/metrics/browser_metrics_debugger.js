@@ -33,9 +33,9 @@ add_task(async function() {
     "@loader/unload.js",
     "@loader/options.js",
     "chrome.js",
+    "resource://devtools/client/shared/vendor/fluent-react.js",
     "resource://devtools/client/shared/vendor/react-dom.js",
     "resource://devtools/client/shared/vendor/react.js",
-    "resource://devtools/client/shared/vendor/lodash.js",
     "resource://devtools/client/debugger/dist/vendors.js",
     "resource://devtools/client/shared/vendor/react-prop-types.js",
     "resource://devtools/client/shared/vendor/react-dom-factories.js",
@@ -59,5 +59,5 @@ add_task(async function() {
   // Ideally the debugger should only resolve when the worker targets have been
   // retrieved, which should be fixed by Bug 1621337 or a followup.
   info("Wait for all pending requests to settle on the DevToolsClient");
-  await toolbox.target.client.waitForRequestsToSettle();
+  await toolbox.commands.client.waitForRequestsToSettle();
 });

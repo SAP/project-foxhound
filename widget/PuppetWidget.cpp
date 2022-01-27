@@ -7,24 +7,22 @@
 
 #include "base/basictypes.h"
 
-#include "ClientLayerManager.h"
 #include "gfxPlatform.h"
+#include "nsRefreshDriver.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/gfx/gfxVars.h"
-#include "mozilla/Hal.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/layers/APZChild.h"
-#include "mozilla/layers/PLayerTransactionChild.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/TextComposition.h"
 #include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/Unused.h"
-#include "BasicLayers.h"
 #include "PuppetWidget.h"
 #include "nsContentUtils.h"
 #include "nsIWidgetListener.h"
@@ -35,7 +33,6 @@
 
 using namespace mozilla;
 using namespace mozilla::dom;
-using namespace mozilla::hal;
 using namespace mozilla::gfx;
 using namespace mozilla::layers;
 using namespace mozilla::widget;
@@ -86,14 +83,12 @@ PuppetWidget::PuppetWidget(BrowserChild* aBrowserChild)
       mDPI(-1),
       mRounding(1),
       mDefaultScale(-1),
-      mCursorHotspotX(0),
-      mCursorHotspotY(0),
       mEnabled(false),
       mVisible(false),
       mNeedIMEStateInit(false),
       mIgnoreCompositionEvents(false) {
   // Setting 'Unknown' means "not yet cached".
-  mInputContext.mIMEState.mEnabled = IMEState::UNKNOWN;
+  mInputContext.mIMEState.mEnabled = IMEEnabled::Unknown;
 }
 
 PuppetWidget::~PuppetWidget() { Destroy(); }
@@ -118,7 +113,7 @@ void PuppetWidget::InfallibleCreate(nsIWidget* aParent,
   PuppetWidget* parent = static_cast<PuppetWidget*>(aParent);
   if (parent) {
     parent->SetChild(this);
-    mLayerManager = parent->GetLayerManager();
+    mWindowRenderer = parent->GetWindowRenderer();
   } else {
     Resize(mBounds.X(), mBounds.Y(), mBounds.Width(), mBounds.Height(), false);
   }
@@ -161,16 +156,15 @@ void PuppetWidget::Destroy() {
 
   Base::OnDestroy();
   Base::Destroy();
-  mPaintTask.Revoke();
   if (mMemoryPressureObserver) {
     mMemoryPressureObserver->Unregister();
     mMemoryPressureObserver = nullptr;
   }
   mChild = nullptr;
-  if (mLayerManager) {
-    mLayerManager->Destroy();
+  if (mWindowRenderer) {
+    mWindowRenderer->Destroy();
   }
-  mLayerManager = nullptr;
+  mWindowRenderer = nullptr;
   mBrowserChild = nullptr;
 }
 
@@ -232,26 +226,6 @@ void PuppetWidget::Resize(double aWidth, double aHeight, bool aRepaint) {
   }
 }
 
-nsresult PuppetWidget::ConfigureChildren(
-    const nsTArray<Configuration>& aConfigurations) {
-  for (uint32_t i = 0; i < aConfigurations.Length(); ++i) {
-    const Configuration& configuration = aConfigurations[i];
-    PuppetWidget* w = static_cast<PuppetWidget*>(configuration.mChild.get());
-    NS_ASSERTION(w->GetParent() == this, "Configured widget is not a child");
-    w->SetWindowClipRegion(configuration.mClipRegion, true);
-    LayoutDeviceIntRect bounds = w->GetBounds();
-    if (bounds.Size() != configuration.mBounds.Size()) {
-      w->Resize(configuration.mBounds.X(), configuration.mBounds.Y(),
-                configuration.mBounds.Width(), configuration.mBounds.Height(),
-                true);
-    } else if (bounds.TopLeft() != configuration.mBounds.TopLeft()) {
-      w->Move(configuration.mBounds.X(), configuration.mBounds.Y());
-    }
-    w->SetWindowClipRegion(configuration.mClipRegion, false);
-  }
-  return NS_OK;
-}
-
 void PuppetWidget::SetFocus(Raise aRaise, CallerType aCallerType) {
   if (aRaise == Raise::Yes && mBrowserChild) {
     mBrowserChild->SendRequestFocus(true, aCallerType);
@@ -268,13 +242,10 @@ void PuppetWidget::Invalidate(const LayoutDeviceIntRect& aRect) {
     return;
   }
 
-  mDirtyRegion.Or(mDirtyRegion, aRect);
-
-  if (mBrowserChild && !mDirtyRegion.IsEmpty() && !mPaintTask.IsPending()) {
-    mPaintTask = new PaintTask(this);
-    nsCOMPtr<nsIRunnable> event(mPaintTask.get());
+  if (mBrowserChild && !aRect.IsEmpty() && !mWidgetPaintTask.IsPending()) {
+    mWidgetPaintTask = new WidgetPaintTask(this);
+    nsCOMPtr<nsIRunnable> event(mWidgetPaintTask.get());
     SchedulerGroup::Dispatch(TaskCategory::Other, event.forget());
-    return;
   }
 }
 
@@ -345,6 +316,7 @@ nsresult PuppetWidget::DispatchEvent(WidgetGUIEvent* aEvent,
     }
 #endif  // #ifdef DEBUG
     mNativeIMEContext = compositionEvent->mNativeIMEContext;
+    mContentCache.OnCompositionEvent(*compositionEvent);
   }
 
   // If the event is a composition event or a keyboard event, it should be
@@ -384,15 +356,16 @@ nsresult PuppetWidget::DispatchEvent(WidgetGUIEvent* aEvent,
   return NS_OK;
 }
 
-nsEventStatus PuppetWidget::DispatchInputEvent(WidgetInputEvent* aEvent) {
+nsIWidget::ContentAndAPZEventStatus PuppetWidget::DispatchInputEvent(
+    WidgetInputEvent* aEvent) {
+  ContentAndAPZEventStatus status;
   if (!AsyncPanZoomEnabled()) {
-    nsEventStatus status = nsEventStatus_eIgnore;
-    DispatchEvent(aEvent, status);
+    DispatchEvent(aEvent, status.mContentStatus);
     return status;
   }
 
   if (!mBrowserChild) {
-    return nsEventStatus_eIgnore;
+    return status;
   }
 
   switch (aEvent->mClass) {
@@ -406,11 +379,14 @@ nsEventStatus PuppetWidget::DispatchInputEvent(WidgetInputEvent* aEvent) {
       Unused << mBrowserChild->SendDispatchKeyboardEvent(
           *aEvent->AsKeyboardEvent());
       break;
+    case eTouchEventClass:
+      Unused << mBrowserChild->SendDispatchTouchEvent(*aEvent->AsTouchEvent());
+      break;
     default:
       MOZ_ASSERT_UNREACHABLE("unsupported event type");
   }
 
-  return nsEventStatus_eIgnore;
+  return status;
 }
 
 nsresult PuppetWidget::SynthesizeNativeKeyEvent(
@@ -429,14 +405,17 @@ nsresult PuppetWidget::SynthesizeNativeKeyEvent(
 }
 
 nsresult PuppetWidget::SynthesizeNativeMouseEvent(
-    mozilla::LayoutDeviceIntPoint aPoint, uint32_t aNativeMessage,
-    uint32_t aModifierFlags, nsIObserver* aObserver) {
+    mozilla::LayoutDeviceIntPoint aPoint, NativeMouseMessage aNativeMessage,
+    MouseButton aButton, nsIWidget::Modifiers aModifierFlags,
+    nsIObserver* aObserver) {
   AutoObserverNotifier notifier(aObserver, "mouseevent");
   if (!mBrowserChild) {
     return NS_ERROR_FAILURE;
   }
   mBrowserChild->SendSynthesizeNativeMouseEvent(
-      aPoint, aNativeMessage, aModifierFlags, notifier.SaveObserver());
+      aPoint, static_cast<uint32_t>(aNativeMessage),
+      static_cast<int16_t>(aButton), static_cast<uint32_t>(aModifierFlags),
+      notifier.SaveObserver());
   return NS_OK;
 }
 
@@ -478,6 +457,17 @@ nsresult PuppetWidget::SynthesizeNativeTouchPoint(
   return NS_OK;
 }
 
+nsresult PuppetWidget::SynthesizeNativeTouchPadPinch(
+    TouchpadGesturePhase aEventPhase, float aScale, LayoutDeviceIntPoint aPoint,
+    int32_t aModifierFlags) {
+  if (!mBrowserChild) {
+    return NS_ERROR_FAILURE;
+  }
+  mBrowserChild->SendSynthesizeNativeTouchPadPinch(aEventPhase, aScale, aPoint,
+                                                   aModifierFlags);
+  return NS_OK;
+}
+
 nsresult PuppetWidget::SynthesizeNativeTouchTap(LayoutDeviceIntPoint aPoint,
                                                 bool aLongTap,
                                                 nsIObserver* aObserver) {
@@ -497,6 +487,54 @@ nsresult PuppetWidget::ClearNativeTouchSequence(nsIObserver* aObserver) {
   }
   mBrowserChild->SendClearNativeTouchSequence(notifier.SaveObserver());
   return NS_OK;
+}
+
+nsresult PuppetWidget::SynthesizeNativePenInput(
+    uint32_t aPointerId, TouchPointerState aPointerState,
+    LayoutDeviceIntPoint aPoint, double aPressure, uint32_t aRotation,
+    int32_t aTiltX, int32_t aTiltY, int32_t aButton, nsIObserver* aObserver) {
+  AutoObserverNotifier notifier(aObserver, "peninput");
+  if (!mBrowserChild) {
+    return NS_ERROR_FAILURE;
+  }
+  mBrowserChild->SendSynthesizeNativePenInput(
+      aPointerId, aPointerState, aPoint, aPressure, aRotation, aTiltX, aTiltY,
+      aButton, notifier.SaveObserver());
+  return NS_OK;
+}
+
+nsresult PuppetWidget::SynthesizeNativeTouchpadDoubleTap(
+    LayoutDeviceIntPoint aPoint, uint32_t aModifierFlags) {
+  if (!mBrowserChild) {
+    return NS_ERROR_FAILURE;
+  }
+  mBrowserChild->SendSynthesizeNativeTouchpadDoubleTap(aPoint, aModifierFlags);
+  return NS_OK;
+}
+
+nsresult PuppetWidget::SynthesizeNativeTouchpadPan(
+    TouchpadGesturePhase aEventPhase, LayoutDeviceIntPoint aPoint,
+    double aDeltaX, double aDeltaY, int32_t aModifierFlags) {
+  if (!mBrowserChild) {
+    return NS_ERROR_FAILURE;
+  }
+  mBrowserChild->SendSynthesizeNativeTouchpadPan(aEventPhase, aPoint, aDeltaX,
+                                                 aDeltaY, aModifierFlags);
+  return NS_OK;
+}
+
+void PuppetWidget::LockNativePointer() {
+  if (!mBrowserChild) {
+    return;
+  }
+  mBrowserChild->SendLockNativePointer();
+}
+
+void PuppetWidget::UnlockNativePointer() {
+  if (!mBrowserChild) {
+    return;
+  }
+  mBrowserChild->SendUnlockNativePointer();
 }
 
 void PuppetWidget::SetConfirmedTargetAPZC(
@@ -522,6 +560,7 @@ bool PuppetWidget::AsyncPanZoomEnabled() const {
 bool PuppetWidget::GetEditCommands(NativeKeyBindingsType aType,
                                    const WidgetKeyboardEvent& aEvent,
                                    nsTArray<CommandInt>& aCommands) {
+  MOZ_ASSERT(!aEvent.mFlags.mIsSynthesizedForTests);
   // Validate the arguments.
   if (NS_WARN_IF(!nsIWidget::GetEditCommands(aType, aEvent, aCommands))) {
     return false;
@@ -533,16 +572,13 @@ bool PuppetWidget::GetEditCommands(NativeKeyBindingsType aType,
   return true;
 }
 
-LayerManager* PuppetWidget::GetLayerManager(
-    PLayerTransactionChild* aShadowManager, LayersBackend aBackendHint,
-    LayerManagerPersistence aPersistence) {
-  if (!mLayerManager) {
+WindowRenderer* PuppetWidget::GetWindowRenderer() {
+  if (!mWindowRenderer) {
     if (XRE_IsParentProcess()) {
       // On the parent process there is no CompositorBridgeChild which confuses
       // some layers code, so we use basic layers instead. Note that we create
-      // a non-retaining layer manager since we don't care about performance.
-      mLayerManager = new BasicLayerManager(BasicLayerManager::BLM_OFFSCREEN);
-      return mLayerManager;
+      mWindowRenderer = new FallbackRenderer;
+      return mWindowRenderer;
     }
 
     // If we know for sure that the parent side of this BrowserChild is not
@@ -551,21 +587,16 @@ LayerManager* PuppetWidget::GetLayerManager(
     // can do drawing in this process.
     MOZ_ASSERT(!mBrowserChild ||
                mBrowserChild->IsLayersConnected() != Some(true));
-    mLayerManager = new BasicLayerManager(this);
+    mWindowRenderer = CreateFallbackRenderer();
   }
 
-  return mLayerManager;
+  return mWindowRenderer;
 }
 
 bool PuppetWidget::CreateRemoteLayerManager(
-    const std::function<bool(LayerManager*)>& aInitializeFunc) {
-  RefPtr<LayerManager> lm;
+    const std::function<bool(WebRenderLayerManager*)>& aInitializeFunc) {
+  RefPtr<WebRenderLayerManager> lm = new WebRenderLayerManager(this);
   MOZ_ASSERT(mBrowserChild);
-  if (mBrowserChild->GetCompositorOptions().UseWebRender()) {
-    lm = new WebRenderLayerManager(this);
-  } else {
-    lm = new ClientLayerManager(this);
-  }
 
   if (!aInitializeFunc(lm)) {
     return false;
@@ -576,7 +607,7 @@ bool PuppetWidget::CreateRemoteLayerManager(
   // it if we successfully create its successor because a partially initialized
   // layer manager is worse than a fully initialized but shutdown layer manager.
   DestroyLayerManager();
-  mLayerManager = std::move(lm);
+  mWindowRenderer = std::move(lm);
   return true;
 }
 
@@ -651,55 +682,23 @@ nsresult PuppetWidget::RequestIMEToCommitComposition(bool aCancel) {
   return NS_OK;
 }
 
-nsresult PuppetWidget::StartPluginIME(const WidgetKeyboardEvent& aKeyboardEvent,
-                                      int32_t aPanelX, int32_t aPanelY,
-                                      nsString& aCommitted) {
-  DebugOnly<bool> propagationAlreadyStopped =
-      aKeyboardEvent.mFlags.mPropagationStopped;
-  DebugOnly<bool> immediatePropagationAlreadyStopped =
-      aKeyboardEvent.mFlags.mImmediatePropagationStopped;
-  if (!mBrowserChild || !mBrowserChild->SendStartPluginIME(
-                            aKeyboardEvent, aPanelX, aPanelY, &aCommitted)) {
-    return NS_ERROR_FAILURE;
-  }
-  // BrowserChild::SendStartPluginIME() sends back the keyboard event to the
-  // main process synchronously.  At this time,
-  // ParamTraits<WidgetEvent>::Write() marks the event as "posted to remote
-  // process".  However, this is not correct here since the event has been
-  // handled synchronously in the main process.  So, we adjust the cross process
-  // dispatching state here.
-  const_cast<WidgetKeyboardEvent&>(aKeyboardEvent)
-      .ResetCrossProcessDispatchingState();
-  // Although it shouldn't occur in content process,
-  // ResetCrossProcessDispatchingState() may reset propagation state too
-  // if the event was posted to a remote process and we're waiting its
-  // result.  So, if you saw hitting the following assertions, you'd
-  // need to restore the propagation state too.
-  MOZ_ASSERT(propagationAlreadyStopped ==
-             aKeyboardEvent.mFlags.mPropagationStopped);
-  MOZ_ASSERT(immediatePropagationAlreadyStopped ==
-             aKeyboardEvent.mFlags.mImmediatePropagationStopped);
-  return NS_OK;
-}
-
-void PuppetWidget::SetPluginFocused(bool& aFocused) {
-  if (mBrowserChild) {
-    mBrowserChild->SendSetPluginFocused(aFocused);
-  }
-}
-
-void PuppetWidget::DefaultProcOfPluginEvent(const WidgetPluginEvent& aEvent) {
-  if (!mBrowserChild) {
-    return;
-  }
-  mBrowserChild->SendDefaultProcOfPluginEvent(aEvent);
-}
-
 // When this widget caches input context and currently managed by
 // IMEStateManager, the cache is valid.
 bool PuppetWidget::HaveValidInputContextCache() const {
-  return (mInputContext.mIMEState.mEnabled != IMEState::UNKNOWN &&
+  return (mInputContext.mIMEState.mEnabled != IMEEnabled::Unknown &&
           IMEStateManager::GetWidgetForActiveInputContext() == this);
+}
+
+nsRefreshDriver* PuppetWidget::GetTopLevelRefreshDriver() const {
+  if (!mBrowserChild) {
+    return nullptr;
+  }
+
+  if (PresShell* presShell = mBrowserChild->GetTopLevelPresShell()) {
+    return presShell->GetRefreshDriver();
+  }
+
+  return nullptr;
 }
 
 void PuppetWidget::SetInputContext(const InputContext& aContext,
@@ -743,24 +742,18 @@ NativeIMEContext PuppetWidget::GetNativeIMEContext() {
 
 nsresult PuppetWidget::NotifyIMEOfFocusChange(
     const IMENotification& aIMENotification) {
+  MOZ_ASSERT(IMEStateManager::CanSendNotificationToWidget());
+
   if (!mBrowserChild) {
     return NS_ERROR_FAILURE;
   }
 
   bool gotFocus = aIMENotification.mMessage == NOTIFY_IME_OF_FOCUS;
   if (gotFocus) {
-    if (mInputContext.mIMEState.mEnabled != IMEState::PLUGIN) {
-      // When IME gets focus, we should initalize all information of the
-      // content.
-      if (NS_WARN_IF(!mContentCache.CacheAll(this, &aIMENotification))) {
-        return NS_ERROR_FAILURE;
-      }
-    } else {
-      // However, if a plugin has focus, only the editor rect information is
-      // available.
-      if (NS_WARN_IF(!mContentCache.CacheEditorRect(this, &aIMENotification))) {
-        return NS_ERROR_FAILURE;
-      }
+    // When IME gets focus, we should initialize all information of the
+    // content.
+    if (NS_WARN_IF(!mContentCache.CacheAll(this, &aIMENotification))) {
+      return NS_ERROR_FAILURE;
     }
   } else {
     // When IME loses focus, we don't need to store anything.
@@ -789,12 +782,13 @@ nsresult PuppetWidget::NotifyIMEOfFocusChange(
 
 nsresult PuppetWidget::NotifyIMEOfCompositionUpdate(
     const IMENotification& aIMENotification) {
+  MOZ_ASSERT(IMEStateManager::CanSendNotificationToWidget());
+
   if (NS_WARN_IF(!mBrowserChild)) {
     return NS_ERROR_FAILURE;
   }
 
-  if (mInputContext.mIMEState.mEnabled != IMEState::PLUGIN &&
-      NS_WARN_IF(!mContentCache.CacheSelection(this, &aIMENotification))) {
+  if (NS_WARN_IF(!mContentCache.CacheSelection(this, &aIMENotification))) {
     return NS_ERROR_FAILURE;
   }
   mBrowserChild->SendNotifyIMECompositionUpdate(mContentCache,
@@ -804,14 +798,11 @@ nsresult PuppetWidget::NotifyIMEOfCompositionUpdate(
 
 nsresult PuppetWidget::NotifyIMEOfTextChange(
     const IMENotification& aIMENotification) {
+  MOZ_ASSERT(IMEStateManager::CanSendNotificationToWidget());
   MOZ_ASSERT(aIMENotification.mMessage == NOTIFY_IME_OF_TEXT_CHANGE,
              "Passed wrong notification");
-  if (!mBrowserChild) {
-    return NS_ERROR_FAILURE;
-  }
 
-  // While a plugin has focus, text change notification shouldn't be available.
-  if (NS_WARN_IF(mInputContext.mIMEState.mEnabled == IMEState::PLUGIN)) {
+  if (!mBrowserChild) {
     return NS_ERROR_FAILURE;
   }
 
@@ -835,15 +826,10 @@ nsresult PuppetWidget::NotifyIMEOfTextChange(
 
 nsresult PuppetWidget::NotifyIMEOfSelectionChange(
     const IMENotification& aIMENotification) {
+  MOZ_ASSERT(IMEStateManager::CanSendNotificationToWidget());
   MOZ_ASSERT(aIMENotification.mMessage == NOTIFY_IME_OF_SELECTION_CHANGE,
              "Passed wrong notification");
   if (!mBrowserChild) {
-    return NS_ERROR_FAILURE;
-  }
-
-  // While a plugin has focus, selection change notification shouldn't be
-  // available.
-  if (NS_WARN_IF(mInputContext.mIMEState.mEnabled == IMEState::PLUGIN)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -862,13 +848,8 @@ nsresult PuppetWidget::NotifyIMEOfSelectionChange(
 
 nsresult PuppetWidget::NotifyIMEOfMouseButtonEvent(
     const IMENotification& aIMENotification) {
+  MOZ_ASSERT(IMEStateManager::CanSendNotificationToWidget());
   if (!mBrowserChild) {
-    return NS_ERROR_FAILURE;
-  }
-
-  // While a plugin has focus, mouse button event notification shouldn't be
-  // available.
-  if (NS_WARN_IF(mInputContext.mIMEState.mEnabled == IMEState::PLUGIN)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -883,6 +864,7 @@ nsresult PuppetWidget::NotifyIMEOfMouseButtonEvent(
 
 nsresult PuppetWidget::NotifyIMEOfPositionChange(
     const IMENotification& aIMENotification) {
+  MOZ_ASSERT(IMEStateManager::CanSendNotificationToWidget());
   if (NS_WARN_IF(!mBrowserChild)) {
     return NS_ERROR_FAILURE;
   }
@@ -890,10 +872,7 @@ nsresult PuppetWidget::NotifyIMEOfPositionChange(
   if (NS_WARN_IF(!mContentCache.CacheEditorRect(this, &aIMENotification))) {
     return NS_ERROR_FAILURE;
   }
-  // While a plugin has focus, selection range isn't available.  So, we don't
-  // need to cache it at that time.
-  if (mInputContext.mIMEState.mEnabled != IMEState::PLUGIN &&
-      NS_WARN_IF(!mContentCache.CacheSelection(this, &aIMENotification))) {
+  if (NS_WARN_IF(!mContentCache.CacheSelection(this, &aIMENotification))) {
     return NS_ERROR_FAILURE;
   }
   if (mIMENotificationRequestsOfParent.WantPositionChanged()) {
@@ -909,21 +888,15 @@ struct CursorSurface {
   IntSize mSize;
 };
 
-void PuppetWidget::SetCursor(nsCursor aCursor, imgIContainer* aCursorImage,
-                             uint32_t aHotspotX, uint32_t aHotspotY) {
+void PuppetWidget::SetCursor(const Cursor& aCursor) {
   if (!mBrowserChild) {
     return;
   }
 
-  // Don't cache on windows, Windowless flash breaks this via async cursor
-  // updates.
-#if !defined(XP_WIN)
-  if (!mUpdateCursor && mCursor == aCursor && mCustomCursor == aCursorImage &&
-      (!aCursorImage ||
-       (mCursorHotspotX == aHotspotX && mCursorHotspotY == aHotspotY))) {
+  const bool force = mUpdateCursor;
+  if (!force && mCursor == aCursor) {
     return;
   }
-#endif
 
   bool hasCustomCursor = false;
   UniquePtr<char[]> customCursorData;
@@ -931,12 +904,28 @@ void PuppetWidget::SetCursor(nsCursor aCursor, imgIContainer* aCursorImage,
   IntSize customCursorSize;
   int32_t stride = 0;
   auto format = SurfaceFormat::B8G8R8A8;
-  bool force = mUpdateCursor;
-
-  if (aCursorImage) {
-    RefPtr<SourceSurface> surface = aCursorImage->GetFrame(
-        imgIContainer::FRAME_CURRENT,
-        imgIContainer::FLAG_SYNC_DECODE | imgIContainer::FLAG_ASYNC_NOTIFY);
+  ImageResolution resolution = aCursor.mResolution;
+  if (aCursor.IsCustom()) {
+    int32_t width = 0, height = 0;
+    aCursor.mContainer->GetWidth(&width);
+    aCursor.mContainer->GetHeight(&height);
+    const int32_t flags =
+        imgIContainer::FLAG_SYNC_DECODE | imgIContainer::FLAG_ASYNC_NOTIFY;
+    RefPtr<SourceSurface> surface;
+    if (width && height &&
+        aCursor.mContainer->GetType() == imgIContainer::TYPE_VECTOR) {
+      // For vector images, scale to device pixels.
+      resolution.ScaleBy(GetDefaultScale().scale);
+      resolution.ApplyInverseTo(width, height);
+      surface = aCursor.mContainer->GetFrameAtSize(
+          {width, height}, imgIContainer::FRAME_CURRENT, flags);
+    } else {
+      // NOTE(emilio): We get the frame at the full size, ignoring resolution,
+      // because we're going to rasterize it, and we'd effectively lose the
+      // extra pixels if we rasterized to CustomCursorSize.
+      surface =
+          aCursor.mContainer->GetFrame(imgIContainer::FRAME_CURRENT, flags);
+    }
     if (surface) {
       if (RefPtr<DataSourceSurface> dataSurface = surface->GetDataSurface()) {
         hasCustomCursor = true;
@@ -948,85 +937,16 @@ void PuppetWidget::SetCursor(nsCursor aCursor, imgIContainer* aCursorImage,
     }
   }
 
-  mCustomCursor = nullptr;
-
   nsDependentCString cursorData(customCursorData ? customCursorData.get() : "",
                                 length);
-  if (!mBrowserChild->SendSetCursor(aCursor, hasCustomCursor, cursorData,
-                                    customCursorSize.width,
-                                    customCursorSize.height, stride, format,
-                                    aHotspotX, aHotspotY, force)) {
+  if (!mBrowserChild->SendSetCursor(
+          aCursor.mDefaultCursor, hasCustomCursor, cursorData,
+          customCursorSize.width, customCursorSize.height, resolution.mX,
+          resolution.mY, stride, format, aCursor.mHotspotX, aCursor.mHotspotY,
+          force)) {
     return;
   }
-
   mCursor = aCursor;
-  mCustomCursor = aCursorImage;
-  mCursorHotspotX = aHotspotX;
-  mCursorHotspotY = aHotspotY;
-  mUpdateCursor = false;
-}
-
-void PuppetWidget::ClearCachedCursor() {
-  nsBaseWidget::ClearCachedCursor();
-  mCustomCursor = nullptr;
-}
-
-nsresult PuppetWidget::Paint() {
-  MOZ_ASSERT(!mDirtyRegion.IsEmpty(), "paint event logic messed up");
-
-  if (!GetCurrentWidgetListener()) return NS_OK;
-
-  LayoutDeviceIntRegion region = mDirtyRegion;
-
-  // reset repaint tracking
-  mDirtyRegion.SetEmpty();
-  mPaintTask.Revoke();
-
-  RefPtr<PuppetWidget> strongThis(this);
-
-  GetCurrentWidgetListener()->WillPaintWindow(this);
-
-  if (GetCurrentWidgetListener()) {
-#ifdef DEBUG
-    debug_DumpPaintEvent(stderr, this, region.ToUnknownRegion(), "PuppetWidget",
-                         0);
-#endif
-
-    if (mLayerManager->GetBackendType() ==
-            mozilla::layers::LayersBackend::LAYERS_CLIENT ||
-        mLayerManager->GetBackendType() ==
-            mozilla::layers::LayersBackend::LAYERS_WR ||
-        (mozilla::layers::LayersBackend::LAYERS_BASIC ==
-             mLayerManager->GetBackendType() &&
-         mBrowserChild && mBrowserChild->IsLayersConnected().isSome())) {
-      // Do nothing, the compositor will handle drawing
-      if (mBrowserChild) {
-        mBrowserChild->NotifyPainted();
-      }
-    } else if (mozilla::layers::LayersBackend::LAYERS_BASIC ==
-               mLayerManager->GetBackendType()) {
-      RefPtr<gfxContext> ctx = gfxContext::CreateOrNull(mDrawTarget);
-      if (!ctx) {
-        gfxDevCrash(LogReason::InvalidContext)
-            << "PuppetWidget context problem " << gfx::hexa(mDrawTarget);
-        return NS_ERROR_FAILURE;
-      }
-      ctx->Rectangle(gfxRect(0, 0, 0, 0));
-      ctx->Clip();
-      AutoLayerManagerSetup setupLayerManager(this, ctx,
-                                              BufferMode::BUFFER_NONE);
-      GetCurrentWidgetListener()->PaintWindow(this, region);
-      if (mBrowserChild) {
-        mBrowserChild->NotifyPainted();
-      }
-    }
-  }
-
-  if (GetCurrentWidgetListener()) {
-    GetCurrentWidgetListener()->DidPaintWindow();
-  }
-
-  return NS_OK;
 }
 
 void PuppetWidget::SetChild(PuppetWidget* aChild) {
@@ -1038,23 +958,38 @@ void PuppetWidget::SetChild(PuppetWidget* aChild) {
 }
 
 NS_IMETHODIMP
-PuppetWidget::PaintTask::Run() {
+PuppetWidget::WidgetPaintTask::Run() {
   if (mWidget) {
     mWidget->Paint();
   }
   return NS_OK;
 }
 
+void PuppetWidget::Paint() {
+  if (!GetCurrentWidgetListener()) return;
+
+  mWidgetPaintTask.Revoke();
+
+  RefPtr<PuppetWidget> strongThis(this);
+
+  GetCurrentWidgetListener()->WillPaintWindow(this);
+
+  if (GetCurrentWidgetListener()) {
+    GetCurrentWidgetListener()->DidPaintWindow();
+  }
+}
+
 void PuppetWidget::PaintNowIfNeeded() {
-  if (IsVisible() && mPaintTask.IsPending()) {
+  if (IsVisible() && mWidgetPaintTask.IsPending()) {
     Paint();
   }
 }
 
 void PuppetWidget::OnMemoryPressure(layers::MemoryPressureReason aWhy) {
   if (aWhy != MemoryPressureReason::LOW_MEMORY_ONGOING && !mVisible &&
-      mLayerManager && XRE_IsContentProcess()) {
-    mLayerManager->ClearCachedResources();
+      mWindowRenderer && mWindowRenderer->AsWebRender() &&
+      XRE_IsContentProcess()) {
+    mWindowRenderer->AsWebRender()->ClearCachedResources();
   }
 }
 
@@ -1076,52 +1011,6 @@ float PuppetWidget::GetDPI() { return mDPI; }
 double PuppetWidget::GetDefaultScaleInternal() { return mDefaultScale; }
 
 int32_t PuppetWidget::RoundsWidgetCoordinatesTo() { return mRounding; }
-
-void* PuppetWidget::GetNativeData(uint32_t aDataType) {
-  switch (aDataType) {
-    case NS_NATIVE_SHAREABLE_WINDOW: {
-      // NOTE: We can not have a tab child in some situations, such as when
-      // we're rendering to a fake widget for thumbnails.
-      if (!mBrowserChild) {
-        NS_WARNING("Need BrowserChild to get the nativeWindow from!");
-      }
-      mozilla::WindowsHandle nativeData = 0;
-      if (mBrowserChild) {
-        nativeData = mBrowserChild->WidgetNativeData();
-      }
-      return (void*)nativeData;
-    }
-    case NS_NATIVE_WINDOW:
-    case NS_NATIVE_WIDGET:
-    case NS_NATIVE_DISPLAY:
-      // These types are ignored (see bug 1183828, bug 1240891).
-      break;
-    case NS_RAW_NATIVE_IME_CONTEXT:
-      MOZ_CRASH("You need to call GetNativeIMEContext() instead");
-    case NS_NATIVE_PLUGIN_PORT:
-    case NS_NATIVE_GRAPHIC:
-    case NS_NATIVE_SHELLWIDGET:
-    default:
-      NS_WARNING("nsWindow::GetNativeData called with bad value");
-      break;
-  }
-  return nullptr;
-}
-
-#if defined(XP_WIN)
-void PuppetWidget::SetNativeData(uint32_t aDataType, uintptr_t aVal) {
-  switch (aDataType) {
-    case NS_NATIVE_CHILD_OF_SHAREABLE_WINDOW:
-      MOZ_ASSERT(mBrowserChild, "Need BrowserChild to send the message.");
-      if (mBrowserChild) {
-        mBrowserChild->SendSetNativeChildOfShareableWindow(aVal);
-      }
-      break;
-    default:
-      NS_WARNING("SetNativeData called with unsupported data type.");
-  }
-}
-#endif
 
 LayoutDeviceIntPoint PuppetWidget::GetChromeOffset() {
   if (!GetOwningBrowserChild()) {
@@ -1165,82 +1054,6 @@ void PuppetWidget::StartAsyncScrollbarDrag(
   mBrowserChild->StartScrollbarDrag(aDragMetrics);
 }
 
-PuppetScreen::PuppetScreen(void* nativeScreen) {}
-
-PuppetScreen::~PuppetScreen() = default;
-
-static ScreenConfiguration ScreenConfig() {
-  ScreenConfiguration config;
-  hal::GetCurrentScreenConfiguration(&config);
-  return config;
-}
-
-nsIntSize PuppetWidget::GetScreenDimensions() {
-  nsIntRect r = ScreenConfig().rect();
-  return nsIntSize(r.Width(), r.Height());
-}
-
-NS_IMETHODIMP
-PuppetScreen::GetRect(int32_t* outLeft, int32_t* outTop, int32_t* outWidth,
-                      int32_t* outHeight) {
-  nsIntRect r = ScreenConfig().rect();
-  r.GetRect(outLeft, outTop, outWidth, outHeight);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-PuppetScreen::GetAvailRect(int32_t* outLeft, int32_t* outTop, int32_t* outWidth,
-                           int32_t* outHeight) {
-  return GetRect(outLeft, outTop, outWidth, outHeight);
-}
-
-NS_IMETHODIMP
-PuppetScreen::GetPixelDepth(int32_t* aPixelDepth) {
-  *aPixelDepth = ScreenConfig().pixelDepth();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-PuppetScreen::GetColorDepth(int32_t* aColorDepth) {
-  *aColorDepth = ScreenConfig().colorDepth();
-  return NS_OK;
-}
-
-NS_IMPL_ISUPPORTS(PuppetScreenManager, nsIScreenManager)
-
-PuppetScreenManager::PuppetScreenManager() {
-  mOneScreen = new PuppetScreen(nullptr);
-}
-
-PuppetScreenManager::~PuppetScreenManager() = default;
-
-NS_IMETHODIMP
-PuppetScreenManager::GetPrimaryScreen(nsIScreen** outScreen) {
-  NS_IF_ADDREF(*outScreen = mOneScreen.get());
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-PuppetScreenManager::GetTotalScreenPixels(int64_t* aTotalScreenPixels) {
-  MOZ_ASSERT(aTotalScreenPixels);
-  if (mOneScreen) {
-    int32_t x, y, width, height;
-    x = y = width = height = 0;
-    mOneScreen->GetRect(&x, &y, &width, &height);
-    *aTotalScreenPixels = width * height;
-  } else {
-    *aTotalScreenPixels = 0;
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-PuppetScreenManager::ScreenForRect(int32_t inLeft, int32_t inTop,
-                                   int32_t inWidth, int32_t inHeight,
-                                   nsIScreen** outScreen) {
-  return GetPrimaryScreen(outScreen);
-}
-
 ScreenIntMargin PuppetWidget::GetSafeAreaInsets() const {
   return mSafeAreaInsets;
 }
@@ -1260,32 +1073,6 @@ nsIWidgetListener* PuppetWidget::GetCurrentWidgetListener() {
   }
 
   return mAttachedWidgetListener;
-}
-
-void PuppetWidget::SetCandidateWindowForPlugin(
-    const CandidateWindowPosition& aPosition) {
-  if (!mBrowserChild) {
-    return;
-  }
-
-  mBrowserChild->SendSetCandidateWindowForPlugin(aPosition);
-}
-
-void PuppetWidget::EnableIMEForPlugin(bool aEnable) {
-  if (!mBrowserChild) {
-    return;
-  }
-
-  // If current IME state isn't plugin, we ignore this call.
-  if (NS_WARN_IF(HaveValidInputContextCache() &&
-                 mInputContext.mIMEState.mEnabled != IMEState::UNKNOWN &&
-                 mInputContext.mIMEState.mEnabled != IMEState::PLUGIN)) {
-    return;
-  }
-
-  // We don't have valid state in cache or state is plugin, so delegate to
-  // chrome process.
-  mBrowserChild->SendEnableIMEForPlugin(aEnable);
 }
 
 void PuppetWidget::ZoomToRect(const uint32_t& aPresShellId,
@@ -1326,31 +1113,6 @@ bool PuppetWidget::HasPendingInputEvent() {
       });
 
   return ret;
-}
-
-void PuppetWidget::HandledWindowedPluginKeyEvent(
-    const NativeEventData& aKeyEventData, bool aIsConsumed) {
-  if (NS_WARN_IF(mKeyEventInPluginCallbacks.IsEmpty())) {
-    return;
-  }
-  nsCOMPtr<nsIKeyEventInPluginCallback> callback =
-      mKeyEventInPluginCallbacks[0];
-  MOZ_ASSERT(callback);
-  mKeyEventInPluginCallbacks.RemoveElementAt(0);
-  callback->HandledWindowedPluginKeyEvent(aKeyEventData, aIsConsumed);
-}
-
-nsresult PuppetWidget::OnWindowedPluginKeyEvent(
-    const NativeEventData& aKeyEventData,
-    nsIKeyEventInPluginCallback* aCallback) {
-  if (NS_WARN_IF(!mBrowserChild)) {
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-  if (NS_WARN_IF(!mBrowserChild->SendOnWindowedPluginKeyEvent(aKeyEventData))) {
-    return NS_ERROR_FAILURE;
-  }
-  mKeyEventInPluginCallbacks.AppendElement(aCallback);
-  return NS_SUCCESS_EVENT_HANDLED_ASYNCHRONOUSLY;
 }
 
 // TextEventDispatcherListener
@@ -1395,14 +1157,6 @@ PuppetWidget::NotifyIME(TextEventDispatcher* aTextEventDispatcher,
 
 NS_IMETHODIMP_(IMENotificationRequests)
 PuppetWidget::GetIMENotificationRequests() {
-  if (mInputContext.mIMEState.mEnabled == IMEState::PLUGIN) {
-    // If a plugin has focus, we cannot receive text nor selection change
-    // in the plugin.  Therefore, PuppetWidget needs to receive only position
-    // change event for updating the editor rect cache.
-    return IMENotificationRequests(
-        mIMENotificationRequestsOfParent.mWantUpdates |
-        IMENotificationRequests::NOTIFY_POSITION_CHANGE);
-  }
   return IMENotificationRequests(
       mIMENotificationRequestsOfParent.mWantUpdates |
       IMENotificationRequests::NOTIFY_TEXT_CHANGE |

@@ -15,9 +15,9 @@
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_mousewheel.h"
 #include "mozilla/StaticPrefs_test.h"
-#include "mozilla/Telemetry.h"                // for Telemetry
+#include "mozilla/Telemetry.h"  // for Telemetry
+#include "mozilla/ToString.h"
 #include "mozilla/layers/IAPZCTreeManager.h"  // for AllowedTouchBehavior
-#include "LayersLogging.h"                    // for Stringify
 #include "OverscrollHandoffState.h"
 #include "QueuedInput.h"
 
@@ -33,15 +33,19 @@ InputBlockState::InputBlockState(
     const RefPtr<AsyncPanZoomController>& aTargetApzc,
     TargetConfirmationFlags aFlags)
     : mTargetApzc(aTargetApzc),
-      mTargetConfirmed(aFlags.mTargetConfirmed
-                           ? TargetConfirmationState::eConfirmed
-                           : TargetConfirmationState::eUnconfirmed),
       mRequiresTargetConfirmation(aFlags.mRequiresTargetConfirmation),
       mBlockId(sBlockCounter++),
       mTransformToApzc(aTargetApzc->GetTransformToThis()) {
   // We should never be constructed with a nullptr target.
   MOZ_ASSERT(mTargetApzc);
   mOverscrollHandoffChain = mTargetApzc->BuildOverscrollHandoffChain();
+  // If a new block starts on a scrollthumb and we have APZ scrollbar
+  // dragging enabled, defer confirmation until we get the drag metrics
+  // for the thumb.
+  bool startingDrag = StaticPrefs::apz_drag_enabled() && aFlags.mHitScrollThumb;
+  mTargetConfirmed = aFlags.mTargetConfirmed && !startingDrag
+                         ? TargetConfirmationState::eConfirmed
+                         : TargetConfirmationState::eUnconfirmed;
 }
 
 bool InputBlockState::SetConfirmedTargetApzc(
@@ -195,11 +199,6 @@ bool CancelableBlockState::SetContentResponse(bool aPreventDefault) {
   return true;
 }
 
-void CancelableBlockState::StartContentResponseTimer() {
-  MOZ_ASSERT(mContentResponseTimer.IsNull());
-  mContentResponseTimer = TimeStamp::Now();
-}
-
 bool CancelableBlockState::TimeoutContentResponse() {
   if (mContentResponseTimerExpired) {
     return false;
@@ -235,25 +234,6 @@ bool CancelableBlockState::IsReadyForHandling() const {
 
 bool CancelableBlockState::ShouldDropEvents() const {
   return InputBlockState::ShouldDropEvents() || IsDefaultPrevented();
-}
-
-void CancelableBlockState::RecordContentResponseTime() {
-  if (!mContentResponseTimer) {
-    // We might get responses from content even though we didn't wait for them.
-    // In that case, ignore the time on them, because they're not relevant for
-    // tuning our timeout value. Also this function might get called multiple
-    // times on the same input block, so we should only record the time from the
-    // first successful call.
-    return;
-  }
-  if (!HasReceivedAllContentNotifications()) {
-    // Not done yet, we'll get called again
-    return;
-  }
-  mozilla::Telemetry::Accumulate(
-      mozilla::Telemetry::CONTENT_RESPONSE_DURATION,
-      (uint32_t)(TimeStamp::Now() - mContentResponseTimer).ToMilliseconds());
-  mContentResponseTimer = TimeStamp();
 }
 
 DragBlockState::DragBlockState(
@@ -305,15 +285,18 @@ WheelBlockState::WheelBlockState(
         mOverscrollHandoffChain->FindFirstScrollable(aInitialEvent,
                                                      &mAllowedScrollDirections);
 
-    // If nothing is scrollable, we don't consider this block as starting a
-    // transaction.
-    if (!apzc) {
+    if (apzc) {
+      if (apzc != GetTargetApzc()) {
+        UpdateTargetApzc(apzc);
+      }
+    } else if (!mOverscrollHandoffChain->CanBePanned(
+                   mOverscrollHandoffChain->GetApzcAtIndex(0))) {
+      // If there's absolutely nothing scrollable start a transaction and mark
+      // this as such to we know to store our EventTime.
+      mIsScrollable = false;
+    } else {
+      // Scrollable, but not in this direction.
       EndTransaction();
-      return;
-    }
-
-    if (apzc != GetTargetApzc()) {
-      UpdateTargetApzc(apzc);
     }
   }
 }
@@ -369,7 +352,7 @@ void WheelBlockState::Update(ScrollWheelInput& aEvent) {
   // We skip this check if the target is not yet confirmed, so that when it is
   // confirmed, we don't timeout the transaction.
   RefPtr<AsyncPanZoomController> apzc = GetTargetApzc();
-  if (IsTargetConfirmed() && !apzc->CanScroll(aEvent)) {
+  if (mIsScrollable && IsTargetConfirmed() && !apzc->CanScroll(aEvent)) {
     return;
   }
 
@@ -442,10 +425,16 @@ bool WheelBlockState::MaybeTimeout(const TimeStamp& aTimeStamp) {
   return true;
 }
 
-void WheelBlockState::OnMouseMove(const ScreenIntPoint& aPoint) {
+void WheelBlockState::OnMouseMove(
+    const ScreenIntPoint& aPoint,
+    const Maybe<ScrollableLayerGuid>& aTargetGuid) {
   MOZ_ASSERT(InTransaction());
 
-  if (!GetTargetApzc()->Contains(aPoint)) {
+  if (!GetTargetApzc()->Contains(aPoint) ||
+      // If the mouse moved over to a different APZC, `mIsScrollable`
+      // may no longer be false and needs to be recomputed.
+      (!mIsScrollable && aTargetGuid.isSome() &&
+       aTargetGuid.value() != GetTargetApzc()->GetGuid())) {
     EndTransaction();
     return;
   }
@@ -627,7 +616,8 @@ TouchBlockState::TouchBlockState(
       mDuringFastFling(false),
       mSingleTapOccurred(false),
       mInSlop(false),
-      mTouchCounter(aCounter) {
+      mTouchCounter(aCounter),
+      mStartTime(GetTargetApzc()->GetFrameTime().Time()) {
   TBS_LOG("Creating %p\n", this);
   if (!StaticPrefs::layout_css_touch_action_enabled()) {
     mAllowedTouchBehaviorSet = true;
@@ -713,6 +703,10 @@ bool TouchBlockState::MustStayActive() { return true; }
 
 const char* TouchBlockState::Type() { return "touch"; }
 
+TimeDuration TouchBlockState::GetTimeSinceBlockStart() const {
+  return GetTargetApzc()->GetFrameTime().Time() - mStartTime;
+}
+
 void TouchBlockState::DispatchEvent(const InputData& aEvent) const {
   MOZ_ASSERT(aEvent.mInputType == MULTITOUCH_INPUT);
   mTouchCounter.Update(aEvent.AsMultiTouchInput());
@@ -790,7 +784,7 @@ bool TouchBlockState::UpdateSlopState(const MultiTouchInput& aInput,
     if (mInSlop) {
       mSlopOrigin = aInput.mTouches[0].mScreenPoint;
       TBS_LOG("%p entering slop with origin %s\n", this,
-              Stringify(mSlopOrigin).c_str());
+              ToString(mSlopOrigin).c_str());
     }
     return false;
   }
@@ -815,6 +809,8 @@ bool TouchBlockState::UpdateSlopState(const MultiTouchInput& aInput,
   }
   return mInSlop;
 }
+
+bool TouchBlockState::IsInSlop() const { return mInSlop; }
 
 Maybe<ScrollDirection> TouchBlockState::GetBestGuessPanDirection(
     const MultiTouchInput& aInput) {

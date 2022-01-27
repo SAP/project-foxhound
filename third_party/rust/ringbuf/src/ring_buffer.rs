@@ -1,15 +1,13 @@
-use std::{
+use crate::{consumer::Consumer, producer::Producer};
+use alloc::{sync::Arc, vec::Vec};
+use cache_padded::CachePadded;
+use core::{
     cell::UnsafeCell,
     cmp::min,
-    mem::{self, MaybeUninit},
+    mem::MaybeUninit,
     ptr::{self, copy},
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicUsize, Ordering},
 };
-
-use crate::{consumer::Consumer, producer::Producer};
 
 pub(crate) struct SharedVec<T: Sized> {
     cell: UnsafeCell<Vec<T>>,
@@ -35,8 +33,8 @@ impl<T: Sized> SharedVec<T> {
 /// Ring buffer itself.
 pub struct RingBuffer<T: Sized> {
     pub(crate) data: SharedVec<MaybeUninit<T>>,
-    pub(crate) head: AtomicUsize,
-    pub(crate) tail: AtomicUsize,
+    pub(crate) head: CachePadded<AtomicUsize>,
+    pub(crate) tail: CachePadded<AtomicUsize>,
 }
 
 impl<T: Sized> RingBuffer<T> {
@@ -46,8 +44,8 @@ impl<T: Sized> RingBuffer<T> {
         data.resize_with(capacity + 1, MaybeUninit::uninit);
         Self {
             data: SharedVec::new(data),
-            head: AtomicUsize::new(0),
-            tail: AtomicUsize::new(0),
+            head: CachePadded::new(AtomicUsize::new(0)),
+            tail: CachePadded::new(AtomicUsize::new(0)),
         }
     }
 
@@ -104,7 +102,7 @@ impl<T: Sized> Drop for RingBuffer<T> {
         };
 
         let drop = |elem_ref: &mut MaybeUninit<T>| unsafe {
-            mem::replace(elem_ref, MaybeUninit::uninit()).assume_init();
+            elem_ref.as_ptr().read();
         };
         for elem in data[slices.0].iter_mut() {
             drop(elem);

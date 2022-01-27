@@ -1,3 +1,4 @@
+
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * vim: set ts=8 sts=2 et sw=2 tw=80:
  * This Source Code Form is subject to the terms of the Mozilla Public
@@ -11,16 +12,30 @@
 #ifndef gc_AllocKind_h
 #define gc_AllocKind_h
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/EnumeratedRange.h"
 
+#include <iterator>
 #include <stdint.h>
 
 #include "js/TraceKind.h"
 #include "js/Utility.h"
 
+class JSDependentString;
+class JSExternalString;
+class JSFatInlineString;
+class JSLinearString;
+class JSRope;
+class JSThinInlineString;
+
 namespace js {
+
+class CompactPropMap;
+class FatInlineAtom;
+class NormalAtom;
+class NormalPropMap;
+class DictionaryPropMap;
+
 namespace gc {
 
 // The GC allocation kinds.
@@ -39,8 +54,8 @@ namespace gc {
 // clang-format off
 #define FOR_EACH_OBJECT_ALLOCKIND(D) \
  /* AllocKind              TraceKind     TypeName           SizedType          BGFinal Nursery Compact */ \
-    D(FUNCTION,            Object,       JSObject,          JSFunction,        true,   true,   true) \
-    D(FUNCTION_EXTENDED,   Object,       JSObject,          FunctionExtended,  true,   true,   true) \
+    D(FUNCTION,            Object,       JSObject,          JSObject_Slots4,   true,   true,   true) \
+    D(FUNCTION_EXTENDED,   Object,       JSObject,          JSObject_Slots6,   true,   true,   true) \
     D(OBJECT0,             Object,       JSObject,          JSObject_Slots0,   false,  false,  true) \
     D(OBJECT0_BACKGROUND,  Object,       JSObject,          JSObject_Slots0,   true,   true,   true) \
     D(OBJECT2,             Object,       JSObject,          JSObject_Slots2,   false,  false,  true) \
@@ -59,19 +74,21 @@ namespace gc {
     D(OBJECT16_BACKGROUND, Object,       JSObject,          JSObject_Slots16,  true,   true,   true)
 
 #define FOR_EACH_NONOBJECT_NONNURSERY_ALLOCKIND(D) \
- /* AllocKind              TraceKind     TypeName           SizedType          BGFinal Nursery Compact */ \
-    D(SCRIPT,              Script,       js::BaseScript,    js::BaseScript,    false,  false,  true) \
-    D(SHAPE,               Shape,        js::Shape,         js::Shape,         true,   false,  true) \
-    D(ACCESSOR_SHAPE,      Shape,        js::AccessorShape, js::AccessorShape, true,   false,  true) \
-    D(BASE_SHAPE,          BaseShape,    js::BaseShape,     js::BaseShape,     true,   false,  true) \
-    D(OBJECT_GROUP,        ObjectGroup,  js::ObjectGroup,   js::ObjectGroup,   true,   false,  false) \
-    D(EXTERNAL_STRING,     String,       JSExternalString,  JSExternalString,  true,   false,  true) \
-    D(FAT_INLINE_ATOM,     String,       js::FatInlineAtom, js::FatInlineAtom, true,   false,  false) \
-    D(ATOM,                String,       js::NormalAtom,    js::NormalAtom,    true,   false,  false) \
-    D(SYMBOL,              Symbol,       JS::Symbol,        JS::Symbol,        true,   false,  false) \
-    D(JITCODE,             JitCode,      js::jit::JitCode,  js::jit::JitCode,  false,  false,  false) \
-    D(SCOPE,               Scope,        js::Scope,         js::Scope,         true,   false,  true) \
-    D(REGEXP_SHARED,       RegExpShared, js::RegExpShared,  js::RegExpShared,  true,   false,  true)
+ /* AllocKind              TraceKind     TypeName               SizedType              BGFinal Nursery Compact */ \
+    D(SCRIPT,              Script,       js::BaseScript,        js::BaseScript,        false,  false,  true) \
+    D(SHAPE,               Shape,        js::Shape,             js::Shape,             true,   false,  true) \
+    D(BASE_SHAPE,          BaseShape,    js::BaseShape,         js::BaseShape,         true,   false,  true) \
+    D(GETTER_SETTER,       GetterSetter, js::GetterSetter,      js::GetterSetter,      true,   false,  true) \
+    D(COMPACT_PROP_MAP,    PropMap,      js::CompactPropMap,    js::CompactPropMap,    true,   false,  true) \
+    D(NORMAL_PROP_MAP,     PropMap,      js::NormalPropMap,     js::NormalPropMap,     true,   false,  true) \
+    D(DICT_PROP_MAP,       PropMap,      js::DictionaryPropMap, js::DictionaryPropMap, true,   false,  true) \
+    D(EXTERNAL_STRING,     String,       JSExternalString,      JSExternalString,      true,   false,  true) \
+    D(FAT_INLINE_ATOM,     String,       js::FatInlineAtom,     js::FatInlineAtom,     true,   false,  false) \
+    D(ATOM,                String,       js::NormalAtom,        js::NormalAtom,        true,   false,  false) \
+    D(SYMBOL,              Symbol,       JS::Symbol,            JS::Symbol,            true,   false,  false) \
+    D(JITCODE,             JitCode,      js::jit::JitCode,      js::jit::JitCode,      false,  false,  false) \
+    D(SCOPE,               Scope,        js::Scope,             js::Scope,             true,   false,  true) \
+    D(REGEXP_SHARED,       RegExpShared, js::RegExpShared,      js::RegExpShared,      true,   false,  true)
 
 #define FOR_EACH_NONOBJECT_NURSERY_ALLOCKIND(D) \
  /* AllocKind              TraceKind     TypeName           SizedType          BGFinal Nursery Compact */ \
@@ -117,6 +134,13 @@ static_assert(int(AllocKind::OBJECT_FIRST) == 0,
 
 constexpr size_t AllocKindCount = size_t(AllocKind::LIMIT);
 
+/*
+ * This flag allows an allocation site to request a specific heap based upon the
+ * estimated lifetime or lifetime requirements of objects allocated from that
+ * site.
+ */
+enum InitialHeap : uint8_t { DefaultHeap, TenuredHeap };
+
 inline bool IsAllocKind(AllocKind kind) {
   return kind >= AllocKind::FIRST && kind <= AllocKind::LIMIT;
 }
@@ -132,7 +156,7 @@ inline bool IsObjectAllocKind(AllocKind kind) {
 }
 
 inline bool IsShapeAllocKind(AllocKind kind) {
-  return kind == AllocKind::SHAPE || kind == AllocKind::ACCESSOR_SHAPE;
+  return kind == AllocKind::SHAPE;
 }
 
 // Returns a sequence for use in a range-based for loop,
@@ -169,6 +193,43 @@ template <typename ValueType>
 using ObjectAllocKindArray =
     mozilla::EnumeratedArray<AllocKind, AllocKind::OBJECT_LIMIT, ValueType>;
 
+/*
+ * Map from C++ type to alloc kind for non-object types. JSObject does not have
+ * a 1:1 mapping, so must use Arena::thingSize.
+ *
+ * The AllocKind is available as MapTypeToAllocKind<SomeType>::kind.
+ *
+ * There are specializations for strings since more than one derived string type
+ * shares the same alloc kind.
+ */
+template <typename T>
+struct MapTypeToAllocKind {};
+#define EXPAND_MAPTYPETOALLOCKIND(allocKind, traceKind, type, sizedType, \
+                                  bgFinal, nursery, compact)             \
+  template <>                                                            \
+  struct MapTypeToAllocKind<type> {                                      \
+    static const AllocKind kind = AllocKind::allocKind;                  \
+  };
+FOR_EACH_NONOBJECT_ALLOCKIND(EXPAND_MAPTYPETOALLOCKIND)
+#undef EXPAND_MAPTYPETOALLOCKIND
+
+template <>
+struct MapTypeToAllocKind<JSDependentString> {
+  static const AllocKind kind = AllocKind::STRING;
+};
+template <>
+struct MapTypeToAllocKind<JSRope> {
+  static const AllocKind kind = AllocKind::STRING;
+};
+template <>
+struct MapTypeToAllocKind<JSLinearString> {
+  static const AllocKind kind = AllocKind::STRING;
+};
+template <>
+struct MapTypeToAllocKind<JSThinInlineString> {
+  static const AllocKind kind = AllocKind::STRING;
+};
+
 static inline JS::TraceKind MapAllocToTraceKind(AllocKind kind) {
   static const JS::TraceKind map[] = {
 #define EXPAND_ELEMENT(allocKind, traceKind, type, sizedType, bgFinal, \
@@ -178,7 +239,7 @@ static inline JS::TraceKind MapAllocToTraceKind(AllocKind kind) {
 #undef EXPAND_ELEMENT
   };
 
-  static_assert(mozilla::ArrayLength(map) == AllocKindCount,
+  static_assert(std::size(map) == AllocKindCount,
                 "AllocKind-to-TraceKind mapping must be in sync");
   return map[size_t(kind)];
 }
@@ -192,7 +253,7 @@ static inline bool IsNurseryAllocable(AllocKind kind) {
 #undef DEFINE_NURSERY_ALLOCABLE
   };
 
-  static_assert(mozilla::ArrayLength(map) == AllocKindCount,
+  static_assert(std::size(map) == AllocKindCount,
                 "IsNurseryAllocable sanity check");
   return map[size_t(kind)];
 }
@@ -206,7 +267,7 @@ static inline bool IsBackgroundFinalized(AllocKind kind) {
 #undef DEFINE_BACKGROUND_FINALIZED
   };
 
-  static_assert(mozilla::ArrayLength(map) == AllocKindCount,
+  static_assert(std::size(map) == AllocKindCount,
                 "IsBackgroundFinalized sanity check");
   return map[size_t(kind)];
 }
@@ -224,7 +285,7 @@ static inline bool IsCompactingKind(AllocKind kind) {
 #undef DEFINE_COMPACTING_KIND
   };
 
-  static_assert(mozilla::ArrayLength(map) == AllocKindCount,
+  static_assert(std::size(map) == AllocKindCount,
                 "IsCompactingKind sanity check");
   return map[size_t(kind)];
 }

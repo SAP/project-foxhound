@@ -28,6 +28,10 @@
 
 "use strict";
 
+// Time after which insecure downloads that have not been dealt with on shutdown
+// get removed (5 minutes).
+const MAX_INSECURE_DOWNLOAD_AGE_MS = 5 * 60 * 1000;
+
 var EXPORTED_SYMBOLS = ["DownloadStore"];
 
 const { XPCOMUtils } = ChromeUtils.import(
@@ -39,7 +43,6 @@ ChromeUtils.defineModuleGetter(
   "Downloads",
   "resource://gre/modules/Downloads.jsm"
 );
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "gTextDecoder", function() {
   return new TextDecoder();
@@ -91,21 +94,39 @@ DownloadStore.prototype = {
     return (async () => {
       let bytes;
       try {
-        bytes = await OS.File.read(this.path);
+        bytes = await IOUtils.read(this.path);
       } catch (ex) {
-        if (!(ex instanceof OS.File.Error) || !ex.becauseNoSuchFile) {
+        if (!(ex.name == "NotFoundError")) {
           throw ex;
         }
         // If the file does not exist, there are no downloads to load.
         return;
       }
 
+      // Set this to true when we make changes to the download list that should
+      // be reflected in the file again.
+      let storeChanges = false;
+      let removePromises = [];
       let storeData = JSON.parse(gTextDecoder.decode(bytes));
 
       // Create live downloads based on the static snapshot.
       for (let downloadData of storeData.list) {
         try {
           let download = await Downloads.createDownload(downloadData);
+
+          // Insecure downloads that have not been dealt with on shutdown should
+          // get cleaned up and removed from the download list on restart unless
+          // they are very new
+          if (
+            download.error?.becauseBlockedByReputationCheck &&
+            download.error.reputationCheckVerdict == "Insecure" &&
+            Date.now() - download.startTime > MAX_INSECURE_DOWNLOAD_AGE_MS
+          ) {
+            removePromises.push(download.removePartialData());
+            storeChanges = true;
+            continue;
+          }
+
           try {
             if (!download.succeeded && !download.canceled && !download.error) {
               // Try to restart the download if it was in progress during the
@@ -124,6 +145,15 @@ DownloadStore.prototype = {
           }
         } catch (ex) {
           // If an item is unrecognized, don't prevent others from being loaded.
+          Cu.reportError(ex);
+        }
+      }
+
+      if (storeChanges) {
+        try {
+          await Promise.all(removePromises);
+          await this.save();
+        } catch (ex) {
           Cu.reportError(ex);
         }
       }
@@ -169,18 +199,15 @@ DownloadStore.prototype = {
       if (atLeastOneDownload) {
         // Create or overwrite the file if there are downloads to save.
         let bytes = gTextEncoder.encode(JSON.stringify(storeData));
-        await OS.File.writeAtomic(this.path, bytes, {
+        await IOUtils.write(this.path, bytes, {
           tmpPath: this.path + ".tmp",
         });
       } else {
         // Remove the file if there are no downloads to save at all.
         try {
-          await OS.File.remove(this.path);
+          await IOUtils.remove(this.path);
         } catch (ex) {
-          if (
-            !(ex instanceof OS.File.Error) ||
-            !(ex.becauseNoSuchFile || ex.becauseAccessDenied)
-          ) {
+          if (!(ex.name == "NotFoundError" || ex.name == "NotAllowedError")) {
             throw ex;
           }
           // On Windows, we may get an access denied error instead of a no such

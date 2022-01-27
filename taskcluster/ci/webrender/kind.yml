@@ -2,15 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-loader: taskgraph.loader.transform:loader
+loader: gecko_taskgraph.loader.transform:loader
 
 kind-dependencies:
     - toolchain
     - build
 
 transforms:
-    - taskgraph.transforms.job:transforms
-    - taskgraph.transforms.task:transforms
+    - gecko_taskgraph.transforms.job:transforms
+    - gecko_taskgraph.transforms.task:transforms
 
 job-defaults:
     attributes:
@@ -45,7 +45,7 @@ jobs:
             files-changed:
                 - 'gfx/wr/**'
 
-    linux-release:
+    linux64-release:
         description: Runs release-mode WebRender CI tests on a Linux worker
         worker-type: b-linux
         worker:
@@ -57,7 +57,7 @@ jobs:
         run:
             using: run-task
             command: >-
-                export PATH=$PATH:$MOZ_FETCHES_DIR/rustc/bin &&
+                export PATH=$PATH:$MOZ_FETCHES_DIR/rustc/bin:${MOZ_FETCHES_DIR}/wrench-deps/meson &&
                 cd $HOME/checkouts/gecko/gfx/wr &&
                 mv $MOZ_FETCHES_DIR/wrench-deps/{vendor,.cargo} ./ &&
                 CARGOFLAGS="--verbose --frozen" ci-scripts/linux-release-tests.sh
@@ -69,7 +69,7 @@ jobs:
             files-changed:
                 - 'gfx/wr/**'
 
-    linux-debug:
+    linux64-debug:
         description: Runs debug-mode WebRender CI tests on a Linux worker
         worker-type: b-linux
         worker:
@@ -81,7 +81,7 @@ jobs:
         run:
             using: run-task
             command: >-
-                export PATH=$PATH:$MOZ_FETCHES_DIR/rustc/bin &&
+                export PATH=$PATH:$MOZ_FETCHES_DIR/rustc/bin:${MOZ_FETCHES_DIR}/wrench-deps/meson &&
                 cd $HOME/checkouts/gecko/gfx/wr &&
                 mv $MOZ_FETCHES_DIR/wrench-deps/{vendor,.cargo} ./ &&
                 CARGOFLAGS="--verbose --frozen" ci-scripts/linux-debug-tests.sh
@@ -98,8 +98,6 @@ jobs:
         worker-type: b-linux
         worker:
             docker-image: {in-tree: webrender}
-            env:
-                TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/macosx64/cross-releng.manifest"
             chain-of-trust: true
             artifacts:
                 - type: file
@@ -108,16 +106,20 @@ jobs:
                 - type: file
                   name: public/build/wrench-macos-headless.tar.bz2
                   path: /builds/worker/artifacts/wrench-macos-headless.tar.bz2
+        dependencies:
+            macosx64-clang-13: toolchain-macosx64-clang-13
         fetches:
             toolchain:
                 - linux64-rust-macos
                 - linux64-cctools-port
-                - linux64-clang
-                - linux64-llvm-dsymutil
+                - linux64-clang-13-macosx-cross
+                - macosx64-sdk-10.12
                 - wrench-deps
+            macosx64-clang-13:
+                - artifact: clang.tar.zst
+                  dest: clang-mac
         run:
             using: run-task
-            tooltool-downloads: internal
             command: '$HOME/checkouts/gecko/taskcluster/scripts/misc/wrench-macos-build.sh'
         treeherder:
             platform: osx-cross/opt
@@ -125,7 +127,6 @@ jobs:
         when:
             files-changed:
                 - 'gfx/wr/**'
-                - 'taskcluster/scripts/misc/tooltool-download.sh'
                 - 'taskcluster/scripts/misc/wr-macos-cross-build-setup.sh'
                 - 'taskcluster/scripts/misc/wrench-macos-build.sh'
 
@@ -162,8 +163,6 @@ jobs:
         worker-type: b-linux
         worker:
             docker-image: {in-tree: webrender}
-            env:
-                TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/macosx64/cross-releng.manifest"
             chain-of-trust: true
             artifacts:
                 - type: file
@@ -174,11 +173,10 @@ jobs:
                 - linux64-rust-macos
                 - linux64-cctools-port
                 - linux64-clang
-                - linux64-llvm-dsymutil
+                - macosx64-sdk-10.12
                 - wrench-deps
         run:
             using: run-task
-            tooltool-downloads: internal
             command: '$HOME/checkouts/gecko/taskcluster/scripts/misc/wr-cargotest-macos-build.sh'
         treeherder:
             platform: osx-cross/debug
@@ -186,7 +184,6 @@ jobs:
         when:
             files-changed:
                 - 'gfx/wr/**'
-                - 'taskcluster/scripts/misc/tooltool-download.sh'
                 - 'taskcluster/scripts/misc/wr-cargotest-macos-build.sh'
                 - 'taskcluster/scripts/misc/wr-macos-cross-build-setup.sh'
 
@@ -208,7 +205,7 @@ jobs:
             command: >-
                 mv cargo-test-binaries target &&
                 cd target &&
-                for i in debug/*; do $i; done
+                for i in debug/deps/*; do $i; done
         treeherder:
             platform: macosx1014-64-qr/debug
             symbol: WR(cargotest)
@@ -222,7 +219,8 @@ jobs:
         worker:
             max-run-time: 5400
             env:
-                TOOLTOOL_MANIFEST: 'browser/config/tooltool-manifests/win64/vs2017.manifest'
+                TOOLTOOL_MANIFEST: 'browser/config/tooltool-manifests/vs2017-15.9.manifest'
+                NODE_OPTIONS: '--max_old_space_size=4096'
         fetches:
             toolchain:
                 - win64-rust
@@ -272,6 +270,9 @@ jobs:
                 - android-gradle-dependencies
                 - android-ndk-linux
                 - android-sdk-linux
+                - android-system-image-x86_64-linux
+                - android-avd-x86_64-linux
+                - linux64-jdk
                 - linux64-rust-android
                 - wrench-deps
         treeherder:
@@ -312,6 +313,9 @@ jobs:
                 - android-gradle-dependencies
                 - android-ndk-linux
                 - android-sdk-linux
+                - android-system-image-x86_64-linux
+                - android-avd-x86_64-linux
+                - linux64-jdk
                 - linux64-rust-android
                 - wrench-deps
         treeherder:
@@ -348,6 +352,9 @@ jobs:
                 - 'wrench-debug.apk'
             toolchain:
                 - android-sdk-linux
+                - android-system-image-x86_64-linux
+                - android-avd-x86_64-linux
+                - linux64-jdk
         run:
             using: run-task
             tooltool-downloads: internal
@@ -390,6 +397,9 @@ jobs:
                 - 'wrench-release.apk'
             toolchain:
                 - android-sdk-linux
+                - android-system-image-x86_64-linux
+                - android-avd-x86_64-linux
+                - linux64-jdk
         run:
             using: run-task
             tooltool-downloads: internal
@@ -429,7 +439,8 @@ jobs:
                 - 'reftests.tar.gz'
                 - 'mozdevice.tar.gz'
             android-build:
-                - 'mozharness.zip'
+                - artifact: 'mozharness.zip'
+                  dest: 'mozharness'
         run:
             using: run-task
             checkout: false
@@ -439,9 +450,9 @@ jobs:
                 export WRENCH_REFTESTS=$MOZ_FETCHES_DIR/reftests &&
                 export MOZHARNESS_PATH=$MOZ_FETCHES_DIR/mozharness &&
                 export PYTHONPATH=$MOZ_FETCHES_DIR/mozdevice:$PYTHONPATH &&
-                python2.7 ${MOZHARNESS_PATH}/scripts/${MOZHARNESS_SCRIPT} --config-file ${MOZHARNESS_PATH}/configs/${MOZHARNESS_CONFIG}
+                python3 ${MOZHARNESS_PATH}/scripts/${MOZHARNESS_SCRIPT} --config-file ${MOZHARNESS_PATH}/configs/${MOZHARNESS_CONFIG}
         treeherder:
-            platform: android-hw-p2-8-0-arm7-api-16/debug
+            platform: android-hw-p2-8-0-arm7/debug
             symbol: WR(wrench)
         when:
             files-changed:
@@ -472,7 +483,8 @@ jobs:
                 - 'reftests.tar.gz'
                 - 'mozdevice.tar.gz'
             android-build:
-                - 'mozharness.zip'
+                - artifact: 'mozharness.zip'
+                  dest: 'mozharness'
         run:
             using: run-task
             checkout: false
@@ -482,9 +494,9 @@ jobs:
                 export WRENCH_REFTESTS=$MOZ_FETCHES_DIR/reftests &&
                 export MOZHARNESS_PATH=$MOZ_FETCHES_DIR/mozharness &&
                 export PYTHONPATH=$MOZ_FETCHES_DIR/mozdevice:$PYTHONPATH &&
-                python2.7 ${MOZHARNESS_PATH}/scripts/${MOZHARNESS_SCRIPT} --config-file ${MOZHARNESS_PATH}/configs/${MOZHARNESS_CONFIG}
+                python3 ${MOZHARNESS_PATH}/scripts/${MOZHARNESS_SCRIPT} --config-file ${MOZHARNESS_PATH}/configs/${MOZHARNESS_CONFIG}
         treeherder:
-            platform: android-hw-p2-8-0-arm7-api-16/opt
+            platform: android-hw-p2-8-0-arm7/opt
             symbol: WR(wrench)
         when:
             files-changed:

@@ -14,9 +14,11 @@
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/DocumentTimeline.h"
 #include "mozilla/dom/MutationObservers.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/AnimationEventDispatcher.h"
 #include "mozilla/AnimationTarget.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/DeclarationBlock.h"
 #include "mozilla/Maybe.h"  // For Maybe
 #include "mozilla/StaticPrefs_dom.h"
@@ -28,8 +30,7 @@
 #include "nsTransitionManager.h"      // For CSSTransition
 #include "PendingAnimationTracker.h"  // For PendingAnimationTracker
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // Static members
 uint64_t Animation::sNextAnimationIndex = 0;
@@ -59,9 +60,7 @@ namespace {
 // appropriate document from the supplied animation.
 class MOZ_RAII AutoMutationBatchForAnimation {
  public:
-  explicit AutoMutationBatchForAnimation(
-      const Animation& aAnimation MOZ_GUARD_OBJECT_NOTIFIER_PARAM) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+  explicit AutoMutationBatchForAnimation(const Animation& aAnimation) {
     NonOwningAnimationTarget target = aAnimation.GetTargetForAnimation();
     if (!target) {
       return;
@@ -72,7 +71,6 @@ class MOZ_RAII AutoMutationBatchForAnimation {
   }
 
  private:
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
   Maybe<nsAutoAnimationMutationBatch> mAutoBatch;
 };
 }  // namespace
@@ -82,6 +80,11 @@ class MOZ_RAII AutoMutationBatchForAnimation {
 // Animation interface:
 //
 // ---------------------------------------------------------------------------
+
+Animation::Animation(nsIGlobalObject* aGlobal)
+    : DOMEventTargetHelper(aGlobal), mAnimationIndex(sNextAnimationIndex++) {}
+
+Animation::~Animation() = default;
 
 /* static */
 already_AddRefed<Animation> Animation::ClonePausedAnimation(
@@ -105,6 +108,14 @@ already_AddRefed<Animation> Animation::ClonePausedAnimation(
   // Setup the effect's link to this.
   animation->mEffect = &aEffect;
   animation->mEffect->SetAnimation(animation);
+
+  animation->mPendingState = PendingState::PausePending;
+
+  Document* doc = animation->GetRenderedDocument();
+  MOZ_ASSERT(doc,
+             "Cloning animation should already have the rendered document");
+  PendingAnimationTracker* tracker = doc->GetOrCreatePendingAnimationTracker();
+  tracker->AddPausePending(*animation);
 
   // We expect our relevance to be the same as the orginal.
   animation->mIsRelevant = aOther.mIsRelevant;
@@ -705,7 +716,8 @@ void Animation::CommitStyles(ErrorResult& aRv) {
   }
 
   // Check it is an element with a style attribute
-  nsCOMPtr<nsStyledElement> styledElement = do_QueryInterface(target.mElement);
+  RefPtr<nsStyledElement> styledElement =
+      nsStyledElement::FromNodeOrNull(target.mElement);
   if (!styledElement) {
     return aRv.ThrowNoModificationAllowedError(
         "Target is not capable of having a style attribute");
@@ -755,7 +767,7 @@ void Animation::CommitStyles(ErrorResult& aRv) {
 
   // Prepare the callback
   MutationClosureData closureData;
-  closureData.mClosure = nsDOMCSSAttributeDeclaration::MutationClosureFunction;
+  closureData.mShouldBeCalled = true;
   closureData.mElement = target.mElement;
   DeclarationBlockMutationClosure beforeChangeClosure = {
       nsDOMCSSAttributeDeclaration::MutationClosureFunction,
@@ -776,9 +788,11 @@ void Animation::CommitStyles(ErrorResult& aRv) {
   }
 
   if (!changed) {
+    MOZ_ASSERT(!closureData.mWasCalled);
     return;
   }
 
+  MOZ_ASSERT(closureData.mWasCalled);
   // Update inline style declaration
   target.mElement->SetInlineStyleDeclaration(*declarationBlock, closureData);
 }
@@ -1851,5 +1865,39 @@ bool Animation::IsRunningOnCompositor() const {
          mEffect->AsKeyframeEffect()->IsRunningOnCompositor();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+bool Animation::HasCurrentEffect() const {
+  return GetEffect() && GetEffect()->IsCurrent();
+}
+
+bool Animation::IsInEffect() const {
+  return GetEffect() && GetEffect()->IsInEffect();
+}
+
+StickyTimeDuration Animation::IntervalStartTime(
+    const StickyTimeDuration& aActiveDuration) const {
+  MOZ_ASSERT(AsCSSTransition() || AsCSSAnimation(),
+             "Should be called for CSS animations or transitions");
+  static constexpr StickyTimeDuration zeroDuration = StickyTimeDuration();
+  return std::max(
+      std::min(StickyTimeDuration(-mEffect->SpecifiedTiming().Delay()),
+               aActiveDuration),
+      zeroDuration);
+}
+
+// Later side of the elapsed time range reported in CSS Animations and CSS
+// Transitions events.
+//
+// https://drafts.csswg.org/css-animations-2/#interval-end
+// https://drafts.csswg.org/css-transitions-2/#interval-end
+StickyTimeDuration Animation::IntervalEndTime(
+    const StickyTimeDuration& aActiveDuration) const {
+  MOZ_ASSERT(AsCSSTransition() || AsCSSAnimation(),
+             "Should be called for CSS animations or transitions");
+
+  static constexpr StickyTimeDuration zeroDuration = StickyTimeDuration();
+  return std::max(std::min((EffectEnd() - mEffect->SpecifiedTiming().Delay()),
+                           aActiveDuration),
+                  zeroDuration);
+}
+
+}  // namespace mozilla::dom

@@ -1,7 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* globals getTestActorWithoutToolbox */
 "use strict";
 
 // Tests for different ways to initialize the inspector.
@@ -25,30 +24,27 @@ const TEST_URI = "data:text/html;charset=utf-8," + encodeURI(HTML);
 
 add_task(async function() {
   const tab = await addTab(TEST_URI);
-  const testActor = await getTestActorWithoutToolbox(tab);
-
-  await testToolboxInitialization(testActor, tab);
-  await testContextMenuInitialization(testActor);
-  await testContextMenuInspectorAlreadyOpen(testActor);
+  await testToolboxInitialization(tab);
+  await testContextMenuInitialization();
+  await testContextMenuInspectorAlreadyOpen();
 });
 
-async function testToolboxInitialization(testActor, tab) {
-  const target = await TargetFactory.forTab(tab);
-
+async function testToolboxInitialization(tab) {
   info("Opening inspector with gDevTools.");
-  const toolbox = await gDevTools.showToolbox(target, "inspector");
+  const toolbox = await gDevTools.showToolboxForTab(tab, {
+    toolId: "inspector",
+  });
   const inspector = toolbox.getCurrentPanel();
 
   ok(true, "Inspector started, and notification received.");
   ok(inspector, "Inspector instance is accessible.");
-  ok(inspector.isReady, "Inspector instance is ready.");
   is(inspector.currentTarget.localTab, tab, "Valid target.");
 
   await selectNode("p", inspector);
   await testMarkupView("p", inspector);
   await testBreadcrumbs("p", inspector);
 
-  await testActor.scrollIntoView("span");
+  await scrollContentPageNodeIntoView(gBrowser.selectedBrowser, "span");
 
   await selectNode("span", inspector);
   await testMarkupView("span", inspector);
@@ -58,25 +54,26 @@ async function testToolboxInitialization(testActor, tab) {
   await toolbox.destroy();
 
   ok(true, "'destroyed' notification received.");
-  ok(!gDevTools.getToolbox(target), "Toolbox destroyed.");
+  const toolboxForTab = await gDevTools.getToolboxForTab(tab);
+  ok(!toolboxForTab, "Toolbox destroyed.");
 }
 
-async function testContextMenuInitialization(testActor) {
+async function testContextMenuInitialization() {
   info("Opening inspector by clicking on 'Inspect Element' context menu item");
-  await clickOnInspectMenuItem(testActor, "#salutation");
+  await clickOnInspectMenuItem("#salutation");
 
   info("Checking inspector state.");
   await testMarkupView("#salutation");
   await testBreadcrumbs("#salutation");
 }
 
-async function testContextMenuInspectorAlreadyOpen(testActor) {
+async function testContextMenuInspectorAlreadyOpen() {
   info("Changing node by clicking on 'Inspect Element' context menu item");
 
   const inspector = await getActiveInspector();
   ok(inspector, "Inspector is active");
 
-  await clickOnInspectMenuItem(testActor, "#closing");
+  await clickOnInspectMenuItem("#closing");
 
   ok(true, "Inspector was updated when 'Inspect Element' was clicked.");
   await testMarkupView("#closing", inspector);

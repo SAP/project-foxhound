@@ -9,6 +9,9 @@
 
 #include "mozilla/dom/PServiceWorkerRegistrationChild.h"
 
+// XXX Avoid including this here by moving function bodies to the cpp file
+#include "mozilla/dom/WorkerRef.h"
+
 namespace mozilla {
 namespace dom {
 
@@ -23,6 +26,8 @@ class ServiceWorkerRegistrationChild final
 
   ServiceWorkerRegistrationChild();
 
+  ~ServiceWorkerRegistrationChild() = default;
+
   // PServiceWorkerRegistrationChild
   void ActorDestroy(ActorDestroyReason aReason) override;
 
@@ -32,9 +37,9 @@ class ServiceWorkerRegistrationChild final
   mozilla::ipc::IPCResult RecvFireUpdateFound() override;
 
  public:
-  static ServiceWorkerRegistrationChild* Create();
+  NS_INLINE_DECL_REFCOUNTING(ServiceWorkerRegistrationChild, override);
 
-  ~ServiceWorkerRegistrationChild() = default;
+  static RefPtr<ServiceWorkerRegistrationChild> Create();
 
   void SetOwner(RemoteServiceWorkerRegistrationImpl* aOwner);
 

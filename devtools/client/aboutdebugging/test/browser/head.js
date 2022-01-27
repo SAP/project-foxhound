@@ -90,7 +90,7 @@ async function openAboutDevtoolsToolbox(
   inspectButton.click();
   await Promise.all([
     waitUntil(() => tab.nextElementSibling),
-    waitForRequestsToSettle(win.AboutDebugging.store),
+    waitForAboutDebuggingRequests(win.AboutDebugging.store),
     shouldWaitToolboxReady
       ? gDevTools.once("toolbox-ready")
       : Promise.resolve(),
@@ -130,7 +130,7 @@ async function closeAboutDevtoolsToolbox(
   const devtoolsBrowser = devtoolsTab.linkedBrowser;
   const devtoolsWindow = devtoolsBrowser.contentWindow;
   const toolbox = getToolbox(devtoolsWindow);
-  await toolbox.target.client.waitForRequestsToSettle();
+  await toolbox.commands.client.waitForRequestsToSettle();
 
   info("Close about:devtools-toolbox page");
   const onToolboxDestroyed = gDevTools.once("toolbox-destroyed");
@@ -152,18 +152,18 @@ async function closeAboutDevtoolsToolbox(
     () => !findDebugTargetByText("Toolbox - ", aboutDebuggingDocument)
   );
 
-  await waitForRequestsToSettle(win.AboutDebugging.store);
+  await waitForAboutDebuggingRequests(win.AboutDebugging.store);
 }
 
 async function reloadAboutDebugging(tab) {
   info("reload about:debugging");
 
-  await refreshTab(tab);
+  await reloadBrowser(tab.linkedBrowser);
   const browser = tab.linkedBrowser;
   const document = browser.contentDocument;
   const window = browser.contentWindow;
   info("wait for the initial about:debugging requests to settle");
-  await waitForRequestsToSettle(window.AboutDebugging.store);
+  await waitForAboutDebuggingRequests(window.AboutDebugging.store);
 
   return document;
 }
@@ -180,10 +180,10 @@ function waitForRequestsSuccess(store) {
 }
 
 /**
- * Wait for all client requests to settle, meaning here that no new request has been
- * dispatched after the provided delay.
+ * Wait for all aboutdebugging REQUEST_*_SUCCESS actions to settle, meaning here
+ * that no new request has been dispatched after the provided delay.
  */
-async function waitForRequestsToSettle(store, delay = 500) {
+async function waitForAboutDebuggingRequests(store, delay = 500) {
   let hasSettled = false;
 
   // After each iteration of this while loop, we check is the timerPromise had the time
@@ -215,18 +215,6 @@ async function waitForRequestsToSettle(store, delay = 500) {
   }
 }
 
-function waitForDispatch(store, type) {
-  return new Promise(resolve => {
-    store.dispatch({
-      type: "@@service/waitUntil",
-      predicate: action => action.type === type,
-      run: (dispatch, getState, action) => {
-        resolve(action);
-      },
-    });
-  });
-}
-
 /**
  * Navigate to "This Firefox"
  */
@@ -244,7 +232,7 @@ async function selectThisFirefoxPage(doc, store) {
   // Navigating to this-firefox will trigger a title change for the
   // about:debugging tab. This title change _might_ trigger a tablist update.
   // If it does, we should make sure to wait for pending tab requests.
-  await waitForRequestsToSettle(store);
+  await waitForAboutDebuggingRequests(store);
 }
 
 /**

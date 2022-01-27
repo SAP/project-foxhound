@@ -43,18 +43,9 @@ Services.scriptloader.loadSubScript(
 );
 
 const EXAMPLE_URL =
-  "http://example.com/browser/devtools/client/debugger/test/mochitest/examples/";
+  "https://example.com/browser/devtools/client/debugger/test/mochitest/examples/";
 
-// NOTE: still experimental, the screenshots might not be exactly correct
-async function takeScreenshot(dbg) {
-  let canvas = dbg.win.document.createElementNS(
-    "http://www.w3.org/1999/xhtml",
-    "html:canvas"
-  );
-  let context = canvas.getContext("2d");
-  canvas.width = dbg.win.innerWidth;
-  canvas.height = dbg.win.innerHeight;
-  context.drawWindow(dbg.win, 0, 0, canvas.width, canvas.height, "white");
-  await waitForTime(1000);
-  dump(`[SCREENSHOT] ${canvas.toDataURL()}\n`);
-}
+// This URL is remote compared to EXAMPLE_URL, as one uses .com and the other uses .org
+// Note that this depends on initDebugger to always use EXAMPLE_URL
+const EXAMPLE_REMOTE_URL =
+  "https://example.org/browser/devtools/client/debugger/test/mochitest/examples/";

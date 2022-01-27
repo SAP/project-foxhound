@@ -7,16 +7,10 @@
 
 /* globals EventEmitter */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
+});
+
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
   "containersEnabled",
@@ -80,42 +74,12 @@ class TabBase {
   }
 
   /**
-   * Sends a message, via the given context, to the ExtensionContent running in
-   * this tab. The tab's current innerWindowID is automatically added to the
-   * recipient filter for the message, and is used to ensure that the message is
-   * not processed if the content process navigates to a different content page
-   * before the message is received.
-   *
-   * @param {BaseContext} context
-   *        The context through which to send the message.
-   * @param {string} messageName
-   *        The name of the message to send.
-   * @param {object} [data = {}]
-   *        Arbitrary, structured-clonable message data to send.
-   * @param {object} [options]
-   *        An options object, as accepted by BaseContext.sendMessage.
-   *
-   * @returns {Promise}
-   */
-  sendMessage(context, messageName, data = {}, options = null) {
-    let { browser, innerWindowID } = this;
-
-    options = Object.assign({}, options);
-    options.recipient = Object.assign({ innerWindowID }, options.recipient);
-
-    return context.sendMessage(
-      browser.messageManager,
-      messageName,
-      data,
-      options
-    );
-  }
-
-  /**
-   * Capture the visible area of this tab, and return the result as a data: URL.
+   * Capture the visible area of this tab, and return the result as a data: URI.
    *
    * @param {BaseContext} context
    *        The extension context for which to perform the capture.
+   * @param {number} zoom
+   *        The current zoom for the page.
    * @param {Object} [options]
    *        The options with which to perform the capture.
    * @param {string} [options.format = "png"]
@@ -124,27 +88,43 @@ class TabBase {
    * @param {integer} [options.quality = 92]
    *        The quality at which to encode the captured image data, ranging from
    *        0 to 100. Has no effect for the "png" format.
-   *
+   * @param {DOMRectInit} [options.rect]
+   *        Area of the document to render, in CSS pixels, relative to the page.
+   *        If null, the currently visible viewport is rendered.
+   * @param {number} [options.scale]
+   *        The scale to render at, defaults to devicePixelRatio.
    * @returns {Promise<string>}
    */
-  capture(context, options = null) {
-    if (!options) {
-      options = {};
-    }
-    if (options.format == null) {
-      options.format = "png";
-    }
-    if (options.quality == null) {
-      options.quality = 92;
+  async capture(context, zoom, options) {
+    let win = this.browser.ownerGlobal;
+    let scale = options?.scale || win.devicePixelRatio;
+    let rect = options?.rect && win.DOMRect.fromRect(options.rect);
+
+    // We only allow mozilla addons to use the resetScrollPosition option,
+    // since it's not standardized.
+    let resetScrollPosition = false;
+    if (!context.extension.restrictSchemes) {
+      resetScrollPosition = !!options?.resetScrollPosition;
     }
 
-    let message = {
-      options,
-      width: this.width,
-      height: this.height,
-    };
+    let wgp = this.browsingContext.currentWindowGlobal;
+    let image = await wgp.drawSnapshot(
+      rect,
+      scale * zoom,
+      "white",
+      resetScrollPosition
+    );
 
-    return this.sendMessage(context, "Extension:Capture", message);
+    let doc = Services.appShell.hiddenDOMWindow.document;
+    let canvas = doc.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+
+    let ctx = canvas.getContext("2d", { alpha: false });
+    ctx.drawImage(image, 0, 0);
+    image.close();
+
+    return canvas.toDataURL(`image/${options?.format}`, options?.quality / 100);
   }
 
   /**
@@ -168,7 +148,11 @@ class TabBase {
    *        @readonly
    */
   get hasTabPermission() {
-    return this.extension.hasPermission("tabs") || this.hasActiveTabPermission;
+    return (
+      this.extension.hasPermission("tabs") ||
+      this.hasActiveTabPermission ||
+      this.matchesHostPermission
+    );
   }
 
   /**
@@ -187,6 +171,15 @@ class TabBase {
       this.activeTabWindowID != null &&
       this.activeTabWindowID === this.innerWindowID
     );
+  }
+
+  /**
+   * @property {boolean} matchesHostPermission
+   *        Returns true if the extensions host permissions match the current tab url.
+   *        @readonly
+   */
+  get matchesHostPermission() {
+    return this.extension.allowedOrigins.matches(this._uri);
   }
 
   /**
@@ -221,15 +214,12 @@ class TabBase {
   }
 
   /**
-   * @property {nsIURI | null} uri
-   *        Returns the current URI of this tab if the extension has permission
-   *        to read it, or null otherwise.
+   * @property {nsIURI} _uri
+   *        Returns the current URI of this tab.
    *        @readonly
    */
-  get uri() {
-    if (this.hasTabPermission) {
-      return this.browser.currentURI;
-    }
+  get _uri() {
+    return this.browser.currentURI;
   }
 
   /**
@@ -437,16 +427,6 @@ class TabBase {
   }
 
   /**
-   * @property {boolean} selected
-   *        An alias for `active`.
-   *        @readonly
-   *        @abstract
-   */
-  get selected() {
-    throw new Error("Not implemented");
-  }
-
-  /**
    * @property {string} status
    *        Returns the current loading status of the tab. May be either
    *        "loading" or "complete".
@@ -611,12 +591,17 @@ class TabBase {
         return false;
       }
     }
-
-    if (queryInfo.url && !queryInfo.url.matches(this.uri)) {
-      return false;
-    }
-    if (queryInfo.title && !queryInfo.title.matches(this.title)) {
-      return false;
+    if (queryInfo.url || queryInfo.title) {
+      if (!this.hasTabPermission) {
+        return false;
+      }
+      // Using _uri and _title instead of url/title to avoid repeated permission checks.
+      if (queryInfo.url && !queryInfo.url.matches(this._uri)) {
+        return false;
+      }
+      if (queryInfo.title && !queryInfo.title.matches(this._title)) {
+        return false;
+      }
     }
 
     return true;
@@ -654,6 +639,7 @@ class TabBase {
       isInReaderMode: this.isInReaderMode,
       sharingState: this.sharingState,
       successorTabId: this.successorTabId,
+      cookieStoreId: this.cookieStoreId,
     };
 
     // If the tab has not been fully layed-out yet, fallback to the geometry
@@ -666,10 +652,6 @@ class TabBase {
     let opener = this.openerTabId;
     if (opener) {
       result.openerTabId = opener;
-    }
-
-    if (this.extension.hasPermission("cookies")) {
-      result.cookieStoreId = this.cookieStoreId;
     }
 
     if (this.hasTabPermission) {
@@ -1455,7 +1437,7 @@ class WindowTrackerBase extends EventEmitter {
     });
 
     this._windowIds = new DefaultWeakMap(window => {
-      return window.windowUtils.outerWindowID;
+      return window.docShell.outerWindowID;
     });
   }
 
@@ -2046,7 +2028,10 @@ class TabManagerBase {
       if (queryInfo) {
         let { active, highlighted, index } = queryInfo;
         if (active === true) {
-          yield windowWrapper.activeTab;
+          let { activeTab } = windowWrapper;
+          if (activeTab) {
+            yield activeTab;
+          }
           return;
         }
         if (index != null) {
@@ -2301,6 +2286,9 @@ function getUserContextIdForCookieStoreId(
       throw new ExtensionError(
         `No cookie store exists with ID ${cookieStoreId}`
       );
+    }
+    if (!extension.canAccessContainer(userContextId)) {
+      throw new ExtensionError(`Cannot access ${cookieStoreId}`);
     }
     return userContextId;
   }

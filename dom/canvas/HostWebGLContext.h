@@ -8,31 +8,21 @@
 
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/GfxMessageUtils.h"
+#include "ClientWebGLContext.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
+#include "GLContext.h"
 #include "WebGLContext.h"
 #include "WebGL2Context.h"
 #include "WebGLFramebuffer.h"
 #include "WebGLTypes.h"
 #include "WebGLCommandQueue.h"
-#include "WebGLCrossProcessCommandQueue.h"
-#include "ProducerConsumerQueue.h"
-#include "IpdlQueue.h"
 
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
-#ifndef WEBGL_BRIDGE_LOG_
-#  define WEBGL_BRIDGE_LOG_(lvl, ...) \
-    MOZ_LOG(mozilla::gWebGLBridgeLog, lvl, (__VA_ARGS__))
-#  define WEBGL_BRIDGE_LOGD(...) WEBGL_BRIDGE_LOG_(LogLevel::Debug, __VA_ARGS__)
-#  define WEBGL_BRIDGE_LOGE(...) WEBGL_BRIDGE_LOG_(LogLevel::Error, __VA_ARGS__)
-#endif  // WEBGL_BRIDGE_LOG_
-
 namespace mozilla {
-
-extern LazyLogModule gWebGLBridgeLog;
 
 namespace dom {
 class WebGLParent;
@@ -69,6 +59,7 @@ struct LockedOutstandingContexts final {
 class HostWebGLContext final : public SupportsWeakPtr {
   friend class WebGLContext;
   friend class WebGLMemoryTracker;
+  friend class dom::WebGLParent;
 
   using ObjectId = webgl::ObjectId;
 
@@ -77,22 +68,17 @@ class HostWebGLContext final : public SupportsWeakPtr {
   }
 
  public:
-  struct RemotingData final {
-    dom::WebGLParent& mParent;
-    UniquePtr<HostWebGLCommandSinkP> mCommandSinkP;
-    UniquePtr<HostWebGLCommandSinkI> mCommandSinkI;
-  };
   struct OwnerData final {
-    Maybe<ClientWebGLContext*> inProcess;
-    Maybe<RemotingData> outOfProcess;
+    ClientWebGLContext* inProcess = nullptr;
+    dom::WebGLParent* outOfProcess = nullptr;
   };
 
-  static UniquePtr<HostWebGLContext> Create(OwnerData&&,
+  static UniquePtr<HostWebGLContext> Create(const OwnerData&,
                                             const webgl::InitContextDesc&,
                                             webgl::InitContextResult* out);
 
  private:
-  explicit HostWebGLContext(OwnerData&&);
+  explicit HostWebGLContext(const OwnerData&);
 
  public:
   virtual ~HostWebGLContext();
@@ -191,8 +177,7 @@ class HostWebGLContext final : public SupportsWeakPtr {
 
   // -
 
-  uvec2 GetFrontBufferSize() const { return mContext->DrawingBufferSize(); }
-  bool FrontBufferSnapshotInto(Range<uint8_t> dest) const {
+  Maybe<uvec2> FrontBufferSnapshotInto(Maybe<Range<uint8_t>> dest) const {
     return mContext->FrontBufferSnapshotInto(dest);
   }
 
@@ -255,9 +240,9 @@ class HostWebGLContext final : public SupportsWeakPtr {
   // ------------------------- GL State -------------------------
   bool IsContextLost() const { return mContext->IsContextLost(); }
 
-  void Disable(GLenum cap) const { mContext->Disable(cap); }
-
-  void Enable(GLenum cap) const { mContext->Enable(cap); }
+  void SetEnabled(GLenum cap, Maybe<GLuint> i, bool val) const {
+    mContext->SetEnabled(cap, i, val);
+  }
 
   bool IsEnabled(GLenum cap) const { return mContext->IsEnabled(cap); }
 
@@ -291,13 +276,14 @@ class HostWebGLContext final : public SupportsWeakPtr {
     mContext->BlendColor(r, g, b, a);
   }
 
-  void BlendEquationSeparate(GLenum modeRGB, GLenum modeAlpha) const {
-    mContext->BlendEquationSeparate(modeRGB, modeAlpha);
+  void BlendEquationSeparate(Maybe<GLuint> i, GLenum modeRGB,
+                             GLenum modeAlpha) const {
+    mContext->BlendEquationSeparate(i, modeRGB, modeAlpha);
   }
 
-  void BlendFuncSeparate(GLenum srcRGB, GLenum dstRGB, GLenum srcAlpha,
-                         GLenum dstAlpha) const {
-    mContext->BlendFuncSeparate(srcRGB, dstRGB, srcAlpha, dstAlpha);
+  void BlendFuncSeparate(Maybe<GLuint> i, GLenum srcRGB, GLenum dstRGB,
+                         GLenum srcAlpha, GLenum dstAlpha) const {
+    mContext->BlendFuncSeparate(i, srcRGB, dstRGB, srcAlpha, dstAlpha);
   }
 
   GLenum CheckFramebufferStatus(GLenum target) const {
@@ -314,9 +300,8 @@ class HostWebGLContext final : public SupportsWeakPtr {
 
   void ClearStencil(GLint v) const { mContext->ClearStencil(v); }
 
-  void ColorMask(WebGLboolean r, WebGLboolean g, WebGLboolean b,
-                 WebGLboolean a) const {
-    mContext->ColorMask(r, g, b, a);
+  void ColorMask(Maybe<GLuint> i, uint8_t mask) const {
+    mContext->ColorMask(i, mask);
   }
 
   void CompileShader(const ObjectId id) const {
@@ -482,8 +467,8 @@ class HostWebGLContext final : public SupportsWeakPtr {
   }
 
   void BufferData(GLenum target, const RawBuffer<>& data, GLenum usage) const {
-    const auto& range = data.Data();
-    mContext->BufferData(target, range.length(), range.begin().get(), usage);
+    const auto& beginOrNull = data.begin();
+    mContext->BufferData(target, data.size(), beginOrNull, usage);
   }
 
   void BufferSubData(GLenum target, uint64_t dstByteOffset,
@@ -791,9 +776,6 @@ class HostWebGLContext final : public SupportsWeakPtr {
     MOZ_RELEASE_ASSERT(mContext->IsWebGL2(), "Requires WebGL2 context");
     return static_cast<WebGL2Context*>(mContext.get());
   }
-
-  // mozilla::ipc::Shmem PopShmem() { return mShmemStack.PopLastElement(); }
-  // nsTArray<mozilla::ipc::Shmem> mShmemStack;
 };
 
 }  // namespace mozilla

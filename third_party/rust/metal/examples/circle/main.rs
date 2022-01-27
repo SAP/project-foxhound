@@ -1,14 +1,15 @@
 use metal::*;
 
-use winit::platform::macos::WindowExtMacOS;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
+    platform::macos::WindowExtMacOS,
 };
 
 use cocoa::{appkit::NSView, base::id as cocoa_id};
+use core_graphics_types::geometry::CGSize;
 
-use objc::runtime::YES;
+use objc::{rc::autoreleasepool, runtime::YES};
 
 use std::mem;
 
@@ -46,6 +47,22 @@ fn main() {
     let device = Device::system_default().expect("no device found");
     println!("Your device is: {}", device.name(),);
 
+    let binary_archive_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("examples/circle/binary_archive.metallib");
+
+    let binary_archive_url =
+        URL::new_with_string(&format!("file://{}", binary_archive_path.display()));
+
+    let binary_archive_descriptor = BinaryArchiveDescriptor::new();
+    if binary_archive_path.exists() {
+        binary_archive_descriptor.set_url(&binary_archive_url);
+    }
+
+    // Set up a binary archive to cache compiled shaders.
+    let binary_archive = device
+        .new_binary_archive_with_descriptor(&binary_archive_descriptor)
+        .unwrap();
+
     let library_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("examples/circle/shaders.metallib");
 
@@ -53,15 +70,20 @@ fn main() {
     let library = device.new_library_with_file(library_path).unwrap();
 
     // The render pipeline generated from the vertex and fragment shaders in the .metal shader file.
-    let pipeline_state = prepare_pipeline_state(&device, &library);
+    let pipeline_state = prepare_pipeline_state(&device, &library, &binary_archive);
+
+    // Serialize the binary archive to disk.
+    binary_archive
+        .serialize_to_url(&binary_archive_url)
+        .unwrap();
 
     // Set the command queue used to pass commands to the device.
     let command_queue = device.new_command_queue();
 
-    // Currently, CoreAnimationLayer is the only interface that provide
+    // Currently, MetalLayer is the only interface that provide
     // layers to carry drawable texture from GPU rendaring through metal
     // library to viewable windows.
-    let layer = CoreAnimationLayer::new();
+    let layer = MetalLayer::new();
     layer.set_device(&device);
     layer.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
     layer.set_presents_with_transaction(false);
@@ -87,56 +109,59 @@ fn main() {
     };
 
     event_loop.run(move |event, _, control_flow| {
-        // ControlFlow::Wait pauses the event loop if no events are available to process.
-        // This is ideal for non-game applications that only update in response to user
-        // input, and uses significantly less power/CPU time than ControlFlow::Poll.
-        *control_flow = ControlFlow::Wait;
+        autoreleasepool(|| {
+            // ControlFlow::Wait pauses the event loop if no events are available to process.
+            // This is ideal for non-game applications that only update in response to user
+            // input, and uses significantly less power/CPU time than ControlFlow::Poll.
+            *control_flow = ControlFlow::Wait;
 
-        match event {
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {
-                println!("The close button was pressed; stopping");
-                *control_flow = ControlFlow::Exit
+            match event {
+                Event::WindowEvent {
+                    event: WindowEvent::CloseRequested,
+                    ..
+                } => {
+                    println!("The close button was pressed; stopping");
+                    *control_flow = ControlFlow::Exit
+                }
+                Event::MainEventsCleared => {
+                    // Queue a RedrawRequested event.
+                    window.request_redraw();
+                }
+                Event::RedrawRequested(_) => {
+                    // It's preferrable to render in this event rather than in MainEventsCleared, since
+                    // rendering in here allows the program to gracefully handle redraws requested
+                    // by the OS.
+                    let drawable = match layer.next_drawable() {
+                        Some(drawable) => drawable,
+                        None => return,
+                    };
+
+                    // Create a new command buffer for each render pass to the current drawable
+                    let command_buffer = command_queue.new_command_buffer();
+
+                    // Obtain a renderPassDescriptor generated from the view's drawable textures.
+                    let render_pass_descriptor = RenderPassDescriptor::new();
+                    prepare_render_pass_descriptor(&render_pass_descriptor, drawable.texture());
+
+                    // Create a render command encoder.
+                    let encoder =
+                        command_buffer.new_render_command_encoder(&render_pass_descriptor);
+                    encoder.set_render_pipeline_state(&pipeline_state);
+                    // Pass in the parameter data.
+                    encoder.set_vertex_buffer(0, Some(&vbuf), 0);
+                    // Draw the triangles which will eventually form the circle.
+                    encoder.draw_primitives(MTLPrimitiveType::TriangleStrip, 0, 1080);
+                    encoder.end_encoding();
+
+                    // Schedule a present once the framebuffer is complete using the current drawable.
+                    command_buffer.present_drawable(&drawable);
+
+                    // Finalize rendering here & push the command buffer to the GPU.
+                    command_buffer.commit();
+                }
+                _ => (),
             }
-            Event::MainEventsCleared => {
-                // Queue a RedrawRequested event.
-                window.request_redraw();
-            }
-            Event::RedrawRequested(_) => {
-                // It's preferrable to render in this event rather than in MainEventsCleared, since
-                // rendering in here allows the program to gracefully handle redraws requested
-                // by the OS.
-                let drawable = match layer.next_drawable() {
-                    Some(drawable) => drawable,
-                    None => return,
-                };
-
-                // Create a new command buffer for each render pass to the current drawable
-                let command_buffer = command_queue.new_command_buffer();
-
-                // Obtain a renderPassDescriptor generated from the view's drawable textures.
-                let render_pass_descriptor = RenderPassDescriptor::new();
-                prepare_render_pass_descriptor(&render_pass_descriptor, drawable.texture());
-
-                // Create a render command encoder.
-                let encoder = command_buffer.new_render_command_encoder(&render_pass_descriptor);
-                encoder.set_render_pipeline_state(&pipeline_state);
-                // Pass in the parameter data.
-                encoder.set_vertex_buffer(0, Some(&vbuf), 0);
-                // Draw the triangles which will eventually form the circle.
-                encoder.draw_primitives(MTLPrimitiveType::TriangleStrip, 0, 1080);
-                encoder.end_encoding();
-
-                // Schedule a present once the framebuffer is complete using the current drawable.
-                command_buffer.present_drawable(&drawable);
-
-                // Finalize rendering here & push the command buffer to the GPU.
-                command_buffer.commit();
-            }
-            _ => (),
-        }
+        });
     });
 }
 
@@ -196,7 +221,11 @@ fn prepare_render_pass_descriptor(descriptor: &RenderPassDescriptorRef, texture:
     color_attachment.set_store_action(MTLStoreAction::Store);
 }
 
-fn prepare_pipeline_state(device: &Device, library: &Library) -> RenderPipelineState {
+fn prepare_pipeline_state(
+    device: &Device,
+    library: &Library,
+    binary_archive: &BinaryArchive,
+) -> RenderPipelineState {
     let vert = library.get_function("vs", None).unwrap();
     let frag = library.get_function("ps", None).unwrap();
 
@@ -208,6 +237,13 @@ fn prepare_pipeline_state(device: &Device, library: &Library) -> RenderPipelineS
         .object_at(0)
         .unwrap()
         .set_pixel_format(MTLPixelFormat::BGRA8Unorm);
+    // Set the binary archives to search for a cached pipeline in.
+    pipeline_state_descriptor.set_binary_archives(&[binary_archive]);
+
+    // Add the pipeline descriptor to the binary archive cache.
+    binary_archive
+        .add_render_pipeline_functions_with_descriptor(&pipeline_state_descriptor)
+        .unwrap();
 
     device
         .new_render_pipeline_state(&pipeline_state_descriptor)

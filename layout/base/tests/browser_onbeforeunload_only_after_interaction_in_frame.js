@@ -1,3 +1,7 @@
+const { PromptTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PromptTestUtils.jsm"
+);
+
 function pageScript() {
   window.addEventListener(
     "beforeunload",
@@ -32,17 +36,17 @@ const PAGE_URL =
 
 add_task(async function doClick() {
   // The onbeforeunload dialog should appear.
-  let dialogShown = false;
-  function onDialogShown(node) {
-    dialogShown = true;
-    let dismissButton = node.querySelector(".tabmodalprompt-button0");
-    dismissButton.click();
-  }
-  let obsName = "tabmodal-dialog-loaded";
-  Services.obs.addObserver(onDialogShown, obsName);
-  await openPage(true);
-  Services.obs.removeObserver(onDialogShown, obsName);
-  Assert.ok(dialogShown, "Should have shown dialog.");
+  let dialogPromise = PromptTestUtils.waitForPrompt(null, {
+    modalType: Services.prompt.MODAL_TYPE_CONTENT,
+    promptType: "confirmEx",
+  });
+
+  let openPagePromise = openPage(true);
+  let dialog = await dialogPromise;
+  Assert.ok(true, "Showed the beforeunload dialog.");
+
+  await PromptTestUtils.handlePrompt(dialog, { buttonNumClick: 0 });
+  await openPagePromise;
 });
 
 add_task(async function noClick() {
@@ -57,7 +61,7 @@ async function openPage(shouldClick) {
     { gBrowser, url: "about:blank" },
     async function(browser) {
       // Load the page.
-      await BrowserTestUtils.loadURI(browser, PAGE_URL);
+      BrowserTestUtils.loadURI(browser, PAGE_URL);
       await BrowserTestUtils.browserLoaded(browser);
 
       let frameBC = browser.browsingContext.children[0];
@@ -85,7 +89,7 @@ async function openPage(shouldClick) {
         "Click should update frame interactivity state"
       );
       // And then navigate away.
-      await BrowserTestUtils.loadURI(browser, "http://example.com/");
+      BrowserTestUtils.loadURI(browser, "http://example.com/");
       await BrowserTestUtils.browserLoaded(browser);
     }
   );

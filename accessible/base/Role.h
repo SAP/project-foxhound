@@ -1066,7 +1066,24 @@ enum Role {
    */
   CODE = 182,
 
-  LAST_ROLE = CODE
+  /**
+   * Represents control whose purpose is to allow a user to edit a time.
+   */
+  TIME_EDITOR = 183,
+
+  /**
+   * Represents the marker associated with a list item. In unordered lists,
+   * this is a bullet, while in ordered lists this is a number.
+   */
+  LISTITEM_MARKER = 184,
+
+  /**
+   * Essentially, this is a progress bar with a contextually defined
+   * scale, ex. the strength of a password entered in an input.
+   */
+  METER = 185,
+
+  LAST_ROLE = METER
 };
 
 }  // namespace roles

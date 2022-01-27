@@ -6,11 +6,10 @@
 
 // Keep in (case-insensitive) order:
 #include "mozilla/PresShell.h"
+#include "mozilla/SVGObserverUtils.h"
 #include "nsContainerFrame.h"
 #include "nsIFrame.h"
 #include "nsGkAtoms.h"
-#include "SVGObserverUtils.h"
-#include "SVGFilters.h"
 
 nsIFrame* NS_NewSVGFEUnstyledLeafFrame(mozilla::PresShell* aPresShell,
                                        mozilla::ComputedStyle* aStyle);
@@ -51,7 +50,7 @@ class SVGFEUnstyledLeafFrame final : public nsIFrame {
   virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
                                     int32_t aModType) override;
 
-  virtual bool ComputeCustomOverflow(nsOverflowAreas& aOverflowAreas) override {
+  virtual bool ComputeCustomOverflow(OverflowAreas& aOverflowAreas) override {
     // We don't maintain a ink overflow rect
     return false;
   }

@@ -1,4 +1,6 @@
+/* clang-format off */
 /* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,8 +16,10 @@
 
 using namespace mozilla::a11y;
 
-static id<mozAccessible, mozView> getNativeViewFromRootAccessible(Accessible* aAccessible) {
-  RootAccessibleWrap* root = static_cast<RootAccessibleWrap*>(aAccessible->AsRoot());
+static id<mozAccessible, mozView> getNativeViewFromRootAccessible(
+    LocalAccessible* aAccessible) {
+  RootAccessibleWrap* root =
+      static_cast<RootAccessibleWrap*>(aAccessible->AsRoot());
   id<mozAccessible, mozView> nativeView = nil;
   root->GetNativeWidget((void**)&nativeView);
   return nativeView;
@@ -25,16 +29,16 @@ static id<mozAccessible, mozView> getNativeViewFromRootAccessible(Accessible* aA
 
 @implementation mozRootAccessible
 
-- (id)initWithAccessible:(mozilla::a11y::AccessibleOrProxy)aAccOrProxy {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+- (id)initWithAccessible:(mozilla::a11y::Accessible*)aAcc {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
-  MOZ_ASSERT(!aAccOrProxy.IsProxy(), "mozRootAccessible is never a proxy");
+  MOZ_ASSERT(!aAcc->IsRemote(), "mozRootAccessible is never a proxy");
 
-  mParallelView = getNativeViewFromRootAccessible(aAccOrProxy.AsAccessible());
+  mParallelView = getNativeViewFromRootAccessible(aAcc->AsLocal());
 
-  return [super initWithAccessible:aAccOrProxy];
+  return [super initWithAccessible:aAcc];
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 - (NSNumber*)moxMain {
@@ -47,17 +51,13 @@ static id<mozAccessible, mozView> getNativeViewFromRootAccessible(Accessible* aA
 
 // return the AXParent that our parallell NSView tells us about.
 - (id)moxUnignoredParent {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
-  if (!mParallelView) mParallelView = (id<mozView, mozAccessible>)[self representedView];
+  // If there is no represented view (eg. headless), this will return nil.
+  return [[self representedView]
+      accessibilityAttributeValue:NSAccessibilityParentAttribute];
 
-  if (mParallelView)
-    return [mParallelView accessibilityAttributeValue:NSAccessibilityParentAttribute];
-
-  MOZ_ASSERT(mParallelView, "we're a root accessible w/o native view?");
-  return [super moxUnignoredParent];
-
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 - (BOOL)hasRepresentedView {
@@ -66,13 +66,14 @@ static id<mozAccessible, mozView> getNativeViewFromRootAccessible(Accessible* aA
 
 // this will return our parallell NSView. see mozDocAccessible.h
 - (id)representedView {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
-  MOZ_ASSERT(mParallelView, "root accessible does not have a native parallel view.");
+  MOZ_ASSERT(mParallelView,
+             "root accessible does not have a native parallel view.");
 
   return mParallelView;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 - (BOOL)isRoot {

@@ -20,7 +20,7 @@ class RemoteAudioDecoderChild final : public RemoteDecoderChild {
   MediaResult InitIPDL(const AudioInfo& aAudioInfo,
                        const CreateDecoderParams::OptionSet& aOptions);
 
-  MediaResult ProcessOutput(const DecodedOutputIPDL& aDecodedData) override;
+  MediaResult ProcessOutput(DecodedOutputIPDL&& aDecodedData) override;
 };
 
 class RemoteAudioDecoderParent final : public RemoteDecoderParent {
@@ -29,11 +29,11 @@ class RemoteAudioDecoderParent final : public RemoteDecoderParent {
                            const AudioInfo& aAudioInfo,
                            const CreateDecoderParams::OptionSet& aOptions,
                            nsISerialEventTarget* aManagerThread,
-                           TaskQueue* aDecodeTaskQueue, bool* aSuccess,
-                           nsCString* aErrorDescription);
+                           TaskQueue* aDecodeTaskQueue);
 
  protected:
-  MediaResult ProcessDecodedData(const MediaDataDecoder::DecodedData& aData,
+  IPCResult RecvConstruct(ConstructResolver&& aResolver) override;
+  MediaResult ProcessDecodedData(MediaDataDecoder::DecodedData&& aData,
                                  DecodedOutputIPDL& aDecodedData) override;
 
  private:
@@ -43,6 +43,7 @@ class RemoteAudioDecoderParent final : public RemoteDecoderParent {
   // passed a deserialized AudioInfo from RecvPRemoteDecoderConstructor
   // which is destroyed when RecvPRemoteDecoderConstructor returns.
   const AudioInfo mAudioInfo;
+  const CreateDecoderParams::OptionSet mOptions;
 };
 
 }  // namespace mozilla

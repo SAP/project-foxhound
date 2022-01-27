@@ -12,7 +12,6 @@
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/Fetch.h"
 #include "mozilla/dom/Nullable.h"
-#include "mozilla/ErrorResult.h"
 #include "nsWrapperCache.h"
 #include "nsHashKeys.h"
 #include "nsInterfaceHashtable.h"
@@ -28,6 +27,8 @@ class nsIPrincipal;
 class nsIURI;
 
 namespace mozilla {
+class ErrorResult;
+
 namespace dom {
 class AddonManager;
 class BodyExtractorBase;
@@ -41,6 +42,7 @@ class ServiceWorkerContainer;
 class DOMRequest;
 class CredentialsContainer;
 class Clipboard;
+class LockManager;
 }  // namespace dom
 namespace webgpu {
 class Instance;
@@ -51,8 +53,7 @@ class Instance;
 // Navigator: Script "navigator" object
 //*****************************************************************************
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Permissions;
 
@@ -66,15 +67,15 @@ class Gamepad;
 class GamepadServiceTest;
 class NavigatorUserMediaSuccessCallback;
 class NavigatorUserMediaErrorCallback;
-class MozGetUserMediaDevicesSuccessCallback;
 
 struct MIDIOptions;
+
+nsTArray<uint32_t> SanitizeVibratePattern(const nsTArray<uint32_t>& aPattern);
 
 namespace network {
 class Connection;
 }  // namespace network
 
-class Presentation;
 class LegacyMozTCPSocket;
 class VRDisplay;
 class VRServiceTest;
@@ -94,8 +95,6 @@ class Navigator final : public nsISupports, public nsWrapperCache {
 
   void Invalidate();
   nsPIDOMWindowInner* GetWindow() const { return mWindow; }
-
-  void RefreshMIMEArray();
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
@@ -123,14 +122,16 @@ class Navigator final : public nsISupports, public nsWrapperCache {
                                    nsIURI* aHandlerURI, nsIURI* aDocumentURI,
                                    ErrorResult& aRv);
   void RegisterProtocolHandler(const nsAString& aScheme, const nsAString& aURL,
-                               const nsAString& aTitle, ErrorResult& aRv);
+                               ErrorResult& aRv);
   nsMimeTypeArray* GetMimeTypes(ErrorResult& aRv);
   nsPluginArray* GetPlugins(ErrorResult& aRv);
   Permissions* GetPermissions(ErrorResult& aRv);
   void GetDoNotTrack(nsAString& aResult);
+  bool GlobalPrivacyControl();
   Geolocation* GetGeolocation(ErrorResult& aRv);
   Promise* GetBattery(ErrorResult& aRv);
 
+  bool CanShare(const ShareData& aData);
   Promise* Share(const ShareData& aData, ErrorResult& aRv);
 
   static void AppName(nsAString& aAppName, nsIPrincipal* aCallerPrincipal,
@@ -176,6 +177,7 @@ class Navigator final : public nsISupports, public nsWrapperCache {
   already_AddRefed<LegacyMozTCPSocket> MozTCPSocket();
   network::Connection* GetConnection(ErrorResult& aRv);
   MediaDevices* GetMediaDevices(ErrorResult& aRv);
+  MediaDevices* GetExtantMediaDevices() const { return mMediaDevices; };
 
   void GetGamepads(nsTArray<RefPtr<Gamepad>>& aGamepads, ErrorResult& aRv);
   GamepadServiceTest* RequestGamepadServiceTest();
@@ -192,8 +194,6 @@ class Navigator final : public nsISupports, public nsWrapperCache {
   already_AddRefed<Promise> RequestMIDIAccess(const MIDIOptions& aOptions,
                                               ErrorResult& aRv);
 
-  Presentation* GetPresentation(ErrorResult& aRv);
-
   bool SendBeacon(const nsAString& aUrl, const Nullable<fetch::BodyInit>& aData,
                   ErrorResult& aRv);
 
@@ -201,18 +201,13 @@ class Navigator final : public nsISupports, public nsWrapperCache {
                        NavigatorUserMediaSuccessCallback& aOnSuccess,
                        NavigatorUserMediaErrorCallback& aOnError,
                        CallerType aCallerType, ErrorResult& aRv);
-  MOZ_CAN_RUN_SCRIPT
-  void MozGetUserMediaDevices(const MediaStreamConstraints& aConstraints,
-                              MozGetUserMediaDevicesSuccessCallback& aOnSuccess,
-                              NavigatorUserMediaErrorCallback& aOnError,
-                              uint64_t aInnerWindowID, const nsAString& aCallID,
-                              ErrorResult& aRv);
 
   already_AddRefed<ServiceWorkerContainer> ServiceWorker();
 
   mozilla::dom::CredentialsContainer* Credentials();
   dom::Clipboard* Clipboard();
   webgpu::Instance* Gpu();
+  dom::LockManager* Locks();
 
   static bool Webdriver();
 
@@ -249,6 +244,7 @@ class Navigator final : public nsISupports, public nsWrapperCache {
   bool HasCreatedMediaSession() const;
 
  private:
+  void ValidateShareData(const ShareData& aData, ErrorResult& aRv);
   RefPtr<MediaKeySystemAccessManager> mMediaKeySystemAccessManager;
 
  public:
@@ -281,7 +277,6 @@ class Navigator final : public nsISupports, public nsWrapperCache {
   RefPtr<MediaDevices> mMediaDevices;
   RefPtr<ServiceWorkerContainer> mServiceWorkerContainer;
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
-  RefPtr<Presentation> mPresentation;
   RefPtr<GamepadServiceTest> mGamepadServiceTest;
   nsTArray<RefPtr<Promise>> mVRGetDisplaysPromises;
   RefPtr<VRServiceTest> mVRServiceTest;
@@ -293,11 +288,9 @@ class Navigator final : public nsISupports, public nsWrapperCache {
   RefPtr<AddonManager> mAddonManager;
   RefPtr<webgpu::Instance> mWebGpu;
   RefPtr<Promise> mSharePromise;  // Web Share API related
-  // Gamepad moving to secure contexts
-  bool mGamepadSecureContextWarningShown = false;
+  RefPtr<dom::LockManager> mLocks;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_Navigator_h

@@ -55,6 +55,19 @@ nsresult nsDirectoryService::GetCurrentProcessDirectory(nsIFile** aFile)
   }
 
   if (!mXCurProcD) {
+#if defined(ANDROID)
+    // Some callers relying on this fallback make assumptions that don't
+    // hold on Android for BinaryPath::GetFile, so use GRE_HOME instead.
+    const char* greHome = getenv("GRE_HOME");
+    if (!greHome) {
+      return NS_ERROR_FAILURE;
+    }
+    nsresult rv = NS_NewNativeLocalFile(nsDependentCString(greHome), true,
+                                        getter_AddRefs(mXCurProcD));
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+#else
     nsCOMPtr<nsIFile> file;
     if (NS_SUCCEEDED(BinaryPath::GetFile(getter_AddRefs(file)))) {
       nsresult rv = file->GetParent(getter_AddRefs(mXCurProcD));
@@ -62,6 +75,7 @@ nsresult nsDirectoryService::GetCurrentProcessDirectory(nsIFile** aFile)
         return rv;
       }
     }
+#endif
   }
   return mXCurProcD->Clone(aFile);
 }  // GetCurrentProcessDirectory()
@@ -229,20 +243,19 @@ nsDirectoryService::Set(const char* aProp, nsISupports* aValue) {
     return NS_ERROR_FAILURE;
   }
 
-  nsDependentCString key(aProp);
-  if (auto entry = mHashtable.LookupForAdd(key)) {
-    return NS_ERROR_FAILURE;
-  } else {
-    nsCOMPtr<nsIFile> ourFile = do_QueryInterface(aValue);
-    if (ourFile) {
-      nsCOMPtr<nsIFile> cloneFile;
-      ourFile->Clone(getter_AddRefs(cloneFile));
-      entry.OrInsert([&cloneFile]() { return cloneFile.forget(); });
-      return NS_OK;
+  const nsDependentCString key(aProp);
+  return mHashtable.WithEntryHandle(key, [&](auto&& entry) {
+    if (!entry) {
+      nsCOMPtr<nsIFile> ourFile = do_QueryInterface(aValue);
+      if (ourFile) {
+        nsCOMPtr<nsIFile> cloneFile;
+        ourFile->Clone(getter_AddRefs(cloneFile));
+        entry.Insert(std::move(cloneFile));
+        return NS_OK;
+      }
     }
-    mHashtable.Remove(key);  // another hashtable lookup, but should be rare
-  }
-  return NS_ERROR_FAILURE;
+    return NS_ERROR_FAILURE;
+  });
 }
 
 NS_IMETHODIMP

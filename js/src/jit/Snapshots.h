@@ -7,7 +7,6 @@
 #ifndef jit_Snapshot_h
 #define jit_Snapshot_h
 
-#include "mozilla/Alignment.h"
 #include "mozilla/Attributes.h"
 
 #include "jit/CompactBuffer.h"
@@ -166,7 +165,9 @@ class RValueAllocation {
   static void writePayload(CompactBufferWriter& writer, PayloadType t,
                            Payload p);
   static void writePadding(CompactBufferWriter& writer);
+#ifdef JS_JITSPEW
   static void dumpPayload(GenericPrinter& out, PayloadType t, Payload p);
+#endif
   static bool equalPayloads(PayloadType t, Payload lhs, Payload rhs);
 
   RValueAllocation(Mode mode, Payload a1, Payload a2)
@@ -323,9 +324,10 @@ class RValueAllocation {
   }
 
  public:
+#ifdef JS_JITSPEW
   void dump(GenericPrinter& out) const;
+#endif
 
- public:
   bool operator==(const RValueAllocation& rhs) const {
     // Note, this equality compares the verbatim content of the payload,
     // which is made possible because we ensure that the payload content is
@@ -374,7 +376,7 @@ class SnapshotWriter {
   void trackSnapshot(uint32_t pcOpcode, uint32_t mirOpcode, uint32_t mirId,
                      uint32_t lirOpcode, uint32_t lirId);
 #endif
-  MOZ_MUST_USE bool add(const RValueAllocation& slot);
+  [[nodiscard]] bool add(const RValueAllocation& slot);
 
   uint32_t allocWritten() const { return allocWritten_; }
   void endSnapshot();

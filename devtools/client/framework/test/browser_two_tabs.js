@@ -7,6 +7,7 @@
 
 var { DevToolsServer } = require("devtools/server/devtools-server");
 var { DevToolsClient } = require("devtools/client/devtools-client");
+const { createCommandsDictionary } = require("devtools/shared/commands/index");
 
 const TAB_URL_1 = "data:text/html;charset=utf-8,foo";
 const TAB_URL_2 = "data:text/html;charset=utf-8,bar";
@@ -23,6 +24,13 @@ add_task(async () => {
   await client.connect();
 
   const tabDescriptors = await client.mainRoot.listTabs();
+  await Promise.all(
+    tabDescriptors.map(async descriptor => {
+      const commands = await createCommandsDictionary(descriptor);
+      // Descriptor's getTarget will only work if the TargetCommand watches for the first top target
+      await commands.targetCommand.startListening();
+    })
+  );
   const tabs = await Promise.all(tabDescriptors.map(d => d.getTarget()));
   const targetFront1 = tabs.find(a => a.url === TAB_URL_1);
   const targetFront2 = tabs.find(a => a.url === TAB_URL_2);
@@ -47,8 +55,8 @@ async function checkGetTab(client, tab1, tab2, targetFront1, targetFront2) {
   if (tab1.linkedBrowser.frameLoader.remoteTab) {
     filter.tabId = tab1.linkedBrowser.frameLoader.remoteTab.tabId;
   } else {
-    const windowUtils = tab1.linkedBrowser.contentWindow.windowUtils;
-    filter.outerWindowID = windowUtils.outerWindowID;
+    const { docShell } = tab1.linkedBrowser.contentWindow;
+    filter.outerWindowID = docShell.outerWindowID;
   }
   front = await getTabTarget(client, filter);
   is(
@@ -86,7 +94,6 @@ async function checkGetTabFailures(client) {
 
 async function checkSelectedTargetActor(targetFront2) {
   // Send a naive request to the second target actor to check if it works
-  await targetFront2.attach();
   const consoleFront = await targetFront2.getFront("console");
   const response = await consoleFront.startListeners([]);
   ok(
@@ -97,7 +104,6 @@ async function checkSelectedTargetActor(targetFront2) {
 
 async function checkFirstTargetActor(targetFront1) {
   // then send a request to the first target actor to check if it still works
-  await targetFront1.attach();
   const consoleFront = await targetFront1.getFront("console");
   const response = await consoleFront.startListeners([]);
   ok(
@@ -108,5 +114,9 @@ async function checkFirstTargetActor(targetFront1) {
 
 async function getTabTarget(client, filter) {
   const descriptor = await client.mainRoot.getTab(filter);
+  // By default, descriptor returned by getTab will close the client
+  // when the tab is closed. Disable this default behavior for this test.
+  // Bug 1698890: The test should probably stop assuming this.
+  descriptor.shouldCloseClient = false;
   return descriptor.getTarget();
 }

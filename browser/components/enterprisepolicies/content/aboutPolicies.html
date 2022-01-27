@@ -7,7 +7,9 @@
 
 <html>
     <head>
+        <meta charset="utf-8">
         <meta http-equiv="Content-Security-Policy" content="default-src chrome:; object-src 'none'">
+        <meta name="color-scheme" content="light dark">
         <title data-l10n-id="about-policies-title"></title>
         <link rel="stylesheet" href="chrome://browser/content/policies/aboutPolicies.css">
         <link rel="localization" href="branding/brand.ftl">
@@ -18,13 +20,13 @@
     </head>
     <body id="body">
         <div id="categories">
-            <div class="category" selected="true" id="category-active">
+            <div class="category" selected="true" id="category-active" tabindex="0">
                 <label class="category-name" data-l10n-id="active-policies-tab"></label>
             </div>
-            <div class="category" id="category-documentation">
+            <div class="category" id="category-documentation" tabindex="0">
                 <label class="category-name" data-l10n-id="documentation-tab"></label>
             </div>
-            <div class="category" id="category-errors">
+            <div class="category" id="category-errors" tabindex="0">
                 <label class="category-name" data-l10n-id="errors-tab"></label>
             </div>
         </div>

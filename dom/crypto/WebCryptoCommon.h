@@ -7,12 +7,29 @@
 #ifndef mozilla_dom_WebCryptoCommon_h
 #define mozilla_dom_WebCryptoCommon_h
 
+// XXX Several of these dependencies could be removed by moving implementations
+// to the cpp file.
+
+#include <cstdint>
+#include <cstring>
 #include "js/StructuredClone.h"
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/dom/CryptoBuffer.h"
+#include "mozilla/fallible.h"
 #include "nsContentUtils.h"
-#include "nsString.h"
-#include "pk11pub.h"
+#include "nsLiteralString.h"
+#include "nsStringFwd.h"
+#include "pkcs11t.h"
+#include "plarena.h"
+#include "secasn1t.h"
+#include "seccomon.h"
+#include "secitem.h"
+#include "secoid.h"
+#include "secoidt.h"
+
+struct JSStructuredCloneReader;
+struct JSStructuredCloneWriter;
 
 // WebCrypto algorithm names
 #define WEBCRYPTO_ALG_AES_CBC "AES-CBC"
@@ -92,9 +109,11 @@
 #define JWK_ALG_PS256 "PS256"
 #define JWK_ALG_PS384 "PS384"
 #define JWK_ALG_PS512 "PS512"
+// The JSON Web Algorithms spec (RFC 7518) uses the hash to identify these, not
+// the curve.
 #define JWK_ALG_ECDSA_P_256 "ES256"
 #define JWK_ALG_ECDSA_P_384 "ES384"
-#define JWK_ALG_ECDSA_P_521 "ES521"
+#define JWK_ALG_ECDSA_P_521 "ES512"
 
 // JWK usages
 #define JWK_USE_ENC "enc"

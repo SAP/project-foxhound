@@ -8,12 +8,15 @@
 #define mozilla_a11y_ia2Accessible_h_
 
 #include "nsISupports.h"
+#include "nsTArray.h"
 
 #include "Accessible2_3.h"
 
 namespace mozilla {
 namespace a11y {
-class Attribute;
+class Accessible;
+class AccAttributes;
+class AccessibleWrap;
 
 class ia2Accessible : public IAccessible2_3 {
  public:
@@ -108,10 +111,12 @@ class ia2Accessible : public IAccessible2_3 {
       /* [out, retval] */ long* nRanges);
 
   // Helper method
-  static HRESULT ConvertToIA2Attributes(nsIPersistentProperties* aAttributes,
+  static HRESULT ConvertToIA2Attributes(AccAttributes* aAttributes,
                                         BSTR* aIA2Attributes);
-  static HRESULT ConvertToIA2Attributes(nsTArray<Attribute>* aAttributes,
-                                        BSTR* aIA2Attributes);
+
+ private:
+  AccessibleWrap* LocalAcc();
+  Accessible* Acc();
 };
 
 }  // namespace a11y

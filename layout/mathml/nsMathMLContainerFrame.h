@@ -34,8 +34,6 @@ class PresShell;
   0x00000002  // size calculations include embellishments
 
 class nsMathMLContainerFrame : public nsContainerFrame, public nsMathMLFrame {
-  friend class nsMathMLmfencedFrame;
-
  public:
   nsMathMLContainerFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
                          ClassID aID)
@@ -111,7 +109,7 @@ class nsMathMLContainerFrame : public nsContainerFrame, public nsMathMLFrame {
   virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override;
 
-  virtual bool ComputeCustomOverflow(nsOverflowAreas& aOverflowAreas) override;
+  bool ComputeCustomOverflow(mozilla::OverflowAreas& aOverflowAreas) override;
 
   virtual void MarkIntrinsicISizesDirty() override;
 

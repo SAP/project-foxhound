@@ -2,6 +2,15 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
+AddonTestUtils.init(this);
+AddonTestUtils.overrideCertDB();
+AddonTestUtils.createAppInfo(
+  "xpcshell@tests.mozilla.org",
+  "XPCShell",
+  "1",
+  "43"
+);
+
 add_task(async function test_simple() {
   let extensionData = {
     manifest: {
@@ -15,6 +24,38 @@ add_task(async function test_simple() {
   let extension = ExtensionTestUtils.loadExtension(extensionData);
   await extension.startup();
   await extension.unload();
+});
+
+add_task(async function test_manifest_V3_disabled() {
+  Services.prefs.setBoolPref("extensions.manifestV3.enabled", false);
+  let extensionData = {
+    manifest: {
+      manifest_version: 3,
+    },
+  };
+
+  let extension = ExtensionTestUtils.loadExtension(extensionData);
+  await Assert.rejects(
+    extension.startup(),
+    /Unsupported manifest version: 3/,
+    "manifest V3 cannot be loaded"
+  );
+  Services.prefs.clearUserPref("extensions.manifestV3.enabled");
+});
+
+add_task(async function test_manifest_V3_enabled() {
+  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
+  let extensionData = {
+    manifest: {
+      manifest_version: 3,
+    },
+  };
+
+  let extension = ExtensionTestUtils.loadExtension(extensionData);
+  await extension.startup();
+  equal(extension.extension.manifest.manifest_version, 3, "manifest V3 loads");
+  await extension.unload();
+  Services.prefs.clearUserPref("extensions.manifestV3.enabled");
 });
 
 add_task(async function test_background() {
@@ -76,4 +117,34 @@ add_task(async function test_extensionTypes() {
   await extension.startup();
   await extension.awaitFinish();
   await extension.unload();
+});
+
+add_task(async function test_policy_temporarilyInstalled() {
+  await AddonTestUtils.promiseStartupManager();
+
+  let extensionData = {
+    manifest: {
+      manifest_version: 2,
+    },
+  };
+
+  async function runTest(useAddonManager) {
+    let extension = ExtensionTestUtils.loadExtension({
+      ...extensionData,
+      useAddonManager,
+    });
+
+    const expected = useAddonManager === "temporary";
+    await extension.startup();
+    const { temporarilyInstalled } = WebExtensionPolicy.getByID(extension.id);
+    equal(
+      temporarilyInstalled,
+      expected,
+      `Got the expected WebExtensionPolicy.temporarilyInstalled value on "${useAddonManager}"`
+    );
+    await extension.unload();
+  }
+
+  await runTest("temporary");
+  await runTest("permanent");
 });

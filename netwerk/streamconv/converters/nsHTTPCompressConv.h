@@ -16,11 +16,6 @@
 
 #  include "zlib.h"
 
-// brotli includes
-#  undef assert
-#  include "assert.h"
-#  include "state.h"
-
 class nsIStringInputStream;
 
 #  define NS_HTTPCOMPRESSCONVERTER_CID                 \
@@ -43,36 +38,7 @@ class nsIStringInputStream;
 namespace mozilla {
 namespace net {
 
-typedef enum {
-  HTTP_COMPRESS_GZIP,
-  HTTP_COMPRESS_DEFLATE,
-  HTTP_COMPRESS_COMPRESS,
-  HTTP_COMPRESS_BROTLI,
-  HTTP_COMPRESS_IDENTITY
-} CompressMode;
-
-class BrotliWrapper {
- public:
-  BrotliWrapper()
-      : mTotalOut(0),
-        mStatus(NS_OK),
-        mBrotliStateIsStreamEnd(false),
-        mRequest(nullptr),
-        mContext(nullptr),
-        mSourceOffset(0) {
-    BrotliDecoderStateInit(&mState, 0, 0, 0);
-  }
-  ~BrotliWrapper() { BrotliDecoderStateCleanup(&mState); }
-
-  BrotliDecoderState mState;
-  Atomic<size_t, Relaxed> mTotalOut;
-  nsresult mStatus;
-  Atomic<bool, Relaxed> mBrotliStateIsStreamEnd;
-
-  nsIRequest* mRequest;
-  nsISupports* mContext;
-  uint64_t mSourceOffset;
-};
+class BrotliWrapper;
 
 class nsHTTPCompressConv : public nsIStreamConverter,
                            public nsICompressConvStats,
@@ -90,18 +56,26 @@ class nsHTTPCompressConv : public nsIStreamConverter,
 
   nsHTTPCompressConv();
 
+  using CompressMode = enum {
+    HTTP_COMPRESS_GZIP,
+    HTTP_COMPRESS_DEFLATE,
+    HTTP_COMPRESS_COMPRESS,
+    HTTP_COMPRESS_BROTLI,
+    HTTP_COMPRESS_IDENTITY
+  };
+
  private:
   virtual ~nsHTTPCompressConv();
 
   nsCOMPtr<nsIStreamListener>
       mListener;  // this guy gets the converted data via his OnDataAvailable ()
-  Atomic<CompressMode, Relaxed> mMode;
+  Atomic<CompressMode, Relaxed> mMode{HTTP_COMPRESS_IDENTITY};
 
-  unsigned char* mOutBuffer;
-  unsigned char* mInpBuffer;
+  unsigned char* mOutBuffer{nullptr};
+  unsigned char* mInpBuffer{nullptr};
 
-  uint32_t mOutBufferLen;
-  uint32_t mInpBufferLen;
+  uint32_t mOutBufferLen{0};
+  uint32_t mInpBufferLen{0};
 
   UniquePtr<BrotliWrapper> mBrotli;
 
@@ -111,24 +85,23 @@ class nsHTTPCompressConv : public nsIStreamConverter,
                                 const char* dataIn, uint32_t, uint32_t avail,
                                 uint32_t* countRead);
 
-  nsresult do_OnDataAvailable(nsIRequest* request, nsISupports* aContext,
-                              uint64_t aSourceOffset, const char* buffer,
-                              uint32_t aCount);
+  nsresult do_OnDataAvailable(nsIRequest* request, uint64_t aSourceOffset,
+                              const char* buffer, uint32_t aCount);
 
-  bool mCheckHeaderDone;
-  Atomic<bool> mStreamEnded;
-  bool mStreamInitialized;
-  bool mDummyStreamInitialised;
+  bool mCheckHeaderDone{false};
+  Atomic<bool> mStreamEnded{false};
+  bool mStreamInitialized{false};
+  bool mDummyStreamInitialised{false};
   bool mFailUncleanStops;
 
-  z_stream d_stream;
-  unsigned mLen, hMode, mSkipCount, mFlags;
+  z_stream d_stream{};
+  unsigned mLen{0}, hMode{0}, mSkipCount{0}, mFlags{0};
 
-  uint32_t check_header(nsIInputStream* iStr, uint32_t streamLen, nsresult* rv);
+  uint32_t check_header(nsIInputStream* iStr, uint32_t streamLen, nsresult* rs);
 
-  Atomic<uint32_t, Relaxed> mDecodedDataLength;
+  Atomic<uint32_t, Relaxed> mDecodedDataLength{0};
 
-  mutable mozilla::Mutex mMutex;
+  mutable mozilla::Mutex mMutex{"nsHTTPCompressConv"};
 };
 
 }  // namespace net

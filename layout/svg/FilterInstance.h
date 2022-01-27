@@ -19,17 +19,23 @@
 #include "nsTArray.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/webrender/WebRenderTypes.h"
+#include "mozilla/ServoStyleConsts.h"
+#include "mozilla/SVGIntegrationUtils.h"
 
 class gfxContext;
+class nsIContent;
 class nsIFrame;
 struct WrFiltersHolder;
 
 namespace mozilla {
-class SVGFilterPaintCallback;
 
 namespace dom {
 class UserSpaceMetrics;
 }  // namespace dom
+
+namespace image {
+struct imgDrawingParams;
+}
 
 /**
  * This class performs all filter processing.
@@ -55,6 +61,7 @@ class FilterInstance {
   using FilterDescription = gfx::FilterDescription;
   using UserSpaceMetrics = dom::UserSpaceMetrics;
   using imgDrawingParams = image::imgDrawingParams;
+  using SVGFilterPaintCallback = SVGIntegrationUtils::SVGFilterPaintCallback;
 
  public:
   /**
@@ -83,7 +90,7 @@ class FilterInstance {
    *   border box).
    */
   static void PaintFilteredFrame(nsIFrame* aFilteredFrame, gfxContext* aCtx,
-                                 SVGFilterPaintCallback* aPaintCallback,
+                                 const SVGFilterPaintCallback& aPaintCallback,
                                  const nsRegion* aDirtyArea,
                                  imgDrawingParams& aImgParams,
                                  float aOpacity = 1.0f);
@@ -120,12 +127,15 @@ class FilterInstance {
 
   /**
    * Try to build WebRender filters for a frame if the filters applied to it are
-   * supported.
+   * supported. aInitialized is set to true if the filter has been initialized
+   * and false otherwise (e.g. a bad url). If aInitialized is false the filter
+   * the filter contents should not be drawn.
    */
   static bool BuildWebRenderFilters(
       nsIFrame* aFilteredFrame,
       mozilla::Span<const mozilla::StyleFilter> aFilters,
-      WrFiltersHolder& aWrFilters, mozilla::Maybe<nsRect>& aPostFilterClip);
+      WrFiltersHolder& aWrFilters, mozilla::Maybe<nsRect>& aPostFilterClip,
+      bool& aInitialized);
 
  private:
   /**
@@ -152,16 +162,22 @@ class FilterInstance {
    * @param aOverrideBBox [optional] Use a different SVG bbox for the target
    *   element. Must be non-null if aTargetFrame is null.
    */
-  FilterInstance(nsIFrame* aTargetFrame, nsIContent* aTargetContent,
-                 const UserSpaceMetrics& aMetrics,
-                 Span<const StyleFilter> aFilterChain,
-                 bool aFilterInputIsTainted,
-                 SVGFilterPaintCallback* aPaintCallback,
-                 const gfxMatrix& aPaintTransform,
-                 const nsRegion* aPostFilterDirtyRegion = nullptr,
-                 const nsRegion* aPreFilterDirtyRegion = nullptr,
-                 const nsRect* aPreFilterInkOverflowRectOverride = nullptr,
-                 const gfxRect* aOverrideBBox = nullptr);
+  FilterInstance(
+      nsIFrame* aTargetFrame, nsIContent* aTargetContent,
+      const UserSpaceMetrics& aMetrics, Span<const StyleFilter> aFilterChain,
+      bool aFilterInputIsTainted,
+      const SVGIntegrationUtils::SVGFilterPaintCallback& aPaintCallback,
+      const gfxMatrix& aPaintTransform,
+      const nsRegion* aPostFilterDirtyRegion = nullptr,
+      const nsRegion* aPreFilterDirtyRegion = nullptr,
+      const nsRect* aPreFilterInkOverflowRectOverride = nullptr,
+      const gfxRect* aOverrideBBox = nullptr);
+
+  static bool BuildWebRenderFiltersImpl(
+      nsIFrame* aFilteredFrame,
+      mozilla::Span<const mozilla::StyleFilter> aFilters,
+      WrFiltersHolder& aWrFilters, mozilla::Maybe<nsRect>& aPostFilterClip,
+      bool& aInitialized);
 
   /**
    * Returns true if the filter instance was created successfully.
@@ -179,7 +195,7 @@ class FilterInstance {
 
   const FilterDescription& ExtractDescriptionAndAdditionalImages(
       nsTArray<RefPtr<SourceSurface>>& aOutAdditionalImages) {
-    mInputImages.SwapElements(aOutAdditionalImages);
+    aOutAdditionalImages = std::move(mInputImages);
     return mFilterDescription;
   }
 
@@ -330,7 +346,7 @@ class FilterInstance {
    */
   const UserSpaceMetrics& mMetrics;
 
-  SVGFilterPaintCallback* mPaintCallback;
+  const SVGFilterPaintCallback& mPaintCallback;
 
   /**
    * The SVG bbox of the element that is being filtered, in user space.

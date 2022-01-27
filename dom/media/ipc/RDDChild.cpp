@@ -6,10 +6,12 @@
 #include "RDDChild.h"
 
 #include "mozilla/RDDProcessManager.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/MemoryReportRequest.h"
-#include "mozilla/ipc/CrashReporterHost.h"
-#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/GPUProcessManager.h"
+#include "mozilla/gfx/gfxVars.h"
+#include "mozilla/ipc/CrashReporterHost.h"
+#include "mozilla/ipc/Endpoint.h"
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/SandboxBroker.h"
@@ -22,9 +24,7 @@
 #  include "mozilla/WinDllServices.h"
 #endif
 
-#ifdef MOZ_GECKO_PROFILER
-#  include "ProfilerParent.h"
-#endif
+#include "ProfilerParent.h"
 #include "RDDProcessHost.h"
 
 namespace mozilla {
@@ -42,7 +42,7 @@ bool RDDChild::Init() {
   Maybe<FileDescriptor> brokerFd;
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
-  auto policy = SandboxBrokerPolicyFactory::GetUtilityPolicy(OtherPid());
+  auto policy = SandboxBrokerPolicyFactory::GetRDDPolicy(OtherPid());
   if (policy != nullptr) {
     brokerFd = Some(FileDescriptor());
     mSandboxBroker =
@@ -60,9 +60,7 @@ bool RDDChild::Init() {
 
   SendInit(updates, brokerFd, Telemetry::CanRecordReleaseData());
 
-#ifdef MOZ_GECKO_PROFILER
   Unused << SendInitProfiler(ProfilerParent::CreateForProcess(OtherPid()));
-#endif
 
   gfxVars::AddReceiver(this);
   auto* gpm = gfx::GPUProcessManager::Get();
@@ -78,8 +76,27 @@ bool RDDChild::SendRequestMemoryReport(const uint32_t& aGeneration,
                                        const bool& aMinimizeMemoryUsage,
                                        const Maybe<FileDescriptor>& aDMDFile) {
   mMemoryReportRequest = MakeUnique<MemoryReportRequestHost>(aGeneration);
-  Unused << PRDDChild::SendRequestMemoryReport(aGeneration, aAnonymize,
-                                               aMinimizeMemoryUsage, aDMDFile);
+
+  PRDDChild::SendRequestMemoryReport(
+      aGeneration, aAnonymize, aMinimizeMemoryUsage, aDMDFile,
+      [&](const uint32_t& aGeneration2) {
+        if (RDDProcessManager* rddpm = RDDProcessManager::Get()) {
+          if (RDDChild* child = rddpm->GetRDDChild()) {
+            if (child->mMemoryReportRequest) {
+              child->mMemoryReportRequest->Finish(aGeneration2);
+              child->mMemoryReportRequest = nullptr;
+            }
+          }
+        }
+      },
+      [&](mozilla::ipc::ResponseRejectReason) {
+        if (RDDProcessManager* rddpm = RDDProcessManager::Get()) {
+          if (RDDChild* child = rddpm->GetRDDChild()) {
+            child->mMemoryReportRequest = nullptr;
+          }
+        }
+      });
+
   return true;
 }
 
@@ -100,19 +117,10 @@ mozilla::ipc::IPCResult RDDChild::RecvAddMemoryReport(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult RDDChild::RecvFinishMemoryReport(
-    const uint32_t& aGeneration) {
-  if (mMemoryReportRequest) {
-    mMemoryReportRequest->Finish(aGeneration);
-    mMemoryReportRequest = nullptr;
-  }
-  return IPC_OK();
-}
-
+#if defined(XP_WIN)
 mozilla::ipc::IPCResult RDDChild::RecvGetModulesTrust(
     ModulePaths&& aModPaths, bool aRunAtNormalPriority,
     GetModulesTrustResolver&& aResolver) {
-#if defined(XP_WIN)
   RefPtr<DllServices> dllSvc(DllServices::Get());
   dllSvc->GetModulesTrust(std::move(aModPaths), aRunAtNormalPriority)
       ->Then(
@@ -122,9 +130,14 @@ mozilla::ipc::IPCResult RDDChild::RecvGetModulesTrust(
           },
           [aResolver](nsresult aRv) { aResolver(Nothing()); });
   return IPC_OK();
-#else
-  return IPC_FAIL(this, "Unsupported on this platform");
+}
 #endif  // defined(XP_WIN)
+
+mozilla::ipc::IPCResult RDDChild::RecvUpdateMediaCodecsSupported(
+    const PDMFactory::MediaCodecsSupported& aSupported) {
+  dom::ContentParent::BroadcastMediaCodecsSupportedUpdate(
+      RemoteDecodeIn::RddProcess, aSupported);
+  return IPC_OK();
 }
 
 void RDDChild::ActorDestroy(ActorDestroyReason aWhy) {

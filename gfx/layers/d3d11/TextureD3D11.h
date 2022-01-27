@@ -8,7 +8,9 @@
 #define MOZILLA_GFX_TEXTURED3D11_H
 
 #include <d3d11.h>
+
 #include <vector>
+
 #include "d3d9.h"
 #include "gfxWindowsPlatform.h"
 #include "mozilla/GfxMessageUtils.h"
@@ -68,7 +70,7 @@ class D3D11TextureData final : public TextureData {
                              LayersBackend aLayersBackend, TextureFlags aFlags,
                              TextureAllocationFlags aAllocFlags) const override;
 
-  void SyncWithObject(SyncObjectClient* aSyncObject) override;
+  void SyncWithObject(RefPtr<SyncObjectClient> aSyncObject) override;
 
   ID3D11Texture2D* GetD3D11Texture() const { return mTexture; }
 
@@ -117,14 +119,12 @@ class D3D11TextureData final : public TextureData {
   // Hold on to the DrawTarget because it is expensive to create one each
   // ::Lock.
   RefPtr<gfx::DrawTarget> mDrawTarget;
-  gfx::IntSize mSize;
-  gfx::SurfaceFormat mFormat;
-  gfx::YUVColorSpace mYUVColorSpace = gfx::YUVColorSpace::UNKNOWN;
+  const gfx::IntSize mSize;
+  const gfx::SurfaceFormat mFormat;
+  gfx::YUVColorSpace mYUVColorSpace = gfx::YUVColorSpace::Identity;
   gfx::ColorRange mColorRange = gfx::ColorRange::LIMITED;
-  bool mNeedsClear;
-  bool mNeedsClearWhite;
-  bool mHasSynchronization;
-  bool mIsForOutOfBandContent;
+  bool mNeedsClear = false;
+  const bool mHasSynchronization;
 
   RefPtr<ID3D11Texture2D> mTexture;
   const TextureAllocationFlags mAllocationFlags;
@@ -251,7 +251,8 @@ class DataTextureSourceD3D11 : public DataTextureSource,
 
   bool Update(gfx::DataSourceSurface* aSurface,
               nsIntRegion* aDestRegion = nullptr,
-              gfx::IntPoint* aSrcOffset = nullptr) override;
+              gfx::IntPoint* aSrcOffset = nullptr,
+              gfx::IntPoint* aDstOffset = nullptr) override;
 
   // TextureSource
 
@@ -323,17 +324,9 @@ class DXGITextureHostD3D11 : public TextureHost {
   DXGITextureHostD3D11(TextureFlags aFlags,
                        const SurfaceDescriptorD3D10& aDescriptor);
 
-  bool BindTextureSource(CompositableTextureSourceRef& aTexture) override;
-  bool AcquireTextureSource(CompositableTextureSourceRef& aTexture) override;
-
   void DeallocateDeviceData() override {}
 
-  void SetTextureSourceProvider(TextureSourceProvider* aProvider) override;
-
   gfx::SurfaceFormat GetFormat() const override { return mFormat; }
-
-  bool Lock() override;
-  void Unlock() override;
 
   bool LockWithoutCompositor() override;
   void UnlockWithoutCompositor() override;
@@ -360,7 +353,9 @@ class DXGITextureHostD3D11 : public TextureHost {
                         const wr::LayoutRect& aBounds,
                         const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
                         const Range<wr::ImageKey>& aImageKeys,
-                        const bool aPreferCompositorSurface) override;
+                        PushDisplayItemFlagSet aFlags) override;
+
+  bool SupportsExternalCompositing(WebRenderBackend aBackend) override;
 
  protected:
   bool LockInternal();
@@ -388,12 +383,7 @@ class DXGIYCbCrTextureHostD3D11 : public TextureHost {
   DXGIYCbCrTextureHostD3D11(TextureFlags aFlags,
                             const SurfaceDescriptorDXGIYCbCr& aDescriptor);
 
-  bool BindTextureSource(CompositableTextureSourceRef& aTexture) override;
-  bool AcquireTextureSource(CompositableTextureSourceRef& aTexture) override;
-
   void DeallocateDeviceData() override {}
-
-  void SetTextureSourceProvider(TextureSourceProvider* aProvider) override;
 
   gfx::SurfaceFormat GetFormat() const override {
     return gfx::SurfaceFormat::YUV;
@@ -404,10 +394,6 @@ class DXGIYCbCrTextureHostD3D11 : public TextureHost {
     return mYUVColorSpace;
   }
   gfx::ColorRange GetColorRange() const override { return mColorRange; }
-
-  bool Lock() override;
-
-  void Unlock() override;
 
   gfx::IntSize GetSize() const override { return mSize; }
 
@@ -429,7 +415,9 @@ class DXGIYCbCrTextureHostD3D11 : public TextureHost {
                         const wr::LayoutRect& aBounds,
                         const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
                         const Range<wr::ImageKey>& aImageKeys,
-                        const bool aPreferCompositorSurface) override;
+                        PushDisplayItemFlagSet aFlags) override;
+
+  bool SupportsExternalCompositing(WebRenderBackend aBackend) override;
 
  private:
   bool EnsureTextureSource();
@@ -443,6 +431,7 @@ class DXGIYCbCrTextureHostD3D11 : public TextureHost {
   RefPtr<DataTextureSourceD3D11> mTextureSources[3];
 
   gfx::IntSize mSize;
+  gfx::IntSize mSizeY;
   gfx::IntSize mSizeCbCr;
   WindowsHandle mHandles[3];
   bool mIsLocked;
@@ -502,19 +491,38 @@ class SyncObjectD3D11Client : public SyncObjectClient {
 
   bool IsSyncObjectValid() override;
 
+  void EnsureInitialized() override {}
+
   SyncType GetSyncType() override { return SyncType::D3D11; }
 
   void RegisterTexture(ID3D11Texture2D* aTexture);
 
- private:
-  bool Init(bool aFallible);
-
-  SyncHandle mSyncHandle;
-  RefPtr<ID3D11Device> mDevice;
-  RefPtr<ID3D11Texture2D> mSyncTexture;
-  RefPtr<IDXGIKeyedMutex> mKeyedMutex;
-  std::vector<ID3D11Texture2D*> mSyncedTextures;
+ protected:
+  explicit SyncObjectD3D11Client(SyncHandle aSyncHandle);
+  bool Init(ID3D11Device* aDevice, bool aFallible);
+  bool SynchronizeInternal(ID3D11Device* aDevice, bool aFallible);
   Mutex mSyncLock;
+  RefPtr<ID3D11Texture2D> mSyncTexture;
+  std::vector<ID3D11Texture2D*> mSyncedTextures;
+
+ private:
+  const SyncHandle mSyncHandle;
+  RefPtr<IDXGIKeyedMutex> mKeyedMutex;
+  const RefPtr<ID3D11Device> mDevice;
+};
+
+class SyncObjectD3D11ClientContentDevice : public SyncObjectD3D11Client {
+ public:
+  explicit SyncObjectD3D11ClientContentDevice(SyncHandle aSyncHandle);
+
+  bool Synchronize(bool aFallible) override;
+
+  bool IsSyncObjectValid() override;
+
+  void EnsureInitialized() override;
+
+ private:
+  RefPtr<ID3D11Device> mContentDevice;
 };
 
 inline uint32_t GetMaxTextureSizeForFeatureLevel(

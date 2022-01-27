@@ -53,6 +53,7 @@ struct nsWidgetInitData;
 namespace mozilla {
 class PresShell;
 class AppWindowTimerCallback;
+class L10nReadyPromiseHandler;
 }  // namespace mozilla
 
 // AppWindow
@@ -104,6 +105,9 @@ class AppWindow final : public nsIBaseWindow,
     virtual void FullscreenWillChange(bool aInFullscreen) override;
     MOZ_CAN_RUN_SCRIPT_BOUNDARY
     virtual void FullscreenChanged(bool aInFullscreen) override;
+    MOZ_CAN_RUN_SCRIPT_BOUNDARY
+    virtual void MacFullscreenMenubarOverlapChanged(
+        mozilla::DesktopCoord aOverlapAmount) override;
     MOZ_CAN_RUN_SCRIPT_BOUNDARY
     virtual void OcclusionStateChanged(bool aIsFullyOccluded) override;
     MOZ_CAN_RUN_SCRIPT_BOUNDARY
@@ -160,6 +164,8 @@ class AppWindow final : public nsIBaseWindow,
   MOZ_CAN_RUN_SCRIPT void UIResolutionChanged();
   MOZ_CAN_RUN_SCRIPT void FullscreenWillChange(bool aInFullscreen);
   MOZ_CAN_RUN_SCRIPT void FullscreenChanged(bool aInFullscreen);
+  MOZ_CAN_RUN_SCRIPT void MacFullscreenMenubarOverlapChanged(
+      mozilla::DesktopCoord aOverlapAmount);
   MOZ_CAN_RUN_SCRIPT void OcclusionStateChanged(bool aIsFullyOccluded);
   MOZ_CAN_RUN_SCRIPT void OSToolbarButtonPressed();
   MOZ_CAN_RUN_SCRIPT
@@ -246,6 +252,16 @@ class AppWindow final : public nsIBaseWindow,
   void LoadPersistentWindowState();
   nsresult GetPersistentValue(const nsAtom* aAttr, nsAString& aValue);
   nsresult SetPersistentValue(const nsAtom* aAttr, const nsAString& aValue);
+
+  // Saves window size and positioning values in order to display a very early
+  // skeleton UI. This has to happen before we can reasonably initialize the
+  // xulstore (i.e., before even loading libxul), so they have to use a special
+  // purpose store to do so.
+  nsresult MaybeSaveEarlyWindowPersistentValues(
+      const LayoutDeviceIntRect& aRect);
+
+  // Gets the uri spec and the window element ID for this window.
+  nsresult GetDocXulStoreKeys(nsString& aUriSpec, nsString& aWindowElementId);
 
   // Enum for the current state of a fullscreen change.
   //

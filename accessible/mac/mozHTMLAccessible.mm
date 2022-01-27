@@ -1,27 +1,29 @@
+/* clang-format off */
 /* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
+/* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #import "mozHTMLAccessible.h"
 
-#import "Accessible-inl.h"
+#import "LocalAccessible-inl.h"
 #import "HyperTextAccessible.h"
 
 #import "nsCocoaUtils.h"
+
+using namespace mozilla::a11y;
 
 @implementation mozHeadingAccessible
 
 - (NSString*)moxTitle {
   nsAutoString title;
-  if (Accessible* acc = mGeckoAccessible.AsAccessible()) {
+  if (LocalAccessible* acc = mGeckoAccessible->AsLocal()) {
     mozilla::ErrorResult rv;
     // XXX use the flattening API when there are available
     // see bug 768298
     acc->GetContent()->GetTextContent(title, rv);
-  } else if (ProxyAccessible* proxy = mGeckoAccessible.AsProxy()) {
+  } else if (RemoteAccessible* proxy = mGeckoAccessible->AsRemote()) {
     proxy->Title(title);
   }
 
@@ -30,9 +32,9 @@
 
 - (id)moxValue {
   GroupPos groupPos;
-  if (Accessible* acc = mGeckoAccessible.AsAccessible()) {
+  if (LocalAccessible* acc = mGeckoAccessible->AsLocal()) {
     groupPos = acc->GroupPosition();
-  } else if (ProxyAccessible* proxy = mGeckoAccessible.AsProxy()) {
+  } else if (RemoteAccessible* proxy = mGeckoAccessible->AsRemote()) {
     groupPos = proxy->GroupPosition();
   }
 
@@ -49,9 +51,9 @@
 
 - (NSURL*)moxURL {
   nsAutoString value;
-  if (Accessible* acc = mGeckoAccessible.AsAccessible()) {
+  if (LocalAccessible* acc = mGeckoAccessible->AsLocal()) {
     acc->Value(value);
-  } else if (ProxyAccessible* proxy = mGeckoAccessible.AsProxy()) {
+  } else if (RemoteAccessible* proxy = mGeckoAccessible->AsRemote()) {
     proxy->Value(value);
   }
 
@@ -76,12 +78,16 @@
   return [super moxRole];
 }
 
+- (NSArray*)moxLinkedUIElements {
+  return [self getRelationsByType:RelationType::LINKS_TO];
+}
+
 @end
 
-@implementation MOXSummaryAccessible
+@implementation MOXListItemAccessible
 
-- (NSNumber*)moxExpanded {
-  return @([self stateWithMask:states::EXPANDED] != 0);
+- (NSString*)moxTitle {
+  return @"";
 }
 
 @end

@@ -12,7 +12,6 @@
 #ifndef frontend_EitherParser_h
 #define frontend_EitherParser_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Tuple.h"
 #include "mozilla/Utf8.h"
 #include "mozilla/Variant.h"
@@ -22,7 +21,6 @@
 
 #include "frontend/BCEParserHandle.h"
 #include "frontend/Parser.h"
-#include "frontend/TokenStream.h"
 
 namespace js {
 
@@ -34,8 +32,8 @@ struct InvokeMemberFunction {
   mozilla::Tuple<std::decay_t<Args>...> args;
 
   template <class This, size_t... Indices>
-  auto matchInternal(This* obj, std::index_sequence<Indices...>) -> decltype(
-      ((*obj).*(MemberFunction<This>::get()))(mozilla::Get<Indices>(args)...)) {
+  auto matchInternal(This* obj, std::index_sequence<Indices...>) -> decltype((
+      (*obj).*(MemberFunction<This>::get()))(mozilla::Get<Indices>(args)...)) {
     return ((*obj).*
             (MemberFunction<This>::get()))(mozilla::Get<Indices>(args)...);
   }
@@ -148,6 +146,16 @@ class EitherParser : public BCEParserHandle {
                          uint32_t*, uint32_t*>
         matcher{offset, line, column};
     return parser.match(std::move(matcher));
+  }
+
+  CompilationState& getCompilationState() {
+    ParserSharedBase& base = parser.match(detail::ParserSharedBaseMatcher());
+    return base.getCompilationState();
+  }
+
+  ParserAtomsTable& parserAtoms() {
+    ParserSharedBase& base = parser.match(detail::ParserSharedBaseMatcher());
+    return base.parserAtoms();
   }
 };
 

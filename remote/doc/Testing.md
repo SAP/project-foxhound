@@ -1,10 +1,13 @@
 Testing
 =======
 
-The remote agent has unit- and functional tests located under
-`remote/test/{unit,browser}`.
+The Remote Protocol has unit- and functional tests located under different folders:
 
-You may run all the tests under a particular subfolder like this:
+  - Shared Modules: `remote/shared/`
+  - CDP: `remote/cdp`.
+  - WebDriver BiDi: `remote/webdriver-bidi`
+
+You may want to run all the tests under a particular subfolder locally like this:
 
 	% ./mach test remote
 
@@ -15,7 +18,7 @@ Unit tests
 Because tests are run in parallel and [xpcshell] itself is quite
 chatty, it can sometimes be useful to run the tests in sequence:
 
-	% ./mach xcpshell-test --sequential remote/test/unit/test_Assert.js
+	% ./mach xpcshell-test --sequential remote/cdp/test/unit/test_DomainCache.js
 
 The unit tests will appear as part of the `X` (for _xpcshell_) jobs
 on Treeherder.
@@ -26,10 +29,10 @@ on Treeherder.
 Browser chrome tests
 --------------------
 
-We also have a set of functional [browser chrome] tests located
-under _remote/test/browser_:
+We also have a set of functional [browser chrome] tests for CDP located
+under _remote/cdp/test/browser_:
 
-	% ./mach mochitest remote/test/browser/browser_cdp.js
+	% ./mach mochitest remote/cdp/test/browser/browser_cdp.js
 
 The functional tests will appear under the `M` (for _mochitest_)
 category in the `remote` jobs on Treeherder.
@@ -38,7 +41,7 @@ As the functional tests will sporadically pop up new Firefox
 application windows, a helpful tip is to run them in [headless
 mode]:
 
-	% ./mach mochitest --headless remote/test/browser
+	% ./mach mochitest --headless remote/cdp/test/browser
 
 The `--headless` flag is equivalent to setting the `MOZ_HEADLESS`
 environment variable.  You can additionally use `MOZ_HEADLESS_WIDTH`
@@ -47,7 +50,7 @@ display.
 
 The `add_task()` function used for writing [asynchronous tests] is
 replaced to provide some additional test setup and teardown useful
-for writing tests against the remote agent and the targets.
+for writing tests against the Remote Agent and the targets.
 
 Before the task is run, the `nsIRemoteAgent` listener is started
 and a [CDP client] is connected.  You will use this CDP client for
@@ -74,7 +77,7 @@ This is what it looks like all put together:
 	  info("Current URL: " + tab.linkedBrowser.currentURI.spec);
 
 	  // manually connect to a specific target
-	  const { mainProcessTarget } = RemoteAgent.targets;
+	  const { mainProcessTarget } = RemoteAgent.cdp.targetList;
 	  const target = mainProcessTarget.wsDebuggerURL;
 	  const client = await CDP({ target });
 
@@ -112,6 +115,9 @@ In addition to our own Firefox-specific tests, we run the upstream
 towards achieving full [Puppeteer support] in Firefox. The tests are written
 in the behaviour-driven testing framework [Mocha].
 
+Check the upstream [Puppeteer test suite] documentation for instructions on
+how to skip tests, run only one test or a subsuite of tests.
+
 Puppeteer tests are vendored under _remote/test/puppeteer/_ and are
 run locally like this:
 
@@ -119,19 +125,30 @@ run locally like this:
 
 You can also run them against Chrome as:
 
-  % ./mach puppeteer-test --product=chrome --subset
+	% ./mach puppeteer-test --product=chrome --subset
 
 `--subset` disables a check for missing or skipped tests in our log parsing.
 This check is typically not relevant when running against Chrome.
 
-To schedule the tests on try, look for `source-test-remote-puppeteer` in
-`./mach try fuzzy`. On try they appear under the `remote(pup)` symbol.
-
-Test expectation metadata is collected in _remote/puppeteer-expected.json_
+Test expectation metadata is collected in _remote/test/puppeteer-expected.json_
 via log parsing and a custom Mocha reporter under
 _remote/test/puppeteer/json-mocha-reporter.js_
+
+
+Testing on Try
+--------------
+
+To schedule all the Remote Protocol tests on try, you can use the
+`remote-protocol` [try preset]:
+
+	mach try --preset remote-protocol
+
+But you can also schedule tests by selecting relevant jobs yourself:
+
+	mach try fuzzy
 
 [Puppeteer test suite]: https://github.com/puppeteer/puppeteer/blob/master/test/README.md
 [track progress]: https://puppeteer.github.io/ispuppeteerfirefoxready/
 [Puppeteer support]: https://bugzilla.mozilla.org/show_bug.cgi?id=puppeteer
 [Mocha]: https://mochajs.org/
+[try preset]: https://firefox-source-docs.mozilla.org/tools/try/presets.html

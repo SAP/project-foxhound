@@ -15,9 +15,7 @@
 #include "nscore.h"
 #include "nsDebug.h"
 
-#include "ipc/IPCMessageUtils.h"
 #include "mozilla/ipc/SharedMemory.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
 #include "mozilla/UniquePtr.h"
 
 /**
@@ -60,6 +58,9 @@ class ShadowLayerForwarder;
 }  // namespace layers
 
 namespace ipc {
+
+template <typename P>
+struct IPDLParamTraits;
 
 class Shmem final {
   friend struct IPDLParamTraits<mozilla::ipc::Shmem>;
@@ -155,23 +156,24 @@ class Shmem final {
                                                      bool aUnsafe,
                                                      bool aProtect = false);
 
-  // Prepare this to be shared with |aProcess|.  Return an IPC message
-  // that contains enough information for the other process to map
-  // this segment in OpenExisting() below.  Return a new message if
-  // successful (owned by the caller), nullptr if not.
-  UniquePtr<IPC::Message> ShareTo(PrivateIPDLCaller, base::ProcessId aTargetPid,
-                                  int32_t routingId);
+  // Prepare this to be shared with another process. Return an IPC message that
+  // contains enough information for the other process to map this segment in
+  // OpenExisting() below.  Return a new message if successful (owned by the
+  // caller), nullptr if not.
+  UniquePtr<IPC::Message> MkCreatedMessage(PrivateIPDLCaller,
+                                           int32_t routingId);
 
-  // Stop sharing this with |aTargetPid|.  Return an IPC message that
+  // Stop sharing this with another process. Return an IPC message that
   // contains enough information for the other process to unmap this
   // segment.  Return a new message if successful (owned by the
   // caller), nullptr if not.
-  UniquePtr<IPC::Message> UnshareFrom(PrivateIPDLCaller, int32_t routingId);
+  UniquePtr<IPC::Message> MkDestroyedMessage(PrivateIPDLCaller,
+                                             int32_t routingId);
 
-  // Return a SharedMemory instance in this process using the
-  // descriptor shared to us by the process that created the
-  // underlying OS shmem resource.  The contents of the descriptor
-  // depend on the type of SharedMemory that was passed to us.
+  // Return a SharedMemory instance in this process using the descriptor shared
+  // to us by the process that created the underlying OS shmem resource.  The
+  // contents of the descriptor depend on the type of SharedMemory that was
+  // passed to us.
   static already_AddRefed<SharedMemory> OpenExisting(
       PrivateIPDLCaller, const IPC::Message& aDescriptor, id_t* aId,
       bool aProtect = false);
@@ -201,19 +203,6 @@ class Shmem final {
   void* mData;
   size_t mSize;
   id_t mId;
-};
-
-template <>
-struct IPDLParamTraits<Shmem> {
-  typedef Shmem paramType;
-
-  static void Write(IPC::Message* aMsg, IProtocol* aActor, paramType&& aParam);
-  static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
-                   IProtocol* aActor, paramType* aResult);
-
-  static void Log(const paramType& aParam, std::wstring* aLog) {
-    aLog->append(L"(shmem segment)");
-  }
 };
 
 }  // namespace ipc

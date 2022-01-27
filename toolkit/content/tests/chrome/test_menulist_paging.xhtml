@@ -7,8 +7,8 @@
         onpopupshown="menulistShown()" onpopuphidden="runTest()"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>      
-  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>      
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 
 <menulist id="menulist1">
   <menupopup id="menulist-popup1">
@@ -96,12 +96,21 @@ let tests = [
 function startTest()
 {
   let popup = document.getElementById("menulist-popup1");
-  let menupopupHeight = popup.getBoundingClientRect().height;
   let menuitemHeight = popup.firstChild.getBoundingClientRect().height;
 
+  let cs = window.getComputedStyle(popup);
+  let csArrow = window.getComputedStyle(popup.scrollBox);
+  let bpmTop = parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth) +
+              parseFloat(csArrow.paddingTop) + parseFloat(csArrow.borderTopWidth) +
+              parseFloat(csArrow.marginTop);
+  let bpmBottom = parseFloat(cs.paddingBottom) + parseFloat(cs.borderBottomWidth) +
+                 parseFloat(csArrow.paddingBottom) + parseFloat(csArrow.borderBottomWidth) +
+                 parseFloat(csArrow.marginBottom);
+
   // First, set the height of each popup to the height of four menuitems plus
-  // any padding and border on the menupopup.
-  let height = menuitemHeight * 4 + (menupopupHeight - menuitemHeight * 10);
+  // any padding / border / margin on the menupopup.
+  let height = menuitemHeight * 4 + bpmTop + bpmBottom;
+
   popup.height = height;
   document.getElementById("menulist-popup2").height = height;
   document.getElementById("menulist-popup3").height = height;
@@ -127,12 +136,15 @@ function menulistShown()
   is(menulist.activeChild.label, menulist.getItemAtIndex(test.initial).label, test.list + " initial selection");
 
   let cs = window.getComputedStyle(menulist.menupopup);
-  let bpTop = parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth);
+  let csArrow = window.getComputedStyle(menulist.menupopup.scrollBox);
+  let bpmTop = parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth) +
+              parseFloat(csArrow.paddingTop) + parseFloat(csArrow.borderTopWidth) +
+              parseFloat(csArrow.marginTop);
 
   // Skip menulist3 as it has a label that scrolling doesn't need normally deal with.
   if (test.scroll >= 0) {
     is(menulist.menupopup.childNodes[test.scroll].getBoundingClientRect().top,
-       menulist.menupopup.getBoundingClientRect().top + bpTop,
+       menulist.menupopup.getBoundingClientRect().top + bpmTop,
        "Popup scroll at correct position");
   }
 

@@ -8,19 +8,20 @@
 // context selector is updated, and evaluating in the console is done in the paused
 // frame context.
 
-const TEST_URI = `${URL_ROOT_COM}test-console-evaluation-context-selector.html`;
+const TEST_URI = `${URL_ROOT_COM_SSL}test-console-evaluation-context-selector.html`;
 const IFRAME_FILE = `test-console-evaluation-context-selector-child.html`;
 
 add_task(async function() {
-  await pushPref("devtools.contenttoolbox.fission", true);
-  await pushPref("devtools.contenttoolbox.webconsole.input.context", true);
+  await pushPref("devtools.webconsole.input.context", true);
 
   const tab = await addTab(TEST_URI);
 
   info("Create new iframes and add them to the page.");
-  await addIFrameAndWaitForLoad(`${URL_ROOT_ORG}${IFRAME_FILE}?id=iframe_org`);
   await addIFrameAndWaitForLoad(
-    `${URL_ROOT_MOCHI_8888}${IFRAME_FILE}?id=iframe_mochi8888`
+    `${URL_ROOT_ORG_SSL}${IFRAME_FILE}?id=iframe_org`
+  );
+  await addIFrameAndWaitForLoad(
+    `${URL_ROOT_NET_SSL}${IFRAME_FILE}?id=iframe_net`
   );
 
   const toolbox = await openToolboxForTab(tab, "webconsole");
@@ -42,6 +43,16 @@ add_task(async function() {
   const evaluationContextSelectorButton = hud.ui.outputNode.querySelector(
     ".webconsole-evaluation-selector-button"
   );
+
+  if (!isFissionEnabled() && !isEveryFrameTargetEnabled()) {
+    is(
+      evaluationContextSelectorButton,
+      null,
+      "context selector is only displayed when Fission or EFT is enabled"
+    );
+    return;
+  }
+
   await waitFor(
     () => evaluationContextSelectorButton.innerText.includes("example.org"),
     "The context selector wasn't updated"
@@ -61,6 +72,10 @@ add_task(async function() {
   );
   ok(true, "Evaluation result is the expected one");
 
+  // Cleanup
+  await clearOutput(hud);
+  setInputValue(hud, "");
+
   info("Resume the debugger");
   await resume(dbg);
 
@@ -71,20 +86,20 @@ add_task(async function() {
   await waitForPaused(dbg);
 
   await waitFor(
-    () => evaluationContextSelectorButton.innerText.includes("mochi.test"),
+    () => evaluationContextSelectorButton.innerText.includes("example.net"),
     "The context selector wasn't updated"
   );
   ok(true, "The context was set to the second iframe document");
 
   // localVar is defined in the event listener, and was assigned the `document` value.
   setInputValue(hud, "localVar");
-  await waitForEagerEvaluationResult(hud, /mochi\.test/);
+  await waitForEagerEvaluationResult(hud, /example\.net/);
   ok(true, "Instant evaluation has the expected result");
 
   await keyboardExecuteAndWaitForMessage(
     hud,
     `localVar`,
-    "mochi.test",
+    "example.net",
     ".result"
   );
   ok(true, "Evaluation result is the expected one");

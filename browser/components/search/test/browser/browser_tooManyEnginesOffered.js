@@ -1,11 +1,9 @@
 "use strict";
 
-// This test makes sure that when a page offers many search engines, the search
-// popup shows a submenu that lists them instead of showing them in the popup
-// itself.
+// This test makes sure that when a page offers many search engines,
+// a limited number of add-engine items will be shown in the searchbar.
 
 const searchPopup = document.getElementById("PopupSearchAutoComplete");
-const oneOffsContainer = searchPopup.searchOneOffsContainer;
 
 add_task(async function test_setup() {
   await gCUITestUtils.addSearchBar();
@@ -27,78 +25,43 @@ add_task(async function test() {
   let promise = promiseEvent(searchPopup, "popupshown");
   info("Opening search panel");
   searchbar.focus();
+  // In TV we may try opening too early, when the searchbar is not ready yet.
+  await TestUtils.waitForCondition(
+    () => BrowserSearch.searchBar.textbox.controller.input,
+    "Wait for the searchbar controller to connect"
+  );
   EventUtils.synthesizeKey("KEY_ArrowDown");
   await promise;
 
-  // Make sure it has only one add-engine menu button item.
-  let items = getOpenSearchItems();
-  Assert.equal(items.length, 1, "A single button");
-  let menuButton = items[0];
-  Assert.equal(menuButton.type, "menu", "A menu button");
+  const addEngineList = searchPopup.oneOffButtons._getAddEngines();
+  Assert.equal(
+    addEngineList.length,
+    6,
+    "Expected number of engines retrieved from web page"
+  );
 
-  // Mouse over the menu button to open it.
-  let buttonPopup = menuButton.menupopup;
-  promise = promiseEvent(buttonPopup, "popupshown");
-  EventUtils.synthesizeMouse(menuButton, 5, 5, { type: "mousemove" });
-  await promise;
+  const displayedAddEngineList = searchPopup.oneOffButtons.buttons.querySelectorAll(
+    ".searchbar-engine-one-off-add-engine"
+  );
+  Assert.equal(
+    displayedAddEngineList.length,
+    searchPopup.oneOffButtons._maxInlineAddEngines,
+    "Expected number of engines displayed on popup"
+  );
 
-  Assert.ok(menuButton.open, "Submenu should be open");
-
-  // Check the engines inside the submenu.
-  Assert.equal(buttonPopup.children.length, 6, "Expected number of engines");
-  for (let i = 0; i < buttonPopup.children.length; i++) {
-    let item = buttonPopup.children[i];
+  for (let i = 0; i < displayedAddEngineList.length; i++) {
+    const engine = addEngineList[i];
+    const item = displayedAddEngineList[i];
     Assert.equal(
-      item.getAttribute("title"),
-      "engine" + (i + 1),
-      "Expected engine title"
+      item.getAttribute("engine-name"),
+      engine.title,
+      "Expected engine is displaying"
     );
   }
 
-  // Mouse out of the menu button to close it.
-  promise = promiseEvent(buttonPopup, "popuphidden");
-  EventUtils.synthesizeMouse(searchbar, 5, 5, { type: "mousemove" });
+  promise = promiseEvent(searchPopup, "popuphidden");
+  EventUtils.synthesizeKey("KEY_Escape", {}, searchPopup.ownerGlobal);
   await promise;
-
-  Assert.ok(!menuButton.open, "Submenu should be closed");
-
-  // Key up until the menu button is selected.
-  for (
-    let button = null;
-    button != menuButton;
-    button = searchbar.textbox.popup.oneOffButtons.selectedButton
-  ) {
-    EventUtils.synthesizeKey("KEY_ArrowUp");
-  }
-
-  // Press the Right arrow key.  The submenu should open.
-  promise = promiseEvent(buttonPopup, "popupshown");
-  EventUtils.synthesizeKey("KEY_ArrowRight");
-  await promise;
-
-  Assert.ok(menuButton.open, "Submenu should be open");
-
-  // Press the Esc key.  The submenu should close.
-  promise = promiseEvent(buttonPopup, "popuphidden");
-  EventUtils.synthesizeKey("KEY_Escape");
-  await promise;
-
-  Assert.ok(!menuButton.open, "Submenu should be closed");
 
   gBrowser.removeCurrentTab();
 });
-
-function getOpenSearchItems() {
-  let os = [];
-
-  let addEngineList = oneOffsContainer.querySelector(".search-add-engines");
-  for (
-    let item = addEngineList.firstElementChild;
-    item;
-    item = item.nextElementSibling
-  ) {
-    os.push(item);
-  }
-
-  return os;
-}

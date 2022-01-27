@@ -1,5 +1,5 @@
-import mock
 from io import BytesIO
+from unittest import mock
 
 from manifest import manifest as wptmanifest
 from manifest.item import TestharnessTest, RefTest
@@ -118,6 +118,16 @@ def make_test_object(test_name,
     return wpttest.from_manifest(tests, test, inherit_metadata, test_metadata.get_test(test.id))
 
 
+def test_run_info():
+    run_info = wpttest.get_run_info("/", "fake-product", debug=False)
+    assert isinstance(run_info["bits"], int)
+    assert isinstance(run_info["os"], str)
+    assert isinstance(run_info["os_version"], str)
+    assert isinstance(run_info["processor"], str)
+    assert isinstance(run_info["product"], str)
+    assert isinstance(run_info["python_version"], int)
+
+
 def test_metadata_inherit():
     items = [("test", "a", 10), ("test", "a/b", 10), ("test", "c", 10)]
     inherit_metadata = [
@@ -202,13 +212,15 @@ def test_expect_any_subtest_status():
 
 
 def test_metadata_fuzzy():
-    item = RefTest(".", "a/fuzzy.html", "/", "a/fuzzy.html",
+    item = RefTest(tests_root=".",
+                   path="a/fuzzy.html",
+                   url_base="/",
+                   url="a/fuzzy.html",
                    references=[["/a/fuzzy-ref.html", "=="]],
                    fuzzy=[[["/a/fuzzy.html", '/a/fuzzy-ref.html', '=='],
                            [[2, 3], [10, 15]]]])
     s = mock.Mock(rel_path="a/fuzzy.html", rel_path_parts=("a", "fuzzy.html"), hash="0"*40)
     s.manifest_items = mock.Mock(return_value=(item.item_type, [item]))
-
 
     manifest = wptmanifest.Manifest("")
 

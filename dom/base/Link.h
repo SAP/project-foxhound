@@ -11,8 +11,10 @@
 #ifndef mozilla_dom_Link_h__
 #define mozilla_dom_Link_h__
 
-#include "mozilla/MemoryReporting.h"
-#include "nsIContent.h"  // for nsLinkState
+#include "nsWrapperCache.h"  // For nsWrapperCache::FlagsType
+#include "nsCOMPtr.h"
+
+class nsIURI;
 
 namespace mozilla {
 
@@ -21,6 +23,7 @@ class SizeOfState;
 
 namespace dom {
 
+class Document;
 class Element;
 
 #define MOZILLA_DOM_LINK_IMPLEMENTATION_IID          \
@@ -33,6 +36,12 @@ class Element;
 class Link : public nsISupports {
  public:
   NS_DECLARE_STATIC_IID_ACCESSOR(MOZILLA_DOM_LINK_IMPLEMENTATION_IID)
+
+  enum class State : uint8_t {
+    Unvisited = 0,
+    Visited,
+    NotLink,
+  };
 
   /**
    * aElement is the element pointer corresponding to this link.
@@ -57,7 +66,6 @@ class Link : public nsISupports {
    * @return the URI this link is for, if available.
    */
   nsIURI* GetURI() const;
-  virtual nsIURI* GetURIExternal() const { return GetURI(); }
 
   /**
    * Helper methods for modifying and obtaining parts of the URI of the Link.
@@ -94,34 +102,9 @@ class Link : public nsISupports {
   // This method nevers returns a null element.
   Element* GetElement() const { return mElement; }
 
-  /**
-   * DNS prefetch has been deferred until later, e.g. page load complete.
-   */
-  virtual void OnDNSPrefetchDeferred() { /*do nothing*/
-  }
-
-  /**
-   * DNS prefetch has been submitted to Host Resolver.
-   */
-  virtual void OnDNSPrefetchRequested() { /*do nothing*/
-  }
-
-  /**
-   * Checks if DNS Prefetching is ok
-   *
-   * @returns boolean
-   *          Defaults to true; should be overridden for specialised cases
-   */
-  virtual bool HasDeferredDNSPrefetchRequest() { return true; }
-
   virtual size_t SizeOfExcludingThis(mozilla::SizeOfState& aState) const;
 
   virtual bool ElementHasHref() const;
-
-  // This is called by HTMLAnchorElement and HTMLLinkElement.
-  void TryDNSPrefetch();
-  void CancelDNSPrefetch(nsWrapperCache::FlagsType aDeferredFlag,
-                         nsWrapperCache::FlagsType aRequestedFlag);
 
   bool HasPendingLinkUpdate() const { return mHasPendingLinkUpdate; }
   void SetHasPendingLinkUpdate() { mHasPendingLinkUpdate = true; }
@@ -132,10 +115,6 @@ class Link : public nsISupports {
   // ClearHasPendingLinkUpdate().
   // If you change this, change also the method in nsINode.
   virtual void NodeInfoChanged(Document* aOldDoc) = 0;
-
-  bool IsInDNSPrefetch() { return mInDNSPrefetch; }
-  void SetIsInDNSPrefetch() { mInDNSPrefetch = true; }
-  void ClearIsInDNSPrefetch() { mInDNSPrefetch = false; }
 
  protected:
   virtual ~Link();
@@ -167,41 +146,18 @@ class Link : public nsISupports {
 
   Element* const mElement;
 
-  uint16_t mLinkState;
-
+  // TODO(emilio): This ideally could be `State mState : 2`, but the version of
+  // gcc we build on automation with (7 as of this writing) has a useless
+  // warning about all values in the range of the enum not fitting, see
+  // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61414.
+  State mState;
   bool mNeedsRegistration : 1;
-
   bool mRegistered : 1;
-
   bool mHasPendingLinkUpdate : 1;
-
-  bool mInDNSPrefetch : 1;
-
   bool mHistory : 1;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(Link, MOZILLA_DOM_LINK_IMPLEMENTATION_IID)
-
-enum ASDestination : uint8_t {
-  DESTINATION_INVALID,
-  DESTINATION_AUDIO,
-  DESTINATION_DOCUMENT,
-  DESTINATION_EMBED,
-  DESTINATION_FONT,
-  DESTINATION_IMAGE,
-  DESTINATION_MANIFEST,
-  DESTINATION_OBJECT,
-  DESTINATION_REPORT,
-  DESTINATION_SCRIPT,
-  DESTINATION_SERVICEWORKER,
-  DESTINATION_SHAREDWORKER,
-  DESTINATION_STYLE,
-  DESTINATION_TRACK,
-  DESTINATION_VIDEO,
-  DESTINATION_WORKER,
-  DESTINATION_XSLT,
-  DESTINATION_FETCH
-};
 
 }  // namespace dom
 }  // namespace mozilla

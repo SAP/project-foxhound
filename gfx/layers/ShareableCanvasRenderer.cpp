@@ -10,12 +10,17 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/layers/TextureClientSharedSurface.h"
 #include "mozilla/layers/CompositableForwarder.h"
+#include "mozilla/layers/TextureForwarder.h"
 
 #include "ClientWebGLContext.h"
 #include "gfxUtils.h"
 #include "GLScreenBuffer.h"
 #include "nsICanvasRenderingContextInternal.h"
 #include "SharedSurfaceGL.h"
+
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/layers/AndroidHardwareBuffer.h"
+#endif
 
 using namespace mozilla::gfx;
 
@@ -75,10 +80,27 @@ RefPtr<layers::TextureClient> ShareableCanvasRenderer::GetFrontBufferFromDesc(
     }
   }
 
-  auto data = MakeUnique<SharedSurfaceTextureData>(desc, format, mData.mSize);
+  if (desc.type() !=
+      SurfaceDescriptor::TSurfaceDescriptorAndroidHardwareBuffer) {
+    mFrontBufferFromDesc = SharedSurfaceTextureData::CreateTextureClient(
+        desc, format, mData.mSize, flags, textureForwarder);
+  } else {
+#ifdef MOZ_WIDGET_ANDROID
+    const SurfaceDescriptorAndroidHardwareBuffer& bufferDesc =
+        desc.get_SurfaceDescriptorAndroidHardwareBuffer();
+    RefPtr<AndroidHardwareBuffer> buffer =
+        AndroidHardwareBufferManager::Get()->GetBuffer(bufferDesc.bufferId());
+    if (!buffer) {
+      return nullptr;
+    }
+    // TextureClient is created only when AndroidHardwareBuffer does not own it.
+    mFrontBufferFromDesc = buffer->GetTextureClientOfSharedSurfaceTextureData(
+        desc, format, mData.mSize, flags, textureForwarder);
+#else
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+#endif
+  }
   mFrontBufferDesc = desc;
-  mFrontBufferFromDesc =
-      TextureClient::CreateWithData(data.release(), flags, textureForwarder);
   return mFrontBufferFromDesc;
 }
 
@@ -105,27 +127,27 @@ void ShareableCanvasRenderer::UpdateCompositableClient() {
   if (!YIsDown()) {
     flags |= TextureFlags::ORIGIN_BOTTOM_LEFT;
   }
+  if (IsOpaque()) {
+    flags |= TextureFlags::IS_OPAQUE;
+  }
 
   // -
 
   const auto fnGetExistingTc = [&]() -> RefPtr<TextureClient> {
+    if (webgl) {
+      const auto desc = webgl->GetFrontBuffer(nullptr);
+      if (!desc) return nullptr;
+      return GetFrontBufferFromDesc(*desc, flags);
+    }
     if (provider) {
-      auto tc = provider->GetTextureClient();
-      if (!tc) return nullptr;
-
       if (!provider->SetKnowsCompositor(forwarder)) {
         gfxCriticalNote << "BufferProvider::SetForwarder failed";
         return nullptr;
       }
-      tc = provider->GetTextureClient();  // Ask again after SetKnowsCompositor
-      return tc;
+
+      return provider->GetTextureClient();
     }
-
-    if (!webgl) return nullptr;
-
-    const auto desc = webgl->GetFrontBuffer(nullptr);
-    if (!desc) return nullptr;
-    return GetFrontBufferFromDesc(*desc, flags);
+    return nullptr;
   };
 
   // -

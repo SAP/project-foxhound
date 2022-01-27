@@ -16,17 +16,18 @@ use std::convert::TryFrom;
 use std::fmt::Display;
 
 use crate::error::{Error, ErrorKind};
+use crate::metrics::labeled::{combine_base_identifier_and_label, strip_label};
 use crate::metrics::CounterMetric;
-use crate::metrics::{combine_base_identifier_and_label, strip_label};
 use crate::CommonMetricData;
 use crate::Glean;
 use crate::Lifetime;
 
 /// The possible error types for metric recording.
 /// Note: the cases in this enum must be kept in sync with the ones
-/// in the platform-specific code (e.g. ErrorType.kt) and with the
+/// in the platform-specific code (e.g. `ErrorType.kt`) and with the
 /// metrics in the registry files.
-#[derive(Debug)]
+// When adding a new error type ensure it's also added to `ErrorType::iter()` below.
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ErrorType {
     /// For when the value to be recorded does not match the metric-specific restrictions
     InvalidValue,
@@ -48,6 +49,27 @@ impl ErrorType {
             ErrorType::InvalidOverflow => "invalid_overflow",
         }
     }
+
+    /// Return an iterator over all possible error types.
+    ///
+    /// ```
+    /// # use glean_core::ErrorType;
+    /// let errors = ErrorType::iter();
+    /// let all_errors = errors.collect::<Vec<_>>();
+    /// assert_eq!(4, all_errors.len());
+    /// ```
+    pub fn iter() -> impl Iterator<Item = Self> {
+        // N.B.: This has no compile-time guarantees that it is complete.
+        // New `ErrorType` variants will need to be added manually.
+        [
+            ErrorType::InvalidValue,
+            ErrorType::InvalidLabel,
+            ErrorType::InvalidState,
+            ErrorType::InvalidOverflow,
+        ]
+        .iter()
+        .copied()
+    }
 }
 
 impl TryFrom<i32> for ErrorType {
@@ -58,7 +80,7 @@ impl TryFrom<i32> for ErrorType {
             0 => Ok(ErrorType::InvalidValue),
             1 => Ok(ErrorType::InvalidLabel),
             2 => Ok(ErrorType::InvalidState),
-            4 => Ok(ErrorType::InvalidOverflow),
+            3 => Ok(ErrorType::InvalidOverflow),
             e => Err(ErrorKind::Lifetime(e).into()),
         }
     }
@@ -95,14 +117,14 @@ fn get_error_metric_for_metric(meta: &CommonMetricData, error: ErrorType) -> Cou
 /// `<name>/<label>`.
 /// Errors do not adhere to the usual "maximum label" restriction.
 ///
-/// ## Arguments
+/// # Arguments
 ///
-/// * glean - The Glean instance containing the database
-/// * meta - The metric's meta data
-/// * error -  The error type to record
-/// * message - The message to log. This message is not sent with the ping.
+/// * `glean` - The Glean instance containing the database
+/// * `meta` - The metric's meta data
+/// * `error` -  The error type to record
+/// * `message` - The message to log. This message is not sent with the ping.
 ///             It does not need to include the metric id, as that is automatically prepended to the message.
-///  * num_errors - The number of errors of the same type to report.
+/// * `num_errors` - The number of errors of the same type to report.
 pub fn record_error<O: Into<Option<i32>>>(
     glean: &Glean,
     meta: &CommonMetricData,
@@ -118,19 +140,19 @@ pub fn record_error<O: Into<Option<i32>>>(
     metric.add(glean, to_report);
 }
 
-/// Get the number of recorded errors for the given metric and error type.
+/// Gets the number of recorded errors for the given metric and error type.
 ///
 /// *Notes: This is a **test-only** API, but we need to expose it to be used in integration tests.
 ///
-/// ## Arguments
+/// # Arguments
 ///
-/// * glean - The Glean object holding the database
-/// * meta - The metadata of the metric instance
-/// * error - The type of error
+/// * `glean` - The Glean object holding the database
+/// * `meta` - The metadata of the metric instance
+/// * `error` - The type of error
 ///
-/// ## Return value
+/// # Returns
 ///
-/// The number of errors reported
+/// The number of errors reported.
 pub fn test_get_num_recorded_errors(
     glean: &Glean,
     meta: &CommonMetricData,
@@ -153,20 +175,23 @@ pub fn test_get_num_recorded_errors(
 mod test {
     use super::*;
     use crate::metrics::*;
+    use crate::tests::new_glean;
 
-    const GLOBAL_APPLICATION_ID: &str = "org.mozilla.glean.test.app";
-    pub fn new_glean() -> (Glean, tempfile::TempDir) {
-        let dir = tempfile::tempdir().unwrap();
-        let tmpname = dir.path().display().to_string();
-
-        let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true).unwrap();
-
-        (glean, dir)
+    #[test]
+    fn error_type_i32_mapping() {
+        let error: ErrorType = std::convert::TryFrom::try_from(0).unwrap();
+        assert_eq!(error, ErrorType::InvalidValue);
+        let error: ErrorType = std::convert::TryFrom::try_from(1).unwrap();
+        assert_eq!(error, ErrorType::InvalidLabel);
+        let error: ErrorType = std::convert::TryFrom::try_from(2).unwrap();
+        assert_eq!(error, ErrorType::InvalidState);
+        let error: ErrorType = std::convert::TryFrom::try_from(3).unwrap();
+        assert_eq!(error, ErrorType::InvalidOverflow);
     }
 
     #[test]
     fn recording_of_all_error_types() {
-        let (glean, _t) = new_glean();
+        let (glean, _t) = new_glean(None);
 
         let string_metric = StringMetric::new(CommonMetricData {
             name: "string_metric".into(),

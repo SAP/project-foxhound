@@ -33,11 +33,13 @@
 #include "nsIObserverService.h"
 #include "nsIWindowsRegKey.h"
 #include "nsServiceManagerUtils.h"
+#include "nsNetAddr.h"
 #include "nsNotifyAddrListener.h"
 #include "nsString.h"
 #include "nsPrintfCString.h"
 #include "mozilla/Services.h"
 #include "nsCRT.h"
+#include "nsThreadPool.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/SHA1.h"
 #include "mozilla/Base64.h"
@@ -112,6 +114,29 @@ nsNotifyAddrListener::GetDnsSuffixList(nsTArray<nsCString>& aDnsSuffixList) {
   aDnsSuffixList.Clear();
   MutexAutoLock lock(mMutex);
   aDnsSuffixList.AppendElements(mDnsSuffixList);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNotifyAddrListener::GetResolvers(nsTArray<RefPtr<nsINetAddr>>& aResolvers) {
+  nsTArray<mozilla::net::NetAddr> addresses;
+  nsresult rv = GetNativeResolvers(addresses);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  for (const auto& addr : addresses) {
+    aResolvers.AppendElement(MakeRefPtr<nsNetAddr>(&addr));
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNotifyAddrListener::GetNativeResolvers(
+    nsTArray<mozilla::net::NetAddr>& aResolvers) {
+  aResolvers.Clear();
+  MutexAutoLock lock(mMutex);
+  aResolvers.AppendElements(mDNSResolvers);
   return NS_OK;
 }
 
@@ -325,7 +350,7 @@ nsresult nsNotifyAddrListener::Init(void) {
       observerService->AddObserver(this, "xpcom-shutdown-threads", false);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  mCheckEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+  mCheckEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
   NS_ENSURE_TRUE(mCheckEvent, NS_ERROR_OUT_OF_MEMORY);
 
   nsCOMPtr<nsIThreadPool> threadPool = new nsThreadPool();
@@ -419,8 +444,10 @@ nsNotifyAddrListener::CheckAdaptersAddresses(void) {
 
   PIP_ADAPTER_ADDRESSES adapterList = (PIP_ADAPTER_ADDRESSES)moz_xmalloc(len);
 
-  ULONG flags = GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_MULTICAST |
-                GAA_FLAG_SKIP_ANYCAST;
+  ULONG flags = GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_ANYCAST;
+  if (!StaticPrefs::network_notify_resolvers()) {
+    flags |= GAA_FLAG_SKIP_DNS_SERVER;
+  }
 
   DWORD ret =
       GetAdaptersAddresses(AF_UNSPEC, flags, nullptr, adapterList, &len);
@@ -445,6 +472,7 @@ nsNotifyAddrListener::CheckAdaptersAddresses(void) {
   ULONG sumAll = 0;
 
   nsTArray<nsCString> dnsSuffixList;
+  nsTArray<mozilla::net::NetAddr> resolvers;
   uint32_t platformDNSIndications = NONE_DETECTED;
   if (ret == ERROR_SUCCESS) {
     bool linkUp = false;
@@ -458,7 +486,14 @@ nsNotifyAddrListener::CheckAdaptersAddresses(void) {
         continue;
       }
 
-      if (adapter->IfType == IF_TYPE_PPP) {
+      LOG(("Adapter %s type: %u",
+           NS_ConvertUTF16toUTF8(adapter->FriendlyName).get(),
+           adapter->IfType));
+
+      if (adapter->IfType == IF_TYPE_PPP ||
+          adapter->IfType == IF_TYPE_PROP_VIRTUAL ||
+          nsDependentString(adapter->FriendlyName).Find(u"VPN") != kNotFound ||
+          nsDependentString(adapter->Description).Find(u"VPN") != kNotFound) {
         LOG(("VPN connection found"));
         platformDNSIndications |= VPN_DETECTED;
       }
@@ -476,6 +511,35 @@ nsNotifyAddrListener::CheckAdaptersAddresses(void) {
         for (int i = 0; i < sockAddr->iSockaddrLength; ++i) {
           sum += (reinterpret_cast<unsigned char*>(sockAddr->lpSockaddr))[i];
         }
+      }
+
+      for (IP_ADAPTER_DNS_SERVER_ADDRESS* pDnServer =
+               adapter->FirstDnsServerAddress;
+           pDnServer; pDnServer = pDnServer->Next) {
+        mozilla::net::NetAddr addr;
+        if (pDnServer->Address.lpSockaddr->sa_family == AF_INET) {
+          const struct sockaddr_in* sin =
+              (const struct sockaddr_in*)pDnServer->Address.lpSockaddr;
+          addr.inet.family = AF_INET;
+          addr.inet.ip = sin->sin_addr.s_addr;
+          addr.inet.port = sin->sin_port;
+        } else if (pDnServer->Address.lpSockaddr->sa_family == AF_INET6) {
+          const struct sockaddr_in6* sin6 =
+              (const struct sockaddr_in6*)pDnServer->Address.lpSockaddr;
+          addr.inet6.family = AF_INET6;
+          memcpy(&addr.inet6.ip.u8, &sin6->sin6_addr, sizeof(addr.inet6.ip.u8));
+          addr.inet6.port = sin6->sin6_port;
+        } else {
+          NS_WARNING("Unexpected addr type");
+          continue;
+        }
+
+        if (LOG_ENABLED()) {
+          char buf[100];
+          addr.ToStringBuffer(buf, 100);
+          LOG(("Found DNS resolver=%s", buf));
+        }
+        resolvers.AppendElement(addr);
       }
 
       if (StaticPrefs::network_notify_dnsSuffixList()) {
@@ -598,7 +662,8 @@ nsNotifyAddrListener::CheckAdaptersAddresses(void) {
 
   {
     MutexAutoLock lock(mMutex);
-    mDnsSuffixList.SwapElements(dnsSuffixList);
+    mDnsSuffixList = std::move(dnsSuffixList);
+    mDNSResolvers = std::move(resolvers);
     mPlatformDNSIndications = platformDNSIndications;
   }
 

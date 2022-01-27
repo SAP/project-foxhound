@@ -40,16 +40,6 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
-namespace {
-
-NS_DEFINE_CID(kStringInputStreamCID, NS_STRINGINPUTSTREAM_CID);
-NS_DEFINE_CID(kFileInputStreamCID, NS_LOCALFILEINPUTSTREAM_CID);
-NS_DEFINE_CID(kBufferedInputStreamCID, NS_BUFFEREDINPUTSTREAM_CID);
-NS_DEFINE_CID(kMIMEInputStreamCID, NS_MIMEINPUTSTREAM_CID);
-NS_DEFINE_CID(kMultiplexInputStreamCID, NS_MULTIPLEXINPUTSTREAM_CID);
-
-}  // namespace
-
 namespace mozilla {
 namespace ipc {
 
@@ -111,8 +101,10 @@ void SerializeInputStreamAsPipeInternal(nsIInputStream* aInputStream,
     nsCOMPtr<nsIEventTarget> target =
         do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
 
+    // Since the source stream could be used by others, let's not close it when
+    // the copy is done.
     rv = NS_AsyncCopy(aInputStream, sink, target, NS_ASYNCCOPY_VIA_READSEGMENTS,
-                      kBufferSize);
+                      kBufferSize, nullptr, nullptr, false);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return;
     }
@@ -331,7 +323,7 @@ already_AddRefed<nsIInputStream> InputStreamHelper::DeserializeInputStream(
   switch (aParams.type()) {
     case InputStreamParams::TStringInputStreamParams: {
       nsCOMPtr<nsIInputStream> stream;
-      NS_NewCStringInputStream(getter_AddRefs(stream), EmptyCString());
+      NS_NewCStringInputStream(getter_AddRefs(stream), ""_ns);
       serializable = do_QueryInterface(stream);
     } break;
 
@@ -373,8 +365,7 @@ already_AddRefed<nsIInputStream> InputStreamHelper::DeserializeInputStream(
 
     case InputStreamParams::TEncryptedFileInputStreamParams:
       serializable = new dom::quota::DecryptingInputStream<
-          dom::quota::IPCStreamCipherStrategy>(
-          dom::quota::IPCStreamCipherStrategy{});
+          dom::quota::IPCStreamCipherStrategy>();
       break;
 
     default:

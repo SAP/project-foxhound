@@ -10,12 +10,16 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "nsCycleCollectionTraversalCallback.h"
+#include "nsHashKeys.h"
 #include "nsTArray.h"
-#include "nsTHashtable.h"
+#include "nsTHashSet.h"
+#include "nsThreadUtils.h"
 
 class nsIGlobalObject;
 
 namespace mozilla {
+class ErrorResult;
+
 namespace dom {
 
 class BlobImpl;
@@ -55,7 +59,7 @@ class GetFilesHelperBase {
 
   // We populate this array in the I/O thread with the BlobImpl.
   FallibleTArray<RefPtr<BlobImpl>> mTargetBlobImplArray;
-  nsTHashtable<nsStringHashKey> mExploredDirectories;
+  nsTHashSet<nsString> mExploredDirectories;
 };
 
 // Retrieving the list of files can be very time/IO consuming. We use this

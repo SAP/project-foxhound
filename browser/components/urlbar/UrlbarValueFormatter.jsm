@@ -11,7 +11,6 @@ const { XPCOMUtils } = ChromeUtils.import(
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   Services: "resource://gre/modules/Services.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
@@ -64,6 +63,11 @@ class UrlbarValueFormatter {
         return;
       }
       delete this._updateInstance;
+    }
+
+    // If this window is being torn down, stop here
+    if (!this.window.docShell) {
+      return;
     }
 
     // Cleanup that must be done in any case, even if there's no value.
@@ -425,9 +429,8 @@ class UrlbarValueFormatter {
     // them, which we can do by passing "currentColor".  See
     // nsTextPaintStyle::GetHighlightColors for details.
     if (
-      this.document.documentElement.querySelector(":-moz-lwtheme") ||
-      (AppConstants.platform == "win" &&
-        this.window.matchMedia("(-moz-windows-default-theme: 0)").matches)
+      this.document.documentElement.hasAttribute("lwtheme") ||
+      this.window.matchMedia("(prefers-contrast)").matches
     ) {
       // non-default theme(s)
       selection.setColors(fg, bg, "currentColor", "currentColor");
@@ -440,13 +443,18 @@ class UrlbarValueFormatter {
   }
 
   _getSearchAlias() {
-    // To determine whether the input contains a valid alias, check the value of
-    // the selected result -- whether it's a search result with an alias.  The
-    // selected result is null when the popup is closed, but we want to continue
-    // highlighting the alias when the popup is closed, and that's why we keep
-    // around the previously selected result in _selectedResult.
+    // To determine whether the input contains a valid alias, check if the
+    // selected result is a search result with an alias. If there is no selected
+    // result, we check the first result in the view, for cases when we do not
+    // highlight token alias results. The selected result is null when the popup
+    // is closed, but we want to continue highlighting the alias when the popup
+    // is closed, and that's why we keep around the previously selected result
+    // in _selectedResult.
     this._selectedResult =
-      this.urlbarInput.view.selectedResult || this._selectedResult;
+      this.urlbarInput.view.selectedResult ||
+      this.urlbarInput.view.getResultAtIndex(0) ||
+      this._selectedResult;
+
     if (
       this._selectedResult &&
       this._selectedResult.type == UrlbarUtils.RESULT_TYPE.SEARCH

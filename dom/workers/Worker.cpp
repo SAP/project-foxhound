@@ -8,6 +8,8 @@
 
 #include "MessageEventRunnable.h"
 #include "mozilla/dom/WorkerBinding.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/TimelineConsumers.h"
 #include "mozilla/Unused.h"
 #include "mozilla/WorkerTimelineMarker.h"
@@ -40,7 +42,7 @@ already_AddRefed<Worker> Worker::Constructor(const GlobalObject& aGlobal,
   }
 
   RefPtr<WorkerPrivate> workerPrivate = WorkerPrivate::Constructor(
-      cx, aScriptURL, false /* aIsChromeWorker */, WorkerTypeDedicated,
+      cx, aScriptURL, false /* aIsChromeWorker */, WorkerKindDedicated,
       aOptions.mName, VoidCString(), nullptr /*aLoadInfo */, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
@@ -92,6 +94,18 @@ void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
+
+  NS_ConvertUTF16toUTF8 nameOrScriptURL(mWorkerPrivate->WorkerName().IsEmpty()
+                                            ? mWorkerPrivate->ScriptURL()
+                                            : mWorkerPrivate->WorkerName());
+  AUTO_PROFILER_MARKER_TEXT("Worker.postMessage", DOM, {}, nameOrScriptURL);
+  uint32_t flags = uint32_t(js::ProfilingStackFrame::Flags::RELEVANT_FOR_JS);
+  if (mWorkerPrivate->IsChromeWorker()) {
+    flags |= uint32_t(js::ProfilingStackFrame::Flags::NONSENSITIVE);
+  }
+  mozilla::AutoProfilerLabel PROFILER_RAII(
+      "Worker.postMessage", nameOrScriptURL.get(),
+      JS::ProfilingCategoryPair::DOM, flags);
 
   RefPtr<MessageEventRunnable> runnable = new MessageEventRunnable(
       mWorkerPrivate, WorkerRunnable::WorkerThreadModifyBusyCount);
@@ -148,7 +162,8 @@ void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
 }
 
 void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
-                         const PostMessageOptions& aOptions, ErrorResult& aRv) {
+                         const StructuredSerializeOptions& aOptions,
+                         ErrorResult& aRv) {
   PostMessage(aCx, aMessage, aOptions.mTransfer, aRv);
 }
 

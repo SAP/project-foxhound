@@ -7,15 +7,15 @@
 #ifndef builtin_intl_Collator_h
 #define builtin_intl_Collator_h
 
-#include "mozilla/Attributes.h"
-
 #include <stdint.h>
 
 #include "builtin/SelfHostingDefines.h"
 #include "js/Class.h"
 #include "vm/NativeObject.h"
 
-struct UCollator;
+namespace mozilla::intl {
+class Collator;
+}
 
 namespace js {
 
@@ -27,7 +27,7 @@ class CollatorObject : public NativeObject {
   static const JSClass& protoClass_;
 
   static constexpr uint32_t INTERNALS_SLOT = 0;
-  static constexpr uint32_t UCOLLATOR_SLOT = 1;
+  static constexpr uint32_t INTL_COLLATOR_SLOT = 1;
   static constexpr uint32_t SLOT_COUNT = 2;
 
   static_assert(INTERNALS_SLOT == INTL_INTERNALS_OBJECT_SLOT,
@@ -37,16 +37,16 @@ class CollatorObject : public NativeObject {
   // Estimated memory use for UCollator (see IcuMemoryUsage).
   static constexpr size_t EstimatedMemoryUse = 1128;
 
-  UCollator* getCollator() const {
-    const auto& slot = getFixedSlot(UCOLLATOR_SLOT);
+  mozilla::intl::Collator* getCollator() const {
+    const auto& slot = getFixedSlot(INTL_COLLATOR_SLOT);
     if (slot.isUndefined()) {
       return nullptr;
     }
-    return static_cast<UCollator*>(slot.toPrivate());
+    return static_cast<mozilla::intl::Collator*>(slot.toPrivate());
   }
 
-  void setCollator(UCollator* collator) {
-    setFixedSlot(UCOLLATOR_SLOT, PrivateValue(collator));
+  void setCollator(mozilla::intl::Collator* collator) {
+    setFixedSlot(INTL_COLLATOR_SLOT, PrivateValue(collator));
   }
 
  private:
@@ -63,8 +63,8 @@ class CollatorObject : public NativeObject {
  *
  * Usage: collator = intl_Collator(locales, options)
  */
-extern MOZ_MUST_USE bool intl_Collator(JSContext* cx, unsigned argc,
-                                       JS::Value* vp);
+[[nodiscard]] extern bool intl_Collator(JSContext* cx, unsigned argc,
+                                        JS::Value* vp);
 
 /**
  * Returns an array with the collation type identifiers per Unicode
@@ -74,8 +74,8 @@ extern MOZ_MUST_USE bool intl_Collator(JSContext* cx, unsigned argc,
  *
  * Usage: collations = intl_availableCollations(locale)
  */
-extern MOZ_MUST_USE bool intl_availableCollations(JSContext* cx, unsigned argc,
-                                                  JS::Value* vp);
+[[nodiscard]] extern bool intl_availableCollations(JSContext* cx, unsigned argc,
+                                                   JS::Value* vp);
 
 /**
  * Compares x and y (which must be String values), and returns a number less
@@ -87,8 +87,8 @@ extern MOZ_MUST_USE bool intl_availableCollations(JSContext* cx, unsigned argc,
  *
  * Usage: result = intl_CompareStrings(collator, x, y)
  */
-extern MOZ_MUST_USE bool intl_CompareStrings(JSContext* cx, unsigned argc,
-                                             JS::Value* vp);
+[[nodiscard]] extern bool intl_CompareStrings(JSContext* cx, unsigned argc,
+                                              JS::Value* vp);
 
 /**
  * Returns true if the given locale sorts upper-case before lower-case
@@ -96,8 +96,8 @@ extern MOZ_MUST_USE bool intl_CompareStrings(JSContext* cx, unsigned argc,
  *
  * Usage: result = intl_isUpperCaseFirst(locale)
  */
-extern MOZ_MUST_USE bool intl_isUpperCaseFirst(JSContext* cx, unsigned argc,
-                                               JS::Value* vp);
+[[nodiscard]] extern bool intl_isUpperCaseFirst(JSContext* cx, unsigned argc,
+                                                JS::Value* vp);
 
 }  // namespace js
 

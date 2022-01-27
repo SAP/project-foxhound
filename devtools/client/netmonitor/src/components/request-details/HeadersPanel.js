@@ -48,6 +48,7 @@ const Accordion = createFactory(
 const UrlPreview = createFactory(
   require("devtools/client/netmonitor/src/components/previews/UrlPreview")
 );
+const HeadersPanelContextMenu = require("devtools/client/netmonitor/src/widgets/HeadersPanelContextMenu");
 const StatusCode = createFactory(
   require("devtools/client/netmonitor/src/components/StatusCode")
 );
@@ -56,10 +57,10 @@ loader.lazyGetter(this, "MDNLink", function() {
   return createFactory(require("devtools/client/shared/components/MdnLink"));
 });
 loader.lazyGetter(this, "Rep", function() {
-  return require("devtools/client/shared/components/reps/reps").REPS.Rep;
+  return require("devtools/client/shared/components/reps/index").REPS.Rep;
 });
 loader.lazyGetter(this, "MODE", function() {
-  return require("devtools/client/shared/components/reps/reps").MODE;
+  return require("devtools/client/shared/components/reps/index").MODE;
 });
 loader.lazyGetter(this, "TreeRow", function() {
   return createFactory(
@@ -145,6 +146,7 @@ class HeadersPanel extends Component {
     this.renderValue = this.renderValue.bind(this);
     this.renderRawHeadersBtn = this.renderRawHeadersBtn.bind(this);
     this.onShowResendMenu = this.onShowResendMenu.bind(this);
+    this.onShowHeadersContextMenu = this.onShowHeadersContextMenu.bind(this);
   }
 
   componentDidMount() {
@@ -186,11 +188,14 @@ class HeadersPanel extends Component {
             3
           )})`;
         } else {
-          preHeaderText = `${method} ${
-            urlDetails.url.split(
-              requestHeaders.headers.find(ele => ele.name === "Host").value
-            )[1]
-          } ${httpVersion}`;
+          const hostHeader = requestHeaders.headers.find(
+            ele => ele.name === "Host"
+          );
+          if (hostHeader) {
+            preHeaderText = `${method} ${
+              urlDetails.url.split(hostHeader.value)[1]
+            } ${httpVersion}`;
+          }
           result = `${title} (${getFormattedSize(
             writeHeaderText(requestHeaders.headers, preHeaderText).length,
             3
@@ -351,10 +356,11 @@ class HeadersPanel extends Component {
       const rawHeaderType = this.getRawHeaderType(path);
       switch (rawHeaderType) {
         case "REQUEST":
+          const hostHeader = requestHeaders.headers.find(
+            ele => ele.name === "Host"
+          );
           preHeaderText = `${method} ${
-            urlDetails.url.split(
-              requestHeaders.headers.find(ele => ele.name === "Host").value
-            )[1]
+            hostHeader ? urlDetails.url.split(hostHeader.value)[1] : "<unknown>"
           } ${httpVersion}`;
           value = writeHeaderText(requestHeaders.headers, preHeaderText).trim();
           break;
@@ -498,6 +504,13 @@ class HeadersPanel extends Component {
     ];
 
     showMenu(menuItems, { button: event.target });
+  }
+
+  onShowHeadersContextMenu(event) {
+    if (!this.contextMenu) {
+      this.contextMenu = new HeadersPanelContextMenu();
+    }
+    this.contextMenu.open(event, window.getSelection());
   }
 
   render() {
@@ -767,7 +780,13 @@ class HeadersPanel extends Component {
             shouldExpandPreview,
             onTogglePreview: expanded => setHeadersUrlPreviewExpanded(expanded),
           }),
-          div({ className: "summary" }, summaryItems)
+          div(
+            {
+              className: "summary",
+              onContextMenu: this.onShowHeadersContextMenu,
+            },
+            summaryItems
+          )
         ),
         Accordion({ items })
       )

@@ -65,14 +65,14 @@ add_task(async function init() {
  * Initializes the dialog to its default state.
  */
 add_task(async function default_state() {
-  let wh = new WindowHelper();
-  wh.onload = function() {
+  let dh = new DialogHelper();
+  dh.onload = function() {
     // Select "Last Hour"
     this.selectDuration(Sanitizer.TIMESPAN_HOUR);
     this.acceptDialog();
   };
-  wh.open();
-  await wh.promiseClosed;
+  dh.open();
+  await dh.promiseClosed;
 });
 
 /**
@@ -90,19 +90,19 @@ add_task(async function test_cancel() {
   }
   await PlacesTestUtils.addVisits(places);
 
-  let wh = new WindowHelper();
-  wh.onload = function() {
+  let dh = new DialogHelper();
+  dh.onload = function() {
     this.selectDuration(Sanitizer.TIMESPAN_HOUR);
     this.checkPrefCheckbox("history", false);
     this.cancelDialog();
   };
-  wh.onunload = async function() {
+  dh.onunload = async function() {
     await promiseHistoryClearedState(uris, false);
     await blankSlate();
     await promiseHistoryClearedState(uris, true);
   };
-  wh.open();
-  await wh.promiseClosed;
+  dh.open();
+  await dh.promiseClosed;
 });
 
 /**
@@ -141,13 +141,13 @@ add_task(async function test_history_downloads_checked() {
 
   await PlacesTestUtils.addVisits(places);
 
-  let wh = new WindowHelper();
-  wh.onload = function() {
+  let dh = new DialogHelper();
+  dh.onload = function() {
     this.selectDuration(Sanitizer.TIMESPAN_HOUR);
     this.checkPrefCheckbox("history", true);
     this.acceptDialog();
   };
-  wh.onunload = async function() {
+  dh.onunload = async function() {
     intPrefIs(
       "sanitize.timeSpan",
       Sanitizer.TIMESPAN_HOUR,
@@ -182,8 +182,8 @@ add_task(async function test_history_downloads_checked() {
     await promiseHistoryClearedState(olderURIs, true);
     await ensureDownloadsClearedState(olderDownloadIDs, true);
   };
-  wh.open();
-  await wh.promiseClosed;
+  dh.open();
+  await dh.promiseClosed;
 });
 
 /**
@@ -215,8 +215,8 @@ add_task(async function test_history_downloads_unchecked() {
   }
 
   await PlacesTestUtils.addVisits(places);
-  let wh = new WindowHelper();
-  wh.onload = function() {
+  let dh = new DialogHelper();
+  dh.onload = function() {
     is(
       this.isWarningPanelVisible(),
       false,
@@ -230,7 +230,7 @@ add_task(async function test_history_downloads_unchecked() {
     this.checkPrefCheckbox("formdata", true);
     this.acceptDialog();
   };
-  wh.onunload = async function() {
+  dh.onunload = async function() {
     intPrefIs(
       "sanitize.timeSpan",
       Sanitizer.TIMESPAN_HOUR,
@@ -256,7 +256,7 @@ add_task(async function test_history_downloads_unchecked() {
 
     for (let entry of formEntries) {
       let exists = await formNameExists(entry);
-      is(exists, false, "form entry " + entry + " should no longer exist");
+      is(exists, 0, "form entry " + entry + " should no longer exist");
     }
 
     // OK, done, cleanup after ourselves.
@@ -264,8 +264,8 @@ add_task(async function test_history_downloads_unchecked() {
     await promiseHistoryClearedState(uris, true);
     await ensureDownloadsClearedState(downloadIDs, true);
   };
-  wh.open();
-  await wh.promiseClosed;
+  dh.open();
+  await dh.promiseClosed;
 });
 
 /**
@@ -287,8 +287,8 @@ add_task(async function test_everything() {
   let promiseSanitized = promiseSanitizationComplete();
 
   await PlacesTestUtils.addVisits(places);
-  let wh = new WindowHelper();
-  wh.onload = function() {
+  let dh = new DialogHelper();
+  dh.onload = function() {
     is(
       this.isWarningPanelVisible(),
       false,
@@ -299,7 +299,7 @@ add_task(async function test_everything() {
     this.checkPrefCheckbox("history", true);
     this.acceptDialog();
   };
-  wh.onunload = async function() {
+  dh.onunload = async function() {
     await promiseSanitized;
     intPrefIs(
       "sanitize.timeSpan",
@@ -310,8 +310,8 @@ add_task(async function test_everything() {
 
     await promiseHistoryClearedState(uris, true);
   };
-  wh.open();
-  await wh.promiseClosed;
+  dh.open();
+  await dh.promiseClosed;
 });
 
 /**
@@ -334,8 +334,8 @@ add_task(async function test_everything_warning() {
   let promiseSanitized = promiseSanitizationComplete();
 
   await PlacesTestUtils.addVisits(places);
-  let wh = new WindowHelper();
-  wh.onload = function() {
+  let dh = new DialogHelper();
+  dh.onload = function() {
     is(
       this.isWarningPanelVisible(),
       true,
@@ -346,7 +346,7 @@ add_task(async function test_everything_warning() {
     this.checkPrefCheckbox("history", true);
     this.acceptDialog();
   };
-  wh.onunload = async function() {
+  dh.onunload = async function() {
     intPrefIs(
       "sanitize.timeSpan",
       Sanitizer.TIMESPAN_EVERYTHING,
@@ -358,8 +358,8 @@ add_task(async function test_everything_warning() {
 
     await promiseHistoryClearedState(uris, true);
   };
-  wh.open();
-  await wh.promiseClosed;
+  dh.open();
+  await dh.promiseClosed;
 });
 
 /**
@@ -381,8 +381,8 @@ add_task(async function test_cannot_clear_history() {
   });
   let uris = [pURI];
 
-  let wh = new WindowHelper();
-  wh.onload = function() {
+  let dh = new DialogHelper();
+  dh.onload = function() {
     // Check that the relevant checkboxes are enabled
     var cb = this.win.document.querySelectorAll(
       "checkbox[preference='privacy.cpd.formdata']"
@@ -403,26 +403,26 @@ add_task(async function test_cannot_clear_history() {
     this.checkAllCheckboxes();
     this.acceptDialog();
   };
-  wh.onunload = async function() {
+  dh.onunload = async function() {
     await promiseSanitized;
 
     await promiseHistoryClearedState(uris, true);
 
     let exists = await formNameExists(formEntries[0]);
     is(
-      exists,
+      Boolean(exists),
       false,
       "form entry " + formEntries[0] + " should no longer exist"
     );
   };
-  wh.open();
-  await wh.promiseClosed;
+  dh.open();
+  await dh.promiseClosed;
 });
 
 add_task(async function test_no_formdata_history_to_clear() {
   let promiseSanitized = promiseSanitizationComplete();
-  let wh = new WindowHelper();
-  wh.onload = function() {
+  let dh = new DialogHelper();
+  dh.onload = function() {
     boolPrefIs(
       "cpd.history",
       true,
@@ -447,8 +447,8 @@ add_task(async function test_no_formdata_history_to_clear() {
 
     this.acceptDialog();
   };
-  wh.open();
-  await wh.promiseClosed;
+  dh.open();
+  await dh.promiseClosed;
   await promiseSanitized;
 });
 
@@ -457,8 +457,8 @@ add_task(async function test_form_entries() {
 
   let promiseSanitized = promiseSanitizationComplete();
 
-  let wh = new WindowHelper();
-  wh.onload = function() {
+  let dh = new DialogHelper();
+  dh.onload = function() {
     boolPrefIs(
       "cpd.formdata",
       true,
@@ -479,95 +479,17 @@ add_task(async function test_form_entries() {
 
     this.acceptDialog();
   };
-  wh.onunload = async function() {
+  dh.onunload = async function() {
     await promiseSanitized;
     let exists = await formNameExists(formEntry);
-    is(exists, false, "form entry " + formEntry + " should no longer exist");
+    is(
+      Boolean(exists),
+      false,
+      "form entry " + formEntry + " should no longer exist"
+    );
   };
-  wh.open();
-  await wh.promiseClosed;
-});
-
-// Test for offline cache deletion
-add_task(async function test_offline_cache() {
-  // Prepare stuff, we will work with www.example.com
-  var URL = "http://www.example.com";
-  var URI = makeURI(URL);
-  var principal = Services.scriptSecurityManager.createContentPrincipal(
-    URI,
-    {}
-  );
-
-  // Give www.example.com privileges to store offline data
-  Services.perms.addFromPrincipal(
-    principal,
-    "offline-app",
-    Ci.nsIPermissionManager.ALLOW_ACTION
-  );
-  Services.perms.addFromPrincipal(
-    principal,
-    "offline-app",
-    Ci.nsIOfflineCacheUpdateService.ALLOW_NO_WARN
-  );
-
-  // Store something to the offline cache
-  var appcacheserv = Cc[
-    "@mozilla.org/network/application-cache-service;1"
-  ].getService(Ci.nsIApplicationCacheService);
-  var appcachegroupid = appcacheserv.buildGroupIDForInfo(
-    makeURI(URL + "/manifest"),
-    Services.loadContextInfo.default
-  );
-  var appcache = appcacheserv.createApplicationCache(appcachegroupid);
-  var storage = Services.cache2.appCacheStorage(
-    Services.loadContextInfo.default,
-    appcache
-  );
-
-  // Open the dialog
-  let wh = new WindowHelper();
-  wh.onload = function() {
-    this.selectDuration(Sanitizer.TIMESPAN_EVERYTHING);
-    // Clear only offlineApps
-    this.uncheckAllCheckboxes();
-    this.checkPrefCheckbox("offlineApps", true);
-    this.acceptDialog();
-  };
-  wh.onunload = function() {
-    // Check if the cache has been deleted
-    var size = -1;
-    var visitor = {
-      onCacheStorageInfo(aEntryCount, aConsumption, aCapacity, aDiskDirectory) {
-        size = aConsumption;
-      },
-    };
-    storage.asyncVisitStorage(visitor, false);
-    // Offline cache visit happens synchronously, since it's forwarded to the old code
-    is(size, 0, "offline application cache entries evicted");
-  };
-
-  var cacheListener = {
-    onCacheEntryCheck() {
-      return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED;
-    },
-    onCacheEntryAvailable(entry, isnew, unused, status) {
-      is(status, Cr.NS_OK);
-      var stream = entry.openOutputStream(0, -1);
-      var content = "content";
-      stream.write(content, content.length);
-      stream.close();
-      entry.close();
-      wh.open();
-    },
-  };
-
-  storage.asyncOpenURI(
-    makeURI(URL),
-    "",
-    Ci.nsICacheStorage.OPEN_TRUNCATE,
-    cacheListener
-  );
-  await wh.promiseClosed;
+  dh.open();
+  await dh.promiseClosed;
 });
 
 // Test for offline apps permission deletion
@@ -583,15 +505,15 @@ add_task(async function test_offline_apps_permissions() {
   let promiseSanitized = promiseSanitizationComplete();
 
   // Open the dialog
-  let wh = new WindowHelper();
-  wh.onload = function() {
+  let dh = new DialogHelper();
+  dh.onload = function() {
     this.selectDuration(Sanitizer.TIMESPAN_EVERYTHING);
     // Clear only offlineApps
     this.uncheckAllCheckboxes();
     this.checkPrefCheckbox("siteSettings", true);
     this.acceptDialog();
   };
-  wh.onunload = async function() {
+  dh.onunload = async function() {
     await promiseSanitized;
 
     // Check all has been deleted (privileges, data, cache)
@@ -601,8 +523,8 @@ add_task(async function test_offline_apps_permissions() {
       "offline-app permissions removed"
     );
   };
-  wh.open();
-  await wh.promiseClosed;
+  dh.open();
+  await dh.promiseClosed;
 });
 
 var now_mSec = Date.now();
@@ -612,28 +534,30 @@ var now_uSec = now_mSec * 1000;
  * This wraps the dialog and provides some convenience methods for interacting
  * with it.
  *
- * @param aWin
- *        The dialog's nsIDOMWindow
+ * @param browserWin (optional)
+ *        The browser window that the dialog is expected to open in. If not
+ *        supplied, the initial browser window of the test run is used.
  */
-function WindowHelper(aWin) {
-  this.win = aWin;
+function DialogHelper(browserWin = window) {
+  this._browserWin = browserWin;
+  this.win = null;
   this.promiseClosed = new Promise(resolve => {
     this._resolveClosed = resolve;
   });
 }
 
-WindowHelper.prototype = {
+DialogHelper.prototype = {
   /**
    * "Presses" the dialog's OK button.
    */
   acceptDialog() {
-    let dialog = this.win.document.querySelector("dialog");
+    let dialogEl = this.win.document.querySelector("dialog");
     is(
-      dialog.getButton("accept").disabled,
+      dialogEl.getButton("accept").disabled,
       false,
       "Dialog's OK button should not be disabled"
     );
-    dialog.acceptDialog();
+    dialogEl.acceptDialog();
   },
 
   /**
@@ -715,73 +639,44 @@ WindowHelper.prototype = {
    * caller is expected to call promiseAsyncUpdates at some point; if false is
    * returned, promiseAsyncUpdates is called automatically.
    */
-  open() {
-    let wh = this;
-
-    function windowObserver(win, aTopic, aData) {
-      if (aTopic != "domwindowopened") {
-        return;
+  async open() {
+    let dialogPromise = BrowserTestUtils.promiseAlertDialogOpen(
+      null,
+      "chrome://browser/content/sanitize.xhtml",
+      {
+        isSubDialog: true,
       }
+    );
 
-      Services.ww.unregisterNotification(windowObserver);
+    executeSoon(() => {
+      Sanitizer.showUI(this._browserWin);
+    });
 
-      var loaded = false;
+    this.win = await dialogPromise;
+    this.win.addEventListener(
+      "load",
+      () => {
+        // Run onload on next tick so that gSanitizePromptDialog.init can run first.
+        executeSoon(() => this.onload());
+      },
+      { once: true }
+    );
 
-      win.addEventListener(
-        "load",
-        function onload(event) {
-          if (win.name !== "SanitizeDialog") {
-            return;
-          }
-
-          wh.win = win;
-          loaded = true;
-          executeSoon(() => wh.onload());
-        },
-        { once: true }
-      );
-
-      win.addEventListener("unload", function onunload(event) {
-        if (win.name !== "SanitizeDialog") {
-          win.removeEventListener("unload", onunload);
-          return;
-        }
-
-        // Why is unload fired before load?
-        if (!loaded) {
-          return;
-        }
-
-        win.removeEventListener("unload", onunload);
-        wh.win = win;
-
+    this.win.addEventListener(
+      "unload",
+      () => {
         // Some exceptions that reach here don't reach the test harness, but
         // ok()/is() do...
-        (async function() {
-          if (wh.onunload) {
-            await wh.onunload();
+        (async () => {
+          if (this.onunload) {
+            await this.onunload();
           }
           await PlacesTestUtils.promiseAsyncUpdates();
-          wh._resolveClosed();
+          this._resolveClosed();
+          this.win = null;
         })();
-      });
-    }
-    Services.ww.registerNotification(windowObserver);
-
-    let browserWin = null;
-    if (Services.appinfo.OS !== "Darwin") {
-      // Retrieve the browser window so we can specify it as the parent
-      // of the dialog to simulate the way the user opens the dialog
-      // on Windows and Linux.
-      browserWin = Services.wm.getMostRecentWindow("navigator:browser");
-    }
-
-    Services.ww.openWindow(
-      browserWin,
-      "chrome://browser/content/sanitize.xhtml",
-      "SanitizeDialog",
-      "chrome,titlebar,dialog,centerscreen,modal",
-      null
+      },
+      { once: true }
     );
   },
 

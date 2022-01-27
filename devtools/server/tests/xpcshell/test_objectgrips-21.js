@@ -1,6 +1,5 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
-/* eslint-disable no-shadow, max-nested-callbacks */
 
 "use strict";
 
@@ -416,9 +415,7 @@ add_task(
   )
 );
 
-const nullPrincipal = Cc["@mozilla.org/nullprincipal;1"].createInstance(
-  Ci.nsIPrincipal
-);
+const nullPrincipal = Services.scriptSecurityManager.createNullPrincipal({});
 add_task(
   threadFrontTest(
     options => {

@@ -15,9 +15,9 @@ from mozperftest.utils import download_file
 _ROOT_URL = "https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/"
 _FENIX_NIGHTLY_BUILDS = (
     "mobile.v2.fenix.nightly.latest.{architecture}"
-    "/artifacts/public/build/{architecture}/geckoNightly/target.apk"
+    "/artifacts/public/build/{architecture}/target.apk"
 )
-_GV_BUILDS = "gecko.v2.mozilla-central.nightly.latest.mobile.android-"
+_GV_BUILDS = "gecko.v2.mozilla-central.shippable.latest.mobile.android-"
 _REFBROW_BUILDS = (
     "mobile.v2.reference-browser.nightly.latest.{architecture}"
     "/artifacts/public/target.{architecture}.apk"
@@ -36,7 +36,7 @@ _PERMALINKS = {
     + "aarch64-opt/artifacts/public/build/geckoview_example.apk",
     "gve_nightly_api16": _ROOT_URL
     + _GV_BUILDS
-    + "api-16-opt/artifacts/public/build/geckoview_example.apk",
+    + "arm-opt/artifacts/public/build/geckoview_example.apk",
     "refbrow_nightly_aarch64": _ROOT_URL
     + _REFBROW_BUILDS.format(architecture="arm64-v8a"),
     "refbrow_nightly_api16": _ROOT_URL
@@ -58,8 +58,7 @@ class ADBLoggedDevice(ADBDevice):
 
 
 class AndroidDevice(Layer):
-    """Use an android device via ADB
-    """
+    """Use an android device via ADB"""
 
     name = "android"
     activated = False

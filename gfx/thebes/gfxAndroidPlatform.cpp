@@ -16,6 +16,8 @@
 #include "mozilla/layers/AndroidHardwareBuffer.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_webgl.h"
+#include "mozilla/widget/AndroidVsync.h"
 
 #include "gfx2DGlue.h"
 #include "gfxFT2FontList.h"
@@ -31,8 +33,6 @@
 #include "ft2build.h"
 #include FT_FREETYPE_H
 #include FT_MODULE_H
-
-#include "mozilla/java/VsyncSourceNatives.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -103,6 +103,8 @@ gfxAndroidPlatform::gfxAndroidPlatform() {
 gfxAndroidPlatform::~gfxAndroidPlatform() {
   FT_Done_Library(gPlatformFTLibrary);
   gPlatformFTLibrary = nullptr;
+  layers::AndroidHardwareBufferManager::Shutdown();
+  layers::AndroidHardwareBufferApi::Shutdown();
 }
 
 void gfxAndroidPlatform::InitAcceleration() {
@@ -111,9 +113,14 @@ void gfxAndroidPlatform::InitAcceleration() {
     if (StaticPrefs::gfx_use_ahardwarebuffer_content_AtStartup()) {
       gfxVars::SetUseAHardwareBufferContent(true);
     }
+    if (StaticPrefs::webgl_enable_ahardwarebuffer()) {
+      gfxVars::SetUseAHardwareBufferSharedSurface(true);
+    }
   }
-  if (gfx::gfxVars::UseAHardwareBufferContent()) {
+  if (gfx::gfxVars::UseAHardwareBufferContent() ||
+      gfxVars::UseAHardwareBufferSharedSurface()) {
     layers::AndroidHardwareBufferApi::Init();
+    layers::AndroidHardwareBufferManager::Init();
   }
 }
 
@@ -156,21 +163,15 @@ static bool IsJapaneseLocale() {
 }
 
 void gfxAndroidPlatform::GetCommonFallbackFonts(
-    uint32_t aCh, uint32_t aNextCh, Script aRunScript,
+    uint32_t aCh, Script aRunScript, eFontPresentation aPresentation,
     nsTArray<const char*>& aFontList) {
   static const char kDroidSansJapanese[] = "Droid Sans Japanese";
   static const char kMotoyaLMaru[] = "MotoyaLMaru";
   static const char kNotoSansCJKJP[] = "Noto Sans CJK JP";
   static const char kNotoColorEmoji[] = "Noto Color Emoji";
 
-  EmojiPresentation emoji = GetEmojiPresentation(aCh);
-  if (emoji != EmojiPresentation::TextOnly) {
-    if (aNextCh == kVariationSelector16 ||
-        (aNextCh != kVariationSelector15 &&
-         emoji == EmojiPresentation::EmojiDefault)) {
-      // if char is followed by VS16, try for a color emoji glyph
-      aFontList.AppendElement(kNotoColorEmoji);
-    }
+  if (PrefersColor(aPresentation)) {
+    aFontList.AppendElement(kNotoColorEmoji);
   }
 
   if (IS_IN_BMP(aCh)) {
@@ -190,15 +191,33 @@ void gfxAndroidPlatform::GetCommonFallbackFonts(
         break;
       case 0x09:
         aFontList.AppendElement("Noto Sans Devanagari");
+        aFontList.AppendElement("Noto Sans Bengali");
         aFontList.AppendElement("Droid Sans Devanagari");
+        break;
+      case 0x0a:
+        aFontList.AppendElement("Noto Sans Gurmukhi");
+        aFontList.AppendElement("Noto Sans Gujarati");
         break;
       case 0x0b:
         aFontList.AppendElement("Noto Sans Tamil");
+        aFontList.AppendElement("Noto Sans Oriya");
         aFontList.AppendElement("Droid Sans Tamil");
+        break;
+      case 0x0c:
+        aFontList.AppendElement("Noto Sans Telugu");
+        aFontList.AppendElement("Noto Sans Kannada");
+        break;
+      case 0x0d:
+        aFontList.AppendElement("Noto Sans Malayalam");
+        aFontList.AppendElement("Noto Sans Sinhala");
         break;
       case 0x0e:
         aFontList.AppendElement("Noto Sans Thai");
+        aFontList.AppendElement("Noto Sans Lao");
         aFontList.AppendElement("Droid Sans Thai");
+        break;
+      case 0x0f:
+        aFontList.AppendElement("Noto Sans Tibetan");
         break;
       case 0x10:
       case 0x2d:
@@ -239,17 +258,12 @@ void gfxAndroidPlatform::GetCommonFallbackFonts(
   aFontList.AppendElement("Droid Sans Fallback");
 }
 
-gfxPlatformFontList* gfxAndroidPlatform::CreatePlatformFontList() {
-  gfxPlatformFontList* list = new gfxFT2FontList();
-  if (NS_SUCCEEDED(list->InitFontList())) {
-    return list;
-  }
-  gfxPlatformFontList::Shutdown();
-  return nullptr;
+bool gfxAndroidPlatform::CreatePlatformFontList() {
+  return gfxPlatformFontList::Initialize(new gfxFT2FontList);
 }
 
 void gfxAndroidPlatform::ReadSystemFontList(
-    nsTArray<SystemFontListEntry>* aFontList) {
+    mozilla::dom::SystemFontList* aFontList) {
   gfxFT2FontList::PlatformFontList()->ReadSystemFontList(aFontList);
 }
 
@@ -264,6 +278,9 @@ bool gfxAndroidPlatform::FontHintingEnabled() {
   //
   // XXX when gecko-android-java is used as an "app runtime", we may
   // want to re-enable hinting for non-browser processes there.
+  //
+  // If this value is changed, we must ensure that the argument passed
+  // to SkInitCairoFT() in GPUParent::RecvInit() is also updated.
   return false;
 #endif  //  MOZ_WIDGET_ANDROID
 
@@ -290,71 +307,57 @@ bool gfxAndroidPlatform::RequiresLinearZoom() {
 
 class AndroidVsyncSource final : public VsyncSource {
  public:
-  class JavaVsyncSupport final
-      : public java::VsyncSource::Natives<JavaVsyncSupport> {
+  class Display final : public VsyncSource::Display,
+                        public widget::AndroidVsync::Observer {
    public:
-    using Base = java::VsyncSource::Natives<JavaVsyncSupport>;
-    using Base::DisposeNative;
-
-    static void NotifyVsync() {
-      Display& display = GetDisplayInstance();
-      TimeStamp vsyncTime = TimeStamp::Now();
-      TimeStamp outputTime = vsyncTime + display.GetVsyncRate();
-      display.NotifyVsync(vsyncTime, outputTime);
-    }
-  };
-
-  class Display final : public VsyncSource::Display {
-   public:
-    Display()
-        : mJavaVsync(java::VsyncSource::INSTANCE()), mObservingVsync(false) {
-      JavaVsyncSupport::Init();  // To register native methods.
-
-      float fps = mJavaVsync->GetRefreshRate();
-      mVsyncDuration = TimeDuration::FromMilliseconds(1000.0 / fps);
-    }
-
+    Display() : mAndroidVsync(widget::AndroidVsync::GetInstance()) {}
     ~Display() { DisableVsync(); }
 
     bool IsVsyncEnabled() override {
       MOZ_ASSERT(NS_IsMainThread());
-      MOZ_ASSERT(mJavaVsync);
-
       return mObservingVsync;
     }
 
     void EnableVsync() override {
       MOZ_ASSERT(NS_IsMainThread());
-      MOZ_ASSERT(mJavaVsync);
 
       if (mObservingVsync) {
         return;
       }
-      mObservingVsync = mJavaVsync->ObserveVsync(true);
-      MOZ_ASSERT(mObservingVsync);
+      mAndroidVsync->RegisterObserver(this, widget::AndroidVsync::RENDER);
+      mObservingVsync = true;
     }
 
     void DisableVsync() override {
       MOZ_ASSERT(NS_IsMainThread());
-      MOZ_ASSERT(mJavaVsync);
 
       if (!mObservingVsync) {
         return;
       }
-      mObservingVsync = mJavaVsync->ObserveVsync(false);
-      MOZ_ASSERT(!mObservingVsync);
+      mAndroidVsync->UnregisterObserver(this, widget::AndroidVsync::RENDER);
+      mObservingVsync = false;
     }
 
-    TimeDuration GetVsyncRate() override { return mVsyncDuration; }
+    TimeDuration GetVsyncRate() override {
+      return mAndroidVsync->GetVsyncRate();
+    }
 
-    void Shutdown() override {
-      DisableVsync();
-      mJavaVsync = nullptr;
+    void Shutdown() override { DisableVsync(); }
+
+    // Override for the widget::AndroidVsync::Observer method
+    void OnVsync(const TimeStamp& aTimeStamp) override {
+      // Use the timebase from the frame callback as the vsync time, unless it
+      // is in the future.
+      TimeStamp now = TimeStamp::Now();
+      TimeStamp vsyncTime = aTimeStamp < now ? aTimeStamp : now;
+      TimeStamp outputTime = vsyncTime + GetVsyncRate();
+
+      NotifyVsync(vsyncTime, outputTime);
     }
 
    private:
-    java::VsyncSource::GlobalRef mJavaVsync;
-    bool mObservingVsync;
+    RefPtr<widget::AndroidVsync> mAndroidVsync;
+    bool mObservingVsync = false;
     TimeDuration mVsyncDuration;
   };
 
@@ -373,8 +376,7 @@ already_AddRefed<mozilla::gfx::VsyncSource>
 gfxAndroidPlatform::CreateHardwareVsyncSource() {
   // Vsync was introduced since JB (API 16~18) but inaccurate. Enable only for
   // KK (API 19) and later.
-  if (AndroidBridge::Bridge() &&
-      AndroidBridge::Bridge()->GetAPIVersion() >= 19) {
+  if (jni::GetAPIVersion() >= 19) {
     RefPtr<AndroidVsyncSource> vsyncSource = new AndroidVsyncSource();
     return vsyncSource.forget();
   }

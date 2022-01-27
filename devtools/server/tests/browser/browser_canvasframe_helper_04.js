@@ -15,7 +15,7 @@ add_task(async function() {
   const browser = await addTab(TEST_URL_1);
   await SpecialPowers.spawn(browser, [TEST_URL_2], async function(url2) {
     const { require } = ChromeUtils.import(
-      "resource://devtools/shared/Loader.jsm"
+      "resource://devtools/shared/loader/Loader.jsm"
     );
     const {
       HighlighterEnvironment,
@@ -41,6 +41,7 @@ add_task(async function() {
     const env = new HighlighterEnvironment();
     env.initFromWindow(doc.defaultView);
     const helper = new CanvasFrameAnonymousContentHelper(env, nodeBuilder);
+    await helper.initialize();
 
     info("Get an element from the helper");
     const el = helper.getElement("child-element");

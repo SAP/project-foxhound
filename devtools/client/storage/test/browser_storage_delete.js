@@ -29,6 +29,10 @@ const TEST_CASES = [
 ];
 
 add_task(async function() {
+  // storage-listings.html explicitly mixes secure and insecure frames.
+  // We should not enforce https for tests using this page.
+  await pushPref("dom.security.https_first", false);
+
   await openTabAndSetupStorage(MAIN_DOMAIN + "storage-listings.html");
 
   const contextMenu = gPanelWindow.document.getElementById(
@@ -64,6 +68,7 @@ add_task(async function() {
       );
     });
 
+    info("Awaiting for store-objects-edit event");
     await eventWait;
 
     ok(
@@ -71,6 +76,4 @@ add_task(async function() {
       `There is no row '${rowName}' in ${treeItemName} after deletion`
     );
   }
-
-  await finishTests();
 });

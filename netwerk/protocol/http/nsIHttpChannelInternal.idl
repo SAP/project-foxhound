@@ -12,6 +12,10 @@
 template<class T> class nsCOMArray;
 namespace mozilla {
 class TimeStamp;
+namespace net {
+class nsHttpConnectionInfo;
+class WebSocketConnectionBase;
+}
 }
 %}
 [ptr] native StringArray(nsTArray<nsCString>);
@@ -22,6 +26,7 @@ native TimeStamp(mozilla::TimeStamp);
 
 interface nsIAsyncInputStream;
 interface nsIAsyncOutputStream;
+interface nsIEarlyHintObserver;
 interface nsIPrincipal;
 interface nsIProxyInfo;
 interface nsISecurityConsoleMessage;
@@ -40,6 +45,10 @@ interface nsIHttpUpgradeListener : nsISupports
                                          in nsIAsyncOutputStream aSocketOut);
 
     [must_use] void onUpgradeFailed(in nsresult aErrorCode);
+
+%{C++
+    virtual nsresult OnWebSocketConnectionAvailable(mozilla::net::WebSocketConnectionBase* aConnection) = 0;
+%}
 };
 
 /**
@@ -85,9 +94,10 @@ interface nsIHttpChannelInternal : nsISupports
     [must_use] void setCookie(in ACString aCookieHeader);
 
     /**
-     * Setup this channel as an application cache fallback channel.
+     * Returns true in case this channel is used for auth;
+     * (the response header includes 'www-authenticate').
      */
-    [must_use] void setupFallbackChannel(in string aFallbackKey);
+    [noscript, must_use] readonly attribute bool isAuthChannel;
 
     /**
      * This flag is set to force relevant cookies to be sent with this load
@@ -209,6 +219,13 @@ interface nsIHttpChannelInternal : nsISupports
     [must_use] attribute boolean allowSpdy;
 
     /**
+     * Enable/Disable HTTP3 negotiation on per channel basis.
+     * The network.http.http3.enabled preference is still a pre-requisite
+     * for starting HTTP3.
+     */
+    [must_use] attribute boolean allowHttp3;
+
+    /**
      * This attribute en/disables the timeout for the first byte of an HTTP
      * response. Enabled by default.
      */
@@ -241,6 +258,13 @@ interface nsIHttpChannelInternal : nsISupports
     [must_use] attribute boolean beConservative;
 
     /**
+     * If true, do not resolve any proxy for this request. Intended only for use with
+     * critical infra like the updater.
+     * default is false.
+     */
+    [must_use] attribute boolean bypassProxy;
+
+    /**
      * True if channel is used by the internal trusted recursive resolver
      * This flag places data for the request in a cache segment specific to TRR
      */
@@ -251,7 +275,14 @@ interface nsIHttpChannelInternal : nsISupports
      * Is false for resources loaded from the cache or resources that have an
      * IP literal host.
      */
-    [noscript, must_use] readonly attribute boolean isResolvedByTRR;
+    [must_use] readonly attribute boolean isResolvedByTRR;
+
+    /**
+     * Set to true if the channel is an OCSP check.
+     * Channels with this flag set will skip TRR in mode3 (because the circular
+     * dependency with checking OCSP for the TRR server will cause a failure)
+     */
+    [must_use] attribute boolean isOCSP;
 
     /**
      * An opaque flags for non-standard behavior of the TLS system.
@@ -403,13 +434,37 @@ interface nsIHttpChannelInternal : nsISupports
         in nsILoadInfo_CrossOriginOpenerPolicy aInitiatorPolicy);
 
     [noscript]
-    bool hasCrossOriginOpenerPolicyMismatch(); 
+    bool hasCrossOriginOpenerPolicyMismatch();
 
     [noscript]
     nsILoadInfo_CrossOriginEmbedderPolicy getResponseEmbedderPolicy();
 
-    [notxpcom, nostdcall] attribute boolean hasNonEmptySandboxingFlag;
-
     [noscript, notxpcom, nostdcall]
     void DoDiagnosticAssertWhenOnStopNotCalledOnDestroy();
+
+    /**
+     * If this is called, this channel's transaction will not be dispatched
+     * until the HTTPSSVC record is available.
+     */
+    [must_use] void setWaitForHTTPSSVCRecord();
+
+    /**
+     * This attribute indicates if the channel has support for HTTP3
+     */
+    [must_use] readonly attribute boolean supportsHTTP3;
+
+    /**
+     * This attribute indicates if the HTTPS RR is used for this channel.
+     */
+    [must_use] readonly attribute boolean hasHTTPSRR;
+
+    /**
+     * Set Early Hint Observer.
+     */
+    [must_use] void setEarlyHintObserver(in nsIEarlyHintObserver aObserver);
+
+%{ C++
+    virtual void SetConnectionInfo(mozilla::net::nsHttpConnectionInfo* aInfo) {}
+%}
+
 };

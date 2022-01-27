@@ -7,6 +7,7 @@
 #include "nsTimerImpl.h"
 #include "TimerThread.h"
 
+#include "GeckoProfiler.h"
 #include "nsThreadUtils.h"
 #include "pratom.h"
 
@@ -17,14 +18,11 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/OperatorNewExtensions.h"
+#include "mozilla/StaticPrefs_timer.h"
 
 #include <math.h>
 
 using namespace mozilla;
-#ifdef MOZ_TASK_TRACER
-#  include "GeckoTaskTracerImpl.h"
-using namespace mozilla::tasktracer;
-#endif
 
 NS_IMPL_ISUPPORTS_INHERITED(TimerThread, Runnable, nsIObserver)
 
@@ -130,15 +128,18 @@ class nsTimerEvent final : public CancelableRunnable {
   NS_IMETHOD GetName(nsACString& aName) override;
 #endif
 
-  explicit nsTimerEvent(already_AddRefed<nsTimerImpl> aTimer)
+  explicit nsTimerEvent(already_AddRefed<nsTimerImpl> aTimer,
+                        ProfilerThreadId aTimerThreadId)
       : mozilla::CancelableRunnable("nsTimerEvent"),
         mTimer(aTimer),
-        mGeneration(mTimer->GetGeneration()) {
+        mGeneration(mTimer->GetGeneration()),
+        mTimerThreadId(aTimerThreadId) {
     // Note: We override operator new for this class, and the override is
     // fallible!
     sAllocatorUsers++;
 
-    if (MOZ_LOG_TEST(GetTimerLog(), LogLevel::Debug)) {
+    if (MOZ_LOG_TEST(GetTimerLog(), LogLevel::Debug) ||
+        profiler_thread_is_being_profiled_for_markers(mTimerThreadId)) {
       mInitTime = TimeStamp::Now();
     }
   }
@@ -152,6 +153,7 @@ class nsTimerEvent final : public CancelableRunnable {
   }
   void operator delete(void* aPtr) {
     sAllocator->Free(aPtr);
+    sAllocatorUsers--;
     DeleteAllocatorIfNeeded();
   }
 
@@ -166,12 +168,12 @@ class nsTimerEvent final : public CancelableRunnable {
     MOZ_ASSERT(!sCanDeleteAllocator || sAllocatorUsers > 0,
                "This will result in us attempting to deallocate the "
                "nsTimerEvent allocator twice");
-    sAllocatorUsers--;
   }
 
   TimeStamp mInitTime;
   RefPtr<nsTimerImpl> mTimer;
   const int32_t mGeneration;
+  ProfilerThreadId mTimerThreadId;
 
   static TimerEventAllocator* sAllocator;
 
@@ -248,6 +250,18 @@ nsTimerEvent::Run() {
              (now - mInitTime).ToMilliseconds()));
   }
 
+  if (profiler_thread_is_being_profiled_for_markers(mTimerThreadId)) {
+    nsAutoCString name;
+    mTimer->GetName(name);
+    PROFILER_MARKER_TEXT(
+        "PostTimerEvent", OTHER,
+        MarkerOptions(MOZ_LIKELY(mInitTime)
+                          ? MarkerTiming::IntervalUntilNowFrom(mInitTime)
+                          : MarkerTiming::InstantNow(),
+                      MarkerThreadId(mTimerThreadId)),
+        name);
+  }
+
   mTimer->Fire(mGeneration);
 
   return NS_OK;
@@ -262,8 +276,7 @@ nsresult TimerThread::Init() {
     nsTimerEvent::Init();
 
     // We hold on to mThread to keep the thread alive.
-    nsresult rv =
-        NS_NewNamedThread("Timer Thread", getter_AddRefs(mThread), this);
+    nsresult rv = NS_NewNamedThread("Timer", getter_AddRefs(mThread), this);
     if (NS_FAILED(rv)) {
       mThread = nullptr;
     } else {
@@ -350,9 +363,9 @@ struct IntervalComparator {
 
 NS_IMETHODIMP
 TimerThread::Run() {
-  NS_SetCurrentThreadName("Timer");
-
   MonitorAutoLock lock(mMonitor);
+
+  mProfilerThreadId = profiler_current_thread_id();
 
   // We need to know how many microseconds give a positive PRIntervalTime. This
   // is platform-dependent and we calculate it at runtime, finding a value |v|
@@ -414,28 +427,7 @@ TimerThread::Run() {
           // on the TimerThread instead of on the thread it targets.
           {
             LogTimerEvent::Run run(timerRef.get());
-            timerRef = PostTimerEvent(timerRef.forget());
-          }
-
-          if (timerRef) {
-            // We got our reference back due to an error.
-            // Unhook the nsRefPtr, and release manually so we can get the
-            // refcount.
-            nsrefcnt rc = timerRef.forget().take()->Release();
-            (void)rc;
-
-            // The nsITimer interface requires that its users keep a reference
-            // to the timers they use while those timers are initialized but
-            // have not yet fired.  If this ever happens, it is a bug in the
-            // code that created and used the timer.
-            //
-            // Further, note that this should never happen even with a
-            // misbehaving user, because nsTimerImpl::Release checks for a
-            // refcount of 1 with an armed timer (a timer whose only reference
-            // is from the timer thread) and when it hits this will remove the
-            // timer from the timer thread and thus destroy the last reference,
-            // preventing this situation from occurring.
-            MOZ_ASSERT(rc != 0, "destroyed timer off its target thread!");
+            PostTimerEvent(timerRef.forget());
           }
 
           if (mShutdown) {
@@ -495,7 +487,10 @@ TimerThread::Run() {
 
     mWaiting = true;
     mNotified = false;
-    mMonitor.Wait(waitFor);
+    {
+      AUTO_PROFILER_TRACING_MARKER("TimerThread", "Wait", OTHER);
+      mMonitor.Wait(waitFor);
+    }
     if (mNotified) {
       forceRunNextTimer = false;
     }
@@ -505,7 +500,8 @@ TimerThread::Run() {
   return NS_OK;
 }
 
-nsresult TimerThread::AddTimer(nsTimerImpl* aTimer) {
+nsresult TimerThread::AddTimer(nsTimerImpl* aTimer,
+                               const MutexAutoLock& aProofOfLock) {
   MonitorAutoLock lock(mMonitor);
 
   if (!aTimer->mEventTarget) {
@@ -528,10 +524,57 @@ nsresult TimerThread::AddTimer(nsTimerImpl* aTimer) {
     mMonitor.Notify();
   }
 
+  if (profiler_thread_is_being_profiled_for_markers(mProfilerThreadId)) {
+    struct TimerMarker {
+      static constexpr Span<const char> MarkerTypeName() {
+        return MakeStringSpan("Timer");
+      }
+      static void StreamJSONMarkerData(
+          baseprofiler::SpliceableJSONWriter& aWriter,
+          const ProfilerString8View& aTimerName, uint32_t aDelay,
+          MarkerThreadId aThreadId) {
+        aWriter.StringProperty("name", aTimerName);
+        aWriter.IntProperty("delay", aDelay);
+        if (!aThreadId.IsUnspecified()) {
+          // Tech note: If `ToNumber()` returns a uint64_t, the conversion to
+          // int64_t is "implementation-defined" before C++20. This is
+          // acceptable here, because this is a one-way conversion to a unique
+          // identifier that's used to visually separate data by thread on the
+          // front-end.
+          aWriter.IntProperty("threadId", static_cast<int64_t>(
+                                              aThreadId.ThreadId().ToNumber()));
+        }
+      }
+      static MarkerSchema MarkerTypeDisplay() {
+        using MS = MarkerSchema;
+        MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
+        schema.AddKeyLabelFormatSearchable("name", "Name", MS::Format::String,
+                                           MS::Searchable::Searchable);
+        schema.AddKeyLabelFormat("delay", "Delay", MS::Format::Milliseconds);
+        schema.SetTableLabel(
+            "{marker.name} - {marker.data.name} - {marker.data.delay}");
+        return schema;
+      }
+    };
+
+    nsAutoCString name;
+    aTimer->GetName(name, aProofOfLock);
+
+    nsLiteralCString prefix("Anonymous_");
+    profiler_add_marker(
+        "AddTimer", geckoprofiler::category::OTHER,
+        MarkerOptions(MarkerThreadId(mProfilerThreadId),
+                      MarkerStack::MaybeCapture(
+                          StringHead(name, prefix.Length()) == prefix)),
+        TimerMarker{}, name, aTimer->mDelay.ToMilliseconds(),
+        MarkerThreadId::CurrentThread());
+  }
+
   return NS_OK;
 }
 
-nsresult TimerThread::RemoveTimer(nsTimerImpl* aTimer) {
+nsresult TimerThread::RemoveTimer(nsTimerImpl* aTimer,
+                                  const MutexAutoLock& aProofOfLock) {
   MonitorAutoLock lock(mMonitor);
 
   // Remove the timer from our array.  Tell callers that aTimer was not found
@@ -545,6 +588,19 @@ nsresult TimerThread::RemoveTimer(nsTimerImpl* aTimer) {
   if (mWaiting) {
     mNotified = true;
     mMonitor.Notify();
+  }
+
+  if (profiler_thread_is_being_profiled_for_markers(mProfilerThreadId)) {
+    nsAutoCString name;
+    aTimer->GetName(name, aProofOfLock);
+
+    nsLiteralCString prefix("Anonymous_");
+    PROFILER_MARKER_TEXT(
+        "RemoveTimer", OTHER,
+        MarkerOptions(MarkerThreadId(mProfilerThreadId),
+                      MarkerStack::MaybeCapture(
+                          StringHead(name, prefix.Length()) == prefix)),
+        name);
   }
 
   return NS_OK;
@@ -642,12 +698,6 @@ bool TimerThread::AddTimerInternal(nsTimerImpl* aTimer) {
 
   std::push_heap(mTimers.begin(), mTimers.end(), Entry::UniquePtrLessThan);
 
-#ifdef MOZ_TASK_TRACER
-  // Caller of AddTimer is the parent task of its timer event, so we store the
-  // TraceInfo here for later used.
-  aTimer->GetTLSTraceInfo();
-#endif
-
   return true;
 }
 
@@ -690,14 +740,13 @@ void TimerThread::RemoveFirstTimerInternal() {
   mTimers.RemoveLastElement();
 }
 
-already_AddRefed<nsTimerImpl> TimerThread::PostTimerEvent(
-    already_AddRefed<nsTimerImpl> aTimerRef) {
+void TimerThread::PostTimerEvent(already_AddRefed<nsTimerImpl> aTimerRef) {
   mMonitor.AssertCurrentThreadOwns();
 
   RefPtr<nsTimerImpl> timer(aTimerRef);
   if (!timer->mEventTarget) {
     NS_ERROR("Attempt to post timer event to NULL event target");
-    return timer.forget();
+    return;
   }
 
   // XXX we may want to reuse this nsTimerEvent in the case of repeating timers.
@@ -708,27 +757,19 @@ already_AddRefed<nsTimerImpl> TimerThread::PostTimerEvent(
   // event, so we can avoid firing a timer that was re-initialized after being
   // canceled.
 
-#ifdef MOZ_TASK_TRACER
-  // During the dispatch of TimerEvent, we overwrite the current TraceInfo
-  // partially with the info saved in timer earlier, and restore it back by
-  // AutoSaveCurTraceInfo.
-  AutoSaveCurTraceInfo saveCurTraceInfo;
-  (timer->GetTracedTask()).SetTLSTraceInfo();
-#endif
-
   nsCOMPtr<nsIEventTarget> target = timer->mEventTarget;
 
   void* p = nsTimerEvent::operator new(sizeof(nsTimerEvent));
   if (!p) {
-    return timer.forget();
+    return;
   }
   RefPtr<nsTimerEvent> event =
-      ::new (KnownNotNull, p) nsTimerEvent(timer.forget());
+      ::new (KnownNotNull, p) nsTimerEvent(timer.forget(), mProfilerThreadId);
 
   nsresult rv;
   {
-    // We release mMonitor around the Dispatch because if this timer is targeted
-    // at the TimerThread we'll deadlock.
+    // We release mMonitor around the Dispatch because if the Dispatch interacts
+    // with the timer API we'll deadlock.
     MonitorAutoUnlock unlock(mMonitor);
     rv = target->Dispatch(event, NS_DISPATCH_NORMAL);
   }
@@ -736,10 +777,7 @@ already_AddRefed<nsTimerImpl> TimerThread::PostTimerEvent(
   if (NS_FAILED(rv)) {
     timer = event->ForgetTimer();
     RemoveTimerInternal(timer);
-    return timer.forget();
   }
-
-  return nullptr;
 }
 
 void TimerThread::DoBeforeSleep() {
@@ -757,12 +795,18 @@ void TimerThread::DoAfterSleep() {
   // Wake up the timer thread to re-process the array to ensure the sleep delay
   // is correct, and fire any expired timers (perhaps quite a few)
   mNotified = true;
+  PROFILER_MARKER_UNTYPED("AfterSleep", OTHER,
+                          MarkerThreadId(mProfilerThreadId));
   mMonitor.Notify();
 }
 
 NS_IMETHODIMP
 TimerThread::Observe(nsISupports* /* aSubject */, const char* aTopic,
                      const char16_t* /* aData */) {
+  if (StaticPrefs::timer_ignore_sleep_wake_notifications()) {
+    return NS_OK;
+  }
+
   if (strcmp(aTopic, "sleep_notification") == 0 ||
       strcmp(aTopic, "suspend_process_notification") == 0) {
     DoBeforeSleep();

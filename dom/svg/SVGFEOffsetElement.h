@@ -9,7 +9,7 @@
 
 #include "SVGAnimatedNumber.h"
 #include "SVGAnimatedString.h"
-#include "SVGFilters.h"
+#include "mozilla/dom/SVGFilters.h"
 
 nsresult NS_NewSVGFEOffsetElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -44,6 +44,8 @@ class SVGFEOffsetElement : public SVGFEOffsetElementBase {
   virtual void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) override;
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedString> In1();

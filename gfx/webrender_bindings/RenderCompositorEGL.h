@@ -17,17 +17,19 @@ namespace wr {
 class RenderCompositorEGL : public RenderCompositor {
  public:
   static UniquePtr<RenderCompositor> Create(
-      RefPtr<widget::CompositorWidget> aWidget);
+      const RefPtr<widget::CompositorWidget>& aWidget, nsACString& aError);
 
-  explicit RenderCompositorEGL(RefPtr<widget::CompositorWidget> aWidget);
+  explicit RenderCompositorEGL(const RefPtr<widget::CompositorWidget>& aWidget,
+                               RefPtr<gl::GLContext>&& aGL);
   virtual ~RenderCompositorEGL();
 
   bool BeginFrame() override;
   RenderedFrameId EndFrame(const nsTArray<DeviceIntRect>& aDirtyRects) final;
   void Pause() override;
   bool Resume() override;
+  bool IsPaused() override;
 
-  gl::GLContext* gl() const override;
+  gl::GLContext* gl() const override { return mGL; }
 
   bool MakeCurrent() override;
 
@@ -35,18 +37,23 @@ class RenderCompositorEGL : public RenderCompositor {
 
   LayoutDeviceIntSize GetBufferSize() override;
 
-  CompositorCapabilities GetCompositorCapabilities() override;
-
   // Interface for partial present
   bool UsePartialPresent() override;
   bool RequestFullRender() override;
   uint32_t GetMaxPartialPresentRects() override;
   bool ShouldDrawPreviousPartialPresentRegions() override;
+  size_t GetBufferAge() const override;
+  void SetBufferDamageRegion(const wr::DeviceIntRect* aRects,
+                             size_t aNumRects) override;
+
+  ipc::FileDescriptor GetAndResetReleaseFence() override;
 
  protected:
   EGLSurface CreateEGLSurface();
 
   void DestroyEGLSurface();
+
+  RefPtr<gl::GLContext> mGL;
 
   EGLSurface mEGLSurface;
 #ifdef MOZ_WIDGET_ANDROID
@@ -54,7 +61,11 @@ class RenderCompositorEGL : public RenderCompositor {
   LayoutDeviceIntSize mEGLSurfaceSize;
 #endif
 
-  EGLint mBufferAge;
+  // FileDescriptor of release fence.
+  // Release fence is a fence that is used for waiting until usage/composite of
+  // AHardwareBuffer is ended. The fence is delivered to client side via
+  // ImageBridge. It is used only on android.
+  ipc::FileDescriptor mReleaseFenceFd;
 };
 
 }  // namespace wr

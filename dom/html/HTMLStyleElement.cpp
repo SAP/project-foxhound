@@ -15,8 +15,7 @@
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Style)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 HTMLStyleElement::HTMLStyleElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
@@ -93,17 +92,10 @@ nsresult HTMLStyleElement::BindToTree(BindContext& aContext, nsINode& aParent) {
 }
 
 void HTMLStyleElement::UnbindFromTree(bool aNullParent) {
-  nsCOMPtr<Document> oldDoc = GetUncomposedDoc();
+  RefPtr<Document> oldDoc = GetUncomposedDoc();
   ShadowRoot* oldShadow = GetContainingShadow();
 
   nsGenericHTMLElement::UnbindFromTree(aNullParent);
-
-  if (oldShadow && GetContainingShadow()) {
-    // The style is in a shadow tree and is still in the
-    // shadow tree. Thus the sheets in the shadow DOM
-    // do not need to be updated.
-    return;
-  }
 
   Unused << UpdateStyleSheetInternal(oldDoc, oldShadow);
 }
@@ -162,6 +154,10 @@ void HTMLStyleElement::SetTextContentInternal(const nsAString& aTextContent,
   Unused << UpdateStyleSheetInternal(nullptr, nullptr);
 }
 
+void HTMLStyleElement::SetDevtoolsAsTriggeringPrincipal() {
+  mTriggeringPrincipal = CreateDevtoolsPrincipal();
+}
+
 Maybe<LinkStyle::SheetInfo> HTMLStyleElement::GetStyleSheetInfo() {
   if (!IsCSSMimeTypeAttributeForStyleElement(*this)) {
     return Nothing();
@@ -180,10 +176,10 @@ Maybe<LinkStyle::SheetInfo> HTMLStyleElement::GetStyleSheetInfo() {
       CORS_NONE,
       title,
       media,
-      /* integrity = */ EmptyString(),
+      /* integrity = */ u""_ns,
       /* nsStyleUtil::CSPAllowsInlineStyle takes care of nonce checking for
          inline styles. Bug 1607011 */
-      /* nonce = */ EmptyString(),
+      /* nonce = */ u""_ns,
       HasAlternateRel::No,
       IsInline::Yes,
       IsExplicitlyEnabled::No,
@@ -195,5 +191,4 @@ JSObject* HTMLStyleElement::WrapNode(JSContext* aCx,
   return HTMLStyleElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

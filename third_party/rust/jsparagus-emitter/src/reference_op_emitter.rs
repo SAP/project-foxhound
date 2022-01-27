@@ -343,14 +343,22 @@ impl NameReferenceEmitter {
                 emitter.emit.get_g_name(name_index);
                 //      [stack] CALLEE
 
-                emitter.emit.g_implicit_this(name_index);
+                // NOTE: We don't support non-syntactic scope.
+                //       See NameOpEmitter::emitGet in SpiderMonkey for omitted
+                //       cases.
+
+                emitter.emit.undefined();
                 //      [stack] CALLEE THIS
             }
             NameLocation::Dynamic => {
                 emitter.emit.get_name(name_index);
                 //      [stack] CALLEE
 
-                emitter.emit.g_implicit_this(name_index);
+                // NOTE: We don't support non-syntactic scope or with statement.
+                //       See NameOpEmitter::emitGet in SpiderMonkey for omitted
+                //       cases.
+
+                emitter.emit.undefined();
                 //      [stack] CALLEE THIS
             }
             NameLocation::FrameSlot(slot, kind) => {
@@ -382,9 +390,12 @@ impl NameReferenceEmitter {
         CallReference::new(CallKind::Normal)
     }
 
-    pub fn emit_for_assignment(self, emitter: &mut AstEmitter) -> AssignmentReference {
+    pub fn emit_for_assignment_with_loc(
+        self,
+        emitter: &mut AstEmitter,
+        loc: NameLocation,
+    ) -> AssignmentReference {
         let name_index = emitter.emit.get_atom_gcthing_index(self.name);
-        let loc = emitter.lookup_name(self.name);
 
         //              [stack]
 
@@ -426,6 +437,18 @@ impl NameReferenceEmitter {
                 }
             }
         }
+    }
+
+    pub fn emit_for_assignment(self, emitter: &mut AstEmitter) -> AssignmentReference {
+        let loc = emitter.lookup_name(self.name);
+        self.emit_for_assignment_with_loc(emitter, loc)
+    }
+
+    /// Ignore any lexical scope and assign to var scope.
+    /// Used by Annex B function.
+    pub fn emit_for_var_assignment(self, emitter: &mut AstEmitter) -> AssignmentReference {
+        let loc = emitter.lookup_name_in_var(self.name);
+        self.emit_for_assignment_with_loc(emitter, loc)
     }
 
     pub fn emit_for_declaration(self, emitter: &mut AstEmitter) -> DeclarationReference {
@@ -485,7 +508,7 @@ where
         //              [stack] THIS THIS
 
         // FIXME: Support super.
-        emitter.emit.call_prop(key_index);
+        emitter.emit.get_prop(key_index);
         //              [stack] THIS CALLEE
 
         emitter.emit.swap();
@@ -545,7 +568,7 @@ where
         //              [stack] THIS THIS KEY
 
         // FIXME: Support super.
-        emitter.emit.call_elem();
+        emitter.emit.get_elem();
         //              [stack] THIS CALLEE
 
         emitter.emit.swap();

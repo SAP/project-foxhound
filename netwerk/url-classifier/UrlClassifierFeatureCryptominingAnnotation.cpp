@@ -10,6 +10,9 @@
 #include "nsIClassifiedChannel.h"
 #include "nsContentUtils.h"
 #include "nsNetUtil.h"
+#include "mozilla/StaticPtr.h"
+#include "nsIWebProgressListener.h"
+#include "nsIChannel.h"
 
 namespace mozilla {
 namespace net {
@@ -40,7 +43,7 @@ StaticRefPtr<UrlClassifierFeatureCryptominingAnnotation>
 
 UrlClassifierFeatureCryptominingAnnotation::
     UrlClassifierFeatureCryptominingAnnotation()
-    : UrlClassifierFeatureBase(
+    : UrlClassifierFeatureAntiTrackingBase(
           nsLiteralCString(CRYPTOMINING_ANNOTATION_FEATURE_NAME),
           nsLiteralCString(URLCLASSIFIER_CRYPTOMINING_ANNOTATION_BLOCKLIST),
           nsLiteralCString(URLCLASSIFIER_CRYPTOMINING_ANNOTATION_ENTITYLIST),

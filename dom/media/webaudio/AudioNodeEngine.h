@@ -285,7 +285,7 @@ class AudioNodeEngine {
   }
   // This consumes the contents of aData.  aData will be emptied after this
   // returns.
-  virtual void SetRawArrayData(nsTArray<float>& aData) {
+  virtual void SetRawArrayData(nsTArray<float>&& aData) {
     NS_ERROR("SetRawArrayData called on an engine that doesn't support it");
   }
 
@@ -339,9 +339,8 @@ class AudioNodeEngine {
   // returning false, then the track can be suspended.
   virtual bool IsActive() const { return false; }
 
-  // Called on forced shutdown of the MediaTrackGraph before handing ownership
-  // from graph thread to main thread.
-  virtual void NotifyForcedShutdown() {}
+  // Called on graph thread when the engine will not be used again.
+  virtual void OnGraphThreadDone() {}
 
   bool HasNode() const {
     MOZ_ASSERT(NS_IsMainThread());

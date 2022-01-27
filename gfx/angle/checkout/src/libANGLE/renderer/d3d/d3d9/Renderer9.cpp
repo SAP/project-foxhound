@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2012-2014 The ANGLE Project Authors. All rights reserved.
+// Copyright 2012 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -27,6 +27,7 @@
 #include "libANGLE/formatutils.h"
 #include "libANGLE/renderer/d3d/CompilerD3D.h"
 #include "libANGLE/renderer/d3d/DeviceD3D.h"
+#include "libANGLE/renderer/d3d/DisplayD3D.h"
 #include "libANGLE/renderer/d3d/FramebufferD3D.h"
 #include "libANGLE/renderer/d3d/IndexDataManager.h"
 #include "libANGLE/renderer/d3d/ProgramD3D.h"
@@ -51,6 +52,8 @@
 #include "libANGLE/renderer/d3d/d3d9/VertexBuffer9.h"
 #include "libANGLE/renderer/d3d/d3d9/formatutils9.h"
 #include "libANGLE/renderer/d3d/d3d9/renderer9_utils.h"
+#include "libANGLE/renderer/d3d/driver_utils_d3d.h"
+#include "libANGLE/renderer/driver_utils.h"
 #include "libANGLE/trace.h"
 
 #if !defined(ANGLE_COMPILE_OPTIMIZATION_LEVEL)
@@ -150,6 +153,11 @@ Renderer9::Renderer9(egl::Display *display) : RendererD3D(display), mStateManage
     mAppliedPixelShader   = nullptr;
     mAppliedProgramSerial = 0;
 
+    gl::InitializeDebugAnnotations(&mAnnotator);
+}
+
+void Renderer9::setGlobalDebugAnnotator()
+{
     gl::InitializeDebugAnnotations(&mAnnotator);
 }
 
@@ -306,11 +314,16 @@ egl::Error Renderer9::initialize()
             mAdapter, mDeviceType, mDeviceWindow,
             behaviorFlags | D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_PUREDEVICE,
             &presentParameters, &mDevice);
+
+        if (FAILED(result))
+        {
+            ERR() << "CreateDevice1 failed: (" << gl::FmtHR(result) << ")";
+        }
     }
     if (result == D3DERR_OUTOFVIDEOMEMORY || result == E_OUTOFMEMORY || result == D3DERR_DEVICELOST)
     {
         return egl::EglBadAlloc(D3D9_INIT_OUT_OF_MEMORY)
-               << "CreateDevice failed: device lost of out of memory";
+               << "CreateDevice failed: device lost or out of memory (" << gl::FmtHR(result) << ")";
     }
 
     if (FAILED(result))
@@ -325,7 +338,8 @@ egl::Error Renderer9::initialize()
             ASSERT(result == D3DERR_OUTOFVIDEOMEMORY || result == E_OUTOFMEMORY ||
                    result == D3DERR_NOTAVAILABLE || result == D3DERR_DEVICELOST);
             return egl::EglBadAlloc(D3D9_INIT_OUT_OF_MEMORY)
-                   << "CreateDevice2 failed: device lost, not available, or of out of memory";
+                   << "CreateDevice2 failed: device lost, not available, or of out of memory ("
+                   << gl::FmtHR(result) << ")";
         }
     }
 
@@ -404,7 +418,7 @@ egl::Error Renderer9::initializeDevice()
 
 D3DPRESENT_PARAMETERS Renderer9::getDefaultPresentParameters()
 {
-    D3DPRESENT_PARAMETERS presentParameters = {0};
+    D3DPRESENT_PARAMETERS presentParameters = {};
 
     // The default swap chain is never actually used. Surface will create a new swap chain with the
     // proper parameters.
@@ -576,7 +590,6 @@ void Renderer9::generateDisplayExtensions(egl::DisplayExtensions *outExtensions)
     outExtensions->querySurfacePointer = true;
     outExtensions->windowFixedSize     = true;
     outExtensions->postSubBuffer       = true;
-    outExtensions->deviceQuery         = true;
 
     outExtensions->image               = true;
     outExtensions->imageBase           = true;
@@ -585,8 +598,9 @@ void Renderer9::generateDisplayExtensions(egl::DisplayExtensions *outExtensions)
 
     outExtensions->flexibleSurfaceCompatibility = true;
 
-    // Contexts are virtualized so textures can be shared globally
-    outExtensions->displayTextureShareGroup = true;
+    // Contexts are virtualized so textures and semaphores can be shared globally
+    outExtensions->displayTextureShareGroup   = true;
+    outExtensions->displaySemaphoreShareGroup = true;
 
     // D3D9 can be used without an output surface
     outExtensions->surfacelessContext = true;
@@ -715,10 +729,13 @@ SwapChainD3D *Renderer9::createSwapChain(NativeWindowD3D *nativeWindow,
 
 egl::Error Renderer9::getD3DTextureInfo(const egl::Config *configuration,
                                         IUnknown *d3dTexture,
+                                        const egl::AttributeMap &attribs,
                                         EGLint *width,
                                         EGLint *height,
-                                        EGLint *samples,
-                                        const angle::Format **angleFormat) const
+                                        GLsizei *samples,
+                                        gl::Format *glFormat,
+                                        const angle::Format **angleFormat,
+                                        UINT *arraySlice) const
 {
     IDirect3DTexture9 *texture = nullptr;
     if (FAILED(d3dTexture->QueryInterface(&texture)))
@@ -773,11 +790,23 @@ egl::Error Renderer9::getD3DTextureInfo(const egl::Config *configuration,
                    << "Unknown client buffer texture format: " << desc.Format;
     }
 
+    const auto &d3dFormatInfo = d3d9::GetD3DFormatInfo(desc.Format);
+    ASSERT(d3dFormatInfo.info().id != angle::FormatID::NONE);
+
+    if (glFormat)
+    {
+        *glFormat = gl::Format(d3dFormatInfo.info().glInternalFormat);
+    }
+
     if (angleFormat)
     {
-        const auto &d3dFormatInfo = d3d9::GetD3DFormatInfo(desc.Format);
-        ASSERT(d3dFormatInfo.info().id != angle::FormatID::NONE);
+
         *angleFormat = &d3dFormatInfo.info();
+    }
+
+    if (arraySlice)
+    {
+        *arraySlice = 0;
     }
 
     return egl::NoError();
@@ -934,6 +963,7 @@ bool Renderer9::supportsFastCopyBufferToTexture(GLenum internalFormat) const
 
 angle::Result Renderer9::fastCopyBufferToTexture(const gl::Context *context,
                                                  const gl::PixelUnpackState &unpack,
+                                                 gl::Buffer *unpackBuffer,
                                                  unsigned int offset,
                                                  RenderTargetD3D *destRenderTarget,
                                                  GLenum destinationFormat,
@@ -1083,7 +1113,8 @@ angle::Result Renderer9::updateState(const gl::Context *context, gl::PrimitiveMo
     {
         ASSERT(firstColorAttachment->isAttached());
         RenderTarget9 *renderTarget = nullptr;
-        ANGLE_TRY(firstColorAttachment->getRenderTarget(context, &renderTarget));
+        ANGLE_TRY(firstColorAttachment->getRenderTarget(context, firstColorAttachment->getSamples(),
+                                                        &renderTarget));
         samples = renderTarget->getSamples();
     }
     gl::RasterizerState rasterizer = glState.getRasterizerState();
@@ -1118,7 +1149,8 @@ angle::Result Renderer9::setBlendDepthRasterStates(const gl::Context *context,
     {
         ASSERT(firstColorAttachment->isAttached());
         RenderTarget9 *renderTarget = nullptr;
-        ANGLE_TRY(firstColorAttachment->getRenderTarget(context, &renderTarget));
+        ANGLE_TRY(firstColorAttachment->getRenderTarget(context, firstColorAttachment->getSamples(),
+                                                        &renderTarget));
         samples = renderTarget->getSamples();
     }
     gl::RasterizerState rasterizer = glState.getRasterizerState();
@@ -1463,7 +1495,7 @@ angle::Result Renderer9::drawLineLoop(const gl::Context *context,
     unsigned int startIndex = 0;
     Context9 *context9      = GetImplAs<Context9>(context);
 
-    if (getNativeExtensions().elementIndexUint)
+    if (getNativeExtensions().elementIndexUintOES)
     {
         if (!mLineLoopIB)
         {
@@ -1675,7 +1707,7 @@ angle::Result Renderer9::getCountingIB(const gl::Context *context,
             ANGLE_TRY(mCountingIB->unmapBuffer(context));
         }
     }
-    else if (getNativeExtensions().elementIndexUint)
+    else if (getNativeExtensions().elementIndexUintOES)
     {
         const unsigned int spaceNeeded = static_cast<unsigned int>(count) * sizeof(unsigned int);
 
@@ -1792,6 +1824,7 @@ void Renderer9::applyUniforms(ProgramD3D *programD3D)
             case GL_SAMPLER_2D:
             case GL_SAMPLER_CUBE:
             case GL_SAMPLER_EXTERNAL_OES:
+            case GL_SAMPLER_VIDEO_IMAGE_WEBGL:
                 break;
             case GL_BOOL:
             case GL_BOOL_VEC2:
@@ -1880,7 +1913,7 @@ void Renderer9::clear(const ClearParameters &clearParams,
 
     // Clearing individual buffers other than buffer zero is not supported by Renderer9 and ES 2.0
     bool clearColor = clearParams.clearColor[0];
-    for (unsigned int i = 0; i < ArraySize(clearParams.clearColor); i++)
+    for (unsigned int i = 0; i < clearParams.clearColor.size(); i++)
     {
         ASSERT(clearParams.clearColor[i] == clearColor);
     }
@@ -1930,10 +1963,12 @@ void Renderer9::clear(const ClearParameters &clearParams,
                                            ? 0.0f
                                            : clearParams.colorF.blue));
 
-        if ((formatInfo.redBits > 0 && !clearParams.colorMaskRed) ||
-            (formatInfo.greenBits > 0 && !clearParams.colorMaskGreen) ||
-            (formatInfo.blueBits > 0 && !clearParams.colorMaskBlue) ||
-            (formatInfo.alphaBits > 0 && !clearParams.colorMaskAlpha))
+        const uint8_t colorMask =
+            gl::BlendStateExt::ColorMaskStorage::GetValueIndexed(0, clearParams.colorMask);
+        bool r, g, b, a;
+        gl::BlendStateExt::UnpackColorMask(colorMask, &r, &g, &b, &a);
+        if ((formatInfo.redBits > 0 && !r) || (formatInfo.greenBits > 0 && !g) ||
+            (formatInfo.blueBits > 0 && !b) || (formatInfo.alphaBits > 0 && !a))
         {
             needMaskedColorClear = true;
         }
@@ -2000,10 +2035,11 @@ void Renderer9::clear(const ClearParameters &clearParams,
 
         if (clearColor)
         {
+            // clearParams.colorMask follows the same packing scheme as
+            // D3DCOLORWRITEENABLE_RED/GREEN/BLUE/ALPHA
             mDevice->SetRenderState(
                 D3DRS_COLORWRITEENABLE,
-                gl_d3d9::ConvertColorMask(clearParams.colorMaskRed, clearParams.colorMaskGreen,
-                                          clearParams.colorMaskBlue, clearParams.colorMaskAlpha));
+                gl::BlendStateExt::ColorMaskStorage::GetValueIndexed(0, clearParams.colorMask));
         }
         else
         {
@@ -2339,7 +2375,7 @@ std::string Renderer9::getRendererDescription() const
 
 DeviceIdentifier Renderer9::getAdapterIdentifier() const
 {
-    DeviceIdentifier deviceIdentifier = {0};
+    DeviceIdentifier deviceIdentifier = {};
     deviceIdentifier.VendorId         = static_cast<UINT>(mAdapterIdentifier.VendorId);
     deviceIdentifier.DeviceId         = static_cast<UINT>(mAdapterIdentifier.DeviceId);
     deviceIdentifier.SubSysId         = static_cast<UINT>(mAdapterIdentifier.SubSysId);
@@ -2954,6 +2990,7 @@ angle::Result Renderer9::getVertexSpaceRequired(const gl::Context *context,
                                                 const gl::VertexBinding &binding,
                                                 size_t count,
                                                 GLsizei instances,
+                                                GLuint baseInstance,
                                                 unsigned int *bytesRequiredOut) const
 {
     if (!attrib.enabled)
@@ -2998,8 +3035,11 @@ void Renderer9::generateCaps(gl::Caps *outCaps,
 
 void Renderer9::initializeFeatures(angle::FeaturesD3D *features) const
 {
-    d3d9::InitializeFeatures(features);
-    OverrideFeaturesWithDisplayState(features, mDisplay->getState());
+    if (!mDisplay->getState().featuresAllDisabled)
+    {
+        d3d9::InitializeFeatures(features);
+    }
+    ApplyFeatureOverrides(features, mDisplay->getState());
 }
 
 DeviceImpl *Renderer9::createEGLDevice()
@@ -3162,7 +3202,7 @@ angle::Result Renderer9::applyTextures(const gl::Context *context, gl::ShaderTyp
     ASSERT(!programD3D->isSamplerMappingDirty());
 
     // TODO(jmadill): Use the Program's sampler bindings.
-    const gl::ActiveTexturePointerArray &activeTextures = glState.getActiveTexturesCache();
+    const gl::ActiveTexturesCache &activeTextures = glState.getActiveTexturesCache();
 
     const gl::RangeUI samplerRange = programD3D->getUsedSamplerRange(shaderType);
     for (unsigned int samplerIndex = samplerRange.low(); samplerIndex < samplerRange.high();
@@ -3199,14 +3239,14 @@ angle::Result Renderer9::applyTextures(const gl::Context *context, gl::ShaderTyp
     }
 
     // Set all the remaining textures to NULL
-    size_t samplerCount = (shaderType == gl::ShaderType::Fragment)
-                              ? caps.maxShaderTextureImageUnits[gl::ShaderType::Fragment]
-                              : caps.maxShaderTextureImageUnits[gl::ShaderType::Vertex];
+    int samplerCount = (shaderType == gl::ShaderType::Fragment)
+                           ? caps.maxShaderTextureImageUnits[gl::ShaderType::Fragment]
+                           : caps.maxShaderTextureImageUnits[gl::ShaderType::Vertex];
 
     // TODO(jmadill): faster way?
-    for (size_t samplerIndex = samplerRange.high(); samplerIndex < samplerCount; samplerIndex++)
+    for (int samplerIndex = samplerRange.high(); samplerIndex < samplerCount; samplerIndex++)
     {
-        ANGLE_TRY(setTexture(context, shaderType, static_cast<int>(samplerIndex), nullptr));
+        ANGLE_TRY(setTexture(context, shaderType, samplerIndex, nullptr));
     }
 
     return angle::Result::Continue;
@@ -3236,4 +3276,33 @@ angle::Result Renderer9::ensureVertexDataManagerInitialized(const gl::Context *c
 
     return angle::Result::Continue;
 }
+
+std::string Renderer9::getVendorString() const
+{
+    return GetVendorString(getVendorId());
+}
+
+std::string Renderer9::getVersionString() const
+{
+    std::ostringstream versionString;
+    std::string driverName(mAdapterIdentifier.Driver);
+    if (!driverName.empty())
+    {
+        versionString << mAdapterIdentifier.Driver;
+    }
+    else
+    {
+        versionString << "D3D9 ";
+    }
+    versionString << "-";
+    versionString << GetDriverVersionString(mAdapterIdentifier.DriverVersion);
+
+    return versionString.str();
+}
+
+RendererD3D *CreateRenderer9(egl::Display *display)
+{
+    return new Renderer9(display);
+}
+
 }  // namespace rx

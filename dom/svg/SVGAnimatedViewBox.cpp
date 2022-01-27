@@ -40,8 +40,9 @@ nsresult SVGViewBox::FromString(const nsAString& aStr, SVGViewBox* aViewBox) {
     return NS_OK;
   }
 
-  nsCharSeparatedTokenizerTemplate<nsContentUtils::IsHTMLWhitespace> tokenizer(
-      aStr, ',', nsCharSeparatedTokenizer::SEPARATOR_OPTIONAL);
+  nsCharSeparatedTokenizerTemplate<nsContentUtils::IsHTMLWhitespace,
+                                   nsTokenizerFlags::SeparatorOptional>
+      tokenizer(aStr, ',');
   float vals[NUM_VIEWBOX_COMPONENTS];
   uint32_t i;
   for (i = 0; i < NUM_VIEWBOX_COMPONENTS && tokenizer.hasMoreTokens(); ++i) {
@@ -71,6 +72,41 @@ static SVGAttrTearoffTable<SVGAnimatedViewBox, SVGRect>
     sAnimSVGViewBoxTearoffTable;
 SVGAttrTearoffTable<SVGAnimatedViewBox, SVGAnimatedRect>
     SVGAnimatedViewBox::sSVGAnimatedRectTearoffTable;
+
+//----------------------------------------------------------------------
+// Helper class: AutoChangeViewBoxNotifier
+// Stack-based helper class to pair calls to WillChangeViewBox and
+// DidChangeViewBox.
+class MOZ_RAII AutoChangeViewBoxNotifier {
+ public:
+  AutoChangeViewBoxNotifier(SVGAnimatedViewBox* aViewBox,
+                            SVGElement* aSVGElement, bool aDoSetAttr = true)
+      : mViewBox(aViewBox), mSVGElement(aSVGElement), mDoSetAttr(aDoSetAttr) {
+    MOZ_ASSERT(mViewBox, "Expecting non-null viewBox");
+    MOZ_ASSERT(mSVGElement, "Expecting non-null element");
+
+    if (mDoSetAttr) {
+      mUpdateBatch.emplace(aSVGElement->GetComposedDoc(), true);
+      mEmptyOrOldValue = mSVGElement->WillChangeViewBox(mUpdateBatch.ref());
+    }
+  }
+
+  ~AutoChangeViewBoxNotifier() {
+    if (mDoSetAttr) {
+      mSVGElement->DidChangeViewBox(mEmptyOrOldValue, mUpdateBatch.ref());
+    }
+    if (mViewBox->mAnimVal) {
+      mSVGElement->AnimationNeedsResample();
+    }
+  }
+
+ private:
+  SVGAnimatedViewBox* const mViewBox;
+  SVGElement* const mSVGElement;
+  Maybe<mozAutoDocUpdate> mUpdateBatch;
+  nsAttrValue mEmptyOrOldValue;
+  bool mDoSetAttr;
+};
 
 /* Implementation of SVGAnimatedViewBox methods */
 
@@ -124,16 +160,10 @@ void SVGAnimatedViewBox::SetBaseValue(const SVGViewBox& aRect,
     return;
   }
 
-  mozAutoDocUpdate updateBatch(aSVGElement->GetComposedDoc(), true);
-  nsAttrValue emptyOrOldValue = aSVGElement->WillChangeViewBox(updateBatch);
+  AutoChangeViewBoxNotifier notifier(this, aSVGElement);
 
   mBaseVal = aRect;
   mHasBaseVal = true;
-
-  aSVGElement->DidChangeViewBox(emptyOrOldValue, updateBatch);
-  if (mAnimVal) {
-    aSVGElement->AnimationNeedsResample();
-  }
 }
 
 nsresult SVGAnimatedViewBox::SetBaseValueString(const nsAString& aValue,
@@ -150,21 +180,10 @@ nsresult SVGAnimatedViewBox::SetBaseValueString(const nsAString& aValue,
     return NS_OK;
   }
 
-  Maybe<mozAutoDocUpdate> updateBatch;
-  nsAttrValue emptyOrOldValue;
-  if (aDoSetAttr) {
-    updateBatch.emplace(aSVGElement->GetComposedDoc(), true);
-    emptyOrOldValue = aSVGElement->WillChangeViewBox(updateBatch.ref());
-  }
+  AutoChangeViewBoxNotifier notifier(this, aSVGElement, aDoSetAttr);
   mHasBaseVal = true;
   mBaseVal = viewBox;
 
-  if (aDoSetAttr) {
-    aSVGElement->DidChangeViewBox(emptyOrOldValue, updateBatch.ref());
-  }
-  if (mAnimVal) {
-    aSVGElement->AnimationNeedsResample();
-  }
   return NS_OK;
 }
 
@@ -198,7 +217,7 @@ already_AddRefed<SVGRect> SVGAnimatedViewBox::ToDOMBaseVal(
 
   RefPtr<SVGRect> domBaseVal = sBaseSVGViewBoxTearoffTable.GetTearoff(this);
   if (!domBaseVal) {
-    domBaseVal = new SVGRect(this, aSVGElement, SVGRect::BaseValue);
+    domBaseVal = new SVGRect(this, aSVGElement, SVGRect::RectType::BaseValue);
     sBaseSVGViewBoxTearoffTable.AddTearoff(this, domBaseVal);
   }
 
@@ -206,10 +225,15 @@ already_AddRefed<SVGRect> SVGAnimatedViewBox::ToDOMBaseVal(
 }
 
 SVGRect::~SVGRect() {
-  if (mType == BaseValue) {
-    sBaseSVGViewBoxTearoffTable.RemoveTearoff(mVal);
-  } else if (mType == AnimValue) {
-    sAnimSVGViewBoxTearoffTable.RemoveTearoff(mVal);
+  switch (mType) {
+    case RectType::BaseValue:
+      sBaseSVGViewBoxTearoffTable.RemoveTearoff(mVal);
+      break;
+    case RectType::AnimValue:
+      sAnimSVGViewBoxTearoffTable.RemoveTearoff(mVal);
+      break;
+    default:
+      break;
   }
 }
 
@@ -222,7 +246,7 @@ already_AddRefed<SVGRect> SVGAnimatedViewBox::ToDOMAnimVal(
 
   RefPtr<SVGRect> domAnimVal = sAnimSVGViewBoxTearoffTable.GetTearoff(this);
   if (!domAnimVal) {
-    domAnimVal = new SVGRect(this, aSVGElement, SVGRect::AnimValue);
+    domAnimVal = new SVGRect(this, aSVGElement, SVGRect::RectType::AnimValue);
     sAnimSVGViewBoxTearoffTable.AddTearoff(this, domAnimVal);
   }
 

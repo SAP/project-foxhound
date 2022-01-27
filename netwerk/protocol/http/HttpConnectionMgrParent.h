@@ -8,6 +8,7 @@
 
 #include "HttpConnectionMgrShell.h"
 #include "mozilla/net/PHttpConnectionMgrParent.h"
+#include "mozilla/StaticMutex.h"
 
 namespace mozilla {
 namespace net {
@@ -20,12 +21,22 @@ class HttpConnectionMgrParent final : public PHttpConnectionMgrParent,
   NS_DECL_ISUPPORTS
   NS_DECL_HTTPCONNECTIONMGRSHELL
 
-  explicit HttpConnectionMgrParent();
+  explicit HttpConnectionMgrParent() = default;
+
+  static uint32_t AddHttpUpgradeListenerToMap(
+      nsIHttpUpgradeListener* aListener);
+  static void RemoveHttpUpgradeListenerFromMap(uint32_t aId);
+  static Maybe<nsCOMPtr<nsIHttpUpgradeListener>>
+  GetAndRemoveHttpUpgradeListener(uint32_t aId);
 
  private:
   virtual ~HttpConnectionMgrParent() = default;
 
-  bool mShutDown;
+  bool mShutDown{false};
+  static uint32_t sListenerId;
+  static StaticMutex sLock;
+  static nsTHashMap<uint32_t, nsCOMPtr<nsIHttpUpgradeListener>>
+      sHttpUpgradeListenerMap;
 };
 
 }  // namespace net

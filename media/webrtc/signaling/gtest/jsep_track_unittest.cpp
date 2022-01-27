@@ -4,16 +4,28 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nss.h"
+#include "ssl.h"
+
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"
 
-#include "signaling/src/jsep/JsepTrack.h"
-#include "signaling/src/sdp/SipccSdp.h"
-#include "signaling/src/sdp/SdpHelper.h"
+#include "jsep/JsepTrack.h"
+#include "sdp/SipccSdp.h"
+#include "sdp/SipccSdpParser.h"
+#include "sdp/SdpHelper.h"
 
 namespace mozilla {
 
-class JsepTrackTest : public ::testing::Test {
+class JsepTrackTestBase : public ::testing::Test {
+ public:
+  static void SetUpTestCase() {
+    NSS_NoDB_Init(nullptr);
+    NSS_SetDomesticPolicy();
+  }
+};
+
+class JsepTrackTest : public JsepTrackTestBase {
  public:
   JsepTrackTest()
       : mSendOff(SdpMediaSection::kAudio, sdp::kSend),
@@ -336,6 +348,8 @@ class JsepTrackTest : public ::testing::Test {
   UniquePtr<Sdp> mAnswer;
   SsrcGenerator mSsrcGenerator;
 };
+
+TEST_F(JsepTrackTestBase, CreateDestroy) {}
 
 TEST_F(JsepTrackTest, CreateDestroy) { Init(SdpMediaSection::kAudio); }
 
@@ -1296,6 +1310,38 @@ TEST_F(JsepTrackTest, SimulcastOfferer) {
   ASSERT_NE(std::string::npos, mAnswer->ToString().find("a=rid:bar recv"));
 }
 
+TEST_F(JsepTrackTest, SimulcastOffererWithRtx) {
+  Init(SdpMediaSection::kVideo);
+  std::vector<JsepTrack::JsConstraints> constraints;
+  constraints.push_back(MakeConstraints("foo", 40000));
+  constraints.push_back(MakeConstraints("bar", 10000));
+  constraints.push_back(MakeConstraints("pop", 5000));
+  mSendOff.SetJsConstraints(constraints);
+  mSendOff.AddToMsection(constraints, sdp::kSend, mSsrcGenerator, true,
+                         &GetOffer());
+  mRecvOff.AddToMsection(constraints, sdp::kSend, mSsrcGenerator, true,
+                         &GetOffer());
+  CreateAnswer();
+  // Add simulcast/rid to answer
+  mRecvAns.AddToMsection(constraints, sdp::kRecv, mSsrcGenerator, false,
+                         &GetAnswer());
+  Negotiate();
+
+  ASSERT_EQ(3U, mSendOff.GetSsrcs().size());
+  const auto posSsrc0 =
+      mOffer->ToString().find(std::to_string(mSendOff.GetSsrcs()[0]));
+  const auto posSsrc1 =
+      mOffer->ToString().find(std::to_string(mSendOff.GetSsrcs()[1]));
+  const auto posSsrc2 =
+      mOffer->ToString().find(std::to_string(mSendOff.GetSsrcs()[2]));
+  ASSERT_NE(std::string::npos, posSsrc0);
+  ASSERT_NE(std::string::npos, posSsrc1);
+  ASSERT_NE(std::string::npos, posSsrc2);
+  ASSERT_GT(posSsrc1, posSsrc0);
+  ASSERT_GT(posSsrc2, posSsrc0);
+  ASSERT_GT(posSsrc2, posSsrc1);
+}
+
 TEST_F(JsepTrackTest, SimulcastAnswerer) {
   Init(SdpMediaSection::kVideo);
   std::vector<JsepTrack::JsConstraints> constraints;
@@ -1395,6 +1441,81 @@ TEST_F(JsepTrackTest, NonDefaultOpusParameters) {
   VERIFY_OPUS_FORCE_MONO(mRecvOff, false);
   VERIFY_OPUS_MAX_PLAYBACK_RATE(mRecvAns, 16000U);
   VERIFY_OPUS_FORCE_MONO(mRecvAns, true);
+}
+
+TEST_F(JsepTrackTest, RtcpFbWithPayloadTypeAsymmetry) {
+  std::vector<std::string> expectedAckFbTypes;
+  std::vector<std::string> expectedNackFbTypes{"", "pli"};
+  std::vector<std::string> expectedCcmFbTypes{"fir"};
+  std::vector<SdpRtcpFbAttributeList::Feedback> expectedOtherFbTypes{
+      {"", SdpRtcpFbAttributeList::kRemb, "", ""},
+      {"", SdpRtcpFbAttributeList::kTransportCC, "", ""}};
+
+  InitCodecs();
+
+  // On offerer, configure to support remb and transport-cc on video codecs
+  for (auto& codec : mOffCodecs) {
+    if (codec->mType == SdpMediaSection::kVideo) {
+      auto& videoCodec = static_cast<JsepVideoCodecDescription&>(*codec);
+      videoCodec.EnableRemb();
+      videoCodec.EnableTransportCC();
+    }
+  }
+
+  InitTracks(SdpMediaSection::kVideo);
+  InitSdp(SdpMediaSection::kVideo);
+
+  CreateOffer();
+  // We do not bother trying to bamboozle the answerer into doing asymmetric
+  // payload types, we just use a raw SDP.
+  const std::string answer =
+      "v=0\r\n"
+      "o=- 0 0 IN IP4 127.0.0.1\r\n"
+      "s=-\r\n"
+      "t=0 0\r\n"
+      "a=msid-semantic:WMS *\r\n"
+      "m=video 0 UDP/TLS/RTP/SAVPF 136\r\n"
+      "c=IN IP4 0.0.0.0\r\n"
+      "a=sendrecv\r\n"
+      "a=fmtp:136 "
+      "profile-level-id=42e00d;level-asymmetry-allowed=1;packetization-mode="
+      "1\r\n"
+      "a=msid:stream_id\r\n"
+      "a=rtcp-fb:136 nack\r\n"
+      "a=rtcp-fb:136 nack pli\r\n"
+      "a=rtcp-fb:136 ccm fir\r\n"
+      "a=rtcp-fb:136 goog-remb\r\n"
+      "a=rtcp-fb:136 transport-cc\r\n"
+      "a=rtpmap:136 H264/90000\r\n"
+      "a=ssrc:2025549043 cname:\r\n";
+
+  UniquePtr<SdpParser> parser(new SipccSdpParser);
+  mAnswer = std::move(parser->Parse(answer)->Sdp());
+  ASSERT_TRUE(mAnswer);
+
+  std::cerr << "Offer SDP: " << std::endl;
+  mOffer->Serialize(std::cerr);
+
+  std::cerr << "Answer SDP: " << std::endl;
+  mAnswer->Serialize(std::cerr);
+
+  mRecvOff.UpdateRecvTrack(*mAnswer, GetAnswer());
+  mRecvOff.Negotiate(GetAnswer(), GetAnswer());
+  mSendOff.Negotiate(GetAnswer(), GetAnswer());
+
+  ASSERT_TRUE(mSendOff.GetNegotiatedDetails());
+  ASSERT_TRUE(mRecvOff.GetNegotiatedDetails());
+
+  UniquePtr<JsepVideoCodecDescription> codec;
+  ASSERT_TRUE((codec = GetVideoCodec(mSendOff)));
+  ASSERT_EQ("136", codec->mDefaultPt)
+      << "Offerer should have seen answer asymmetry!";
+  ASSERT_TRUE((codec = GetVideoCodec(mRecvOff)));
+  ASSERT_EQ("126", codec->mDefaultPt);
+  ASSERT_EQ(expectedAckFbTypes, codec->mAckFbTypes);
+  ASSERT_EQ(expectedNackFbTypes, codec->mNackFbTypes);
+  ASSERT_EQ(expectedCcmFbTypes, codec->mCcmFbTypes);
+  ASSERT_EQ(expectedOtherFbTypes, codec->mOtherFbTypes);
 }
 
 }  // namespace mozilla

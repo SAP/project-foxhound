@@ -20,6 +20,7 @@ namespace layers {
  * compositor from the UI thread. Primarily used on Android to coordinate registering and
  * releasing the surface with the compositor.
  */
+[NeedsOtherPid]
 sync protocol PUiCompositorController
 {
 
@@ -39,7 +40,7 @@ parent:
 child:
   async ToolbarAnimatorMessageFromCompositor(int32_t aMessage);
   async RootFrameMetrics(ScreenPoint aScrollOffset, CSSToScreenScale aZoom);
-  async ScreenPixels(Shmem aMem, ScreenIntSize aSize);
+  async ScreenPixels(Shmem aMem, ScreenIntSize aSize, bool aNeedsYFlip);
 };
 
 } // layers

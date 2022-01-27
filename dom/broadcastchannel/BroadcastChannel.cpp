@@ -25,7 +25,6 @@
 #include "mozilla/StorageAccess.h"
 #include "nsContentUtils.h"
 
-#include "nsIBFCacheEntry.h"
 #include "nsICookieJarSettings.h"
 #include "mozilla/dom/Document.h"
 
@@ -43,26 +42,23 @@ using namespace ipc;
 
 namespace {
 
-class CloseRunnable final : public nsIRunnable, public nsICancelableRunnable {
+class CloseRunnable final : public DiscardableRunnable {
  public:
-  NS_DECL_ISUPPORTS
-
-  explicit CloseRunnable(BroadcastChannel* aBC) : mBC(aBC) { MOZ_ASSERT(mBC); }
+  explicit CloseRunnable(BroadcastChannel* aBC)
+      : DiscardableRunnable("BroadcastChannel CloseRunnable"), mBC(aBC) {
+    MOZ_ASSERT(mBC);
+  }
 
   NS_IMETHOD Run() override {
     mBC->Shutdown();
     return NS_OK;
   }
 
-  nsresult Cancel() override { return NS_OK; }
-
  private:
   ~CloseRunnable() = default;
 
   RefPtr<BroadcastChannel> mBC;
 };
-
-NS_IMPL_ISUPPORTS(CloseRunnable, nsICancelableRunnable, nsIRunnable)
 
 class TeardownRunnable {
  protected:
@@ -354,22 +350,9 @@ void BroadcastChannel::RemoveDocFromBFCache() {
     return;
   }
 
-  nsPIDOMWindowInner* window = GetOwner();
-  if (!window) {
-    return;
+  if (nsPIDOMWindowInner* window = GetOwner()) {
+    window->RemoveFromBFCacheSync();
   }
-
-  Document* doc = window->GetExtantDoc();
-  if (!doc) {
-    return;
-  }
-
-  nsCOMPtr<nsIBFCacheEntry> bfCacheEntry = doc->GetBFCacheEntry();
-  if (!bfCacheEntry) {
-    return;
-  }
-
-  bfCacheEntry->RemoveFromBFCacheSync();
 }
 
 void BroadcastChannel::DisconnectFromOwner() {
@@ -379,6 +362,7 @@ void BroadcastChannel::DisconnectFromOwner() {
 
 void BroadcastChannel::MessageReceived(const MessageData& aData) {
   if (NS_FAILED(CheckCurrentGlobalCorrectness())) {
+    RemoveDocFromBFCache();
     return;
   }
 

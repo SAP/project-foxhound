@@ -6,6 +6,7 @@
 
 #include "ImageMemoryReporter.h"
 #include "Image.h"
+#include "base/process_util.h"
 #include "mozilla/layers/SharedSurfacesParent.h"
 #include "mozilla/StaticPrefs_image.h"
 #include "nsIMemoryReporter.h"
@@ -130,9 +131,8 @@ void ImageMemoryReporter::ReportSharedSurface(
   }
 
   constexpr auto desc = "Decoded image data stored in shared memory."_ns;
-  aHandleReport->Callback(EmptyCString(), path, kind,
-                          nsIMemoryReporter::UNITS_BYTES, surfaceSize, desc,
-                          aData);
+  aHandleReport->Callback(""_ns, path, kind, nsIMemoryReporter::UNITS_BYTES,
+                          surfaceSize, desc, aData);
 }
 
 /* static */

@@ -10,6 +10,8 @@
  * event handler based interface.
  */
 
+interface nsISocketTransport;
+
 enum TCPSocketBinaryType {
   "arraybuffer",
   "string"
@@ -27,7 +29,7 @@ enum TCPReadyState {
   "closed",
 };
 
-[NoInterfaceObject,
+[LegacyNoInterfaceObject,
  Exposed=Window]
 interface LegacyMozTCPSocket {
   /**
@@ -51,6 +53,11 @@ interface TCPSocket : EventTarget {
    * Upgrade an insecure connection to use TLS. Throws if the ready state is not OPEN.
    */
   [Throws] void upgradeToSecure();
+
+  /**
+   * The raw internal socket transport.
+   */
+  readonly attribute nsISocketTransport? transport;
 
   /**
    * The UTF16 host of this socket object.

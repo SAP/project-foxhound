@@ -4,28 +4,41 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef mozilla_dom_GamepadTestChannelChild_h_
+#define mozilla_dom_GamepadTestChannelChild_h_
+
 #include "mozilla/dom/PGamepadTestChannelChild.h"
 #include "mozilla/dom/Promise.h"
-
-#ifndef mozilla_dom_GamepadTestChannelChild_h_
-#  define mozilla_dom_GamepadTestChannelChild_h_
+#include "mozilla/WeakPtr.h"
+#include "nsRefPtrHashtable.h"
 
 namespace mozilla {
 namespace dom {
 
-class GamepadTestChannelChild final : public PGamepadTestChannelChild {
-  friend class PGamepadTestChannelChild;
+class GamepadServiceTest;
 
+class GamepadTestChannelChild final : public PGamepadTestChannelChild {
  public:
-  GamepadTestChannelChild() = default;
-  ~GamepadTestChannelChild() = default;
-  void AddPromise(const uint32_t& aID, Promise* aPromise);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GamepadTestChannelChild)
+
+  static already_AddRefed<GamepadTestChannelChild> Create(
+      GamepadServiceTest* aGamepadServiceTest);
+
+  GamepadTestChannelChild(const GamepadTestChannelChild&) = delete;
+  GamepadTestChannelChild(GamepadTestChannelChild&&) = delete;
+  GamepadTestChannelChild& operator=(const GamepadTestChannelChild&) = delete;
+  GamepadTestChannelChild& operator=(GamepadTestChannelChild&&) = delete;
 
  private:
-  mozilla::ipc::IPCResult RecvReplyGamepadIndex(const uint32_t& aID,
-                                                const uint32_t& aIndex);
+  explicit GamepadTestChannelChild(GamepadServiceTest* aGamepadServiceTest);
+  ~GamepadTestChannelChild() = default;
 
-  nsRefPtrHashtable<nsUint32HashKey, dom::Promise> mPromiseList;
+  mozilla::ipc::IPCResult RecvReplyGamepadHandle(const uint32_t& aID,
+                                                 const GamepadHandle& aHandle);
+
+  WeakPtr<GamepadServiceTest> mGamepadServiceTest;
+
+  friend class PGamepadTestChannelChild;
 };
 
 }  // namespace dom

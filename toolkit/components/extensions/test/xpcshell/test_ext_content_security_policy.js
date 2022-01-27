@@ -1,5 +1,7 @@
 "use strict";
 
+Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
+
 const server = createHttpServer({ hosts: ["example.com"] });
 
 server.registerPathHandler("/dummy", (request, response) => {
@@ -8,35 +10,44 @@ server.registerPathHandler("/dummy", (request, response) => {
   response.write("<!DOCTYPE html><html></html>");
 });
 
+server.registerPathHandler("/worker.js", (request, response) => {
+  response.setStatusLine(request.httpVersion, 200, "OK");
+  response.setHeader("Content-Type", "application/javascript", false);
+  response.write("let x = true;");
+});
+
+const baseCSP = [];
+baseCSP[2] = {
+  "object-src": ["blob:", "filesystem:", "moz-extension:", "'self'"],
+  "script-src": [
+    "'unsafe-eval'",
+    "'unsafe-inline'",
+    "blob:",
+    "filesystem:",
+    "http://localhost:*",
+    "http://127.0.0.1:*",
+    "https://*",
+    "moz-extension:",
+    "'self'",
+  ],
+};
+baseCSP[3] = {
+  "object-src": ["'self'"],
+  "script-src": ["http://localhost:*", "http://127.0.0.1:*", "'self'"],
+  "worker-src": ["http://localhost:*", "http://127.0.0.1:*", "'self'"],
+};
+
 /**
  * Tests that content security policies for an add-on are actually applied to *
  * documents that belong to it. This tests both the base policies and add-on
  * specific policies, and ensures that the parsed policies applied to the
  * document's principal match what was specified in the policy string.
  *
+ * @param {number} [manifest_version]
  * @param {object} [customCSP]
  */
-async function testPolicy(customCSP = null) {
+async function testPolicy(manifest_version = 2, customCSP = null) {
   let baseURL;
-
-  let baseCSP = {
-    "object-src": [
-      "blob:",
-      "filesystem:",
-      "https://*",
-      "moz-extension:",
-      "'self'",
-    ],
-    "script-src": [
-      "'unsafe-eval'",
-      "'unsafe-inline'",
-      "blob:",
-      "filesystem:",
-      "https://*",
-      "moz-extension:",
-      "'self'",
-    ],
-  };
 
   let addonCSP = {
     "object-src": ["'self'"],
@@ -56,8 +67,13 @@ async function testPolicy(customCSP = null) {
   }
 
   function checkSource(name, policy, expected) {
+    // fallback to script-src when comparing worker-src if policy does not include worker-src
+    let policySrc =
+      name != "worker-src" || policy[name]
+        ? policy[name]
+        : policy["script-src"];
     equal(
-      JSON.stringify(policy[name].sort()),
+      JSON.stringify(policySrc.sort()),
       JSON.stringify(expected[name].sort()),
       `Expected value for ${name}`
     );
@@ -67,22 +83,25 @@ async function testPolicy(customCSP = null) {
     let policies = csp["csp-policies"];
 
     info(`Base policy for ${location}`);
+    let base = baseCSP[manifest_version];
 
     equal(policies[0]["report-only"], false, "Policy is not report-only");
-    checkSource("object-src", policies[0], baseCSP);
-    checkSource("script-src", policies[0], baseCSP);
+    for (let key in base) {
+      checkSource(key, policies[0], base);
+    }
 
     info(`Add-on policy for ${location}`);
 
     equal(policies[1]["report-only"], false, "Policy is not report-only");
-    checkSource("object-src", policies[1], addonCSP);
-    checkSource("script-src", policies[1], addonCSP);
+    for (let key in addonCSP) {
+      checkSource(key, policies[1], addonCSP);
+    }
   }
 
   function background() {
     browser.test.sendMessage(
       "base-url",
-      browser.extension.getURL("").replace(/\/$/, "")
+      browser.runtime.getURL("").replace(/\/$/, "")
     );
 
     browser.test.sendMessage("background-csp", window.getCSP());
@@ -90,6 +109,37 @@ async function testPolicy(customCSP = null) {
 
   function tabScript() {
     browser.test.sendMessage("tab-csp", window.getCSP());
+
+    const worker = new Worker("worker.js");
+    worker.onmessage = event => {
+      browser.test.sendMessage("worker-csp", event.data);
+    };
+
+    worker.postMessage({});
+  }
+
+  function testWorker(port) {
+    this.onmessage = () => {
+      try {
+        // eslint-disable-next-line no-undef
+        importScripts(`http://127.0.0.1:${port}/worker.js`);
+        postMessage({ loaded: true });
+      } catch (e) {
+        postMessage({ loaded: false });
+      }
+    };
+  }
+
+  let web_accessible_resources = ["content.html", "tab.html"];
+  if (manifest_version == 3) {
+    let extension_pages = content_security_policy;
+    content_security_policy = {
+      extension_pages,
+    };
+    let resources = web_accessible_resources;
+    web_accessible_resources = [
+      { resources, matches: ["http://example.com/*"] },
+    ];
   }
 
   let extension = ExtensionTestUtils.loadExtension({
@@ -102,12 +152,13 @@ async function testPolicy(customCSP = null) {
       "tab.js": tabScript,
 
       "content.html": `<html><head><meta charset="utf-8"></head></html>`,
+      "worker.js": `(${testWorker})(${server.identity.primaryPort})`,
     },
 
     manifest: {
+      manifest_version,
       content_security_policy,
-
-      web_accessible_resources: ["content.html", "tab.html"],
+      web_accessible_resources,
     },
   });
 
@@ -129,7 +180,7 @@ async function testPolicy(customCSP = null) {
   let frameScriptURL = `data:,(${encodeURI(frameScript)}).call(this)`;
   Services.mm.loadFrameScript(frameScriptURL, true, true);
 
-  info(`Testing CSP for policy: ${content_security_policy}`);
+  info(`Testing CSP for policy: ${JSON.stringify(content_security_policy)}`);
 
   await extension.startup();
 
@@ -169,6 +220,10 @@ async function testPolicy(customCSP = null) {
 
   checkCSP(contentCSP, "content frame");
 
+  let workerCSP = await extension.awaitMessage("worker-csp");
+  // TODO BUG 1685627: This test should fail if localhost is not in the csp.
+  ok(workerCSP.loaded, "worker loaded");
+
   await contentPage.close();
   await tabPage.close();
 
@@ -178,18 +233,30 @@ async function testPolicy(customCSP = null) {
 }
 
 add_task(async function testCSP() {
-  await testPolicy(null);
+  await testPolicy(2, null);
 
   let hash =
     "'sha256-NjZhMDQ1YjQ1MjEwMmM1OWQ4NDBlYzA5N2Q1OWQ5NDY3ZTEzYTNmMzRmNjQ5NGU1MzlmZmQzMmMxYmIzNWYxOCAgLQo='";
 
-  await testPolicy({
+  await testPolicy(2, {
     "object-src": "'self' https://*.example.com",
     "script-src": `'self' https://*.example.com 'unsafe-eval' ${hash}`,
   });
 
-  await testPolicy({
+  await testPolicy(2, {
     "object-src": "'none'",
     "script-src": `'self'`,
+  });
+
+  await testPolicy(3, {
+    "object-src": "'self' http://localhost",
+    "script-src": `'self' http://localhost:123 ${hash}`,
+    "worker-src": `'self' http://127.0.0.1:*`,
+  });
+
+  await testPolicy(3, {
+    "object-src": "'none'",
+    "script-src": `'self'`,
+    "worker-src": `'self'`,
   });
 });

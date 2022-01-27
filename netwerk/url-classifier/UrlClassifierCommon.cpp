@@ -9,6 +9,7 @@
 #include "ClassifierDummyChannel.h"
 #include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/Components.h"
 #include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/ContentBlockingNotifier.h"
 #include "mozilla/dom/WindowGlobalParent.h"
@@ -31,6 +32,7 @@
 #include "nsIWebProgressListener.h"
 #include "nsNetUtil.h"
 #include "nsQueryObject.h"
+#include "nsReadableUtils.h"
 
 namespace mozilla {
 namespace net {
@@ -80,7 +82,7 @@ bool UrlClassifierCommon::ShouldEnableProtectionForChannel(
   MOZ_ASSERT(loadInfo);
 
   auto policyType = loadInfo->GetExternalContentPolicyType();
-  if (policyType == nsIContentPolicy::TYPE_DOCUMENT) {
+  if (policyType == ExtContentPolicy::TYPE_DOCUMENT) {
     UC_LOG(
         ("UrlClassifierCommon::ShouldEnableProtectionForChannel - "
          "skipping top-level load for channel %p",
@@ -217,7 +219,8 @@ nsresult UrlClassifierCommon::SetBlockedContent(nsIChannel* channel,
   // to correct top-level window), we need to do this in the parent process
   // instead (find the top-level window in the parent and send an IPC to child
   // processes to report console).
-  nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil = services::GetThirdPartyUtil();
+  nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
+      components::ThirdPartyUtil::Service();
   if (NS_WARN_IF(!thirdPartyUtil)) {
     return NS_OK;
   }
@@ -525,7 +528,7 @@ bool UrlClassifierCommon::IsAllowListed(nsIChannel* aChannel) {
          "check allowlisting test domain on channel %p",
          aChannel));
 
-    nsCOMPtr<nsIIOService> ios = services::GetIOService();
+    nsCOMPtr<nsIIOService> ios = components::IO::Service();
     if (NS_WARN_IF(!ios)) {
       return false;
     }
@@ -580,12 +583,8 @@ bool UrlClassifierCommon::IsTrackingClassificationFlag(uint32_t aFlag) {
 
 // static
 bool UrlClassifierCommon::IsSocialTrackingClassificationFlag(uint32_t aFlag) {
-  if (aFlag & nsIClassifiedChannel::ClassificationFlags::
-                  CLASSIFIED_ANY_SOCIAL_TRACKING) {
-    return true;
-  }
-
-  return false;
+  return (aFlag & nsIClassifiedChannel::ClassificationFlags::
+                      CLASSIFIED_ANY_SOCIAL_TRACKING) != 0;
 }
 
 // static
@@ -606,14 +605,10 @@ bool UrlClassifierCommon::IsCryptominingClassificationFlag(uint32_t aFlag) {
 
 void UrlClassifierCommon::TablesToString(const nsTArray<nsCString>& aList,
                                          nsACString& aString) {
+  // Truncate and append rather than assigning because that's more efficient if
+  // aString is an nsAutoCString.
   aString.Truncate();
-
-  for (const nsCString& table : aList) {
-    if (!aString.IsEmpty()) {
-      aString.Append(",");
-    }
-    aString.Append(table);
-  }
+  StringJoinAppend(aString, ","_ns, aList);
 }
 
 uint32_t UrlClassifierCommon::TablesToClassificationFlags(
@@ -647,14 +642,14 @@ bool UrlClassifierCommon::IsPassiveContent(nsIChannel* aChannel) {
   MOZ_ASSERT(aChannel);
 
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-  nsContentPolicyType contentType = loadInfo->GetExternalContentPolicyType();
+  ExtContentPolicyType contentType = loadInfo->GetExternalContentPolicyType();
 
   // Return true if aChannel is loading passive display content, as
   // defined by the mixed content blocker.
   // https://searchfox.org/mozilla-central/rev/c80fa7258c935223fe319c5345b58eae85d4c6ae/dom/security/nsMixedContentBlocker.cpp#532
-  return contentType == nsIContentPolicy::TYPE_IMAGE ||
-         contentType == nsIContentPolicy::TYPE_MEDIA ||
-         (contentType == nsIContentPolicy::TYPE_OBJECT_SUBREQUEST &&
+  return contentType == ExtContentPolicy::TYPE_IMAGE ||
+         contentType == ExtContentPolicy::TYPE_MEDIA ||
+         (contentType == ExtContentPolicy::TYPE_OBJECT_SUBREQUEST &&
           !StaticPrefs::security_mixed_content_block_object_subrequest());
 }
 

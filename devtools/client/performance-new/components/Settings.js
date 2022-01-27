@@ -33,7 +33,6 @@
  */
 
 /**
- * @typedef {import("../@types/perf").PopupWindow} PopupWindow
  * @typedef {import("../@types/perf").State} StoreState
  * @typedef {import("../@types/perf").FeatureDescription} FeatureDescription
  *
@@ -67,7 +66,7 @@ const {
   h3,
   section,
   p,
-  em,
+  span,
 } = require("devtools/client/shared/vendor/react-dom-factories");
 const Range = createFactory(
   require("devtools/client/performance-new/components/Range")
@@ -76,7 +75,7 @@ const DirectoryPicker = createFactory(
   require("devtools/client/performance-new/components/DirectoryPicker")
 );
 const {
-  makeExponentialScale,
+  makeLinear10Scale,
   makePowerOf2Scale,
   formatFileSize,
   featureDescriptions,
@@ -87,12 +86,15 @@ const selectors = require("devtools/client/performance-new/store/selectors");
 const {
   openFilePickerForObjdir,
 } = require("devtools/client/performance-new/browser");
+const Localized = createFactory(
+  require("devtools/client/shared/vendor/fluent-react").Localized
+);
 
 // The Gecko Profiler interprets the "entries" setting as 8 bytes per entry.
 const PROFILE_ENTRY_SIZE = 8;
 
 /**
- * @typedef {{ name: string, id: string, title: string }} ThreadColumn
+ * @typedef {{ name: string, id: string, l10nId: string }} ThreadColumn
  */
 
 /** @type {Array<ThreadColumn[]>} */
@@ -101,64 +103,69 @@ const threadColumns = [
     {
       name: "GeckoMain",
       id: "gecko-main",
-      title:
-        "The main processes for both the parent process, and content processes",
+      // The l10nId take the form `perf-thread-${id}`, but isn't done programmatically
+      // so that it is easy to search in the codebase.
+      l10nId: "perftools-thread-gecko-main",
     },
     {
       name: "Compositor",
       id: "compositor",
-      title: "Composites together different painted elements on the page.",
+      l10nId: "perftools-thread-compositor",
     },
     {
       name: "DOM Worker",
       id: "dom-worker",
-      title: "This handle both web workers and service workers",
+      l10nId: "perftools-thread-dom-worker",
     },
     {
       name: "Renderer",
       id: "renderer",
-      title: "When WebRender is enabled, the thread that executes OpenGL calls",
+      l10nId: "perftools-thread-renderer",
     },
   ],
   [
     {
       name: "RenderBackend",
       id: "render-backend",
-      title: "The WebRender RenderBackend thread",
+      l10nId: "perftools-thread-render-backend",
     },
     {
       name: "PaintWorker",
       id: "paint-worker",
-      title:
-        "When off-main-thread painting is enabled, the thread on which " +
-        "painting happens",
+      l10nId: "perftools-thread-paint-worker",
     },
     {
       name: "StyleThread",
       id: "style-thread",
-      title: "Style computation is split into multiple threads",
+      l10nId: "perftools-thread-style-thread",
     },
     {
       name: "Socket Thread",
       id: "socket-thread",
-      title: "The thread where networking code runs any blocking socket calls",
+      l10nId: "perftools-thread-socket-thread",
     },
   ],
   [
     {
       name: "StreamTrans",
       id: "stream-trans",
-      title: "TODO",
+      l10nId: "pref-thread-stream-trans",
     },
     {
       name: "ImgDecoder",
       id: "img-decoder",
-      title: "Image decoding threads",
+      l10nId: "perftools-thread-img-decoder",
     },
     {
       name: "DNS Resolver",
       id: "dns-resolver",
-      title: "DNS resolution happens on this thread",
+      l10nId: "perftools-thread-dns-resolver",
+    },
+    {
+      // Threads that are part of XPCOM's TaskController thread pool.
+      name: "TaskController",
+      id: "task-controller",
+      l10nId: "perftools-thread-task-controller",
     },
   ],
 ];
@@ -179,19 +186,7 @@ class Settings extends PureComponent {
       temporaryThreadText: null,
     };
 
-    this._handleThreadCheckboxChange = this._handleThreadCheckboxChange.bind(
-      this
-    );
-    this._handleFeaturesCheckboxChange = this._handleFeaturesCheckboxChange.bind(
-      this
-    );
-    this._handleAddObjdir = this._handleAddObjdir.bind(this);
-    this._handleRemoveObjdir = this._handleRemoveObjdir.bind(this);
-    this._setThreadTextFromInput = this._setThreadTextFromInput.bind(this);
-    this._handleThreadTextCleanup = this._handleThreadTextCleanup.bind(this);
-    this._renderThreadsColumns = this._renderThreadsColumns.bind(this);
-
-    this._intervalExponentialScale = makeExponentialScale(0.01, 100);
+    this._intervalExponentialScale = makeLinear10Scale(0.01, 100);
     this._entriesExponentialScale = makePowerOf2Scale(
       128 * 1024,
       256 * 1024 * 1024
@@ -202,7 +197,7 @@ class Settings extends PureComponent {
    * Handle the checkbox change.
    * @param {React.ChangeEvent<HTMLInputElement>} event
    */
-  _handleThreadCheckboxChange(event) {
+  _handleThreadCheckboxChange = event => {
     const { threads, changeThreads } = this.props;
     const { checked, value } = event.target;
 
@@ -213,13 +208,13 @@ class Settings extends PureComponent {
     } else {
       changeThreads(threads.filter(thread => thread !== value));
     }
-  }
+  };
 
   /**
    * Handle the checkbox change.
    * @param {React.ChangeEvent<HTMLInputElement>} event
    */
-  _handleFeaturesCheckboxChange(event) {
+  _handleFeaturesCheckboxChange = event => {
     const { features, changeFeatures } = this.props;
     const { checked, value } = event.target;
 
@@ -230,38 +225,38 @@ class Settings extends PureComponent {
     } else {
       changeFeatures(features.filter(feature => feature !== value));
     }
-  }
+  };
 
-  _handleAddObjdir() {
+  _handleAddObjdir = () => {
     const { objdirs, changeObjdirs } = this.props;
     openFilePickerForObjdir(window, objdirs, changeObjdirs);
-  }
+  };
 
   /**
    * @param {number} index
    * @return {void}
    */
-  _handleRemoveObjdir(index) {
+  _handleRemoveObjdir = index => {
     const { objdirs, changeObjdirs } = this.props;
     const newObjdirs = [...objdirs];
     newObjdirs.splice(index, 1);
     changeObjdirs(newObjdirs);
-  }
+  };
 
   /**
    * @param {React.ChangeEvent<HTMLInputElement>} event
    */
-  _setThreadTextFromInput(event) {
+  _setThreadTextFromInput = event => {
     this.setState({ temporaryThreadText: event.target.value });
-  }
+  };
 
   /**
    * @param {React.ChangeEvent<HTMLInputElement>} event
    */
-  _handleThreadTextCleanup(event) {
+  _handleThreadTextCleanup = event => {
     this.setState({ temporaryThreadText: null });
     this.props.changeThreads(_threadTextToList(event.target.value));
-  }
+  };
 
   /**
    * @param {ThreadColumn[]} threadDisplay
@@ -270,86 +265,96 @@ class Settings extends PureComponent {
    */
   _renderThreadsColumns(threadDisplay, index) {
     const { threads } = this.props;
+    const areAllThreadsIncluded = threads.includes("*");
     return div(
       { className: "perf-settings-thread-column", key: index },
-      threadDisplay.map(({ name, title, id }) =>
-        label(
-          {
-            className:
-              "perf-settings-checkbox-label perf-settings-thread-label",
-            key: name,
-            title,
-          },
-          input({
-            className: "perf-settings-checkbox",
-            id: `perf-settings-thread-checkbox-${id}`,
-            type: "checkbox",
-            value: name,
-            checked: threads.includes(name),
-            onChange: this._handleThreadCheckboxChange,
-          }),
-          name
+      threadDisplay.map(({ name, id, l10nId }) =>
+        Localized(
+          // The title is localized with a description of the thread.
+          { id: l10nId, attrs: { title: true }, key: name },
+          label(
+            {
+              className: `perf-settings-checkbox-label perf-settings-thread-label toggle-container-with-text ${
+                areAllThreadsIncluded
+                  ? "perf-settings-checkbox-label-disabled"
+                  : ""
+              }`,
+            },
+            input({
+              className: "perf-settings-checkbox",
+              id: `perf-settings-thread-checkbox-${id}`,
+              type: "checkbox",
+              // Do not localize the value, this is used internally by the profiler.
+              value: name,
+              checked: threads.includes(name),
+              disabled: areAllThreadsIncluded,
+              onChange: this._handleThreadCheckboxChange,
+            }),
+            span(null, name)
+          )
         )
       )
     );
   }
-
   _renderThreads() {
     const { temporaryThreadText } = this.state;
     const { threads } = this.props;
 
     return renderSection(
       "perf-settings-threads-summary",
-      "Threads",
+      Localized({ id: "perftools-heading-threads" }, "Threads"),
       div(
         null,
         div(
           { className: "perf-settings-thread-columns" },
-          threadColumns.map(this._renderThreadsColumns)
+          threadColumns.map((threadDisplay, index) =>
+            this._renderThreadsColumns(threadDisplay, index)
+          )
         ),
         div(
-          { className: "perf-settings-all-threads" },
+          {
+            className: "perf-settings-checkbox-label perf-settings-all-threads",
+          },
           label(
             {
-              className: "perf-settings-checkbox-label",
+              className: "toggle-container-with-text",
             },
             input({
-              className: "perf-settings-checkbox",
               id: "perf-settings-thread-checkbox-all-threads",
               type: "checkbox",
               value: "*",
               checked: threads.includes("*"),
               onChange: this._handleThreadCheckboxChange,
             }),
-            "Bypass selections above and record ",
-            em(null, "all"),
-            " registered threads"
+            Localized({ id: "perftools-record-all-registered-threads" })
           )
         ),
         div(
           { className: "perf-settings-row" },
-          label(
-            {
-              className: "perf-settings-text-label",
-              title:
-                "These thread names are a comma separated list that is used to " +
-                "enable profiling of the threads in the profiler. The name needs to " +
-                "be only a partial match of the thread name to be included. It " +
-                "is whitespace sensitive.",
-            },
-            div(null, "Add custom threads by name:"),
-            input({
-              className: "perf-settings-text-input",
-              id: "perf-settings-thread-text",
-              type: "text",
-              value:
-                temporaryThreadText === null
-                  ? threads.join(",")
-                  : temporaryThreadText,
-              onBlur: this._handleThreadTextCleanup,
-              onFocus: this._setThreadTextFromInput,
-              onChange: this._setThreadTextFromInput,
-            })
+          Localized(
+            { id: "perftools-tools-threads-input-label" },
+            label(
+              { className: "perf-settings-text-label" },
+              div(
+                null,
+                Localized(
+                  { id: "perftools-custom-threads-label" },
+                  "Add custom threads by name:"
+                )
+              ),
+              input({
+                className: "perf-settings-text-input",
+                id: "perftools-settings-thread-text",
+                type: "text",
+                value:
+                  temporaryThreadText === null
+                    ? threads.join(",")
+                    : temporaryThreadText,
+                onBlur: this._handleThreadTextCleanup,
+                onFocus: this._setThreadTextFromInput,
+                onChange: this._setThreadTextFromInput,
+              })
+            )
           )
         )
       )
@@ -357,7 +362,7 @@ class Settings extends PureComponent {
   }
 
   /**
-   * @param {string} sectionTitle
+   * @param {React.ReactNode} sectionTitle
    * @param {FeatureDescription[]} features
    * @param {boolean} isSupported
    */
@@ -365,6 +370,11 @@ class Settings extends PureComponent {
     if (features.length === 0) {
       return null;
     }
+
+    // Note: This area is not localized. This area is pretty deep in the UI, and is mostly
+    // geared towards Firefox engineers. It may not be worth localizing. This decision
+    // can be tracked in Bug 1682333.
+
     return div(
       null,
       h3(null, sectionTitle),
@@ -375,30 +385,26 @@ class Settings extends PureComponent {
           : "perf-settings-checkbox-label-disabled";
         return label(
           {
-            className: `perf-settings-checkbox-label perf-settings-feature-label ${extraClassName}`,
+            className: `perf-settings-checkbox-label perf-toggle-label ${extraClassName}`,
             key: value,
           },
+          input({
+            id: `perf-settings-feature-checkbox-${value}`,
+            type: "checkbox",
+            value,
+            checked: isSupported && this.props.features.includes(value),
+            onChange: this._handleFeaturesCheckboxChange,
+            disabled: !isSupported,
+          }),
           div(
-            { className: "perf-settings-checkbox-and-name" },
-            input({
-              className: "perf-settings-checkbox",
-              id: `perf-settings-feature-checkbox-${value}`,
-              type: "checkbox",
-              value,
-              checked: isSupported && this.props.features.includes(value),
-              onChange: this._handleFeaturesCheckboxChange,
-              disabled: !isSupported,
-            }),
-            div(
-              { className: "perf-settings-feature-name" },
-              !isSupported && featureDescription.experimental
-                ? // Note when unsupported features are experimental.
-                  `${name} (Experimental)`
-                : name
-            )
+            { className: "perf-toggle-text-label" },
+            !isSupported && featureDescription.experimental
+              ? // Note when unsupported features are experimental.
+                `${name} (Experimental)`
+              : name
           ),
           div(
-            { className: "perf-settings-feature-title" },
+            { className: "perf-toggle-description" },
             title,
             !isSupported && disabledReason
               ? div(
@@ -440,13 +446,34 @@ class Settings extends PureComponent {
       div(
         null,
         this._renderFeatureSection(
-          "Features (Recommended on by default)",
+          Localized(
+            { id: "perftools-heading-features-default" },
+            "Features (Recommended on by default)"
+          ),
           recommended,
           true
         ),
-        this._renderFeatureSection("Features", supported, true),
-        this._renderFeatureSection("Experimental", experimental, true),
-        this._renderFeatureSection("Disabled Features", unsupported, false)
+        this._renderFeatureSection(
+          Localized({ id: "perftools-heading-features" }, "Features"),
+          supported,
+          true
+        ),
+        this._renderFeatureSection(
+          Localized(
+            { id: "perftools-heading-features-experimental" },
+            "Experimental"
+          ),
+          experimental,
+          true
+        ),
+        this._renderFeatureSection(
+          Localized(
+            { id: "perftools-heading-features-disabled" },
+            "Disabled Features"
+          ),
+          unsupported,
+          false
+        )
       )
     );
   }
@@ -455,15 +482,10 @@ class Settings extends PureComponent {
     const { objdirs } = this.props;
     return renderSection(
       "perf-settings-local-build-summary",
-      "Local build",
+      Localized({ id: "perftools-heading-local-build" }),
       div(
         null,
-        p(
-          null,
-          `If you're profiling a build that you have compiled yourself, on this
-          machine, please add your build's objdir to the list below so that
-          it can be used to look up symbol information.`
-        ),
+        p(null, Localized({ id: "perftools-description-local-build" })),
         DirectoryPicker({
           dirs: objdirs,
           onAdd: this._handleAddObjdir,
@@ -476,10 +498,13 @@ class Settings extends PureComponent {
   render() {
     return section(
       { className: "perf-settings" },
-      h1(null, "Full Settings"),
-      h2({ className: "perf-settings-title" }, "Buffer Settings"),
+      h1(null, Localized({ id: "perftools-heading-settings" })),
+      h2(
+        { className: "perf-settings-title" },
+        Localized({ id: "perftools-heading-buffer" })
+      ),
       Range({
-        label: "Sampling interval:",
+        label: Localized({ id: "perftools-range-interval-label" }),
         value: this.props.interval,
         id: "perf-range-interval",
         scale: this._intervalExponentialScale,
@@ -487,7 +512,7 @@ class Settings extends PureComponent {
         onChange: this.props.changeInterval,
       }),
       Range({
-        label: "Buffer size:",
+        label: Localized({ id: "perftools-range-entries-label" }),
         value: this.props.entries,
         id: "perf-range-entries",
         scale: this._entriesExponentialScale,
@@ -521,10 +546,13 @@ function _threadTextToList(threads) {
 /**
  * Format the interval number for display.
  * @param {number} value
- * @return {string}
+ * @return {React.ReactNode}
  */
 function _intervalTextDisplay(value) {
-  return `${value} ms`;
+  return Localized({
+    id: "perftools-range-interval-milliseconds",
+    $interval: value,
+  });
 }
 
 /**
@@ -537,10 +565,9 @@ function _entriesTextDisplay(value) {
 }
 
 /**
- * about:profiling doesn't need to collapse the children into details/summary,
- * but the popup and devtools do (for now).
+ * Renders a section for about:profiling.
  *
- * @param {string} id
+ * @param {string} id Unused.
  * @param {React.ReactNode} title
  * @param {React.ReactNode} children
  * @returns React.ReactNode

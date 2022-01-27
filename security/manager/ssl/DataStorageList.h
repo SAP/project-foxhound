@@ -14,6 +14,5 @@
 // to something faster.
 
 DATA_STORAGE(AlternateServices)
-DATA_STORAGE(SecurityPreloadState)
+DATA_STORAGE(ClientAuthRememberList)
 DATA_STORAGE(SiteSecurityServiceState)
-DATA_STORAGE(TRRBlacklist)

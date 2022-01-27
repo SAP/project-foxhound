@@ -51,24 +51,12 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIDNSService"
 );
 
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "gUUIDGenerator",
-  "@mozilla.org/uuid-generator;1",
-  "nsIUUIDGenerator"
-);
-
-// The list of participating TRRs.
-const kTRRs = JSON.parse(
-  Services.prefs.getDefaultBranch("").getCharPref("network.trr.resolvers")
-).map(trr => trr.url);
-
 // The canonical domain whose subdomains we will be resolving.
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
   "kCanonicalDomain",
   "doh-rollout.trrRace.canonicalDomain",
-  "firefox-dns-perf-test.net"
+  "firefox-dns-perf-test.net."
 );
 
 // The number of random subdomains to resolve per TRR.
@@ -89,11 +77,17 @@ XPCOMUtils.defineLazyPreferenceGetter(
   val =>
     val
       ? val.split(",").map(t => t.trim())
-      : ["google.com", "youtube.com", "amazon.com", "facebook.com", "yahoo.com"]
+      : [
+          "google.com.",
+          "youtube.com.",
+          "amazon.com.",
+          "facebook.com.",
+          "yahoo.com.",
+        ]
 );
 
 function getRandomSubdomain() {
-  let uuid = gUUIDGenerator
+  let uuid = Services.uuid
     .generateUUID()
     .toString()
     .slice(1, -1); // Discard surrounding braces
@@ -116,10 +110,11 @@ class DNSLookup {
     this.retryCount++;
     try {
       this.usedDomain = this._domain || getRandomSubdomain();
-      gDNSService.asyncResolveWithTrrServer(
+      gDNSService.asyncResolve(
         this.usedDomain,
-        this.trrServer,
+        Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
         Ci.nsIDNSService.RESOLVE_BYPASS_CACHE,
+        gDNSService.newTRRResolverInfo(this.trrServer),
         this,
         Services.tm.currentThread,
         {}
@@ -147,8 +142,9 @@ DNSLookup.prototype.QueryInterface = ChromeUtils.generateQI(["nsIDNSListener"]);
 // triggered and the results aggregated before telemetry is sent. If aborted,
 // any aggregated results are discarded.
 class LookupAggregator {
-  constructor(onCompleteCallback) {
+  constructor(onCompleteCallback, trrList) {
     this.onCompleteCallback = onCompleteCallback;
+    this.trrList = trrList;
     this.aborted = false;
     this.networkUnstable = false;
     this.captivePortal = false;
@@ -159,7 +155,7 @@ class LookupAggregator {
       this.domains.push(null);
     }
     this.domains.push(...kPopularDomains);
-    this.totalLookups = kTRRs.length * this.domains.length;
+    this.totalLookups = this.trrList.length * this.domains.length;
     this.completedLookups = 0;
     this.results = [];
   }
@@ -171,7 +167,7 @@ class LookupAggregator {
     }
 
     this._ran = true;
-    for (let trr of kTRRs) {
+    for (let trr of this.trrList) {
       for (let domain of this.domains) {
         new DNSLookup(
           domain,
@@ -181,7 +177,10 @@ class LookupAggregator {
               domain: usedDomain,
               trr,
               status,
-              time: record ? record.trrFetchDurationNetworkOnly : -1,
+              time: record
+                ? record.QueryInterface(Ci.nsIDNSAddrRecord)
+                    .trrFetchDurationNetworkOnly
+                : -1,
               retryCount,
             });
 
@@ -246,11 +245,12 @@ class LookupAggregator {
 // spawned next time we get a link, up to 5 times. On the fifth time, we just
 // let the aggegator complete and mark it as tainted.
 class TRRRacer {
-  constructor(onCompleteCallback) {
+  constructor(onCompleteCallback, trrList) {
     this._aggregator = null;
     this._retryCount = 0;
     this._complete = false;
     this._onCompleteCallback = onCompleteCallback;
+    this._trrList = trrList;
   }
 
   run() {
@@ -355,7 +355,10 @@ class TRRRacer {
   }
 
   _runNewAggregator() {
-    this._aggregator = new LookupAggregator(() => this.onComplete());
+    this._aggregator = new LookupAggregator(
+      () => this.onComplete(),
+      this._trrList
+    );
     this._aggregator.run();
     this._retryCount++;
   }

@@ -113,6 +113,7 @@ void SVGGeometryFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
                             nsIFrame* aPrevInFlow) {
   AddStateBits(aParent->GetStateBits() & NS_STATE_SVG_CLIPPATH_CHILD);
   nsIFrame::Init(aContent, aParent, aPrevInFlow);
+  AddStateBits(NS_FRAME_MAY_BE_TRANSFORMED);
 }
 
 nsresult SVGGeometryFrame::AttributeChanged(int32_t aNameSpaceID,
@@ -136,37 +137,37 @@ nsresult SVGGeometryFrame::AttributeChanged(int32_t aNameSpaceID,
 /* virtual */
 void SVGGeometryFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
   nsIFrame::DidSetComputedStyle(aOldComputedStyle);
+  auto* element = static_cast<SVGGeometryElement*>(GetContent());
+  if (!aOldComputedStyle) {
+    element->ClearAnyCachedPath();
+    return;
+  }
 
-  if (aOldComputedStyle) {
-    SVGGeometryElement* element =
-        static_cast<SVGGeometryElement*>(GetContent());
-
-    const auto* oldStyleSVG = aOldComputedStyle->StyleSVG();
-    if (!SVGContentUtils::ShapeTypeHasNoCorners(GetContent())) {
-      if (StyleSVG()->mStrokeLinecap != oldStyleSVG->mStrokeLinecap &&
-          element->IsSVGElement(nsGkAtoms::path)) {
-        // If the stroke-linecap changes to or from "butt" then our element
-        // needs to update its cached Moz2D Path, since SVGPathData::BuildPath
-        // decides whether or not to insert little lines into the path for zero
-        // length subpaths base on that property.
+  const auto* oldStyleSVG = aOldComputedStyle->StyleSVG();
+  if (!SVGContentUtils::ShapeTypeHasNoCorners(GetContent())) {
+    if (StyleSVG()->mStrokeLinecap != oldStyleSVG->mStrokeLinecap &&
+        element->IsSVGElement(nsGkAtoms::path)) {
+      // If the stroke-linecap changes to or from "butt" then our element
+      // needs to update its cached Moz2D Path, since SVGPathData::BuildPath
+      // decides whether or not to insert little lines into the path for zero
+      // length subpaths base on that property.
+      element->ClearAnyCachedPath();
+    } else if (HasAnyStateBits(NS_STATE_SVG_CLIPPATH_CHILD)) {
+      if (StyleSVG()->mClipRule != oldStyleSVG->mClipRule) {
+        // Moz2D Path objects are fill-rule specific.
+        // For clipPath we use clip-rule as the path's fill-rule.
         element->ClearAnyCachedPath();
-      } else if (HasAnyStateBits(NS_STATE_SVG_CLIPPATH_CHILD)) {
-        if (StyleSVG()->mClipRule != oldStyleSVG->mClipRule) {
-          // Moz2D Path objects are fill-rule specific.
-          // For clipPath we use clip-rule as the path's fill-rule.
-          element->ClearAnyCachedPath();
-        }
-      } else {
-        if (StyleSVG()->mFillRule != oldStyleSVG->mFillRule) {
-          // Moz2D Path objects are fill-rule specific.
-          element->ClearAnyCachedPath();
-        }
+      }
+    } else {
+      if (StyleSVG()->mFillRule != oldStyleSVG->mFillRule) {
+        // Moz2D Path objects are fill-rule specific.
+        element->ClearAnyCachedPath();
       }
     }
+  }
 
-    if (element->IsGeometryChangedViaCSS(*Style(), *aOldComputedStyle)) {
-      element->ClearAnyCachedPath();
-    }
+  if (element->IsGeometryChangedViaCSS(*Style(), *aOldComputedStyle)) {
+    element->ClearAnyCachedPath();
   }
 }
 
@@ -198,11 +199,28 @@ bool SVGGeometryFrame::IsSVGTransformed(
 
 void SVGGeometryFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                         const nsDisplayListSet& aLists) {
-  if (!static_cast<const SVGElement*>(GetContent())->HasValidDimensions() ||
-      ((!IsVisibleForPainting() || StyleEffects()->mOpacity == 0.0f) &&
-       aBuilder->IsForPainting())) {
+  if (!static_cast<const SVGElement*>(GetContent())->HasValidDimensions()) {
     return;
   }
+
+  if (aBuilder->IsForPainting()) {
+    if (!IsVisibleForPainting()) {
+      return;
+    }
+    if (StyleEffects()->mOpacity == 0.0f) {
+      return;
+    }
+    const auto* styleSVG = StyleSVG();
+    if (Type() != LayoutFrameType::SVGImage && styleSVG->mFill.kind.IsNone() &&
+        styleSVG->mStroke.kind.IsNone() && styleSVG->mMarkerEnd.IsNone() &&
+        styleSVG->mMarkerMid.IsNone() && styleSVG->mMarkerStart.IsNone()) {
+      return;
+    }
+
+    aBuilder->BuildCompositorHitTestInfoIfNeeded(this,
+                                                 aLists.BorderBackground());
+  }
+
   DisplayOutline(aBuilder, aLists);
   aLists.Content()->AppendNewToTop<DisplaySVGGeometry>(aBuilder, this);
 }
@@ -351,7 +369,7 @@ void SVGGeometryFrame::ReflowSVG() {
   }
 
   nsRect overflow = nsRect(nsPoint(0, 0), mRect.Size());
-  nsOverflowAreas overflowAreas(overflow, overflow);
+  OverflowAreas overflowAreas(overflow, overflow);
   FinishAndStoreOverflow(overflowAreas, mRect.Size());
 
   RemoveStateBits(NS_FRAME_FIRST_REFLOW | NS_FRAME_IS_DIRTY |
@@ -461,18 +479,7 @@ SVGBBox SVGGeometryFrame::GetBBoxContribution(const Matrix& aToBBoxUserspace,
   } else {
     // Get the bounds using a Moz2D Path object (more expensive):
     RefPtr<DrawTarget> tmpDT;
-#ifdef XP_WIN
-    // Unfortunately D2D backed DrawTarget produces bounds with rounding errors
-    // when whole number results are expected, even in the case of trivial
-    // calculations. To avoid that and meet the expectations of web content we
-    // have to use a CAIRO DrawTarget. The most efficient way to do that is to
-    // wrap the cached cairo_surface_t from ScreenReferenceSurface():
-    RefPtr<gfxASurface> refSurf =
-        gfxPlatform::GetPlatform()->ScreenReferenceSurface();
-    tmpDT = gfxPlatform::CreateDrawTargetForSurface(refSurf, IntSize(1, 1));
-#else
     tmpDT = gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget();
-#endif
 
     FillRule fillRule = SVGUtils::ToFillRule(
         HasAnyStateBits(NS_STATE_SVG_CLIPPATH_CHILD) ? StyleSVG()->mClipRule
@@ -730,27 +737,50 @@ void SVGGeometryFrame::PaintMarkers(gfxContext& aContext,
                                     const gfxMatrix& aTransform,
                                     imgDrawingParams& aImgParams) {
   auto* element = static_cast<SVGGeometryElement*>(GetContent());
-
-  if (element->IsMarkable()) {
-    SVGMarkerFrame* markerFrames[SVGMark::eTypeCount];
-    if (SVGObserverUtils::GetAndObserveMarkers(this, &markerFrames)) {
-      nsTArray<SVGMark> marks;
-      element->GetMarkPoints(&marks);
-      if (uint32_t num = marks.Length()) {
-        SVGContextPaint* contextPaint =
-            SVGContextPaint::GetContextPaint(GetContent());
-        float strokeWidth = SVGUtils::GetStrokeWidth(this, contextPaint);
-        for (uint32_t i = 0; i < num; i++) {
-          const SVGMark& mark = marks[i];
-          SVGMarkerFrame* frame = markerFrames[mark.type];
-          if (frame) {
-            frame->PaintMark(aContext, aTransform, this, mark, strokeWidth,
-                             aImgParams);
-          }
-        }
-      }
+  if (!element->IsMarkable()) {
+    return;
+  }
+  SVGMarkerFrame* markerFrames[SVGMark::eTypeCount];
+  if (!SVGObserverUtils::GetAndObserveMarkers(this, &markerFrames)) {
+    return;
+  }
+  nsTArray<SVGMark> marks;
+  element->GetMarkPoints(&marks);
+  if (marks.IsEmpty()) {
+    return;
+  }
+  float strokeWidth = GetStrokeWidthForMarkers();
+  for (const SVGMark& mark : marks) {
+    if (auto* frame = markerFrames[mark.type]) {
+      frame->PaintMark(aContext, aTransform, this, mark, strokeWidth,
+                       aImgParams);
     }
   }
+}
+
+float SVGGeometryFrame::GetStrokeWidthForMarkers() {
+  float strokeWidth = SVGUtils::GetStrokeWidth(
+      this, SVGContextPaint::GetContextPaint(GetContent()));
+  gfxMatrix userToOuterSVG;
+  if (SVGUtils::GetNonScalingStrokeTransform(this, &userToOuterSVG)) {
+    // We're not interested in any translation here so we can treat this as
+    // Singular Value Decomposition (SVD) of a 2 x 2 matrix. That would give us
+    // sx and sy values as the X and Y scales. The value we want is the XY
+    // scale i.e. the normalised hypotenuse, which is sqrt(sx^2 + sy^2) /
+    // sqrt(2). If we use the formulae from
+    // https://scicomp.stackexchange.com/a/14103, we discover that the
+    // normalised hypotenuse is simply the square root of the sum of the squares
+    // of all the 2D matrix elements divided by sqrt(2).
+    //
+    // Note that this may need adjusting to support 3D transforms properly.
+
+    strokeWidth /= float(sqrt(userToOuterSVG._11 * userToOuterSVG._11 +
+                              userToOuterSVG._12 * userToOuterSVG._12 +
+                              userToOuterSVG._21 * userToOuterSVG._21 +
+                              userToOuterSVG._22 * userToOuterSVG._22) /
+                         M_SQRT2);
+  }
+  return strokeWidth;
 }
 
 uint16_t SVGGeometryFrame::GetHitTestFlags() {

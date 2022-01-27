@@ -3,14 +3,10 @@
   <title>Test for IME state controling</title>
   <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
-  <script type="text/javascript" src="utils.js"></script>
   <link rel="stylesheet" type="text/css"
           href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 </head>
 <body onload="setTimeout(runTests, 0);" style="ime-mode: disabled;">
-<script>
-setTestPluginEnabledState(SpecialPowers.Ci.nsIPluginTag.STATE_ENABLED);
-</script>
 <div id="display" style="ime-mode: disabled;">
   <!-- input elements -->
   <input type="text"     id="text"/><br/>
@@ -31,6 +27,12 @@ setTestPluginEnabledState(SpecialPowers.Ci.nsIPluginTag.STATE_ENABLED);
   <input type="search"   id="search"/><br/>
   <input type="tel"      id="tel"/><br/>
   <input type="number"   id="number"/><br/>
+  <input type="date"     id="date"/><br/>
+  <input type="datetime-local" id="datetime-local"/><br/>
+  <input type="time"     id="time"/><br/>
+  <!-- TODO(bug 1283382, bug 1283382): month and week -->
+  <input type="week"     id="week"/><br/>
+  <input type="month"    id="month"/><br/>
 
   <!-- form controls -->
   <button id="button">button</button><br/>
@@ -46,6 +48,10 @@ setTestPluginEnabledState(SpecialPowers.Ci.nsIPluginTag.STATE_ENABLED);
 
   <!-- a element -->
   <a id="a_href" href="about:blank">a[href]</a><br/>
+
+  <!-- multimedia element -->
+  <audio id="audio_with_controls" controls=""></audio><br/>
+  <video id="video_with_controls" controls=""></video><br/>
 
   <!-- ime-mode test -->
   <input type="text" id="ime_mode_auto"     style="ime-mode: auto;"/><br/>
@@ -167,6 +173,15 @@ function runBasicTest(aIsEditable, aInDesignMode, aDescription) {
 
   function test(aTest) {
     function moveFocus(aTestInner, aFocusEventHandler) {
+      function getFocusedElement() {
+        let focusedElement = gFM.focusedElement;
+        if (aTest.idInUAWidget === undefined &&
+            focusedElement?.containingShadowRoot?.isUAWidget()) {
+          focusedElement = focusedElement.containingShadowRoot.host;
+        }
+        return focusedElement;
+      }
+
       if (aInDesignMode) {
         if (document.activeElement) {
           document.activeElement.blur();
@@ -178,8 +193,12 @@ function runBasicTest(aIsEditable, aInDesignMode, aDescription) {
       } else {
         document.getElementById("text").focus();
       }
-      var previousFocusedElement = gFM.focusedElement;
+      var previousFocusedElement = getFocusedElement();
       var element = document.getElementById(aTest.id);
+      if (aTest.idInUAWidget !== undefined) {
+        element = SpecialPowers.wrap(element).
+          openOrClosedShadowRoot.getElementById(aTest.idInUAWidget);
+      }
       var focusEventTarget = element;
       if (element.contentDocument) {
         focusEventTarget = element.contentDocument;
@@ -194,11 +213,7 @@ function runBasicTest(aIsEditable, aInDesignMode, aDescription) {
       focusEventTarget.removeEventListener("focus", aFocusEventHandler, true);
       onIMEFocusBlurHandler = null;
 
-      var focusedElement = gFM.focusedElement;
-      // FIXME(emilio, bug 981248): This is needed just for <input type=number>
-      while (focusedElement && focusedElement.isNativeAnonymous) {
-        focusedElement = focusedElement.parentNode;
-      }
+      let focusedElement = getFocusedElement();
       if (aTest.focusable) {
         is(focusedElement, element,
            aDescription + ": " + aTest.description + ", focus didn't move");
@@ -354,6 +369,8 @@ function runBasicTest(aIsEditable, aInDesignMode, aDescription) {
     aInDesignMode ? gUtils.IME_STATUS_ENABLED : gUtils.IME_STATUS_PASSWORD;
   const kEnabledStateOnReadonlyField =
     aInDesignMode ? gUtils.IME_STATUS_ENABLED : gUtils.IME_STATUS_DISABLED;
+  const kEnabledStateInUAWidget =
+    aInDesignMode ? gUtils.IME_STATUS_ENABLED : gUtils.IME_STATUS_DISABLED;
   const kTests = [
     { id: "text",
       description: "input[type=text]",
@@ -429,6 +446,22 @@ function runBasicTest(aIsEditable, aInDesignMode, aDescription) {
       focusable: !aInDesignMode,
       expectedEnabled: gUtils.IME_STATUS_ENABLED,
       expectedType: "number" },
+    { id: "date",
+      description: "input[type=date]",
+      focusable: !aInDesignMode,
+      expectedEnabled: kEnabledStateOnReadonlyField,
+      expectedType: "date" },
+    { id: "datetime-local",
+      description: "input[type=datetime-local]",
+      focusable: !aInDesignMode,
+      expectedEnabled: kEnabledStateOnReadonlyField,
+      expectedType: "datetime-local" },
+    { id: "time",
+      description: "input[type=time]",
+      focusable: !aInDesignMode,
+      expectedEnabled: kEnabledStateOnReadonlyField,
+      expectedType: "time" },
+    // TODO(bug 1283382, bug 1283382): month and week
 
     // form controls
     { id: "button",
@@ -459,6 +492,58 @@ function runBasicTest(aIsEditable, aInDesignMode, aDescription) {
       description: "a[href]",
       focusable: !aIsEditable && !aInDesignMode,
       expectedEnabled: kEnabledStateOnNonEditableElement },
+
+    // audio element
+    { id: "audio_with_controls",
+      description: "audio",
+      focusable: !aInDesignMode,
+      expectedEnabled: kEnabledStateOnNonEditableElement },
+    { id: "audio_with_controls",
+      idInUAWidget: "playButton",
+      description: "playButton in audio",
+      focusable: !aInDesignMode,
+      expectedEnabled: kEnabledStateInUAWidget },
+    { id: "audio_with_controls",
+      idInUAWidget: "scrubber",
+      description: "scrubber in audio",
+      focusable: !aInDesignMode,
+      expectedEnabled: kEnabledStateInUAWidget },
+    { id: "audio_with_controls",
+      idInUAWidget: "muteButton",
+      description: "muteButton in audio",
+      focusable: !aInDesignMode,
+      expectedEnabled: kEnabledStateInUAWidget },
+    { id: "audio_with_controls",
+      idInUAWidget: "volumeControl",
+      description: "volumeControl in audio",
+      focusable: !aInDesignMode,
+      expectedEnabled: kEnabledStateInUAWidget },
+
+    // video element
+    { id: "video_with_controls",
+      description: "video",
+      focusable: !aInDesignMode,
+      expectedEnabled: kEnabledStateOnNonEditableElement },
+    { id: "video_with_controls",
+      idInUAWidget: "playButton",
+      description: "playButton in video",
+      focusable: !aInDesignMode,
+      expectedEnabled: kEnabledStateInUAWidget },
+    { id: "video_with_controls",
+      idInUAWidget: "scrubber",
+      description: "scrubber in video",
+      focusable: !aInDesignMode,
+      expectedEnabled: kEnabledStateInUAWidget },
+    { id: "video_with_controls",
+      idInUAWidget: "muteButton",
+      description: "muteButton in video",
+      focusable: !aInDesignMode,
+      expectedEnabled: kEnabledStateInUAWidget },
+    { id: "video_with_controls",
+      idInUAWidget: "volumeControl",
+      description: "volumeControl in video",
+      focusable: !aInDesignMode,
+      expectedEnabled: kEnabledStateInUAWidget },
 
     // ime-mode
     { id: "ime_mode_auto",
@@ -666,29 +751,26 @@ function runPluginTest() {
     return;
   }
 
-  if (navigator.platform.indexOf("Mac") == 0) {
-    // XXX on mac, currently, this test isn't passed because it doesn't return
-    // IME_STATUS_PLUGIN by its bug.
-    return;
-  }
-
   var plugin = document.getElementById("plugin");
+
+  // Plugins are not supported and their elements should not accept focus;
+  // therefore, IME should not enable when we play with it.
 
   document.activeElement.blur();
   is(gUtils.IMEStatus, gUtils.IME_STATUS_DISABLED,
      "runPluginTest: unexpected enabled state when no element has focus");
 
   plugin.focus();
-  is(gUtils.IMEStatus, gUtils.IME_STATUS_PLUGIN,
-     "runPluginTest: unexpected enabled state when plugin has focus");
+  is(gUtils.IMEStatus, gUtils.IME_STATUS_DISABLED,
+     "runPluginTest: unexpected enabled state when attempting to give focus to plugin");
 
   plugin.blur();
   is(gUtils.IMEStatus, gUtils.IME_STATUS_DISABLED,
-     "runPluginTest: unexpected enabled state when plugin has focus");
+     "runPluginTest: unexpected enabled state after unfocusing plugin");
 
   plugin.focus();
-  is(gUtils.IMEStatus, gUtils.IME_STATUS_PLUGIN,
-     "runPluginTest: unexpected enabled state when plugin has focus #2");
+  is(gUtils.IMEStatus, gUtils.IME_STATUS_DISABLED,
+     "runPluginTest: unexpected enabled state when attempting to give focus to plugin #2");
 
   var parent = plugin.parentNode;
   parent.removeChild(plugin);
@@ -753,6 +835,16 @@ function runTypeChangingTest() {
     { id: "number",
       type: "number",     expected: gUtils.IME_STATUS_ENABLED,
       description: "[type=\"number\"]" },
+    { id: "date",
+      type: "date",     expected: gUtils.IME_STATUS_DISABLED,
+      description: "[type=\"date\"]" },
+    { id: "datetime-local",
+      type: "datetime-local", expected: gUtils.IME_STATUS_DISABLED,
+      description: "[type=\"datetime-local\"]" },
+    { id: "time",
+      type: "time",       expected: gUtils.IME_STATUS_DISABLED,
+      description: "[type=\"time\"]" },
+    // TODO(bug 1283382, bug 1283382): month and week
     { id: "ime_mode_auto",
       type: "text",     expected: gUtils.IME_STATUS_ENABLED,  imeMode:  true,
       description: "[type=\"text\"][ime-mode: auto;]" },
@@ -882,6 +974,10 @@ function runTypeChangingTest() {
     { type: "search",   expected: gUtils.IME_STATUS_ENABLED  },
     { type: "tel",      expected: gUtils.IME_STATUS_ENABLED  },
     { type: "number",   expected: gUtils.IME_STATUS_ENABLED  },
+    { type: "date",     expected: gUtils.IME_STATUS_DISABLED },
+    { type: "datetime-local", expected: gUtils.IME_STATUS_DISABLED },
+    { type: "time",     expected: gUtils.IME_STATUS_DISABLED },
+    // TODO(bug 1283382, bug 1283382): month and week
   ];
 
   function getExpectedIMEEnabled(aNewType, aInputControl) {
@@ -1208,6 +1304,9 @@ function runEditorFlagChangeTests() {
   is(gUtils.IMEStatus, gUtils.IME_STATUS_ENABLED,
      description + "IME isn't enabled on HTML editor");
   const kIMEStateChangeFlags = Ci.nsIEditor.eEditorReadonlyMask;
+  const kFlagsNotAllowedWithHTMLEditor =
+    Ci.nsIEditor.eEditorPasswordMask |
+    Ci.nsIEditor.eEditorSingleLineMask;
   var editor = window.docShell.editor;
   var flags = editor.flags;
 
@@ -1230,7 +1329,7 @@ function runEditorFlagChangeTests() {
      description + "#1 IME isn't enabled on HTML editor");
 
   editor.flags |=
-      ~(kIMEStateChangeFlags | Ci.nsIEditor.eEditorPasswordMask);
+      ~(kIMEStateChangeFlags | kFlagsNotAllowedWithHTMLEditor);
   ok(editor.composing,
      description + "#2 IME composition was committed unexpectedly");
   is(gUtils.IMEStatus, gUtils.IME_STATUS_ENABLED,
@@ -1308,7 +1407,7 @@ function runTestPasswordFieldOnDialog() {
 }
 
 // Bug 580388 and bug 808287
-function runEditorReframeTests(aCallback) {
+async function runEditorReframeTests() {
   if (document.activeElement) {
     document.activeElement.blur();
   }
@@ -1363,43 +1462,43 @@ function runEditorReframeTests(aCallback) {
   TIP.keydown(AKey);
   TIP.keyup(AKey);
 
-  hitEventLoop(function() {
-    is(IMEFocus, 0, "runEditorReframeTests(): IME shouldn't receive a focus notification during reframing");
-    is(IMEBlur, 0, "runEditorReframeTests(): IME shouldn't receive a blur notification during reframing");
-    ok(IMEHasFocus, "runEditorReframeTests(): IME must have focus even after reframing");
+  await new Promise(r => hitEventLoop(r, 20));
 
-    var onFocus = function(aEvent) {
-      // Perform a style change and query during focus to trigger reframing
-      input.style.overflow = "visible";
-      synthesizeQuerySelectedText();
-    };
-    input.addEventListener("focus", onFocus);
-    IMEFocus = IMEBlur = 0;
+  is(IMEFocus, 0, "runEditorReframeTests(): IME shouldn't receive a focus notification during reframing");
+  is(IMEBlur, 0, "runEditorReframeTests(): IME shouldn't receive a blur notification during reframing");
+  ok(IMEHasFocus, "runEditorReframeTests(): IME must have focus even after reframing");
 
-    input.blur();
-    input.focus();
-    TIP.keydown(AKey);
-    TIP.keyup(AKey);
+  var onFocus = function(aEvent) {
+    // Perform a style change and query during focus to trigger reframing
+    input.style.overflow = "visible";
+    synthesizeQuerySelectedText();
+  };
+  input.addEventListener("focus", onFocus);
+  IMEFocus = IMEBlur = 0;
 
-    hitEventLoop(function() {
-      is(IMEFocus, 1, "runEditorReframeTests(): IME should receive a focus notification at focus but shouldn't receive it during reframing");
-      is(IMEBlur, 1, "runEditorReframeTests(): IME should receive a blur notification at blur but shouldn't receive it during reframing");
-      ok(IMEHasFocus, "runEditorReframeTests(): IME sould have focus after reframing during focus");
+  input.blur();
+  input.focus();
+  TIP.keydown(AKey);
+  TIP.keyup(AKey);
 
-      input.removeEventListener("input", onInput, true);
-      input.removeEventListener("focus", onFocus);
+  await new Promise(r => hitEventLoop(r, 20));
 
-      input.style.overflow = "visible";
-      input.value = "";
+  is(IMEFocus, 1, "runEditorReframeTests(): IME should receive a focus notification at focus but shouldn't receive it during reframing");
+  is(IMEBlur, 1, "runEditorReframeTests(): IME should receive a blur notification at blur but shouldn't receive it during reframing");
+  ok(IMEHasFocus, "runEditorReframeTests(): IME sould have focus after reframing during focus");
 
-      TIP = null;
+  input.removeEventListener("input", onInput, true);
+  input.removeEventListener("focus", onFocus);
 
-      hitEventLoop(aCallback, 20);
-    }, 20);
-  }, 20);
+  input.style.overflow = "visible";
+  input.value = "";
+
+  TIP = null;
+
+  await new Promise(r => hitEventLoop(r, 20));
 }
 
-function runTests() {
+async function runTests() {
   if (!kIMEEnabledSupported && !kIMEOpenSupported)
     return;
 
@@ -1448,10 +1547,10 @@ function runTests() {
   // runTestPasswordFieldOnDialog();
 
   // Asynchronous tests
-  runEditorReframeTests(function() {
-    // This will call onFinish(), so, this test must be the last.
-    runEditableSubframeTests();
-  });
+  await runEditorReframeTests();
+
+  // This will call onFinish(), so, this test must be the last.
+  runEditableSubframeTests();
 }
 
 function onFinish() {

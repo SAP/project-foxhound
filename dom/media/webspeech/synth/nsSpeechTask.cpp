@@ -8,6 +8,7 @@
 #include "AudioSegment.h"
 #include "nsSpeechTask.h"
 #include "nsSynthVoiceRegistry.h"
+#include "nsXULAppAPI.h"
 #include "SharedBuffer.h"
 #include "SpeechSynthesis.h"
 
@@ -17,8 +18,7 @@ extern mozilla::LogModule* GetSpeechSynthLog();
 
 #define AUDIO_TRACK 1
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // nsSpeechTask
 
@@ -100,8 +100,7 @@ nsresult nsSpeechTask::DispatchStartImpl(const nsAString& aUri) {
 
   mState = STATE_SPEAKING;
   mUtterance->mChosenVoiceURI = aUri;
-  mUtterance->DispatchSpeechSynthesisEvent(u"start"_ns, 0, nullptr, 0,
-                                           EmptyString());
+  mUtterance->DispatchSpeechSynthesisEvent(u"start"_ns, 0, nullptr, 0, u""_ns);
 
   return NS_OK;
 }
@@ -137,7 +136,7 @@ nsresult nsSpeechTask::DispatchEndImpl(float aElapsedTime,
 
   mState = STATE_ENDED;
   utterance->DispatchSpeechSynthesisEvent(u"end"_ns, aCharIndex, nullptr,
-                                          aElapsedTime, EmptyString());
+                                          aElapsedTime, u""_ns);
 
   return NS_OK;
 }
@@ -161,7 +160,7 @@ nsresult nsSpeechTask::DispatchPauseImpl(float aElapsedTime,
   mUtterance->mPaused = true;
   if (mState == STATE_SPEAKING) {
     mUtterance->DispatchSpeechSynthesisEvent(u"pause"_ns, aCharIndex, nullptr,
-                                             aElapsedTime, EmptyString());
+                                             aElapsedTime, u""_ns);
   }
 
   return NS_OK;
@@ -186,7 +185,7 @@ nsresult nsSpeechTask::DispatchResumeImpl(float aElapsedTime,
   mUtterance->mPaused = false;
   if (mState == STATE_SPEAKING) {
     mUtterance->DispatchSpeechSynthesisEvent(u"resume"_ns, aCharIndex, nullptr,
-                                             aElapsedTime, EmptyString());
+                                             aElapsedTime, u""_ns);
   }
 
   return NS_OK;
@@ -222,7 +221,7 @@ nsresult nsSpeechTask::DispatchErrorImpl(float aElapsedTime,
 
   mState = STATE_ENDED;
   mUtterance->DispatchSpeechSynthesisEvent(u"error"_ns, aCharIndex, nullptr,
-                                           aElapsedTime, EmptyString());
+                                           aElapsedTime, u""_ns);
   return NS_OK;
 }
 
@@ -386,5 +385,4 @@ void nsSpeechTask::SetAudioOutputVolume(float aVolume) {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

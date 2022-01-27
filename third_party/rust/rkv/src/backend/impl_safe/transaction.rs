@@ -8,8 +8,10 @@
 // CONDITIONS OF ANY KIND, either express or implied. See the License for the
 // specific language governing permissions and limitations under the License.
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::Arc,
+};
 
 use super::{
     snapshot::Snapshot,
@@ -35,7 +37,7 @@ pub struct RoTransactionImpl<'t> {
 
 impl<'t> RoTransactionImpl<'t> {
     pub(crate) fn new(env: &'t EnvironmentImpl, idx: Arc<()>) -> Result<RoTransactionImpl<'t>, ErrorImpl> {
-        let snapshots = env.dbs()?.iter().map(|(id, db)| (DatabaseImpl(id), db.snapshot())).collect();
+        let snapshots = env.dbs()?.arena.iter().map(|(id, db)| (DatabaseImpl(id), db.snapshot())).collect();
         Ok(RoTransactionImpl {
             env,
             snapshots,
@@ -45,8 +47,8 @@ impl<'t> RoTransactionImpl<'t> {
 }
 
 impl<'t> BackendRoTransaction for RoTransactionImpl<'t> {
-    type Error = ErrorImpl;
     type Database = DatabaseImpl;
+    type Error = ErrorImpl;
 
     fn get(&self, db: &Self::Database, key: &[u8]) -> Result<&[u8], Self::Error> {
         let snapshot = self.snapshots.get(db).ok_or_else(|| ErrorImpl::DbIsForeignError)?;
@@ -76,7 +78,7 @@ pub struct RwTransactionImpl<'t> {
 
 impl<'t> RwTransactionImpl<'t> {
     pub(crate) fn new(env: &'t EnvironmentImpl, idx: Arc<()>) -> Result<RwTransactionImpl<'t>, ErrorImpl> {
-        let snapshots = env.dbs()?.iter().map(|(id, db)| (DatabaseImpl(id), db.snapshot())).collect();
+        let snapshots = env.dbs()?.arena.iter().map(|(id, db)| (DatabaseImpl(id), db.snapshot())).collect();
         Ok(RwTransactionImpl {
             env,
             snapshots,
@@ -86,8 +88,8 @@ impl<'t> RwTransactionImpl<'t> {
 }
 
 impl<'t> BackendRwTransaction for RwTransactionImpl<'t> {
-    type Error = ErrorImpl;
     type Database = DatabaseImpl;
+    type Error = ErrorImpl;
     type Flags = WriteFlagsImpl;
 
     fn get(&self, db: &Self::Database, key: &[u8]) -> Result<&[u8], Self::Error> {
@@ -142,7 +144,7 @@ impl<'t> BackendRwTransaction for RwTransactionImpl<'t> {
         let mut dbs = self.env.dbs_mut()?;
 
         for (id, snapshot) in self.snapshots {
-            let db = dbs.get_mut(id.0).ok_or_else(|| ErrorImpl::DbIsForeignError)?;
+            let db = dbs.arena.get_mut(id.0).ok_or_else(|| ErrorImpl::DbIsForeignError)?;
             db.replace(snapshot);
         }
 

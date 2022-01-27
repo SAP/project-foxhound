@@ -15,22 +15,26 @@
 #include <string.h>
 #include <type_traits>
 
-#include "jsapi.h"
 #include "jsnum.h"
 
 #include "builtin/Array.h"
 #include "jit/AtomicOperations.h"
 #include "jit/InlinableNatives.h"
+#include "js/CallAndConstruct.h"  // JS::Construct
 #include "js/Conversions.h"
+#include "js/experimental/TypedData.h"  // JS_NewDataView
+#include "js/friend/ErrorMessages.h"    // js::GetErrorMessage, JSMSG_*
 #include "js/PropertySpec.h"
 #include "js/Wrapper.h"
-#include "util/Windows.h"
+#include "util/DifferentialTesting.h"
+#include "util/WindowsWrapper.h"
 #include "vm/ArrayBufferObject.h"
 #include "vm/GlobalObject.h"
 #include "vm/Interpreter.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/SharedMem.h"
+#include "vm/Uint8Clamped.h"
 #include "vm/WrapperObject.h"
 
 #include "gc/Nursery-inl.h"
@@ -46,7 +50,7 @@ using mozilla::AssertedCast;
 using mozilla::WrapToSigned;
 
 DataViewObject* DataViewObject::create(
-    JSContext* cx, uint32_t byteOffset, uint32_t byteLength,
+    JSContext* cx, size_t byteOffset, size_t byteLength,
     Handle<ArrayBufferObjectMaybeShared*> arrayBuffer, HandleObject proto) {
   if (arrayBuffer->isDetached()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
@@ -68,17 +72,16 @@ DataViewObject* DataViewObject::create(
 bool DataViewObject::getAndCheckConstructorArgs(JSContext* cx,
                                                 HandleObject bufobj,
                                                 const CallArgs& args,
-                                                uint32_t* byteOffsetPtr,
-                                                uint32_t* byteLengthPtr) {
+                                                size_t* byteOffsetPtr,
+                                                size_t* byteLengthPtr) {
   // Step 3.
-  if (!IsArrayBufferMaybeShared(bufobj)) {
+  if (!bufobj->is<ArrayBufferObjectMaybeShared>()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_NOT_EXPECTED_TYPE, "DataView",
                               "ArrayBuffer", bufobj->getClass()->name);
     return false;
   }
-  Rooted<ArrayBufferObjectMaybeShared*> buffer(
-      cx, &AsArrayBufferMaybeShared(bufobj));
+  auto buffer = bufobj.as<ArrayBufferObjectMaybeShared>();
 
   // Step 4.
   uint64_t offset;
@@ -94,7 +97,7 @@ bool DataViewObject::getAndCheckConstructorArgs(JSContext* cx,
   }
 
   // Step 6.
-  uint32_t bufferByteLength = buffer->byteLength();
+  size_t bufferByteLength = buffer->byteLength();
 
   // Step 7.
   if (offset > bufferByteLength) {
@@ -102,7 +105,7 @@ bool DataViewObject::getAndCheckConstructorArgs(JSContext* cx,
                               JSMSG_OFFSET_OUT_OF_BUFFER);
     return false;
   }
-  MOZ_ASSERT(offset <= INT32_MAX);
+  MOZ_ASSERT(offset <= ArrayBufferObject::maxBufferByteLength());
 
   // Step 8.a
   uint64_t viewByteLength = bufferByteLength - offset;
@@ -123,10 +126,10 @@ bool DataViewObject::getAndCheckConstructorArgs(JSContext* cx,
       return false;
     }
   }
-  MOZ_ASSERT(viewByteLength <= INT32_MAX);
+  MOZ_ASSERT(viewByteLength <= ArrayBufferObject::maxBufferByteLength());
 
-  *byteOffsetPtr = AssertedCast<uint32_t>(offset);
-  *byteLengthPtr = AssertedCast<uint32_t>(viewByteLength);
+  *byteOffsetPtr = offset;
+  *byteLengthPtr = viewByteLength;
   return true;
 }
 
@@ -136,7 +139,8 @@ bool DataViewObject::constructSameCompartment(JSContext* cx,
   MOZ_ASSERT(args.isConstructing());
   cx->check(bufobj);
 
-  uint32_t byteOffset, byteLength;
+  size_t byteOffset = 0;
+  size_t byteLength = 0;
   if (!getAndCheckConstructorArgs(cx, bufobj, args, &byteOffset, &byteLength)) {
     return false;
   }
@@ -146,8 +150,7 @@ bool DataViewObject::constructSameCompartment(JSContext* cx,
     return false;
   }
 
-  Rooted<ArrayBufferObjectMaybeShared*> buffer(
-      cx, &AsArrayBufferMaybeShared(bufobj));
+  auto buffer = bufobj.as<ArrayBufferObjectMaybeShared>();
   JSObject* obj =
       DataViewObject::create(cx, byteOffset, byteLength, buffer, proto);
   if (!obj) {
@@ -182,7 +185,8 @@ bool DataViewObject::constructWrapped(JSContext* cx, HandleObject bufobj,
   }
 
   // NB: This entails the IsArrayBuffer check
-  uint32_t byteOffset, byteLength;
+  size_t byteOffset = 0;
+  size_t byteLength = 0;
   if (!getAndCheckConstructorArgs(cx, unwrapped, args, &byteOffset,
                                   &byteLength)) {
     return false;
@@ -253,9 +257,9 @@ SharedMem<uint8_t*> DataViewObject::getDataPointer(uint64_t offset,
                                                    bool* isSharedMemory) {
   MOZ_ASSERT(offsetIsInBounds<NativeType>(offset));
 
-  MOZ_ASSERT(offset < UINT32_MAX);
+  MOZ_ASSERT(offset < SIZE_MAX);
   *isSharedMemory = this->isSharedMemory();
-  return dataPointerEither().cast<uint8_t*>() + uint32_t(offset);
+  return dataPointerEither().cast<uint8_t*>() + size_t(offset);
 }
 
 template <typename T>
@@ -450,12 +454,10 @@ bool DataViewObject::write(JSContext* cx, Handle<DataViewObject*> obj,
     return false;
   }
 
-#ifdef JS_MORE_DETERMINISTIC
   // See the comment in ElementSpecific::doubleToNative.
-  if (TypeIsFloatingPoint<NativeType>()) {
+  if (js::SupportDifferentialTesting() && TypeIsFloatingPoint<NativeType>()) {
     value = JS::CanonicalizeNaN(value);
   }
-#endif
 
   // Step 6.
   bool isLittleEndian = args.length() >= 3 && ToBoolean(args[2]);
@@ -883,7 +885,7 @@ bool DataViewObject::fun_setFloat64(JSContext* cx, unsigned argc, Value* vp) {
 bool DataViewObject::bufferGetterImpl(JSContext* cx, const CallArgs& args) {
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
-  args.rval().set(DataViewObject::bufferValue(thisView));
+  args.rval().set(thisView->bufferValue());
   return true;
 }
 
@@ -904,7 +906,7 @@ bool DataViewObject::byteLengthGetterImpl(JSContext* cx, const CallArgs& args) {
   }
 
   // Step 7.
-  args.rval().set(DataViewObject::byteLengthValue(thisView));
+  args.rval().set(thisView->byteLengthValue());
   return true;
 }
 
@@ -925,18 +927,13 @@ bool DataViewObject::byteOffsetGetterImpl(JSContext* cx, const CallArgs& args) {
   }
 
   // Step 7.
-  args.rval().set(DataViewObject::byteOffsetValue(thisView));
+  args.rval().set(thisView->byteOffsetValue());
   return true;
 }
 
 bool DataViewObject::byteOffsetGetter(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   return CallNonGenericMethod<is, byteOffsetGetterImpl>(cx, args);
-}
-
-JSObject* DataViewObject::CreatePrototype(JSContext* cx, JSProtoKey key) {
-  return GlobalObject::createBlankPrototype(cx, cx->global(),
-                                            &DataViewObject::protoClass_);
 }
 
 static const JSClassOps DataViewObjectClassOps = {
@@ -964,10 +961,11 @@ const ClassSpec DataViewObject::classSpec_ = {
 
 const JSClass DataViewObject::class_ = {
     "DataView",
-    JSCLASS_HAS_PRIVATE |
-        JSCLASS_HAS_RESERVED_SLOTS(DataViewObject::RESERVED_SLOTS) |
+    JSCLASS_HAS_RESERVED_SLOTS(DataViewObject::RESERVED_SLOTS) |
         JSCLASS_HAS_CACHED_PROTO(JSProto_DataView),
     &DataViewObjectClassOps, &DataViewObject::classSpec_};
+
+const JSClass* const JS::DataView::ClassPtr = &DataViewObject::class_;
 
 const JSClass DataViewObject::protoClass_ = {
     "DataView.prototype", JSCLASS_HAS_CACHED_PROTO(JSProto_DataView),
@@ -1022,9 +1020,8 @@ const JSPropertySpec DataViewObject::properties[] = {
     JS_PSG("byteOffset", DataViewObject::byteOffsetGetter, 0),
     JS_STRING_SYM_PS(toStringTag, "DataView", JSPROP_READONLY), JS_PS_END};
 
-JS_FRIEND_API JSObject* JS_NewDataView(JSContext* cx, HandleObject buffer,
-                                       uint32_t byteOffset,
-                                       int32_t byteLength) {
+JS_PUBLIC_API JSObject* JS_NewDataView(JSContext* cx, HandleObject buffer,
+                                       size_t byteOffset, size_t byteLength) {
   JSProtoKey key = JSProto_DataView;
   RootedObject constructor(cx, GlobalObject::getOrCreateConstructor(cx, key));
   if (!constructor) {
@@ -1035,7 +1032,7 @@ JS_FRIEND_API JSObject* JS_NewDataView(JSContext* cx, HandleObject buffer,
 
   cargs[0].setObject(*buffer);
   cargs[1].setNumber(byteOffset);
-  cargs[2].setInt32(byteLength);
+  cargs[2].setNumber(byteLength);
 
   RootedValue fun(cx, ObjectValue(*constructor));
   RootedObject obj(cx);

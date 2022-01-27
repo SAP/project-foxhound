@@ -15,8 +15,10 @@
 #include "js/Class.h"
 #include "vm/NativeObject.h"
 
-struct UFormattedNumber;
-struct UNumberFormatter;
+namespace mozilla::intl {
+class NumberFormat;
+class NumberRangeFormat;
+}  // namespace mozilla::intl
 
 namespace js {
 
@@ -27,7 +29,7 @@ class NumberFormatObject : public NativeObject {
 
   static constexpr uint32_t INTERNALS_SLOT = 0;
   static constexpr uint32_t UNUMBER_FORMATTER_SLOT = 1;
-  static constexpr uint32_t UFORMATTED_NUMBER_SLOT = 2;
+  static constexpr uint32_t UNUMBER_RANGE_FORMATTER_SLOT = 2;
   static constexpr uint32_t SLOT_COUNT = 3;
 
   static_assert(INTERNALS_SLOT == INTL_INTERNALS_OBJECT_SLOT,
@@ -36,30 +38,34 @@ class NumberFormatObject : public NativeObject {
 
   // Estimated memory use for UNumberFormatter and UFormattedNumber
   // (see IcuMemoryUsage).
-  static constexpr size_t EstimatedMemoryUse = 750;
+  static constexpr size_t EstimatedMemoryUse = 972;
 
-  UNumberFormatter* getNumberFormatter() const {
+  // Estimated memory use for UNumberRangeFormatter and UFormattedNumberRange
+  // (see IcuMemoryUsage).
+  static constexpr size_t EstimatedRangeFormatterMemoryUse = 14143;
+
+  mozilla::intl::NumberFormat* getNumberFormatter() const {
     const auto& slot = getFixedSlot(UNUMBER_FORMATTER_SLOT);
     if (slot.isUndefined()) {
       return nullptr;
     }
-    return static_cast<UNumberFormatter*>(slot.toPrivate());
+    return static_cast<mozilla::intl::NumberFormat*>(slot.toPrivate());
   }
 
-  void setNumberFormatter(UNumberFormatter* formatter) {
+  void setNumberFormatter(mozilla::intl::NumberFormat* formatter) {
     setFixedSlot(UNUMBER_FORMATTER_SLOT, PrivateValue(formatter));
   }
 
-  UFormattedNumber* getFormattedNumber() const {
-    const auto& slot = getFixedSlot(UFORMATTED_NUMBER_SLOT);
+  mozilla::intl::NumberRangeFormat* getNumberRangeFormatter() const {
+    const auto& slot = getFixedSlot(UNUMBER_RANGE_FORMATTER_SLOT);
     if (slot.isUndefined()) {
       return nullptr;
     }
-    return static_cast<UFormattedNumber*>(slot.toPrivate());
+    return static_cast<mozilla::intl::NumberRangeFormat*>(slot.toPrivate());
   }
 
-  void setFormattedNumber(UFormattedNumber* formatted) {
-    setFixedSlot(UFORMATTED_NUMBER_SLOT, PrivateValue(formatted));
+  void setNumberRangeFormatter(mozilla::intl::NumberRangeFormat* formatter) {
+    setFixedSlot(UNUMBER_RANGE_FORMATTER_SLOT, PrivateValue(formatter));
   }
 
  private:
@@ -76,8 +82,8 @@ class NumberFormatObject : public NativeObject {
  *
  * Usage: numberFormat = intl_NumberFormat(locales, options)
  */
-extern MOZ_MUST_USE bool intl_NumberFormat(JSContext* cx, unsigned argc,
-                                           Value* vp);
+[[nodiscard]] extern bool intl_NumberFormat(JSContext* cx, unsigned argc,
+                                            Value* vp);
 
 /**
  * Returns the numbering system type identifier per Unicode
@@ -86,8 +92,8 @@ extern MOZ_MUST_USE bool intl_NumberFormat(JSContext* cx, unsigned argc,
  *
  * Usage: defaultNumberingSystem = intl_numberingSystem(locale)
  */
-extern MOZ_MUST_USE bool intl_numberingSystem(JSContext* cx, unsigned argc,
-                                              Value* vp);
+[[nodiscard]] extern bool intl_numberingSystem(JSContext* cx, unsigned argc,
+                                               Value* vp);
 
 /**
  * Returns a string representing the number x according to the effective
@@ -95,11 +101,19 @@ extern MOZ_MUST_USE bool intl_numberingSystem(JSContext* cx, unsigned argc,
  *
  * Spec: ECMAScript Internationalization API Specification, 11.3.2.
  *
- * Usage: formatted = intl_FormatNumber(numberFormat, x, formatToParts,
- *                                      unitStyle)
+ * Usage: formatted = intl_FormatNumber(numberFormat, x, formatToParts)
  */
-extern MOZ_MUST_USE bool intl_FormatNumber(JSContext* cx, unsigned argc,
-                                           Value* vp);
+[[nodiscard]] extern bool intl_FormatNumber(JSContext* cx, unsigned argc,
+                                            Value* vp);
+
+/**
+ * Returns a string representing the number range «x - y» according to the
+ * effective locale and the formatting options of the given NumberFormat.
+ *
+ * Usage: formatted = intl_FormatNumberRange(numberFormat, x, y, formatToParts)
+ */
+[[nodiscard]] extern bool intl_FormatNumberRange(JSContext* cx, unsigned argc,
+                                                 Value* vp);
 
 #if DEBUG || MOZ_SYSTEM_ICU
 /**
@@ -107,172 +121,11 @@ extern MOZ_MUST_USE bool intl_FormatNumber(JSContext* cx, unsigned argc,
  *
  * Usage: units = intl_availableMeasurementUnits()
  */
-extern MOZ_MUST_USE bool intl_availableMeasurementUnits(JSContext* cx,
-                                                        unsigned argc,
-                                                        Value* vp);
+[[nodiscard]] extern bool intl_availableMeasurementUnits(JSContext* cx,
+                                                         unsigned argc,
+                                                         Value* vp);
 #endif
 
-namespace intl {
-
-/**
- * Class to create a number formatter skeleton.
- *
- * The skeleton syntax is documented at:
- * https://github.com/unicode-org/icu/blob/master/docs/userguide/format_parse/numbers/skeletons.md
- */
-class MOZ_STACK_CLASS NumberFormatterSkeleton final {
-  static constexpr size_t DefaultVectorSize = 128;
-  using SkeletonVector = Vector<char16_t, DefaultVectorSize>;
-
-  SkeletonVector vector_;
-
-  bool append(char16_t c) { return vector_.append(c); }
-
-  bool appendN(char16_t c, size_t times) { return vector_.appendN(c, times); }
-
-  template <size_t N>
-  bool append(const char16_t (&chars)[N]) {
-    static_assert(N > 0,
-                  "should only be used with string literals or properly "
-                  "null-terminated arrays");
-    MOZ_ASSERT(chars[N - 1] == '\0',
-               "should only be used with string literals or properly "
-               "null-terminated arrays");
-    return vector_.append(chars, N - 1);  // Without trailing \0.
-  }
-
-  template <size_t N>
-  bool appendToken(const char16_t (&token)[N]) {
-    return append(token) && append(' ');
-  }
-
-  bool append(const char* chars, size_t length) {
-    return vector_.append(chars, length);
-  }
-
- public:
-  explicit NumberFormatterSkeleton(JSContext* cx) : vector_(cx) {}
-
-  /**
-   * Return a new UNumberFormatter based on this skeleton.
-   */
-  UNumberFormatter* toFormatter(JSContext* cx, const char* locale);
-
-  /**
-   * Set this skeleton to display a currency amount. |currency| must be a
-   * three-letter currency code.
-   *
-   * https://github.com/unicode-org/icu/blob/master/docs/userguide/format_parse/numbers/skeletons.md#unit
-   */
-  MOZ_MUST_USE bool currency(JSLinearString* currency);
-
-  enum class CurrencyDisplay { Code, Name, Symbol, NarrowSymbol };
-
-  /**
-   * Set the currency display style for this skeleton.
-   *
-   * https://github.com/unicode-org/icu/blob/master/docs/userguide/format_parse/numbers/skeletons.md#unit-width
-   */
-  MOZ_MUST_USE bool currencyDisplay(CurrencyDisplay display);
-
-  /**
-   * Set this skeleton to display a unit amount. |unit| must be a well-formed
-   * unit identifier.
-   *
-   * https://github.com/unicode-org/icu/blob/master/docs/userguide/format_parse/numbers/skeletons.md#unit
-   * https://github.com/unicode-org/icu/blob/master/docs/userguide/format_parse/numbers/skeletons.md#per-unit
-   */
-  MOZ_MUST_USE bool unit(JSLinearString* unit);
-
-  enum class UnitDisplay { Short, Narrow, Long };
-
-  /**
-   * Set the unit display style for this skeleton.
-   *
-   * https://github.com/unicode-org/icu/blob/master/docs/userguide/format_parse/numbers/skeletons.md#unit-width
-   */
-  MOZ_MUST_USE bool unitDisplay(UnitDisplay display);
-
-  /**
-   * Set this skeleton to display a percent number.
-   *
-   * https://github.com/unicode-org/icu/blob/master/docs/userguide/format_parse/numbers/skeletons.md#unit
-   * https://github.com/unicode-org/icu/blob/master/docs/userguide/format_parse/numbers/skeletons.md#scale
-   */
-  MOZ_MUST_USE bool percent();
-
-  /**
-   * Set the fraction digits settings for this skeleton. |min| can be zero,
-   * |max| must be larger-or-equal to |min|.
-   *
-   * https://github.com/unicode-org/icu/blob/master/docs/userguide/format_parse/numbers/skeletons.md#fraction-precision
-   */
-  MOZ_MUST_USE bool fractionDigits(uint32_t min, uint32_t max);
-
-  /**
-   * Set the integer-width settings for this skeleton. |min| must be a non-zero
-   * number.
-   *
-   * https://github.com/unicode-org/icu/blob/master/docs/userguide/format_parse/numbers/skeletons.md#integer-width
-   */
-  MOZ_MUST_USE bool integerWidth(uint32_t min);
-
-  /**
-   * Set the significant digits settings for this skeleton. |min| must be a
-   * non-zero number, |max| must be larger-or-equal to |min|.
-   *
-   * https://github.com/unicode-org/icu/blob/master/docs/userguide/format_parse/numbers/skeletons.md#significant-digits-precision
-   */
-  MOZ_MUST_USE bool significantDigits(uint32_t min, uint32_t max);
-
-  /**
-   * Enable or disable grouping for this skeleton.
-   *
-   * https://github.com/unicode-org/icu/blob/master/docs/userguide/format_parse/numbers/skeletons.md#grouping
-   */
-  MOZ_MUST_USE bool useGrouping(bool on);
-
-  enum class Notation {
-    Standard,
-    Scientific,
-    Engineering,
-    CompactShort,
-    CompactLong
-  };
-
-  /**
-   * Set the notation style for this skeleton.
-   *
-   * https://github.com/unicode-org/icu/blob/master/docs/userguide/format_parse/numbers/skeletons.md#notation
-   */
-  MOZ_MUST_USE bool notation(Notation style);
-
-  enum class SignDisplay {
-    Auto,
-    Never,
-    Always,
-    ExceptZero,
-    Accounting,
-    AccountingAlways,
-    AccountingExceptZero
-  };
-
-  /**
-   * Set the sign-display for this skeleton.
-   *
-   * https://github.com/unicode-org/icu/blob/master/docs/userguide/format_parse/numbers/skeletons.md#sign-display
-   */
-  MOZ_MUST_USE bool signDisplay(SignDisplay display);
-
-  /**
-   * Set the rounding mode to 'half-up' for this skeleton.
-   *
-   * https://github.com/unicode-org/icu/blob/master/docs/userguide/format_parse/numbers/skeletons.md#rounding-mode
-   */
-  MOZ_MUST_USE bool roundingModeHalfUp();
-};
-
-}  // namespace intl
 }  // namespace js
 
 #endif /* builtin_intl_NumberFormat_h */

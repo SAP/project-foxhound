@@ -98,20 +98,6 @@ function promiseFocus(window) {
   return new Promise(resolve => waitForFocus(resolve, window));
 }
 
-// Helper to register test failures and close windows if any are left open
-function checkOpenWindows(aWindowID) {
-  let found = false;
-  for (let win of Services.wm.getEnumerator(aWindowID)) {
-    if (!win.closed) {
-      found = true;
-      win.close();
-    }
-  }
-  if (found) {
-    ok(false, "Found unexpected " + aWindowID + " window still open");
-  }
-}
-
 // Tools to disable and re-enable the background update and blocklist timers
 // so that tests can protect themselves from unwanted timer events.
 var gCatMan = Services.catMan;
@@ -154,11 +140,6 @@ registerCleanupFunction(function() {
       Services.prefs.setCharPref(pref.name, pref.value);
     }
   }
-
-  // Throw an error if the add-ons manager window is open anywhere
-  checkOpenWindows("Addons:Manager");
-  checkOpenWindows("Addons:Compatibility");
-  checkOpenWindows("Addons:Install");
 
   return AddonManager.getAllInstalls().then(aInstalls => {
     for (let install of aInstalls) {
@@ -265,20 +246,6 @@ function get_addon_file_url(aFilename) {
   }
 }
 
-function get_current_view(aManager) {
-  let view = aManager.document.getElementById("view-port").selectedPanel;
-  if (view.id == "headered-views") {
-    view = aManager.document.getElementById("headered-views-content")
-      .selectedPanel;
-  }
-  is(
-    view,
-    aManager.gViewController.displayedView,
-    "view controller is tracking the displayed view correctly"
-  );
-  return view;
-}
-
 function check_all_in_list(aManager, aIds, aIgnoreExtras) {
   var doc = aManager.document;
   var list = doc.getElementById("addon-list");
@@ -309,21 +276,23 @@ function check_all_in_list(aManager, aIds, aIgnoreExtras) {
   }
 }
 
-function get_addon_element(aManager, aId) {
-  const win = aManager.getHtmlBrowser().contentWindow;
-  return getAddonCard(win, aId);
-}
-
 function getAddonCard(win, id) {
   return win.document.querySelector(`addon-card[addon-id="${id}"]`);
 }
 
-function wait_for_view_load(
+async function wait_for_view_load(
   aManagerWindow,
   aCallback,
   aForceWait,
   aLongerTimeout
 ) {
+  // Wait one tick to make sure that the microtask related to an
+  // async loadView call originated from outsite about:addons
+  // is already executing (otherwise isLoading would be still false
+  // and we wouldn't be waiting for that load before resolving
+  // the promise returned by this test helper function).
+  await Promise.resolve();
+
   let p = new Promise(resolve => {
     requestLongerTimeout(aLongerTimeout ? aLongerTimeout : 2);
 
@@ -333,7 +302,7 @@ function wait_for_view_load(
     }
 
     aManagerWindow.document.addEventListener(
-      "ViewChanged",
+      "view-loaded",
       function() {
         resolve(aManagerWindow);
       },
@@ -345,23 +314,11 @@ function wait_for_view_load(
 }
 
 function wait_for_manager_load(aManagerWindow, aCallback) {
-  let p = new Promise(resolve => {
-    if (!aManagerWindow.gIsInitializing) {
-      resolve(aManagerWindow);
-      return;
-    }
-
-    info("Waiting for initialization");
-    aManagerWindow.document.addEventListener(
-      "Initialized",
-      function() {
-        resolve(aManagerWindow);
-      },
-      { once: true }
-    );
-  });
-
-  return log_callback(p, aCallback);
+  info("Waiting for initialization");
+  return log_callback(
+    aManagerWindow.promiseInitialized.then(() => aManagerWindow),
+    aCallback
+  );
 }
 
 function open_manager(
@@ -383,7 +340,7 @@ function open_manager(
 
       ok(aManagerWindow != null, "Should have an add-ons manager window");
       is(
-        aManagerWindow.location,
+        aManagerWindow.location.href,
         MANAGER_URI,
         "Should be displaying the correct UI"
       );
@@ -425,7 +382,7 @@ function close_manager(aManagerWindow, aCallback, aLongerTimeout) {
       "Should have an add-ons manager window to close"
     );
     is(
-      aManagerWindow.location,
+      aManagerWindow.location.href,
       MANAGER_URI,
       "Should be closing window with correct URI"
     );
@@ -551,22 +508,14 @@ async function install_addon(path, cb, pathPrefix = TESTROOT) {
 }
 
 function CategoryUtilities(aManagerWindow) {
-  this.window = aManagerWindow.getHtmlBrowser().contentWindow;
-  this.managerWindow = aManagerWindow;
-
+  this.window = aManagerWindow;
   this.window.addEventListener("unload", () => (this.window = null), {
     once: true,
   });
-  this.managerWindow.addEventListener(
-    "unload",
-    () => (this.managerWindow = null),
-    { once: true }
-  );
 }
 
 CategoryUtilities.prototype = {
   window: null,
-  managerWindow: null,
 
   get _categoriesBox() {
     return this.window.document.querySelector("categories-box");
@@ -585,7 +534,7 @@ CategoryUtilities.prototype = {
       "Should not get selected category when manager window is not loaded"
     );
     let viewId = this.getSelectedViewId();
-    let view = this.managerWindow.gViewController.parseViewId(viewId);
+    let view = this.window.gViewController.parseViewId(viewId);
     return view.type == "list" ? view.param : view.type;
   },
 
@@ -642,7 +591,7 @@ CategoryUtilities.prototype = {
     EventUtils.synthesizeMouseAtCenter(categoryButton, {}, this.window);
 
     // Use wait_for_view_load until all open_manager calls are gone.
-    return wait_for_view_load(this.managerWindow);
+    return wait_for_view_load(this.window);
   },
 
   openType(categoryType) {
@@ -669,6 +618,7 @@ function addCertOverride(host, bits) {
           cos.rememberValidityOverride(
             host,
             -1,
+            {},
             securityInfo.serverCert,
             bits,
             false
@@ -715,9 +665,6 @@ function MockProvider() {
       id: "extension",
       name: "Extensions",
       uiPriority: 4000,
-      flags:
-        AddonManager.TYPE_UI_VIEW_LIST |
-        AddonManager.TYPE_SUPPORTS_UNDO_RESTARTLESS_UNINSTALL,
     },
   ];
 
@@ -1145,7 +1092,7 @@ MockAddon.prototype = {
 
   set appDisabled(val) {
     if (val == this._appDisabled) {
-      return val;
+      return;
     }
 
     AddonManagerPrivate.callAddonListeners("onPropertyChanged", this, [
@@ -1156,8 +1103,6 @@ MockAddon.prototype = {
     this._appDisabled = val;
     var newActive = this.shouldBeActive;
     this._updateActiveState(currentActive, newActive);
-
-    return val;
   },
 
   get userDisabled() {
@@ -1202,7 +1147,7 @@ MockAddon.prototype = {
   },
 
   set permissions(val) {
-    return (this._permissions = val);
+    this._permissions = val;
   },
 
   get applyBackgroundUpdates() {
@@ -1497,29 +1442,9 @@ function waitForCondition(condition, nextTest, errorMsg) {
   };
 }
 
-function getTestPluginTag() {
-  let ph = Cc["@mozilla.org/plugin/host;1"].getService(Ci.nsIPluginHost);
-  let tags = ph.getPluginTags();
-
-  // Find the test plugin
-  for (let i = 0; i < tags.length; i++) {
-    if (tags[i].name == "Test Plug-in") {
-      return tags[i];
-    }
-  }
-  ok(false, "Unable to find plugin");
-  return null;
-}
-
 // Wait for and then acknowledge (by pressing the primary button) the
 // given notification.
 function promiseNotification(id = "addon-webext-permissions") {
-  if (
-    !Services.prefs.getBoolPref("extensions.webextPermissionPrompts", false)
-  ) {
-    return Promise.resolve();
-  }
-
   return new Promise(resolve => {
     function popupshown() {
       let notification = PopupNotifications.getNotification(id);
@@ -1625,7 +1550,10 @@ function assertAboutAddonsTelemetryEvents(events, filters = {}) {
       filters.methods
         ? filters.methods.includes(actual)
         : ABOUT_ADDONS_METHODS.has(actual),
-    object: "aboutAddons",
+    object: actual =>
+      filters.objects
+        ? filters.objects.includes(actual)
+        : actual === "aboutAddons",
   });
 }
 
@@ -1647,27 +1575,18 @@ async function loadInitialView(type, opts) {
   let loadCallbackDone = Promise.resolve();
 
   if (opts && opts.loadCallback) {
-    // Make sure the HTML browser is loaded and pass its window to the callback
-    // function instead of the XUL window.
-    loadCallback = managerWindow => {
-      loadCallbackDone = managerWindow
-        .promiseHtmlBrowserLoaded()
-        .then(async browser => {
-          let win = browser.contentWindow;
-          win.managerWindow = managerWindow;
-          // Wait for the test code to finish running before proceeding.
-          await opts.loadCallback(win);
-        });
+    loadCallback = win => {
+      loadCallbackDone = (async () => {
+        // Wait for the test code to finish running before proceeding.
+        await opts.loadCallback(win);
+      })();
     };
   }
-  let managerWindow = await open_manager(null, null, loadCallback);
 
-  let browser = managerWindow.document.getElementById("html-view-browser");
-  let win = browser.contentWindow;
+  let win = await open_manager(null, null, loadCallback);
   if (!opts || !opts.withAnimations) {
     win.document.body.setAttribute("skip-animations", "");
   }
-  win.managerWindow = managerWindow;
 
   // Let any load callback code to run before the rest of the test continues.
   await loadCallbackDone;
@@ -1675,20 +1594,29 @@ async function loadInitialView(type, opts) {
   return win;
 }
 
+function getSection(doc, type) {
+  const SECTION_INDEXES = {
+    enabled: 0,
+    disabled: 1,
+    colorway: 2,
+  };
+  return doc.querySelector(`section[section="${SECTION_INDEXES[type]}"]`);
+}
+
 function waitForViewLoad(win) {
-  return wait_for_view_load(win.managerWindow, undefined, true);
+  return wait_for_view_load(win, undefined, true);
 }
 
 function closeView(win) {
-  return close_manager(win.managerWindow);
+  return close_manager(win);
 }
 
 function switchView(win, type) {
-  return new CategoryUtilities(win.managerWindow).openType(type);
+  return new CategoryUtilities(win).openType(type);
 }
 
 function isCategoryVisible(win, type) {
-  return new CategoryUtilities(win.managerWindow).isTypeVisible(type);
+  return new CategoryUtilities(win).isTypeVisible(type);
 }
 
 function mockPromptService() {
@@ -1759,4 +1687,65 @@ async function testUndoPendingUninstall(addonList, addon) {
 
 function loadTestSubscript(filePath) {
   Services.scriptloader.loadSubScript(new URL(filePath, gTestPath).href, this);
+}
+
+function cleanupPendingNotifications() {
+  const { ExtensionsUI } = ChromeUtils.import(
+    "resource:///modules/ExtensionsUI.jsm"
+  );
+  info("Cleanup any pending notification before exiting the test");
+  const keys = ChromeUtils.nondeterministicGetWeakSetKeys(
+    ExtensionsUI.pendingNotifications
+  );
+  if (keys) {
+    keys.forEach(key => ExtensionsUI.pendingNotifications.delete(key));
+  }
+}
+
+function promisePermissionPrompt(addonId) {
+  return BrowserUtils.promiseObserved(
+    "webextension-permission-prompt",
+    subject => {
+      const { info } = subject.wrappedJSObject || {};
+      return !addonId || (info.addon && info.addon.id === addonId);
+    }
+  ).then(({ subject }) => {
+    return subject.wrappedJSObject.info;
+  });
+}
+
+async function handlePermissionPrompt({
+  addonId,
+  reject = false,
+  assertIcon = true,
+} = {}) {
+  const info = await promisePermissionPrompt(addonId);
+  // Assert that info.addon and info.icon are defined as expected.
+  is(
+    info.addon && info.addon.id,
+    addonId,
+    "Got the AddonWrapper in the permission prompt info"
+  );
+
+  if (assertIcon) {
+    ok(info.icon != null, "Got an addon icon in the permission prompt info");
+  }
+
+  if (reject) {
+    info.reject();
+  } else {
+    info.resolve();
+  }
+}
+
+async function switchToDetailView({ id, win }) {
+  let card = getAddonCard(win, id);
+  ok(card, `Addon card found for ${id}`);
+  ok(!card.querySelector("addon-details"), "The card doesn't have details");
+  let loaded = waitForViewLoad(win);
+  EventUtils.synthesizeMouseAtCenter(card, { clickCount: 1 }, win);
+  await loaded;
+  card = getAddonCard(win, id);
+  ok(card.querySelector("addon-details"), "The card does have details");
+  return card;
 }

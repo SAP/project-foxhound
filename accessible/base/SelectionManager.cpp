@@ -101,6 +101,24 @@ void SelectionManager::RemoveDocSelectionListener(PresShell* aPresShell) {
   // selection.
   Selection* spellSel = frameSel->GetSelection(SelectionType::eSpellCheck);
   spellSel->RemoveSelectionListener(this);
+
+  if (mCurrCtrlNormalSel) {
+    if (mCurrCtrlNormalSel->GetPresShell() == aPresShell) {
+      // Remove 'this' registered as selection listener for the normal selection
+      // if we are removing listeners for its PresShell.
+      mCurrCtrlNormalSel->RemoveSelectionListener(this);
+      mCurrCtrlNormalSel = nullptr;
+    }
+  }
+
+  if (mCurrCtrlSpellSel) {
+    if (mCurrCtrlSpellSel->GetPresShell() == aPresShell) {
+      // Remove 'this' registered as selection listener for the spellcheck
+      // selection if we are removing listeners for its PresShell.
+      mCurrCtrlSpellSel->RemoveSelectionListener(this);
+      mCurrCtrlSpellSel = nullptr;
+    }
+  }
 }
 
 void SelectionManager::ProcessTextSelChangeEvent(AccEvent* aEvent) {
@@ -130,9 +148,9 @@ void SelectionManager::ProcessTextSelChangeEvent(AccEvent* aEvent) {
                                              selection->FocusOffset());
   mAccWithCaret = caretCntr;
   if (mCaretOffset != -1) {
-    RefPtr<AccCaretMoveEvent> caretMoveEvent =
-        new AccCaretMoveEvent(caretCntr, mCaretOffset, selection->IsCollapsed(),
-                              aEvent->FromUserInput());
+    RefPtr<AccCaretMoveEvent> caretMoveEvent = new AccCaretMoveEvent(
+        caretCntr, mCaretOffset, selection->IsCollapsed(),
+        caretCntr->IsCaretAtEndOfLine(), aEvent->FromUserInput());
     nsEventShell::FireEvent(caretMoveEvent);
   }
 }
@@ -148,8 +166,9 @@ SelectionManager::NotifySelectionChanged(dom::Document* aDocument,
   DocAccessible* document = GetAccService()->GetDocAccessible(aDocument);
 
 #ifdef A11Y_LOG
-  if (logging::IsEnabled(logging::eSelection))
+  if (logging::IsEnabled(logging::eSelection)) {
     logging::SelChange(aSelection, document, aReason);
+  }
 #endif
 
   if (document) {

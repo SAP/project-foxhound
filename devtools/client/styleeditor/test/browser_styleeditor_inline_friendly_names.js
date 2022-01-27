@@ -5,8 +5,8 @@
 // Test that inline style sheets get correct names if they are saved to disk and
 // that those names survice a reload but not navigation to another page.
 
-const FIRST_TEST_PAGE = TEST_BASE_HTTP + "inline-1.html";
-const SECOND_TEST_PAGE = TEST_BASE_HTTP + "inline-2.html";
+const FIRST_TEST_PAGE = TEST_BASE_HTTPS + "inline-1.html";
+const SECOND_TEST_PAGE = TEST_BASE_HTTPS + "inline-2.html";
 const SAVE_PATH = "test.css";
 
 add_task(async function() {
@@ -77,7 +77,7 @@ function testFriendlyNamesAfterSave(ui) {
     "Friendly name for the second inline sheet isn't the same as the first."
   );
 
-  return promise.resolve(null);
+  return Promise.resolve(null);
 }
 
 function testFriendlyNamesAfterNavigation(ui) {
@@ -97,5 +97,5 @@ function testFriendlyNamesAfterNavigation(ui) {
     "The second editor doesn't have the save path as a friendly name."
   );
 
-  return promise.resolve(null);
+  return Promise.resolve(null);
 }

@@ -13,26 +13,6 @@ const PROVIDER_PREF_BRANCH =
 const DEVTOOLS_PREF =
   "browser.newtabpage.activity-stream.asrouter.devtoolsEnabled";
 const FXA_USERNAME_PREF = "services.sync.username";
-const FIRST_RUN_PREF = "trailhead.firstrun.branches";
-const DEFAULT_FIRSTRUN_TRIPLET = "supercharge";
-const DEFAULT_FIRSTRUN_INTERRUPT = "join";
-
-function getTrailheadConfigFromPref(value) {
-  let [interrupt, triplet] = value.split("-");
-  return {
-    trailheadInterrupt: interrupt || DEFAULT_FIRSTRUN_INTERRUPT,
-    trailheadTriplet: triplet || DEFAULT_FIRSTRUN_TRIPLET,
-  };
-}
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
-  "trailheadPrefs",
-  FIRST_RUN_PREF,
-  "",
-  null,
-  getTrailheadConfigFromPref
-);
 
 const DEFAULT_STATE = {
   _initialized: false,
@@ -72,21 +52,11 @@ class _ASRouterPreferences {
   constructor() {
     Object.assign(this, DEFAULT_STATE);
     this._callbacks = new Set();
-
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
-      "personalizedCfrScores",
-      "browser.messaging-system.personalized-cfr.scores",
-      "{}",
-      null,
-      this._transformPersonalizedCfrScores
-    );
-
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "personalizedCfrThreshold",
-      "browser.messaging-system.personalized-cfr.score-threshold",
-      5000
+      "disableCaptivePortalVPNPromo",
+      "browser.newtabpage.activity-stream.asrouter.disable-captive-portal-vpn-promo",
+      false
     );
   }
 
@@ -116,11 +86,6 @@ class _ASRouterPreferences {
       }
       return filtered;
     }, []);
-  }
-
-  // istanbul ignore next
-  get trailhead() {
-    return trailheadPrefs;
   }
 
   get providers() {
@@ -244,12 +209,10 @@ this._ASRouterPreferences = _ASRouterPreferences;
 this.ASRouterPreferences = new _ASRouterPreferences();
 this.TEST_PROVIDERS = TEST_PROVIDERS;
 this.TARGETING_PREFERENCES = TARGETING_PREFERENCES;
-this.getTrailheadConfigFromPref = getTrailheadConfigFromPref;
 
 const EXPORTED_SYMBOLS = [
   "_ASRouterPreferences",
   "ASRouterPreferences",
   "TEST_PROVIDERS",
   "TARGETING_PREFERENCES",
-  "getTrailheadConfigFromPref",
 ];

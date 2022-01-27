@@ -12,9 +12,11 @@
 namespace mozilla {
 
 class AppleDecoderModule : public PlatformDecoderModule {
+  template <typename T, typename... Args>
+  friend already_AddRefed<T> MakeAndAddRef(Args&&...);
+
  public:
-  AppleDecoderModule();
-  virtual ~AppleDecoderModule();
+  static already_AddRefed<PlatformDecoderModule> Create();
 
   nsresult Startup() override;
 
@@ -29,12 +31,27 @@ class AppleDecoderModule : public PlatformDecoderModule {
   bool SupportsMimeType(const nsACString& aMimeType,
                         DecoderDoctorDiagnostics* aDiagnostics) const override;
 
+  bool Supports(const SupportDecoderParams& aParams,
+                DecoderDoctorDiagnostics* aDiagnostics) const override;
+
   static void Init();
 
-  static bool sCanUseHardwareVideoDecoder;
+  static bool sCanUseVP9Decoder;
+
+  static constexpr int kCMVideoCodecType_VP9{'vp09'};
 
  private:
+  AppleDecoderModule() = default;
+  virtual ~AppleDecoderModule() = default;
+
   static bool sInitialized;
+  bool IsVideoSupported(const VideoInfo& aConfig,
+                        const CreateDecoderParams::OptionSet& aOptions =
+                            CreateDecoderParams::OptionSet()) const;
+  // Enable VP9 HW decoder.
+  static bool RegisterSupplementalVP9Decoder();
+  // Return true if a dummy hardware VP9 decoder could be created.
+  static bool CanCreateVP9Decoder();
 };
 
 }  // namespace mozilla

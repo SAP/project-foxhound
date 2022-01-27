@@ -2,7 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { MultiLocalizationHelper } = require("devtools/shared/l10n");
+const {
+  FluentL10n,
+} = require("devtools/client/shared/fluent-l10n/fluent-l10n");
 
 loader.lazyRequireGetter(
   this,
@@ -23,8 +26,13 @@ loader.lazyRequireGetter(
   true
 );
 
-const DBG_STRINGS_URI = "devtools/client/locales/debugger.properties";
-const L10N = new LocalizationHelper(DBG_STRINGS_URI);
+const DBG_STRINGS_URI = [
+  "devtools/client/locales/debugger.properties",
+  // These are used in the AppErrorBoundary component
+  "devtools/client/locales/startup.properties",
+  "devtools/client/locales/components.properties",
+];
+const L10N = new MultiLocalizationHelper(...DBG_STRINGS_URI);
 
 async function getNodeFront(gripOrFront, toolbox) {
   // Given a NodeFront
@@ -37,21 +45,28 @@ async function getNodeFront(gripOrFront, toolbox) {
 }
 
 class DebuggerPanel {
-  constructor(iframeWindow, toolbox) {
+  constructor(iframeWindow, toolbox, commands) {
     this.panelWin = iframeWindow;
     this.panelWin.L10N = L10N;
+
     this.toolbox = toolbox;
+    this.commands = commands;
   }
 
   async open() {
+    // whypaused-* strings are in devtools/shared as they're used in the PausedDebuggerOverlay as well
+    const fluentL10n = new FluentL10n();
+    await fluentL10n.init(["devtools/shared/debugger-paused-reasons.ftl"]);
+
     const {
       actions,
       store,
       selectors,
       client,
     } = await this.panelWin.Debugger.bootstrap({
-      targetList: this.toolbox.targetList,
-      devToolsClient: this.toolbox.target.client,
+      commands: this.commands,
+      fluentBundles: fluentL10n.getBundles(),
+      resourceCommand: this.toolbox.resourceCommand,
       workers: {
         sourceMaps: this.toolbox.sourceMapService,
         evaluationsParser: this.toolbox.parserService,
@@ -63,24 +78,8 @@ class DebuggerPanel {
     this._store = store;
     this._selectors = selectors;
     this._client = client;
-    this.isReady = true;
-
-    this.panelWin.document.addEventListener(
-      "drag:start",
-      this.toolbox.toggleDragging
-    );
-    this.panelWin.document.addEventListener(
-      "drag:end",
-      this.toolbox.toggleDragging
-    );
 
     registerStoreObserver(this._store, this._onDebuggerStateChange.bind(this));
-
-    const resourceWatcher = this.toolbox.resourceWatcher;
-    await resourceWatcher.watchResources(
-      [resourceWatcher.TYPES.ERROR_MESSAGE],
-      { onAvailable: actions.addException }
-    );
 
     return this;
   }
@@ -93,7 +92,7 @@ class DebuggerPanel {
       currentThreadActorID &&
       currentThreadActorID !== getCurrentThread(oldState)
     ) {
-      const threadFront = this.toolbox.target.client.getFrontByID(
+      const threadFront = this.commands.client.getFrontByID(
         currentThreadActorID
       );
       this.toolbox.selectTarget(threadFront?.targetFront.actorID);
@@ -162,8 +161,7 @@ class DebuggerPanel {
       return;
     }
 
-    const forceUnHighlightInTest = true;
-    return this._unhighlight(forceUnHighlightInTest);
+    return this._unhighlight();
   }
 
   getFrames() {
@@ -196,6 +194,19 @@ class DebuggerPanel {
     return this._actions.getMappedExpression(expression);
   }
 
+  /**
+   * Return the source-mapped variables for the current scope.
+   * @returns {{[String]: String} | null} A dictionary mapping original variable names to generated
+   * variable names if map scopes is enabled, otherwise null.
+   */
+  getMappedVariables() {
+    if (!this._selectors.isMapScopesEnabled(this._getState())) {
+      return null;
+    }
+    const thread = this._selectors.getCurrentThread(this._getState());
+    return this._selectors.getSelectedScopeMappings(this._getState(), thread);
+  }
+
   isPaused() {
     const thread = this._selectors.getCurrentThread(this._getState());
     return this._selectors.getIsPaused(this._getState(), thread);
@@ -206,8 +217,8 @@ class DebuggerPanel {
     return this._actions.selectSourceURL(cx, url, { line, column });
   }
 
-  async selectWorker(workerTargetFront) {
-    const threadActorID = workerTargetFront.threadFront?.actorID;
+  async selectWorker(workerDescriptorFront) {
+    const threadActorID = workerDescriptorFront.threadFront?.actorID;
 
     const isThreadAvailable = this._selectors
       .getThreads(this._getState())
@@ -229,7 +240,7 @@ class DebuggerPanel {
     this.selectThread(threadActorID);
 
     // select worker's source
-    const source = this.getSourceByURL(workerTargetFront._url);
+    const source = this.getSourceByURL(workerDescriptorFront._url);
     await this.selectSource(source.id, 1, 1);
   }
 

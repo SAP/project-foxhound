@@ -9,10 +9,10 @@ import subprocess
 import sys
 
 import mozfile
+import mozpack.path as mozpath
 
 from mozlint import result
 from mozlint.pathutils import expand_exclusions
-from mozlint.util import pip
 
 here = os.path.abspath(os.path.dirname(__file__))
 FLAKE8_REQUIREMENTS_PATH = os.path.join(here, "flake8_requirements.txt")
@@ -58,12 +58,14 @@ The offset is of the form (lineno_offset, num_lines) and is passed
 to the lineoffset property of an `Issue`.
 """
 
-# We use sys.prefix to find executables as that gets modified with
-# virtualenv's activate_this.py, whereas sys.executable doesn't.
-if platform.system() == "Windows":
-    bindir = os.path.join(sys.prefix, "Scripts")
-else:
-    bindir = os.path.join(sys.prefix, "bin")
+
+def default_bindir():
+    # We use sys.prefix to find executables as that gets modified with
+    # virtualenv's activate_this.py, whereas sys.executable doesn't.
+    if platform.system() == "Windows":
+        return os.path.join(sys.prefix, "Scripts")
+    else:
+        return os.path.join(sys.prefix, "bin")
 
 
 class NothingToLint(Exception):
@@ -73,21 +75,30 @@ class NothingToLint(Exception):
 
 
 def setup(root, **lintargs):
-    if not pip.reinstall_program(FLAKE8_REQUIREMENTS_PATH):
+    virtualenv_manager = lintargs["virtualenv_manager"]
+    try:
+        virtualenv_manager.install_pip_requirements(
+            FLAKE8_REQUIREMENTS_PATH, quiet=True
+        )
+    except subprocess.CalledProcessError:
         print(FLAKE8_INSTALL_ERROR)
         return 1
 
 
 def lint(paths, config, **lintargs):
-    from flake8.main.application import Application
 
-    log = lintargs["log"]
     root = lintargs["root"]
+    virtualenv_bin_path = lintargs.get("virtualenv_bin_path")
     config_path = os.path.join(root, ".flake8")
 
+    results = run(paths, config, **lintargs)
+    fixed = 0
+
     if lintargs.get("fix"):
+        # fix and run again to count remaining issues
+        fixed = len(results)
         fix_cmd = [
-            os.path.join(bindir, "autopep8"),
+            os.path.join(virtualenv_bin_path or default_bindir(), "autopep8"),
             "--global-config",
             config_path,
             "--in-place",
@@ -98,6 +109,19 @@ def lint(paths, config, **lintargs):
             fix_cmd.extend(["--exclude", ",".join(config["exclude"])])
 
         subprocess.call(fix_cmd + paths)
+        results = run(paths, config, **lintargs)
+
+        fixed = fixed - len(results)
+
+    return {"results": results, "fixed": fixed}
+
+
+def run(paths, config, **lintargs):
+    from flake8.main.application import Application
+
+    log = lintargs["log"]
+    root = lintargs["root"]
+    config_path = os.path.join(root, ".flake8")
 
     # Run flake8.
     app = Application()
@@ -131,7 +155,7 @@ def lint(paths, config, **lintargs):
         # Ignore exclude rules if `--no-filter` was passed in.
         config.setdefault("exclude", [])
         if lintargs.get("use_filters", True):
-            config["exclude"].extend(self.options.exclude)
+            config["exclude"].extend(map(mozpath.normpath, self.options.exclude))
 
         # Since we use the root .flake8 file to store exclusions, we haven't
         # properly filtered the paths through mozlint's `filterpaths` function

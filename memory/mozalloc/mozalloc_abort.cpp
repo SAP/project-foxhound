@@ -27,10 +27,12 @@ void mozalloc_abort(const char* const msg) {
 #else
   __android_log_print(ANDROID_LOG_ERROR, "Gecko", "mozalloc_abort: %s", msg);
 #endif
+
 #ifdef MOZ_WIDGET_ANDROID
   abortThroughJava(msg);
 #endif
-  MOZ_CRASH();
+
+  MOZ_CRASH_UNSAFE(msg);
 }
 
 #ifdef MOZ_WIDGET_ANDROID
@@ -55,7 +57,8 @@ void fillAbortMessage(char (&msg)[N], uintptr_t retAddress) {
 }
 #endif
 
-#if defined(XP_UNIX) && !defined(MOZ_ASAN) && !defined(MOZ_TSAN)
+#if defined(XP_UNIX) && !defined(MOZ_ASAN) && !defined(MOZ_TSAN) && \
+    !defined(LIBFUZZER)
 // Define abort() here, so that it is used instead of the system abort(). This
 // lets us control the behavior when aborting, in order to get better results
 // on *NIX platforms. See mozalloc_abort for details.
@@ -71,6 +74,9 @@ void fillAbortMessage(char (&msg)[N], uintptr_t retAddress) {
 //
 // The same applies to ThreadSanitizer when run with "halt_on_error=1" in
 // combination with "abort_on_error=1".
+//
+// When building with libFuzzer, it pulls in the UndefinedBehaviorSanitizer
+// runtime which also requires the same workaround as with ASan or TSan.
 extern "C" void abort(void) {
 #  ifdef MOZ_WIDGET_ANDROID
   char msg[64] = {};
@@ -83,8 +89,8 @@ extern "C" void abort(void) {
 
   // We won't reach here because mozalloc_abort() is MOZ_NORETURN. But that
   // annotation isn't used on ARM (see mozalloc_abort.h for why) so we add a
-  // redundant MOZ_CRASH() here to avoid a "'noreturn' function does return"
+  // unreachable marker here to avoid a "'noreturn' function does return"
   // warning.
-  MOZ_CRASH();
+  MOZ_ASSUME_UNREACHABLE_MARKER();
 }
 #endif

@@ -70,26 +70,23 @@ function pumpReadStream(inputStream, goon) {
     );
     pump.init(inputStream, 0, 0, true);
     var data = "";
-    pump.asyncRead(
-      {
-        onStartRequest(aRequest) {},
-        onDataAvailable(aRequest, aInputStream, aOffset, aCount) {
-          var wrapper = Cc[
-            "@mozilla.org/scriptableinputstream;1"
-          ].createInstance(Ci.nsIScriptableInputStream);
-          wrapper.init(aInputStream);
-          var str = wrapper.read(wrapper.available());
-          LOG_C2("reading data '" + str.substring(0, 5) + "'");
-          data += str;
-        },
-        onStopRequest(aRequest, aStatusCode) {
-          LOG_C2("done reading data: " + aStatusCode);
-          Assert.equal(aStatusCode, Cr.NS_OK);
-          goon(data);
-        },
+    pump.asyncRead({
+      onStartRequest(aRequest) {},
+      onDataAvailable(aRequest, aInputStream, aOffset, aCount) {
+        var wrapper = Cc["@mozilla.org/scriptableinputstream;1"].createInstance(
+          Ci.nsIScriptableInputStream
+        );
+        wrapper.init(aInputStream);
+        var str = wrapper.read(wrapper.available());
+        LOG_C2("reading data '" + str.substring(0, 5) + "'");
+        data += str;
       },
-      null
-    );
+      onStopRequest(aRequest, aStatusCode) {
+        LOG_C2("done reading data: " + aStatusCode);
+        Assert.equal(aStatusCode, Cr.NS_OK);
+        goon(data);
+      },
+    });
   } else {
     // blocking stream
     var data = read_stream(inputStream, inputStream.available());
@@ -99,7 +96,7 @@ function pumpReadStream(inputStream, goon) {
 
 OpenCallback.prototype = {
   QueryInterface: ChromeUtils.generateQI(["nsICacheEntryOpenCallback"]),
-  onCacheEntryCheck(entry, appCache) {
+  onCacheEntryCheck(entry) {
     LOG_C2(this, "onCacheEntryCheck");
     Assert.ok(!this.onCheckPassed);
     this.onCheckPassed = true;
@@ -144,7 +141,7 @@ OpenCallback.prototype = {
     LOG_C2(this, "onCacheEntryCheck DONE, return ENTRY_WANTED");
     return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED;
   },
-  onCacheEntryAvailable(entry, isnew, appCache, status) {
+  onCacheEntryAvailable(entry, isnew, status) {
     if (this.behavior & MAYBE_NEW && isnew) {
       this.behavior |= NEW;
     }
@@ -252,9 +249,6 @@ OpenCallback.prototype = {
         this.goon(entry, true);
       }
 
-      var wrapper = Cc["@mozilla.org/scriptableinputstream;1"].createInstance(
-        Ci.nsIScriptableInputStream
-      );
       var self = this;
       pumpReadStream(entry.openInputStream(0), function(data) {
         Assert.equal(data, self.workingData);
@@ -415,7 +409,7 @@ function MultipleCallbacks(number, goon, delayed) {
 function wait_for_cache_index(continue_func) {
   // This callback will not fire before the index is in the ready state.  nsICacheStorage.exists() will
   // no longer throw after this point.
-  get_cache_service().asyncGetDiskConsumption({
+  Services.cache2.asyncGetDiskConsumption({
     onNetworkCacheDiskConsumption() {
       continue_func();
     },

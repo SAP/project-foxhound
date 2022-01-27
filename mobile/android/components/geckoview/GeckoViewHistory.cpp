@@ -6,7 +6,8 @@
 
 #include "JavaBuiltins.h"
 #include "jsapi.h"
-#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
+#include "js/Array.h"               // JS::GetArrayLength, JS::IsArrayObject
+#include "js/PropertyAndElement.h"  // JS_GetElement
 #include "nsIURI.h"
 #include "nsXULAppAPI.h"
 
@@ -80,12 +81,14 @@ void GeckoViewHistory::QueryVisitedStateInContentProcess(
   MOZ_ASSERT(XRE_IsContentProcess());
 
   // First, serialize all the new URIs that we need to look up. Note that this
-  // could be written as `nsDataHashtable<nsUint64HashKey, nsTArray<URIParams>`
-  // instead, but, since we don't expect to have many tab children, we can avoid
-  // the cost of hashing.
+  // could be written as `nsTHashMap<nsUint64HashKey,
+  // nsTArray<URIParams>` instead, but, since we don't expect to have many tab
+  // children, we can avoid the cost of hashing.
   AutoTArray<NewURIEntry, 8> newEntries;
-  for (auto query = aQueries.ConstIter(); !query.Done(); query.Next()) {
-    nsIURI* uri = query.Get()->GetKey();
+  for (auto& query : aQueries) {
+    nsIURI* uri = query.GetKey();
+    MOZ_ASSERT(query.GetData().IsEmpty(),
+               "Shouldn't have parents to notify in child processes");
     auto entry = mTrackedURIs.Lookup(uri);
     if (!entry) {
       continue;
@@ -143,8 +146,8 @@ void GeckoViewHistory::QueryVisitedStateInParentProcess(
   MOZ_ASSERT(XRE_IsParentProcess());
 
   nsTArray<NewURIEntry> newEntries;
-  for (auto query = aQueries.ConstIter(); !query.Done(); query.Next()) {
-    nsIURI* uri = query.Get()->GetKey();
+  for (const auto& query : aQueries) {
+    nsIURI* uri = query.GetKey();
     auto entry = mTrackedURIs.Lookup(uri);
     if (!entry) {
       continue;  // Nobody cares about this uri anymore.
@@ -174,13 +177,13 @@ void GeckoViewHistory::QueryVisitedStateInParentProcess(
     }
   }
 
-  for (const NewURIEntry& entry : newEntries) {
-    QueryVisitedState(entry.mWidget, std::move(entry.mURIs));
+  for (NewURIEntry& entry : newEntries) {
+    QueryVisitedState(entry.mWidget, nullptr, std::move(entry.mURIs));
   }
 }
 
 void GeckoViewHistory::StartPendingVisitedQueries(
-    const PendingVisitedQueries& aQueries) {
+    PendingVisitedQueries&& aQueries) {
   if (XRE_IsContentProcess()) {
     QueryVisitedStateInContentProcess(aQueries);
   } else {
@@ -194,9 +197,8 @@ void GeckoViewHistory::StartPendingVisitedQueries(
  */
 class OnVisitedCallback final : public nsIAndroidEventCallback {
  public:
-  explicit OnVisitedCallback(GeckoViewHistory* aHistory,
-                             nsIGlobalObject* aGlobalObject, nsIURI* aURI)
-      : mHistory(aHistory), mGlobalObject(aGlobalObject), mURI(aURI) {}
+  explicit OnVisitedCallback(GeckoViewHistory* aHistory, nsIURI* aURI)
+      : mHistory(aHistory), mURI(aURI) {}
 
   NS_DECL_ISUPPORTS
 
@@ -207,7 +209,7 @@ class OnVisitedCallback final : public nsIAndroidEventCallback {
     if (visitedState) {
       AutoTArray<VisitedURI, 1> visitedURIs;
       visitedURIs.AppendElement(VisitedURI{mURI.get(), *visitedState});
-      mHistory->HandleVisitedState(visitedURIs);
+      mHistory->HandleVisitedState(visitedURIs, nullptr);
     }
     return NS_OK;
   }
@@ -226,7 +228,6 @@ class OnVisitedCallback final : public nsIAndroidEventCallback {
   }
 
   RefPtr<GeckoViewHistory> mHistory;
-  nsCOMPtr<nsIGlobalObject> mGlobalObject;
   nsCOMPtr<nsIURI> mURI;
 };
 
@@ -328,7 +329,7 @@ GeckoViewHistory::VisitURI(nsIWidget* aWidget, nsIURI* aURI,
   auto bundle = java::GeckoBundle::New(bundleKeys, bundleValues);
 
   nsCOMPtr<nsIAndroidEventCallback> callback =
-      new OnVisitedCallback(this, dispatcher->GetGlobalObject(), aURI);
+      new OnVisitedCallback(this, aURI);
 
   Unused << NS_WARN_IF(
       NS_FAILED(dispatcher->Dispatch(kOnVisitedMessage, bundle, callback)));
@@ -348,11 +349,11 @@ GeckoViewHistory::SetURITitle(nsIURI* aURI, const nsAString& aTitle) {
 class GetVisitedCallback final : public nsIAndroidEventCallback {
  public:
   explicit GetVisitedCallback(GeckoViewHistory* aHistory,
-                              nsIGlobalObject* aGlobalObject,
-                              const nsTArray<RefPtr<nsIURI>>& aURIs)
+                              ContentParent* aInterestedProcess,
+                              nsTArray<RefPtr<nsIURI>>&& aURIs)
       : mHistory(aHistory),
-        mGlobalObject(aGlobalObject),
-        mURIs(aURIs.Clone()) {}
+        mInterestedProcess(aInterestedProcess),
+        mURIs(std::move(aURIs)) {}
 
   NS_DECL_ISUPPORTS
 
@@ -363,7 +364,11 @@ class GetVisitedCallback final : public nsIAndroidEventCallback {
       JS_ClearPendingException(aCx);
       return NS_ERROR_FAILURE;
     }
-    mHistory->HandleVisitedState(visitedURIs);
+    IHistory::ContentParentSet interestedProcesses;
+    if (mInterestedProcess) {
+      interestedProcesses.Insert(mInterestedProcess);
+    }
+    mHistory->HandleVisitedState(visitedURIs, &interestedProcesses);
     return NS_OK;
   }
 
@@ -423,7 +428,7 @@ class GetVisitedCallback final : public nsIAndroidEventCallback {
   }
 
   RefPtr<GeckoViewHistory> mHistory;
-  nsCOMPtr<nsIGlobalObject> mGlobalObject;
+  RefPtr<ContentParent> mInterestedProcess;
   nsTArray<RefPtr<nsIURI>> mURIs;
 };
 
@@ -434,8 +439,9 @@ NS_IMPL_ISUPPORTS(GetVisitedCallback, nsIAndroidEventCallback)
  * is always called in the parent process: from `GetVisited` in non-e10s, and
  * from `ContentParent::RecvGetVisited` in e10s.
  */
-void GeckoViewHistory::QueryVisitedState(
-    nsIWidget* aWidget, const nsTArray<RefPtr<nsIURI>>&& aURIs) {
+void GeckoViewHistory::QueryVisitedState(nsIWidget* aWidget,
+                                         ContentParent* aInterestedProcess,
+                                         nsTArray<RefPtr<nsIURI>>&& aURIs) {
   MOZ_ASSERT(XRE_IsParentProcess());
   RefPtr<nsWindow> window = nsWindow::From(aWidget);
   if (NS_WARN_IF(!window)) {
@@ -473,7 +479,7 @@ void GeckoViewHistory::QueryVisitedState(
   auto bundle = java::GeckoBundle::New(bundleKeys, bundleValues);
 
   nsCOMPtr<nsIAndroidEventCallback> callback =
-      new GetVisitedCallback(this, dispatcher->GetGlobalObject(), aURIs);
+      new GetVisitedCallback(this, aInterestedProcess, std::move(aURIs));
 
   Unused << NS_WARN_IF(
       NS_FAILED(dispatcher->Dispatch(kGetVisitedMessage, bundle, callback)));
@@ -485,12 +491,13 @@ void GeckoViewHistory::QueryVisitedState(
  * from `VisitedCallback::OnSuccess` and `GetVisitedCallback::OnSuccess`.
  */
 void GeckoViewHistory::HandleVisitedState(
-    const nsTArray<VisitedURI>& aVisitedURIs) {
+    const nsTArray<VisitedURI>& aVisitedURIs,
+    ContentParentSet* aInterestedProcesses) {
   MOZ_ASSERT(XRE_IsParentProcess());
 
   for (const VisitedURI& visitedURI : aVisitedURIs) {
     auto status =
         visitedURI.mVisited ? VisitedStatus::Visited : VisitedStatus::Unvisited;
-    NotifyVisited(visitedURI.mURI, status);
+    NotifyVisited(visitedURI.mURI, status, aInterestedProcesses);
   }
 }

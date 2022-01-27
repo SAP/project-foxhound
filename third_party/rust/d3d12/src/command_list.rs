@@ -1,14 +1,12 @@
 //! Graphics command list
 
-use com::WeakPtr;
-use resource::DiscardRegion;
+use crate::{
+    com::WeakPtr, resource::DiscardRegion, CommandAllocator, CpuDescriptor, DescriptorHeap, Format,
+    GpuAddress, GpuDescriptor, IndexCount, InstanceCount, PipelineState, Rect, Resource, RootIndex,
+    RootSignature, Subresource, VertexCount, VertexOffset, WorkGroupCount, HRESULT,
+};
 use std::{mem, ptr};
 use winapi::um::d3d12;
-use {
-    CommandAllocator, CpuDescriptor, DescriptorHeap, Format, GpuAddress, GpuDescriptor, IndexCount,
-    InstanceCount, PipelineState, Rect, Resource, RootSignature, VertexCount, VertexOffset,
-    WorkGroupCount, HRESULT,
-};
 
 #[repr(u32)]
 #[derive(Clone, Copy)]
@@ -53,7 +51,64 @@ impl IndirectArgument {
         })
     }
 
-    // TODO: missing variants
+    pub fn vertex_buffer(slot: u32) -> Self {
+        let mut desc = d3d12::D3D12_INDIRECT_ARGUMENT_DESC {
+            Type: d3d12::D3D12_INDIRECT_ARGUMENT_TYPE_VERTEX_BUFFER_VIEW,
+            ..unsafe { mem::zeroed() }
+        };
+        *unsafe { desc.u.VertexBuffer_mut() } =
+            d3d12::D3D12_INDIRECT_ARGUMENT_DESC_VertexBuffer { Slot: slot };
+        IndirectArgument(desc)
+    }
+
+    pub fn constant(root_index: RootIndex, dest_offset_words: u32, count: u32) -> Self {
+        let mut desc = d3d12::D3D12_INDIRECT_ARGUMENT_DESC {
+            Type: d3d12::D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT,
+            ..unsafe { mem::zeroed() }
+        };
+        *unsafe { desc.u.Constant_mut() } = d3d12::D3D12_INDIRECT_ARGUMENT_DESC_Constant {
+            RootParameterIndex: root_index,
+            DestOffsetIn32BitValues: dest_offset_words,
+            Num32BitValuesToSet: count,
+        };
+        IndirectArgument(desc)
+    }
+
+    pub fn constant_buffer_view(root_index: RootIndex) -> Self {
+        let mut desc = d3d12::D3D12_INDIRECT_ARGUMENT_DESC {
+            Type: d3d12::D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW,
+            ..unsafe { mem::zeroed() }
+        };
+        *unsafe { desc.u.ConstantBufferView_mut() } =
+            d3d12::D3D12_INDIRECT_ARGUMENT_DESC_ConstantBufferView {
+                RootParameterIndex: root_index,
+            };
+        IndirectArgument(desc)
+    }
+
+    pub fn shader_resource_view(root_index: RootIndex) -> Self {
+        let mut desc = d3d12::D3D12_INDIRECT_ARGUMENT_DESC {
+            Type: d3d12::D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW,
+            ..unsafe { mem::zeroed() }
+        };
+        *unsafe { desc.u.ShaderResourceView_mut() } =
+            d3d12::D3D12_INDIRECT_ARGUMENT_DESC_ShaderResourceView {
+                RootParameterIndex: root_index,
+            };
+        IndirectArgument(desc)
+    }
+
+    pub fn unordered_access_view(root_index: RootIndex) -> Self {
+        let mut desc = d3d12::D3D12_INDIRECT_ARGUMENT_DESC {
+            Type: d3d12::D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW,
+            ..unsafe { mem::zeroed() }
+        };
+        *unsafe { desc.u.UnorderedAccessView_mut() } =
+            d3d12::D3D12_INDIRECT_ARGUMENT_DESC_UnorderedAccessView {
+                RootParameterIndex: root_index,
+            };
+        IndirectArgument(desc)
+    }
 }
 
 #[repr(transparent)]
@@ -62,7 +117,7 @@ pub struct ResourceBarrier(d3d12::D3D12_RESOURCE_BARRIER);
 impl ResourceBarrier {
     pub fn transition(
         resource: Resource,
-        subresource: u32,
+        subresource: Subresource,
         state_before: d3d12::D3D12_RESOURCE_STATES,
         state_after: d3d12::D3D12_RESOURCE_STATES,
         flags: d3d12::D3D12_RESOURCE_BARRIER_FLAGS,
@@ -185,13 +240,13 @@ impl GraphicsCommandList {
     }
 
     pub fn set_index_buffer(&self, gpu_address: GpuAddress, size: u32, format: Format) {
-        let mut ibv = d3d12::D3D12_INDEX_BUFFER_VIEW {
+        let ibv = d3d12::D3D12_INDEX_BUFFER_VIEW {
             BufferLocation: gpu_address,
             SizeInBytes: size,
             Format: format,
         };
         unsafe {
-            self.IASetIndexBuffer(&mut ibv);
+            self.IASetIndexBuffer(&ibv);
         }
     }
 
@@ -242,7 +297,7 @@ impl GraphicsCommandList {
 
     pub fn set_compute_root_descriptor_table(
         &self,
-        root_index: u32,
+        root_index: RootIndex,
         base_descriptor: GpuDescriptor,
     ) {
         unsafe {
@@ -252,7 +307,7 @@ impl GraphicsCommandList {
 
     pub fn set_compute_root_constant_buffer_view(
         &self,
-        root_index: u32,
+        root_index: RootIndex,
         buffer_location: GpuAddress,
     ) {
         unsafe {
@@ -262,7 +317,7 @@ impl GraphicsCommandList {
 
     pub fn set_compute_root_shader_resource_view(
         &self,
-        root_index: u32,
+        root_index: RootIndex,
         buffer_location: GpuAddress,
     ) {
         unsafe {
@@ -272,7 +327,7 @@ impl GraphicsCommandList {
 
     pub fn set_compute_root_unordered_access_view(
         &self,
-        root_index: u32,
+        root_index: RootIndex,
         buffer_location: GpuAddress,
     ) {
         unsafe {
@@ -280,9 +335,20 @@ impl GraphicsCommandList {
         }
     }
 
+    pub fn set_compute_root_constant(
+        &self,
+        root_index: RootIndex,
+        value: u32,
+        dest_offset_words: u32,
+    ) {
+        unsafe {
+            self.SetComputeRoot32BitConstant(root_index, value, dest_offset_words);
+        }
+    }
+
     pub fn set_graphics_root_descriptor_table(
         &self,
-        root_index: u32,
+        root_index: RootIndex,
         base_descriptor: GpuDescriptor,
     ) {
         unsafe {
@@ -292,7 +358,7 @@ impl GraphicsCommandList {
 
     pub fn set_graphics_root_constant_buffer_view(
         &self,
-        root_index: u32,
+        root_index: RootIndex,
         buffer_location: GpuAddress,
     ) {
         unsafe {
@@ -302,7 +368,7 @@ impl GraphicsCommandList {
 
     pub fn set_graphics_root_shader_resource_view(
         &self,
-        root_index: u32,
+        root_index: RootIndex,
         buffer_location: GpuAddress,
     ) {
         unsafe {
@@ -312,11 +378,22 @@ impl GraphicsCommandList {
 
     pub fn set_graphics_root_unordered_access_view(
         &self,
-        root_index: u32,
+        root_index: RootIndex,
         buffer_location: GpuAddress,
     ) {
         unsafe {
             self.SetGraphicsRootUnorderedAccessView(root_index, buffer_location);
+        }
+    }
+
+    pub fn set_graphics_root_constant(
+        &self,
+        root_index: RootIndex,
+        value: u32,
+        dest_offset_words: u32,
+    ) {
+        unsafe {
+            self.SetGraphicsRoot32BitConstant(root_index, value, dest_offset_words);
         }
     }
 

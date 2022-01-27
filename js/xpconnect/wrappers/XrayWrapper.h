@@ -8,10 +8,14 @@
 #define XrayWrapper_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/Maybe.h"
 
 #include "WrapperFactory.h"
 
 #include "jsapi.h"
+#include "jsfriendapi.h"
+#include "js/friend/XrayJitInfo.h"  // JS::XrayJitInfo
+#include "js/Object.h"              // JS::GetReservedSlot
 #include "js/Proxy.h"
 #include "js/Wrapper.h"
 
@@ -32,14 +36,6 @@
 class nsIPrincipal;
 
 namespace xpc {
-
-namespace XrayUtils {
-
-bool IsTransparent(JSContext* cx, JS::HandleObject wrapper, JS::HandleId id);
-
-bool HasNativeProperty(JSContext* cx, JS::HandleObject wrapper, JS::HandleId id,
-                       bool* hasProp);
-}  // namespace XrayUtils
 
 enum XrayType {
   XrayForDOMObject,
@@ -68,7 +64,7 @@ class XrayTraits {
   virtual bool resolveOwnProperty(
       JSContext* cx, JS::HandleObject wrapper, JS::HandleObject target,
       JS::HandleObject holder, JS::HandleId id,
-      JS::MutableHandle<JS::PropertyDescriptor> desc);
+      JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc);
 
   bool delete_(JSContext* cx, JS::HandleObject wrapper, JS::HandleId id,
                JS::ObjectOpResult& result) {
@@ -153,15 +149,17 @@ class DOMXrayTraits : public XrayTraits {
   virtual bool resolveOwnProperty(
       JSContext* cx, JS::HandleObject wrapper, JS::HandleObject target,
       JS::HandleObject holder, JS::HandleId id,
-      JS::MutableHandle<JS::PropertyDescriptor> desc) override;
+      JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc) override;
 
   bool delete_(JSContext* cx, JS::HandleObject wrapper, JS::HandleId id,
                JS::ObjectOpResult& result);
 
-  bool defineProperty(JSContext* cx, JS::HandleObject wrapper, JS::HandleId id,
-                      JS::Handle<JS::PropertyDescriptor> desc,
-                      JS::Handle<JS::PropertyDescriptor> existingDesc,
-                      JS::ObjectOpResult& result, bool* done);
+  bool defineProperty(
+      JSContext* cx, JS::HandleObject wrapper, JS::HandleId id,
+      JS::Handle<JS::PropertyDescriptor> desc,
+      JS::Handle<mozilla::Maybe<JS::PropertyDescriptor>> existingDesc,
+      JS::Handle<JSObject*> existingHolder, JS::ObjectOpResult& result,
+      bool* done);
   virtual bool enumerateNames(JSContext* cx, JS::HandleObject wrapper,
                               unsigned flags, JS::MutableHandleIdVector props);
   static bool call(JSContext* cx, JS::HandleObject wrapper,
@@ -192,15 +190,17 @@ class JSXrayTraits : public XrayTraits {
   virtual bool resolveOwnProperty(
       JSContext* cx, JS::HandleObject wrapper, JS::HandleObject target,
       JS::HandleObject holder, JS::HandleId id,
-      JS::MutableHandle<JS::PropertyDescriptor> desc) override;
+      JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc) override;
 
   bool delete_(JSContext* cx, JS::HandleObject wrapper, JS::HandleId id,
                JS::ObjectOpResult& result);
 
-  bool defineProperty(JSContext* cx, JS::HandleObject wrapper, JS::HandleId id,
-                      JS::Handle<JS::PropertyDescriptor> desc,
-                      JS::Handle<JS::PropertyDescriptor> existingDesc,
-                      JS::ObjectOpResult& result, bool* defined);
+  bool defineProperty(
+      JSContext* cx, JS::HandleObject wrapper, JS::HandleId id,
+      JS::Handle<JS::PropertyDescriptor> desc,
+      JS::Handle<mozilla::Maybe<JS::PropertyDescriptor>> existingDesc,
+      JS::Handle<JSObject*> existingHolder, JS::ObjectOpResult& result,
+      bool* defined);
 
   virtual bool enumerateNames(JSContext* cx, JS::HandleObject wrapper,
                               unsigned flags, JS::MutableHandleIdVector props);
@@ -209,6 +209,9 @@ class JSXrayTraits : public XrayTraits {
                    const JS::CallArgs& args, const js::Wrapper& baseInstance) {
     JSXrayTraits& self = JSXrayTraits::singleton;
     JS::RootedObject holder(cx, self.ensureHolder(cx, wrapper));
+    if (!holder) {
+      return false;
+    }
     if (xpc::JSXrayTraits::getProtoKey(holder) == JSProto_Function) {
       return baseInstance.call(cx, wrapper, args);
     }
@@ -225,6 +228,9 @@ class JSXrayTraits : public XrayTraits {
   bool getPrototype(JSContext* cx, JS::HandleObject wrapper,
                     JS::HandleObject target, JS::MutableHandleObject protop) {
     JS::RootedObject holder(cx, ensureHolder(cx, wrapper));
+    if (!holder) {
+      return false;
+    }
     JSProtoKey key = getProtoKey(holder);
     if (isPrototype(holder)) {
       JSProtoKey protoKey = js::InheritanceProtoKeyForStandardClass(key);
@@ -260,30 +266,30 @@ class JSXrayTraits : public XrayTraits {
   virtual JSObject* createHolder(JSContext* cx, JSObject* wrapper) override;
 
   static JSProtoKey getProtoKey(JSObject* holder) {
-    int32_t key = js::GetReservedSlot(holder, SLOT_PROTOKEY).toInt32();
+    int32_t key = JS::GetReservedSlot(holder, SLOT_PROTOKEY).toInt32();
     return static_cast<JSProtoKey>(key);
   }
 
   static bool isPrototype(JSObject* holder) {
-    return js::GetReservedSlot(holder, SLOT_ISPROTOTYPE).toBoolean();
+    return JS::GetReservedSlot(holder, SLOT_ISPROTOTYPE).toBoolean();
   }
 
   static JSProtoKey constructorFor(JSObject* holder) {
-    int32_t key = js::GetReservedSlot(holder, SLOT_CONSTRUCTOR_FOR).toInt32();
+    int32_t key = JS::GetReservedSlot(holder, SLOT_CONSTRUCTOR_FOR).toInt32();
     return static_cast<JSProtoKey>(key);
   }
 
   // Operates in the wrapper compartment.
   static bool getOwnPropertyFromWrapperIfSafe(
       JSContext* cx, JS::HandleObject wrapper, JS::HandleId id,
-      JS::MutableHandle<JS::PropertyDescriptor> desc);
+      JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc);
 
   // Like the above, but operates in the target compartment. wrapperGlobal is
   // the caller's global (must be in the wrapper compartment).
   static bool getOwnPropertyFromTargetIfSafe(
       JSContext* cx, JS::HandleObject target, JS::HandleObject wrapper,
       JS::HandleObject wrapperGlobal, JS::HandleId id,
-      JS::MutableHandle<JS::PropertyDescriptor> desc);
+      JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc);
 
   static const JSClass HolderClass;
   static JSXrayTraits singleton;
@@ -299,12 +305,14 @@ class OpaqueXrayTraits : public XrayTraits {
   virtual bool resolveOwnProperty(
       JSContext* cx, JS::HandleObject wrapper, JS::HandleObject target,
       JS::HandleObject holder, JS::HandleId id,
-      JS::MutableHandle<JS::PropertyDescriptor> desc) override;
+      JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc) override;
 
-  bool defineProperty(JSContext* cx, JS::HandleObject wrapper, JS::HandleId id,
-                      JS::Handle<JS::PropertyDescriptor> desc,
-                      JS::Handle<JS::PropertyDescriptor> existingDesc,
-                      JS::ObjectOpResult& result, bool* defined) {
+  bool defineProperty(
+      JSContext* cx, JS::HandleObject wrapper, JS::HandleId id,
+      JS::Handle<JS::PropertyDescriptor> desc,
+      JS::Handle<mozilla::Maybe<JS::PropertyDescriptor>> existingDesc,
+      JS::Handle<JSObject*> existingHolder, JS::ObjectOpResult& result,
+      bool* defined) {
     *defined = false;
     return true;
   }
@@ -380,7 +388,8 @@ class XrayWrapper : public Base {
   /* Standard internal methods. */
   virtual bool getOwnPropertyDescriptor(
       JSContext* cx, JS::Handle<JSObject*> wrapper, JS::Handle<jsid> id,
-      JS::MutableHandle<JS::PropertyDescriptor> desc) const override;
+      JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc)
+      const override;
   virtual bool defineProperty(JSContext* cx, JS::Handle<JSObject*> wrapper,
                               JS::Handle<jsid> id,
                               JS::Handle<JS::PropertyDescriptor> desc,
@@ -481,7 +490,7 @@ void ClearXrayExpandoSlots(JSObject* target, size_t slotIndex);
 JSObject* EnsureXrayExpandoObject(JSContext* cx, JS::HandleObject wrapper);
 
 // Information about xrays for use by the JITs.
-extern js::XrayJitInfo gXrayJitInfo;
+extern JS::XrayJitInfo gXrayJitInfo;
 
 }  // namespace xpc
 

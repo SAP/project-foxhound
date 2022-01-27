@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// Testing project search
+// Testing basic project search
 add_task(async function() {
   const dbg = await initDebugger("doc-script-switching.html", "switching-01");
 
@@ -27,6 +27,7 @@ add_task(async function() {
   await waitForLoadedSource(dbg, "switching-01");
 });
 
+// Test expanding search matches to reveal the search results.
 add_task(async function() {
   const dbg = await initDebugger("doc-react.html", "App.js");
   await openProjectSearch(dbg);
@@ -42,6 +43,29 @@ add_task(async function() {
   collapsedNodes[0].click();
 
   is(getExpandedResultsCount(dbg), 226);
+});
+
+// Test the prioritization of source-mapped files. (Bug 1642778)
+add_task(async function() {
+  const dbg = await initDebugger("doc-react.html", "App.js");
+  await openProjectSearch(dbg);
+  type(dbg, "componentDidMount");
+  pressKey(dbg, "Enter");
+  await waitForState(dbg, state => state.projectTextSearch.status === "DONE");
+
+  is(getExpandedResultsCount(dbg), 8);
+
+  const snippets = findAllElements(dbg, "projectSearchExpandedResults");
+  const files = findAllElements(dbg, "projectSearchFileResults");
+
+  // The first item should be the original (prettified) file
+  is(
+    files[0].innerText.includes(
+      "browser/devtools/client/debugger/test/mochitest/examples/react/build/App.js"
+    ),
+    true
+  );
+  is(snippets[0].innerText.endsWith("componentDidMount() {"), true);
 });
 
 function openProjectSearch(dbg) {
@@ -64,7 +88,7 @@ async function selectResult(dbg) {
 }
 
 function getExpandedResultsCount(dbg) {
-  return findAllElements(dbg, "projectSerchExpandedResults").length;
+  return findAllElements(dbg, "projectSearchExpandedResults").length;
 }
 
 function getResultsFiles(dbg) {

@@ -138,7 +138,7 @@ nsTextFragment& nsTextFragment::operator=(const nsTextFragment& aOther) {
 
 static inline int32_t FirstNon8BitUnvectorized(const char16_t* str,
                                                const char16_t* end) {
-  typedef Non8BitParameters<sizeof(size_t)> p;
+  using p = Non8BitParameters<sizeof(size_t)>;
   const size_t mask = p::mask();
   const uint32_t alignMask = p::alignMask();
   const uint32_t numUnicharsPerWord = p::numUnicharsPerWord();
@@ -169,11 +169,9 @@ static inline int32_t FirstNon8BitUnvectorized(const char16_t* str,
 }
 
 #ifdef MOZILLA_MAY_SUPPORT_SSE2
-namespace mozilla {
-namespace SSE2 {
+namespace mozilla::SSE2 {
 int32_t FirstNon8Bit(const char16_t* str, const char16_t* end);
-}  // namespace SSE2
-}  // namespace mozilla
+}  // namespace mozilla::SSE2
 #endif
 
 #ifdef __powerpc__
@@ -205,8 +203,11 @@ static inline int32_t FirstNon8Bit(const char16_t* str, const char16_t* end) {
   return FirstNon8BitUnvectorized(str, end);
 }
 
-bool nsTextFragment::SetTo(const char16_t* aBuffer, int32_t aLength,
+bool nsTextFragment::SetTo(const char16_t* aBuffer, uint32_t aLength,
                            bool aUpdateBidi, const StringTaint& aTaint, bool aForce2b) {
+  if (MOZ_UNLIKELY(aLength > NS_MAX_TEXT_FRAGMENT_LENGTH)) {
+    return false;
+  }
 
   if (aForce2b && mState.mIs2b && !m2b->IsReadonly()) {
     uint32_t storageSize = m2b->StorageSize();
@@ -305,7 +306,10 @@ bool nsTextFragment::SetTo(const char16_t* aBuffer, int32_t aLength,
 
   if (first16bit != -1) {  // aBuffer contains no non-8bit character
     // Use ucs2 storage because we have to
-    CheckedUint32 m2bSize = aLength + 1;
+    CheckedUint32 m2bSize = CheckedUint32(aLength) + 1;
+    if (!m2bSize.isValid()) {
+      return false;
+    }
     m2bSize *= sizeof(char16_t);
     if (!m2bSize.isValid()) {
       return false;
@@ -331,8 +335,7 @@ bool nsTextFragment::SetTo(const char16_t* aBuffer, int32_t aLength,
     }
 
     // Copy data
-    LossyConvertUtf16toLatin1(MakeSpan(aBuffer, aLength),
-                              MakeSpan(buff, aLength));
+    LossyConvertUtf16toLatin1(Span(aBuffer, aLength), Span(buff, aLength));
     m1b = buff;
     mState.mIs2b = false;
   }
@@ -344,24 +347,19 @@ bool nsTextFragment::SetTo(const char16_t* aBuffer, int32_t aLength,
   return true;
 }
 
-void nsTextFragment::CopyTo(char16_t* aDest, int32_t aOffset, int32_t aCount) {
-  NS_ASSERTION(aOffset >= 0, "Bad offset passed to nsTextFragment::CopyTo()!");
-  NS_ASSERTION(aCount >= 0, "Bad count passed to nsTextFragment::CopyTo()!");
-
-  if (aOffset < 0) {
-    aOffset = 0;
-  }
-
-  if (uint32_t(aOffset + aCount) > GetLength()) {
+void nsTextFragment::CopyTo(char16_t* aDest, uint32_t aOffset,
+                            uint32_t aCount) {
+  const CheckedUint32 endOffset = CheckedUint32(aOffset) + aCount;
+  if (!endOffset.isValid() || endOffset.value() > GetLength()) {
     aCount = mState.mLength - aOffset;
   }
 
-  if (aCount != 0) {
+  if (aCount) {
     if (mState.mIs2b) {
       memcpy(aDest, Get2b() + aOffset, sizeof(char16_t) * aCount);
     } else {
       const char* cp = m1b + aOffset;
-      ConvertLatin1toUtf16(MakeSpan(cp, aCount), MakeSpan(aDest, aCount));
+      ConvertLatin1toUtf16(Span(cp, aCount), Span(aDest, aCount));
     }
   }
 }
@@ -450,8 +448,7 @@ bool nsTextFragment::Append(const char16_t* aBuffer, uint32_t aLength,
 
     // Copy data into buff
     char16_t* data = static_cast<char16_t*>(buff->Data());
-    ConvertLatin1toUtf16(MakeSpan(m1b, mState.mLength),
-                         MakeSpan(data, mState.mLength));
+    ConvertLatin1toUtf16(Span(m1b, mState.mLength), Span(data, mState.mLength));
 
     memcpy(data + mState.mLength, aBuffer, aLength * sizeof(char16_t));
     mState.mLength += aLength;
@@ -492,8 +489,8 @@ bool nsTextFragment::Append(const char16_t* aBuffer, uint32_t aLength,
   }
 
   // Copy aBuffer into buff.
-  LossyConvertUtf16toLatin1(MakeSpan(aBuffer, aLength),
-                            MakeSpan(buff + mState.mLength, aLength));
+  LossyConvertUtf16toLatin1(Span(aBuffer, aLength),
+                            Span(buff + mState.mLength, aLength));
 
   m1b = buff;
   mState.mLength += aLength;
@@ -519,7 +516,7 @@ size_t nsTextFragment::SizeOfExcludingThis(
 // every allocation
 void nsTextFragment::UpdateBidiFlag(const char16_t* aBuffer, uint32_t aLength) {
   if (mState.mIs2b && !mState.mIsBidi) {
-    if (HasRTLChars(MakeSpan(aBuffer, aLength))) {
+    if (HasRTLChars(Span(aBuffer, aLength))) {
       mState.mIsBidi = true;
     }
   }

@@ -7,11 +7,17 @@
 #ifndef mozilla_dom_SyncedContext_h
 #define mozilla_dom_SyncedContext_h
 
-#include "mozilla/EnumSet.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/Tuple.h"
+#include <array>
+#include <type_traits>
 #include <utility>
+#include "mozilla/Attributes.h"
+#include "mozilla/BitSet.h"
+#include "mozilla/EnumSet.h"
+#include "nsStringFwd.h"
+#include "nscore.h"
+
+// Referenced via macro definitions
+#include "mozilla/ErrorResult.h"
 
 class PickleIterator;
 
@@ -30,17 +36,19 @@ struct IPDLParamTraits;
 namespace dom {
 class ContentParent;
 class ContentChild;
+template <typename T>
+class MaybeDiscarded;
 
 namespace syncedcontext {
 
 template <size_t I>
 using Index = typename std::integral_constant<size_t, I>;
 
-using IndexSet = EnumSet<size_t, uint64_t>;
-
 template <typename Context>
 class Transaction {
  public:
+  using IndexSet = EnumSet<size_t, BitSet<Context::FieldValues::count>>;
+
   // Set a field at the given index in this `Transaction`. Creating a
   // `Transaction` object and setting multiple fields on it allows for
   // multiple mutations to be performed atomically.
@@ -57,7 +65,7 @@ class Transaction {
   // If the target has been discarded, changes will be ignored.
   //
   // NOTE: This method mutates `this`, clearing the modified field set.
-  nsresult Commit(Context* aOwner);
+  [[nodiscard]] nsresult Commit(Context* aOwner);
 
   // Called from `ContentParent` in response to a transaction from content.
   mozilla::ipc::IPCResult CommitFromIPC(const MaybeDiscarded<Context>& aOwner,
@@ -66,6 +74,16 @@ class Transaction {
   // Called from `ContentChild` in response to a transaction from the parent.
   mozilla::ipc::IPCResult CommitFromIPC(const MaybeDiscarded<Context>& aOwner,
                                         uint64_t aEpoch, ContentChild* aSource);
+
+  // Apply the changes from this transaction to the specified Context WITHOUT
+  // syncing the changes to other processes.
+  //
+  // Unlike `Commit`, this method will NOT call the corresponding `CanSet` or
+  // `DidSet` methods, and can be performed when the target context is
+  // unattached or discarded.
+  //
+  // NOTE: YOU PROBABLY DO NOT WANT TO USE THIS METHOD
+  void CommitWithoutSyncing(Context* aOwner);
 
  private:
   friend struct mozilla::ipc::IPDLParamTraits<Transaction<Context>>;
@@ -78,10 +96,12 @@ class Transaction {
   // `Commit`, which will perform the necessary synchronization.
   //
   // `Validate` must be called before calling this method.
-  void Apply(Context* aOwner);
+  void Apply(Context* aOwner, bool aFromIPC);
 
   // Returns the set of fields which failed to validate, or an empty set if
   // there were no validation errors.
+  //
+  // NOTE: This method mutates `this` if any changes were reverted.
   IndexSet Validate(Context* aOwner, ContentParent* aSource);
 
   template <typename F>
@@ -103,9 +123,6 @@ class FieldValues : public Base {
  public:
   // The number of fields stored by this type.
   static constexpr size_t count = Count;
-  static_assert(count < 64,
-                "At most 64 synced fields are supported. Please file a bug if "
-                "you need additional fields.");
 
   // The base type will define a series of `Get` methods for looking up a field
   // by its field index.
@@ -186,6 +203,38 @@ class FieldStorage {
   Values mValues;
 };
 
+// Alternative return type enum for `CanSet` validators which allows specifying
+// more behaviour.
+enum class CanSetResult : uint8_t {
+  // The set attempt is denied. This is equivalent to returning `false`.
+  Deny,
+  // The set attempt is allowed. This is equivalent to returning `true`.
+  Allow,
+  // The set attempt is reverted non-fatally.
+  Revert,
+};
+
+// Helper type traits to use concrete types rather than generic forwarding
+// references for the `SetXXX` methods defined on the synced context type.
+//
+// This helps avoid potential issues where someone accidentally declares an
+// overload of these methods with slightly different types and different
+// behaviours. See bug 1659520.
+template <typename T>
+struct GetFieldSetterType {
+  using SetterArg = T;
+};
+template <>
+struct GetFieldSetterType<nsString> {
+  using SetterArg = const nsAString&;
+};
+template <>
+struct GetFieldSetterType<nsCString> {
+  using SetterArg = const nsACString&;
+};
+template <typename T>
+using FieldSetterType = typename GetFieldSetterType<T>::SetterArg;
+
 #define MOZ_DECL_SYNCED_CONTEXT_FIELD_INDEX(name, type) IDX_##name,
 #define MOZ_DECL_SYNCED_CONTEXT_FIELDS_DECL(name, type)             \
   /* index based field lookup */                                    \
@@ -197,12 +246,21 @@ class FieldStorage {
 #define MOZ_DECL_SYNCED_CONTEXT_FIELD_GETSET(name, type)                       \
   const type& Get##name() const { return mFields.template Get<IDX_##name>(); } \
                                                                                \
-  template <typename U>                                                        \
-  void Set##name(U&& aValue) {                                                 \
+  [[nodiscard]] nsresult Set##name(                                            \
+      ::mozilla::dom::syncedcontext::FieldSetterType<type> aValue) {           \
     Transaction txn;                                                           \
-    txn.template Set<IDX_##name>(std::forward<U>(aValue));                     \
-    txn.Commit(this);                                                          \
+    txn.template Set<IDX_##name>(std::move(aValue));                           \
+    return txn.Commit(this);                                                   \
+  }                                                                            \
+  void Set##name(::mozilla::dom::syncedcontext::FieldSetterType<type> aValue,  \
+                 ErrorResult& aRv) {                                           \
+    nsresult rv = this->Set##name(std::move(aValue));                          \
+    if (NS_FAILED(rv)) {                                                       \
+      aRv.ThrowInvalidStateError("cannot set synced field '" #name             \
+                                 "': context is discarded");                   \
+    }                                                                          \
   }
+
 #define MOZ_DECL_SYNCED_CONTEXT_TRANSACTION_SET(name, type)  \
   template <typename U>                                      \
   void Set##name(U&& aValue) {                               \

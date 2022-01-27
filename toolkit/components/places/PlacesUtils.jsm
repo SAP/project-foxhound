@@ -173,6 +173,7 @@ function serializeNode(aNode) {
 const DB_URL_LENGTH_MAX = 65536;
 const DB_TITLE_LENGTH_MAX = 4096;
 const DB_DESCRIPTION_LENGTH_MAX = 256;
+const DB_SITENAME_LENGTH_MAX = 50;
 
 /**
  * Executes a boolean validate function, throwing if it returns false.
@@ -349,6 +350,14 @@ const PAGEINFO_VALIDATORS = Object.freeze({
     }
     throw new TypeError(
       `description property of pageInfo object: ${v} must be either a string or null if provided`
+    );
+  },
+  siteName: v => {
+    if (typeof v === "string" || v === null) {
+      return v ? v.slice(0, DB_SITENAME_LENGTH_MAX) : null;
+    }
+    throw new TypeError(
+      `siteName property of pageInfo object: ${v} must be either a string or null if provided`
     );
   },
   annotations: v => {
@@ -609,26 +618,6 @@ var PlacesUtils = {
   },
 
   /**
-   * Parses matchBuckets strings (for example, "suggestion:4,general:Infinity")
-   * like those used in the browser.urlbar.matchBuckets preference.
-   *
-   * @param   str
-   *          A matchBuckets string.
-   * @returns An array of the form: [
-   *            [bucketName_0, bucketPriority_0],
-   *            [bucketName_1, bucketPriority_1],
-   *            ...
-   *            [bucketName_n, bucketPriority_n]
-   *          ]
-   */
-  convertMatchBucketsStringToArray(str) {
-    return str.split(",").map(v => {
-      let bucket = v.split(":");
-      return [bucket[0].trim().toLowerCase(), Number(bucket[1])];
-    });
-  },
-
-  /**
    * Determines if a folder is generated from a query.
    * @param aNode a result true.
    * @returns true if the node is a folder generated from a query.
@@ -825,6 +814,7 @@ var PlacesUtils = {
   },
 
   BOOKMARK_VALIDATORS,
+  PAGEINFO_VALIDATORS,
   SYNC_BOOKMARK_VALIDATORS,
   SYNC_CHANGE_RECORD_VALIDATORS,
 
@@ -1408,6 +1398,13 @@ var PlacesUtils = {
     return found;
   },
 
+  getChildCountForFolder(guid) {
+    let folder = PlacesUtils.getFolderContents(guid).root;
+    let childCount = folder.childCount;
+    folder.containerOpen = false;
+    return childCount;
+  },
+
   /**
    * Returns an array containing all the uris in the first level of the
    * passed in container.
@@ -1971,13 +1968,6 @@ XPCOMUtils.defineLazyGetter(PlacesUtils, "bookmarks", () => {
 
 XPCOMUtils.defineLazyServiceGetter(
   PlacesUtils,
-  "annotations",
-  "@mozilla.org/browser/annotation-service;1",
-  "nsIAnnotationService"
-);
-
-XPCOMUtils.defineLazyServiceGetter(
-  PlacesUtils,
   "tagging",
   "@mozilla.org/browser/tagging-service;1",
   "nsITaggingService"
@@ -2018,10 +2008,14 @@ function setupDbForShutdown(conn, name) {
 
             // At this stage, all external clients have finished using the
             // database. We just need to close the high-level connection.
-            await conn.close();
-            state = "2. Closed Sqlite.jsm connection.";
-
-            resolve();
+            try {
+              await conn.close();
+              state = "2. Closed Sqlite.jsm connection.";
+              resolve();
+            } catch (ex) {
+              state = "2. Failed to closed Sqlite.jsm connection: " + ex;
+              reject(ex);
+            }
           },
           () => state
         );
@@ -2030,13 +2024,13 @@ function setupDbForShutdown(conn, name) {
         conn.close();
         reject(ex);
       }
-    });
+    }).catch(Cu.reportError);
 
     // Make sure that Sqlite.jsm doesn't close until we are done
     // with the high-level connection.
     Sqlite.shutdown.addBlocker(
       `${name} must be closed before Sqlite.jsm`,
-      () => promiseClosed.catch(Cu.reportError),
+      () => promiseClosed,
       () => state
     );
   } catch (ex) {

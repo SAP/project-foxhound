@@ -8,6 +8,8 @@
 #define mozilla_UrlClassifierFeatureFlash_h
 
 #include "UrlClassifierFeatureBase.h"
+#include "nsIHttpChannel.h"
+#include "nsIChannel.h"
 
 namespace mozilla {
 namespace net {
@@ -16,7 +18,7 @@ class UrlClassifierFeatureFlash final : public UrlClassifierFeatureBase {
  public:
   struct FlashFeature;
 
-  static void GetFeatureNames(nsTArray<nsCString>& aNames);
+  static void GetFeatureNames(nsTArray<nsCString>& aArray);
 
   static void MaybeShutdown();
 

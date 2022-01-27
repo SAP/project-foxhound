@@ -31,13 +31,11 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 const POPUP_NOTIFICATION_ID = "contextual-feature-recommendation";
-const ANIMATION_BUTTON_ID = "cfr-notification-footer-animation-button";
-const ANIMATION_LABEL_ID = "cfr-notification-footer-animation-label";
 const SUMO_BASE_URL = Services.urlFormatter.formatURLPref(
   "app.support.baseURL"
 );
 const ADDONS_API_URL =
-  "https://services.addons.mozilla.org/api/v3/addons/addon";
+  "https://services.addons.mozilla.org/api/v4/addons/addon";
 
 const DELAY_BEFORE_EXPAND_MS = 1000;
 const CATEGORY_ICONS = {
@@ -65,7 +63,7 @@ let PageActionMap = new WeakMap();
  * We need one PageAction for each window
  */
 class PageAction {
-  constructor(win, dispatchToASRouter) {
+  constructor(win, dispatchCFRAction) {
     this.window = win;
 
     this.urlbar = win.gURLBar; // The global URLBar object
@@ -79,7 +77,7 @@ class PageAction {
 
     // This should NOT be use directly to dispatch message-defined actions attached to buttons.
     // Please use dispatchUserAction instead.
-    this._dispatchToASRouter = dispatchToASRouter;
+    this._dispatchCFRAction = dispatchCFRAction;
 
     this._popupStateChange = this._popupStateChange.bind(this);
     this._collapse = this._collapse.bind(this);
@@ -112,13 +110,6 @@ class PageAction {
         message_id: recommendation.id,
         bucket_id: recommendation.content.bucket_id,
         event: "IMPRESSION",
-        ...(recommendation.personalizedModelVersion
-          ? {
-              event_context: {
-                modelVersion: recommendation.personalizedModelVersion,
-              },
-            }
-          : {}),
       });
     }
   }
@@ -236,15 +227,6 @@ class PageAction {
         this.urlbarinput.setAttribute("cfr-recommendation-state", "collapsed");
       }
     }
-
-    // TODO: FIXME: find a nicer way of cleaning this up. Maybe listening to "popuphidden"?
-    // Remove click listener on pause button;
-    if (this.onAnimationButtonClick) {
-      this.window.document
-        .getElementById(ANIMATION_BUTTON_ID)
-        .removeEventListener("click", this.onAnimationButtonClick);
-      delete this.onAnimationButtonClick;
-    }
   }
 
   _clearScheduledStateChanges() {
@@ -283,25 +265,25 @@ class PageAction {
   }
 
   dispatchUserAction(action) {
-    this._dispatchToASRouter(
+    this._dispatchCFRAction(
       { type: "USER_ACTION", data: action },
-      { browser: this.window.gBrowser.selectedBrowser }
+      this.window.gBrowser.selectedBrowser
     );
   }
 
   _dispatchImpression(message) {
-    this._dispatchToASRouter({ type: "IMPRESSION", data: message });
+    this._dispatchCFRAction({ type: "IMPRESSION", data: message });
   }
 
   _sendTelemetry(ping) {
-    this._dispatchToASRouter({
+    this._dispatchCFRAction({
       type: "DOORHANGER_TELEMETRY",
       data: { action: "cfr_user_event", source: "CFR", ...ping },
     });
   }
 
   _blockMessage(messageID) {
-    this._dispatchToASRouter({
+    this._dispatchCFRAction({
       type: "BLOCK_MESSAGE_BY_ID",
       data: { id: messageID },
     });
@@ -420,19 +402,16 @@ class PageAction {
           args: { total: users },
         })
       );
-      footerUsers.removeAttribute("hidden");
+      footerUsers.hidden = false;
     } else {
       // Prevent whitespace around empty label from affecting other spacing
-      footerUsers.setAttribute("hidden", true);
+      footerUsers.hidden = true;
       footerUsers.removeAttribute("value");
     }
 
     // Spacer pushes the link to the opposite end when there's other content
-    if (rating || users) {
-      footerSpacer.removeAttribute("hidden");
-    } else {
-      footerSpacer.setAttribute("hidden", true);
-    }
+
+    footerSpacer.hidden = !rating && !users;
   }
 
   _createElementAndAppend({ type, id }, parent) {
@@ -444,94 +423,13 @@ class PageAction {
     return element;
   }
 
-  async _renderPinTabAnimation() {
-    const ANIMATION_CONTAINER_ID =
-      "cfr-notification-footer-pintab-animation-container";
-    const footer = this.window.document.getElementById(
-      "cfr-notification-footer"
-    );
-    let animationContainer = this.window.document.getElementById(
-      ANIMATION_CONTAINER_ID
-    );
-    if (!animationContainer) {
-      animationContainer = this._createElementAndAppend(
-        { type: "vbox", id: ANIMATION_CONTAINER_ID },
-        footer
-      );
-
-      let controlsContainer = this._createElementAndAppend(
-        { type: "hbox", id: "cfr-notification-footer-animation-controls" },
-        animationContainer
-      );
-
-      // spacer
-      this._createElementAndAppend(
-        { type: "vbox" },
-        controlsContainer
-      ).setAttribute("flex", 1);
-
-      let animationButton = this._createElementAndAppend(
-        { type: "hbox", id: ANIMATION_BUTTON_ID },
-        controlsContainer
-      );
-
-      // animation button label
-      this._createElementAndAppend(
-        { type: "label", id: ANIMATION_LABEL_ID },
-        animationButton
-      );
-    }
-
-    animationContainer.toggleAttribute(
-      "animate",
-      !this.window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    );
-    animationContainer.removeAttribute("paused");
-
-    this.window.document.getElementById(
-      ANIMATION_LABEL_ID
-    ).textContent = await this.getStrings({
-      string_id: "cfr-doorhanger-pintab-animation-pause",
-    });
-
-    if (!this.onAnimationButtonClick) {
-      let animationButton = this.window.document.getElementById(
-        ANIMATION_BUTTON_ID
-      );
-      this.onAnimationButtonClick = async () => {
-        let animationLabel = this.window.document.getElementById(
-          ANIMATION_LABEL_ID
-        );
-        if (animationContainer.toggleAttribute("paused")) {
-          animationLabel.textContent = await this.getStrings({
-            string_id: "cfr-doorhanger-pintab-animation-resume",
-          });
-        } else {
-          animationLabel.textContent = await this.getStrings({
-            string_id: "cfr-doorhanger-pintab-animation-pause",
-          });
-        }
-      };
-      animationButton.addEventListener("click", this.onAnimationButtonClick);
-    }
-  }
-
   async _renderMilestonePopup(message, browser) {
     this.maybeLoadCustomElement(this.window);
 
     let { content, id } = message;
     let { primary, secondary } = content.buttons;
-
-    let dateFormat = new Services.intl.DateTimeFormat(
-      this.window.gBrowser.ownerGlobal.navigator.language,
-      {
-        month: "long",
-        year: "numeric",
-      }
-    ).format;
-
     let earliestDate = await TrackingDBService.getEarliestRecordedDate();
-    let monthName = dateFormat(new Date(earliestDate));
+    let timestamp = new Date().getTime(earliestDate);
     let panelTitle = "";
     let headerLabel = this.window.document.getElementById(
       "cfr-notification-header-label"
@@ -551,7 +449,7 @@ class PageAction {
         content: message.content.heading_text,
         attributes: {
           blockedCount: reachedMilestone,
-          date: monthName,
+          date: timestamp,
         },
       })
     );
@@ -564,9 +462,6 @@ class PageAction {
     this.window.document
       .getElementById("contextual-feature-recommendation-notification")
       .setAttribute("data-notification-bucket", content.bucket_id);
-    let notification = this.window.document.getElementById(
-      "notification-popup"
-    );
 
     let primaryBtnString = await this.getStrings(primary.label);
     let primaryActionCallback = () => {
@@ -610,29 +505,6 @@ class PageAction {
       },
     ];
 
-    let style = this.window.document.createElement("style");
-    style.textContent = `
-      .cfr-notification-milestone .panel-arrow {
-        fill: #0250BB !important;
-      }
-    `;
-    style.classList.add("milestone-style");
-
-    let arrow;
-    let manageClass = event => {
-      if (event === "dismissed" || event === "removed") {
-        style = notification.shadowRoot.querySelector(".milestone-style");
-        if (style) {
-          notification.shadowRoot.removeChild(style);
-        }
-        arrow.classList.remove("cfr-notification-milestone");
-      } else if (event === "showing") {
-        notification.shadowRoot.appendChild(style);
-        arrow = notification.shadowRoot.querySelector(".panel-arrowcontainer");
-        arrow.classList.add("cfr-notification-milestone");
-      }
-    };
-
     // Actually show the notification
     this.currentNotification = this.window.PopupNotifications.show(
       browser,
@@ -643,7 +515,6 @@ class PageAction {
       secondaryActions,
       {
         hideClose: true,
-        eventCallback: manageClass,
         persistWhileVisible: true,
       }
     );
@@ -661,7 +532,7 @@ class PageAction {
   async _renderPopup(message, browser) {
     this.maybeLoadCustomElement(this.window);
 
-    const { id, content, modelVersion } = message;
+    const { id, content } = message;
 
     const headerLabel = this.window.document.getElementById(
       "cfr-notification-header-label"
@@ -697,7 +568,6 @@ class PageAction {
         message_id: id,
         bucket_id: content.bucket_id,
         event: "RATIONALE",
-        ...(modelVersion ? { event_context: { modelVersion } } : {}),
       });
     // Use the message layout as a CSS selector to hide different parts of the
     // notification template markup
@@ -729,7 +599,6 @@ class PageAction {
             message_id: id,
             bucket_id: content.bucket_id,
             event: "ENABLE",
-            ...(modelVersion ? { event_context: { modelVersion } } : {}),
           });
           RecommendationMap.delete(browser);
         };
@@ -752,50 +621,6 @@ class PageAction {
           learnMoreURL,
           ...options,
         };
-        break;
-      case "message_and_animation":
-        footerText.textContent = await this.getStrings(content.text);
-        const stepsContainerId = "cfr-notification-feature-steps";
-        let stepsContainer = this.window.document.getElementById(
-          stepsContainerId
-        );
-        primaryActionCallback = () => {
-          this._blockMessage(id);
-          this.dispatchUserAction(primary.action);
-          this.hideAddressBarNotifier();
-          this._sendTelemetry({
-            message_id: id,
-            bucket_id: content.bucket_id,
-            event: "PIN",
-            ...(modelVersion ? { event_context: { modelVersion } } : {}),
-          });
-          RecommendationMap.delete(browser);
-        };
-        panelTitle = await this.getStrings(content.heading_text);
-
-        if (content.descriptionDetails) {
-          if (stepsContainer) {
-            // If it exists we need to empty it
-            stepsContainer.remove();
-            stepsContainer = stepsContainer.cloneNode(false);
-          } else {
-            stepsContainer = this.window.document.createXULElement("vbox");
-            stepsContainer.setAttribute("id", stepsContainerId);
-          }
-          footerText.parentNode.appendChild(stepsContainer);
-          for (let step of content.descriptionDetails.steps) {
-            // This li is a generic xul element with custom styling
-            const li = this.window.document.createXULElement("li");
-            li.appendChild(
-              RemoteL10n.createElement(this.window.document, "span", {
-                content: step,
-              })
-            );
-            stepsContainer.appendChild(li);
-          }
-        }
-
-        await this._renderPinTabAnimation();
         break;
       default:
         panelTitle = await this.getStrings(content.addon.title);
@@ -820,7 +645,6 @@ class PageAction {
             message_id: id,
             bucket_id: content.bucket_id,
             event: "LEARN_MORE",
-            ...(modelVersion ? { event_context: { modelVersion } } : {}),
           });
 
         primaryActionCallback = async () => {
@@ -835,7 +659,6 @@ class PageAction {
             message_id: id,
             bucket_id: content.bucket_id,
             event: "INSTALL",
-            ...(modelVersion ? { event_context: { modelVersion } } : {}),
           });
           RecommendationMap.delete(browser);
         };
@@ -868,7 +691,6 @@ class PageAction {
             message_id: id,
             bucket_id: content.bucket_id,
             event,
-            ...(modelVersion ? { event_context: { modelVersion } } : {}),
           });
           // We want to collapse if needed when we dismiss
           this._collapse();
@@ -915,7 +737,7 @@ class PageAction {
   _executeNotifierAction(browser, message) {
     switch (message.content.layout) {
       case "chiclet_open_url":
-        this._dispatchToASRouter(
+        this._dispatchCFRAction(
           {
             type: "USER_ACTION",
             data: {
@@ -949,13 +771,12 @@ class PageAction {
       return;
     }
     const message = RecommendationMap.get(browser);
-    const { id, content, modelVersion } = message;
+    const { id, content } = message;
 
     this._sendTelemetry({
       message_id: id,
       bucket_id: content.bucket_id,
       event: "CLICK_DOORHANGER",
-      ...(modelVersion ? { event_context: { modelVersion } } : {}),
     });
 
     if (this.shouldShowDoorhanger(message)) {
@@ -1074,21 +895,20 @@ const CFRPageActions = {
    * Force a recommendation to be shown. Should only happen via the Admin page.
    * @param browser                 The browser for the recommendation
    * @param recommendation  The recommendation to show
-   * @param dispatchToASRouter      A function to dispatch resulting actions to
+   * @param dispatchCFRAction      A function to dispatch resulting actions to
    * @return                        Did adding the recommendation succeed?
    */
-  async forceRecommendation(browser, recommendation, dispatchToASRouter) {
+  async forceRecommendation(browser, recommendation, dispatchCFRAction) {
     // If we are forcing via the Admin page, the browser comes in a different format
-    const win = browser.browser.ownerGlobal;
-    const { id, content, personalizedModelVersion } = recommendation;
-    RecommendationMap.set(browser.browser, {
+    const win = browser.ownerGlobal;
+    const { id, content } = recommendation;
+    RecommendationMap.set(browser, {
       id,
       content,
       retain: true,
-      modelVersion: personalizedModelVersion,
     });
     if (!PageActionMap.has(win)) {
-      PageActionMap.set(win, new PageAction(win, dispatchToASRouter));
+      PageActionMap.set(win, new PageAction(win, dispatchCFRAction));
     }
 
     if (content.skip_address_bar_notifier) {
@@ -1110,10 +930,10 @@ const CFRPageActions = {
    * @param browser                 The browser for the recommendation
    * @param host                    The host for the recommendation
    * @param recommendation  The recommendation to show
-   * @param dispatchToASRouter      A function to dispatch resulting actions to
+   * @param dispatchCFRAction      A function to dispatch resulting actions to
    * @return                        Did adding the recommendation succeed?
    */
-  async addRecommendation(browser, host, recommendation, dispatchToASRouter) {
+  async addRecommendation(browser, host, recommendation, dispatchCFRAction) {
     const win = browser.ownerGlobal;
     if (PrivateBrowsingUtils.isWindowPrivate(win)) {
       return false;
@@ -1129,16 +949,15 @@ const CFRPageActions = {
       // Don't replace an existing message
       return false;
     }
-    const { id, content, personalizedModelVersion } = recommendation;
+    const { id, content } = recommendation;
     RecommendationMap.set(browser, {
       id,
       host,
       content,
       retain: true,
-      modelVersion: personalizedModelVersion,
     });
     if (!PageActionMap.has(win)) {
-      PageActionMap.set(win, new PageAction(win, dispatchToASRouter));
+      PageActionMap.set(win, new PageAction(win, dispatchCFRAction));
     }
 
     if (content.skip_address_bar_notifier) {

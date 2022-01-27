@@ -19,6 +19,7 @@
 #include "nsDirectoryServiceDefs.h"
 #include "nsPIDOMWindow.h"
 #include "nsIWidget.h"
+#include "mozilla/Logging.h"
 #include "mozilla/Services.h"
 
 #include <stdlib.h>
@@ -266,7 +267,7 @@ void nsNativeAppSupportUnix::DoInteract() {
 
     if (appService) {
       bool userAllowedQuit = true;
-      appService->Quit(nsIAppStartup::eForceQuit, &userAllowedQuit);
+      appService->Quit(nsIAppStartup::eForceQuit, 0, &userAllowedQuit);
     }
   } else {
     if (mClientState != STATE_SHUTDOWN_CANCELLED) {
@@ -355,7 +356,7 @@ void nsNativeAppSupportUnix::DieCB(SmcConn smc_conn, SmPointer client_data) {
 
   if (appService) {
     bool userAllowedQuit = false;
-    appService->Quit(nsIAppStartup::eForceQuit, &userAllowedQuit);
+    appService->Quit(nsIAppStartup::eForceQuit, 0, &userAllowedQuit);
   }
   // Quit causes the shutdown to begin but the shutdown process is asynchronous
   // so we can't DisconnectFromSM() yet

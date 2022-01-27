@@ -19,24 +19,6 @@ static const wchar_t kUser32LibName[] = L"user32.dll";
 bool nsWindowBase::sTouchInjectInitialized = false;
 InjectTouchInputPtr nsWindowBase::sInjectTouchFuncPtr;
 
-bool nsWindowBase::DispatchPluginEvent(const MSG& aMsg) {
-  if (!ShouldDispatchPluginEvent()) {
-    return false;
-  }
-  WidgetPluginEvent pluginEvent(true, ePluginInputEvent, this);
-  LayoutDeviceIntPoint point(0, 0);
-  InitEvent(pluginEvent, &point);
-  NPEvent npEvent;
-  npEvent.event = aMsg.message;
-  npEvent.wParam = aMsg.wParam;
-  npEvent.lParam = aMsg.lParam;
-  pluginEvent.mPluginEvent.Copy(npEvent);
-  pluginEvent.mRetargetToFocusedDocument = true;
-  return DispatchWindowEvent(&pluginEvent);
-}
-
-bool nsWindowBase::ShouldDispatchPluginEvent() { return PluginHasFocus(); }
-
 // static
 bool nsWindowBase::InitTouchInjection() {
   if (!sTouchInjectInitialized) {
@@ -79,8 +61,7 @@ bool nsWindowBase::InjectTouchPoint(uint32_t aId, LayoutDeviceIntPoint& aPoint,
     return false;
   }
 
-  POINTER_TOUCH_INFO info;
-  memset(&info, 0, sizeof(POINTER_TOUCH_INFO));
+  POINTER_TOUCH_INFO info{};
 
   info.touchFlags = TOUCH_FLAG_NONE;
   info.touchMask =
@@ -127,6 +108,43 @@ void nsWindowBase::ChangedDPI() {
   }
 }
 
+static Result<POINTER_FLAGS, nsresult> PointerStateToFlag(
+    nsWindowBase::TouchPointerState aPointerState, bool isUpdate) {
+  bool hover = aPointerState & nsWindowBase::TOUCH_HOVER;
+  bool contact = aPointerState & nsWindowBase::TOUCH_CONTACT;
+  bool remove = aPointerState & nsWindowBase::TOUCH_REMOVE;
+  bool cancel = aPointerState & nsWindowBase::TOUCH_CANCEL;
+
+  POINTER_FLAGS flags;
+  if (isUpdate) {
+    // We know about this pointer, send an update
+    flags = POINTER_FLAG_UPDATE;
+    if (hover) {
+      flags |= POINTER_FLAG_INRANGE;
+    } else if (contact) {
+      flags |= POINTER_FLAG_INCONTACT | POINTER_FLAG_INRANGE;
+    } else if (remove) {
+      flags = POINTER_FLAG_UP;
+    }
+
+    if (cancel) {
+      flags |= POINTER_FLAG_CANCELED;
+    }
+  } else {
+    // Missing init state, error out
+    if (remove || cancel) {
+      return Err(NS_ERROR_INVALID_ARG);
+    }
+
+    // Create a new pointer
+    flags = POINTER_FLAG_INRANGE;
+    if (contact) {
+      flags |= POINTER_FLAG_INCONTACT | POINTER_FLAG_DOWN;
+    }
+  }
+  return flags;
+}
+
 nsresult nsWindowBase::SynthesizeNativeTouchPoint(
     uint32_t aPointerId, nsIWidget::TouchPointerState aPointerState,
     LayoutDeviceIntPoint aPoint, double aPointerPressure,
@@ -156,60 +174,40 @@ nsresult nsWindowBase::SynthesizeNativeTouchPoint(
     return NS_OK;
   }
 
-  bool hover = aPointerState & TOUCH_HOVER;
-  bool contact = aPointerState & TOUCH_CONTACT;
-  bool remove = aPointerState & TOUCH_REMOVE;
-  bool cancel = aPointerState & TOUCH_CANCEL;
-
   // win api expects a value from 0 to 1024. aPointerPressure is a value
   // from 0.0 to 1.0.
   uint32_t pressure = (uint32_t)ceil(aPointerPressure * 1024);
 
   // If we already know about this pointer id get it's record
-  PointerInfo* info = mActivePointers.Get(aPointerId);
-
-  // We know about this pointer, send an update
-  if (info) {
-    POINTER_FLAGS flags = POINTER_FLAG_UPDATE;
-    if (hover) {
-      flags |= POINTER_FLAG_INRANGE;
-    } else if (contact) {
-      flags |= POINTER_FLAG_INCONTACT | POINTER_FLAG_INRANGE;
-    } else if (remove) {
-      flags = POINTER_FLAG_UP;
-      // Remove the pointer from our tracking list. This is nsAutPtr wrapped,
-      // so shouldn't leak.
-      mActivePointers.Remove(aPointerId);
+  return mActivePointers.WithEntryHandle(aPointerId, [&](auto&& entry) {
+    POINTER_FLAGS flags;
+    // Can't use MOZ_TRY_VAR because it confuses WithEntryHandle
+    auto result = PointerStateToFlag(aPointerState, !!entry);
+    if (result.isOk()) {
+      flags = result.unwrap();
+    } else {
+      return result.unwrapErr();
     }
 
-    if (cancel) {
-      flags |= POINTER_FLAG_CANCELED;
+    if (!entry) {
+      entry.Insert(MakeUnique<PointerInfo>(aPointerId, aPoint,
+                                           PointerInfo::PointerType::TOUCH));
+    } else {
+      if (entry.Data()->mType != PointerInfo::PointerType::TOUCH) {
+        return NS_ERROR_UNEXPECTED;
+      }
+      if (aPointerState & TOUCH_REMOVE) {
+        // Remove the pointer from our tracking list. This is UniquePtr wrapped,
+        // so shouldn't leak.
+        entry.Remove();
+      }
     }
 
     return !InjectTouchPoint(aPointerId, aPoint, flags, pressure,
                              aPointerOrientation)
                ? NS_ERROR_UNEXPECTED
                : NS_OK;
-  }
-
-  // Missing init state, error out
-  if (remove || cancel) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  // Create a new pointer
-  info = new PointerInfo(aPointerId, aPoint);
-
-  POINTER_FLAGS flags = POINTER_FLAG_INRANGE;
-  if (contact) {
-    flags |= POINTER_FLAG_INCONTACT | POINTER_FLAG_DOWN;
-  }
-
-  mActivePointers.Put(aPointerId, info);
-  return !InjectTouchPoint(aPointerId, aPoint, flags, pressure,
-                           aPointerOrientation)
-             ? NS_ERROR_UNEXPECTED
-             : NS_OK;
+  });
 }
 
 nsresult nsWindowBase::ClearNativeTouchSequence(nsIObserver* aObserver) {
@@ -220,7 +218,10 @@ nsresult nsWindowBase::ClearNativeTouchSequence(nsIObserver* aObserver) {
 
   // cancel all input points
   for (auto iter = mActivePointers.Iter(); !iter.Done(); iter.Next()) {
-    auto info = iter.UserData();
+    auto* info = iter.UserData();
+    if (info->mType != PointerInfo::PointerType::TOUCH) {
+      continue;
+    }
     InjectTouchPoint(info->mPointerId, info->mPosition, POINTER_FLAG_CANCELED);
     iter.Remove();
   }
@@ -229,6 +230,113 @@ nsresult nsWindowBase::ClearNativeTouchSequence(nsIObserver* aObserver) {
 
   return NS_OK;
 }
+
+#if !defined(NTDDI_WIN10_RS5) || (NTDDI_VERSION < NTDDI_WIN10_RS5)
+static CreateSyntheticPointerDevicePtr CreateSyntheticPointerDevice;
+static DestroySyntheticPointerDevicePtr DestroySyntheticPointerDevice;
+static InjectSyntheticPointerInputPtr InjectSyntheticPointerInput;
+#endif
+static HSYNTHETICPOINTERDEVICE sSyntheticPenDevice;
+
+static bool InitPenInjection() {
+  if (sSyntheticPenDevice) {
+    return true;
+  }
+#if !defined(NTDDI_WIN10_RS5) || (NTDDI_VERSION < NTDDI_WIN10_RS5)
+  HMODULE hMod = LoadLibraryW(kUser32LibName);
+  if (!hMod) {
+    return false;
+  }
+  CreateSyntheticPointerDevice =
+      (CreateSyntheticPointerDevicePtr)GetProcAddress(
+          hMod, "CreateSyntheticPointerDevice");
+  if (!CreateSyntheticPointerDevice) {
+    WinUtils::Log("CreateSyntheticPointerDevice not available.");
+    return false;
+  }
+  DestroySyntheticPointerDevice =
+      (DestroySyntheticPointerDevicePtr)GetProcAddress(
+          hMod, "DestroySyntheticPointerDevice");
+  if (!DestroySyntheticPointerDevice) {
+    WinUtils::Log("DestroySyntheticPointerDevice not available.");
+    return false;
+  }
+  InjectSyntheticPointerInput = (InjectSyntheticPointerInputPtr)GetProcAddress(
+      hMod, "InjectSyntheticPointerInput");
+  if (!InjectSyntheticPointerInput) {
+    WinUtils::Log("InjectSyntheticPointerInput not available.");
+    return false;
+  }
+#endif
+  sSyntheticPenDevice =
+      CreateSyntheticPointerDevice(PT_PEN, 1, POINTER_FEEDBACK_DEFAULT);
+  return !!sSyntheticPenDevice;
+}
+
+nsresult nsWindowBase::SynthesizeNativePenInput(
+    uint32_t aPointerId, nsIWidget::TouchPointerState aPointerState,
+    LayoutDeviceIntPoint aPoint, double aPressure, uint32_t aRotation,
+    int32_t aTiltX, int32_t aTiltY, int32_t aButton, nsIObserver* aObserver) {
+  AutoObserverNotifier notifier(aObserver, "peninput");
+  if (!InitPenInjection()) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  // win api expects a value from 0 to 1024. aPointerPressure is a value
+  // from 0.0 to 1.0.
+  uint32_t pressure = (uint32_t)ceil(aPressure * 1024);
+
+  // If we already know about this pointer id get it's record
+  return mActivePointers.WithEntryHandle(aPointerId, [&](auto&& entry) {
+    POINTER_FLAGS flags;
+    // Can't use MOZ_TRY_VAR because it confuses WithEntryHandle
+    auto result = PointerStateToFlag(aPointerState, !!entry);
+    if (result.isOk()) {
+      flags = result.unwrap();
+    } else {
+      return result.unwrapErr();
+    }
+
+    if (!entry) {
+      entry.Insert(MakeUnique<PointerInfo>(aPointerId, aPoint,
+                                           PointerInfo::PointerType::PEN));
+    } else {
+      if (entry.Data()->mType != PointerInfo::PointerType::PEN) {
+        return NS_ERROR_UNEXPECTED;
+      }
+      if (aPointerState & TOUCH_REMOVE) {
+        // Remove the pointer from our tracking list. This is UniquePtr wrapped,
+        // so shouldn't leak.
+        entry.Remove();
+      }
+    }
+
+    POINTER_TYPE_INFO info{};
+
+    info.type = PT_PEN;
+    info.penInfo.pointerInfo.pointerType = PT_PEN;
+    info.penInfo.pointerInfo.pointerFlags = flags;
+    info.penInfo.pointerInfo.pointerId = aPointerId;
+    info.penInfo.pointerInfo.ptPixelLocation.x = aPoint.x;
+    info.penInfo.pointerInfo.ptPixelLocation.y = aPoint.y;
+
+    info.penInfo.penFlags = PEN_FLAG_NONE;
+    // PEN_FLAG_ERASER is not supported this way, unfortunately.
+    if (aButton == 2) {
+      info.penInfo.penFlags |= PEN_FLAG_BARREL;
+    }
+    info.penInfo.penMask = PEN_MASK_PRESSURE | PEN_MASK_ROTATION |
+                           PEN_MASK_TILT_X | PEN_MASK_TILT_Y;
+    info.penInfo.pressure = pressure;
+    info.penInfo.rotation = aRotation;
+    info.penInfo.tiltX = aTiltX;
+    info.penInfo.tiltY = aTiltY;
+
+    return InjectSyntheticPointerInput(sSyntheticPenDevice, &info, 1)
+               ? NS_OK
+               : NS_ERROR_UNEXPECTED;
+  });
+};
 
 bool nsWindowBase::HandleAppCommandMsg(const MSG& aAppCommandMsg,
                                        LRESULT* aRetValue) {

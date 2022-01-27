@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 ml{
     AuxExemplarCharacters{"[]"}
     Ellipsis{
@@ -20,7 +21,10 @@ ml{
         " യ ര ല വ ശ ഷ സ ഹ ള ഴ റ]"
     }
     ExemplarCharactersNumbers{"[\\- ‑ , . % ‰ + 0൦ 1൧ 2൨ 3൩ 4൪ 5൫ 6൬ 7൭ 8൮ 9൯]"}
-    ExemplarCharactersPunctuation{"[\\- ‑ , ; \\: ! ? . ' ‘ ’ \u0022 “ ” ( ) \\[ \\] \\{ \\}]"}
+    ExemplarCharactersPunctuation{
+        "[\\- ‐ ‑ – — , ; \\: ! ? . … ' ‘ ’ \u0022 “ ” ( ) \\[ \\] § @ * / \\& # † ‡ "
+        "′ ″]"
+    }
     MoreInformation{"?"}
     NumberElements{
         default{"latn"}
@@ -208,6 +212,18 @@ ml{
             }
         }
         minimalPairs{
+            case{
+                accusative{"{0} ദിവസത്തിനെ"}
+                dative{"{0} ദിവസത്തിന്"}
+                genitive{"{0} ദിവസത്തിന്റെ"}
+                instrumental{"{0} ദിവസത്തിനാൽ"}
+                locative{"{0} ദിവസത്തിൽ"}
+                nominative{"{0} ദിവസം"}
+                sociative{"{0} ദിവസത്തിനോട്"}
+            }
+            gender{
+                feminine{"{0} സ്ത്രീലിംഗം"}
+            }
             ordinal{
                 other{"{0}-ാമത്തെ വലത്തേക്ക് തിരിയുക."}
             }
@@ -241,7 +257,6 @@ ml{
         }
         native{"mlym"}
     }
-    Version{"37"}
     calendar{
         buddhist{
             eras{
@@ -496,6 +511,16 @@ ml{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "ahmmsszzzz",
+                "ahmmssz",
+                "ahmmss",
+                "ahmm",
+                "GyMMMMEEEEd",
+                "GyMMMMd",
+                "GyMMMd",
+                "GGGGGyMMdd",
+            }
             availableFormats{
                 Bh{"B h"}
                 Bhm{"B h:mm"}
@@ -669,6 +694,16 @@ ml{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "ahmmsszzzz",
+                "ahmmssz",
+                "ahmmss",
+                "ahmm",
+                "yMMMMEEEEd",
+                "yMMMMd",
+                "yMMMd",
+                "yyMd",
+            }
             appendItems{
                 Timezone{"{0} {1}"}
             }
@@ -688,6 +723,7 @@ ml{
                 GyMMM{"G y MMM"}
                 GyMMMEd{"G y MMM d, E"}
                 GyMMMd{"G y MMM d"}
+                GyMd{"M/d/y GGGGG"}
                 H{"HH"}
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
@@ -1760,7 +1796,7 @@ ml{
             dn{"കാലഘട്ടം"}
         }
         era-narrow{
-            dn{"കാലഘട്ടം"}
+            dn{"കാല."}
         }
         era-short{
             dn{"കാലഘട്ടം"}
@@ -2432,13 +2468,13 @@ ml{
             dn{"ആഴ്‌ച. ദിവസം"}
         }
         weekdayOfMonth{
-            dn{"മാസത്തിലെ പ്രവർത്തിദിനം"}
+            dn{"മാസത്തിലെ പ്രവൃത്തി ദിവസം"}
         }
         weekdayOfMonth-narrow{
-            dn{"മാസ. പ്രവർത്തിദിനം"}
+            dn{"മാസ. പ്രവൃത്തി ദിവസം"}
         }
         weekdayOfMonth-short{
-            dn{"മാസ. പ്രവർത്തിദിനം"}
+            dn{"മാസ. പ്രവൃത്തി ദിവസം"}
         }
         year{
             dn{"വർഷം"}
@@ -2498,10 +2534,10 @@ ml{
             dn{"സമയ മേഖല"}
         }
         zone-narrow{
-            dn{"സമയ മേഖല"}
+            dn{"മേഖല"}
         }
         zone-short{
-            dn{"സമയ മേഖല"}
+            dn{"മേഖല"}
         }
     }
     listPattern{
@@ -2516,6 +2552,9 @@ ml{
             end{"{0}, {1} എന്നിവ"}
             middle{"{0}, {1}"}
             start{"{0}, {1}"}
+        }
+        standard-narrow{
+            2{"{0}, {1} എന്നിവ"}
         }
         standard-short{
             2{"{0} കൂടാതെ {1}"}
@@ -2536,7 +2575,7 @@ ml{
             start{"{0} {1}"}
         }
         unit-short{
-            2{"{0} കൂടാതെ {1}"}
+            2{"{0}, {1}"}
             end{"{0}, {1}"}
             middle{"{0}, {1}"}
             start{"{0}, {1}"}

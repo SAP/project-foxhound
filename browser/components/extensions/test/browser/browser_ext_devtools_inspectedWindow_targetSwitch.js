@@ -28,8 +28,14 @@ async function getCurrentTabId(extension) {
 async function navigateTo(uri, tab, toolbox, extension) {
   const originalTabId = await getCurrentTabId(extension);
 
-  const onSwitched = toolbox.targetList.once("switched-target");
-  await BrowserTestUtils.loadURI(tab.linkedBrowser, uri);
+  const promiseBrowserLoaded = BrowserTestUtils.browserLoaded(
+    tab.linkedBrowser
+  );
+  const onSwitched = toolbox.commands.targetCommand.once("switched-target");
+  BrowserTestUtils.loadURI(tab.linkedBrowser, uri);
+  info("Wait for the tab to be loaded");
+  await promiseBrowserLoaded;
+  info("Wait for the toolbox target to have been switched");
   await onSwitched;
 
   const currentTabId = await getCurrentTabId(extension);
@@ -40,17 +46,10 @@ async function navigateTo(uri, tab, toolbox, extension) {
   );
 }
 
-async function pushPref(preferenceName, value) {
-  const options = { set: [[preferenceName, value]] };
-  await SpecialPowers.pushPrefEnv(options);
-}
-
 /**
  * This test checks whether inspectedWindow works well even target-switching happens.
  */
 add_task(async () => {
-  await pushPref("devtools.target-switching.enabled", true);
-
   const tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
     CONTENT_PROCESS_PAGE
@@ -93,7 +92,7 @@ add_task(async () => {
   await extension.startup();
 
   info("Open the developer toolbox");
-  const { toolbox } = await openToolboxForTab(tab);
+  const toolbox = await openToolboxForTab(tab);
 
   info("Wait the devtools page load");
   await extension.awaitMessage("devtools-page-loaded");
@@ -115,7 +114,7 @@ add_task(async () => {
 
   // Navigate to an url that should switch to another target
   // when fission is enabled.
-  if (Services.prefs.getBoolPref("fission.autostart")) {
+  if (SpecialPowers.useRemoteSubframes) {
     info("Navigate to another page running on content process");
     await navigateTo(CONTENT_PROCESS_PAGE2, tab, toolbox, extension);
 

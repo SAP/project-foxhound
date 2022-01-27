@@ -4,6 +4,10 @@
 
 /* Permissions */
 
+#trackingGroup {
+  --section-highlight-background-color: color-mix(in srgb, var(--in-content-accent-color) 20%, transparent);
+}
+
 .content-blocking-icon,
 .permission-icon,
 .content-blocking-checkbox {
@@ -16,49 +20,11 @@
   margin-inline-end: 0.2em;
 }
 
-.content-blocking-checkbox .checkbox-icon {
-  margin-inline: 4px 8px;
-  width: 16px;
-}
-
-#contentBlockingTrackingProtectionCheckbox > .checkbox-label-box {
-  list-style-image: url("chrome://browser/skin/controlcenter/tracker-image.svg");
-}
-
-#contentBlockingTrackingProtectionCheckbox[checked] > .checkbox-label-box {
-  list-style-image: url("chrome://browser/skin/controlcenter/tracker-image-disabled.svg");
-}
-
-#contentBlockingBlockCookiesCheckbox > .checkbox-label-box {
-  list-style-image: url("chrome://browser/skin/controlcenter/3rdpartycookies.svg");
-}
-
-#contentBlockingBlockCookiesCheckbox[checked] > .checkbox-label-box {
-  list-style-image: url("chrome://browser/skin/controlcenter/3rdpartycookies-disabled.svg");
-}
-
-#contentBlockingCryptominersCheckbox > .checkbox-label-box {
-  list-style-image: url("chrome://browser/skin/controlcenter/cryptominers.svg");
-}
-
-#contentBlockingCryptominersCheckbox[checked] > .checkbox-label-box {
-  list-style-image: url("chrome://browser/skin/controlcenter/cryptominers-disabled.svg");
-}
-
-#contentBlockingFingerprintersCheckbox > .checkbox-label-box {
-  list-style-image: url("chrome://browser/skin/controlcenter/fingerprinters.svg");
-}
-
-#contentBlockingFingerprintersCheckbox[checked] > .checkbox-label-box {
-  list-style-image: url("chrome://browser/skin/controlcenter/fingerprinters-disabled.svg");
-}
-
 .content-blocking-icon,
 .permission-icon,
 .content-blocking-category .checkbox-label-box,
 .extra-information-label > image,
 .arrowhead,
-.content-blocking-info-image,
 .reload-tabs-button,
 .content-blocking-warning-image {
   -moz-context-properties: fill;
@@ -90,7 +56,7 @@
 }
 
 .autoplay-icon {
-  list-style-image: url(chrome://browser/skin/notification-icons/autoplay-media-detailed.svg);
+  list-style-image: url(chrome://browser/skin/notification-icons/autoplay-media.svg);
 }
 
 .midi-icon {
@@ -109,10 +75,6 @@
   margin-top: 10px;
 }
 
-#contentBlockingCategories {
-  margin-top: 16px;
-}
-
 #trackingProtectionShield {
   list-style-image: url("chrome://browser/skin/controlcenter/tracking-protection.svg");
   -moz-context-properties: fill, fill-opacity;
@@ -123,12 +85,22 @@
   margin-inline-end: 10px;
 }
 
-.content-blocking-category {
-  border-radius: 4px;
+.content-blocking-category,
+#fpiIncompatibilityWarning {
   margin: 3px 0;
-  padding: 9px;
-  border: 1px solid var(--in-content-border-color);
-  background-color: rgba(215, 215, 219, 0.2);
+}
+
+#fpiIncompatibilityWarning {
+  background-color: var(--section-highlight-background-color);
+}
+
+#fpiIncompatibilityWarning,
+#contentBlockingCategories {
+  margin-top: 16px;
+}
+
+.content-blocking-category {
+  border-color: var(--in-content-box-border-color);
 }
 
 .content-blocking-category.disabled {
@@ -139,9 +111,8 @@
   opacity: 1;
 }
 
-.content-blocking-warning > .indent,
 .content-blocking-category > .indent {
-  margin-inline-end: 28px;
+  margin-inline-end: 22px;
 }
 
 .arrowhead {
@@ -152,26 +123,22 @@
   min-width: 20px;
   max-height: 20px;
   max-width: 20px;
-  list-style-image: url("chrome://global/skin/icons/arrow-dropdown-12.svg");
+  list-style-image: url("chrome://global/skin/icons/arrow-down-12.svg");
   background-color: transparent;
   padding: 3px;
 }
 
 .arrowhead:not([disabled]):hover {
   cursor: pointer;
-  background-color: var(--grey-90-a10);
+  background-color: var(--in-content-button-background-hover);
 }
 
 .arrowhead:not([disabled]):hover:active {
-  background-color: var(--grey-90-a20);
+  background-color: var(--in-content-button-background-active);
 }
 
 .arrowhead.up {
   list-style-image: url("chrome://global/skin/icons/arrow-up-12.svg");
-}
-
-.arrowhead > .button-box {
-  padding: 0 !important;
 }
 
 .content-blocking-category.expanded:not(.selected) .reload-tabs {
@@ -181,8 +148,6 @@
 .content-blocking-warning.reload-tabs:not([hidden]) {
   display: flex;
   flex-wrap: wrap;
-  /* Match .indent's horizontal padding: */
-  padding-inline: 28px;
 }
 
 .content-blocking-reload-desc-container {
@@ -192,6 +157,7 @@
    * item will stretch to fill all available space. */
   flex: 1 1 345px;
   display: flex;
+  align-self: center;
 }
 
 .content-blocking-reload-description {
@@ -199,42 +165,25 @@
   margin-inline-end: 5px;
 }
 
-.content-blocking-reload-desc-container > .content-blocking-info-image {
-  list-style-image: url(chrome://global/skin/icons/identity-icon.svg);
-  margin-inline-end: 12px;
-  margin-top: 0.4em;
-  flex-shrink: 0;
-  align-self: start;
-}
-
 .reload-tabs-button {
   max-height: 30px;
   min-height: 30px;
   padding: 0 20px;
-  list-style-image: url("chrome://browser/skin/reload.svg");
-  background-color: var(--blue-50);
+  list-style-image: url("chrome://global/skin/icons/reload.svg");
   align-self: center;
-}
-
-.reload-tabs-button:not([disabled="true"]):hover {
-  background-color: var(--blue-60);
-}
-
-.reload-tabs-button:not([disabled="true"]):hover:active {
-  background-color: var(--blue-70);
 }
 
 .reload-tabs-button .button-icon {
   margin: 0 6px;
-  color: white;
+  color: inherit;
 }
 
 .reload-tabs-button .button-text {
-  color: white;
+  color: inherit;
 }
 
-.content-blocking-category.expanded:not(.selected) .content-blocking-warning {
-  background-color: var(--grey-90-a10);
+.content-blocking-category.selected .content-blocking-warning {
+  background-color: var(--section-highlight-background-color);
 }
 
 .content-blocking-category.selected .arrowhead {
@@ -242,8 +191,23 @@
 }
 
 .content-blocking-category.selected {
-  border: 1px solid #45A1FF;
-  background-color: rgba(69, 161, 255, 0.2);
+  border-color: var(--in-content-accent-color);
+}
+
+@media (prefers-contrast) {
+  .content-blocking-category.selected {
+    outline: 2px solid var(--in-content-accent-color);
+  }
+}
+
+@media not (prefers-contrast) {
+  .content-blocking-category {
+    background-color: rgba(215, 215, 219, 0.1);
+  }
+
+  .content-blocking-category.selected {
+    background-color: var(--section-highlight-background-color);
+  }
 }
 
 .content-blocking-warning-title,
@@ -283,9 +247,8 @@
 }
 
 .content-blocking-warning {
-  background-color: rgba(69, 161, 255, 0.2);
-  border-radius: 4px;
-  padding: 10px 0;
+  /* Match .indent's horizontal padding, minus the border added via .info-box-container: */
+  padding-inline: calc(22px - 1px);
   margin: 10px 0;
 }
 
@@ -293,34 +256,20 @@
   margin-top: 0;
 }
 
-.content-blocking-trackers-image {
-  list-style-image: url("chrome://browser/skin/controlcenter/tracker-image-disabled.svg");
-  margin-inline-end: 5px;
+.content-blocking-extra-blocking-desc {
+  margin-inline-start: 0.5em;
+  position: relative;
+  top: 0.65em;
 }
 
-.content-blocking-social-media-image {
-  list-style-image: url("chrome://browser/skin/controlcenter/socialblock-disabled.svg");
-  margin-inline-end: 5px;
-}
-
-.content-blocking-cookies-image {
-  list-style-image: url("chrome://browser/skin/controlcenter/3rdpartycookies-disabled.svg");
-  margin-inline-end: 5px;
-}
-
-.content-blocking-cryptominers-image {
-  list-style-image: url("chrome://browser/skin/controlcenter/cryptominers-disabled.svg");
-  margin-inline-end: 5px;
-}
-
-.content-blocking-fingerprinters-image {
-  list-style-image: url("chrome://browser/skin/controlcenter/fingerprinters-disabled.svg");
-  margin-inline-end: 5px;
+.content-blocking-label {
+  display: list-item;
+  line-height: 1.2em;
 }
 
 .content-blocking-warning-image {
   list-style-image: url("chrome://global/skin/icons/warning.svg");
-  margin-inline: 4px 8px;
+  margin-inline-end: 6px;
 }
 
 #blockCookiesMenu {
@@ -337,17 +286,9 @@
 }
 
 #telemetry-container {
-  border-radius: 4px;
-  background-color: rgba(12,12,13,0.2);
-  font-size: 85%;
-  padding: 3px;
-  margin-top: 4px;
-  margin-bottom: 4px;
+  margin-block: 4px;
+  line-height: 1.8em;
   width: 100%;
-}
-
-#dataDescriptionBox {
-  line-height: 1.3;
 }
 
 .content-blocking-category-description {
@@ -356,7 +297,7 @@
 }
 
 .warning-description {
-  background: url(chrome://browser/skin/controlcenter/warning.svg) no-repeat 0 5px;
+  background: url(chrome://global/skin/icons/warning.svg) no-repeat 0 5px;
   opacity: 0.6;
   -moz-context-properties: fill, stroke;
   fill: #d7b600;
@@ -374,7 +315,7 @@
 }
 
 #deleteOnCloseNote {
-  margin-bottom: 0 !important; /* Overrides .info-panel margin-bottom. */
+  margin-top: 8px;
   margin-inline-end: 32px;
 }
 
@@ -382,17 +323,60 @@
   display: -moz-inline-box;
 }
 
-/* HTTPS-Only Mode */
-#httpsOnlyBox[hidehttpsonly] {
-  display: none;
+/* Address bar */
+
+.firefoxSuggestOptionBox {
+  /* With this value we're trying to keep the apparent vertical space between
+     option boxes the same as the apparent vertical space between the labels of
+     the checkboxes above the Firefox Suggest subsection. */
+  margin-block-start: 11px;
 }
 
-#httpsOnlyShield {
-  list-style-image: url("chrome://browser/skin/controlcenter/https-only.svg");
-  -moz-context-properties: fill, fill-opacity;
-  fill: currentColor;
-  fill-opacity: 0.5;
-  width: 64px;
-  height: 64px;
-  margin-inline-end: 10px;
+.firefoxSuggestOptionBox:first-of-type {
+  /* Similar here: Make the apparent vertical space between the last checkbox
+     and first option box the same as elsewhere. */
+  margin-block-start: 5px;
+}
+
+.firefoxSuggestToggle {
+  /* These variables and comments are copied from and override
+     toggle-button.css. We include values for all variables, even those that are
+     the same at the time this comment was written, for sanity and locality of
+     reference. */
+  --button-height: 16px !important;
+  --button-half-height: 8px !important;
+  --button-width: 32px !important;
+  --button-border-width: 1px !important;
+  /* dot-size = button-height - 2*dot-margin - 2*button-border-width */
+  --dot-size: 14px !important;
+  --dot-margin: 0px !important;
+  /* --dot-transform-x = button-width - 2*dot-margin - dot-size - 2*button-border-width */
+  --dot-transform-x: 16px !important;
+}
+
+.firefoxSuggestOptionDescription {
+  /* Prevent the description from flowing under the toggle button.
+     32px = toggle button width
+     1em = a little extra */
+  padding-inline-end: calc(32px + 1em);
+  color: var(--in-content-deemphasized-text);
+}
+
+#firefoxSuggestInfoBox {
+  margin-block-start: 16px;
+  padding: 12px;
+}
+
+#firefoxSuggestInfoBox > description {
+  margin-inline-start: 2px;
+  margin-block: 2px;
+}
+
+#openSearchEnginePreferences {
+  margin-block-start: 6px;
+  line-height: 30px;
+}
+
+#openSearchEnginePreferences.extraMargin {
+  margin-block-start: 24px;
 }

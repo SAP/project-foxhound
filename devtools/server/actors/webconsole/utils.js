@@ -4,18 +4,7 @@
 
 "use strict";
 
-const { Ci, Cu, Cc } = require("chrome");
-
-// Note that this is only used in WebConsoleCommands, see $0 and screenshot.
-if (!isWorker) {
-  loader.lazyRequireGetter(
-    this,
-    "captureScreenshot",
-    "devtools/shared/screenshot/capture",
-    true
-  );
-}
-
+const { Cu } = require("chrome");
 const CONSOLE_WORKER_IDS = (exports.CONSOLE_WORKER_IDS = [
   "SharedWorker",
   "ServiceWorker",
@@ -88,10 +77,10 @@ var WebConsoleUtils = {
    *         Inner ID for the given window, null if we can't access it.
    */
   getInnerWindowId: function(window) {
-    // Might throw with SecurityError: Permission denied to access property "windowUtils"
-    // on cross-origin object.
+    // Might throw with SecurityError: Permission denied to access property
+    // "windowGlobalChild" on cross-origin object.
     try {
-      return window.windowUtils.currentInnerWindowID;
+      return window.windowGlobalChild.innerWindowId;
     } catch (e) {
       return null;
     }
@@ -519,63 +508,6 @@ WebConsoleCommands._registerOriginal("help", function(owner) {
 });
 
 /**
- * Change the JS evaluation scope.
- *
- * @param DOMElement|string|window window
- *        The window object to use for eval scope. This can be a string that
- *        is used to perform document.querySelector(), to find the iframe that
- *        you want to cd() to. A DOMElement can be given as well, the
- *        .contentWindow property is used. Lastly, you can directly pass
- *        a window object. If you call cd() with no arguments, the current
- *        eval scope is cleared back to its default (the top window).
- */
-WebConsoleCommands._registerOriginal("cd", function(owner, window) {
-  // Log a deprecation warning.
-  const scriptErrorClass = Cc["@mozilla.org/scripterror;1"];
-  const scriptError = scriptErrorClass.createInstance(Ci.nsIScriptError);
-
-  const deprecationMessage =
-    "The `cd` command will be disabled in a future release. " +
-    "See https://bugzilla.mozilla.org/show_bug.cgi?id=1605327 for more information.";
-
-  scriptError.initWithWindowID(
-    deprecationMessage,
-    null,
-    null,
-    0,
-    0,
-    1,
-    "content javascript",
-    owner.window.windowUtils.currentInnerWindowID
-  );
-  const Services = require("Services");
-  Services.console.logMessage(scriptError);
-
-  if (!window) {
-    owner.consoleActor.evalWindow = null;
-    owner.helperResult = { type: "cd" };
-    return;
-  }
-
-  if (typeof window == "string") {
-    window = owner.window.document.querySelector(window);
-  }
-  if (Element.isInstance(window) && window.contentWindow) {
-    window = window.contentWindow;
-  }
-  if (!(window instanceof Ci.nsIDOMWindow)) {
-    owner.helperResult = {
-      type: "error",
-      message: "cdFunctionInvalidArgument",
-    };
-    return;
-  }
-
-  owner.consoleActor.evalWindow = window;
-  owner.helperResult = { type: "cd" };
-});
-
-/**
  * Inspects the passed object. This is done by opening the PropertyPanel.
  *
  * @param object object
@@ -617,7 +549,12 @@ WebConsoleCommands._registerOriginal("copy", function(owner, value) {
       payload = JSON.stringify(value, null, "  ");
     }
   } catch (ex) {
-    payload = "/* " + ex + " */";
+    owner.helperResult = {
+      type: "error",
+      message: "webconsole.error.commands.copyError",
+      messageArgs: [ex.toString()],
+    };
+    return;
   }
   owner.helperResult = {
     type: "copyValueToClipboard",
@@ -634,15 +571,28 @@ WebConsoleCommands._registerOriginal("copy", function(owner, value) {
  */
 WebConsoleCommands._registerOriginal("screenshot", function(owner, args = {}) {
   owner.helperResult = (async () => {
-    // creates data for saving the screenshot
-    // help is handled on the client side
-    const value = await captureScreenshot(args, owner.window.document);
+    // everything is handled on the client side, so we return a very simple object with
+    // the args
     return {
       type: "screenshotOutput",
-      value,
-      // pass args through to the client, so that the client can take care of copying
-      // and saving the screenshot data on the client machine instead of on the
-      // remote machine
+      args,
+    };
+  })();
+});
+
+/**
+ * Shows a history of commands and expressions previously executed within the command line.
+ *
+ * @param object args
+ *               The arguments to be passed to the history
+ * @return void
+ */
+WebConsoleCommands._registerOriginal("history", function(owner, args = {}) {
+  owner.helperResult = (async () => {
+    // everything is handled on the client side, so we return a very simple object with
+    // the args
+    return {
+      type: "historyOutput",
       args,
     };
   })();

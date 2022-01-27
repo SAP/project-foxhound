@@ -51,7 +51,7 @@ add_task(async function() {
   BrowserTestUtils.loadURI(partialURLTab.linkedBrowser, testURL);
   await Promise.all([loaded1, loaded2, loaded3]);
 
-  testURL = BrowserUtils.trimURL(testURL);
+  testURL = BrowserUIUtils.trimURL(testURL);
   testPartialURL = testURL.substr(0, testURL.length - charsToDelete);
 
   function cleanUp() {
@@ -77,8 +77,8 @@ add_task(async function() {
     await BrowserTestUtils.switchTab(gBrowser, deletedURLTab);
     is(
       gURLBar.value,
-      "",
-      'gURLBar.value should be "" after switching back to deletedURLTab'
+      testURL,
+      "gURLBar.value should be testURL after switching back to deletedURLTab"
     );
 
     await BrowserTestUtils.switchTab(gBrowser, fullURLTab);

@@ -16,7 +16,7 @@ add_task(async function() {
     async function(browser) {
       await SpecialPowers.spawn(browser, [], async function() {
         const { require } = ChromeUtils.import(
-          "resource://devtools/shared/Loader.jsm"
+          "resource://devtools/shared/loader/Loader.jsm"
         );
         const {
           HighlighterEnvironment,
@@ -100,6 +100,7 @@ add_task(async function() {
         const node = content.document.createElement("div");
         content.document.body.append(node);
         const highlighter = new AccessibleHighlighter(env);
+        await highlighter.isReady;
         const infobar = highlighter.accessibleInfobar;
         const bounds = {
           x: 0,

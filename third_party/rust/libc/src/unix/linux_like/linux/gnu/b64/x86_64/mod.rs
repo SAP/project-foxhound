@@ -42,6 +42,14 @@ s! {
         pub l_pid: ::pid_t,
     }
 
+    pub struct flock64 {
+        pub l_type: ::c_short,
+        pub l_whence: ::c_short,
+        pub l_start: ::off64_t,
+        pub l_len: ::off64_t,
+        pub l_pid: ::pid_t,
+    }
+
     pub struct siginfo_t {
         pub si_signo: ::c_int,
         pub si_errno: ::c_int,
@@ -260,6 +268,12 @@ s! {
         pub c_cc: [::cc_t; 19],
         pub c_ispeed: ::speed_t,
         pub c_ospeed: ::speed_t,
+    }
+
+    pub struct ip_mreqn {
+        pub imr_multiaddr: ::in_addr,
+        pub imr_address: ::in_addr,
+        pub imr_ifindex: ::c_int,
     }
 }
 
@@ -501,61 +515,6 @@ pub const ENOTRECOVERABLE: ::c_int = 131;
 pub const EHWPOISON: ::c_int = 133;
 pub const ERFKILL: ::c_int = 132;
 
-pub const SOL_SOCKET: ::c_int = 1;
-
-pub const SO_REUSEADDR: ::c_int = 2;
-pub const SO_TYPE: ::c_int = 3;
-pub const SO_ERROR: ::c_int = 4;
-pub const SO_DONTROUTE: ::c_int = 5;
-pub const SO_BROADCAST: ::c_int = 6;
-pub const SO_SNDBUF: ::c_int = 7;
-pub const SO_RCVBUF: ::c_int = 8;
-pub const SO_SNDBUFFORCE: ::c_int = 32;
-pub const SO_RCVBUFFORCE: ::c_int = 33;
-pub const SO_KEEPALIVE: ::c_int = 9;
-pub const SO_OOBINLINE: ::c_int = 10;
-pub const SO_NO_CHECK: ::c_int = 11;
-pub const SO_PRIORITY: ::c_int = 12;
-pub const SO_LINGER: ::c_int = 13;
-pub const SO_BSDCOMPAT: ::c_int = 14;
-pub const SO_REUSEPORT: ::c_int = 15;
-pub const SO_PASSCRED: ::c_int = 16;
-pub const SO_PEERCRED: ::c_int = 17;
-pub const SO_RCVLOWAT: ::c_int = 18;
-pub const SO_SNDLOWAT: ::c_int = 19;
-pub const SO_RCVTIMEO: ::c_int = 20;
-pub const SO_SNDTIMEO: ::c_int = 21;
-pub const SO_SECURITY_AUTHENTICATION: ::c_int = 22;
-pub const SO_SECURITY_ENCRYPTION_TRANSPORT: ::c_int = 23;
-pub const SO_SECURITY_ENCRYPTION_NETWORK: ::c_int = 24;
-pub const SO_BINDTODEVICE: ::c_int = 25;
-pub const SO_ATTACH_FILTER: ::c_int = 26;
-pub const SO_DETACH_FILTER: ::c_int = 27;
-pub const SO_GET_FILTER: ::c_int = SO_ATTACH_FILTER;
-pub const SO_PEERNAME: ::c_int = 28;
-pub const SO_TIMESTAMP: ::c_int = 29;
-pub const SO_ACCEPTCONN: ::c_int = 30;
-pub const SO_PEERSEC: ::c_int = 31;
-pub const SO_PASSSEC: ::c_int = 34;
-pub const SO_TIMESTAMPNS: ::c_int = 35;
-pub const SCM_TIMESTAMPNS: ::c_int = SO_TIMESTAMPNS;
-pub const SO_MARK: ::c_int = 36;
-pub const SO_PROTOCOL: ::c_int = 38;
-pub const SO_DOMAIN: ::c_int = 39;
-pub const SO_RXQ_OVFL: ::c_int = 40;
-pub const SO_WIFI_STATUS: ::c_int = 41;
-pub const SCM_WIFI_STATUS: ::c_int = SO_WIFI_STATUS;
-pub const SO_PEEK_OFF: ::c_int = 42;
-pub const SO_NOFCS: ::c_int = 43;
-pub const SO_LOCK_FILTER: ::c_int = 44;
-pub const SO_SELECT_ERR_QUEUE: ::c_int = 45;
-pub const SO_BUSY_POLL: ::c_int = 46;
-pub const SO_MAX_PACING_RATE: ::c_int = 47;
-pub const SO_BPF_EXTENSIONS: ::c_int = 48;
-pub const SO_INCOMING_CPU: ::c_int = 49;
-pub const SO_ATTACH_BPF: ::c_int = 50;
-pub const SO_DETACH_BPF: ::c_int = SO_DETACH_FILTER;
-
 pub const SOCK_STREAM: ::c_int = 1;
 pub const SOCK_DGRAM: ::c_int = 2;
 
@@ -581,10 +540,7 @@ pub const SIGURG: ::c_int = 23;
 pub const SIGIO: ::c_int = 29;
 pub const SIGSYS: ::c_int = 31;
 pub const SIGSTKFLT: ::c_int = 16;
-#[deprecated(
-    since = "0.2.55",
-    note = "Use SIGSYS instead"
-)]
+#[deprecated(since = "0.2.55", note = "Use SIGSYS instead")]
 pub const SIGUNUSED: ::c_int = 31;
 pub const SIGPOLL: ::c_int = 29;
 pub const SIGPWR: ::c_int = 30;
@@ -607,6 +563,9 @@ pub const F_GETOWN: ::c_int = 9;
 pub const F_SETOWN: ::c_int = 8;
 pub const F_SETLK: ::c_int = 6;
 pub const F_SETLKW: ::c_int = 7;
+pub const F_OFD_GETLK: ::c_int = 36;
+pub const F_OFD_SETLK: ::c_int = 37;
+pub const F_OFD_SETLKW: ::c_int = 38;
 
 pub const F_RDLCK: ::c_int = 0;
 pub const F_WRLCK: ::c_int = 1;
@@ -687,6 +646,7 @@ pub const MAP_EXECUTABLE: ::c_int = 0x01000;
 pub const MAP_POPULATE: ::c_int = 0x08000;
 pub const MAP_NONBLOCK: ::c_int = 0x010000;
 pub const MAP_STACK: ::c_int = 0x020000;
+pub const MAP_SYNC: ::c_int = 0x080000;
 
 pub const EDEADLOCK: ::c_int = 35;
 pub const EUCLEAN: ::c_int = 117;
@@ -706,6 +666,8 @@ pub const PTRACE_SETFPXREGS: ::c_uint = 19;
 pub const PTRACE_GETREGS: ::c_uint = 12;
 pub const PTRACE_SETREGS: ::c_uint = 13;
 pub const PTRACE_PEEKSIGINFO_SHARED: ::c_uint = 1;
+pub const PTRACE_SYSEMU: ::c_uint = 31;
+pub const PTRACE_SYSEMU_SINGLESTEP: ::c_uint = 32;
 
 pub const MCL_CURRENT: ::c_int = 0x0001;
 pub const MCL_FUTURE: ::c_int = 0x0002;
@@ -755,14 +717,14 @@ pub const NOFLSH: ::tcflag_t = 0x00000080;
 pub const CIBAUD: ::tcflag_t = 0o02003600000;
 pub const CBAUDEX: ::tcflag_t = 0o010000;
 pub const VSWTC: usize = 7;
-pub const OLCUC:  ::tcflag_t = 0o000002;
-pub const NLDLY:  ::tcflag_t = 0o000400;
-pub const CRDLY:  ::tcflag_t = 0o003000;
+pub const OLCUC: ::tcflag_t = 0o000002;
+pub const NLDLY: ::tcflag_t = 0o000400;
+pub const CRDLY: ::tcflag_t = 0o003000;
 pub const TABDLY: ::tcflag_t = 0o014000;
-pub const BSDLY:  ::tcflag_t = 0o020000;
-pub const FFDLY:  ::tcflag_t = 0o100000;
-pub const VTDLY:  ::tcflag_t = 0o040000;
-pub const XTABS:  ::tcflag_t = 0o014000;
+pub const BSDLY: ::tcflag_t = 0o020000;
+pub const FFDLY: ::tcflag_t = 0o100000;
+pub const VTDLY: ::tcflag_t = 0o040000;
+pub const XTABS: ::tcflag_t = 0o014000;
 
 pub const B0: ::speed_t = 0o000000;
 pub const B50: ::speed_t = 0o000001;
@@ -824,6 +786,8 @@ pub const TIOCOUTQ: ::c_ulong = 0x5411;
 pub const TIOCGWINSZ: ::c_ulong = 0x5413;
 pub const TIOCSWINSZ: ::c_ulong = 0x5414;
 pub const FIONREAD: ::c_ulong = 0x541B;
+pub const TIOCSBRK: ::c_ulong = 0x5427;
+pub const TIOCCBRK: ::c_ulong = 0x5428;
 
 // offsets in user_regs_structs, from sys/reg.h
 pub const R15: ::c_int = 0;
@@ -879,17 +843,13 @@ pub const REG_TRAPNO: ::c_int = 20;
 pub const REG_OLDMASK: ::c_int = 21;
 pub const REG_CR2: ::c_int = 22;
 
-extern {
+extern "C" {
     pub fn getcontext(ucp: *mut ucontext_t) -> ::c_int;
     pub fn setcontext(ucp: *const ucontext_t) -> ::c_int;
-    pub fn makecontext(ucp: *mut ucontext_t,
-                       func:  extern fn (),
-                       argc: ::c_int, ...);
-    pub fn swapcontext(uocp: *mut ucontext_t,
-                       ucp: *const ucontext_t) -> ::c_int;
+    pub fn makecontext(ucp: *mut ucontext_t, func: extern "C" fn(), argc: ::c_int, ...);
+    pub fn swapcontext(uocp: *mut ucontext_t, ucp: *const ucontext_t) -> ::c_int;
     pub fn iopl(level: ::c_int) -> ::c_int;
-    pub fn ioperm(from: ::c_ulong, num: ::c_ulong,
-                  turn_on: ::c_int) -> ::c_int;
+    pub fn ioperm(from: ::c_ulong, num: ::c_ulong, turn_on: ::c_int) -> ::c_int;
 }
 
 cfg_if! {
@@ -899,5 +859,12 @@ cfg_if! {
     } else {
         mod not_x32;
         pub use self::not_x32::*;
+    }
+}
+
+cfg_if! {
+    if #[cfg(libc_align)] {
+        mod align;
+        pub use self::align::*;
     }
 }

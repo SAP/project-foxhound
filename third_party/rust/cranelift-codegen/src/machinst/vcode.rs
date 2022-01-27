@@ -17,19 +17,22 @@
 //! See the main module comment in `mod.rs` for more details on the VCode-based
 //! backend pipeline.
 
-use crate::ir::{self, types, SourceLoc};
+use crate::ir::{self, types, Constant, ConstantData, SourceLoc};
 use crate::machinst::*;
 use crate::settings;
-
+use crate::timing;
 use regalloc::Function as RegallocFunction;
 use regalloc::Set as RegallocSet;
 use regalloc::{
-    BlockIx, InstIx, Range, RegAllocResult, RegClass, RegUsageCollector, RegUsageMapper, SpillSlot,
-    StackmapRequestInfo,
+    BlockIx, InstIx, PrettyPrint, Range, RegAllocResult, RegClass, RegUsageCollector,
+    RegUsageMapper, SpillSlot, StackmapRequestInfo,
 };
 
 use alloc::boxed::Box;
 use alloc::{borrow::Cow, vec::Vec};
+use cranelift_entity::{entity_impl, Keys, PrimaryMap};
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fmt;
 use std::iter;
 use std::string::String;
@@ -38,6 +41,8 @@ use std::string::String;
 pub type InsnIndex = u32;
 /// Index referring to a basic block in VCode.
 pub type BlockIndex = u32;
+/// Range of an instructions in VCode.
+pub type InsnRange = core::ops::Range<InsnIndex>;
 
 /// VCodeInst wraps all requirements for a MachInst to be in VCode: it must be
 /// a `MachInst` and it must be able to emit itself at least to a `SizeCodeSink`.
@@ -85,7 +90,11 @@ pub struct VCode<I: VCodeInst> {
     block_order: BlockLoweringOrder,
 
     /// ABI object.
-    abi: Box<dyn ABIBody<I = I>>,
+    abi: Box<dyn ABICallee<I = I>>,
+
+    /// Constant information used during code emission. This should be
+    /// immutable across function compilations within the same module.
+    emit_info: I::Info,
 
     /// Safepoint instruction indices. Filled in post-regalloc. (Prior to
     /// regalloc, the safepoint instructions are listed in the separate
@@ -93,9 +102,23 @@ pub struct VCode<I: VCodeInst> {
     safepoint_insns: Vec<InsnIndex>,
 
     /// For each safepoint entry in `safepoint_insns`, a list of `SpillSlot`s.
-    /// These are used to generate actual stackmaps at emission. Filled in
+    /// These are used to generate actual stack maps at emission. Filled in
     /// post-regalloc.
     safepoint_slots: Vec<Vec<SpillSlot>>,
+
+    /// Do we generate debug info?
+    generate_debug_info: bool,
+
+    /// Instruction end offsets, instruction indices at each label, and total
+    /// buffer size.  Only present if `generate_debug_info` is set.
+    insts_layout: RefCell<(Vec<u32>, Vec<u32>, u32)>,
+
+    /// Constants.
+    constants: VCodeConstants,
+
+    /// Are any debug value-labels present? If not, we can skip the
+    /// post-emission analysis.
+    has_value_labels: bool,
 }
 
 /// A builder for a VCode function body. This builder is designed for the
@@ -116,8 +139,8 @@ pub struct VCodeBuilder<I: VCodeInst> {
     /// In-progress VCode.
     vcode: VCode<I>,
 
-    /// In-progress stackmap-request info.
-    stackmap_info: StackmapRequestInfo,
+    /// In-progress stack map-request info.
+    stack_map_info: StackmapRequestInfo,
 
     /// Index of the last block-start in the vcode.
     block_start: InsnIndex,
@@ -131,10 +154,21 @@ pub struct VCodeBuilder<I: VCodeInst> {
 
 impl<I: VCodeInst> VCodeBuilder<I> {
     /// Create a new VCodeBuilder.
-    pub fn new(abi: Box<dyn ABIBody<I = I>>, block_order: BlockLoweringOrder) -> VCodeBuilder<I> {
+    pub fn new(
+        abi: Box<dyn ABICallee<I = I>>,
+        emit_info: I::Info,
+        block_order: BlockLoweringOrder,
+        constants: VCodeConstants,
+    ) -> VCodeBuilder<I> {
         let reftype_class = I::ref_type_regclass(abi.flags());
-        let vcode = VCode::new(abi, block_order);
-        let stackmap_info = StackmapRequestInfo {
+        let vcode = VCode::new(
+            abi,
+            emit_info,
+            block_order,
+            constants,
+            /* generate_debug_info = */ true,
+        );
+        let stack_map_info = StackmapRequestInfo {
             reftype_class,
             reftyped_vregs: vec![],
             safepoint_insns: vec![],
@@ -142,7 +176,7 @@ impl<I: VCodeInst> VCodeBuilder<I> {
 
         VCodeBuilder {
             vcode,
-            stackmap_info,
+            stack_map_info,
             block_start: 0,
             succ_start: 0,
             cur_srcloc: SourceLoc::default(),
@@ -150,7 +184,7 @@ impl<I: VCodeInst> VCodeBuilder<I> {
     }
 
     /// Access the ABI object.
-    pub fn abi(&mut self) -> &mut dyn ABIBody<I = I> {
+    pub fn abi(&mut self) -> &mut dyn ABICallee<I = I> {
         &mut *self.vcode.abi
     }
 
@@ -168,7 +202,7 @@ impl<I: VCodeInst> VCodeBuilder<I> {
         }
         self.vcode.vreg_types[vreg.get_index()] = ty;
         if is_reftype(ty) {
-            self.stackmap_info.reftyped_vregs.push(vreg);
+            self.stack_map_info.reftyped_vregs.push(vreg);
             self.vcode.have_ref_values = true;
         }
     }
@@ -218,10 +252,13 @@ impl<I: VCodeInst> VCodeBuilder<I> {
                 }
             }
         }
+        if insn.defines_value_label().is_some() {
+            self.vcode.has_value_labels = true;
+        }
         self.vcode.insts.push(insn);
         self.vcode.srclocs.push(self.cur_srcloc);
         if is_safepoint {
-            self.stackmap_info
+            self.stack_map_info
                 .safepoint_insns
                 .push(InstIx::new((self.vcode.insts.len() - 1) as u32));
         }
@@ -237,13 +274,18 @@ impl<I: VCodeInst> VCodeBuilder<I> {
         self.cur_srcloc = srcloc;
     }
 
+    /// Access the constants.
+    pub fn constants(&mut self) -> &mut VCodeConstants {
+        &mut self.vcode.constants
+    }
+
     /// Build the final VCode, returning the vcode itself as well as auxiliary
-    /// information, such as the stackmap request information.
+    /// information, such as the stack map request information.
     pub fn build(self) -> (VCode<I>, StackmapRequestInfo) {
         // TODO: come up with an abstraction for "vcode and auxiliary data". The
         // auxiliary data needs to be separate from the vcode so that it can be
         // referenced as the vcode is mutated (e.g. by the register allocator).
-        (self.vcode, self.stackmap_info)
+        (self.vcode, self.stack_map_info)
     }
 }
 
@@ -262,7 +304,13 @@ fn is_reftype(ty: Type) -> bool {
 
 impl<I: VCodeInst> VCode<I> {
     /// New empty VCode.
-    fn new(abi: Box<dyn ABIBody<I = I>>, block_order: BlockLoweringOrder) -> VCode<I> {
+    fn new(
+        abi: Box<dyn ABICallee<I = I>>,
+        emit_info: I::Info,
+        block_order: BlockLoweringOrder,
+        constants: VCodeConstants,
+        generate_debug_info: bool,
+    ) -> VCode<I> {
         VCode {
             liveins: abi.liveins(),
             liveouts: abi.liveouts(),
@@ -276,8 +324,13 @@ impl<I: VCodeInst> VCode<I> {
             block_succs: vec![],
             block_order,
             abi,
+            emit_info,
             safepoint_insns: vec![],
             safepoint_slots: vec![],
+            generate_debug_info,
+            insts_layout: RefCell::new((vec![], vec![], 0)),
+            constants,
+            has_value_labels: false,
         }
     }
 
@@ -424,12 +477,18 @@ impl<I: VCodeInst> VCode<I> {
     where
         I: MachInstEmit,
     {
+        let _tt = timing::vcode_emit();
         let mut buffer = MachBuffer::new();
         let mut state = I::State::new(&*self.abi);
 
-        buffer.reserve_labels_for_blocks(self.num_blocks() as BlockIndex); // first N MachLabels are simply block indices.
+        // The first M MachLabels are reserved for block indices, the next N MachLabels for
+        // constants.
+        buffer.reserve_labels_for_blocks(self.num_blocks() as BlockIndex);
+        buffer.reserve_labels_for_constants(&self.constants);
 
-        let flags = self.abi.flags();
+        let mut inst_ends = vec![0; self.insts.len()];
+        let mut label_insn_iix = vec![0; self.num_blocks()];
+
         let mut safepoint_idx = 0;
         let mut cur_srcloc = None;
         for block in 0..self.num_blocks() {
@@ -438,12 +497,13 @@ impl<I: VCodeInst> VCode<I> {
             while new_offset > buffer.cur_offset() {
                 // Pad with NOPs up to the aligned block offset.
                 let nop = I::gen_nop((new_offset - buffer.cur_offset()) as usize);
-                nop.emit(&mut buffer, flags, &mut Default::default());
+                nop.emit(&mut buffer, &self.emit_info, &mut Default::default());
             }
             assert_eq!(buffer.cur_offset(), new_offset);
 
             let (start, end) = self.block_ranges[block as usize];
             buffer.bind_label(MachLabel::from_block(block));
+            label_insn_iix[block as usize] = start;
             for iix in start..end {
                 let srcloc = self.srclocs[iix as usize];
                 if cur_srcloc != Some(srcloc) {
@@ -453,21 +513,36 @@ impl<I: VCodeInst> VCode<I> {
                     buffer.start_srcloc(srcloc);
                     cur_srcloc = Some(srcloc);
                 }
+                state.pre_sourceloc(cur_srcloc.unwrap_or(SourceLoc::default()));
 
                 if safepoint_idx < self.safepoint_insns.len()
                     && self.safepoint_insns[safepoint_idx] == iix
                 {
                     if self.safepoint_slots[safepoint_idx].len() > 0 {
-                        let stackmap = self.abi.spillslots_to_stackmap(
+                        let stack_map = self.abi.spillslots_to_stack_map(
                             &self.safepoint_slots[safepoint_idx][..],
                             &state,
                         );
-                        state.pre_safepoint(stackmap);
+                        state.pre_safepoint(stack_map);
                     }
                     safepoint_idx += 1;
                 }
 
-                self.insts[iix as usize].emit(&mut buffer, flags, &mut state);
+                self.insts[iix as usize].emit(&mut buffer, &self.emit_info, &mut state);
+
+                if self.generate_debug_info {
+                    // Buffer truncation may have happened since last inst append; trim inst-end
+                    // layout info as appropriate.
+                    let l = &mut inst_ends[0..iix as usize];
+                    for end in l.iter_mut().rev() {
+                        if *end > buffer.cur_offset() {
+                            *end = buffer.cur_offset();
+                        } else {
+                            break;
+                        }
+                    }
+                    inst_ends[iix as usize] = buffer.cur_offset();
+                }
             }
 
             if cur_srcloc.is_some() {
@@ -488,7 +563,39 @@ impl<I: VCodeInst> VCode<I> {
             }
         }
 
+        // Emit the constants used by the function.
+        for (constant, data) in self.constants.iter() {
+            let label = buffer.get_label_for_constant(constant);
+            buffer.defer_constant(label, data.alignment(), data.as_slice(), u32::max_value());
+        }
+
+        if self.generate_debug_info {
+            for end in inst_ends.iter_mut().rev() {
+                if *end > buffer.cur_offset() {
+                    *end = buffer.cur_offset();
+                } else {
+                    break;
+                }
+            }
+            *self.insts_layout.borrow_mut() = (inst_ends, label_insn_iix, buffer.cur_offset());
+        }
+
         buffer
+    }
+
+    /// Generates value-label ranges.
+    pub fn value_labels_ranges(&self) -> ValueLabelsRanges {
+        if !self.has_value_labels {
+            return ValueLabelsRanges::default();
+        }
+
+        let layout = &self.insts_layout.borrow();
+        debug::compute(&self.insts, &layout.0[..], &layout.1[..])
+    }
+
+    /// Get the offsets of stackslots.
+    pub fn stackslot_offsets(&self) -> &PrimaryMap<StackSlot, u32> {
+        self.abi.stackslot_offsets()
     }
 
     /// Get the IR block for a BlockIndex, if one exists.
@@ -541,6 +648,10 @@ impl<I: VCodeInst> RegallocFunction for VCode<I> {
         }
     }
 
+    fn is_included_in_clobbers(&self, insn: &I) -> bool {
+        insn.is_included_in_clobbers()
+    }
+
     fn get_regs(insn: &I, collector: &mut RegUsageCollector) {
         insn.get_regs(collector)
     }
@@ -583,7 +694,7 @@ impl<I: VCodeInst> RegallocFunction for VCode<I> {
     }
 
     fn gen_zero_len_nop(&self) -> I {
-        I::gen_zero_len_nop()
+        I::gen_nop(0)
     }
 
     fn maybe_direct_reload(&self, insn: &I, reg: VirtualReg, slot: SpillSlot) -> Option<I> {
@@ -622,7 +733,7 @@ impl<I: VCodeInst> fmt::Debug for VCode<I> {
 }
 
 /// Pretty-printing with `RealRegUniverse` context.
-impl<I: VCodeInst> ShowWithRRU for VCode<I> {
+impl<I: VCodeInst> PrettyPrint for VCode<I> {
     fn show_rru(&self, mb_rru: Option<&RealRegUniverse>) -> String {
         use std::fmt::Write;
 
@@ -669,5 +780,140 @@ impl<I: VCodeInst> ShowWithRRU for VCode<I> {
         write!(&mut s, "}}}}\n").unwrap();
 
         s
+    }
+}
+
+/// This structure tracks the large constants used in VCode that will be emitted separately by the
+/// [MachBuffer].
+///
+/// First, during the lowering phase, constants are inserted using
+/// [VCodeConstants.insert]; an intermediate handle, [VCodeConstant], tracks what constants are
+/// used in this phase. Some deduplication is performed, when possible, as constant
+/// values are inserted.
+///
+/// Secondly, during the emission phase, the [MachBuffer] assigns [MachLabel]s for each of the
+/// constants so that instructions can refer to the value's memory location. The [MachBuffer]
+/// then writes the constant values to the buffer.
+#[derive(Default)]
+pub struct VCodeConstants {
+    constants: PrimaryMap<VCodeConstant, VCodeConstantData>,
+    pool_uses: HashMap<Constant, VCodeConstant>,
+    well_known_uses: HashMap<*const [u8], VCodeConstant>,
+}
+impl VCodeConstants {
+    /// Initialize the structure with the expected number of constants.
+    pub fn with_capacity(expected_num_constants: usize) -> Self {
+        Self {
+            constants: PrimaryMap::with_capacity(expected_num_constants),
+            pool_uses: HashMap::with_capacity(expected_num_constants),
+            well_known_uses: HashMap::new(),
+        }
+    }
+
+    /// Insert a constant; using this method indicates that a constant value will be used and thus
+    /// will be emitted to the `MachBuffer`. The current implementation can deduplicate constants
+    /// that are [VCodeConstantData::Pool] or [VCodeConstantData::WellKnown] but not
+    /// [VCodeConstantData::Generated].
+    pub fn insert(&mut self, data: VCodeConstantData) -> VCodeConstant {
+        match data {
+            VCodeConstantData::Generated(_) => self.constants.push(data),
+            VCodeConstantData::Pool(constant, _) => match self.pool_uses.get(&constant) {
+                None => {
+                    let vcode_constant = self.constants.push(data);
+                    self.pool_uses.insert(constant, vcode_constant);
+                    vcode_constant
+                }
+                Some(&vcode_constant) => vcode_constant,
+            },
+            VCodeConstantData::WellKnown(data_ref) => {
+                match self.well_known_uses.get(&(data_ref as *const [u8])) {
+                    None => {
+                        let vcode_constant = self.constants.push(data);
+                        self.well_known_uses
+                            .insert(data_ref as *const [u8], vcode_constant);
+                        vcode_constant
+                    }
+                    Some(&vcode_constant) => vcode_constant,
+                }
+            }
+        }
+    }
+
+    /// Retrieve a byte slice for the given [VCodeConstant], if available.
+    pub fn get(&self, constant: VCodeConstant) -> Option<&[u8]> {
+        self.constants.get(constant).map(|d| d.as_slice())
+    }
+
+    /// Return the number of constants inserted.
+    pub fn len(&self) -> usize {
+        self.constants.len()
+    }
+
+    /// Iterate over the [VCodeConstant] keys inserted in this structure.
+    pub fn keys(&self) -> Keys<VCodeConstant> {
+        self.constants.keys()
+    }
+
+    /// Iterate over the [VCodeConstant] keys and the data (as a byte slice) inserted in this
+    /// structure.
+    pub fn iter(&self) -> impl Iterator<Item = (VCodeConstant, &VCodeConstantData)> {
+        self.constants.iter()
+    }
+}
+
+/// A use of a constant by one or more VCode instructions; see [VCodeConstants].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VCodeConstant(u32);
+entity_impl!(VCodeConstant);
+
+/// Identify the different types of constant that can be inserted into [VCodeConstants]. Tracking
+/// these separately instead of as raw byte buffers allows us to avoid some duplication.
+pub enum VCodeConstantData {
+    /// A constant already present in the Cranelift IR
+    /// [ConstantPool](crate::ir::constant::ConstantPool).
+    Pool(Constant, ConstantData),
+    /// A reference to a well-known constant value that is statically encoded within the compiler.
+    WellKnown(&'static [u8]),
+    /// A constant value generated during lowering; the value may depend on the instruction context
+    /// which makes it difficult to de-duplicate--if possible, use other variants.
+    Generated(ConstantData),
+}
+impl VCodeConstantData {
+    /// Retrieve the constant data as a byte slice.
+    pub fn as_slice(&self) -> &[u8] {
+        match self {
+            VCodeConstantData::Pool(_, d) | VCodeConstantData::Generated(d) => d.as_slice(),
+            VCodeConstantData::WellKnown(d) => d,
+        }
+    }
+
+    /// Calculate the alignment of the constant data.
+    pub fn alignment(&self) -> u32 {
+        if self.as_slice().len() <= 8 {
+            8
+        } else {
+            16
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::mem::size_of;
+
+    #[test]
+    fn size_of_constant_structs() {
+        assert_eq!(size_of::<Constant>(), 4);
+        assert_eq!(size_of::<VCodeConstant>(), 4);
+        assert_eq!(size_of::<ConstantData>(), 24);
+        assert_eq!(size_of::<VCodeConstantData>(), 32);
+        assert_eq!(
+            size_of::<PrimaryMap<VCodeConstant, VCodeConstantData>>(),
+            24
+        );
+        // TODO The VCodeConstants structure's memory size could be further optimized.
+        // With certain versions of Rust, each `HashMap` in `VCodeConstants` occupied at
+        // least 48 bytes, making an empty `VCodeConstants` cost 120 bytes.
     }
 }

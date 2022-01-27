@@ -1,22 +1,24 @@
 #![allow(non_snake_case)]
 
-use crate::future::{MaybeDone, maybe_done};
+use super::assert_future;
+use crate::future::{maybe_done, MaybeDone};
 use core::fmt;
 use core::pin::Pin;
-use futures_core::future::{Future, FusedFuture};
+use futures_core::future::{FusedFuture, Future};
 use futures_core::task::{Context, Poll};
-use pin_utils::unsafe_pinned;
-use super::assert_future;
+use pin_project_lite::pin_project;
 
 macro_rules! generate {
     ($(
         $(#[$doc:meta])*
         ($Join:ident, <$($Fut:ident),*>),
     )*) => ($(
-        $(#[$doc])*
-        #[must_use = "futures do nothing unless you `.await` or poll them"]
-        pub struct $Join<$($Fut: Future),*> {
-            $($Fut: MaybeDone<$Fut>,)*
+        pin_project! {
+            $(#[$doc])*
+            #[must_use = "futures do nothing unless you `.await` or poll them"]
+            pub struct $Join<$($Fut: Future),*> {
+                $(#[pin] $Fut: MaybeDone<$Fut>,)*
+            }
         }
 
         impl<$($Fut),*> fmt::Debug for $Join<$($Fut),*>
@@ -34,29 +36,27 @@ macro_rules! generate {
         }
 
         impl<$($Fut: Future),*> $Join<$($Fut),*> {
-            fn new($($Fut: $Fut),*) -> $Join<$($Fut),*> {
-                $Join {
+            fn new($($Fut: $Fut),*) -> Self {
+                Self {
                     $($Fut: maybe_done($Fut)),*
                 }
             }
-            $(
-                unsafe_pinned!($Fut: MaybeDone<$Fut>);
-            )*
         }
 
         impl<$($Fut: Future),*> Future for $Join<$($Fut),*> {
             type Output = ($($Fut::Output),*);
 
             fn poll(
-                mut self: Pin<&mut Self>, cx: &mut Context<'_>
+                self: Pin<&mut Self>, cx: &mut Context<'_>
             ) -> Poll<Self::Output> {
                 let mut all_done = true;
+                let mut futures = self.project();
                 $(
-                    all_done &= self.as_mut().$Fut().poll(cx).is_ready();
+                    all_done &= futures.$Fut.as_mut().poll(cx).is_ready();
                 )*
 
                 if all_done {
-                    Poll::Ready(($(self.as_mut().$Fut().take_output().unwrap()), *))
+                    Poll::Ready(($(futures.$Fut.take_output().unwrap()), *))
                 } else {
                     Poll::Pending
                 }
@@ -143,7 +143,8 @@ where
     Fut2: Future,
     Fut3: Future,
 {
-    Join3::new(future1, future2, future3)
+    let f = Join3::new(future1, future2, future3);
+    assert_future::<(Fut1::Output, Fut2::Output, Fut3::Output), _>(f)
 }
 
 /// Same as [`join`](join()), but with more futures.
@@ -175,7 +176,8 @@ where
     Fut3: Future,
     Fut4: Future,
 {
-    Join4::new(future1, future2, future3, future4)
+    let f = Join4::new(future1, future2, future3, future4);
+    assert_future::<(Fut1::Output, Fut2::Output, Fut3::Output, Fut4::Output), _>(f)
 }
 
 /// Same as [`join`](join()), but with more futures.
@@ -210,5 +212,6 @@ where
     Fut4: Future,
     Fut5: Future,
 {
-    Join5::new(future1, future2, future3, future4, future5)
+    let f = Join5::new(future1, future2, future3, future4, future5);
+    assert_future::<(Fut1::Output, Fut2::Output, Fut3::Output, Fut4::Output, Fut5::Output), _>(f)
 }

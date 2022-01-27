@@ -158,8 +158,9 @@ void ClearSiteData::ClearDataFromChannel(nsIHttpChannel* aChannel) {
   }
 
   nsCOMPtr<nsIPrincipal> principal;
-  rv = ssm->GetChannelResultPrincipal(aChannel, getter_AddRefs(principal));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+  rv = ssm->GetChannelResultStoragePrincipal(aChannel,
+                                             getter_AddRefs(principal));
+  if (NS_WARN_IF(NS_FAILED(rv) || !principal)) {
     return;
   }
 
@@ -184,9 +185,11 @@ void ClearSiteData::ClearDataFromChannel(nsIHttpChannel* aChannel) {
   int32_t cleanFlags = 0;
   RefPtr<PendingCleanupHolder> holder = new PendingCleanupHolder(aChannel);
 
-  if (flags & eCache) {
-    LogOpToConsole(aChannel, uri, eCache);
-    cleanFlags |= nsIClearDataService::CLEAR_ALL_CACHES;
+  if (StaticPrefs::privacy_clearsitedata_cache_enabled()) {
+    if (flags & eCache) {
+      LogOpToConsole(aChannel, uri, eCache);
+      cleanFlags |= nsIClearDataService::CLEAR_ALL_CACHES;
+    }
   }
 
   if (flags & eCookies) {
@@ -229,14 +232,16 @@ uint32_t ClearSiteData::ParseHeader(nsIHttpChannel* aChannel,
 
   uint32_t flags = 0;
 
-  nsCCharSeparatedTokenizer token(headerValue, ',');
-  while (token.hasMoreTokens()) {
-    auto value = token.nextToken();
+  for (auto value : nsCCharSeparatedTokenizer(headerValue, ',').ToRange()) {
+    // XXX This seems unnecessary, since the tokenizer already strips whitespace
+    // around tokens.
     value.StripTaggedASCII(mozilla::ASCIIMask::MaskWhitespace());
 
-    if (value.EqualsLiteral("\"cache\"")) {
-      flags |= eCache;
-      continue;
+    if (StaticPrefs::privacy_clearsitedata_cache_enabled()) {
+      if (value.EqualsLiteral("\"cache\"")) {
+        flags |= eCache;
+        continue;
+      }
     }
 
     if (value.EqualsLiteral("\"cookies\"")) {
@@ -250,7 +255,10 @@ uint32_t ClearSiteData::ParseHeader(nsIHttpChannel* aChannel,
     }
 
     if (value.EqualsLiteral("\"*\"")) {
-      flags = eCache | eCookies | eStorage;
+      flags = eCookies | eStorage;
+      if (StaticPrefs::privacy_clearsitedata_cache_enabled()) {
+        flags |= eCache;
+      }
       break;
     }
 

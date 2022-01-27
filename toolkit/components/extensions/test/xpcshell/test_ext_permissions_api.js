@@ -59,10 +59,13 @@ add_task(async function setup() {
     "geolocation",
     "management",
     "menus.overrideContext",
+    "nativeMessaging",
+    "scripting",
     "search",
     "tabHide",
     "tabs",
     "webRequestBlocking",
+    "webRequestFilterResponse.serviceWorkerScript",
   ];
   OptionalPermissions = Schemas.getPermissionNames([
     "OptionalPermission",

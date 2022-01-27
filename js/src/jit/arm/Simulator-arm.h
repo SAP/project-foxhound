@@ -36,6 +36,7 @@
 #  include "jit/arm/Architecture-arm.h"
 #  include "jit/arm/disasm/Disasm-arm.h"
 #  include "jit/IonTypes.h"
+#  include "js/AllocPolicy.h"
 #  include "js/ProfilingFrameIterator.h"
 #  include "threading/Thread.h"
 #  include "vm/MutexIDs.h"
@@ -196,8 +197,6 @@ class Simulator {
   // above.
   Simulator();
   ~Simulator();
-
-  static bool supportsAtomics() { return HasLDSTREXBHD(); }
 
   // The currently executing Simulator instance. Potentially there can be one
   // for each native thread.
@@ -610,17 +609,17 @@ class SimulatorProcess {
     // Technically we need the lock to access the innards of the
     // icache, not to take its address, but the latter condition
     // serves as a useful complement to the former.
-    MOZ_ASSERT(singleton_->cacheLock_.ownedByCurrentThread());
+    singleton_->cacheLock_.assertOwnedByCurrentThread();
     return singleton_->icache_;
   }
 
   static Redirection* redirection() {
-    MOZ_ASSERT(singleton_->cacheLock_.ownedByCurrentThread());
+    singleton_->cacheLock_.assertOwnedByCurrentThread();
     return singleton_->redirection_;
   }
 
   static void setRedirection(js::jit::Redirection* redirection) {
-    MOZ_ASSERT(singleton_->cacheLock_.ownedByCurrentThread());
+    singleton_->cacheLock_.assertOwnedByCurrentThread();
     singleton_->redirection_ = redirection;
   }
 };

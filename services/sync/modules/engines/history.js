@@ -220,60 +220,41 @@ HistoryStore.prototype = {
       }
     });
     if (toAdd.length || toRemove.length) {
-      // We want to notify history observers that a batch operation is underway
-      // so they don't do lots of work for each incoming record.
-      let observers = PlacesUtils.history.getObservers();
-      const notifyHistoryObservers = notification => {
-        for (let observer of observers) {
+      if (toRemove.length) {
+        // PlacesUtils.history.remove takes an array of visits to remove,
+        // but the error semantics are tricky - a single "bad" entry will cause
+        // an exception before anything is removed. So we do remove them one at
+        // a time.
+        await Async.yieldingForEach(toRemove, async record => {
           try {
-            observer[notification]();
+            await this.remove(record);
           } catch (ex) {
-            // don't log an error - it's not our code that failed and we don't
-            // want an error log written just for this.
-            this._log.info("history observer failed", ex);
-          }
-        }
-      };
-      notifyHistoryObservers("onBeginUpdateBatch");
-      try {
-        if (toRemove.length) {
-          // PlacesUtils.history.remove takes an array of visits to remove,
-          // but the error semantics are tricky - a single "bad" entry will cause
-          // an exception before anything is removed. So we do remove them one at
-          // a time.
-          await Async.yieldingForEach(toRemove, async record => {
-            try {
-              await this.remove(record);
-            } catch (ex) {
-              if (Async.isShutdownException(ex)) {
-                throw ex;
-              }
-              this._log.error("Failed to delete a place info", ex);
-              this._log.trace("The record that failed", record);
-              failed.push(record.id);
+            if (Async.isShutdownException(ex)) {
+              throw ex;
             }
-          });
-        }
-        for (let chunk of this._generateChunks(toAdd)) {
-          // Per bug 1415560, we ignore any exceptions returned by insertMany
-          // as they are likely to be spurious. We do supply an onError handler
-          // and log the exceptions seen there as they are likely to be
-          // informative, but we still never abort the sync based on them.
-          try {
-            await PlacesUtils.history.insertMany(chunk, null, failedVisit => {
-              this._log.info(
-                "Failed to insert a history record",
-                failedVisit.guid
-              );
-              this._log.trace("The record that failed", failedVisit);
-              failed.push(failedVisit.guid);
-            });
-          } catch (ex) {
-            this._log.info("Failed to insert history records", ex);
+            this._log.error("Failed to delete a place info", ex);
+            this._log.trace("The record that failed", record);
+            failed.push(record.id);
           }
+        });
+      }
+      for (let chunk of this._generateChunks(toAdd)) {
+        // Per bug 1415560, we ignore any exceptions returned by insertMany
+        // as they are likely to be spurious. We do supply an onError handler
+        // and log the exceptions seen there as they are likely to be
+        // informative, but we still never abort the sync based on them.
+        try {
+          await PlacesUtils.history.insertMany(chunk, null, failedVisit => {
+            this._log.info(
+              "Failed to insert a history record",
+              failedVisit.guid
+            );
+            this._log.trace("The record that failed", failedVisit);
+            failed.push(failedVisit.guid);
+          });
+        } catch (ex) {
+          this._log.info("Failed to insert history records", ex);
         }
-      } finally {
-        notifyHistoryObservers("onEndUpdateBatch");
       }
     }
 
@@ -521,60 +502,26 @@ HistoryTracker.prototype = {
 
   onStart() {
     this._log.info("Adding Places observer.");
-    PlacesUtils.history.addObserver(this, true);
     this._placesObserver = new PlacesWeakCallbackWrapper(
       this.handlePlacesEvents.bind(this)
     );
-    PlacesObservers.addListener(["page-visited"], this._placesObserver);
+    PlacesObservers.addListener(
+      ["page-visited", "history-cleared", "page-removed"],
+      this._placesObserver
+    );
   },
 
   onStop() {
     this._log.info("Removing Places observer.");
-    PlacesUtils.history.removeObserver(this);
     if (this._placesObserver) {
-      PlacesObservers.removeListener(["page-visited"], this._placesObserver);
+      PlacesObservers.removeListener(
+        ["page-visited", "history-cleared", "page-removed"],
+        this._placesObserver
+      );
     }
   },
 
-  QueryInterface: ChromeUtils.generateQI([
-    "nsINavHistoryObserver",
-    "nsISupportsWeakReference",
-  ]),
-
-  async onDeleteAffectsGUID(uri, guid, reason, source, increment) {
-    if (this.ignoreAll || reason == Ci.nsINavHistoryObserver.REASON_EXPIRED) {
-      return;
-    }
-    this._log.trace(source + ": " + uri.spec + ", reason " + reason);
-    const added = await this.addChangedID(guid);
-    if (added) {
-      this.score += increment;
-    }
-  },
-
-  onDeleteVisits(uri, partialRemoval, guid, reason) {
-    this.asyncObserver.enqueueCall(() =>
-      this.onDeleteAffectsGUID(
-        uri,
-        guid,
-        reason,
-        "onDeleteVisits",
-        SCORE_INCREMENT_SMALL
-      )
-    );
-  },
-
-  onDeleteURI(uri, guid, reason) {
-    this.asyncObserver.enqueueCall(() =>
-      this.onDeleteAffectsGUID(
-        uri,
-        guid,
-        reason,
-        "onDeleteURI",
-        SCORE_INCREMENT_XLARGE
-      )
-    );
-  },
+  QueryInterface: ChromeUtils.generateQI(["nsISupportsWeakReference"]),
 
   handlePlacesEvents(aEvents) {
     this.asyncObserver.enqueueCall(() => this._handlePlacesEvents(aEvents));
@@ -590,27 +537,42 @@ HistoryTracker.prototype = {
       return;
     }
     for (let event of aEvents) {
-      this._log.trace("'page-visited': " + event.url);
-      if (
-        this.engine.shouldSyncURL(event.url) &&
-        (await this.addChangedID(event.pageGuid))
-      ) {
-        this.score += SCORE_INCREMENT_SMALL;
+      switch (event.type) {
+        case "page-visited": {
+          this._log.trace("'page-visited': " + event.url);
+          if (
+            this.engine.shouldSyncURL(event.url) &&
+            (await this.addChangedID(event.pageGuid))
+          ) {
+            this.score += SCORE_INCREMENT_SMALL;
+          }
+          break;
+        }
+        case "history-cleared": {
+          this._log.trace("history-cleared");
+          // Note that we're going to trigger a sync, but none of the cleared
+          // pages are tracked, so the deletions will not be propagated.
+          // See Bug 578694.
+          this.score += SCORE_INCREMENT_XLARGE;
+          break;
+        }
+        case "page-removed": {
+          if (event.reason === PlacesVisitRemoved.REASON_EXPIRED) {
+            return;
+          }
+
+          this._log.trace(
+            "page-removed: " + event.url + ", reason " + event.reason
+          );
+          const added = await this.addChangedID(event.pageGuid);
+          if (added) {
+            this.score += event.isRemovedFromStore
+              ? SCORE_INCREMENT_XLARGE
+              : SCORE_INCREMENT_SMALL;
+          }
+          break;
+        }
       }
     }
   },
-
-  onClearHistory() {
-    this._log.trace("onClearHistory");
-    // Note that we're going to trigger a sync, but none of the cleared
-    // pages are tracked, so the deletions will not be propagated.
-    // See Bug 578694.
-    this.score += SCORE_INCREMENT_XLARGE;
-  },
-
-  onBeginUpdateBatch() {},
-  onEndUpdateBatch() {},
-  onPageChanged() {},
-  onTitleChanged() {},
-  onBeforeDeleteURI() {},
 };

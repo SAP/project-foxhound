@@ -31,7 +31,7 @@
       var _delayedOnLoad = function() {
         gFindBar = document.getElementById("FindToolbar");
         gBrowser = document.getElementById("content");
-        gBrowser.addEventListener("pageshow", onPageShow, false);
+        gBrowser.addEventListener("pageshow", onPageShow, { once: true });
         BrowserTestUtils.loadURI(gBrowser, "data:text/html,<h2 id='h2'>mozilla</h2>");
       }
       setTimeout(_delayedOnLoad, 1000);
@@ -39,15 +39,18 @@
 
     function enterStringIntoFindField(aString) {
       for (var i=0; i < aString.length; i++) {
-        var event = document.createEvent("KeyboardEvent");
-        event.initKeyEvent("keypress", true, true, null, false, false,
-                           false, false, 0, aString.charCodeAt(i));
+        var event = new KeyboardEvent("keypress", {
+          bubbles: true,
+          cancelable: true,
+          view: null,
+          keyCode: 0,
+          charCode: aString.charCodeAt(i),
+        });
         gFindBar._findField.dispatchEvent(event);
       }
     }
 
     function onPageShow() {
-      gBrowser.removeEventListener("pageshow", onPageShow, false);
       var findField = gFindBar._findField;
       document.getElementById("cmd_find").doCommand();
 
@@ -65,9 +68,13 @@
         highlight.click();
 
       // Delete search term
-      var event = document.createEvent("KeyboardEvent");
-      event.initKeyEvent("keypress", true, true, null, false, false,
-                         false, false, KeyEvent.DOM_VK_BACK_SPACE, 0);
+      var event = new KeyboardEvent("keypress", {
+        bubbles: true,
+        cancelable: true,
+        view: null,
+        keyCode: KeyEvent.DOM_VK_BACK_SPACE,
+        charCode: 0,
+      });
       gFindBar._findField.dispatchEvent(event);
 
       var notRed = !findField.hasAttribute("status") ||

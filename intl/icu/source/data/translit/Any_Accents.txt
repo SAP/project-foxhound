@@ -1,5 +1,6 @@
 ﻿# © 2016 and later: Unicode, Inc. and others.
-# License & terms of use: http://www.unicode.org/copyright.html#License
+# License & terms of use: http://www.unicode.org/copyright.html
+# Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 #
 # File: Any_Accents.txt
 # Generated from CLDR
@@ -8,7 +9,7 @@
 :: NFD (NFC) ;
 # to do: make reversible
 # define special conversion characters.
-# varients of this could use different characters, or set one or the other to null.
+# variants of this could use different characters, or set one or the other to null.
 $pre = \← ;
 $post = \→ ;
 # Provide keyboard equivalents for common diacritics used in transliteration

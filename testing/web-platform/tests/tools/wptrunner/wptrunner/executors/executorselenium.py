@@ -1,4 +1,3 @@
-from __future__ import absolute_import
 import json
 import os
 import socket
@@ -6,7 +5,7 @@ import threading
 import time
 import traceback
 import uuid
-from six.moves.urllib.parse import urljoin
+from urllib.parse import urljoin
 
 from .base import (CallbackHandler,
                    RefTestExecutor,
@@ -19,12 +18,13 @@ from .protocol import (BaseProtocolPart,
                        Protocol,
                        SelectorProtocolPart,
                        ClickProtocolPart,
+                       CookiesProtocolPart,
                        SendKeysProtocolPart,
+                       WindowProtocolPart,
                        ActionSequenceProtocolPart,
                        TestDriverProtocolPart)
-from ..testrunner import Stop
 
-here = os.path.join(os.path.split(__file__)[0])
+here = os.path.dirname(__file__)
 
 webdriver = None
 exceptions = None
@@ -61,13 +61,17 @@ class SeleniumBaseProtocolPart(BaseProtocolPart):
     def set_window(self, handle):
         self.webdriver.switch_to_window(handle)
 
+    def window_handles(self):
+        return self.webdriver.window_handles
+
     def load(self, url):
         self.webdriver.get(url)
 
     def wait(self):
         while True:
             try:
-                self.webdriver.execute_async_script("")
+                return self.webdriver.execute_async_script("""let callback = arguments[arguments.length - 1];
+addEventListener("__test_restart", e => {e.preventDefault(); callback(true)})""")
             except exceptions.TimeoutException:
                 pass
             except (socket.timeout, exceptions.NoSuchWindowException,
@@ -76,6 +80,7 @@ class SeleniumBaseProtocolPart(BaseProtocolPart):
             except Exception:
                 self.logger.error(traceback.format_exc())
                 break
+        return False
 
 
 class SeleniumTestharnessProtocolPart(TestharnessProtocolPart):
@@ -155,7 +160,7 @@ class SeleniumTestharnessProtocolPart(TestharnessProtocolPart):
         """
         while True:
             try:
-                self.webdriver.execute_script(self.window_loaded_script, asynchronous=True)
+                self.webdriver.execute_async_script(self.window_loaded_script)
                 break
             except exceptions.JavascriptException:
                 pass
@@ -180,6 +185,27 @@ class SeleniumClickProtocolPart(ClickProtocolPart):
         return element.click()
 
 
+class SeleniumCookiesProtocolPart(CookiesProtocolPart):
+    def setup(self):
+        self.webdriver = self.parent.webdriver
+
+    def delete_all_cookies(self):
+        self.logger.info("Deleting all cookies")
+        return self.webdriver.delete_all_cookies()
+
+class SeleniumWindowProtocolPart(WindowProtocolPart):
+    def setup(self):
+        self.webdriver = self.parent.webdriver
+
+    def minimize(self):
+        self.previous_rect = self.webdriver.window.rect
+        self.logger.info("Minimizing")
+        return self.webdriver.minimize()
+
+    def set_rect(self, rect):
+        self.logger.info("Setting window rect")
+        self.webdriver.window.rect = rect
+
 class SeleniumSendKeysProtocolPart(SendKeysProtocolPart):
     def setup(self):
         self.webdriver = self.parent.webdriver
@@ -200,8 +226,9 @@ class SeleniumTestDriverProtocolPart(TestDriverProtocolPart):
     def setup(self):
         self.webdriver = self.parent.webdriver
 
-    def send_message(self, message_type, status, message=None):
+    def send_message(self, cmd_id, message_type, status, message=None):
         obj = {
+            "cmd_id": cmd_id,
             "type": "testdriver-%s" % str(message_type),
             "status": str(status)
         }
@@ -215,8 +242,10 @@ class SeleniumProtocol(Protocol):
                   SeleniumTestharnessProtocolPart,
                   SeleniumSelectorProtocolPart,
                   SeleniumClickProtocolPart,
+                  SeleniumCookiesProtocolPart,
                   SeleniumSendKeysProtocolPart,
                   SeleniumTestDriverProtocolPart,
+                  SeleniumWindowProtocolPart,
                   SeleniumActionSequenceProtocolPart]
 
     def __init__(self, executor, browser, capabilities, **kwargs):
@@ -263,8 +292,9 @@ class SeleniumRun(TimedRunner):
         try:
             self.protocol.base.set_timeout(timeout + self.extra_timeout)
         except exceptions.ErrorInResponseException:
-            self.logger.error("Lost WebDriver connection")
-            return Stop
+            msg = "Lost WebDriver connection"
+            self.logger.error(msg)
+            return ("INTERNAL-ERROR", msg)
 
     def run_func(self):
         try:

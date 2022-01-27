@@ -16,6 +16,9 @@ interface mixin WindowOrWorkerGlobalScope {
   [Replaceable] readonly attribute USVString origin;
   readonly attribute boolean crossOriginIsolated;
 
+  [Throws, NeedsCallerType]
+  void reportError(any e);
+
   // base64 utility methods
   [Throws]
   DOMString btoa(DOMString btoa);
@@ -41,9 +44,16 @@ interface mixin WindowOrWorkerGlobalScope {
 
   // ImageBitmap
   [Throws]
-  Promise<ImageBitmap> createImageBitmap(ImageBitmapSource aImage);
+  Promise<ImageBitmap> createImageBitmap(ImageBitmapSource aImage,
+                                         optional ImageBitmapOptions aOptions = {});
   [Throws]
-  Promise<ImageBitmap> createImageBitmap(ImageBitmapSource aImage, long aSx, long aSy, long aSw, long aSh);
+  Promise<ImageBitmap> createImageBitmap(ImageBitmapSource aImage,
+                                         long aSx, long aSy, long aSw, long aSh,
+                                         optional ImageBitmapOptions aOptions = {});
+
+  // structured cloning
+  [Throws]
+  any structuredClone(any value, optional StructuredSerializeOptions options = {});
 };
 
 // https://fetch.spec.whatwg.org/#fetch-method

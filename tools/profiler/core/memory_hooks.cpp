@@ -67,6 +67,55 @@ namespace mozilla::profiler {
 // Utilities
 //---------------------------------------------------------------------------
 
+// Returns true or or false depending on whether the marker was actually added
+// or not.
+static bool profiler_add_native_allocation_marker(int64_t aSize,
+                                                  uintptr_t aMemoryAddress) {
+  if (!profiler_thread_is_being_profiled_for_markers(
+          profiler_main_thread_id())) {
+    return false;
+  }
+
+  // Because native allocations may be intercepted anywhere, blocking while
+  // locking the profiler mutex here could end up causing a deadlock if another
+  // mutex is taken, which the profiler may indirectly need elsewhere.
+  // See bug 1642726 for such a scenario.
+  // So instead we bail out if the mutex is already locked. Native allocations
+  // are statistically sampled anyway, so missing a few because of this is
+  // acceptable.
+  if (profiler_is_locked_on_current_thread()) {
+    return false;
+  }
+
+  struct NativeAllocationMarker {
+    static constexpr mozilla::Span<const char> MarkerTypeName() {
+      return mozilla::MakeStringSpan("Native allocation");
+    }
+    static void StreamJSONMarkerData(
+        mozilla::baseprofiler::SpliceableJSONWriter& aWriter, int64_t aSize,
+        uintptr_t aMemoryAddress, ProfilerThreadId aThreadId) {
+      aWriter.IntProperty("size", aSize);
+      aWriter.IntProperty("memoryAddress",
+                          static_cast<int64_t>(aMemoryAddress));
+      // Tech note: If `ToNumber()` returns a uint64_t, the conversion to
+      // int64_t is "implementation-defined" before C++20. This is acceptable
+      // here, because this is a one-way conversion to a unique identifier
+      // that's used to visually separate data by thread on the front-end.
+      aWriter.IntProperty("threadId",
+                          static_cast<int64_t>(aThreadId.ToNumber()));
+    }
+    static mozilla::MarkerSchema MarkerTypeDisplay() {
+      return mozilla::MarkerSchema::SpecialFrontendLocation{};
+    }
+  };
+
+  profiler_add_marker("Native allocation", geckoprofiler::category::OTHER,
+                      {MarkerThreadId::MainThread(), MarkerStack::Capture()},
+                      NativeAllocationMarker{}, aSize, aMemoryAddress,
+                      profiler_current_thread_id());
+  return true;
+}
+
 static malloc_table_t gMallocTable;
 
 // This is only needed because of the |const void*| vs |void*| arg mismatch.
@@ -255,7 +304,12 @@ static void EnsureAllocationTrackerIsInstalled() {
     ::mozilla::detail::ThreadLocal<T, ::mozilla::detail::ThreadLocalKeyStorage>
 #endif
 
-class ThreadIntercept {
+// This class is used to determine if allocations on this thread should be
+// intercepted or not.
+// Creating a ThreadIntercept object on the stack will implicitly block nested
+// ones. There are other reasons to block: The feature is off, or we're inside a
+// profiler function that is locking a mutex.
+class MOZ_RAII ThreadIntercept {
   // When set to true, malloc does not intercept additional allocations. This is
   // needed because collecting stacks creates new allocations. When blocked,
   // these allocations are then ignored by the memory hook.
@@ -265,92 +319,58 @@ class ThreadIntercept {
   // or disabled.
   static mozilla::Atomic<bool, mozilla::Relaxed> sAllocationsFeatureEnabled;
 
-  // The markers will be stored on the main thread. Retain the id to the main
-  // thread of this process here.
-  static mozilla::Atomic<int, mozilla::Relaxed> sMainThreadId;
+  // True if this ThreadIntercept has set tlsIsBlocked.
+  bool mIsBlockingTLS;
 
-  ThreadIntercept() = default;
-
-  // Only allow consumers to access this information if they run
-  // ThreadIntercept::MaybeGet and ask through the non-static version.
-  static bool IsBlocked_() {
-    // When the native allocations feature is turned on, memory hooks run on
-    // every single allocation. For a subset of these allocations, the stack
-    // gets sampled by running profiler_get_backtrace(), which locks the
-    // profiler mutex.
-    //
-    // An issue arises when allocating while the profiler is locked FOR THE
-    // CURRENT THREAD. In this situation, if profiler_get_backtrace() were to be
-    // run, it would try to re-acquire this lock and deadlock. In order to guard
-    // against this deadlock, we check to see if the mutex is already locked by
-    // this thread.
-    return tlsIsBlocked.get() || profiler_is_locked_on_current_thread();
-  }
+  // True if interception is blocked for any reason.
+  bool mIsBlocked;
 
  public:
-  static void Init() { tlsIsBlocked.infallibleInit(); }
-
-  // The ThreadIntercept object can only be created through this method, the
-  // constructor is private. This is so that we only check to see if the native
-  // allocations are turned on once, and not multiple times through the calls.
-  // The feature maybe be toggled between different stages of the memory hook.
-  static Maybe<ThreadIntercept> MaybeGet() {
-    if (sAllocationsFeatureEnabled && !ThreadIntercept::IsBlocked_()) {
-      // Only return thread intercepts when the native allocations feature is
-      // enabled and we aren't blocked.
-      return Some(ThreadIntercept());
-    }
-    return Nothing();
-  }
-
-  void Block() {
+  static void Init() {
+    tlsIsBlocked.infallibleInit();
+    // infallibleInit should zero-initialize, which corresponds to `false`.
     MOZ_ASSERT(!tlsIsBlocked.get());
-    tlsIsBlocked.set(true);
   }
 
-  void Unblock() {
-    MOZ_ASSERT(tlsIsBlocked.get());
-    tlsIsBlocked.set(false);
+  ThreadIntercept() {
+    // If the allocation interception feature is enabled, and the TLS is not
+    // blocked yet, we will block the TLS now, and unblock on destruction.
+    mIsBlockingTLS = sAllocationsFeatureEnabled && !tlsIsBlocked.get();
+    if (mIsBlockingTLS) {
+      MOZ_ASSERT(!tlsIsBlocked.get());
+      tlsIsBlocked.set(true);
+      // Since this is the top-level ThreadIntercept, interceptions are not
+      // blocked unless the profiler itself holds a locked mutex, in which case
+      // we don't want to intercept allocations that originate from such a
+      // profiler call.
+      mIsBlocked = profiler_is_locked_on_current_thread();
+    } else {
+      // The feature is off, or the TLS was already blocked, then we block this
+      // interception.
+      mIsBlocked = true;
+    }
   }
 
-  bool IsBlocked() const { return ThreadIntercept::IsBlocked_(); }
-
-  static void EnableAllocationFeature(int aMainThreadId) {
-    sAllocationsFeatureEnabled = true;
-    sMainThreadId = aMainThreadId;
+  ~ThreadIntercept() {
+    if (mIsBlockingTLS) {
+      MOZ_ASSERT(tlsIsBlocked.get());
+      tlsIsBlocked.set(false);
+    }
   }
+
+  // Is this ThreadIntercept effectively blocked? (Feature is off, or this
+  // ThreadIntercept is nested, or we're inside a locked-Profiler function.)
+  bool IsBlocked() const { return mIsBlocked; }
+
+  static void EnableAllocationFeature() { sAllocationsFeatureEnabled = true; }
 
   static void DisableAllocationFeature() { sAllocationsFeatureEnabled = false; }
-
-  static int MainThreadId() { return sMainThreadId; }
 };
 
 PROFILER_THREAD_LOCAL(bool) ThreadIntercept::tlsIsBlocked;
 
 mozilla::Atomic<bool, mozilla::Relaxed>
     ThreadIntercept::sAllocationsFeatureEnabled(false);
-
-mozilla::Atomic<int, mozilla::Relaxed> ThreadIntercept::sMainThreadId(0);
-
-// An object of this class must be created (on the stack) before running any
-// code that might allocate.
-class AutoBlockIntercepts {
-  ThreadIntercept& mThreadIntercept;
-
- public:
-  // Disallow copy and assign.
-  AutoBlockIntercepts(const AutoBlockIntercepts&) = delete;
-  void operator=(const AutoBlockIntercepts&) = delete;
-
-  explicit AutoBlockIntercepts(ThreadIntercept& aThreadIntercept)
-      : mThreadIntercept(aThreadIntercept) {
-    mThreadIntercept.Block();
-  }
-  ~AutoBlockIntercepts() {
-    MOZ_ASSERT(mThreadIntercept.IsBlocked());
-    mThreadIntercept.Unblock();
-  }
-};
 
 //---------------------------------------------------------------------------
 // malloc/free callbacks
@@ -367,17 +387,15 @@ static void AllocCallback(void* aPtr, size_t aReqSize) {
     sCounter->Add(actualSize);
   }
 
-  auto threadIntercept = ThreadIntercept::MaybeGet();
-  if (threadIntercept.isNothing()) {
-    // Either the native allocations feature is not turned on, or we  may be
+  ThreadIntercept threadIntercept;
+  if (threadIntercept.IsBlocked()) {
+    // Either the native allocations feature is not turned on, or we may be
     // recursing into a memory hook, return. We'll still collect counter
     // information about this allocation, but no stack.
     return;
   }
 
-  // The next part of the function requires allocations, so block the memory
-  // hooks from recursing on any new allocations coming in.
-  AutoBlockIntercepts block(threadIntercept.ref());
+  AUTO_PROFILER_LABEL("AllocCallback", PROFILER);
 
   // Perform a bernoulli trial, which will return true or false based on its
   // configured probability. It takes into account the byte size so that
@@ -389,7 +407,7 @@ static void AllocCallback(void* aPtr, size_t aReqSize) {
       gBernoulli->trial(actualSize) &&
       // Second, attempt to add a marker if the Bernoulli trial passed.
       profiler_add_native_allocation_marker(
-          ThreadIntercept::MainThreadId(), static_cast<int64_t>(actualSize),
+          static_cast<int64_t>(actualSize),
           reinterpret_cast<uintptr_t>(aPtr))) {
     MOZ_ASSERT(gAllocationTracker,
                "gAllocationTracker must be properly installed for the memory "
@@ -412,17 +430,15 @@ static void FreeCallback(void* aPtr) {
   int64_t signedSize = -(static_cast<int64_t>(unsignedSize));
   sCounter->Add(signedSize);
 
-  auto threadIntercept = ThreadIntercept::MaybeGet();
-  if (threadIntercept.isNothing()) {
-    // Either the native allocations feature is not turned on, or we  may be
+  ThreadIntercept threadIntercept;
+  if (threadIntercept.IsBlocked()) {
+    // Either the native allocations feature is not turned on, or we may be
     // recursing into a memory hook, return. We'll still collect counter
     // information about this allocation, but no stack.
     return;
   }
 
-  // The next part of the function requires allocations, so block the memory
-  // hooks from recursing on any new allocations coming in.
-  AutoBlockIntercepts block(threadIntercept.ref());
+  AUTO_PROFILER_LABEL("FreeCallback", PROFILER);
 
   // Perform a bernoulli trial, which will return true or false based on its
   // configured probability. It takes into account the byte size so that
@@ -432,8 +448,7 @@ static void FreeCallback(void* aPtr) {
       "gAllocationTracker must be properly installed for the memory hooks.");
   if (gAllocationTracker->RemoveMemoryAddressIfFound(aPtr)) {
     // This size here is negative, indicating a deallocation.
-    profiler_add_native_allocation_marker(ThreadIntercept::MainThreadId(),
-                                          signedSize,
+    profiler_add_native_allocation_marker(signedSize,
                                           reinterpret_cast<uintptr_t>(aPtr));
   }
 }
@@ -550,15 +565,18 @@ namespace mozilla::profiler {
 // Initialization
 //---------------------------------------------------------------------------
 
-void install_memory_hooks() {
+BaseProfilerCount* install_memory_hooks() {
   if (!sCounter) {
     sCounter = new ProfilerCounterTotal("malloc", "Memory",
                                         "Amount of allocated memory");
     // Also initialize the ThreadIntercept, even if native allocation tracking
     // won't be turned on. This way the TLS will be initialized.
     ThreadIntercept::Init();
+  } else {
+    sCounter->Clear();
   }
   jemalloc_replace_dynamic(replace_init);
+  return sCounter;
 }
 
 // Remove the hooks, but leave the sCounter machinery. Deleting the counter
@@ -567,7 +585,7 @@ void install_memory_hooks() {
 // leak these values.
 void remove_memory_hooks() { jemalloc_replace_dynamic(nullptr); }
 
-void enable_native_allocations(int aMainThreadId) {
+void enable_native_allocations() {
   // The bloat log tracks allocations and deallocations. This can conflict
   // with the memory hook machinery, as the bloat log creates its own
   // allocations. This means we can re-enter inside the bloat log machinery. At
@@ -596,7 +614,7 @@ void enable_native_allocations(int aMainThreadId) {
 
   EnsureBernoulliIsInstalled();
   EnsureAllocationTrackerIsInstalled();
-  ThreadIntercept::EnableAllocationFeature(aMainThreadId);
+  ThreadIntercept::EnableAllocationFeature();
 }
 
 // This is safe to call even if native allocations hasn't been enabled.

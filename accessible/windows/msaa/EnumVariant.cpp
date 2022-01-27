@@ -15,7 +15,7 @@ using namespace mozilla::a11y;
 
 IMPL_IUNKNOWN_QUERY_HEAD(ChildrenEnumVariant)
 IMPL_IUNKNOWN_QUERY_IFACE(IEnumVARIANT)
-IMPL_IUNKNOWN_QUERY_TAIL_AGGREGATED(mAnchorAcc)
+IMPL_IUNKNOWN_QUERY_TAIL_AGGREGATED(mAnchorMsaa)
 
 STDMETHODIMP
 ChildrenEnumVariant::Next(ULONG aCount, VARIANT FAR* aItems,
@@ -24,17 +24,19 @@ ChildrenEnumVariant::Next(ULONG aCount, VARIANT FAR* aItems,
 
   *aCountFetched = 0;
 
-  if (mAnchorAcc->IsDefunct() || mAnchorAcc->GetChildAt(mCurIndex) != mCurAcc)
+  Accessible* anchor = mAnchorMsaa->Acc();
+  if (!anchor || anchor->ChildAt(mCurIndex) != mCurAcc) {
     return CO_E_OBJNOTCONNECTED;
+  }
 
   ULONG countFetched = 0;
   while (mCurAcc && countFetched < aCount) {
     VariantInit(aItems + countFetched);
 
-    IDispatch* accNative = AccessibleWrap::NativeAccessible(mCurAcc);
+    IDispatch* accNative = MsaaAccessible::NativeAccessible(mCurAcc);
 
     ++mCurIndex;
-    mCurAcc = mAnchorAcc->GetChildAt(mCurIndex);
+    mCurAcc = anchor->ChildAt(mCurIndex);
 
     // Don't output the accessible and count it as having been fetched unless
     // it is non-null
@@ -55,21 +57,24 @@ ChildrenEnumVariant::Next(ULONG aCount, VARIANT FAR* aItems,
 
 STDMETHODIMP
 ChildrenEnumVariant::Skip(ULONG aCount) {
-  if (mAnchorAcc->IsDefunct() || mAnchorAcc->GetChildAt(mCurIndex) != mCurAcc)
+  Accessible* anchor = mAnchorMsaa->Acc();
+  if (!anchor || anchor->ChildAt(mCurIndex) != mCurAcc) {
     return CO_E_OBJNOTCONNECTED;
+  }
 
   mCurIndex += aCount;
-  mCurAcc = mAnchorAcc->GetChildAt(mCurIndex);
+  mCurAcc = anchor->ChildAt(mCurIndex);
 
   return mCurAcc ? S_OK : S_FALSE;
 }
 
 STDMETHODIMP
 ChildrenEnumVariant::Reset() {
-  if (mAnchorAcc->IsDefunct()) return CO_E_OBJNOTCONNECTED;
+  Accessible* anchor = mAnchorMsaa->Acc();
+  if (!anchor) return CO_E_OBJNOTCONNECTED;
 
   mCurIndex = 0;
-  mCurAcc = mAnchorAcc->GetChildAt(0);
+  mCurAcc = anchor->ChildAt(0);
 
   return S_OK;
 }

@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 ti{
     Currencies{
         BRL{
@@ -7,16 +8,20 @@ ti{
             "የብራዚል ሪል",
         }
         CNY{
-            "CN¥",
-            "የቻይና ዩአን ረንሚንቢ",
+            "CNY",
+            "ዩዋን ቻይና",
+        }
+        ERN{
+            "ERN",
+            "ናቕፋ",
         }
         ETB{
             "Br",
-            "የኢትዮጵያ ብር",
+            "ብር",
         }
         EUR{
             "€",
-            "አውሮ",
+            "ዩሮ",
         }
         GBP{
             "£",
@@ -27,8 +32,8 @@ ti{
             "የሕንድ ሩፒ",
         }
         JPY{
-            "JP¥",
-            "የጃፓን የን",
+            "JPY",
+            "የን ጃፓን",
         }
         RUB{
             "RUB",
@@ -36,12 +41,68 @@ ti{
         }
         USD{
             "US$",
-            "የአሜሪካን ዶላር",
+            "ዶላር ኣመሪካ",
+        }
+        XAG{
+            "XAG",
+            "ብሩር",
+        }
+        XAU{
+            "XAU",
+            "ወርቂ",
+        }
+        XXX{
+            "¤",
+            "ዘይተፈልጠ ባጤራ",
+        }
+    }
+    Currencies%narrow{
+        BMD{"$"}
+        CNY{"¥"}
+        EUR{"€"}
+        JPY{"¥"}
+        USD{"$"}
+    }
+    CurrencyPlurals{
+        CNY{
+            one{"ዩዋን ቻይና"}
+            other{"ዩዋን ቻይና"}
+        }
+        ERN{
+            one{"ናቕፋ"}
+            other{"ናቕፋ"}
+        }
+        ETB{
+            one{"ብር"}
+            other{"ብር"}
+        }
+        EUR{
+            one{"ዩሮ"}
+            other{"ዩሮ"}
+        }
+        JPY{
+            one{"የን ጃፓን"}
+            other{"የን ጃፓን"}
+        }
+        USD{
+            one{"ዶላር ኣመሪካ"}
+            other{"ዶላር ኣመሪካ"}
+        }
+        XAG{
+            one{"ብሩር"}
+            other{"ብሩር"}
+        }
+        XAU{
+            one{"ወርቂ"}
+            other{"ወርቂ"}
+        }
+        XXX{
+            one{"(ዘይተፈልጠ ባጤራ)"}
+            other{"(ዘይተፈልጠ ባጤራ)"}
         }
     }
     CurrencyUnitPatterns{
         one{"{0} {1}"}
         other{"{0} {1}"}
     }
-    Version{"37"}
 }

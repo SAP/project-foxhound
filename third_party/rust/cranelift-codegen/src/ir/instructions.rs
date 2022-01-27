@@ -13,11 +13,16 @@ use core::num::NonZeroU32;
 use core::ops::{Deref, DerefMut};
 use core::str::FromStr;
 
+#[cfg(feature = "enable-serde")]
+use serde::{Deserialize, Serialize};
+
 use crate::ir::{self, trapcode::TrapCode, types, Block, FuncRef, JumpTable, SigRef, Type, Value};
 use crate::isa;
 
 use crate::bitset::BitSet;
+use crate::data_value::DataValue;
 use crate::entity;
+use ir::condcodes::{FloatCC, IntCC};
 
 /// Some instructions use an external list of argument values because there is not enough space in
 /// the 16-byte `InstructionData` struct. These value lists are stored in a memory pool in
@@ -275,11 +280,46 @@ impl InstructionData {
                 ref mut destination,
                 ..
             } => Some(destination),
-            Self::BranchTable { .. } => None,
+            Self::BranchTable { .. } | Self::IndirectJump { .. } => None,
             _ => {
                 debug_assert!(!self.opcode().is_branch());
                 None
             }
+        }
+    }
+
+    /// Return the value of an immediate if the instruction has one or `None` otherwise. Only
+    /// immediate values are considered, not global values, constant handles, condition codes, etc.
+    pub fn imm_value(&self) -> Option<DataValue> {
+        match self {
+            &InstructionData::UnaryBool { imm, .. } => Some(DataValue::from(imm)),
+            // 8-bit.
+            &InstructionData::BinaryImm8 { imm, .. }
+            | &InstructionData::BranchTableEntry { imm, .. } => Some(DataValue::from(imm as i8)), // Note the switch from unsigned to signed.
+            // 32-bit
+            &InstructionData::UnaryIeee32 { imm, .. } => Some(DataValue::from(imm)),
+            &InstructionData::HeapAddr { imm, .. } => {
+                let imm: u32 = imm.into();
+                Some(DataValue::from(imm as i32)) // Note the switch from unsigned to signed.
+            }
+            &InstructionData::Load { offset, .. }
+            | &InstructionData::LoadComplex { offset, .. }
+            | &InstructionData::Store { offset, .. }
+            | &InstructionData::StoreComplex { offset, .. }
+            | &InstructionData::StackLoad { offset, .. }
+            | &InstructionData::StackStore { offset, .. }
+            | &InstructionData::TableAddr { offset, .. } => Some(DataValue::from(offset)),
+            // 64-bit.
+            &InstructionData::UnaryImm { imm, .. }
+            | &InstructionData::BinaryImm64 { imm, .. }
+            | &InstructionData::IntCompareImm { imm, .. } => Some(DataValue::from(imm.bits())),
+            &InstructionData::UnaryIeee64 { imm, .. } => Some(DataValue::from(imm)),
+            // 128-bit; though these immediates are present logically in the IR they are not
+            // included in the `InstructionData` for memory-size reasons. This case, returning
+            // `None`, is left here to alert users of this method that they should retrieve the
+            // value using the `DataFlowGraph`.
+            &InstructionData::Shuffle { mask: _, .. } => None,
+            _ => None,
         }
     }
 
@@ -295,6 +335,33 @@ impl InstructionData {
         }
     }
 
+    /// If this is a control-flow instruction depending on an integer condition, gets its
+    /// condition.  Otherwise, return `None`.
+    pub fn cond_code(&self) -> Option<IntCC> {
+        match self {
+            &InstructionData::IntCond { cond, .. }
+            | &InstructionData::BranchIcmp { cond, .. }
+            | &InstructionData::IntCompare { cond, .. }
+            | &InstructionData::IntCondTrap { cond, .. }
+            | &InstructionData::BranchInt { cond, .. }
+            | &InstructionData::IntSelect { cond, .. }
+            | &InstructionData::IntCompareImm { cond, .. } => Some(cond),
+            _ => None,
+        }
+    }
+
+    /// If this is a control-flow instruction depending on a floating-point condition, gets its
+    /// condition.  Otherwise, return `None`.
+    pub fn fp_cond_code(&self) -> Option<FloatCC> {
+        match self {
+            &InstructionData::BranchFloat { cond, .. }
+            | &InstructionData::FloatCompare { cond, .. }
+            | &InstructionData::FloatCond { cond, .. }
+            | &InstructionData::FloatCondTrap { cond, .. } => Some(cond),
+            _ => None,
+        }
+    }
+
     /// If this is a trapping instruction, get an exclusive reference to its
     /// trap code. Otherwise, return `None`.
     pub fn trap_code_mut(&mut self) -> Option<&mut TrapCode> {
@@ -303,6 +370,27 @@ impl InstructionData {
             | Self::FloatCondTrap { code, .. }
             | Self::IntCondTrap { code, .. }
             | Self::Trap { code, .. } => Some(code),
+            _ => None,
+        }
+    }
+
+    /// If this is an atomic read/modify/write instruction, return its subopcode.
+    pub fn atomic_rmw_op(&self) -> Option<ir::AtomicRmwOp> {
+        match self {
+            &InstructionData::AtomicRmw { op, .. } => Some(op),
+            _ => None,
+        }
+    }
+
+    /// If this is a load/store instruction, returns its immediate offset.
+    pub fn load_store_offset(&self) -> Option<i32> {
+        match self {
+            &InstructionData::Load { offset, .. }
+            | &InstructionData::StackLoad { offset, .. }
+            | &InstructionData::LoadComplex { offset, .. }
+            | &InstructionData::Store { offset, .. }
+            | &InstructionData::StackStore { offset, .. }
+            | &InstructionData::StoreComplex { offset, .. } => Some(offset.into()),
             _ => None,
         }
     }

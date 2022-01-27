@@ -14,6 +14,7 @@
 #include <functional>
 #include <iostream>
 
+#include "nss_policy.h"
 #include "test_io.h"
 
 #define GTEST_HAS_RTTI 0
@@ -158,7 +159,9 @@ class TlsAgent : public PollTarget {
   void SetServerKeyBits(uint16_t bits);
   void ExpectReadWriteError();
   void EnableFalseStart();
-  void ExpectPsk();
+  void ExpectEch(bool expected = true);
+  bool GetEchExpected() const { return expect_ech_; }
+  void ExpectPsk(SSLPskType psk = ssl_psk_external);
   void ExpectResumption();
   void SkipVersionChecks();
   void SetSignatureSchemes(const SSLSignatureScheme* schemes, size_t count);
@@ -186,6 +189,7 @@ class TlsAgent : public PollTarget {
   void EnableExtendedMasterSecret();
   void CheckExtendedMasterSecret(bool expected);
   void CheckEarlyDataAccepted(bool expected);
+  void CheckEchAccepted(bool expected);
   void SetDowngradeCheckVersion(uint16_t version);
   void CheckSecretsDestroyed();
   void ConfigNamedGroups(const std::vector<SSLNamedGroup>& groups);
@@ -228,7 +232,9 @@ class TlsAgent : public PollTarget {
 
   static const char* state_str(State state) { return states[state]; }
 
-  PRFileDesc* ssl_fd() const { return ssl_fd_.get(); }
+  NssManagedFileDesc ssl_fd() const {
+    return NssManagedFileDesc(ssl_fd_.get(), policy_);
+  }
   std::shared_ptr<DummyPrSocket>& adapter() { return adapter_; }
 
   const SSLChannelInfo& info() const {
@@ -304,6 +310,10 @@ class TlsAgent : public PollTarget {
   void ExpectSendAlert(uint8_t alert, uint8_t level = 0);
 
   std::string alpn_value_to_use_ = "";
+  // set the given policy before this agent runs
+  void SetPolicy(SECOidTag oid, PRUint32 set, PRUint32 clear) {
+    policy_ = NssPolicy(oid, set, clear);
+  }
 
  private:
   const static char* states[];
@@ -426,6 +436,7 @@ class TlsAgent : public PollTarget {
   uint16_t expected_version_;
   uint16_t expected_cipher_suite_;
   bool expect_client_auth_;
+  bool expect_ech_;
   SSLPskType expect_psk_;
   bool can_falsestart_hook_called_;
   bool sni_hook_called_;
@@ -449,6 +460,7 @@ class TlsAgent : public PollTarget {
   SniCallbackFunction sni_callback_;
   bool skip_version_checks_;
   std::vector<uint8_t> resumption_token_;
+  NssPolicy policy_;
 };
 
 inline std::ostream& operator<<(std::ostream& stream,

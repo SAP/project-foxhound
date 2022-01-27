@@ -23,7 +23,9 @@ function DateKeeper(props) {
     // http://ecma-international.org/ecma-262/5.1/#sec-15.9.1.1
     MAX_DATE = 8640000000000000,
     MAX_YEAR = 275760,
-    MAX_MONTH = 9;
+    MAX_MONTH = 9,
+    // One day in ms since epoch.
+    ONE_DAY = 86400000;
 
   DateKeeper.prototype = {
     get year() {
@@ -85,9 +87,33 @@ function DateKeeper(props) {
         selection: { year, month, day },
       };
 
+      if (year === undefined) {
+        year = today.getFullYear();
+      }
+      if (month === undefined) {
+        month = today.getMonth();
+      }
+
+      const minYear = this.state.min.getFullYear();
+      const maxYear = this.state.max.getFullYear();
+
+      // Choose a valid year for the value/min/max properties
+      const selectedYear = Math.min(Math.max(year, minYear), maxYear);
+
+      // Choose the month that correspond to the selectedYear
+      let selectedMonth = 0;
+
+      if (selectedYear === year) {
+        selectedMonth = month;
+      } else if (selectedYear === minYear) {
+        selectedMonth = this.state.min.getMonth();
+      } else if (selectedYear === maxYear) {
+        selectedMonth = this.state.max.getMonth();
+      }
+
       this.setCalendarMonth({
-        year: year === undefined ? today.getFullYear() : year,
-        month: month === undefined ? today.getMonth() : month,
+        year: selectedYear,
+        month: selectedMonth,
       });
     },
 
@@ -159,10 +185,20 @@ function DateKeeper(props) {
     getMonths() {
       let months = [];
 
+      const currentYear = this.year;
+
+      const minYear = this.state.min.getFullYear();
+      const minMonth = this.state.min.getMonth();
+      const maxYear = this.state.max.getFullYear();
+      const maxMonth = this.state.max.getMonth();
+
       for (let i = 0; i < MONTHS_IN_A_YEAR; i++) {
+        const disabled =
+          (currentYear == minYear && i < minMonth) ||
+          (currentYear == maxYear && i > maxMonth);
         months.push({
           value: i,
-          enabled: true,
+          enabled: !disabled,
         });
       }
 
@@ -184,6 +220,9 @@ function DateKeeper(props) {
       const lastItem = this.state.years[this.state.years.length - 1];
       const currentYear = this.year;
 
+      const minYear = Math.max(this.state.min.getFullYear(), 1);
+      const maxYear = Math.min(this.state.max.getFullYear(), MAX_YEAR);
+
       // Generate new years array when the year is outside of the first &
       // last item range. If not, return the cached result.
       if (
@@ -195,7 +234,8 @@ function DateKeeper(props) {
         // The year is set in the middle with items on both directions
         for (let i = -(YEAR_VIEW_SIZE / 2); i < YEAR_VIEW_SIZE / 2; i++) {
           const year = currentYear + i;
-          if (year >= 1 && year <= MAX_YEAR) {
+
+          if (year >= minYear && year <= maxYear) {
             years.push({
               value: year,
               enabled: true,
@@ -254,8 +294,11 @@ function DateKeeper(props) {
           this.state.selection.year == dateObj.getUTCFullYear() &&
           this.state.selection.month == dateObj.getUTCMonth() &&
           this.state.selection.day == dateObj.getUTCDate();
+        // The date is at 00:00, so if the minimum is that day at e.g. 01:00,
+        // we should arguably still be able to select that date. So we need to
+        // compare the date at the very end of the day for minimum purposes.
         const isOutOfRange =
-          dateObj.getTime() < this.state.min.getTime() ||
+          dateObj.getTime() + ONE_DAY - 1 < this.state.min.getTime() ||
           dateObj.getTime() > this.state.max.getTime();
         const isToday = this.state.today.getTime() == dateObj.getTime();
         const isOffStep = this._checkIsOffStep(

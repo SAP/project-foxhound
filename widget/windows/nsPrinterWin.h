@@ -6,28 +6,48 @@
 #ifndef nsPrinterWin_h_
 #define nsPrinterWin_h_
 
-#include "nsIPrinter.h"
+#include "nsPrinterBase.h"
+#include "mozilla/DataMutex.h"
+#include "nsTArrayForwardDeclare.h"
 
-#include "mozilla/Maybe.h"
-#include "nsIPaper.h"
-#include "nsISupportsImpl.h"
-#include "nsString.h"
-
-class nsPrinterWin final : public nsIPrinter {
+class nsPrinterWin final : public nsPrinterBase {
  public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIPRINTER
+  NS_IMETHOD GetName(nsAString& aName) override;
+  NS_IMETHOD GetSystemName(nsAString& aName) override;
+  NS_IMETHOD CopyFromWithValidation(nsIPrintSettings*, JSContext*,
+                                    Promise**) final;
+  bool SupportsDuplex() const final;
+  bool SupportsColor() const final;
+  bool SupportsMonochrome() const final;
+  bool SupportsCollation() const final;
+  PrinterInfo CreatePrinterInfo() const final;
+  MarginDouble GetMarginsForPaper(nsString aPaperId) const final;
+
   nsPrinterWin() = delete;
-  explicit nsPrinterWin(const nsAString& aName);
+  static already_AddRefed<nsPrinterWin> Create(
+      const mozilla::CommonPaperInfoArray* aPaperInfoArray,
+      const nsAString& aName);
 
  private:
+  nsPrinterWin(const mozilla::CommonPaperInfoArray* aPaperInfoArray,
+               const nsAString& aName);
   ~nsPrinterWin() = default;
 
-  nsresult EnsurePaperList();
+  PrintSettingsInitializer GetValidatedSettings(
+      PrintSettingsInitializer aSettingsToValidate) const;
 
-  nsString mName;
-  nsTArray<RefPtr<nsIPaper>> mPaperList;
-  Maybe<bool> mSupportsDuplex;
+  nsTArray<uint8_t> CopyDefaultDevmodeW() const;
+  nsTArray<mozilla::PaperInfo> PaperList() const;
+  PrintSettingsInitializer DefaultSettings() const;
+
+  const nsString mName;
+  mutable mozilla::DataMutex<nsTArray<uint8_t>> mDefaultDevmodeWStorage;
+  // Even though some documentation seems to suggest that you should be able to
+  // use printer drivers on separate threads if you have separate handles, we
+  // see threading issues with multiple drivers. This Mutex is used to lock
+  // around all calls to DeviceCapabilitiesW, DocumentPropertiesW and
+  // CreateICW/DCW, to hopefully prevent these issues.
+  mutable mozilla::Mutex mDriverMutex{"nsPrinterWin::Driver"};
 };
 
 #endif  // nsPrinterWin_h_

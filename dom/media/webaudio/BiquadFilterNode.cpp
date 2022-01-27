@@ -16,8 +16,7 @@
 #include "mozilla/ErrorResult.h"
 #include "AudioParamTimeline.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(BiquadFilterNode, AudioNode, mFrequency,
                                    mDetune, mQ, mGain)
@@ -225,12 +224,12 @@ BiquadFilterNode::BiquadFilterNode(AudioContext* aContext)
     : AudioNode(aContext, 2, ChannelCountMode::Max,
                 ChannelInterpretation::Speakers),
       mType(BiquadFilterType::Lowpass) {
-  CreateAudioParam(mFrequency, BiquadFilterNodeEngine::FREQUENCY, u"frequency",
-                   350.f, -(aContext->SampleRate() / 2),
-                   aContext->SampleRate() / 2);
-  CreateAudioParam(mDetune, BiquadFilterNodeEngine::DETUNE, u"detune", 0.f);
-  CreateAudioParam(mQ, BiquadFilterNodeEngine::Q, u"Q", 1.f);
-  CreateAudioParam(mGain, BiquadFilterNodeEngine::GAIN, u"gain", 0.f);
+  mFrequency = CreateAudioParam(
+      BiquadFilterNodeEngine::FREQUENCY, u"frequency"_ns, 350.f,
+      -(aContext->SampleRate() / 2), aContext->SampleRate() / 2);
+  mDetune = CreateAudioParam(BiquadFilterNodeEngine::DETUNE, u"detune"_ns, 0.f);
+  mQ = CreateAudioParam(BiquadFilterNodeEngine::Q, u"Q"_ns, 1.f);
+  mGain = CreateAudioParam(BiquadFilterNodeEngine::GAIN, u"gain"_ns, 0.f);
 
   uint64_t windowID = 0;
   if (aContext->GetParentObject()) {
@@ -254,10 +253,10 @@ already_AddRefed<BiquadFilterNode> BiquadFilterNode::Create(
   }
 
   audioNode->SetType(aOptions.mType);
-  audioNode->Q()->SetValue(aOptions.mQ);
-  audioNode->Detune()->SetValue(aOptions.mDetune);
-  audioNode->Frequency()->SetValue(aOptions.mFrequency);
-  audioNode->Gain()->SetValue(aOptions.mGain);
+  audioNode->Q()->SetInitialValue(aOptions.mQ);
+  audioNode->Detune()->SetInitialValue(aOptions.mDetune);
+  audioNode->Frequency()->SetInitialValue(aOptions.mFrequency);
+  audioNode->Gain()->SetInitialValue(aOptions.mGain);
 
   return audioNode.forget();
 }
@@ -345,5 +344,4 @@ void BiquadFilterNode::GetFrequencyResponse(const Float32Array& aFrequencyHz,
                               aMagResponse.Data(), aPhaseResponse.Data());
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -34,9 +34,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=435441
 <div id="display">
 </div>
 
-<div id="transformTest" style="height:100px; width:200px; background-color:blue;">
-</div>
-
 </div>
 <pre id="test">
 <script type="application/javascript">
@@ -89,10 +86,6 @@ var supported_properties = {
     "cy": [ test_length_transition, test_percent_transition,
             test_length_unclamped, test_percent_unclamped ],
     "-moz-image-region": [ test_rect_transition ],
-    "-moz-outline-radius-bottomleft": [ test_radius_transition ],
-    "-moz-outline-radius-bottomright": [ test_radius_transition ],
-    "-moz-outline-radius-topleft": [ test_radius_transition ],
-    "-moz-outline-radius-topright": [ test_radius_transition ],
     "background-color": [ test_color_transition,
                           test_currentcolor_transition ],
     "background-position": [ test_background_position_transition,
@@ -134,11 +127,15 @@ var supported_properties = {
     "bottom": [ test_length_transition, test_percent_transition,
                 test_length_percent_calc_transition,
                 test_length_unclamped, test_percent_unclamped ],
+    "accent-color": [ test_color_transition,
+                      test_currentcolor_transition,
+                      test_auto_color_transition ],
     "caret-color": [ test_color_transition,
                      test_currentcolor_transition,
                      test_auto_color_transition ],
     "clip": [ test_rect_transition ],
-    "clip-path": [ test_basic_shape_or_url_transition ],
+    "clip-path": [ test_basic_shape_or_url_transition,
+                   test_path_function ],
     "color": [ test_color_transition,
                test_currentcolor_transition ],
     "fill": [ test_color_transition,
@@ -286,8 +283,8 @@ var supported_properties = {
                          test_float_zeroToOne_clamped ],
     "stroke-width": [ test_length_transition, test_percent_transition,
                       test_length_clamped, test_percent_clamped, ],
-    "-moz-tab-size": [ test_float_zeroToOne_transition,
-                       test_float_aboveOne_transition, test_length_clamped ],
+    "tab-size": [ test_float_zeroToOne_transition,
+                  test_float_aboveOne_transition, test_length_clamped ],
     "text-decoration": [ test_color_shorthand_transition,
                          test_currentcolor_shorthand_transition ],
     "text-decoration-color": [ test_color_transition,
@@ -412,8 +409,8 @@ if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
     [ test_background_position_transition ];
 }
 
-if (IsCSSPropertyPrefEnabled("layout.css.clip-path-path.enabled")) {
-  supported_properties["clip-path"].push(test_path_function);
+if (IsCSSPropertyPrefEnabled("layout.css.d-property.enabled")) {
+  supported_properties["d"] = [ test_path_function ];
 }
 
 if (IsCSSPropertyPrefEnabled("layout.css.font-variations.enabled")) {
@@ -424,6 +421,40 @@ if (IsCSSPropertyPrefEnabled("layout.css.individual-transform.enabled")) {
   supported_properties["rotate"] = [ test_rotate_transition ];
   supported_properties["scale"] = [ test_scale_transition ];
   supported_properties["translate"] = [ test_translate_transition ];
+}
+
+if (IsCSSPropertyPrefEnabled("layout.css.aspect-ratio.enabled")) {
+  function test_aspect_ratio_transition(prop) {
+    [
+      // No transition between auto and <ratio>.
+      { start: "auto", end: "1 / 1",
+        expected: "1 / 1" },
+      // No transition between auto && <ratio> and <ratio>.
+      { start: "auto 1 / 1", end: "1 / 1",
+        expected: "1 / 1" },
+      // No transition between auto && <ratio> and auto.
+      { start: "auto 1 / 1", end: "auto",
+        expected: "auto" },
+      { start: "1 / 2", end: "8 / 1",
+        expected: "1 / 1" },
+      { start: "auto 1 / 2", end: "auto 8 / 1",
+        expected: "auto 1 / 1" },
+    ].forEach(test => {
+      div.style.transitionProperty = 'none';
+      div.style[prop] = test.start;
+      is(cs[prop], test.start,
+         `aspect-ratio: computed value before transition`);
+      div.style.transitionProperty = prop;
+      div.style[prop] = test.end;
+      is(cs[prop], test.expected,
+         `aspect-ratio: interpolation of aspect-ratio`);
+      // We check distance only if there is a transition.
+      if (test.end != test.expected) {
+        check_distance(prop, test.start, test.expected, test.end);
+      }
+    });
+  }
+  supported_properties["aspect-ratio"] = [ test_aspect_ratio_transition ];
 }
 
 supported_properties["scrollbar-color"] = [
@@ -458,9 +489,7 @@ for (const logical_size of ["inline", "block"]) {
 }
 
 var div = document.getElementById("display");
-var OMTAdiv = document.getElementById("transformTest");
 var cs = getComputedStyle(div, "");
-var OMTACs = getComputedStyle(OMTAdiv, "");
 var winUtils = SpecialPowers.getDOMWindowUtils(window);
 
 function computeMatrix(v) {
@@ -3069,14 +3098,28 @@ function test_font_variations_transition(prop) {
   check_distance(prop, "\"wght\" 2, \"wdth\" 0.5", "\"wght\" 1.5, \"wdth\" 0.75", "\"wght\" 0, \"wdth\" 1.5");
 }
 
+var OMTAdiv;
+var OMTACs;
+
+function prepareForOMTATest() {
+  if (OMTAdiv) {
+    OMTAdiv.remove();
+  }
+  OMTAdiv = document.createElement("div");
+  OMTAdiv.style = "height:100px; width:200px; background-color:blue;";
+  OMTAdiv.style.setProperty("transition-duration", "300s", "");
+  OMTAdiv.style.setProperty("transition-timing-function", "linear", "");
+  document.body.appendChild(OMTAdiv);
+
+  OMTACs = getComputedStyle(OMTAdiv, "");
+}
+
 function runAsyncTests() {
   // These tests check the value on the compositor 2/3rds of the way through
   // the transition.
   // For the transform tests we simply compare the value on the compositor
   // with the computed value, but for the opacity test we check the absolute
   // value as well.
-  OMTAdiv.style.setProperty("transition-duration", "300s", "");
-  OMTAdiv.style.setProperty("transition-timing-function", "linear", "");
   addAsyncTransformTests();
   addAsyncOpacityTest();
   addAsyncDelayTest();
@@ -3094,6 +3137,8 @@ function addAsyncTransformTests() {
 }
 
 async function runTransformTest(test) {
+  prepareForOMTATest();
+
   OMTAdiv.style.setProperty("transition-property", "none", "");
   OMTAdiv.style.setProperty("transform", test.start, "");
   OMTACs.getPropertyValue("transform");
@@ -3124,6 +3169,8 @@ async function runTransformTest(test) {
 
 function addAsyncOpacityTest() {
   addAsyncAnimTest(async function() {
+    prepareForOMTATest();
+
     OMTAdiv.style.setProperty("transition-property", "none", "");
     OMTAdiv.style.setProperty("opacity", 0, "");
     OMTACs.getPropertyValue("opacity");
@@ -3142,6 +3189,8 @@ function addAsyncOpacityTest() {
 
 function addAsyncDelayTest() {
   addAsyncAnimTest(async function() {
+    prepareForOMTATest();
+
     OMTAdiv.style.setProperty("transition-property", "none", "");
     OMTAdiv.style.setProperty("transition-delay", "100s", "");
     OMTAdiv.style.setProperty("transition-duration", "200s", "");

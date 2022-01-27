@@ -22,7 +22,11 @@ module.exports = {
       },
     },
     {
-      files: ["client/shared/*.jsm"],
+      files: [
+        "client/shared/*.jsm",
+        // Allow non-camelcase so that run_test doesn't produce a warning.
+        "**/test*/**/*",
+      ],
       rules: {
         camelcase: "off",
       },
@@ -95,6 +99,10 @@ module.exports = {
           "^(resource://)?devtools/client",
         ],
       },
+      excludedFiles: [
+        // Tests can always import anything.
+        "**/test*/**/*",
+      ],
     },
     {
       // Cu, Cc etc... are not available in most devtools modules loaded by require.
@@ -106,13 +114,12 @@ module.exports = {
         "**/test/**/shared-head.js",
         "client/debugger/test/mochitest/code_frame-script.js",
         "client/responsive.html/browser/content.js",
-        "client/shared/browser-loader.js",
         "server/actors/webconsole/content-process-forward.js",
-        "server/actors/worker/service-worker-process.js",
         "server/startup/content-process.js",
         "server/startup/frame.js",
-        "shared/base-loader.js",
-        "shared/worker/loader.js",
+        "shared/loader/base-loader.js",
+        "shared/loader/browser-loader.js",
+        "shared/loader/worker-loader.js",
         "startup/aboutdebugging-registration.js",
         "startup/aboutdevtools/aboutdevtools-registration.js",
         "startup/aboutdevtoolstoolbox-registration.js",
@@ -219,6 +226,8 @@ module.exports = {
     "func-style": "off",
     // Only useful in a node environment.
     "handle-callback-err": "off",
+    // componentDidUnmount is not a real lifecycle method, use componentWillUnmount.
+    "id-denylist": ["error", "componentDidUnmount"],
     // Maximum depth callbacks can be nested.
     "max-nested-callbacks": ["error", 3],
     // Don't limit the number of parameters that can be used in a function.

@@ -23,8 +23,6 @@ class ArgumentsObject;
 
 namespace jit {
 
-using CalleeToken = void*;
-
 enum class FrameType {
   // A JS frame is analogous to a js::InterpreterFrame, representing one
   // scripted function activation. IonJS frames are used by the optimizing
@@ -284,11 +282,10 @@ class JSJitProfilingFrameIterator {
   FrameType type_;
   void* resumePCinCurrentFrame_;
 
-  inline JitFrameLayout* framePtr() const;
   inline JSScript* frameScript() const;
-  MOZ_MUST_USE bool tryInitWithPC(void* pc);
-  MOZ_MUST_USE bool tryInitWithTable(JitcodeGlobalTable* table, void* pc,
-                                     bool forLastCallSite);
+  [[nodiscard]] bool tryInitWithPC(void* pc);
+  [[nodiscard]] bool tryInitWithTable(JitcodeGlobalTable* table, void* pc,
+                                      bool forLastCallSite);
 
   void moveToCppEntryFrame();
   void moveToWasmFrame(CommonFrameLayout* frame);
@@ -309,6 +306,7 @@ class JSJitProfilingFrameIterator {
     MOZ_ASSERT(!done());
     return fp_;
   }
+  inline JitFrameLayout* framePtr() const;
   void* stackAddress() const { return fp(); }
   FrameType frameType() const {
     MOZ_ASSERT(!done());
@@ -342,7 +340,7 @@ class RInstructionResults {
 
   ~RInstructionResults();
 
-  MOZ_MUST_USE bool init(JSContext* cx, uint32_t numResults);
+  [[nodiscard]] bool init(JSContext* cx, uint32_t numResults);
   bool isInitialized() const;
   size_t length() const;
 
@@ -441,8 +439,8 @@ class SnapshotIterator {
   Value fromInstructionResult(uint32_t index) const;
 
   Value allocationValue(const RValueAllocation& a, ReadMethod rm = RM_Normal);
-  MOZ_MUST_USE bool allocationReadable(const RValueAllocation& a,
-                                       ReadMethod rm = RM_Normal);
+  [[nodiscard]] bool allocationReadable(const RValueAllocation& a,
+                                        ReadMethod rm = RM_Normal);
   void writeAllocationValuePayload(const RValueAllocation& a, const Value& v);
   void warnUnreadableAllocation();
 
@@ -469,7 +467,7 @@ class SnapshotIterator {
     return snapshot_.numAllocationsRead() < numAllocations();
   }
 
-  int32_t readOuterNumActualArgs() const;
+  JitFrameLayout* frame() { return fp_; };
 
   // Used by recover instruction to store the value back into the instruction
   // results array.
@@ -478,7 +476,7 @@ class SnapshotIterator {
  public:
   // Exhibits frame properties contained in the snapshot.
   uint32_t pcOffset() const;
-  inline MOZ_MUST_USE bool resumeAfter() const {
+  [[nodiscard]] inline bool resumeAfter() const {
     // Inline frames are inlined on calls, which are considered as being
     // resumed on the Call as baseline will push the pc once we return from
     // the call.
@@ -508,12 +506,12 @@ class SnapshotIterator {
   // recover instructions. This vector should be registered before the
   // beginning of the iteration. This function is in charge of allocating
   // enough space for all instructions results, and return false iff it fails.
-  MOZ_MUST_USE bool initInstructionResults(MaybeReadFallback& fallback);
+  [[nodiscard]] bool initInstructionResults(MaybeReadFallback& fallback);
 
  protected:
   // This function is used internally for computing the result of the recover
   // instructions.
-  MOZ_MUST_USE bool computeInstructionResults(
+  [[nodiscard]] bool computeInstructionResults(
       JSContext* cx, RInstructionResults* results) const;
 
  public:
@@ -565,9 +563,9 @@ class SnapshotIterator {
                              unsigned start, unsigned end, JSScript* script,
                              MaybeReadFallback& fallback) {
     // Assumes that the common frame arguments have already been read.
-    if (script->argumentsHasVarBinding()) {
+    if (script->needsArgsObj()) {
       if (argsObj) {
-        Value v = read();
+        Value v = maybeRead(fallback);
         if (v.isObject()) {
           *argsObj = &v.toObject().as<ArgumentsObject>();
         }
@@ -740,7 +738,7 @@ class InlineFrameIterator {
           // this inlined frame.
           InlineFrameIterator it(cx, this);
           ++it;
-          unsigned argsObjAdj = it.script()->argumentsHasVarBinding() ? 1 : 0;
+          unsigned argsObjAdj = it.script()->needsArgsObj() ? 1 : 0;
           bool hasNewTarget = isConstructing();
           SnapshotIterator parent_s(it.snapshotIterator());
 
@@ -820,7 +818,7 @@ class InlineFrameIterator {
     s.skip();
 
     // Arguments object.
-    if (script()->argumentsHasVarBinding()) {
+    if (script()->needsArgsObj()) {
       s.skip();
     }
 

@@ -55,7 +55,7 @@ class ChromiumCDMChild : public PChromiumCDMChild, public cdm::Host_10 {
                              const char* aChallenge,
                              uint32_t aChallengeSize) override {}
   void EnableOutputProtection(uint32_t aDesiredProtectionMask) override {}
-  void QueryOutputProtectionStatus() override {}
+  void QueryOutputProtectionStatus() override;
   void OnDeferredInitializationDone(cdm::StreamType aStreamType,
                                     cdm::Status aDecoderStatus) override {}
   void RequestStorageId(uint32_t aVersion) override;
@@ -94,6 +94,9 @@ class ChromiumCDMChild : public PChromiumCDMChild, public cdm::Host_10 {
                                   const nsCString& aSessionId) override;
   ipc::IPCResult RecvRemoveSession(const uint32_t& aPromiseId,
                                    const nsCString& aSessionId) override;
+  ipc::IPCResult RecvCompleteQueryOutputProtectionStatus(
+      const bool& aSuccess, const uint32_t& aLinkMask,
+      const uint32_t& aProtectionMask) override;
   ipc::IPCResult RecvGetStatusForPolicy(
       const uint32_t& aPromiseId,
       const cdm::HdcpVersion& aMinHdcpVersion) override;

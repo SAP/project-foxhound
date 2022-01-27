@@ -7,10 +7,13 @@
 #ifndef mozilla_dom_ResizeObserverController_h
 #define mozilla_dom_ResizeObserverController_h
 
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/ResizeObserver.h"
 #include "mozilla/TimeStamp.h"
-#include "nsRefreshDriver.h"
+#include "nsRefreshObservers.h"
 #include "nsTObserverArray.h"
+
+class nsRefreshDriver;
 
 namespace mozilla {
 
@@ -18,7 +21,6 @@ class PresShell;
 
 namespace dom {
 
-class Document;
 class ResizeObserverController;
 
 /**
@@ -65,10 +67,6 @@ class ResizeObserverController final {
             new ResizeObserverNotificationHelper(this)) {
     MOZ_ASSERT(mDocument, "Need a non-null document");
   }
-
-  // Methods for supporting cycle-collection
-  void Traverse(nsCycleCollectionTraversalCallback& aCb);
-  void Unlink();
 
   void AddSizeOfIncludingThis(nsWindowSizes&) const;
 
@@ -131,7 +129,7 @@ class ResizeObserverController final {
   Document* const mDocument;
 
   RefPtr<ResizeObserverNotificationHelper> mResizeObserverNotificationHelper;
-  nsTArray<RefPtr<ResizeObserver>> mResizeObservers;
+  nsTArray<ResizeObserver*> mResizeObservers;
 };
 
 }  // namespace dom

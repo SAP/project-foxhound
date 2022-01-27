@@ -7,20 +7,20 @@
 #ifndef jit_arm_Assembler_arm_h
 #define jit_arm_Assembler_arm_h
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/MathAlgorithms.h"
 
 #include <algorithm>
+#include <iterator>
 
 #include "jit/arm/Architecture-arm.h"
 #include "jit/arm/disasm/Disasm-arm.h"
 #include "jit/CompactBuffer.h"
 #include "jit/JitCode.h"
-#include "jit/JitRealm.h"
 #include "jit/shared/Assembler-shared.h"
 #include "jit/shared/Disassembler-shared.h"
 #include "jit/shared/IonAssemblerBufferWithConstantPools.h"
+#include "wasm/WasmTypeDecls.h"
 
 union PoolHintPun;
 
@@ -80,8 +80,7 @@ static constexpr Register IntArgReg2 = r2;
 static constexpr Register IntArgReg3 = r3;
 static constexpr Register HeapReg = r10;
 static constexpr Register CallTempNonArgRegs[] = {r5, r6, r7, r8};
-static const uint32_t NumCallTempNonArgRegs =
-    mozilla::ArrayLength(CallTempNonArgRegs);
+static const uint32_t NumCallTempNonArgRegs = std::size(CallTempNonArgRegs);
 
 // These register assignments for the 64-bit atomic ops are frequently too
 // constraining, but we have no way of expressing looser constraints to the
@@ -100,6 +99,8 @@ static constexpr Register64 CmpXchgNew64 =
     Register64(CmpXchgNewHi, CmpXchgNewLo);
 static constexpr Register CmpXchgOutLo = IntArgReg0;
 static constexpr Register CmpXchgOutHi = IntArgReg1;
+static constexpr Register64 CmpXchgOut64 =
+    Register64(CmpXchgOutHi, CmpXchgOutLo);
 
 // Exchange: Any two non-equal odd/even pairs would do for `new` and `out`.
 
@@ -118,8 +119,12 @@ static constexpr Register64 FetchOpVal64 =
     Register64(FetchOpValHi, FetchOpValLo);
 static constexpr Register FetchOpTmpLo = IntArgReg2;
 static constexpr Register FetchOpTmpHi = IntArgReg3;
+static constexpr Register64 FetchOpTmp64 =
+    Register64(FetchOpTmpHi, FetchOpTmpLo);
 static constexpr Register FetchOpOutLo = IntArgReg0;
 static constexpr Register FetchOpOutHi = IntArgReg1;
+static constexpr Register64 FetchOpOut64 =
+    Register64(FetchOpOutHi, FetchOpOutLo);
 
 class ABIArgGenerator {
   unsigned intRegIndex_;
@@ -147,6 +152,7 @@ class ABIArgGenerator {
   ABIArg next(MIRType argType);
   ABIArg& current() { return current_; }
   uint32_t stackBytesConsumedSoFar() const { return stackOffset_; }
+  void increaseStackOffset(uint32_t bytes) { stackOffset_ += bytes; }
 };
 
 bool IsUnaligned(const wasm::MemoryAccessDesc& access);
@@ -158,7 +164,7 @@ static constexpr Register ABINonArgReg2 = r6;
 static constexpr Register ABINonArgReg3 = r7;
 
 // This register may be volatile or nonvolatile. Avoid d15 which is the
-// ScratchDoubleReg.
+// ScratchDoubleReg_.
 static constexpr FloatRegister ABINonArgDoubleReg{FloatRegisters::d8,
                                                   VFPRegister::Double};
 
@@ -217,23 +223,27 @@ static constexpr FloatRegister ReturnFloat32Reg = {FloatRegisters::d0,
 static constexpr FloatRegister ReturnDoubleReg = {FloatRegisters::d0,
                                                   VFPRegister::Double};
 static constexpr FloatRegister ReturnSimd128Reg = InvalidFloatReg;
-static constexpr FloatRegister ScratchFloat32Reg = {FloatRegisters::s30,
-                                                    VFPRegister::Single};
-static constexpr FloatRegister ScratchDoubleReg = {FloatRegisters::d15,
-                                                   VFPRegister::Double};
+static constexpr FloatRegister ScratchFloat32Reg_ = {FloatRegisters::s30,
+                                                     VFPRegister::Single};
+static constexpr FloatRegister ScratchDoubleReg_ = {FloatRegisters::d15,
+                                                    VFPRegister::Double};
 static constexpr FloatRegister ScratchSimd128Reg = InvalidFloatReg;
 static constexpr FloatRegister ScratchUIntReg = {FloatRegisters::d15,
                                                  VFPRegister::UInt};
 static constexpr FloatRegister ScratchIntReg = {FloatRegisters::d15,
                                                 VFPRegister::Int};
 
+// Do not reference ScratchFloat32Reg_ directly, use ScratchFloat32Scope
+// instead.
 struct ScratchFloat32Scope : public AutoFloatRegisterScope {
   explicit ScratchFloat32Scope(MacroAssembler& masm)
-      : AutoFloatRegisterScope(masm, ScratchFloat32Reg) {}
+      : AutoFloatRegisterScope(masm, ScratchFloat32Reg_) {}
 };
+
+// Do not reference ScratchDoubleReg_ directly, use ScratchDoubleScope instead.
 struct ScratchDoubleScope : public AutoFloatRegisterScope {
   explicit ScratchDoubleScope(MacroAssembler& masm)
-      : AutoFloatRegisterScope(masm, ScratchDoubleReg) {}
+      : AutoFloatRegisterScope(masm, ScratchDoubleReg_) {}
 };
 
 // Registerd used in RegExpMatcher instruction (do not use JSReturnOperand).
@@ -295,10 +305,10 @@ static_assert(JitStackAlignment % SimdMemoryAlignment == 0,
 static const uint32_t WasmStackAlignment = SimdMemoryAlignment;
 static const uint32_t WasmTrapInstructionLength = 4;
 
-// The offsets are dynamically asserted during
-// code generation in the prologue/epilogue.
+// See comments in wasm::GenerateFunctionPrologue.  The difference between these
+// is the size of the largest callable prologue on the platform.
 static constexpr uint32_t WasmCheckedCallEntryOffset = 0u;
-static constexpr uint32_t WasmCheckedTailEntryOffset = 16u;
+static constexpr uint32_t WasmCheckedTailEntryOffset = 12u;
 
 static const Scale ScalePointer = TimesFour;
 
@@ -1255,10 +1265,6 @@ class Assembler : public AssemblerShared {
 
   static DoubleCondition InvertCondition(DoubleCondition cond);
 
-  void writeRelocation(BufferOffset src) {
-    jumpRelocations_.writeUnsigned(src.getOffset());
-  }
-
   void writeDataRelocation(BufferOffset offset, ImmGCPtr ptr) {
     // Raw GC pointer relocations and Value relocations both end up in
     // Assembler::TraceDataRelocations.
@@ -1328,6 +1334,7 @@ class Assembler : public AssemblerShared {
   // Write a single instruction into the instruction stream.  Very hot,
   // inlined for performance
   MOZ_ALWAYS_INLINE BufferOffset writeInst(uint32_t x) {
+    MOZ_ASSERT(hasCreator());
     BufferOffset offs = m_buffer.putInt(x);
 #ifdef JS_DISASM_ARM
     spew(m_buffer.getInstOrNull(offs));
@@ -1635,6 +1642,12 @@ class Assembler : public AssemblerShared {
   BufferOffset as_vdtm(LoadStore st, Register rn, VFPRegister vd, int length,
                        /* also has update conditions */ Condition c = Always);
 
+  // vldr/vstr variants that handle unaligned accesses.  These encode as NEON
+  // single-element instructions and can only be used if NEON is available.
+  // Here, vd must be tagged as a float or double register.
+  BufferOffset as_vldr_unaligned(VFPRegister vd, Register rn);
+  BufferOffset as_vstr_unaligned(VFPRegister vd, Register rn);
+
   BufferOffset as_vimm(VFPRegister vd, VFPImm imm, Condition c = Always);
 
   BufferOffset as_vmrs(Register r, Condition c = Always);
@@ -1670,7 +1683,10 @@ class Assembler : public AssemblerShared {
 
   static bool SupportsFloatingPoint() { return HasVFP(); }
   static bool SupportsUnalignedAccesses() { return HasARMv7(); }
-  static bool SupportsFastUnalignedAccesses() { return false; }
+  // Note, returning false here is technically wrong, but one has to go via the
+  // as_vldr_unaligned and as_vstr_unaligned instructions to get proper behavior
+  // and those are NEON-specific and have to be asked for specifically.
+  static bool SupportsFastUnalignedFPAccesses() { return false; }
 
   static bool HasRoundInstruction(RoundingMode mode) { return false; }
 
@@ -1678,7 +1694,7 @@ class Assembler : public AssemblerShared {
   void addPendingJump(BufferOffset src, ImmPtr target, RelocationKind kind) {
     enoughMemory_ &= jumps_.append(RelativePatch(target.value, kind));
     if (kind == RelocationKind::JITCODE) {
-      writeRelocation(src);
+      jumpRelocations_.writeUnsigned(src.getOffset());
     }
   }
 
@@ -2192,16 +2208,6 @@ static inline bool GetTempRegForIntArg(uint32_t usedIntArgs,
   return true;
 }
 
-#if !defined(JS_CODEGEN_ARM_HARDFP) || defined(JS_SIMULATOR_ARM)
-
-static inline uint32_t GetArgStackDisp(uint32_t arg) {
-  MOZ_ASSERT(!UseHardFpABI());
-  MOZ_ASSERT(arg >= NumIntArgRegs);
-  return (arg - NumIntArgRegs) * sizeof(intptr_t);
-}
-
-#endif
-
 #if defined(JS_CODEGEN_ARM_HARDFP) || defined(JS_SIMULATOR_ARM)
 
 static inline bool GetFloat32ArgReg(uint32_t usedIntArgs,
@@ -2223,47 +2229,6 @@ static inline bool GetDoubleArgReg(uint32_t usedIntArgs, uint32_t usedFloatArgs,
   }
   *out = VFPRegister(usedFloatArgs >> 1, VFPRegister::Double);
   return true;
-}
-
-static inline uint32_t GetIntArgStackDisp(uint32_t usedIntArgs,
-                                          uint32_t usedFloatArgs,
-                                          uint32_t* padding) {
-  MOZ_ASSERT(UseHardFpABI());
-  MOZ_ASSERT(usedIntArgs >= NumIntArgRegs);
-  uint32_t doubleSlots =
-      std::max(0, (int32_t)usedFloatArgs - (int32_t)NumFloatArgRegs);
-  doubleSlots *= 2;
-  int intSlots = usedIntArgs - NumIntArgRegs;
-  return (intSlots + doubleSlots + *padding) * sizeof(intptr_t);
-}
-
-static inline uint32_t GetFloat32ArgStackDisp(uint32_t usedIntArgs,
-                                              uint32_t usedFloatArgs,
-                                              uint32_t* padding) {
-  MOZ_ASSERT(UseHardFpABI());
-  MOZ_ASSERT(usedFloatArgs >= NumFloatArgRegs);
-  uint32_t intSlots = 0;
-  if (usedIntArgs > NumIntArgRegs) {
-    intSlots = usedIntArgs - NumIntArgRegs;
-  }
-  uint32_t float32Slots = usedFloatArgs - NumFloatArgRegs;
-  return (intSlots + float32Slots + *padding) * sizeof(intptr_t);
-}
-
-static inline uint32_t GetDoubleArgStackDisp(uint32_t usedIntArgs,
-                                             uint32_t usedFloatArgs,
-                                             uint32_t* padding) {
-  MOZ_ASSERT(UseHardFpABI());
-  MOZ_ASSERT(usedFloatArgs >= NumFloatArgRegs);
-  uint32_t intSlots = 0;
-  if (usedIntArgs > NumIntArgRegs) {
-    intSlots = usedIntArgs - NumIntArgRegs;
-    // Update the amount of padding required.
-    *padding += (*padding + usedIntArgs) % 2;
-  }
-  uint32_t doubleSlots = usedFloatArgs - NumFloatArgRegs;
-  doubleSlots *= 2;
-  return (intSlots + doubleSlots + *padding) * sizeof(intptr_t);
 }
 
 #endif

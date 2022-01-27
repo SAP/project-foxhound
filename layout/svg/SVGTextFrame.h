@@ -33,7 +33,7 @@ class TextRenderedRunIterator;
 
 namespace dom {
 struct DOMPointInit;
-class nsISVGPoint;
+class DOMSVGPoint;
 class SVGRect;
 class SVGGeometryElement;
 }  // namespace dom
@@ -236,17 +236,19 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
   // SVG DOM text methods:
   uint32_t GetNumberOfChars(nsIContent* aContent);
   float GetComputedTextLength(nsIContent* aContent);
-  void SelectSubString(nsIContent* aContent, uint32_t charnum, uint32_t nchars,
-                       ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void SelectSubString(nsIContent* aContent,
+                                                   uint32_t charnum,
+                                                   uint32_t nchars,
+                                                   ErrorResult& aRv);
   MOZ_CAN_RUN_SCRIPT
   float GetSubStringLength(nsIContent* aContent, uint32_t charnum,
                            uint32_t nchars, ErrorResult& aRv);
   int32_t GetCharNumAtPosition(nsIContent* aContent,
                                const dom::DOMPointInit& aPoint);
 
-  already_AddRefed<dom::nsISVGPoint> GetStartPositionOfChar(
+  already_AddRefed<dom::DOMSVGPoint> GetStartPositionOfChar(
       nsIContent* aContent, uint32_t aCharNum, ErrorResult& aRv);
-  already_AddRefed<dom::nsISVGPoint> GetEndPositionOfChar(nsIContent* aContent,
+  already_AddRefed<dom::DOMSVGPoint> GetEndPositionOfChar(nsIContent* aContent,
                                                           uint32_t aCharNum,
                                                           ErrorResult& aRv);
   already_AddRefed<dom::SVGRect> GetExtentOfChar(nsIContent* aContent,
@@ -264,12 +266,6 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
   void HandleAttributeChangeInDescendant(dom::Element* aElement,
                                          int32_t aNameSpaceID,
                                          nsAtom* aAttribute);
-
-  /**
-   * Schedules mPositions to be recomputed and the covered region to be
-   * updated.
-   */
-  void NotifyGlyphMetricsChange();
 
   /**
    * Calls ScheduleReflowSVGNonDisplayText if this is a non-display frame,
@@ -380,6 +376,12 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
    * Performs the actual work of reflowing the anonymous block child.
    */
   void DoReflow();
+
+  /**
+   * Schedules mPositions to be recomputed and the covered region to be
+   * updated.
+   */
+  void NotifyGlyphMetricsChange();
 
   /**
    * Recomputes mPositions by calling DoGlyphPositioning if this information

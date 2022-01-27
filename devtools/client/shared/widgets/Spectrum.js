@@ -16,21 +16,14 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "getTextProperties",
-  "devtools/shared/accessibility",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "getContrastRatioAgainstBackground",
+  ["getTextProperties", "getContrastRatioAgainstBackground"],
   "devtools/shared/accessibility",
   true
 );
 
 const L10N = new MultiLocalizationHelper(
-  "devtools/shared/locales/en-US/accessibility.properties",
-  "devtools/client/locales/en-US/accessibility.properties",
-  "devtools/client/locales/en-US/inspector.properties"
+  "devtools/client/locales/accessibility.properties",
+  "devtools/client/locales/inspector.properties"
 );
 const ARROW_KEYS = ["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"];
 const [ArrowUp, ArrowRight, ArrowDown, ArrowLeft] = ARROW_KEYS;

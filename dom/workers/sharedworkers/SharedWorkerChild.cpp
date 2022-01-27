@@ -8,7 +8,12 @@
 #include "mozilla/dom/ErrorEvent.h"
 #include "mozilla/dom/ErrorEventBinding.h"
 #include "mozilla/dom/Exceptions.h"
+#include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/SharedWorker.h"
+#include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/dom/WorkerError.h"
+#include "mozilla/dom/locks/LockManagerChild.h"
 
 namespace mozilla {
 
@@ -112,6 +117,17 @@ IPCResult SharedWorkerChild::RecvError(const ErrorValue& aValue) {
   if (defaultActionEnabled) {
     WorkerErrorReport::LogErrorToConsole(aValue.get_ErrorData(), innerWindowId);
   }
+
+  return IPC_OK();
+}
+
+IPCResult SharedWorkerChild::RecvNotifyLock(bool aCreated) {
+  if (!mParent) {
+    return IPC_OK();
+  }
+
+  locks::LockManagerChild::NotifyBFCacheOnMainThread(mParent->GetOwner(),
+                                                     aCreated);
 
   return IPC_OK();
 }

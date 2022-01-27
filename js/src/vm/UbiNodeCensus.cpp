@@ -8,6 +8,7 @@
 
 #include "builtin/MapObject.h"
 #include "js/CharacterEncoding.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "util/Text.h"
 #include "vm/JSContext.h"
 #include "vm/PlainObject.h"  // js::PlainObject
@@ -86,7 +87,7 @@ bool SimpleCount::report(JSContext* cx, CountBase& countBase,
                          MutableHandleValue report) {
   Count& count = static_cast<Count&>(countBase);
 
-  RootedPlainObject obj(cx, NewBuiltinClassInstance<PlainObject>(cx));
+  RootedPlainObject obj(cx, NewPlainObject(cx));
   if (!obj) {
     return false;
   }
@@ -159,7 +160,7 @@ bool BucketCount::report(JSContext* cx, CountBase& countBase,
   if (!arr) {
     return false;
   }
-  arr->ensureDenseInitializedLength(cx, 0, length);
+  arr->ensureDenseInitializedLength(0, length);
 
   for (size_t i = 0; i < length; i++) {
     arr->setDenseElement(i, NumberValue(count.ids_[i]));
@@ -273,7 +274,7 @@ bool ByCoarseType::report(JSContext* cx, CountBase& countBase,
                           MutableHandleValue report) {
   Count& count = static_cast<Count&>(countBase);
 
-  RootedPlainObject obj(cx, NewBuiltinClassInstance<PlainObject>(cx));
+  RootedPlainObject obj(cx, NewPlainObject(cx));
   if (!obj) {
     return false;
   }
@@ -363,7 +364,7 @@ static PlainObject* countMapToObject(JSContext* cx, Map& map, GetName getName) {
           compareEntries<typename Map::Entry>);
   }
 
-  RootedPlainObject obj(cx, NewBuiltinClassInstance<PlainObject>(cx));
+  RootedPlainObject obj(cx, NewPlainObject(cx));
   if (!obj) {
     return nullptr;
   }
@@ -413,7 +414,7 @@ static PlainObject* countMap16ToObject(JSContext* cx, Map& map,
           compareEntries<typename Map::Entry>);
   }
 
-  RootedPlainObject obj(cx, NewBuiltinClassInstance<PlainObject>(cx));
+  RootedPlainObject obj(cx, NewPlainObject(cx));
   if (!obj) {
     return nullptr;
   }
@@ -735,7 +736,7 @@ bool ByUbinodeType::report(JSContext* cx, CountBase& countBase,
   }
 
   // Now build the result by iterating over the sorted vector.
-  RootedPlainObject obj(cx, NewBuiltinClassInstance<PlainObject>(cx));
+  RootedPlainObject obj(cx, NewPlainObject(cx));
   if (!obj) {
     return false;
   }

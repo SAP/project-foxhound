@@ -7,6 +7,10 @@ registerCleanupFunction(function() {
 add_task(async function() {
   await openPreferencesViaOpenPreferencesAPI("general", { leaveOpen: true });
   await gBrowser.contentWindow.gMainPane._selectDefaultLanguageGroupPromise;
+  await TestUtils.waitForCondition(
+    () => !gBrowser.contentWindow.Preferences.updateQueued
+  );
+
   let doc = gBrowser.contentDocument;
   let contentWindow = gBrowser.contentWindow;
   var langGroup = Services.prefs.getComplexValue(
@@ -37,6 +41,7 @@ add_task(async function() {
       false,
       false,
       false,
+      0,
       null,
       0
     );
@@ -95,7 +100,7 @@ add_task(async function() {
   let fontSizeField = doc.getElementById("defaultFontSize");
   is(
     fontSizeField.value,
-    defaultFontSize,
+    "" + defaultFontSize,
     "Font size should be set correctly."
   );
 

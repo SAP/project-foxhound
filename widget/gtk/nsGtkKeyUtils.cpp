@@ -19,14 +19,15 @@
 #include "X11UndefineNone.h"
 #include "IMContextWrapper.h"
 #include "WidgetUtils.h"
+#include "WidgetUtilsGtk.h"
 #include "keysym2ucs.h"
 #include "nsContentUtils.h"
 #include "nsGtkUtils.h"
 #include "nsIBidiKeyboard.h"
 #include "nsPrintfCString.h"
+#include "nsReadableUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsWindow.h"
-#include "gfxPlatformGtk.h"
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/MouseEvents.h"
@@ -193,14 +194,11 @@ static const nsCString GetCharacterCodeNames(const char16_t* aChars,
     return "\"\""_ns;
   }
   nsCString result;
-  for (uint32_t i = 0; i < aLength; ++i) {
-    if (!result.IsEmpty()) {
-      result.AppendLiteral(", ");
-    } else {
-      result.AssignLiteral("\"");
-    }
-    result.Append(GetCharacterCodeName(aChars[i]));
-  }
+  result.AssignLiteral("\"");
+  StringJoinAppend(result, ", "_ns, Span{aChars, aLength},
+                   [](nsACString& dest, const char16_t charValue) {
+                     dest.Append(GetCharacterCodeName(charValue));
+                   });
   result.AppendLiteral("\"");
   return result;
 }
@@ -340,13 +338,15 @@ void KeymapWrapper::Shutdown() {
 KeymapWrapper::KeymapWrapper()
     : mInitialized(false),
       mGdkKeymap(gdk_keymap_get_default()),
-      mXKBBaseEventCode(0) {
+      mXKBBaseEventCode(0),
+      mOnKeysChangedSignalHandle(0),
+      mOnDirectionChangedSignalHandle(0) {
   MOZ_LOG(gKeymapWrapperLog, LogLevel::Info,
           ("%p Constructor, mGdkKeymap=%p", this, mGdkKeymap));
 
   g_object_ref(mGdkKeymap);
 
-  if (gfxPlatformGtk::GetPlatform()->IsX11Display()) {
+  if (GdkIsX11Display()) {
     InitXKBExtension();
   }
 
@@ -365,7 +365,7 @@ void KeymapWrapper::Init() {
   mModifierKeys.Clear();
   memset(mModifierMasks, 0, sizeof(mModifierMasks));
 
-  if (gfxPlatformGtk::GetPlatform()->IsX11Display()) {
+  if (GdkIsX11Display()) {
     InitBySystemSettingsX11();
   }
 #ifdef MOZ_WAYLAND
@@ -452,9 +452,14 @@ void KeymapWrapper::InitBySystemSettingsX11() {
   MOZ_LOG(gKeymapWrapperLog, LogLevel::Info,
           ("%p InitBySystemSettingsX11, mGdkKeymap=%p", this, mGdkKeymap));
 
-  g_signal_connect(mGdkKeymap, "keys-changed", (GCallback)OnKeysChanged, this);
-  g_signal_connect(mGdkKeymap, "direction-changed",
-                   (GCallback)OnDirectionChanged, this);
+  if (!mOnKeysChangedSignalHandle) {
+    mOnKeysChangedSignalHandle = g_signal_connect(
+        mGdkKeymap, "keys-changed", (GCallback)OnKeysChanged, this);
+  }
+  if (!mOnDirectionChangedSignalHandle) {
+    mOnDirectionChangedSignalHandle = g_signal_connect(
+        mGdkKeymap, "direction-changed", (GCallback)OnDirectionChanged, this);
+  }
 
   Display* display = gdk_x11_display_get_xdisplay(gdk_display_get_default());
 
@@ -750,8 +755,8 @@ static void gdk_registry_handle_global(void* data, struct wl_registry* registry,
                                        uint32_t id, const char* interface,
                                        uint32_t version) {
   if (strcmp(interface, "wl_seat") == 0) {
-    wl_seat* seat =
-        (wl_seat*)wl_registry_bind(registry, id, &wl_seat_interface, 1);
+    auto* seat =
+        WaylandRegistryBind<wl_seat>(registry, id, &wl_seat_interface, 1);
     wl_seat_add_listener(seat, &seat_listener, data);
   }
 }
@@ -772,11 +777,11 @@ void KeymapWrapper::InitBySystemSettingsWayland() {
 
 KeymapWrapper::~KeymapWrapper() {
   gdk_window_remove_filter(nullptr, FilterEvents, this);
-  if (gfxPlatformGtk::GetPlatform()->IsX11Display()) {
-    g_signal_handlers_disconnect_by_func(mGdkKeymap,
-                                         FuncToGpointer(OnKeysChanged), this);
-    g_signal_handlers_disconnect_by_func(
-        mGdkKeymap, FuncToGpointer(OnDirectionChanged), this);
+  if (mOnKeysChangedSignalHandle) {
+    g_signal_handler_disconnect(mGdkKeymap, mOnKeysChangedSignalHandle);
+  }
+  if (mOnDirectionChangedSignalHandle) {
+    g_signal_handler_disconnect(mGdkKeymap, mOnDirectionChangedSignalHandle);
   }
   g_object_unref(mGdkKeymap);
   MOZ_LOG(gKeymapWrapperLog, LogLevel::Info, ("%p Destructor", this));
@@ -1019,6 +1024,41 @@ uint32_t KeymapWrapper::ComputeKeyModifiers(guint aModifierState) {
     keyModifiers |= MODIFIER_SCROLLLOCK;
   }
   return keyModifiers;
+}
+
+/* static */
+guint KeymapWrapper::ConvertWidgetModifierToGdkState(
+    nsIWidget::Modifiers aNativeModifiers) {
+  if (!aNativeModifiers) {
+    return 0;
+  }
+  struct ModifierMapEntry {
+    nsIWidget::Modifiers mWidgetModifier;
+    Modifier mModifier;
+  };
+  // TODO: Currently, we don't treat L/R of each modifier on Linux.
+  // TODO: No proper native modifier for Level5.
+  static constexpr ModifierMapEntry sModifierMap[] = {
+      {nsIWidget::CAPS_LOCK, Modifier::CAPS_LOCK},
+      {nsIWidget::NUM_LOCK, Modifier::NUM_LOCK},
+      {nsIWidget::SHIFT_L, Modifier::SHIFT},
+      {nsIWidget::SHIFT_R, Modifier::SHIFT},
+      {nsIWidget::CTRL_L, Modifier::CTRL},
+      {nsIWidget::CTRL_R, Modifier::CTRL},
+      {nsIWidget::ALT_L, Modifier::ALT},
+      {nsIWidget::ALT_R, Modifier::ALT},
+      {nsIWidget::ALTGRAPH, Modifier::LEVEL3},
+      {nsIWidget::COMMAND_L, Modifier::SUPER},
+      {nsIWidget::COMMAND_R, Modifier::SUPER}};
+
+  guint state = 0;
+  KeymapWrapper* instance = GetInstance();
+  for (const ModifierMapEntry& entry : sModifierMap) {
+    if (aNativeModifiers & entry.mWidgetModifier) {
+      state |= instance->GetModifierMask(entry.mModifier);
+    }
+  }
+  return state;
 }
 
 /* static */
@@ -1525,6 +1565,7 @@ void KeymapWrapper::HandleKeyPressEvent(nsWindow* aWindow,
               ("  HandleKeyPressEvent(), dispatched \"Forward\" command "
                "event"));
       return;
+    case GDK_Reload:
     case GDK_Refresh:
       aWindow->DispatchCommandEvent(nsGkAtoms::Reload);
       return;
@@ -1720,7 +1761,7 @@ void KeymapWrapper::InitKeyEvent(WidgetKeyboardEvent& aKeyEvent,
   // key release events, the result isn't what we want.
   guint modifierState = aGdkKeyEvent->state;
   GdkDisplay* gdkDisplay = gdk_display_get_default();
-  if (aGdkKeyEvent->is_modifier && GDK_IS_X11_DISPLAY(gdkDisplay)) {
+  if (aGdkKeyEvent->is_modifier && GdkIsX11Display(gdkDisplay)) {
     Display* display = gdk_x11_display_get_xdisplay(gdkDisplay);
     if (XEventsQueued(display, QueuedAfterReading)) {
       XEvent nextEvent;

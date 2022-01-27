@@ -19,6 +19,7 @@
 #include "nsRange.h"
 
 #include "mozilla/dom/BorrowedAttrInfo.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/PresShell.h"
@@ -28,7 +29,7 @@ using namespace mozilla::a11y;
 
 sdnAccessible::~sdnAccessible() {
   if (mUniqueId.isSome()) {
-    AccessibleWrap::ReleaseChildID(WrapNotNull(this));
+    MsaaAccessible::ReleaseChildID(WrapNotNull(this));
   }
 }
 
@@ -51,7 +52,7 @@ sdnAccessible::QueryInterface(REFIID aREFIID, void** aInstancePtr) {
     return S_OK;
   }
 
-  AccessibleWrap* accessible = GetAccessible();
+  MsaaAccessible* accessible = GetMsaa();
   if (accessible) return accessible->QueryInterface(aREFIID, aInstancePtr);
 
   // IUnknown* is the canonical one if and only if this accessible doesn't have
@@ -104,12 +105,12 @@ sdnAccessible::get_nodeInfo(BSTR __RPC_FAR* aNodeName,
   // application can compare this to the childID we return for events such as
   // focus events, to correlate back to data nodes in their internal object
   // model.
-  AccessibleWrap* accessible = GetAccessible();
+  MsaaAccessible* accessible = GetMsaa();
   if (accessible) {
-    *aUniqueID = AccessibleWrap::GetChildIDFor(accessible);
+    *aUniqueID = MsaaAccessible::GetChildIDFor(accessible->LocalAcc());
   } else {
     if (mUniqueId.isNothing()) {
-      AccessibleWrap::AssignChildIDTo(WrapNotNull(this));
+      MsaaAccessible::AssignChildIDTo(WrapNotNull(this));
     }
     MOZ_ASSERT(mUniqueId.isSome());
     *aUniqueID = mUniqueId.value();
@@ -219,7 +220,7 @@ sdnAccessible::get_computedStyle(
   for (index = realIndex = 0; index < length && realIndex < aMaxStyleProperties;
        index++) {
     nsAutoCString property;
-    nsAutoString value;
+    nsAutoCString value;
 
     // Ignore -moz-* properties.
     cssDecl->Item(index, property);
@@ -229,7 +230,8 @@ sdnAccessible::get_computedStyle(
     if (!value.IsEmpty()) {
       aStyleProperties[realIndex] =
           ::SysAllocString(NS_ConvertUTF8toUTF16(property).get());
-      aStyleValues[realIndex] = ::SysAllocString(value.get());
+      aStyleValues[realIndex] =
+          ::SysAllocString(NS_ConvertUTF8toUTF16(value).get());
       ++realIndex;
     }
   }
@@ -255,12 +257,12 @@ sdnAccessible::get_computedStyleForProperties(
 
   uint32_t index = 0;
   for (index = 0; index < aNumStyleProperties; index++) {
-    nsAutoString value;
+    nsAutoCString value;
     if (aStyleProperties[index])
       cssDecl->GetPropertyValue(
           NS_ConvertUTF16toUTF8(nsDependentString(aStyleProperties[index])),
           value);  // Get property value
-    aStyleValues[index] = ::SysAllocString(value.get());
+    aStyleValues[index] = ::SysAllocString(NS_ConvertUTF8toUTF16(value).get());
   }
 
   return S_OK;

@@ -124,6 +124,7 @@
   /* contextual keywords */                                            \
   MACRO(As, "'as'")                                                    \
   RANGE(ContextualKeywordFirst, As)                                    \
+  MACRO(Assert, "'assert'")                                            \
   MACRO(Async, "'async'")                                              \
   MACRO(Await, "'await'")                                              \
   MACRO(Each, "'each'")                                                \
@@ -164,14 +165,13 @@
    *   - the precedence list in Parser.cpp                             \
    *   - the JSOp code list in BytecodeEmitter.cpp                     \
    */                                                                  \
-  MACRO(Pipeline, "'|>'")                                              \
-  RANGE(BinOpFirst, Pipeline)                                          \
   MACRO(Coalesce, "'\?\?'") /* escapes to avoid trigraphs warning */   \
-  MACRO(Or, "'||'")         /* logical or */                           \
-  MACRO(And, "'&&'")        /* logical and */                          \
-  MACRO(BitOr, "'|'")       /* bitwise-or */                           \
-  MACRO(BitXor, "'^'")      /* bitwise-xor */                          \
-  MACRO(BitAnd, "'&'")      /* bitwise-and */                          \
+  RANGE(BinOpFirst, Coalesce)                                          \
+  MACRO(Or, "'||'")    /* logical or */                                \
+  MACRO(And, "'&&'")   /* logical and */                               \
+  MACRO(BitOr, "'|'")  /* bitwise-or */                                \
+  MACRO(BitXor, "'^'") /* bitwise-xor */                               \
+  MACRO(BitAnd, "'&'") /* bitwise-and */                               \
                                                                        \
   /* Equality operation tokens, per TokenKindIsEquality. */            \
   MACRO(StrictEq, "'==='")                                             \
@@ -192,7 +192,8 @@
   MACRO(InstanceOf, "keyword 'instanceof'")                            \
   RANGE(KeywordBinOpFirst, InstanceOf)                                 \
   MACRO(In, "keyword 'in'")                                            \
-  RANGE(KeywordBinOpLast, In)                                          \
+  MACRO(PrivateIn, "keyword 'in' (private)")                           \
+  RANGE(KeywordBinOpLast, PrivateIn)                                   \
                                                                        \
   /* Shift ops, per TokenKindIsShift. */                               \
   MACRO(Lsh, "'<<'")                                                   \
@@ -277,7 +278,7 @@ inline bool TokenKindIsAssignment(TokenKind tt) {
   return TokenKind::AssignmentStart <= tt && tt <= TokenKind::AssignmentLast;
 }
 
-inline MOZ_MUST_USE bool TokenKindIsKeyword(TokenKind tt) {
+[[nodiscard]] inline bool TokenKindIsKeyword(TokenKind tt) {
   return (TokenKind::KeywordFirst <= tt && tt <= TokenKind::KeywordLast) ||
          (TokenKind::KeywordBinOpFirst <= tt &&
           tt <= TokenKind::KeywordBinOpLast) ||
@@ -285,37 +286,37 @@ inline MOZ_MUST_USE bool TokenKindIsKeyword(TokenKind tt) {
           tt <= TokenKind::KeywordUnOpLast);
 }
 
-inline MOZ_MUST_USE bool TokenKindIsContextualKeyword(TokenKind tt) {
+[[nodiscard]] inline bool TokenKindIsContextualKeyword(TokenKind tt) {
   return TokenKind::ContextualKeywordFirst <= tt &&
          tt <= TokenKind::ContextualKeywordLast;
 }
 
-inline MOZ_MUST_USE bool TokenKindIsFutureReservedWord(TokenKind tt) {
+[[nodiscard]] inline bool TokenKindIsFutureReservedWord(TokenKind tt) {
   return TokenKind::FutureReservedKeywordFirst <= tt &&
          tt <= TokenKind::FutureReservedKeywordLast;
 }
 
-inline MOZ_MUST_USE bool TokenKindIsStrictReservedWord(TokenKind tt) {
+[[nodiscard]] inline bool TokenKindIsStrictReservedWord(TokenKind tt) {
   return TokenKind::StrictReservedKeywordFirst <= tt &&
          tt <= TokenKind::StrictReservedKeywordLast;
 }
 
-inline MOZ_MUST_USE bool TokenKindIsReservedWordLiteral(TokenKind tt) {
+[[nodiscard]] inline bool TokenKindIsReservedWordLiteral(TokenKind tt) {
   return TokenKind::ReservedWordLiteralFirst <= tt &&
          tt <= TokenKind::ReservedWordLiteralLast;
 }
 
-inline MOZ_MUST_USE bool TokenKindIsReservedWord(TokenKind tt) {
+[[nodiscard]] inline bool TokenKindIsReservedWord(TokenKind tt) {
   return TokenKindIsKeyword(tt) || TokenKindIsFutureReservedWord(tt) ||
          TokenKindIsReservedWordLiteral(tt);
 }
 
-inline MOZ_MUST_USE bool TokenKindIsPossibleIdentifier(TokenKind tt) {
+[[nodiscard]] inline bool TokenKindIsPossibleIdentifier(TokenKind tt) {
   return tt == TokenKind::Name || TokenKindIsContextualKeyword(tt) ||
          TokenKindIsStrictReservedWord(tt);
 }
 
-inline MOZ_MUST_USE bool TokenKindIsPossibleIdentifierName(TokenKind tt) {
+[[nodiscard]] inline bool TokenKindIsPossibleIdentifierName(TokenKind tt) {
   return TokenKindIsPossibleIdentifier(tt) || TokenKindIsReservedWord(tt);
 }
 

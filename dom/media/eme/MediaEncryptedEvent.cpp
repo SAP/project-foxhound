@@ -11,9 +11,9 @@
 #include "jsfriendapi.h"
 #include "nsINode.h"
 #include "mozilla/dom/MediaKeys.h"
+#include "mozilla/HoldDropJSObjects.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(MediaEncryptedEvent)
 
@@ -28,8 +28,7 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(MediaEncryptedEvent, Event)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(MediaEncryptedEvent, Event)
-  tmp->mInitData = nullptr;
-  mozilla::DropJSObjects(this);
+  mozilla::DropJSObjects(tmp);
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(MediaEncryptedEvent)
@@ -40,10 +39,7 @@ MediaEncryptedEvent::MediaEncryptedEvent(EventTarget* aOwner)
   mozilla::HoldJSObjects(this);
 }
 
-MediaEncryptedEvent::~MediaEncryptedEvent() {
-  mInitData = nullptr;
-  mozilla::DropJSObjects(this);
-}
+MediaEncryptedEvent::~MediaEncryptedEvent() { mozilla::DropJSObjects(this); }
 
 JSObject* MediaEncryptedEvent::WrapObjectInternal(
     JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
@@ -109,5 +105,4 @@ void MediaEncryptedEvent::GetInitData(JSContext* cx,
   aData.set(mInitData);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

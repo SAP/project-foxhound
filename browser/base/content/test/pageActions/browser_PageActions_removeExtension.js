@@ -1,17 +1,5 @@
 "use strict";
 
-const { EnterprisePolicyTesting } = ChromeUtils.import(
-  "resource://testing-common/EnterprisePolicyTesting.jsm"
-);
-
-const { ExtensionCommon } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionCommon.jsm"
-);
-
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
-);
-
 const TELEMETRY_EVENTS_FILTERS = {
   category: "addonsManager",
   method: "action",
@@ -27,8 +15,12 @@ add_task(async function init() {
     url: "http://example.com/",
   });
 
+  // The prompt service is mocked later, so set it up to be restored.
+  let { prompt } = Services;
+
   registerCleanupFunction(async () => {
     BrowserTestUtils.removeTab(tab);
+    Services.prompt = prompt;
   });
 });
 
@@ -50,17 +42,41 @@ add_task(async function contextMenu_removeExtension_panel() {
 
   let actionId = ExtensionCommon.makeWidgetId(extension.id);
 
-  // Open the panel and then open the context menu on the action's item.
-  await promisePageActionPanelOpen();
-  let panelButton = BrowserPageActions.panelButtonNodeForActionID(actionId);
-  let contextMenuPromise = promisePanelShown("pageActionContextMenu");
-  EventUtils.synthesizeMouseAtCenter(panelButton, {
-    type: "contextmenu",
-    button: 2,
-  });
-  await contextMenuPromise;
+  const url = "data:text/html,<h1>A Page</h1>";
+  let win = await BrowserTestUtils.openNewBrowserWindow();
+  await SimpleTest.promiseFocus(win);
+  BrowserTestUtils.loadURI(win.gBrowser, url);
+  await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
 
-  let removeExtensionItem = getRemoveExtensionItem();
+  info("Shrink the window if necessary, check the meatball menu is visible");
+  let originalOuterWidth = win.outerWidth;
+  await promiseStableResize(500, win);
+
+  // The pageAction implementation enables the button at the next animation
+  // frame, so before we look for the button we should wait one animation frame
+  // as well.
+  await promiseAnimationFrame(win);
+
+  let meatballButton = win.document.getElementById("pageActionButton");
+  Assert.ok(BrowserTestUtils.is_visible(meatballButton));
+
+  // Open the panel.
+  await promisePageActionPanelOpen(win);
+
+  info("Open the context menu");
+  let panelButton = win.BrowserPageActions.panelButtonNodeForActionID(actionId);
+  let contextMenuPromise = promisePanelShown("pageActionContextMenu", win);
+  EventUtils.synthesizeMouseAtCenter(
+    panelButton,
+    {
+      type: "contextmenu",
+      button: 2,
+    },
+    win
+  );
+  let contextMenu = await contextMenuPromise;
+
+  let removeExtensionItem = getRemoveExtensionItem(win);
   Assert.ok(removeExtensionItem, "'Remove' item exists");
   Assert.ok(!removeExtensionItem.hidden, "'Remove' item is visible");
   Assert.ok(!removeExtensionItem.disabled, "'Remove' item is not disabled");
@@ -68,10 +84,10 @@ add_task(async function contextMenu_removeExtension_panel() {
   // Click the "remove extension" item, a prompt should be displayed and then
   // the add-on should be uninstalled. We mock the prompt service to confirm
   // the removal of the add-on.
-  contextMenuPromise = promisePanelHidden("pageActionContextMenu");
+  contextMenuPromise = promisePanelHidden("pageActionContextMenu", win);
   let addonUninstalledPromise = promiseAddonUninstalled(extension.id);
   mockPromptService();
-  EventUtils.synthesizeMouseAtCenter(removeExtensionItem, {});
+  contextMenu.activateItem(removeExtensionItem);
   await Promise.all([contextMenuPromise, addonUninstalledPromise]);
 
   // Done, clean up.
@@ -88,11 +104,8 @@ add_task(async function contextMenu_removeExtension_panel() {
     TELEMETRY_EVENTS_FILTERS
   );
 
-  // urlbar tests that run after this one can break if the mouse is left over
-  // the area where the urlbar popup appears, which seems to happen due to the
-  // above synthesized mouse events.  Move it over the urlbar.
-  EventUtils.synthesizeMouseAtCenter(gURLBar.inputField, { type: "mousemove" });
-  gURLBar.focus();
+  await promiseStableResize(originalOuterWidth, win);
+  await BrowserTestUtils.closeWindow(win);
 });
 
 add_task(async function contextMenu_removeExtension_urlbar() {
@@ -124,12 +137,18 @@ add_task(async function contextMenu_removeExtension_urlbar() {
     type: "contextmenu",
     button: 2,
   });
-  await contextMenuPromise;
+  let contextMenu = await contextMenuPromise;
 
+  let menuItems = collectContextMenuItems();
+  Assert.equal(menuItems.length, 2, "Context menu has two children");
   let removeExtensionItem = getRemoveExtensionItem();
   Assert.ok(removeExtensionItem, "'Remove' item exists");
   Assert.ok(!removeExtensionItem.hidden, "'Remove' item is visible");
   Assert.ok(!removeExtensionItem.disabled, "'Remove' item is not disabled");
+  let manageExtensionItem = getManageExtensionItem();
+  Assert.ok(manageExtensionItem, "'Manage' item exists");
+  Assert.ok(!manageExtensionItem.hidden, "'Manage' item is visible");
+  Assert.ok(!manageExtensionItem.disabled, "'Manage' item is not disabled");
 
   // Click the "remove extension" item, a prompt should be displayed and then
   // the add-on should be uninstalled. We mock the prompt service to cancel the
@@ -139,7 +158,7 @@ add_task(async function contextMenu_removeExtension_urlbar() {
   let promptCancelledPromise = new Promise(resolve => {
     promptService.confirmEx = () => resolve();
   });
-  EventUtils.synthesizeMouseAtCenter(removeExtensionItem, {});
+  contextMenu.activateItem(removeExtensionItem);
   await Promise.all([contextMenuPromise, promptCancelledPromise]);
 
   // Done, clean up.
@@ -155,61 +174,6 @@ add_task(async function contextMenu_removeExtension_urlbar() {
     ],
     TELEMETRY_EVENTS_FILTERS
   );
-
-  // urlbar tests that run after this one can break if the mouse is left over
-  // the area where the urlbar popup appears, which seems to happen due to the
-  // above synthesized mouse events.  Move it over the urlbar.
-  EventUtils.synthesizeMouseAtCenter(gURLBar.inputField, { type: "mousemove" });
-  gURLBar.focus();
-});
-
-add_task(async function contextMenu_removeExtension_disabled_in_panel() {
-  // We use an extension that shows a page action so that we can test the
-  // "remove extension" item in the context menu.
-  let extension = ExtensionTestUtils.loadExtension({
-    manifest: {
-      name: "Test contextMenu",
-      page_action: { show_matches: ["<all_urls>"] },
-    },
-
-    useAddonManager: "temporary",
-  });
-
-  await extension.startup();
-  // Add a policy to prevent the add-on from being uninstalled.
-  await EnterprisePolicyTesting.setupPolicyEngineWithJson({
-    policies: {
-      Extensions: {
-        Locked: [extension.id],
-      },
-    },
-  });
-
-  let actionId = ExtensionCommon.makeWidgetId(extension.id);
-
-  // Open the panel and then open the context menu on the action's item.
-  await promisePageActionPanelOpen();
-  let panelButton = BrowserPageActions.panelButtonNodeForActionID(actionId);
-  let contextMenuPromise = promisePanelShown("pageActionContextMenu");
-  EventUtils.synthesizeMouseAtCenter(panelButton, {
-    type: "contextmenu",
-    button: 2,
-  });
-  await contextMenuPromise;
-
-  let removeExtensionItem = getRemoveExtensionItem();
-  Assert.ok(removeExtensionItem, "'Remove' item exists");
-  Assert.ok(!removeExtensionItem.hidden, "'Remove' item is visible");
-  Assert.ok(removeExtensionItem.disabled, "'Remove' item is disabled");
-
-  // Press escape to hide the context menu.
-  contextMenuPromise = promisePanelHidden("pageActionContextMenu");
-  EventUtils.synthesizeKey("KEY_Escape");
-  await contextMenuPromise;
-
-  // Done, clean up.
-  await extension.unload();
-  await EnterprisePolicyTesting.setupPolicyEngineWithJson("");
 
   // urlbar tests that run after this one can break if the mouse is left over
   // the area where the urlbar popup appears, which seems to happen due to the
@@ -253,16 +217,22 @@ add_task(async function contextMenu_removeExtension_disabled_in_urlbar() {
     type: "contextmenu",
     button: 2,
   });
-  await contextMenuPromise;
+  let contextMenu = await contextMenuPromise;
 
+  let menuItems = collectContextMenuItems();
+  Assert.equal(menuItems.length, 2, "Context menu has two children");
   let removeExtensionItem = getRemoveExtensionItem();
   Assert.ok(removeExtensionItem, "'Remove' item exists");
   Assert.ok(!removeExtensionItem.hidden, "'Remove' item is visible");
   Assert.ok(removeExtensionItem.disabled, "'Remove' item is disabled");
+  let manageExtensionItem = getManageExtensionItem();
+  Assert.ok(manageExtensionItem, "'Manage' item exists");
+  Assert.ok(!manageExtensionItem.hidden, "'Manage' item is visible");
+  Assert.ok(!manageExtensionItem.disabled, "'Manage' item is not disabled");
 
-  // Press escape to hide the context menu.
+  // Hide the context menu.
   contextMenuPromise = promisePanelHidden("pageActionContextMenu");
-  EventUtils.synthesizeKey("KEY_Escape");
+  contextMenu.hidePopup();
   await contextMenuPromise;
 
   // Done, clean up.
@@ -274,6 +244,82 @@ add_task(async function contextMenu_removeExtension_disabled_in_urlbar() {
   // above synthesized mouse events.  Move it over the urlbar.
   EventUtils.synthesizeMouseAtCenter(gURLBar.inputField, { type: "mousemove" });
   gURLBar.focus();
+});
+
+add_task(async function contextMenu_removeExtension_disabled_in_panel() {
+  // We use an extension that shows a page action so that we can test the
+  // "remove extension" item in the context menu.
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      name: "Test contextMenu",
+      page_action: { show_matches: ["<all_urls>"] },
+    },
+
+    useAddonManager: "temporary",
+  });
+
+  await extension.startup();
+  // Add a policy to prevent the add-on from being uninstalled.
+  await EnterprisePolicyTesting.setupPolicyEngineWithJson({
+    policies: {
+      Extensions: {
+        Locked: [extension.id],
+      },
+    },
+  });
+
+  let actionId = ExtensionCommon.makeWidgetId(extension.id);
+
+  const url = "data:text/html,<h1>A Page</h1>";
+  let win = await BrowserTestUtils.openNewBrowserWindow();
+  await SimpleTest.promiseFocus(win);
+  BrowserTestUtils.loadURI(win.gBrowser, url);
+  await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
+
+  info("Shrink the window if necessary, check the meatball menu is visible");
+  let originalOuterWidth = win.outerWidth;
+  await promiseStableResize(500, win);
+
+  // The pageAction implementation enables the button at the next animation
+  // frame, so before we look for the button we should wait one animation frame
+  // as well.
+  await promiseAnimationFrame(win);
+
+  let meatballButton = win.document.getElementById("pageActionButton");
+  Assert.ok(BrowserTestUtils.is_visible(meatballButton));
+
+  // Open the panel.
+  await promisePageActionPanelOpen(win);
+
+  info("Open the context menu");
+  let panelButton = win.BrowserPageActions.panelButtonNodeForActionID(actionId);
+  let contextMenuPromise = promisePanelShown("pageActionContextMenu", win);
+  EventUtils.synthesizeMouseAtCenter(
+    panelButton,
+    {
+      type: "contextmenu",
+      button: 2,
+    },
+    win
+  );
+  let contextMenu = await contextMenuPromise;
+
+  let removeExtensionItem = getRemoveExtensionItem(win);
+  Assert.ok(removeExtensionItem, "'Remove' item exists");
+  Assert.ok(!removeExtensionItem.hidden, "'Remove' item is visible");
+  Assert.ok(removeExtensionItem.disabled, "'Remove' item is disabled");
+
+  // Hide the context menu.
+  contextMenuPromise = promisePanelHidden("pageActionContextMenu", win);
+  contextMenu.hidePopup();
+  await contextMenuPromise;
+
+  // Done, clean up.
+  await extension.unload();
+  await EnterprisePolicyTesting.setupPolicyEngineWithJson("");
+
+  await promiseStableResize(originalOuterWidth, win);
+  await BrowserTestUtils.closeWindow(win);
 });
 
 function promiseAddonUninstalled(addonId) {
@@ -290,8 +336,6 @@ function promiseAddonUninstalled(addonId) {
 }
 
 function mockPromptService() {
-  let { prompt } = Services;
-
   let promptService = {
     // The prompt returns 1 for cancelled and 0 for accepted.
     _response: 0,
@@ -301,22 +345,24 @@ function mockPromptService() {
 
   Services.prompt = promptService;
 
-  registerCleanupFunction(() => {
-    Services.prompt = prompt;
-  });
-
   return promptService;
 }
 
-function getRemoveExtensionItem() {
-  return document.querySelector(
+function getRemoveExtensionItem(win = window) {
+  return win.document.querySelector(
     "#pageActionContextMenu > menuitem[label='Remove Extension']"
   );
 }
 
-async function promiseAnimationFrame(win = window) {
-  await new Promise(resolve => win.requestAnimationFrame(resolve));
+function getManageExtensionItem(win = window) {
+  return win.document.querySelector(
+    "#pageActionContextMenu > menuitem[label='Manage Extension…']"
+  );
+}
 
-  let { tm } = Services;
-  return new Promise(resolve => tm.dispatchToMainThread(resolve));
+function collectContextMenuItems(win = window) {
+  let contextMenu = win.document.getElementById("pageActionContextMenu");
+  return Array.prototype.filter.call(contextMenu.children, node => {
+    return win.getComputedStyle(node).visibility == "visible";
+  });
 }

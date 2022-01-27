@@ -7,6 +7,9 @@
 // _AboutLogins is only exported for testing
 var EXPORTED_SYMBOLS = ["AboutLoginsParent", "_AboutLogins"];
 
+const { setTimeout, clearTimeout } = ChromeUtils.import(
+  "resource://gre/modules/Timer.jsm"
+);
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
@@ -57,134 +60,13 @@ XPCOMUtils.defineLazyGetter(this, "AboutLoginsL10n", () => {
 });
 
 const ABOUT_LOGINS_ORIGIN = "about:logins";
+const AUTH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const MASTER_PASSWORD_NOTIFICATION_ID = "master-password-login-required";
-const PASSWORD_SYNC_NOTIFICATION_ID = "enable-password-sync";
-
-const HIDE_MOBILE_FOOTER_PREF = "signon.management.page.hideMobileFooter";
-const SHOW_PASSWORD_SYNC_NOTIFICATION_PREF =
-  "signon.management.page.showPasswordSyncNotification";
 
 // about:logins will always use the privileged content process,
 // even if it is disabled for other consumers such as about:newtab.
 const EXPECTED_ABOUTLOGINS_REMOTE_TYPE = E10SUtils.PRIVILEGEDABOUT_REMOTE_TYPE;
-
-// App store badges sourced from https://developer.apple.com/app-store/marketing/guidelines/#section-badges.
-// This array mirrors the file names from the App store directory (./content/third-party/app-store)
-const APP_STORE_LOCALES = [
-  "az",
-  "ar",
-  "bg",
-  "cs",
-  "da",
-  "de",
-  "el",
-  "en",
-  "es-mx",
-  "es",
-  "et",
-  "fi",
-  "fr",
-  "he",
-  "hu",
-  "id",
-  "it",
-  "ja",
-  "ko",
-  "lt",
-  "lv",
-  "my",
-  "nb",
-  "nl",
-  "nn",
-  "pl",
-  "pt-br",
-  "pt-pt",
-  "ro",
-  "ru",
-  "si",
-  "sk",
-  "sv",
-  "th",
-  "tl",
-  "tr",
-  "vi",
-  "zh-hans",
-  "zh-hant",
-];
-
-// Google play badges sourced from https://play.google.com/intl/en_us/badges/
-// This array mirrors the file names from the play store directory (./content/third-party/play-store)
-const PLAY_STORE_LOCALES = [
-  "af",
-  "ar",
-  "az",
-  "be",
-  "bg",
-  "bn",
-  "bs",
-  "ca",
-  "cs",
-  "da",
-  "de",
-  "el",
-  "en",
-  "es",
-  "et",
-  "eu",
-  "fa",
-  "fr",
-  "gl",
-  "gu",
-  "he",
-  "hi",
-  "hr",
-  "hu",
-  "hy",
-  "id",
-  "is",
-  "it",
-  "ja",
-  "ka",
-  "kk",
-  "km",
-  "kn",
-  "ko",
-  "lo",
-  "lt",
-  "lv",
-  "mk",
-  "mr",
-  "ms",
-  "my",
-  "nb",
-  "ne",
-  "nl",
-  "nn",
-  "pa",
-  "pl",
-  "pt-br",
-  "pt",
-  "ro",
-  "ru",
-  "si",
-  "sk",
-  "sl",
-  "sq",
-  "sr",
-  "sv",
-  "ta",
-  "te",
-  "th",
-  "tl",
-  "tr",
-  "uk",
-  "ur",
-  "uz",
-  "vi",
-  "zh-cn",
-  "zh-tw",
-];
-
+let _gPasswordRemaskTimeout = null;
 const convertSubjectToLogin = subject => {
   subject.QueryInterface(Ci.nsILoginMetaInfo).QueryInterface(Ci.nsILoginInfo);
   const login = LoginHelper.loginToVanillaObject(subject);
@@ -265,10 +147,6 @@ class AboutLoginsParent extends JSWindowActorParent {
         Services.logins.removeLogin(login);
         break;
       }
-      case "AboutLogins:HideFooter": {
-        Services.prefs.setBoolPref(HIDE_MOBILE_FOOTER_PREF, true);
-        break;
-      }
       case "AboutLogins:SortChanged": {
         Services.prefs.setCharPref("signon.management.page.sort", message.data);
         break;
@@ -281,7 +159,7 @@ class AboutLoginsParent extends JSWindowActorParent {
         ownerGlobal.gSync.openFxAManagePage("password-manager");
         break;
       }
-      case "AboutLogins:Import": {
+      case "AboutLogins:ImportFromBrowser": {
         try {
           MigrationUtils.showMigrationWizard(ownerGlobal, [
             MigrationUtils.MIGRATION_ENTRYPOINT_PASSWORDS,
@@ -291,36 +169,18 @@ class AboutLoginsParent extends JSWindowActorParent {
         }
         break;
       }
+
+      case "AboutLogins:ImportReportInit": {
+        let reportData = LoginCSVImport.lastImportReport;
+        this.sendAsyncMessage("AboutLogins:ImportReportData", reportData);
+        break;
+      }
+
       case "AboutLogins:GetHelp": {
         const SUPPORT_URL =
           Services.urlFormatter.formatURLPref("app.support.baseURL") +
-          "firefox-lockwise";
+          "password-manager-remember-delete-edit-logins";
         ownerGlobal.openWebLinkIn(SUPPORT_URL, "tab", {
-          relatedToCurrent: true,
-        });
-        break;
-      }
-      case "AboutLogins:OpenMobileAndroid": {
-        const MOBILE_ANDROID_URL_PREF =
-          "signon.management.page.mobileAndroidURL";
-        const linkTrackingSource = message.data.source;
-        let MOBILE_ANDROID_URL = Services.prefs.getStringPref(
-          MOBILE_ANDROID_URL_PREF
-        );
-        // Append the `utm_creative` query parameter value:
-        MOBILE_ANDROID_URL += linkTrackingSource;
-        ownerGlobal.openWebLinkIn(MOBILE_ANDROID_URL, "tab", {
-          relatedToCurrent: true,
-        });
-        break;
-      }
-      case "AboutLogins:OpenMobileIos": {
-        const MOBILE_IOS_URL_PREF = "signon.management.page.mobileAppleURL";
-        const linkTrackingSource = message.data.source;
-        let MOBILE_IOS_URL = Services.prefs.getStringPref(MOBILE_IOS_URL_PREF);
-        // Append the `utm_creative` query parameter value:
-        MOBILE_IOS_URL += linkTrackingSource;
-        ownerGlobal.openWebLinkIn(MOBILE_IOS_URL, "tab", {
           relatedToCurrent: true,
         });
         break;
@@ -362,14 +222,21 @@ class AboutLoginsParent extends JSWindowActorParent {
           messageText.value,
           captionText.value
         );
-        if (isAuthorized) {
-          const AUTH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-          AboutLogins._authExpirationTime = Date.now() + AUTH_TIMEOUT_MS;
-        }
         this.sendAsyncMessage("AboutLogins:MasterPasswordResponse", {
           result: isAuthorized,
           telemetryEvent,
         });
+        if (isAuthorized) {
+          AboutLogins._authExpirationTime = Date.now() + AUTH_TIMEOUT_MS;
+          const remaskPasswords = () => {
+            this.sendAsyncMessage("AboutLogins:RemaskPassword");
+          };
+          clearTimeout(_gPasswordRemaskTimeout);
+          _gPasswordRemaskTimeout = setTimeout(
+            remaskPasswords,
+            AUTH_TIMEOUT_MS
+          );
+        }
         break;
       }
       case "AboutLogins:Subscribe": {
@@ -388,28 +255,6 @@ class AboutLoginsParent extends JSWindowActorParent {
         const logins = await AboutLogins.getAllLogins();
         try {
           let syncState = AboutLogins.getSyncState();
-          if (FXA_ENABLED) {
-            AboutLogins.updatePasswordSyncNotificationState(syncState);
-          }
-
-          const playStoreBadgeLanguage = Services.locale.negotiateLanguages(
-            Services.locale.appLocalesAsBCP47,
-            PLAY_STORE_LOCALES,
-            "en-us",
-            Services.locale.langNegStrategyLookup
-          )[0];
-
-          const appStoreBadgeLanguage = Services.locale.negotiateLanguages(
-            Services.locale.appLocalesAsBCP47,
-            APP_STORE_LOCALES,
-            "en-us",
-            Services.locale.langNegStrategyLookup
-          )[0];
-
-          const selectedBadgeLanguages = {
-            appStoreBadgeLanguage,
-            playStoreBadgeLanguage,
-          };
 
           let selectedSort = Services.prefs.getCharPref(
             "signon.management.page.sort",
@@ -424,7 +269,6 @@ class AboutLoginsParent extends JSWindowActorParent {
             logins,
             selectedSort,
             syncState,
-            selectedBadgeLanguages,
             masterPasswordEnabled: LoginHelper.isMasterPasswordSet(),
             passwordRevealVisible: Services.policies.isAllowed(
               "passwordReveal"
@@ -556,24 +400,12 @@ class AboutLoginsParent extends JSWindowActorParent {
         fp.open(fpCallback);
         break;
       }
-      case "AboutLogins:ImportPasswords": {
-        let fp = Cc["@mozilla.org/filepicker;1"].createInstance(
-          Ci.nsIFilePicker
-        );
-        async function fpCallback(aResult) {
-          if (aResult != Ci.nsIFilePicker.returnCancel) {
-            await LoginCSVImport.importFromCSV(fp.file.path);
-            Services.telemetry.recordEvent(
-              "pwmgr",
-              "mgmt_menu_item_used",
-              "import_csv_complete"
-            );
-          }
-        }
+      case "AboutLogins:ImportFromFile": {
         let [
           title,
           okButtonLabel,
           csvFilterTitle,
+          tsvFilterTitle,
         ] = await AboutLoginsL10n.formatValues([
           {
             id: "about-logins-import-file-picker-title",
@@ -584,13 +416,50 @@ class AboutLoginsParent extends JSWindowActorParent {
           {
             id: "about-logins-import-file-picker-csv-filter-title",
           },
+          {
+            id: "about-logins-import-file-picker-tsv-filter-title",
+          },
         ]);
+        let { result, path } = await this.openFilePickerDialog(
+          title,
+          okButtonLabel,
+          [
+            {
+              title: csvFilterTitle,
+              extensionPattern: "*.csv",
+            },
+            {
+              title: tsvFilterTitle,
+              extensionPattern: "*.tsv",
+            },
+          ],
+          ownerGlobal
+        );
 
-        fp.init(ownerGlobal, title, Ci.nsIFilePicker.modeOpen);
-        fp.appendFilter(csvFilterTitle, "*.csv");
-        fp.appendFilters(Ci.nsIFilePicker.filterAll);
-        fp.okButtonLabel = okButtonLabel;
-        fp.open(fpCallback);
+        if (result != Ci.nsIFilePicker.returnCancel) {
+          let summary;
+          try {
+            summary = await LoginCSVImport.importFromCSV(path);
+          } catch (e) {
+            Cu.reportError(e);
+            this.sendAsyncMessage(
+              "AboutLogins:ImportPasswordsErrorDialog",
+              e.errorType
+            );
+          }
+          if (summary) {
+            this.sendAsyncMessage("AboutLogins:ImportPasswordsDialog", summary);
+            Services.telemetry.recordEvent(
+              "pwmgr",
+              "mgmt_menu_item_used",
+              "import_csv_complete"
+            );
+          }
+        }
+        break;
+      }
+      case "AboutLogins:RemoveAllLogins": {
+        Services.logins.removeAllUserFacingLogins();
         break;
       }
     }
@@ -609,6 +478,21 @@ class AboutLoginsParent extends JSWindowActorParent {
     }
 
     this.sendAsyncMessage("AboutLogins:ShowLoginItemError", messageObject);
+  }
+
+  async openFilePickerDialog(title, okButtonLabel, appendFilters, ownerGlobal) {
+    return new Promise(resolve => {
+      let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
+      fp.init(ownerGlobal, title, Ci.nsIFilePicker.modeOpen);
+      for (const appendFilter of appendFilters) {
+        fp.appendFilter(appendFilter.title, appendFilter.extensionPattern);
+      }
+      fp.appendFilters(Ci.nsIFilePicker.filterAll);
+      fp.okButtonLabel = okButtonLabel;
+      fp.open(async result => {
+        resolve({ result, path: fp.file.path });
+      });
+    });
   }
 }
 
@@ -712,7 +596,7 @@ var AboutLogins = {
         break;
       }
       case "removeAllLogins": {
-        this.messageSubscribers("AboutLogins:AllLogins", []);
+        this.messageSubscribers("AboutLogins:RemoveAllLogins", []);
         break;
       }
     }
@@ -766,37 +650,6 @@ var AboutLogins = {
     this.messageSubscribers("AboutLogins:MasterPasswordAuthRequired");
   },
 
-  showPasswordSyncNotifications() {
-    if (
-      !Services.prefs.getBoolPref(SHOW_PASSWORD_SYNC_NOTIFICATION_PREF, true)
-    ) {
-      return;
-    }
-
-    this.showNotifications({
-      id: PASSWORD_SYNC_NOTIFICATION_ID,
-      priority: "PRIORITY_INFO_MEDIUM",
-      iconURL: "chrome://browser/skin/login.svg",
-      messageId: "enable-password-sync-notification-message",
-      buttonIds: [
-        "enable-password-sync-preferences-button",
-        "about-logins-enable-password-sync-dont-ask-again-button",
-      ],
-      onClicks: [
-        function onSyncPreferencesClick(browser) {
-          browser.ownerGlobal.gSync.openPrefs("password-manager");
-        },
-        function onDontAskAgainClick(browser) {
-          Services.prefs.setBoolPref(
-            SHOW_PASSWORD_SYNC_NOTIFICATION_PREF,
-            false
-          );
-        },
-      ],
-      extraFtl: ["branding/brand.ftl", "browser/branding/sync-brand.ftl"],
-    });
-  },
-
   showNotifications({
     id,
     priority,
@@ -841,10 +694,12 @@ var AboutLogins = {
       }
 
       notification = notificationBox.appendNotification(
-        messageFragment,
         id,
-        iconURL,
-        notificationBox[priority],
+        {
+          label: messageFragment,
+          image: iconURL,
+          priority: notificationBox[priority],
+        },
         buttons
       );
     }
@@ -957,37 +812,19 @@ var AboutLogins = {
     // authenticated. More diagnostics and error states can be handled
     // by other more Sync-specific pages.
     const loggedIn = state.status != UIState.STATUS_NOT_CONFIGURED;
-
-    // Pass the pref set if user has dismissed mobile promo footer
-    const dismissedMobileFooter = Services.prefs.getBoolPref(
-      HIDE_MOBILE_FOOTER_PREF
-    );
+    const passwordSyncEnabled = state.syncEnabled && PASSWORD_SYNC_ENABLED;
 
     return {
       loggedIn,
       email: state.email,
       avatarURL: state.avatarURL,
-      hideMobileFooter: !loggedIn || dismissedMobileFooter,
       fxAccountsEnabled: FXA_ENABLED,
+      passwordSyncEnabled,
     };
   },
 
-  updatePasswordSyncNotificationState(
-    syncState,
-    // Need to explicitly call the getter on lazy preference getters
-    // to activate their observer.
-    passwordSyncEnabled = PASSWORD_SYNC_ENABLED
-  ) {
-    if (syncState.loggedIn && !passwordSyncEnabled) {
-      this.showPasswordSyncNotifications();
-      return;
-    }
-    this.removeNotifications(PASSWORD_SYNC_NOTIFICATION_ID);
-  },
-
   onPasswordSyncEnabledPreferenceChange(data, previous, latest) {
-    Services.prefs.clearUserPref(SHOW_PASSWORD_SYNC_NOTIFICATION_PREF);
-    this.updatePasswordSyncNotificationState(this.getSyncState(), latest);
+    this.messageSubscribers("AboutLogins:SyncState", this.getSyncState());
   },
 };
 var _AboutLogins = AboutLogins;

@@ -7,11 +7,15 @@
 #ifndef nsCycleCollectionTraversalCallback_h__
 #define nsCycleCollectionTraversalCallback_h__
 
-#include "jspubtd.h"
-#include "js/HeapAPI.h"
-#include "nsISupports.h"
+#include <cstdint>
+#include "nscore.h"
 
 class nsCycleCollectionParticipant;
+class nsISupports;
+
+namespace JS {
+class GCCellPtr;
+}
 
 class NS_NO_VTABLE nsCycleCollectionTraversalCallback {
  public:
@@ -27,7 +31,7 @@ class NS_NO_VTABLE nsCycleCollectionTraversalCallback {
                    uint64_t aCompartmentAddress = 0) = 0;
 
   NS_IMETHOD_(void) NoteXPCOMChild(nsISupports* aChild) = 0;
-  NS_IMETHOD_(void) NoteJSChild(const JS::GCCellPtr& aThing) = 0;
+  NS_IMETHOD_(void) NoteJSChild(JS::GCCellPtr aThing) = 0;
   NS_IMETHOD_(void)
   NoteNativeChild(void* aChild, nsCycleCollectionParticipant* aHelper) = 0;
 

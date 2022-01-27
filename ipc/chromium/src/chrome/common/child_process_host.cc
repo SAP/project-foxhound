@@ -29,22 +29,12 @@ bool ChildProcessHost::CreateChannel() {
   channel_id_ = IPC::Channel::GenerateVerifiedChannelID();
   channel_.reset(
       new IPC::Channel(channel_id_, IPC::Channel::MODE_SERVER, &listener_));
+#if defined(OS_WIN)
+  channel_->StartAcceptingHandles(IPC::Channel::MODE_SERVER);
+#elif defined(OS_MACOSX)
+  channel_->StartAcceptingMachPorts(IPC::Channel::MODE_SERVER);
+#endif
   if (!channel_->Connect()) return false;
-
-  opening_channel_ = true;
-
-  return true;
-}
-
-bool ChildProcessHost::CreateChannel(FileDescriptor& aFileDescriptor) {
-  if (channel_.get()) {
-    channel_->Close();
-  }
-  channel_ =
-      mozilla::ipc::OpenDescriptor(aFileDescriptor, IPC::Channel::MODE_SERVER);
-  if (!channel_->Connect()) {
-    return false;
-  }
 
   opening_channel_ = true;
 

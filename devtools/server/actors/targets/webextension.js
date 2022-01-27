@@ -21,11 +21,13 @@ const {
   parentProcessTargetPrototype,
 } = require("devtools/server/actors/targets/parent-process");
 const makeDebugger = require("devtools/server/actors/utils/make-debugger");
-const { ActorClassWithSpec } = require("devtools/shared/protocol");
 const {
   webExtensionTargetSpec,
 } = require("devtools/shared/specs/targets/webextension");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+
+const Targets = require("devtools/server/actors/targets/index");
+const TargetActorMixin = require("devtools/server/actors/targets/target-actor-mixin");
 
 loader.lazyRequireGetter(
   this,
@@ -39,7 +41,7 @@ const FALLBACK_DOC_URL =
 /**
  * Protocol.js expects only the prototype object, and does not maintain the prototype
  * chain when it constructs the ActorClass. For this reason we are using `extend` to
- * maintain the properties of BrowsingContextTargetActor.prototype
+ * maintain the properties of WindowGlobalTargetActor.prototype
  */
 const webExtensionTargetPrototype = extend({}, parentProcessTargetPrototype);
 
@@ -47,7 +49,7 @@ const webExtensionTargetPrototype = extend({}, parentProcessTargetPrototype);
  * Creates a target actor for debugging all the contexts associated to a target
  * WebExtensions add-on running in a child extension process. Most of the implementation
  * is inherited from ParentProcessTargetActor (which inherits most of its implementation
- * from BrowsingContextTargetActor).
+ * from WindowGlobalTargetActor).
  *
  * WebExtensionTargetActor is created by a WebExtensionActor counterpart, when its
  * parent actor's `connect` method has been called (on the listAddons RDP package),
@@ -56,10 +58,10 @@ const webExtensionTargetPrototype = extend({}, parentProcessTargetPrototype);
  * if the extension is running in oop-mode).
  *
  * A WebExtensionTargetActor contains all target-scoped actors, like a regular
- * ParentProcessTargetActor or BrowsingContextTargetActor.
+ * ParentProcessTargetActor or WindowGlobalTargetActor.
  *
  * History lecture:
- * - The add-on actors used to not inherit BrowsingContextTargetActor because of the
+ * - The add-on actors used to not inherit WindowGlobalTargetActor because of the
  *   different way the add-on APIs where exposed to the add-on itself, and for this reason
  *   the Addon Debugger has only a sub-set of the feature available in the Tab or in the
  *   Browser Toolbox.
@@ -77,25 +79,36 @@ const webExtensionTargetPrototype = extend({}, parentProcessTargetPrototype);
  * @param {nsIMessageSender} chromeGlobal.
  *        The chromeGlobal where this actor has been injected by the
  *        frame-connector.js connectToFrame method.
- * @param {string} prefix
- *        the custom RDP prefix to use.
- * @param {string} addonId
- *        the addonId of the target WebExtension.
+ * @param {Object} options
+ *        - addonId: {String} the addonId of the target WebExtension.
+ *        - chromeGlobal: {nsIMessageSender} The chromeGlobal where this actor
+ *          has been injected by the frame-connector.js connectToFrame method.
+ *        - isTopLevelTarget: {Boolean} flag to indicate if this is the top
+ *          level target of the DevTools session
+ *        - prefix: {String} the custom RDP prefix to use.
  */
 webExtensionTargetPrototype.initialize = function(
   conn,
-  chromeGlobal,
-  prefix,
-  addonId
+  { addonId, chromeGlobal, isTopLevelTarget, prefix }
 ) {
   this.addonId = addonId;
   this.chromeGlobal = chromeGlobal;
+
+  // Expose the BrowsingContext of the fallback document,
+  // which is the one this target actor will always refer to via its form()
+  // and all resources should be related to this one as we currently spawn
+  // only just this one target actor to debug all webextension documents.
+  this.devtoolsSpawnedBrowsingContextForWebExtension =
+    chromeGlobal.browsingContext;
 
   // Try to discovery an existent extension page to attach (which will provide the initial
   // URL shown in the window tittle when the addon debugger is opened).
   const extensionWindow = this._searchForExtensionWindow();
 
-  parentProcessTargetPrototype.initialize.call(this, conn, extensionWindow);
+  parentProcessTargetPrototype.initialize.call(this, conn, {
+    isTopLevelTarget,
+    window: extensionWindow,
+  });
   this._chromeGlobal = chromeGlobal;
   this._prefix = prefix;
 
@@ -112,7 +125,7 @@ webExtensionTargetPrototype.initialize = function(
   });
 
   // Bind the _allowSource helper to this, it is used in the
-  // BrowsingContextTargetActor to lazily create the TabSources instance.
+  // WindowGlobalTargetActor to lazily create the SourcesManager instance.
   this._allowSource = this._allowSource.bind(this);
   this._onParentExit = this._onParentExit.bind(this);
 
@@ -148,7 +161,7 @@ webExtensionTargetPrototype.isRootActor = true;
 /**
  * Called when the actor is removed from the connection.
  */
-webExtensionTargetPrototype.exit = function() {
+webExtensionTargetPrototype.destroy = function() {
   if (this._chromeGlobal) {
     const chromeGlobal = this._chromeGlobal;
     this._chromeGlobal = null;
@@ -163,10 +176,14 @@ webExtensionTargetPrototype.exit = function() {
     });
   }
 
+  if (this.fallbackWindow) {
+    this.fallbackWindow = null;
+  }
+
   this.addon = null;
   this.addonId = null;
 
-  return ParentProcessTargetActor.prototype.exit.apply(this);
+  return ParentProcessTargetActor.prototype.destroy.apply(this);
 };
 
 // Private helpers.
@@ -187,12 +204,6 @@ webExtensionTargetPrototype._searchFallbackWindow = function() {
   return this.fallbackWindow;
 };
 
-webExtensionTargetPrototype._destroyFallbackWindow = function() {
-  if (this.fallbackWindow) {
-    this.fallbackWindow = null;
-  }
-};
-
 // Discovery an extension page to use as a default target window.
 // NOTE: This currently fail to discovery an extension page running in a
 // windowless browser when running in non-oop mode, and the background page
@@ -207,7 +218,7 @@ webExtensionTargetPrototype._searchForExtensionWindow = function() {
   return this._searchFallbackWindow();
 };
 
-// Customized ParentProcessTargetActor/BrowsingContextTargetActor hooks.
+// Customized ParentProcessTargetActor/WindowGlobalTargetActor hooks.
 
 webExtensionTargetPrototype._onDocShellDestroy = function(docShell) {
   // Stop watching this docshell (the unwatch() method will check if we
@@ -221,8 +232,8 @@ webExtensionTargetPrototype._onDocShellDestroy = function(docShell) {
   this._notifyDocShellDestroy(webProgress);
 
   // If the destroyed docShell was the current docShell and the actor is
-  // currently attached, switch to the fallback window
-  if (this.attached && docShell == this.docShell) {
+  // not destroyed, switch to the fallback window
+  if (!this.isDestroyed() && docShell == this.docShell) {
     this._changeTopLevelDocument(this._searchForExtensionWindow());
   }
 };
@@ -231,33 +242,6 @@ webExtensionTargetPrototype._onNewExtensionWindow = function(window) {
   if (!this.window || this.window === this.fallbackWindow) {
     this._changeTopLevelDocument(window);
   }
-};
-
-webExtensionTargetPrototype._attach = function() {
-  // NOTE: we need to be sure that `this.window` can return a window before calling the
-  // ParentProcessTargetActor.onAttach, or the BrowsingContextTargetActor will not be
-  // subscribed to the child doc shell updates.
-
-  if (
-    !this.window ||
-    this.window.document.nodePrincipal.addonId !== this.addonId
-  ) {
-    // Discovery an existent extension page (or fallback window) to attach.
-    this._setWindow(this._searchForExtensionWindow());
-  }
-
-  // Call ParentProcessTargetActor's _attach to listen for any new/destroyed chrome
-  // docshell.
-  ParentProcessTargetActor.prototype._attach.apply(this);
-};
-
-webExtensionTargetPrototype._detach = function() {
-  // Call ParentProcessTargetActor's _detach to unsubscribe new/destroyed chrome docshell
-  // listeners.
-  ParentProcessTargetActor.prototype._detach.apply(this);
-
-  // Stop watching for new extension windows.
-  this._destroyFallbackWindow();
 };
 
 /**
@@ -418,10 +402,11 @@ webExtensionTargetPrototype._onParentExit = function(msg) {
     return;
   }
 
-  this.exit();
+  this.destroy();
 };
 
-exports.WebExtensionTargetActor = ActorClassWithSpec(
+exports.WebExtensionTargetActor = TargetActorMixin(
+  Targets.TYPES.FRAME,
   webExtensionTargetSpec,
   webExtensionTargetPrototype
 );

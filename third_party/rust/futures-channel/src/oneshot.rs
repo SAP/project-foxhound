@@ -1,28 +1,28 @@
 //! A channel for sending a single message between asynchronous tasks.
+//!
+//! This is a single-producer, single-consumer channel.
 
 use alloc::sync::Arc;
 use core::fmt;
 use core::pin::Pin;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering::SeqCst;
-use futures_core::future::Future;
+use futures_core::future::{FusedFuture, Future};
 use futures_core::task::{Context, Poll, Waker};
 
 use crate::lock::Lock;
 
 /// A future for a value that will be provided by another asynchronous task.
 ///
-/// This is created by the [`channel`] function.
+/// This is created by the [`channel`](channel) function.
 #[must_use = "futures do nothing unless you `.await` or poll them"]
-#[derive(Debug)]
 pub struct Receiver<T> {
     inner: Arc<Inner<T>>,
 }
 
 /// A means of transmitting a single value to another task.
 ///
-/// This is created by the [`channel`] function.
-#[derive(Debug)]
+/// This is created by the [`channel`](channel) function.
 pub struct Sender<T> {
     inner: Arc<Inner<T>>,
 }
@@ -33,7 +33,6 @@ impl<T> Unpin for Sender<T> {}
 
 /// Internal state of the `Receiver`/`Sender` pair above. This is all used as
 /// the internal synchronization between the two for send/recv operations.
-#[derive(Debug)]
 struct Inner<T> {
     /// Indicates whether this oneshot is complete yet. This is filled in both
     /// by `Sender::drop` and by `Receiver::drop`, and both sides interpret it
@@ -68,7 +67,9 @@ struct Inner<T> {
     tx_task: Lock<Option<Waker>>,
 }
 
-/// Creates a new one-shot channel for sending values across asynchronous tasks.
+/// Creates a new one-shot channel for sending a single value across asynchronous tasks.
+///
+/// The channel works for a spsc (single-producer, single-consumer) scheme.
 ///
 /// This function is similar to Rust's channel constructor found in the standard
 /// library. Two halves are returned, the first of which is a `Sender` handle,
@@ -82,37 +83,34 @@ struct Inner<T> {
 ///
 /// ```
 /// use futures::channel::oneshot;
-/// use futures::future::FutureExt;
-/// use std::thread;
+/// use std::{thread, time::Duration};
 ///
 /// let (sender, receiver) = oneshot::channel::<i32>();
 ///
-/// # let t =
 /// thread::spawn(|| {
-///     let future = receiver.map(|i| {
-///         println!("got: {:?}", i);
-///     });
-///     // ...
-/// # return future;
+///     println!("THREAD: sleeping zzz...");
+///     thread::sleep(Duration::from_millis(1000));
+///     println!("THREAD: i'm awake! sending.");
+///     sender.send(3).unwrap();
 /// });
 ///
-/// sender.send(3).unwrap();
-/// # futures::executor::block_on(t.join().unwrap());
+/// println!("MAIN: doing some useful stuff");
+///
+/// futures::executor::block_on(async {
+///     println!("MAIN: waiting for msg...");
+///     println!("MAIN: got: {:?}", receiver.await)
+/// });
 /// ```
 pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
     let inner = Arc::new(Inner::new());
-    let receiver = Receiver {
-        inner: inner.clone(),
-    };
-    let sender = Sender {
-        inner,
-    };
+    let receiver = Receiver { inner: inner.clone() };
+    let sender = Sender { inner };
     (sender, receiver)
 }
 
 impl<T> Inner<T> {
-    fn new() -> Inner<T> {
-        Inner {
+    fn new() -> Self {
+        Self {
             complete: AtomicBool::new(false),
             data: Lock::new(None),
             rx_task: Lock::new(None),
@@ -122,11 +120,11 @@ impl<T> Inner<T> {
 
     fn send(&self, t: T) -> Result<(), T> {
         if self.complete.load(SeqCst) {
-            return Err(t)
+            return Err(t);
         }
 
         // Note that this lock acquisition may fail if the receiver
-        // is closed and sets the `complete` flag to true, whereupon
+        // is closed and sets the `complete` flag to `true`, whereupon
         // the receiver may call `poll()`.
         if let Some(mut slot) = self.data.try_lock() {
             assert!(slot.is_none());
@@ -159,7 +157,7 @@ impl<T> Inner<T> {
         // destructor, but our destructor hasn't run yet so if it's set then the
         // oneshot is gone.
         if self.complete.load(SeqCst) {
-            return Poll::Ready(())
+            return Poll::Ready(());
         }
 
         // If our other half is not gone then we need to park our current task
@@ -268,7 +266,10 @@ impl<T> Inner<T> {
         } else {
             let task = cx.waker().clone();
             match self.rx_task.try_lock() {
-                Some(mut slot) => { *slot = Some(task); false },
+                Some(mut slot) => {
+                    *slot = Some(task);
+                    false
+                }
                 None => true,
             }
         };
@@ -336,14 +337,13 @@ impl<T> Sender<T> {
     ///
     /// If the value is successfully enqueued for the remote end to receive,
     /// then `Ok(())` is returned. If the receiving end was dropped before
-    /// this function was called, however, then `Err` is returned with the value
-    /// provided.
+    /// this function was called, however, then `Err(t)` is returned.
     pub fn send(self, t: T) -> Result<(), T> {
         self.inner.send(t)
     }
 
     /// Polls this `Sender` half to detect whether its associated
-    /// [`Receiver`](Receiver) with has been dropped.
+    /// [`Receiver`](Receiver) has been dropped.
     ///
     /// # Return values
     ///
@@ -358,6 +358,15 @@ impl<T> Sender<T> {
         self.inner.poll_canceled(cx)
     }
 
+    /// Creates a future that resolves when this `Sender`'s corresponding
+    /// [`Receiver`](Receiver) half has hung up.
+    ///
+    /// This is a utility wrapping [`poll_canceled`](Sender::poll_canceled)
+    /// to expose a [`Future`](core::future::Future).
+    pub fn cancellation(&mut self) -> Cancellation<'_, T> {
+        Cancellation { inner: self }
+    }
+
     /// Tests to see whether this `Sender`'s corresponding `Receiver`
     /// has been dropped.
     ///
@@ -367,11 +376,40 @@ impl<T> Sender<T> {
     pub fn is_canceled(&self) -> bool {
         self.inner.is_canceled()
     }
+
+    /// Tests to see whether this `Sender` is connected to the given `Receiver`. That is, whether
+    /// they were created by the same call to `channel`.
+    pub fn is_connected_to(&self, receiver: &Receiver<T>) -> bool {
+        Arc::ptr_eq(&self.inner, &receiver.inner)
+    }
 }
 
 impl<T> Drop for Sender<T> {
     fn drop(&mut self) {
         self.inner.drop_tx()
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for Sender<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Sender").field("complete", &self.inner.complete).finish()
+    }
+}
+
+/// A future that resolves when the receiving end of a channel has hung up.
+///
+/// This is an `.await`-friendly interface around [`poll_canceled`](Sender::poll_canceled).
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+#[derive(Debug)]
+pub struct Cancellation<'a, T> {
+    inner: &'a mut Sender<T>,
+}
+
+impl<T> Future for Cancellation<'_, T> {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        self.inner.poll_canceled(cx)
     }
 }
 
@@ -417,16 +455,34 @@ impl<T> Receiver<T> {
 impl<T> Future for Receiver<T> {
     type Output = Result<T, Canceled>;
 
-    fn poll(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<T, Canceled>> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<T, Canceled>> {
         self.inner.recv(cx)
+    }
+}
+
+impl<T> FusedFuture for Receiver<T> {
+    fn is_terminated(&self) -> bool {
+        if self.inner.complete.load(SeqCst) {
+            if let Some(slot) = self.inner.data.try_lock() {
+                if slot.is_some() {
+                    return false;
+                }
+            }
+            true
+        } else {
+            false
+        }
     }
 }
 
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
         self.inner.drop_rx()
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for Receiver<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Receiver").field("complete", &self.inner.complete).finish()
     }
 }

@@ -16,13 +16,19 @@
         "description": "Returns the value of the 'places.history.enabled' preference",
         "parameters": [],
         "async": true
-      },
+      }
+    ],
+    "events": [
       {
-        "name": "isUploadDisabled",
+        "name": "onScreenshotCommand",
         "type": "function",
-        "description": "Returns the value of the 'extensions.screenshots.upload-disabled' preference",
-        "parameters": [],
-        "async": true
+        "description": "Fired when the command event for the Screenshots menuitem is fired.",
+        "parameters": [
+          {
+            "name": "isContextMenuClick",
+            "type": "boolean"
+          }
+        ]
       }
     ]
   }

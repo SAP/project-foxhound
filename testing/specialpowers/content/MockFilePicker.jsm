@@ -28,9 +28,7 @@ if (__URI__.includes("specialpowers")) {
 
 var registrar = Cm.QueryInterface(Ci.nsIComponentRegistrar);
 var oldClassID;
-var newClassID = Cc["@mozilla.org/uuid-generator;1"]
-  .getService(Ci.nsIUUIDGenerator)
-  .generateUUID();
+var newClassID = Services.uuid.generateUUID();
 var newFactory = function(window) {
   return {
     createInstance(aOuter, aIID) {
@@ -183,7 +181,7 @@ function MockFilePickerInstance(window) {
 MockFilePickerInstance.prototype = {
   QueryInterface: ChromeUtils.generateQI(["nsIFilePicker"]),
   init(aParent, aTitle, aMode) {
-    MockFilePicker.mode = aMode;
+    this.mode = aMode;
     this.filterIndex = MockFilePicker.filterIndex;
     this.parent = aParent;
   },

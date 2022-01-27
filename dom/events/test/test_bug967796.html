@@ -20,14 +20,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=967796
 
 /** Test for Bug 967796 **/
 SimpleTest.waitForExplicitFinish();
-SimpleTest.waitForFocus(() => {
-  // Enable Pointer Events
-  SpecialPowers.pushPrefEnv({
-    "set": [
-      ["dom.w3c_pointer_events.enabled", true]
-    ]
-  }, runTests);
-});
+SimpleTest.waitForFocus(runTests);
 var outer;
 var middle;
 var inner;
@@ -58,10 +51,7 @@ function runTests() {
   outside = document.getElementById("outside");
   container = document.getElementById("container");
   file = document.getElementById("file");
-  iframe = document.createElement('iframe');
-  iframe.width=50;
-  iframe.height=50;
-  container.appendChild(iframe);
+  iframe = document.getElementById("iframe");
   iframe.addEventListener("pointerenter", penter);
   iframe.addEventListener("pointerleave", pleave);
   iframe.addEventListener("pointerout", pout);
@@ -240,6 +230,7 @@ function pout(evt) {
          onpointerenter="penter(event)" onpointerleave="pleave(event)"
          onpointerout="pout(event)" onpointerover="pover(event)">
   <br>
+  <iframe id="iframe" width="50" height="50"></iframe>
 </div>
 </body>
 </html>

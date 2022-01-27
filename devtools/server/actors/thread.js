@@ -21,6 +21,8 @@ const { threadSpec } = require("devtools/shared/specs/thread");
 const {
   getAvailableEventBreakpoints,
   eventBreakpointForNotification,
+  eventsRequireNotifications,
+  firstStatementBreakpointId,
   makeEventBreakpointMessage,
 } = require("devtools/server/actors/utils/event-breakpoints");
 const {
@@ -52,25 +54,13 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "EventLoopStack",
+  "EventLoop",
   "devtools/server/actors/utils/event-loop",
   true
 );
 loader.lazyRequireGetter(
   this,
-  "FrameActor",
-  "devtools/server/actors/frame",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "getSavedFrameParent",
-  "devtools/server/actors/frame",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "isValidSavedFrame",
+  ["FrameActor", "getSavedFrameParent", "isValidSavedFrame"],
   "devtools/server/actors/frame",
   true
 );
@@ -146,6 +136,34 @@ const getAsyncParentFrame = frame => {
 };
 const RESTARTED_FRAMES = new WeakSet();
 
+// Thread actor possible states:
+const STATES = {
+  //  Before ThreadActor.attach is called:
+  DETACHED: "detached",
+  //  After the actor is destroyed:
+  EXITED: "exited",
+
+  // States possible in between DETACHED AND EXITED:
+  // Default state, when the thread isn't paused,
+  RUNNING: "running",
+  // When paused on any type of breakpoint, or, when the client requested an interrupt.
+  PAUSED: "paused",
+};
+exports.STATES = STATES;
+
+// Possible values for the `why.type` attribute in "paused" event
+const PAUSE_REASONS = {
+  ALREADY_PAUSED: "alreadyPaused",
+  INTERRUPTED: "interrupted", // Associated with why.onNext attribute
+  MUTATION_BREAKPOINT: "mutationBreakpoint", // Associated with why.mutationType and why.message attributes
+  DEBUGGER_STATEMENT: "debuggerStatement",
+  EXCEPTION: "exception",
+  XHR: "XHR",
+  EVENT_BREAKPOINT: "eventBreakpoint",
+  RESUME_LIMIT: "resumeLimit",
+};
+exports.PAUSE_REASONS = PAUSE_REASONS;
+
 /**
  * JSD2 actors.
  */
@@ -169,33 +187,29 @@ const RESTARTED_FRAMES = new WeakSet();
  *        window.
  */
 const ThreadActor = ActorClassWithSpec(threadSpec, {
-  initialize: function(parent, global) {
+  initialize(parent, global) {
     Actor.prototype.initialize.call(this, parent.conn);
-    this._state = "detached";
-    this._frameActors = [];
+    this._state = STATES.DETACHED;
     this._parent = parent;
-    this._dbg = null;
-    this._gripDepth = 0;
-    this._threadLifetimePool = null;
-    this._parentClosed = false;
-    this._scripts = null;
-    this._xhrBreakpoints = [];
-    this._observingNetwork = false;
-    this._activeEventBreakpoints = new Set();
-    this._activeEventPause = null;
-    this._pauseOverlay = null;
-    this._priorPause = null;
-    this._frameActorMap = new WeakMap();
-
-    this._watchpointsMap = new WatchpointMap(this);
-
+    this.global = global;
     this._options = {
       skipBreakpoints: false,
     };
+    this._gripDepth = 0;
+    this._parentClosed = false;
+    this._observingNetwork = false;
+    this._frameActors = [];
+    this._xhrBreakpoints = [];
 
-    this.breakpointActorMap = new BreakpointActorMap(this);
+    this._dbg = null;
+    this._threadLifetimePool = null;
+    this._activeEventPause = null;
+    this._pauseOverlay = null;
+    this._priorPause = null;
 
-    this._debuggerSourcesSeen = null;
+    this._activeEventBreakpoints = new Set();
+    this._frameActorMap = new WeakMap();
+    this._debuggerSourcesSeen = new WeakSet();
 
     // A Set of URLs string to watch for when new sources are found by
     // the debugger instance.
@@ -207,7 +221,13 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     // throws a particular exception, instead of for all older frames as well.
     this._handledFrameExceptions = new WeakMap();
 
-    this.global = global;
+    this._watchpointsMap = new WatchpointMap(this);
+
+    this.breakpointActorMap = new BreakpointActorMap(this);
+
+    this._nestedEventLoop = new EventLoop({
+      thread: this,
+    });
 
     this.onNewSourceEvent = this.onNewSourceEvent.bind(this);
 
@@ -218,6 +238,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     this.pauseObjectGrip = this.pauseObjectGrip.bind(this);
     this._onOpeningRequest = this._onOpeningRequest.bind(this);
     this._onNewDebuggee = this._onNewDebuggee.bind(this);
+    this._onExceptionUnwind = this._onExceptionUnwind.bind(this);
     this._eventBreakpointListener = this._eventBreakpointListener.bind(this);
     this._onWindowReady = this._onWindowReady.bind(this);
     this._onWillNavigate = this._onWillNavigate.bind(this);
@@ -227,14 +248,8 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     this._parent.on("will-navigate", this._onWillNavigate);
     this._parent.on("navigate", this._onNavigate);
 
+    this._firstStatementBreakpoint = null;
     this._debuggerNotificationObserver = new DebuggerNotificationObserver();
-
-    if (Services.obs) {
-      // Set a wrappedJSObject property so |this| can be sent via the observer svc
-      // for the xpcshell harness.
-      this.wrappedJSObject = this;
-      Services.obs.notifyObservers(this, "devtools-thread-instantiated");
-    }
   },
 
   // Used by the ObjectActor to keep track of the depth of grip() calls.
@@ -244,7 +259,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     if (!this._dbg) {
       this._dbg = this._parent.dbg;
       // Keep the debugger disabled until a client attaches.
-      if (this._state === "detached") {
+      if (this._state === STATES.DETACHED) {
         this._dbg.disable();
       } else {
         this._dbg.enable();
@@ -253,23 +268,19 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     return this._dbg;
   },
 
-  get globalDebugObject() {
-    if (!this._parent.window) {
-      return null;
-    }
-    return this.dbg.makeGlobalObjectReference(this._parent.window);
-  },
-
+  // Current state of the thread actor:
+  //  - detached: state, before ThreadActor.attach is called,
+  //  - exited: state, after the actor is destroyed,
+  // States possible in between these two states:
+  //  - running: default state, when the thread isn't paused,
+  //  - paused: state, when paused on any type of breakpoint, or, when the client requested an interrupt.
   get state() {
     return this._state;
   },
 
+  // XXX: soon to be equivalent to !isDestroyed once the thread actor is initialized on target creation.
   get attached() {
-    return (
-      this.state == "attached" ||
-      this.state == "running" ||
-      this.state == "paused"
-    );
+    return this.state == STATES.RUNNING || this.state == STATES.PAUSED;
   },
 
   get threadLifetimePool() {
@@ -288,8 +299,8 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     return createValueGrip(value, this.threadLifetimePool, this.objectGrip);
   },
 
-  get sources() {
-    return this._parent.sources;
+  get sourcesManager() {
+    return this._parent.sourcesManager;
   },
 
   get breakpoints() {
@@ -297,64 +308,45 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
   },
 
   get youngestFrame() {
-    if (this.state != "paused") {
+    if (this.state != STATES.PAUSED) {
       return null;
     }
     return this.dbg.getNewestFrame();
   },
 
-  get skipBreakpoints() {
+  get skipBreakpointsOption() {
     return (
       this._options.skipBreakpoints ||
       (this.insideClientEvaluation && this.insideClientEvaluation.eager)
     );
   },
 
-  /**
-   * Keep track of all of the nested event loops we use to pause the debuggee
-   * when we hit a breakpoint/debugger statement/etc in one place so we can
-   * resolve them when we get resume packets. We have more than one (and keep
-   * them in a stack) because we can pause within client evals.
-   */
-  _threadPauseEventLoops: null,
-  _pushThreadPause: function() {
-    if (!this._threadPauseEventLoops) {
-      this._threadPauseEventLoops = [];
-    }
-    const eventLoop = this._nestedEventLoops.push();
-    this._threadPauseEventLoops.push(eventLoop);
-    eventLoop.enter();
-  },
-  _popThreadPause: function() {
-    const eventLoop = this._threadPauseEventLoops.pop();
-    assert(eventLoop, "Should have an event loop.");
-    eventLoop.resolve();
+  isPaused() {
+    return this._state === STATES.PAUSED;
   },
 
-  isPaused() {
-    return this._state === "paused";
+  lastPausedPacket() {
+    return this._priorPause;
   },
 
   /**
    * Remove all debuggees and clear out the thread's sources.
    */
-  clearDebuggees: function() {
+  clearDebuggees() {
     if (this._dbg) {
       this.dbg.removeAllDebuggees();
     }
-    this._sources = null;
-    this._scripts = null;
   },
 
   /**
-   * Clean up listeners, debuggees and clear actor pools associated with
-   * the lifetime of this actor. This does not destroy the thread actor,
-   * it resets it. This is used in methods `onDetatch` and
-   * `exit`. The actor is truely destroyed in the `exit method`.
+   * Destroy the debugger and put the actor in the exited state.
+   *
+   * As part of destroy, we: clean up listeners, debuggees and
+   * clear actor pools associated with the lifetime of this actor.
    */
-  destroy: function() {
+  destroy() {
     dumpn("in ThreadActor.prototype.destroy");
-    if (this._state == "paused") {
+    if (this._state == STATES.PAUSED) {
       this.doResume();
     }
 
@@ -379,76 +371,59 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     this._parent.off("will-navigate", this._onWillNavigate);
     this._parent.off("navigate", this._onNavigate);
 
-    this.sources.off("newSource", this.onNewSourceEvent);
+    this.sourcesManager.off("newSource", this.onNewSourceEvent);
     this.clearDebuggees();
     this._threadLifetimePool.destroy();
     this._threadLifetimePool = null;
     this._dbg = null;
-    // Note: here we don't call Actor.prototype.destroy.call(this)
-    // because the real "destroy" method is `exit()`, where
-    // Actor.prototype.destroy.call(this) will be called.
-  },
+    this._state = STATES.EXITED;
 
-  /**
-   * destroy the debugger and put the actor in the exited state.
-   */
-  exit: function() {
-    this.destroy();
-    this._state = "exited";
-    // This actor has a slightly different destroy behavior than other
-    // actors using Protocol.js. The thread actor may detach but still
-    // be in use, however detach calls the destroy method, even though it
-    // expects the actor to still be alive. Therefore, we are calling
-    // `Actor.prototype.destroy` in the `exit` method, after its state has
-    // been set to "exited", where we are certain that the actor is no
-    // longer in use.
     Actor.prototype.destroy.call(this);
   },
 
+  /**
+   * Tells if the thread actor has been initialized/attached on target creation
+   * by the server codebase. (And not late, from the frontend, by the TargetMixinFront class)
+   */
+  isAttached() {
+    return !!this.alreadyAttached;
+  },
+
   // Request handlers
-  onAttach: function({ options }) {
-    if (this.state === "exited") {
+  attach(options) {
+    // Note that the client avoids trying to call attach if already attached.
+    // But just in case, avoid any possible duplicate call to attach.
+    if (this.alreadyAttached) {
+      return;
+    }
+
+    if (this.state === STATES.EXITED) {
       throw {
         error: "exited",
         message: "threadActor has exited",
       };
     }
 
-    if (this.state !== "detached") {
+    if (this.state !== STATES.DETACHED) {
       throw {
         error: "wrongState",
         message: "Current state is " + this.state,
       };
     }
 
-    this._state = "attached";
     this.dbg.onDebuggerStatement = this.onDebuggerStatement;
     this.dbg.onNewScript = this.onNewScript;
     this.dbg.onNewDebuggee = this._onNewDebuggee;
 
-    this._debuggerSourcesSeen = new WeakSet();
+    this.sourcesManager.on("newSource", this.onNewSourceEvent);
 
-    this._options = { ...this._options, ...options };
-    this.sources.on("newSource", this.onNewSourceEvent);
+    this.reconfigure(options);
 
-    // Initialize an event loop stack. This can't be done in the constructor,
-    // because this.conn is not yet initialized by the actor pool at that time.
-    this._nestedEventLoops = new EventLoopStack({
-      thread: this,
-    });
+    // Switch state from DETACHED to RUNNING
+    this._state = STATES.RUNNING;
 
-    if (options.breakpoints) {
-      this._setBreakpointsOnAttach(options.breakpoints);
-    }
-    if (options.eventBreakpoints) {
-      this.setActiveEventBreakpoints(options.eventBreakpoints);
-    }
-
+    this.alreadyAttached = true;
     this.dbg.enable();
-
-    if ("observeAsmJS" in this._options) {
-      this.dbg.allowUnobservedAsmJS = !this._options.observeAsmJS;
-    }
 
     // Notify the parent that we've finished attaching. If this is a worker
     // thread which was paused until attaching, this will allow content to
@@ -456,48 +431,17 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     if (this._parent.onThreadAttached) {
       this._parent.onThreadAttached();
     }
-
-    try {
-      // Put ourselves in the paused state.
-      const packet = this._paused();
-      if (!packet) {
-        throw {
-          error: "notAttached",
-          message: "cannot attach, could not create pause packet",
-        };
-      }
-      packet.why = { type: "attached" };
-
-      // Send the response to the attach request now (rather than
-      // returning it), because we're going to start a nested event
-      // loop here.
-      this.conn.send({ from: this.actorID });
-      this.emit("paused", packet);
-
-      // Start a nested event loop.
-      this._pushThreadPause();
-
-      // We already sent a response to this request via this.conn.send(),
-      // don't send one now. But protocol.js probably still emits a second
-      // empty packet.
-    } catch (e) {
-      reportException("DBG-SERVER", e);
-      throw {
-        error: "notAttached",
-        message: e.toString(),
-      };
+    if (Services.obs) {
+      // Set a wrappedJSObject property so |this| can be sent via the observer service
+      // for the xpcshell harness.
+      this.wrappedJSObject = this;
+      Services.obs.notifyObservers(this, "devtools-thread-ready");
     }
   },
 
   toggleEventLogging(logEventBreakpoints) {
     this._options.logEventBreakpoints = logEventBreakpoints;
     return this._options.logEventBreakpoints;
-  },
-
-  _setBreakpointsOnAttach(breakpoints) {
-    for (const { location, options } of Object.values(breakpoints)) {
-      this.setBreakpoint(location, options);
-    }
   },
 
   get pauseOverlay() {
@@ -508,33 +452,54 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     const env = new HighlighterEnvironment();
     env.initFromTargetActor(this._parent);
     const highlighter = new PausedDebuggerOverlay(env, {
-      resume: () => this.onResume({ resumeLimit: null }),
-      stepOver: () => this.onResume({ resumeLimit: { type: "next" } }),
+      resume: () => this.resume(null),
+      stepOver: () => this.resume({ type: "next" }),
     });
     this._pauseOverlay = highlighter;
     return highlighter;
   },
 
-  showOverlay() {
+  _canShowOverlay() {
+    const { window } = this._parent;
+
+    // The CanvasFrameAnonymousContentHelper class we're using to create the paused overlay
+    // need to have access to a documentElement.
+    // We might have access to a non-chrome window getter that is a Sandox (e.g. in the
+    // case of ContentProcessTargetActor).
+    if (!window?.document?.documentElement) {
+      return false;
+    }
+
+    // Ignore privileged document (top level window, special about:* pages, …).
+    if (window.isChromeWindow) {
+      return false;
+    }
+
+    return true;
+  },
+
+  async showOverlay() {
     if (
       this._options.shouldShowOverlay &&
       this.isPaused() &&
+      this._canShowOverlay() &&
       this._parent.on &&
-      this._parent.window.document &&
-      !this._parent.window.isChromeWindow &&
       this.pauseOverlay
     ) {
       const reason = this._priorPause.why.type;
-      this.pauseOverlay.show(null, { reason });
+      await this.pauseOverlay.isReady;
+
+      // we might not be paused anymore.
+      if (!this.isPaused()) {
+        return;
+      }
+
+      this.pauseOverlay.show(reason);
     }
   },
 
-  hideOverlay(msg) {
-    if (
-      this._parent.window.document &&
-      this._parent.on &&
-      !this._parent.window.isChromeWindow
-    ) {
+  hideOverlay() {
+    if (this._canShowOverlay() && this._pauseOverlay) {
       this.pauseOverlay.hide();
     }
   },
@@ -570,22 +535,31 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     }
   },
 
-  setBreakpoint: async function(location, options) {
-    const actor = this.breakpointActorMap.getOrCreateBreakpointActor(location);
+  async setBreakpoint(location, options) {
+    let actor = this.breakpointActorMap.get(location);
+    // Avoid resetting the exact same breakpoint twice
+    if (actor && JSON.stringify(actor.options) == JSON.stringify(options)) {
+      return;
+    }
+    if (!actor) {
+      actor = this.breakpointActorMap.getOrCreateBreakpointActor(location);
+    }
     actor.setOptions(options);
     this._maybeClearPriorPause(location);
 
     if (location.sourceUrl) {
       // There can be multiple source actors for a URL if there are multiple
       // inline sources on an HTML page.
-      const sourceActors = this.sources.getSourceActorsByURL(
+      const sourceActors = this.sourcesManager.getSourceActorsByURL(
         location.sourceUrl
       );
       for (const sourceActor of sourceActors) {
         await sourceActor.applyBreakpoint(actor);
       }
     } else {
-      const sourceActor = this.sources.getSourceActorById(location.sourceId);
+      const sourceActor = this.sourcesManager.getSourceActorById(
+        location.sourceId
+      );
       if (sourceActor) {
         await sourceActor.applyBreakpoint(actor);
       }
@@ -598,7 +572,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     actor.delete();
   },
 
-  removeXHRBreakpoint: function(path, method) {
+  removeXHRBreakpoint(path, method) {
     const index = this._findXHRBreakpointIndex(path, method);
 
     if (index >= 0) {
@@ -607,7 +581,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     return this._updateNetworkObserver();
   },
 
-  setXHRBreakpoint: function(path, method) {
+  setXHRBreakpoint(path, method) {
     // request.path is a string,
     // If requested url contains the path, then we pause.
     const index = this._findXHRBreakpointIndex(path, method);
@@ -618,27 +592,101 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     return this._updateNetworkObserver();
   },
 
-  getAvailableEventBreakpoints: function() {
+  getAvailableEventBreakpoints() {
     return getAvailableEventBreakpoints();
   },
-  getActiveEventBreakpoints: function() {
+  getActiveEventBreakpoints() {
     return Array.from(this._activeEventBreakpoints);
   },
-  setActiveEventBreakpoints: function(ids) {
+  setActiveEventBreakpoints(ids) {
     this._activeEventBreakpoints = new Set(ids);
 
-    if (this._activeEventBreakpoints.size === 0) {
-      this._debuggerNotificationObserver.removeListener(
-        this._eventBreakpointListener
-      );
-    } else {
+    if (eventsRequireNotifications(ids)) {
       this._debuggerNotificationObserver.addListener(
         this._eventBreakpointListener
       );
+    } else {
+      this._debuggerNotificationObserver.removeListener(
+        this._eventBreakpointListener
+      );
+    }
+
+    if (this._activeEventBreakpoints.has(firstStatementBreakpointId())) {
+      this._ensureFirstStatementBreakpointInitialized();
+
+      this._firstStatementBreakpoint.hit = frame =>
+        this._pauseAndRespondEventBreakpoint(
+          frame,
+          firstStatementBreakpointId()
+        );
+    } else if (this._firstStatementBreakpoint) {
+      // Disabling the breakpoint disables the feature as much as we need it
+      // to. We do not bother removing breakpoints from the scripts themselves
+      // here because the breakpoints will be a no-op if `hit` is `null`, and
+      // if we wanted to remove them, we'd need a way to iterate through them
+      // all, which would require us to hold strong references to them, which
+      // just isn't needed. Plus, if the user disables and then re-enables the
+      // feature again later, the breakpoints will still be there to work.
+      this._firstStatementBreakpoint.hit = null;
     }
   },
 
+  _ensureFirstStatementBreakpointInitialized() {
+    if (this._firstStatementBreakpoint) {
+      return;
+    }
+
+    this._firstStatementBreakpoint = { hit: null };
+    for (const script of this.dbg.findScripts()) {
+      this._maybeTrackFirstStatementBreakpoint(script);
+    }
+  },
+
+  _maybeTrackFirstStatementBreakpointForNewGlobal(global) {
+    if (this._firstStatementBreakpoint) {
+      for (const script of this.dbg.findScripts({ global })) {
+        this._maybeTrackFirstStatementBreakpoint(script);
+      }
+    }
+  },
+
+  _maybeTrackFirstStatementBreakpoint(script) {
+    if (
+      // If the feature is not enabled yet, there is nothing to do.
+      !this._firstStatementBreakpoint ||
+      // WASM files don't have a first statement.
+      script.format !== "js" ||
+      // All "top-level" scripts are non-functions, whether that's because
+      // the script is a module, a global script, or an eval or what.
+      script.isFunction
+    ) {
+      return;
+    }
+
+    const bps = script.getPossibleBreakpoints();
+
+    // Scripts aren't guaranteed to have a step start if for instance the
+    // file contains only function declarations, so in that case we try to
+    // fall back to whatever we can find.
+    let meta = bps.find(bp => bp.isStepStart) || bps[0];
+    if (!meta) {
+      // We've tried to avoid using `getAllColumnOffsets()` because the set of
+      // locations included in this list is very under-defined, but for this
+      // usecase it's not the end of the world. Maybe one day we could have an
+      // "onEnterFrame" that was scoped to a specific script to avoid this.
+      meta = script.getAllColumnOffsets()[0];
+    }
+
+    if (!meta) {
+      // Not certain that this is actually possible, but including for sanity
+      // so that we don't throw unexpectedly.
+      return;
+    }
+    script.setBreakpoint(meta.offset, this._firstStatementBreakpoint);
+  },
+
   _onNewDebuggee(global) {
+    this._maybeTrackFirstStatementBreakpointForNewGlobal(global);
     try {
       this._debuggerNotificationObserver.connect(global.unsafeDereference());
     } catch (e) {}
@@ -670,8 +718,8 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     return true;
   },
 
-  _onOpeningRequest: function(subject) {
-    if (this.skipBreakpoints) {
+  _onOpeningRequest(subject) {
+    if (this.skipBreakpointsOption) {
       return;
     }
 
@@ -713,44 +761,45 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
       // or loading favicons. This also includes requests dispatched indirectly
       // from workers. We'll need to handle them separately in the future.
       if (frame) {
-        this._pauseAndRespond(frame, { type: "XHR" });
+        this._pauseAndRespond(frame, { type: PAUSE_REASONS.XHR });
       }
     }
   },
 
-  onDetach: function(request) {
-    this.destroy();
-    this._state = "detached";
-    this._debuggerSourcesSeen = null;
-
-    dumpn("ThreadActor.prototype.onDetach: returning 'detached' packet");
-    this.emit("detached");
-    return {};
-  },
-
-  onReconfigure: function(request) {
-    if (this.state == "exited") {
-      return { error: "wrongState" };
+  reconfigure(options = {}) {
+    if (this.state == STATES.EXITED) {
+      throw {
+        error: "wrongState",
+      };
     }
-    const options = request.options || {};
+    this._options = { ...this._options, ...options };
 
     if ("observeAsmJS" in options) {
       this.dbg.allowUnobservedAsmJS = !options.observeAsmJS;
     }
 
-    if ("pauseWorkersUntilAttach" in options) {
-      if (this._parent.pauseWorkersUntilAttach) {
-        this._parent.pauseWorkersUntilAttach(options.pauseWorkersUntilAttach);
+    if (
+      "pauseWorkersUntilAttach" in options &&
+      this._parent.pauseWorkersUntilAttach
+    ) {
+      this._parent.pauseWorkersUntilAttach(options.pauseWorkersUntilAttach);
+    }
+
+    if (options.breakpoints) {
+      for (const breakpoint of Object.values(options.breakpoints)) {
+        this.setBreakpoint(breakpoint.location, breakpoint.options);
       }
     }
 
-    this._options = { ...this._options, ...options };
+    if (options.eventBreakpoints) {
+      this.setActiveEventBreakpoints(options.eventBreakpoints);
+    }
 
-    return {};
+    this.maybePauseOnExceptions();
   },
 
   _eventBreakpointListener(notification) {
-    if (this._state === "paused" || this._state === "detached") {
+    if (this._state === STATES.PAUSED || this._state === STATES.DETACHED) {
       return;
     }
 
@@ -775,9 +824,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     } else if (!notification.phase && !this._activeEventPause) {
       const frame = this.dbg.getNewestFrame();
       if (frame) {
-        const { sourceActor } = this.sources.getFrameLocation(frame);
-        const { url } = sourceActor;
-        if (this.sources.isBlackBoxed(url)) {
+        if (this.sourcesManager.isFrameBlackBoxed(frame)) {
           return;
         }
 
@@ -788,11 +835,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
 
   _makeEventBreakpointEnterFrame(eventBreakpoint) {
     return frame => {
-      const location = this.sources.getFrameLocation(frame);
-      const { sourceActor, line, column } = location;
-      const { url } = sourceActor;
-
-      if (this.sources.isBlackBoxed(url, line, column)) {
+      if (this.sourcesManager.isFrameBlackBoxed(frame)) {
         return undefined;
       }
 
@@ -804,7 +847,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
   },
 
   _pauseAndRespondEventBreakpoint(frame, eventBreakpoint) {
-    if (this.skipBreakpoints) {
+    if (this.skipBreakpointsOption) {
       return undefined;
     }
 
@@ -819,7 +862,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     }
 
     return this._pauseAndRespond(frame, {
-      type: "eventBreakpoint",
+      type: PAUSE_REASONS.EVENT_BREAKPOINT,
       breakpoint: eventBreakpoint,
       message: makeEventBreakpointMessage(eventBreakpoint),
     });
@@ -851,16 +894,18 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
    *        Hook to modify the packet before it is sent. Feel free to return a
    *        promise.
    */
-  _pauseAndRespond: function(frame, reason, onPacket = k => k) {
+  _pauseAndRespond(frame, reason, onPacket = k => k) {
     try {
       const packet = this._paused(frame);
       if (!packet) {
         return undefined;
       }
 
-      const { sourceActor, line, column } = this.sources.getFrameLocation(
-        frame
-      );
+      const {
+        sourceActor,
+        line,
+        column,
+      } = this.sourcesManager.getFrameLocation(frame);
 
       packet.why = reason;
 
@@ -890,7 +935,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     }
 
     try {
-      this._pushThreadPause();
+      this._nestedEventLoop.enter();
     } catch (e) {
       reportException("TA__pauseAndRespond", e);
     }
@@ -905,7 +950,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     return this._parentClosed ? null : undefined;
   },
 
-  _makeOnEnterFrame: function({ pauseAndRespond }) {
+  _makeOnEnterFrame({ pauseAndRespond }) {
     return frame => {
       if (this._requestedFrameRestart) {
         return null;
@@ -916,7 +961,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
         steppingType: "next",
       });
 
-      if (this.sources.isFrameBlackBoxed(frame)) {
+      if (this.sourcesManager.isFrameBlackBoxed(frame)) {
         return undefined;
       }
 
@@ -926,7 +971,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     };
   },
 
-  _makeOnPop: function({ pauseAndRespond, steppingType }) {
+  _makeOnPop({ pauseAndRespond, steppingType }) {
     const thread = this;
     return function(completion) {
       if (thread._requestedFrameRestart === this) {
@@ -948,7 +993,10 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
       // on the next pause.
       thread.suspendedFrame = this;
 
-      if (steppingType != "finish" && !thread.sources.isFrameBlackBoxed(this)) {
+      if (
+        steppingType != "finish" &&
+        !thread.sourcesManager.isFrameBlackBoxed(this)
+      ) {
         const pauseAndRespValue = pauseAndRespond(this, packet =>
           thread.createCompletionGrip(packet, completion)
         );
@@ -967,7 +1015,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     };
   },
 
-  restartFrame: function(frame) {
+  restartFrame(frame) {
     this._requestedFrameRestart = null;
     this._priorPause = null;
 
@@ -985,8 +1033,8 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     return completion;
   },
 
-  hasMoved: function(frame, newType) {
-    const newLocation = this.sources.getFrameLocation(frame);
+  hasMoved(frame, newType) {
+    const newLocation = this.sourcesManager.getFrameLocation(frame);
 
     if (!this._priorPause) {
       return true;
@@ -1006,12 +1054,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     return line !== newLocation.line || column !== newLocation.column;
   },
 
-  _makeOnStep: function({
-    pauseAndRespond,
-    startFrame,
-    steppingType,
-    completion,
-  }) {
+  _makeOnStep({ pauseAndRespond, startFrame, steppingType, completion }) {
     const thread = this;
     return function() {
       if (thread._validFrameStepOffset(this, startFrame, this.offset)) {
@@ -1024,7 +1067,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     };
   },
 
-  _validFrameStepOffset: function(frame, startFrame, offset) {
+  _validFrameStepOffset(frame, startFrame, offset) {
     const meta = frame.script.getOffsetMetadata(offset);
 
     // Continue if:
@@ -1033,7 +1076,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     // 3. we have not moved since the last pause
     if (
       !meta.isBreakpoint ||
-      this.sources.isFrameBlackBoxed(frame) ||
+      this.sourcesManager.isFrameBlackBoxed(frame) ||
       !this.hasMoved(frame)
     ) {
       return false;
@@ -1046,11 +1089,11 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
   },
 
   atBreakpointLocation(frame) {
-    const location = this.sources.getFrameLocation(frame);
+    const location = this.sourcesManager.getFrameLocation(frame);
     return !!this.breakpointActorMap.get(location);
   },
 
-  createCompletionGrip: function(packet, completion) {
+  createCompletionGrip(packet, completion) {
     if (!completion) {
       return packet;
     }
@@ -1073,14 +1116,18 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
   /**
    * Define the JS hook functions for stepping.
    */
-  _makeSteppingHooks: function({ steppingType, startFrame, completion }) {
+  _makeSteppingHooks({ steppingType, startFrame, completion }) {
     // Bind these methods and state because some of the hooks are called
     // with 'this' set to the current frame. Rather than repeating the
     // binding in each _makeOnX method, just do it once here and pass it
     // in to each function.
     const steppingHookState = {
       pauseAndRespond: (frame, onPacket = k => k) =>
-        this._pauseAndRespond(frame, { type: "resumeLimit" }, onPacket),
+        this._pauseAndRespond(
+          frame,
+          { type: PAUSE_REASONS.RESUME_LIMIT },
+          onPacket
+        ),
       startFrame: startFrame || this.youngestFrame,
       steppingType,
       completion,
@@ -1102,7 +1149,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
    * @returns A promise that resolves to true once the hooks are attached, or is
    *          rejected with an error packet.
    */
-  _handleResumeLimit: async function({ resumeLimit, frameActorID }) {
+  async _handleResumeLimit({ resumeLimit, frameActorID }) {
     const steppingType = resumeLimit.type;
     if (
       !["break", "step", "next", "finish", "restart"].includes(steppingType)
@@ -1136,7 +1183,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     return this._attachSteppingHooks(frame, steppingType, undefined);
   },
 
-  _attachSteppingHooks: function(frame, steppingType, completion) {
+  _attachSteppingHooks(frame, steppingType, completion) {
     // If we are stepping out of the onPop handler, we want to use "next" mode
     // so that the parent frame's handlers behave consistently.
     if (steppingType === "finish" && frame.reportedPop) {
@@ -1166,7 +1213,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
         case "break":
         case "next":
           if (stepFrame.script) {
-            if (!this.sources.isFrameBlackBoxed(stepFrame)) {
+            if (!this.sourcesManager.isFrameBlackBoxed(stepFrame)) {
               stepFrame.onStep = onStep;
             }
           }
@@ -1186,7 +1233,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
   /**
    * Clear the onStep and onPop hooks for all frames on the stack.
    */
-  _clearSteppingHooks: function() {
+  _clearSteppingHooks() {
     if (this.suspendedFrame) {
       this.suspendedFrame.onStep = undefined;
       this.suspendedFrame.onPop = undefined;
@@ -1206,8 +1253,8 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
   /**
    * Handle a protocol request to resume execution of the debuggee.
    */
-  onResume: async function({ resumeLimit, frameActorID }) {
-    if (this._state !== "paused") {
+  async resume(resumeLimit, frameActorID) {
+    if (this._state !== STATES.PAUSED) {
       return {
         error: "wrongState",
         message:
@@ -1221,11 +1268,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     // In case of multiple nested event loops (due to multiple debuggers open in
     // different tabs or multiple devtools clients connected to the same tab)
     // only allow resumption in a LIFO order.
-    if (
-      this._nestedEventLoops.size &&
-      this._nestedEventLoops.lastPausedThreadActor &&
-      this._nestedEventLoops.lastPausedThreadActor !== this
-    ) {
+    if (!this._nestedEventLoop.isTheLastPausedThreadActor()) {
       return {
         error: "wrongOrder",
         message: "trying to resume in the wrong order.",
@@ -1259,66 +1302,27 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
    * we are shutting down.
    */
   doResume({ resumeLimit } = {}) {
-    this.maybePauseOnExceptions();
-    this._state = "running";
+    this._state = STATES.RUNNING;
 
     // Drop the actors in the pause actor pool.
     this._pausePool.destroy();
-
     this._pausePool = null;
+
     this._pauseActor = null;
-    this._popThreadPause();
+    this._nestedEventLoop.exit();
+
     // Tell anyone who cares of the resume (as of now, that's the xpcshell harness and
     // devtools-startup.js when handling the --wait-for-jsdebugger flag)
     this.emit("resumed");
     this.hideOverlay();
-
-    if (Services.obs) {
-      Services.obs.notifyObservers(this, "devtools-thread-resumed");
-    }
-  },
-
-  /**
-   * Spin up a nested event loop so we can synchronously resolve a promise.
-   *
-   * DON'T USE THIS UNLESS YOU ABSOLUTELY MUST! Nested event loops suck: the
-   * world's state can change out from underneath your feet because JS is no
-   * longer run-to-completion.
-   *
-   * @param p
-   *        The promise we want to resolve.
-   * @returns The promise's resolution.
-   */
-  unsafeSynchronize: function(p) {
-    let needNest = true;
-    let eventLoop;
-    let returnVal;
-
-    p.then(resolvedVal => {
-      needNest = false;
-      returnVal = resolvedVal;
-    })
-      .catch(e => reportException("unsafeSynchronize", e))
-      .then(() => {
-        if (eventLoop) {
-          eventLoop.resolve();
-        }
-      });
-
-    if (needNest) {
-      eventLoop = this._nestedEventLoops.push();
-      eventLoop.enter();
-    }
-
-    return returnVal;
   },
 
   /**
    * Set the debugging hook to pause on exceptions if configured to do so.
    */
-  maybePauseOnExceptions: function() {
+  maybePauseOnExceptions() {
     if (this._options.pauseOnExceptions) {
-      this.dbg.onExceptionUnwind = this.onExceptionUnwind.bind(this);
+      this.dbg.onExceptionUnwind = this._onExceptionUnwind;
     } else {
       this.dbg.onExceptionUnwind = undefined;
     }
@@ -1327,7 +1331,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
   /**
    * Helper method that returns the next frame when stepping.
    */
-  _getNextStepFrame: function(frame) {
+  _getNextStepFrame(frame) {
     const endOfFrame = frame.reportedPop;
     const stepFrame = endOfFrame
       ? frame.older || getAsyncParentFrame(frame)
@@ -1344,8 +1348,8 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     return stepFrame;
   },
 
-  frames: function(start, count) {
-    if (this.state !== "paused") {
+  frames(start, count) {
+    if (this.state !== STATES.PAUSED) {
       return {
         error: "wrongState",
         message:
@@ -1400,7 +1404,9 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
       // there is an active Debugger.Source that represents the SaveFrame's
       // source, it will have already been created in the server.
       if (frame instanceof Debugger.Frame) {
-        const sourceActor = this.sources.createSourceActor(frame.script.source);
+        const sourceActor = this.sourcesManager.createSourceActor(
+          frame.script.source
+        );
         if (!sourceActor) {
           continue;
         }
@@ -1448,7 +1454,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     }
   },
 
-  onSources: function(request) {
+  sources(request) {
     this.addAllSources();
 
     // No need to flush the new source packets here, as we are sending the
@@ -1456,9 +1462,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     // overhead of an RDP packet for every source right now. Let the default
     // timeout flush the buffered packets.
 
-    return {
-      sources: this.sources.iter().map(s => s.form()),
-    };
+    return this.sourcesManager.iter().map(s => s.form());
   },
 
   /**
@@ -1468,13 +1472,13 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
    * e.g. due to a page navigation. This way the breakpoint actors' script
    * caches won't hold on to the Debugger.Script objects leaking memory.
    */
-  disableAllBreakpoints: function() {
+  disableAllBreakpoints() {
     for (const bpActor of this.breakpointActorMap.findActors()) {
       bpActor.removeScripts();
     }
   },
 
-  removeAllWatchpoints: function() {
+  removeAllWatchpoints() {
     for (const actor of this.threadLifetimePool.poolChildren()) {
       if (actor.typeName == "obj") {
         actor.removeWatchpoints();
@@ -1497,16 +1501,16 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
   /**
    * Handle a protocol request to pause the debuggee.
    */
-  onInterrupt: function({ when }) {
-    if (this.state == "exited") {
+  interrupt(when) {
+    if (this.state == STATES.EXITED) {
       return { type: "exited" };
-    } else if (this.state == "paused") {
+    } else if (this.state == STATES.PAUSED) {
       // TODO: return the actual reason for the existing pause.
       this.emit("paused", {
-        why: { type: "alreadyPaused" },
+        why: { type: PAUSE_REASONS.ALREADY_PAUSED },
       });
       return {};
-    } else if (this.state != "running") {
+    } else if (this.state != STATES.RUNNING) {
       return {
         error: "wrongState",
         message: "Received interrupt request in " + this.state + " state.",
@@ -1517,11 +1521,12 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
       // executed, just set an onEnterFrame handler.
       if (when == "onNext") {
         const onEnterFrame = frame => {
-          this._pauseAndRespond(frame, { type: "interrupted", onNext: true });
+          this._pauseAndRespond(frame, {
+            type: PAUSE_REASONS.INTERRUPTED,
+            onNext: true,
+          });
         };
         this.dbg.onEnterFrame = onEnterFrame;
-
-        this.emit("willInterrupt");
         return {};
       }
 
@@ -1531,7 +1536,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
       if (!packet) {
         return { error: "notInterrupted" };
       }
-      packet.why = { type: "interrupted", onNext: false };
+      packet.why = { type: PAUSE_REASONS.INTERRUPTED, onNext: false };
 
       // Send the response to the interrupt request now (rather than
       // returning it), because we're going to start a nested event loop
@@ -1540,7 +1545,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
       this.emit("paused", packet);
 
       // Start a nested event loop.
-      this._pushThreadPause();
+      this._nestedEventLoop.enter();
 
       // We already sent a response to this request, don't send one
       // now.
@@ -1551,7 +1556,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     }
   },
 
-  _paused: function(frame) {
+  _paused(frame) {
     // We don't handle nested pauses correctly.  Don't try - if we're
     // paused, just continue running whatever code triggered the pause.
     // We don't want to actually have nested pauses (although we
@@ -1559,15 +1564,14 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     // a pause, it should cause the actor to resume (dropping
     // pause-lifetime actors etc) and then repause when complete.
 
-    if (this.state === "paused") {
+    if (this.state === STATES.PAUSED) {
       return undefined;
     }
 
-    this._state = "paused";
+    this._state = STATES.PAUSED;
 
     // Clear stepping hooks.
     this.dbg.onEnterFrame = undefined;
-    this.dbg.onExceptionUnwind = undefined;
     this._requestedFrameRestart = null;
     this._clearSteppingHooks();
 
@@ -1586,7 +1590,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     this._pausePool.manage(this._pauseActor);
 
     // Update the list of frames.
-    const poppedFrames = this._updateFrames();
+    this._updateFrames();
 
     // Send off the paused packet and spin an event loop.
     const packet = {
@@ -1597,21 +1601,13 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
       packet.frame = this._createFrameActor(frame);
     }
 
-    if (poppedFrames) {
-      packet.poppedFrames = poppedFrames;
-    }
-
     return packet;
   },
 
   /**
-   * Expire frame actors for frames that have been popped.
-   *
-   * @returns A list of actor IDs whose frames have been popped.
+   * Expire frame actors for frames that are no longer on the current stack.
    */
-  _updateFrames: function() {
-    const popped = [];
-
+  _updateFrames() {
     // Create the actor pool that will hold the still-living frames.
     const framesPool = new Pool(this.conn, "frames");
     const frameList = [];
@@ -1620,8 +1616,6 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
       if (frameActor.frame.onStack) {
         framesPool.manage(frameActor);
         frameList.push(frameActor);
-      } else {
-        popped.push(frameActor.actorID);
       }
     }
 
@@ -1633,13 +1627,11 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
 
     this._frameActors = frameList;
     this._framesPool = framesPool;
-
-    return popped;
   },
 
-  _createFrameActor: function(frame, depth) {
+  _createFrameActor(frame, depth) {
     let actor = this._frameActorMap.get(frame);
-    if (!actor) {
+    if (!actor || actor.isDestroyed()) {
       actor = new FrameActor(frame, this, depth);
       this._frameActors.push(actor);
       this._framesPool.manage(actor);
@@ -1659,7 +1651,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
    * @return The EnvironmentActor for environment or undefined for host
    *         functions or functions scoped to a non-debuggee global.
    */
-  createEnvironmentActor: function(environment, pool) {
+  createEnvironmentActor(environment, pool) {
     if (!environment) {
       return undefined;
     }
@@ -1683,7 +1675,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
    * @param pool Pool
    *        The actor pool where the new object actor will be added.
    */
-  objectGrip: function(value, pool) {
+  objectGrip(value, pool) {
     if (!pool.objectActors) {
       pool.objectActors = new WeakMap();
     }
@@ -1710,7 +1702,6 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
 
           return createValueGrip(v, this.threadLifetimePool, this.objectGrip);
         },
-        sources: () => this.sources,
         createEnvironmentActor: (e, p) => this.createEnvironmentActor(e, p),
         promote: () => this.threadObjectGrip(actor),
         isThreadLifetimePool: () =>
@@ -1729,7 +1720,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
    * @param value Debugger.Object
    *        The debuggee object value.
    */
-  pauseObjectGrip: function(value) {
+  pauseObjectGrip(value) {
     if (!this._pausePool) {
       throw new Error("Object grip requested while not paused.");
     }
@@ -1743,21 +1734,19 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
    * @param actor object
    *        The object actor.
    */
-  threadObjectGrip: function(actor) {
-    // Save the reference for when we need to demote the object
-    // back to its original registered pool
-    actor.originalRegisteredPool = actor.getParent();
-
+  threadObjectGrip(actor) {
     this.threadLifetimePool.manage(actor);
     this.threadLifetimePool.objectActors.set(actor.obj, actor);
   },
 
-  _onWindowReady: function({ isTopLevel, isBFCache, window }) {
-    if (isTopLevel && this.state != "detached") {
-      this.sources.reset();
+  _onWindowReady({ isTopLevel, isBFCache, window }) {
+    // Note that this code relates to the disabling of Debugger API from will-navigate listener.
+    // And should only be triggered when the target actor doesn't follow WindowGlobal lifecycle.
+    // i.e. when the Thread Actor manages more than one top level WindowGlobal.
+    if (isTopLevel && this.state != STATES.DETACHED) {
+      this.sourcesManager.reset();
       this.clearDebuggees();
       this.dbg.enable();
-      this.maybePauseOnExceptions();
       // Update the global no matter if the debugger is on or off,
       // otherwise the global will be wrong when enabled later.
       this.global = window;
@@ -1776,31 +1765,39 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     }
   },
 
-  _onWillNavigate: function({ isTopLevel }) {
+  _onWillNavigate({ isTopLevel }) {
     if (!isTopLevel) {
       return;
     }
 
     // Proceed normally only if the debuggee is not paused.
-    if (this.state == "paused") {
-      this.unsafeSynchronize(Promise.resolve(this.doResume()));
+    if (this.state == STATES.PAUSED) {
+      // If we were paused while navigating to a new page,
+      // we resume previous page execution, so that the document can be sucessfully unloaded.
+      // And we disable the Debugger API, so that we do not hit any breakpoint or trigger any
+      // thread actor feature. We will re-enable it just before the next page starts loading,
+      // from window-ready listener. That's for when the target doesn't follow WindowGlobal
+      // lifecycle.
+      // When the target follows the WindowGlobal lifecycle, we will stiff resume and disable
+      // this thread actor. It will soon be destroyed. And a new target will pick up
+      // the next WindowGlobal and spawn a new Debugger API, via ThreadActor.attach().
+      this.doResume();
       this.dbg.disable();
     }
 
     this.removeAllWatchpoints();
     this.disableAllBreakpoints();
     this.dbg.onEnterFrame = undefined;
-    this.dbg.onExceptionUnwind = undefined;
   },
 
-  _onNavigate: function() {
-    if (this.state == "running") {
+  _onNavigate() {
+    if (this.state == STATES.RUNNING) {
       this.dbg.enable();
     }
   },
 
   // JS Debugger API hooks.
-  pauseForMutationBreakpoint: function(
+  pauseForMutationBreakpoint(
     mutationType,
     targetNode,
     ancestorNode,
@@ -1819,9 +1816,10 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
       return undefined;
     }
 
-    const location = this.sources.getFrameLocation(frame);
-
-    if (this.skipBreakpoints || this.sources.isBlackBoxed(location.sourceUrl)) {
+    if (
+      this.skipBreakpointsOption ||
+      this.sourcesManager.isFrameBlackBoxed(frame)
+    ) {
       return undefined;
     }
 
@@ -1842,7 +1840,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     return this._pauseAndRespond(
       frame,
       {
-        type: "mutationBreakpoint",
+        type: PAUSE_REASONS.MUTATION_BREAKPOINT,
         mutationType,
         message: `DOM Mutation: '${mutationType}'`,
       },
@@ -1865,9 +1863,7 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
    * @param frame Debugger.Frame
    *        The stack frame that contained the debugger statement.
    */
-  onDebuggerStatement: function(frame) {
-    const location = this.sources.getFrameLocation(frame);
-
+  onDebuggerStatement(frame) {
     // Don't pause if
     // 1. we have not moved since the last pause
     // 2. breakpoints are disabled
@@ -1875,28 +1871,30 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     // 4. there is a breakpoint at the same location
     if (
       !this.hasMoved(frame, "debuggerStatement") ||
-      this.skipBreakpoints ||
-      this.sources.isBlackBoxed(location.sourceUrl) ||
+      this.skipBreakpointsOption ||
+      this.sourcesManager.isFrameBlackBoxed(frame) ||
       this.atBreakpointLocation(frame)
     ) {
       return undefined;
     }
 
-    return this._pauseAndRespond(frame, { type: "debuggerStatement" });
+    return this._pauseAndRespond(frame, {
+      type: PAUSE_REASONS.DEBUGGER_STATEMENT,
+    });
   },
 
-  onSkipBreakpoints: function({ skip }) {
+  skipBreakpoints(skip) {
     this._options.skipBreakpoints = skip;
     return { skip };
   },
 
-  onPauseOnExceptions: function({ pauseOnExceptions, ignoreCaughtExceptions }) {
-    this._options = {
-      ...this._options,
+  // Bug 1686485 is meant to remove usages of this request
+  // in favor direct call to `reconfigure`
+  pauseOnExceptions(pauseOnExceptions, ignoreCaughtExceptions) {
+    this.reconfigure({
       pauseOnExceptions,
       ignoreCaughtExceptions,
-    };
-    this.maybePauseOnExceptions();
+    });
     return {};
   },
 
@@ -1909,7 +1907,12 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
    * @param value object
    *        The exception that was thrown.
    */
-  onExceptionUnwind: function(youngestFrame, value) {
+  _onExceptionUnwind(youngestFrame, value) {
+    // Ignore any reported exception if we are already paused
+    if (this.isPaused()) {
+      return undefined;
+    }
+
     let willBeCaught = false;
     for (let frame = youngestFrame; frame != null; frame = frame.older) {
       if (frame.script.isInCatchScope(frame.offset)) {
@@ -1936,16 +1939,16 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
       return undefined;
     }
 
-    const { sourceActor } = this.sources.getFrameLocation(youngestFrame);
-    const url = sourceActor ? sourceActor.url : null;
-
     // Don't pause on exceptions thrown while inside an evaluation being done on
     // behalf of the client.
     if (this.insideClientEvaluation) {
       return undefined;
     }
 
-    if (this.skipBreakpoints || this.sources.isBlackBoxed(url)) {
+    if (
+      this.skipBreakpointsOption ||
+      this.sourcesManager.isFrameBlackBoxed(youngestFrame)
+    ) {
       return undefined;
     }
 
@@ -1962,12 +1965,12 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
       }
 
       packet.why = {
-        type: "exception",
+        type: PAUSE_REASONS.EXCEPTION,
         exception: createValueGrip(value, this._pausePool, this.objectGrip),
       };
       this.emit("paused", packet);
 
-      this._pushThreadPause();
+      this._nestedEventLoop.enter();
     } catch (e) {
       reportException("TA_onExceptionUnwind", e);
     }
@@ -1976,16 +1979,15 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
   },
 
   /**
-   * A function that the engine calls when a new script has been loaded into the
-   * scope of the specified debuggee global.
+   * A function that the engine calls when a new script has been loaded.
    *
    * @param script Debugger.Script
    *        The source script that has been loaded into a debuggee compartment.
-   * @param global Debugger.Object
-   *        A Debugger.Object instance whose referent is the global object.
    */
-  onNewScript: function(script, global) {
+  onNewScript(script) {
     this._addSource(script.source);
+
+    this._maybeTrackFirstStatementBreakpoint(script);
   },
 
   /**
@@ -1994,16 +1996,34 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
    *
    * @param {SourceActor} source
    */
-  onNewSourceEvent: function(source) {
+  onNewSourceEvent(source) {
+    // When this target is supported by the Watcher Actor,
+    // and we listen to SOURCE, we avoid emitting the newSource RDP event
+    // as it would be duplicated with the Resource/watchResources API.
+    // Could probably be removed once bug 1680280 is fixed.
+    if (!this._shouldEmitNewSource) {
+      return;
+    }
+
     // Bug 1516197: New sources are likely detected due to either user
     // interaction on the page, or devtools requests sent to the server.
     // We use executeSoon because we don't want to block those operations
     // by sending packets in the middle of them.
     DevToolsUtils.executeSoon(() => {
+      if (this.isDestroyed()) {
+        return;
+      }
       this.emit("newSource", {
         source: source.form(),
       });
     });
+  },
+
+  // API used by the Watcher Actor to disable the newSource events
+  // Could probably be removed once bug 1680280 is fixed.
+  _shouldEmitNewSource: true,
+  disableNewSourceEvents() {
+    this._shouldEmitNewSource = false;
   },
 
   /**
@@ -2013,8 +2033,8 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
    *        The source that will be stored.
    * @returns true, if the source was added; false otherwise.
    */
-  _addSource: function(source) {
-    if (!this.sources.allowSource(source)) {
+  _addSource(source) {
+    if (!this.sourcesManager.allowSource(source)) {
       return false;
     }
 
@@ -2025,17 +2045,27 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     let sourceActor;
     if (
       this._debuggerSourcesSeen.has(source) &&
-      this.sources.hasSourceActor(source)
+      this.sourcesManager.hasSourceActor(source)
     ) {
-      sourceActor = this.sources.getSourceActor(source);
+      sourceActor = this.sourcesManager.getSourceActor(source);
       sourceActor.resetDebuggeeScripts();
     } else {
-      sourceActor = this.sources.createSourceActor(source);
+      sourceActor = this.sourcesManager.createSourceActor(source);
     }
 
     const sourceUrl = sourceActor.url;
     if (this._onLoadBreakpointURLs.has(sourceUrl)) {
+      // Immediately set a breakpoint on first line
+      // (note that this is only used by `./mach xpcshell-test --jsdebugger`)
       this.setBreakpoint({ sourceUrl, line: 1 }, {});
+      // But also query asynchronously the first really breakable line
+      // as the first may not be valid and won't break.
+      (async () => {
+        const [firstLine] = await sourceActor.getBreakableLines();
+        if (firstLine != 1) {
+          this.setBreakpoint({ sourceUrl, line: firstLine }, {});
+        }
+      })();
     }
 
     const bpActors = this.breakpointActorMap
@@ -2059,8 +2089,12 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
    *
    * @param url The URL string to fetch.
    */
-  _resurrectSource: async function(url) {
-    let { content, contentType, sourceMapURL } = await this.sources.urlContents(
+  async _resurrectSource(url) {
+    let {
+      content,
+      contentType,
+      sourceMapURL,
+    } = await this.sourcesManager.urlContents(
       url,
       /* partial */ false,
       /* canUseCache */ true
@@ -2144,39 +2178,26 @@ const ThreadActor = ActorClassWithSpec(threadSpec, {
     }
   },
 
-  onDump: function() {
+  dumpThread() {
     return {
       pauseOnExceptions: this._options.pauseOnExceptions,
       ignoreCaughtExceptions: this._options.ignoreCaughtExceptions,
       logEventBreakpoints: this._options.logEventBreakpoints,
-      skipBreakpoints: this.skipBreakpoints,
+      skipBreakpoints: this.skipBreakpointsOption,
       breakpoints: this.breakpointActorMap.listKeys(),
     };
   },
 
   // NOTE: dumpPools is defined in the Thread actor to avoid
   // adding it to multiple target specs and actors.
-  onDumpPools() {
+  dumpPools() {
     return this.conn.dumpPools();
   },
 
-  logLocation: function(prefix, frame) {
-    const loc = this.sources.getFrameLocation(frame);
+  logLocation(prefix, frame) {
+    const loc = this.sourcesManager.getFrameLocation(frame);
     dump(`${prefix} (${loc.line}, ${loc.column})\n`);
   },
-});
-
-Object.assign(ThreadActor.prototype.requestTypes, {
-  attach: ThreadActor.prototype.onAttach,
-  detach: ThreadActor.prototype.onDetach,
-  reconfigure: ThreadActor.prototype.onReconfigure,
-  resume: ThreadActor.prototype.onResume,
-  interrupt: ThreadActor.prototype.onInterrupt,
-  sources: ThreadActor.prototype.onSources,
-  skipBreakpoints: ThreadActor.prototype.onSkipBreakpoints,
-  pauseOnExceptions: ThreadActor.prototype.onPauseOnExceptions,
-  dumpThread: ThreadActor.prototype.onDump,
-  dumpPools: ThreadActor.prototype.onDumpPools,
 });
 
 exports.ThreadActor = ThreadActor;

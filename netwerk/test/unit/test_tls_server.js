@@ -21,9 +21,7 @@ const socketTransportService = Cc[
   "@mozilla.org/network/socket-transport-service;1"
 ].getService(Ci.nsISocketTransportService);
 
-const prefs = Cc["@mozilla.org/preferences-service;1"].getService(
-  Ci.nsIPrefBranch
-);
+const prefs = Services.prefs;
 
 function getCert() {
   return new Promise((resolve, reject) => {
@@ -121,6 +119,7 @@ function storeCertOverride(port, cert) {
   certOverrideService.rememberValidityOverride(
     "127.0.0.1",
     port,
+    {},
     cert,
     overrideBits,
     true
@@ -135,6 +134,7 @@ function startClient(port, cert, expectingAlert, tlsVersion) {
     ["ssl"],
     "127.0.0.1",
     port,
+    null,
     null
   );
   let input;

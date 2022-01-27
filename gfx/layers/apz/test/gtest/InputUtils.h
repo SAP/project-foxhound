@@ -56,21 +56,21 @@ APZEventResult TouchDown(const RefPtr<InputReceiver>& aTarget,
 }
 
 template <class InputReceiver>
-nsEventStatus TouchMove(const RefPtr<InputReceiver>& aTarget,
-                        const ScreenIntPoint& aPoint, TimeStamp aTime) {
+APZEventResult TouchMove(const RefPtr<InputReceiver>& aTarget,
+                         const ScreenIntPoint& aPoint, TimeStamp aTime) {
   MultiTouchInput mti =
       CreateMultiTouchInput(MultiTouchInput::MULTITOUCH_MOVE, aTime);
   mti.mTouches.AppendElement(CreateSingleTouchData(0, aPoint));
-  return aTarget->ReceiveInputEvent(mti).mStatus;
+  return aTarget->ReceiveInputEvent(mti);
 }
 
 template <class InputReceiver>
-nsEventStatus TouchUp(const RefPtr<InputReceiver>& aTarget,
-                      const ScreenIntPoint& aPoint, TimeStamp aTime) {
+APZEventResult TouchUp(const RefPtr<InputReceiver>& aTarget,
+                       const ScreenIntPoint& aPoint, TimeStamp aTime) {
   MultiTouchInput mti =
       CreateMultiTouchInput(MultiTouchInput::MULTITOUCH_END, aTime);
   mti.mTouches.AppendElement(CreateSingleTouchData(0, aPoint));
-  return aTarget->ReceiveInputEvent(mti).mStatus;
+  return aTarget->ReceiveInputEvent(mti);
 }
 
 template <class InputReceiver>
@@ -125,14 +125,25 @@ template <class InputReceiver>
 APZEventResult PanGesture(PanGestureInput::PanGestureType aType,
                           const RefPtr<InputReceiver>& aTarget,
                           const ScreenIntPoint& aPoint,
-                          const ScreenPoint& aDelta, TimeStamp aTime) {
+                          const ScreenPoint& aDelta, TimeStamp aTime,
+                          Modifiers aModifiers = MODIFIER_NONE) {
   PanGestureInput input(aType, MillisecondsSinceStartup(aTime), aTime, aPoint,
-                        aDelta, 0 /* Modifiers */);
+                        aDelta, aModifiers);
   if (aType == PanGestureInput::PANGESTURE_END) {
     input.mFollowedByMomentum = true;
   }
 
   return aTarget->ReceiveInputEvent(input);
+}
+
+template <class InputReceiver>
+APZEventResult PanGestureWithModifiers(PanGestureInput::PanGestureType aType,
+                                       Modifiers aModifiers,
+                                       const RefPtr<InputReceiver>& aTarget,
+                                       const ScreenIntPoint& aPoint,
+                                       const ScreenPoint& aDelta,
+                                       TimeStamp aTime) {
+  return PanGesture(aType, aTarget, aPoint, aDelta, aTime, aModifiers);
 }
 
 #endif  // mozilla_layers_InputUtils_h

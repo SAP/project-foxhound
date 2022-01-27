@@ -81,7 +81,7 @@ const DB_TITLE_LENGTH_MAX = 4096;
 
 // The current mirror database schema version. Bump for migrations, then add
 // migration code to `migrateMirrorSchema`.
-const MIRROR_SCHEMA_VERSION = 7;
+const MIRROR_SCHEMA_VERSION = 8;
 
 const DEFAULT_MAX_FRECENCIES_TO_RECALCULATE = 400;
 
@@ -324,7 +324,7 @@ class SyncedBookmarksMirror {
           ex
         );
         wasCorrupt = true;
-        await OS.File.remove(path);
+        await IOUtils.remove(path);
         await attachAndInitMirrorDatabase(db, path);
       } else {
         MirrorLog.error("Unrecoverable error attaching mirror to Places", ex);
@@ -533,8 +533,6 @@ class SyncedBookmarksMirror {
    *         The current local time, in seconds.
    * @param  {Number} [options.remoteTimeSeconds]
    *         The current server time, in seconds.
-   * @param  {String[]} [options.weakUpload]
-   *         GUIDs of bookmarks to weakly upload.
    * @param  {Number} [options.maxFrecenciesToRecalculate]
    *         The maximum number of bookmark URL frecencies to recalculate after
    *         this merge. Frecency calculation blocks other Places writes, so we
@@ -559,7 +557,6 @@ class SyncedBookmarksMirror {
   async apply({
     localTimeSeconds,
     remoteTimeSeconds,
-    weakUpload,
     maxFrecenciesToRecalculate,
     notifyInStableOrder,
     signal = null,
@@ -580,7 +577,6 @@ class SyncedBookmarksMirror {
         finalizeOrInterruptSignal,
         localTimeSeconds,
         remoteTimeSeconds,
-        weakUpload,
         maxFrecenciesToRecalculate,
         notifyInStableOrder
       );
@@ -595,12 +591,11 @@ class SyncedBookmarksMirror {
     signal,
     localTimeSeconds,
     remoteTimeSeconds,
-    weakUpload,
     maxFrecenciesToRecalculate = DEFAULT_MAX_FRECENCIES_TO_RECALCULATE,
     notifyInStableOrder = false
   ) {
     let wasMerged = await withTiming("Merging bookmarks in Rust", () =>
-      this.merge(signal, localTimeSeconds, remoteTimeSeconds, weakUpload)
+      this.merge(signal, localTimeSeconds, remoteTimeSeconds)
     );
 
     if (!wasMerged) {
@@ -672,12 +667,7 @@ class SyncedBookmarksMirror {
     return changeRecords;
   }
 
-  merge(
-    signal,
-    localTimeSeconds = Date.now() / 1000,
-    remoteTimeSeconds = 0,
-    weakUpload = []
-  ) {
+  merge(signal, localTimeSeconds = Date.now() / 1000, remoteTimeSeconds = 0) {
     return new Promise((resolve, reject) => {
       let op = null;
       function onAbort() {
@@ -775,12 +765,7 @@ class SyncedBookmarksMirror {
           }
         },
       };
-      op = this.merger.merge(
-        localTimeSeconds,
-        remoteTimeSeconds,
-        weakUpload,
-        callback
-      );
+      op = this.merger.merge(localTimeSeconds, remoteTimeSeconds, callback);
       if (signal.aborted) {
         op.cancel();
       } else {
@@ -1514,6 +1499,15 @@ async function migrateMirrorSchema(db, currentSchemaVersion) {
     await db.execute(`CREATE INDEX IF NOT EXISTS mirror.structurePositions ON
                       structure(parentGuid, position)`);
   }
+  if (currentSchemaVersion < 8) {
+    // Not really a "schema" update, but addresses the defect from bug 1635859.
+    // In short, every bookmark with a corresponding entry in the mirror should
+    // have syncStatus = NORMAL.
+    await db.execute(`UPDATE moz_bookmarks AS b
+                      SET syncStatus = ${PlacesUtils.bookmarks.SYNC_STATUS.NORMAL}
+                      WHERE EXISTS (SELECT 1 FROM mirror.items
+                                    WHERE guid = b.guid)`);
+  }
 }
 
 /**
@@ -2066,9 +2060,6 @@ class BookmarkObserverRecorder {
     this.notifyInStableOrder = notifyInStableOrder;
     this.signal = signal;
     this.placesEvents = [];
-    this.guidChangedArgs = [];
-    this.itemMovedArgs = [];
-    this.itemChangedArgs = [];
     this.shouldInvalidateKeywords = false;
   }
 
@@ -2082,7 +2073,7 @@ class BookmarkObserverRecorder {
     if (this.shouldInvalidateKeywords) {
       await PlacesUtils.keywords.invalidateCachedKeywords();
     }
-    await this.notifyBookmarkObservers();
+    this.notifyBookmarkObservers();
     if (this.signal.aborted) {
       throw new SyncedBookmarksMirror.InterruptedError(
         "Interrupted before recalculating frecencies for new URLs"
@@ -2139,10 +2130,11 @@ class BookmarkObserverRecorder {
     MirrorLog.trace("Recording observer notifications for changed GUIDs");
     await this.db.execute(
       `SELECT b.id, b.lastModified, b.type, b.guid AS newGuid,
-              c.oldGuid, p.id AS parentId, p.guid AS parentGuid
+              p.guid AS parentGuid, gp.guid AS grandParentGuid
        FROM guidsChanged c
        JOIN moz_bookmarks b ON b.id = c.itemId
        JOIN moz_bookmarks p ON p.id = b.parent
+       LEFT JOIN moz_bookmarks gp ON gp.id = p.parent
        ${this.orderBy("c.level", "b.parent", "b.position")}`,
       null,
       (row, cancel) => {
@@ -2155,9 +2147,8 @@ class BookmarkObserverRecorder {
           lastModified: row.getResultByName("lastModified"),
           type: row.getResultByName("type"),
           newGuid: row.getResultByName("newGuid"),
-          oldGuid: row.getResultByName("oldGuid"),
-          parentId: row.getResultByName("parentId"),
           parentGuid: row.getResultByName("parentGuid"),
+          grandParentGuid: row.getResultByName("grandParentGuid"),
         };
         this.noteGuidChanged(info);
       }
@@ -2210,13 +2201,14 @@ class BookmarkObserverRecorder {
 
     MirrorLog.trace("Recording observer notifications for moved items");
     await this.db.execute(
-      `SELECT b.id, b.guid, b.type, p.id AS newParentId, c.oldParentId,
-              p.guid AS newParentGuid, c.oldParentGuid,
+      `SELECT b.id, b.guid, b.type, p.guid AS newParentGuid, c.oldParentGuid,
               b.position AS newPosition, c.oldPosition,
+              gp.guid AS grandParentGuid,
               (SELECT h.url FROM moz_places h WHERE h.id = b.fk) AS url
        FROM itemsMoved c
        JOIN moz_bookmarks b ON b.id = c.itemId
        JOIN moz_bookmarks p ON p.id = b.parent
+       LEFT JOIN moz_bookmarks gp ON gp.id = p.parent
        ${this.orderBy("c.level", "b.parent", "b.position")}`,
       null,
       (row, cancel) => {
@@ -2228,13 +2220,12 @@ class BookmarkObserverRecorder {
           id: row.getResultByName("id"),
           guid: row.getResultByName("guid"),
           type: row.getResultByName("type"),
-          newParentId: row.getResultByName("newParentId"),
-          oldParentId: row.getResultByName("oldParentId"),
           newParentGuid: row.getResultByName("newParentGuid"),
           oldParentGuid: row.getResultByName("oldParentGuid"),
           newPosition: row.getResultByName("newPosition"),
           oldPosition: row.getResultByName("oldPosition"),
           urlHref: row.getResultByName("url"),
+          grandParentGuid: row.getResultByName("grandParentGuid"),
         };
         this.noteItemMoved(info);
       }
@@ -2255,10 +2246,13 @@ class BookmarkObserverRecorder {
               (SELECT h.url FROM moz_places h
                WHERE h.id = c.oldPlaceId) AS oldURL,
               p.id AS parentId, p.guid AS parentGuid,
-              c.keywordChanged
+              c.keywordChanged,
+              gp.guid AS grandParentGuid,
+              (SELECT h.url FROM moz_places h WHERE h.id = b.fk) AS url
        FROM itemsChanged c
        JOIN moz_bookmarks b ON b.id = c.itemId
        JOIN moz_bookmarks p ON p.id = b.parent
+       LEFT JOIN moz_bookmarks gp ON gp.id = p.parent
        ${this.orderBy("c.level", "b.parent", "b.position")}`,
       null,
       (row, cancel) => {
@@ -2277,6 +2271,7 @@ class BookmarkObserverRecorder {
           oldURLHref: row.getResultByName("oldURL"),
           parentId: row.getResultByName("parentId"),
           parentGuid: row.getResultByName("parentGuid"),
+          grandParentGuid: row.getResultByName("grandParentGuid"),
         };
         this.noteItemChanged(info);
         if (row.getResultByName("keywordChanged")) {
@@ -2314,67 +2309,74 @@ class BookmarkObserverRecorder {
 
   noteGuidChanged(info) {
     PlacesUtils.invalidateCachedGuidFor(info.id);
-    this.guidChangedArgs.push([
-      info.id,
-      "guid",
-      /* isAnnotationProperty */ false,
-      info.newGuid,
-      info.lastModified,
-      info.type,
-      info.parentId,
-      info.newGuid,
-      info.parentGuid,
-      info.oldGuid,
-      PlacesUtils.bookmarks.SOURCES.SYNC,
-    ]);
+    this.placesEvents.push(
+      new PlacesBookmarkGuid({
+        id: info.id,
+        itemType: info.type,
+        url: info.urlHref,
+        guid: info.newGuid,
+        parentGuid: info.parentGuid,
+        lastModified: info.lastModified,
+        source: PlacesUtils.bookmarks.SOURCES.SYNC,
+        isTagging:
+          info.parentGuid === PlacesUtils.bookmarks.tagsGuid ||
+          info.grandParentGuid === PlacesUtils.bookmarks.tagsGuid,
+      })
+    );
   }
 
   noteItemMoved(info) {
-    this.itemMovedArgs.push([
-      info.id,
-      info.oldParentId,
-      info.oldPosition,
-      info.newParentId,
-      info.newPosition,
-      info.type,
-      info.guid,
-      info.oldParentGuid,
-      info.newParentGuid,
-      PlacesUtils.bookmarks.SOURCES.SYNC,
-      info.urlHref,
-    ]);
+    this.placesEvents.push(
+      new PlacesBookmarkMoved({
+        id: info.id,
+        itemType: info.type,
+        url: info.urlHref,
+        guid: info.guid,
+        parentGuid: info.newParentGuid,
+        source: PlacesUtils.bookmarks.SOURCES.SYNC,
+        index: info.newPosition,
+        oldParentGuid: info.oldParentGuid,
+        oldIndex: info.oldPosition,
+        isTagging:
+          info.newParentGuid === PlacesUtils.bookmarks.tagsGuid ||
+          info.grandParentGuid === PlacesUtils.bookmarks.tagsGuid,
+      })
+    );
   }
 
   noteItemChanged(info) {
     if (info.oldTitle != info.newTitle) {
-      this.itemChangedArgs.push([
-        info.id,
-        "title",
-        /* isAnnotationProperty */ false,
-        info.newTitle,
-        info.lastModified,
-        info.type,
-        info.parentId,
-        info.guid,
-        info.parentGuid,
-        info.oldTitle,
-        PlacesUtils.bookmarks.SOURCES.SYNC,
-      ]);
+      this.placesEvents.push(
+        new PlacesBookmarkTitle({
+          id: info.id,
+          itemType: info.type,
+          url: info.urlHref,
+          guid: info.guid,
+          parentGuid: info.parentGuid,
+          title: info.newTitle,
+          lastModified: info.lastModified,
+          source: PlacesUtils.bookmarks.SOURCES.SYNC,
+          isTagging:
+            info.parentGuid === PlacesUtils.bookmarks.tagsGuid ||
+            info.grandParentGuid === PlacesUtils.bookmarks.tagsGuid,
+        })
+      );
     }
     if (info.oldURLHref != info.newURLHref) {
-      this.itemChangedArgs.push([
-        info.id,
-        "uri",
-        /* isAnnotationProperty */ false,
-        info.newURLHref,
-        info.lastModified,
-        info.type,
-        info.parentId,
-        info.guid,
-        info.parentGuid,
-        info.oldURLHref,
-        PlacesUtils.bookmarks.SOURCES.SYNC,
-      ]);
+      this.placesEvents.push(
+        new PlacesBookmarkUrl({
+          id: info.id,
+          itemType: info.type,
+          url: info.newURLHref,
+          guid: info.guid,
+          parentGuid: info.parentGuid,
+          lastModified: info.lastModified,
+          source: PlacesUtils.bookmarks.SOURCES.SYNC,
+          isTagging:
+            info.parentGuid === PlacesUtils.bookmarks.tagsGuid ||
+            info.grandParentGuid === PlacesUtils.bookmarks.tagsGuid,
+        })
+      );
     }
   }
 
@@ -2395,81 +2397,14 @@ class BookmarkObserverRecorder {
     );
   }
 
-  async notifyBookmarkObservers() {
+  notifyBookmarkObservers() {
     MirrorLog.trace("Notifying bookmark observers");
-    let observers = PlacesUtils.bookmarks.getObservers();
-    // ideally we'd send `onBeginUpdateBatch` here (and `onEndUpdateBatch` at
-    // the end) to all observers, but batching is somewhat broken currently.
-    // See bug 1605881 for all the gory details...
-    await Async.yieldingForEach(
-      this.guidChangedArgs,
-      args => {
-        if (this.signal.aborted) {
-          throw new SyncedBookmarksMirror.InterruptedError(
-            "Interrupted while notifying observers for changed GUIDs"
-          );
-        }
-        this.notifyObserversWithInfo(observers, "onItemChanged", {
-          isTagging: false,
-          args,
-        });
-      },
-      yieldState
-    );
-    if (this.signal.aborted) {
-      throw new SyncedBookmarksMirror.InterruptedError(
-        "Interrupted before notifying observers for new items"
-      );
+
+    if (this.placesEvents.length) {
+      PlacesObservers.notifyListeners(this.placesEvents);
     }
-    PlacesObservers.notifyListeners(this.placesEvents);
-    await Async.yieldingForEach(
-      this.itemMovedArgs,
-      args => {
-        if (this.signal.aborted) {
-          throw new SyncedBookmarksMirror.InterruptedError(
-            "Interrupted before notifying observers for moved items"
-          );
-        }
-        this.notifyObserversWithInfo(observers, "onItemMoved", {
-          isTagging: false,
-          args,
-        });
-      },
-      yieldState
-    );
-    await Async.yieldingForEach(
-      this.itemChangedArgs,
-      args => {
-        if (this.signal.aborted) {
-          throw new SyncedBookmarksMirror.InterruptedError(
-            "Interrupted before notifying observers for changed items"
-          );
-        }
-        this.notifyObserversWithInfo(observers, "onItemChanged", {
-          isTagging: false,
-          args,
-        });
-      },
-      yieldState
-    );
+
     MirrorLog.trace("Notified bookmark observers");
-  }
-
-  notifyObserversWithInfo(observers, name, info) {
-    for (let observer of observers) {
-      if (info.isTagging && observer.skipTags) {
-        return;
-      }
-      this.notifyObserver(observer, name, info.args);
-    }
-  }
-
-  notifyObserver(observer, notification, args = []) {
-    try {
-      observer[notification](...args);
-    } catch (ex) {
-      MirrorLog.warn("Error notifying observer", ex);
-    }
   }
 }
 

@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 dsb{
     Currencies{
         ADP{
@@ -209,6 +210,10 @@ dsb{
         CLP{
             "CLP",
             "chilski peso",
+        }
+        CNH{
+            "CNH",
+            "chinski yuan (offshore)",
         }
         CNY{
             "CN¥",
@@ -422,6 +427,10 @@ dsb{
             "LRD",
             "liberiski dolar",
         }
+        LSL{
+            "LSL",
+            "lesothiski loti",
+        }
         LTL{
             "LTL",
             "litawski litas",
@@ -543,7 +552,7 @@ dsb{
             "papua-neuguinejska kina",
         }
         PHP{
-            "PHP",
+            "₱",
             "filipinski peso",
         }
         PKR{
@@ -727,7 +736,7 @@ dsb{
             "pódzajtšnokaribiski dolar",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "CFA-frank (BCEAO)",
         }
         XPF{
@@ -1067,6 +1076,12 @@ dsb{
             other{"chilskich peso"}
             two{"chilskej peso"}
         }
+        CNH{
+            few{"chinske yuany (offshore)"}
+            one{"chinski yuan (offshore)"}
+            other{"chinskich yuanow (offshore)"}
+            two{"chinskej yuanaj (offshore)"}
+        }
         CNY{
             few{"chinske yuany"}
             one{"chinski yuan"}
@@ -1384,6 +1399,12 @@ dsb{
             one{"liberiski dolar"}
             other{"liberiskich dolarow"}
             two{"liberiskej dolara"}
+        }
+        LSL{
+            few{"lesothiske lotije"}
+            one{"lesothiski loti"}
+            other{"lesothiskich lotijow"}
+            two{"lesothiskej lotija"}
         }
         LTL{
             few{"litawske litasy"}
@@ -1884,5 +1905,4 @@ dsb{
         other{"{0} {1}"}
         two{"{0} {1}"}
     }
-    Version{"37"}
 }

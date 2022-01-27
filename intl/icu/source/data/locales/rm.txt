@@ -1,13 +1,16 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 rm{
     AuxExemplarCharacters{"[á ă â å ä ā æ ç ĕ ê ë ē í ĭ î ï ī ñ ó ŏ ô ö ø ō œ ú ŭ û ü ū ÿ]"}
     ExemplarCharacters{"[a à b c d e é è f g h i ì j k l m n o ò p q r s t u ù v w x y z]"}
     ExemplarCharactersIndex{"[A À B C D E É È F G H I Ì J K L M N O Ò P Q R S T U Ù V W X Y Z]"}
     ExemplarCharactersNumbers{"[. ’ % ‰ + − 0 1 2 3 4 5 6 7 8 9]"}
     NumberElements{
+        default{"latn"}
         latn{
             miscPatterns{
+                approximately{"≈{0}"}
                 atLeast{"≥{0}"}
                 range{"{0}–{1}"}
             }
@@ -19,6 +22,7 @@ rm{
                 scientificFormat{"#E0"}
             }
             symbols{
+                approximatelySign{"≈"}
                 decimal{"."}
                 exponential{"E"}
                 group{"’"}
@@ -33,9 +37,18 @@ rm{
                 timeSeparator{":"}
             }
         }
+        minimalPairs{
+            ordinal{
+                other{"Prender la {0}. a dretga."}
+            }
+            plural{
+                one{"{0} di"}
+                other{"{0} dis"}
+            }
+        }
         minimumGroupingDigits{"1"}
+        native{"latn"}
     }
-    Version{"37"}
     calendar{
         generic{
             DateTimePatterns{
@@ -47,11 +60,21 @@ rm{
                 "d MMMM y G",
                 "dd-MM-y G",
                 "dd-MM-y GGGGG",
-                "{1} {0}",
-                "{1} {0}",
-                "{1} {0}",
-                "{1} {0}",
-                "{1} {0}",
+                "{1}, {0}",
+                "{1} 'a' 'las' {0}",
+                "{1} 'a' 'las' {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+            }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "GyMMMMEEEEd",
+                "GyMMMMd",
+                "GyMMdd",
+                "GGGGGyMMdd",
             }
             availableFormats{
                 E{"ccc"}
@@ -240,6 +263,16 @@ rm{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "yMMMMEEEEd",
+                "yMMMMd",
+                "yMMdd",
+                "yyMMdd",
+            }
             appendItems{
                 Timezone{"{0} {1}"}
             }
@@ -256,6 +289,7 @@ rm{
                 GyMMMMEd{"E, d MMMM y G"}
                 GyMMMMd{"d MMMM y G"}
                 GyMMMd{"dd-MM-y GGGGG"}
+                GyMd{"dd-MM-y GGGGG"}
                 H{"HH"}
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
@@ -266,6 +300,10 @@ rm{
                 MMM{"LLL"}
                 MMMEd{"E, dd-MM"}
                 MMMMEd{"E, d MMMM"}
+                MMMMW{
+                    one{"W. 'emna' MMMM"}
+                    other{"W. 'emna' MMMM"}
+                }
                 MMMMd{"d MMMM"}
                 MMMd{"dd-MM"}
                 Md{"dd-MM"}
@@ -288,6 +326,10 @@ rm{
                 yMd{"dd-MM-y"}
                 yQQQ{"QQQ y"}
                 yQQQQ{"QQQQ y"}
+                yw{
+                    one{"w. 'dal' Y"}
+                    other{"w. 'emna' 'dal' Y"}
+                }
             }
             dayNames{
                 format{
@@ -656,7 +698,7 @@ rm{
     }
     fields{
         day{
-            dn{"Tag"}
+            dn{"di"}
             relative{
                 "-1"{"ier"}
                 "-2"{"stersas"}
@@ -664,6 +706,12 @@ rm{
                 "1"{"damaun"}
                 "2"{"puschmaun"}
             }
+        }
+        day-narrow{
+            dn{"d"}
+        }
+        day-short{
+            dn{"di"}
         }
         dayperiod{
             dn{"mesadad dal di"}
@@ -677,11 +725,40 @@ rm{
         minute{
             dn{"minuta"}
         }
+        minute-narrow{
+            dn{"min"}
+        }
+        minute-short{
+            dn{"min"}
+        }
         month{
             dn{"mais"}
         }
+        quarter{
+            dn{"quartal"}
+        }
+        quarter-narrow{
+            dn{"qrtl"}
+        }
+        quarter-short{
+            dn{"qrtl"}
+        }
         second{
             dn{"secunda"}
+        }
+        second-narrow{
+            dn{"s"}
+        }
+        second-short{
+            dn{"s"}
+        }
+        sun-short{
+            relativeTime{
+                future{
+                    one{"+{0} dumengia"}
+                    other{"en {0} du"}
+                }
+            }
         }
         week{
             dn{"emna"}
@@ -691,9 +768,40 @@ rm{
         }
         year{
             dn{"onn"}
+            relative{
+                "-1"{"l’onn passà"}
+                "0"{"quest onn"}
+                "1"{"l’onn proxim"}
+            }
         }
         zone{
             dn{"zona d’urari"}
+        }
+    }
+    listPattern{
+        or{
+            2{"{0} u {1}"}
+            end{"{0} u {1}"}
+        }
+        or-narrow{
+            2{"{0} u {1}"}
+            end{"{0} u {1}"}
+        }
+        or-short{
+            2{"{0} u {1}"}
+            end{"{0} u {1}"}
+        }
+        standard{
+            2{"{0} e {1}"}
+            end{"{0} e {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
+        }
+        unit-narrow{
+            2{"{0} {1}"}
+            end{"{0} {1}"}
+            middle{"{0} {1}"}
+            start{"{0} {1}"}
         }
     }
     measurementSystemNames{

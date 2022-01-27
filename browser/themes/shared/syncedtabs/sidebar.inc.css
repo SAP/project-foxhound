@@ -13,9 +13,9 @@ body {
   height: 100%;
   margin: 0;
   font: message-box;
-  background-color: -moz-Field;
-  color: -moz-FieldText;
-  -moz-user-select: none;
+  background-color: Field;
+  color: FieldText;
+  user-select: none;
 }
 
 /* The content-container holds the non-scrollable header and the scrollable
@@ -77,25 +77,25 @@ body {
 }
 
 .item.selected:focus > .item-title-container {
-  background-color: Highlight;
-  color: HighlightText;
+  background-color: SelectedItem;
+  color: SelectedItemText;
 }
 
 .item.client .item-twisty-container {
   min-width: 12px;
   height: 12px;
-  background-image: url("chrome://global/skin/icons/twisty-expanded.svg");
+  background-image: url("chrome://global/skin/icons/arrow-down-12.svg");
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
   fill-opacity: 1;
 }
 
 .item.client.closed .item-twisty-container {
-  background-image: url("chrome://global/skin/icons/twisty-collapsed.svg");
+  background-image: url("chrome://global/skin/icons/arrow-right-12.svg");
 }
 
 .item.client.closed .item-twisty-container:dir(rtl) {
-  background-image: url("chrome://global/skin/icons/twisty-collapsed-rtl.svg");
+  background-image: url("chrome://global/skin/icons/arrow-left-12.svg");
 }
 
 .client .item.tab > .item-title-container {
@@ -132,7 +132,7 @@ body {
 }
 
 .item.tab > .item-title-container > .item-icon-container {
-  background-image: url("chrome://mozapps/skin/places/defaultFavicon.svg");
+  background-image: url("chrome://global/skin/icons/defaultFavicon.svg");
   -moz-context-properties: fill;
   fill: currentColor;
 }

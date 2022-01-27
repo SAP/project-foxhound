@@ -22,16 +22,22 @@ RenderTextureHostWrapper::~RenderTextureHostWrapper() {
   MOZ_COUNT_DTOR_INHERITED(RenderTextureHostWrapper, RenderTextureHost);
 }
 
-wr::WrExternalImage RenderTextureHostWrapper::Lock(
-    uint8_t aChannelIndex, gl::GLContext* aGL, wr::ImageRendering aRendering) {
+void RenderTextureHostWrapper::EnsureTextureHost() const {
   if (!mTextureHost) {
     mTextureHost = RenderThread::Get()->GetRenderTexture(mExternalImageId);
     MOZ_ASSERT(mTextureHost);
     if (!mTextureHost) {
       gfxCriticalNoteOnce << "Failed to get RenderTextureHost for extId:"
                           << AsUint64(mExternalImageId);
-      return InvalidToWrExternalImage();
     }
+  }
+}
+
+wr::WrExternalImage RenderTextureHostWrapper::Lock(
+    uint8_t aChannelIndex, gl::GLContext* aGL, wr::ImageRendering aRendering) {
+  EnsureTextureHost();
+  if (!mTextureHost) {
+    return InvalidToWrExternalImage();
   }
 
   return mTextureHost->Lock(aChannelIndex, aGL, aRendering);
@@ -46,6 +52,84 @@ void RenderTextureHostWrapper::Unlock() {
 void RenderTextureHostWrapper::ClearCachedResources() {
   if (mTextureHost) {
     mTextureHost->ClearCachedResources();
+  }
+}
+
+RenderMacIOSurfaceTextureHost*
+RenderTextureHostWrapper::AsRenderMacIOSurfaceTextureHost() {
+  EnsureTextureHost();
+  if (!mTextureHost) {
+    return nullptr;
+  }
+  return mTextureHost->AsRenderMacIOSurfaceTextureHost();
+}
+
+RenderDXGITextureHost* RenderTextureHostWrapper::AsRenderDXGITextureHost() {
+  EnsureTextureHost();
+  if (!mTextureHost) {
+    return nullptr;
+  }
+  return mTextureHost->AsRenderDXGITextureHost();
+}
+
+RenderDXGIYCbCrTextureHost*
+RenderTextureHostWrapper::AsRenderDXGIYCbCrTextureHost() {
+  EnsureTextureHost();
+  if (!mTextureHost) {
+    return nullptr;
+  }
+  return mTextureHost->AsRenderDXGIYCbCrTextureHost();
+}
+
+RenderTextureHostSWGL* RenderTextureHostWrapper::EnsureRenderTextureHostSWGL()
+    const {
+  EnsureTextureHost();
+  if (!mTextureHost) {
+    return nullptr;
+  }
+  return mTextureHost->AsRenderTextureHostSWGL();
+}
+
+size_t RenderTextureHostWrapper::GetPlaneCount() const {
+  if (RenderTextureHostSWGL* swglHost = EnsureRenderTextureHostSWGL()) {
+    return swglHost->GetPlaneCount();
+  }
+  return 0;
+}
+
+gfx::SurfaceFormat RenderTextureHostWrapper::GetFormat() const {
+  if (RenderTextureHostSWGL* swglHost = EnsureRenderTextureHostSWGL()) {
+    return swglHost->GetFormat();
+  }
+  return gfx::SurfaceFormat::UNKNOWN;
+}
+
+gfx::ColorDepth RenderTextureHostWrapper::GetColorDepth() const {
+  if (RenderTextureHostSWGL* swglHost = EnsureRenderTextureHostSWGL()) {
+    return swglHost->GetColorDepth();
+  }
+  return gfx::ColorDepth::COLOR_8;
+}
+
+gfx::YUVRangedColorSpace RenderTextureHostWrapper::GetYUVColorSpace() const {
+  if (RenderTextureHostSWGL* swglHost = EnsureRenderTextureHostSWGL()) {
+    return swglHost->GetYUVColorSpace();
+  }
+  return gfx::YUVRangedColorSpace::Default;
+}
+
+bool RenderTextureHostWrapper::MapPlane(RenderCompositor* aCompositor,
+                                        uint8_t aChannelIndex,
+                                        PlaneInfo& aPlaneInfo) {
+  if (RenderTextureHostSWGL* swglHost = EnsureRenderTextureHostSWGL()) {
+    return swglHost->MapPlane(aCompositor, aChannelIndex, aPlaneInfo);
+  }
+  return false;
+}
+
+void RenderTextureHostWrapper::UnmapPlanes() {
+  if (RenderTextureHostSWGL* swglHost = EnsureRenderTextureHostSWGL()) {
+    swglHost->UnmapPlanes();
   }
 }
 

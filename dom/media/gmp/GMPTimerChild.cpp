@@ -9,8 +9,7 @@
 
 #define MAX_NUM_TIMERS 1000
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 GMPTimerChild::GMPTimerChild(GMPChild* aPlugin)
     : mTimerCount(1), mPlugin(aPlugin) {
@@ -36,7 +35,7 @@ GMPErr GMPTimerChild::SetTimer(GMPTask* aTask, int64_t aTimeoutMS) {
     return GMPQuotaExceededErr;
   }
   uint32_t timerId = mTimerCount;
-  mTimers.Put(timerId, aTask);
+  mTimers.InsertOrUpdate(timerId, aTask);
   mTimerCount++;
 
   if (!SendSetTimer(timerId, aTimeoutMS)) {
@@ -57,5 +56,4 @@ mozilla::ipc::IPCResult GMPTimerChild::RecvTimerExpired(
   return IPC_OK();
 }
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp

@@ -9,8 +9,10 @@
 #include "mozilla/Sprintf.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/Telemetry.h"
+#include "nsServiceManagerUtils.h"
 #include "nsICrashService.h"
 #include "nsXULAppAPI.h"
+#include "nsIFile.h"
 
 // Consistency checking for nsICrashService constants.  We depend on the
 // equivalence between nsICrashService values and GeckoProcessType values
@@ -19,9 +21,6 @@
 // support in various places because compilation errors will be triggered here.
 static_assert(nsICrashService::PROCESS_TYPE_MAIN ==
                   (int)GeckoProcessType_Default,
-              "GeckoProcessType enum is out of sync with nsICrashService!");
-static_assert(nsICrashService::PROCESS_TYPE_PLUGIN ==
-                  (int)GeckoProcessType_Plugin,
               "GeckoProcessType enum is out of sync with nsICrashService!");
 static_assert(nsICrashService::PROCESS_TYPE_CONTENT ==
                   (int)GeckoProcessType_Content,
@@ -96,15 +95,6 @@ bool CrashReporterHost::AdoptMinidump(nsIFile* aFile,
   return true;
 }
 
-int32_t CrashReporterHost::GetCrashType() {
-  if (mExtraAnnotations[CrashReporter::Annotation::PluginHang].EqualsLiteral(
-          "1")) {
-    return nsICrashService::CRASH_TYPE_HANG;
-  }
-
-  return nsICrashService::CRASH_TYPE_CRASH;
-}
-
 bool CrashReporterHost::FinalizeCrashReport() {
   MOZ_ASSERT(!mFinalized);
   MOZ_ASSERT(HasMinidump());
@@ -119,7 +109,7 @@ bool CrashReporterHost::FinalizeCrashReport() {
 
   CrashReporter::WriteExtraFile(mDumpID, mExtraAnnotations);
 
-  RecordCrash(mProcessType, GetCrashType(), mDumpID);
+  RecordCrash(mProcessType, nsICrashService::CRASH_TYPE_CRASH, mDumpID);
 
   mFinalized = true;
   return true;
@@ -149,22 +139,18 @@ void CrashReporterHost::RecordCrashWithTelemetry(GeckoProcessType aProcessType,
                                                  int32_t aCrashType) {
   nsCString key;
 
-  if (aProcessType == GeckoProcessType_Plugin &&
-      aCrashType == nsICrashService::CRASH_TYPE_HANG) {
-    key.AssignLiteral("pluginhang");
-  } else {
-    switch (aProcessType) {
-#define GECKO_PROCESS_TYPE(enum_name, string_name, xre_name, bin_type) \
-  case GeckoProcessType_##enum_name:                                   \
-    key.AssignLiteral(string_name);                                    \
+  switch (aProcessType) {
+#define GECKO_PROCESS_TYPE(enum_value, enum_name, string_name, xre_name, \
+                           bin_type)                                     \
+  case GeckoProcessType_##enum_name:                                     \
+    key.AssignLiteral(string_name);                                      \
     break;
 #include "mozilla/GeckoProcessTypes.h"
 #undef GECKO_PROCESS_TYPE
-      // We can't really hit this, thanks to the above switch, but having it
-      // here will placate the compiler.
-      default:
-        MOZ_ASSERT_UNREACHABLE("unknown process type");
-    }
+    // We can't really hit this, thanks to the above switch, but having it
+    // here will placate the compiler.
+    default:
+      MOZ_ASSERT_UNREACHABLE("unknown process type");
   }
 
   Telemetry::Accumulate(Telemetry::SUBPROCESS_CRASHES_WITH_DUMP, key, 1);
@@ -194,7 +180,7 @@ void CrashReporterHost::NotifyCrashService(GeckoProcessType aProcessType,
       break;
   }
 
-  RefPtr<Promise> promise;
+  RefPtr<dom::Promise> promise;
   crashService->AddCrash(processType, aCrashType, aChildDumpID,
                          getter_AddRefs(promise));
 }

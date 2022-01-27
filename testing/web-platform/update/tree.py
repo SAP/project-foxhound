@@ -9,6 +9,7 @@ from wptrunner import update as wptupdate
 
 from wptrunner.update.tree import Commit, CommitMessage, get_unique_name
 
+
 class HgTree(wptupdate.tree.HgTree):
     def __init__(self, *args, **kwargs):
         self.commit_cls = kwargs.pop("commit_cls", Commit)
@@ -16,6 +17,7 @@ class HgTree(wptupdate.tree.HgTree):
 
     # TODO: The extra methods for upstreaming patches from a
     # hg checkout
+
 
 class GitTree(wptupdate.tree.GitTree):
     def __init__(self, *args, **kwargs):
@@ -116,9 +118,13 @@ class GitTree(wptupdate.tree.GitTree):
         """Get an unused branch name in the local tree
 
         :param prefix: Prefix to use at the start of the branch name"""
-        branches = [ref[len("refs/heads/"):] for sha1, ref in self.list_refs()
-                    if ref.startswith("refs/heads/")]
+        branches = [
+            ref[len("refs/heads/") :]
+            for sha1, ref in self.list_refs()
+            if ref.startswith("refs/heads/")
+        ]
         return get_unique_name(branches, prefix)
+
 
 class Patch(object):
     def __init__(self, author, email, message, diff):
@@ -146,16 +152,18 @@ class GeckoCommitMessage(CommitMessage):
     """Commit message following the Gecko conventions for identifying bug number
     and reviewer"""
 
-    # c.f. http://hg.mozilla.org/hgcustom/version-control-tools/file/tip/hghooks/mozhghooks/commit-message.py
+    # c.f. http://hg.mozilla.org/hgcustom/version-control-tools/file/tip/hghooks/mozhghooks/commit-message.py # noqa E501
     # which has the regexps that are actually enforced by the VCS hooks. These are
     # slightly different because we need to parse out specific parts of the message rather
     # than just enforce a general pattern.
 
-    _bug_re = re.compile("^Bug (\d+)[^\w]*(?:Part \d+[^\w]*)?(.*?)\s*(?:r=(\w*))?$",
-                         re.IGNORECASE)
+    _bug_re = re.compile(
+        "^Bug (\d+)[^\w]*(?:Part \d+[^\w]*)?(.*?)\s*(?:r=(\w*))?$", re.IGNORECASE
+    )
 
-    _backout_re = re.compile("^(?:Back(?:ing|ed)\s+out)|Backout|(?:Revert|(?:ed|ing))",
-                             re.IGNORECASE)
+    _backout_re = re.compile(
+        "^(?:Back(?:ing|ed)\s+out)|Backout|(?:Revert|(?:ed|ing))", re.IGNORECASE
+    )
     _backout_sha1_re = re.compile("(?:\s|\:)(0-9a-f){12}")
 
     def _parse_message(self):
@@ -187,4 +195,3 @@ class GeckoCommit(Commit):
         diff = self.git("show", *args)
 
         return Patch(self.author, self.email, self.message, diff)
-

@@ -10,6 +10,7 @@
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/net/PHttpTransactionChild.h"
 #include "nsHttpRequestHead.h"
+#include "nsIEarlyHintObserver.h"
 #include "nsIRequest.h"
 #include "nsIStreamListener.h"
 #include "nsIThreadRetargetableStreamListener.h"
@@ -35,7 +36,8 @@ class HttpTransactionChild final : public PHttpTransactionChild,
                                    public nsIStreamListener,
                                    public nsITransportEventSink,
                                    public nsIThrottledInputChannel,
-                                   public nsIThreadRetargetableStreamListener {
+                                   public nsIThreadRetargetableStreamListener,
+                                   public nsIEarlyHintObserver {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIREQUESTOBSERVER
@@ -43,6 +45,7 @@ class HttpTransactionChild final : public PHttpTransactionChild,
   NS_DECL_NSITRANSPORTEVENTSINK
   NS_DECL_NSITHROTTLEDINPUTCHANNEL
   NS_DECL_NSITHREADRETARGETABLESTREAMLISTENER
+  NS_DECL_NSIEARLYHINTOBSERVER
 
   explicit HttpTransactionChild();
 
@@ -58,9 +61,8 @@ class HttpTransactionChild final : public PHttpTransactionChild,
       const bool& aHasTransactionObserver,
       const Maybe<H2PushedStreamArg>& aPushedStreamArg,
       const mozilla::Maybe<PInputChannelThrottleQueueChild*>& aThrottleQueue,
-      const bool& aIsDocumentLoad);
-  mozilla::ipc::IPCResult RecvUpdateClassOfService(
-      const uint32_t& classOfService);
+      const bool& aIsDocumentLoad, const TimeStamp& aRedirectStart,
+      const TimeStamp& aRedirectEnd);
   mozilla::ipc::IPCResult RecvCancelPump(const nsresult& aStatus);
   mozilla::ipc::IPCResult RecvSuspendPump();
   mozilla::ipc::IPCResult RecvResumePump();
@@ -81,10 +83,10 @@ class HttpTransactionChild final : public PHttpTransactionChild,
   // Initialize the *real* nsHttpTransaction. See |nsHttpTransaction::Init|
   // for the parameters.
   [[nodiscard]] nsresult InitInternal(
-      uint32_t caps, const HttpConnectionInfoCloneArgs& aArgs,
-      nsHttpRequestHead* reqHeaders,
-      nsIInputStream* reqBody,  // use the trick in bug 1277681
-      uint64_t reqContentLength, bool reqBodyIncludesHeaders,
+      uint32_t caps, const HttpConnectionInfoCloneArgs& infoArgs,
+      nsHttpRequestHead* requestHead,
+      nsIInputStream* requestBody,  // use the trick in bug 1277681
+      uint64_t requestContentLength, bool requestBodyHasHeaders,
       uint64_t topLevelOuterContentWindowId, uint8_t httpTrafficCategory,
       uint64_t requestContextID, uint32_t classOfService, uint32_t initialRwin,
       bool responseTimeoutEnabled, uint64_t channelId,
@@ -96,13 +98,19 @@ class HttpTransactionChild final : public PHttpTransactionChild,
   bool CanSendODAToContentProcessDirectly(
       const Maybe<nsHttpResponseHead>& aHead);
 
+  ResourceTimingStructArgs GetTimingAttributes();
+
   // Use Release-Acquire ordering to ensure the OMT ODA is ignored while
   // transaction is canceled on main thread.
-  Atomic<bool, ReleaseAcquire> mCanceled;
-  nsresult mStatus;
-  uint64_t mChannelId;
+  Atomic<bool, ReleaseAcquire> mCanceled{false};
+  Atomic<nsresult, ReleaseAcquire> mStatus{NS_OK};
+  uint64_t mChannelId{0};
   nsHttpRequestHead mRequestHead;
-  bool mIsDocumentLoad;
+  bool mIsDocumentLoad{false};
+  uint64_t mLogicalOffset{0};
+  TimeStamp mRedirectStart;
+  TimeStamp mRedirectEnd;
+  nsCString mProtocolVersion;
 
   nsCOMPtr<nsIInputStream> mUploadStream;
   RefPtr<nsHttpTransaction> mTransaction;

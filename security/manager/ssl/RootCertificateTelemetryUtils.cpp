@@ -12,6 +12,7 @@
 #include "mozilla/Logging.h"
 #include "nsINSSComponent.h"
 #include "nsNSSCertHelper.h"
+#include "nsServiceManagerUtils.h"
 #include "pk11pub.h"
 
 namespace mozilla {
@@ -46,11 +47,11 @@ class BinaryHashSearchArrayComparator {
 // it may be a CA from an external PKCS#11 token, or it may be a CA from OS
 // storage (Enterprise Root).
 // See also the constants in RootCertificateTelemetryUtils.h.
-int32_t RootCABinNumber(const Span<uint8_t> cert) {
-  Digest digest;
+int32_t RootCABinNumber(Span<const uint8_t> cert) {
+  nsTArray<uint8_t> digestArray;
 
   // Compute SHA256 hash of the certificate
-  nsresult rv = digest.DigestBuf(SEC_OID_SHA256, cert.data(), cert.size());
+  nsresult rv = Digest::DigestBuf(SEC_OID_SHA256, cert, digestArray);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return ROOT_CERTIFICATE_HASH_FAILURE;
   }
@@ -58,16 +59,15 @@ int32_t RootCABinNumber(const Span<uint8_t> cert) {
   // Compare against list of stored hashes
   size_t idx;
 
-  MOZ_LOG(
-      gPublicKeyPinningTelemetryLog, LogLevel::Debug,
-      ("pkpinTelem: First bytes %02x %02x %02x %02x\n", digest.get().data[0],
-       digest.get().data[1], digest.get().data[2], digest.get().data[3]));
+  MOZ_LOG(gPublicKeyPinningTelemetryLog, LogLevel::Debug,
+          ("pkpinTelem: First bytes %02x %02x %02x %02x\n",
+           digestArray.ElementAt(0), digestArray.ElementAt(1),
+           digestArray.ElementAt(2), digestArray.ElementAt(3)));
 
-  if (mozilla::BinarySearchIf(
-          ROOT_TABLE, 0, ArrayLength(ROOT_TABLE),
-          BinaryHashSearchArrayComparator(
-              static_cast<uint8_t*>(digest.get().data), digest.get().len),
-          &idx)) {
+  if (mozilla::BinarySearchIf(ROOT_TABLE, 0, ArrayLength(ROOT_TABLE),
+                              BinaryHashSearchArrayComparator(
+                                  digestArray.Elements(), digestArray.Length()),
+                              &idx)) {
     MOZ_LOG(gPublicKeyPinningTelemetryLog, LogLevel::Debug,
             ("pkpinTelem: Telemetry index was %zu, bin is %d\n", idx,
              ROOT_TABLE[idx].binNumber));
@@ -94,7 +94,7 @@ int32_t RootCABinNumber(const Span<uint8_t> cert) {
     }
   }
 
-  SECItem certItem = {siBuffer, cert.data(),
+  SECItem certItem = {siBuffer, const_cast<uint8_t*>(cert.data()),
                       static_cast<unsigned int>(cert.size())};
   UniquePK11SlotInfo softokenSlot(PK11_GetInternalKeySlot());
   if (!softokenSlot) {
@@ -126,7 +126,7 @@ int32_t RootCABinNumber(const Span<uint8_t> cert) {
 // Attempt to increment the appropriate bin in the provided Telemetry probe ID.
 // If there was a hash failure, we do nothing.
 void AccumulateTelemetryForRootCA(mozilla::Telemetry::HistogramID probe,
-                                  const Span<uint8_t> cert) {
+                                  const Span<const uint8_t> cert) {
   int32_t binId = RootCABinNumber(cert);
 
   if (binId != ROOT_CERTIFICATE_HASH_FAILURE) {

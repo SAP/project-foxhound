@@ -26,16 +26,16 @@ class TextEditor;
  * This abstract class is used for the text control frame to get the editor and
  * selection controller objects, and some helper properties.
  */
-class TextControlElement : public nsGenericHTMLFormElementWithState {
+class TextControlElement : public nsGenericHTMLFormControlElementWithState {
  public:
   TextControlElement(already_AddRefed<dom::NodeInfo>&& aNodeInfo,
-                     dom::FromParser aFromParser, uint8_t aType)
-      : nsGenericHTMLFormElementWithState(std::move(aNodeInfo), aFromParser,
-                                          aType){};
+                     dom::FromParser aFromParser, FormControlType aType)
+      : nsGenericHTMLFormControlElementWithState(std::move(aNodeInfo),
+                                                 aFromParser, aType){};
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(TextControlElement,
-                                           nsGenericHTMLFormElementWithState)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(
+      TextControlElement, nsGenericHTMLFormControlElementWithState)
 
   bool IsTextControlElement() const final { return true; }
 
@@ -174,22 +174,6 @@ class TextControlElement : public nsGenericHTMLFormElementWithState {
    */
   virtual void InitializeKeyboardEventListeners() = 0;
 
-  /**
-   * Update the visibility of both the placholder and preview text based on the
-   * element's state.
-   */
-  virtual void UpdateOverlayTextVisibility(bool aNotify) = 0;
-
-  /**
-   * Returns the current expected placeholder visibility state.
-   */
-  virtual bool GetPlaceholderVisibility() = 0;
-
-  /**
-   * Returns the current expected preview visibility state.
-   */
-  virtual bool GetPreviewVisibility() = 0;
-
   enum class ValueChangeKind {
     Internal,
     Script,
@@ -236,6 +220,14 @@ class TextControlElement : public nsGenericHTMLFormElementWithState {
 
  protected:
   virtual ~TextControlElement() = default;
+
+  // The focusability state of this form control.  eUnfocusable means that it
+  // shouldn't be focused at all, eInactiveWindow means it's in an inactive
+  // window, eActiveWindow means it's in an active window.
+  enum class FocusTristate { eUnfocusable, eInactiveWindow, eActiveWindow };
+
+  // Get our focus state.
+  FocusTristate FocusState();
 };
 
 }  // namespace mozilla

@@ -78,7 +78,7 @@
       error: "Expected identifier for class selector but found ‘ ’.  Ruleset ignored due to bad selector.",
     }, {
       css: ":not() {}",
-      error: "Missing argument in negation pseudo-class ‘)’.  Ruleset ignored due to bad selector.",
+      error: "Selector expected.  Ruleset ignored due to bad selector.",
     }, {
       css: "* { -webkit-text-size-adjust: 100% }",
       error: "Error in parsing value for ‘-webkit-text-size-adjust’.  Declaration dropped.",
@@ -120,6 +120,10 @@
       css: "a, .b, #c { unknown: invalid; }",
       error: "Unknown property ‘unknown’.  Declaration dropped.",
       cssSelectors: "a, .b, #c"
+    },
+    {
+      css: ":host:hover { color: red; }",
+      error: ":host selector in ‘:host:hover’ is not featureless and will never match. Maybe you intended to use :host()?"
     },
   ];
 

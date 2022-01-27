@@ -21,15 +21,11 @@ var EXPORTED_SYMBOLS = ["PdfJsTelemetry"];
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var PdfJsTelemetry = {
-  onViewerIsUsed() {
+  onViewerIsUsed(isAttachment) {
     Services.telemetry.scalarAdd("pdf.viewer.used", 1);
-  },
-  onFallbackShown(featureId) {
-    Services.telemetry.scalarAdd("pdf.viewer.fallback_shown", 1);
-    let histogram = Services.telemetry.getHistogramById(
-      "PDF_VIEWER_FALLBACK_REASON"
-    );
-    histogram.add(featureId ?? "unknown");
+    if (isAttachment) {
+      Services.telemetry.scalarAdd("pdf.viewer.is_attachment", 1);
+    }
   },
   onFallbackError(featureId) {
     let histogram = Services.telemetry.getHistogramById(
@@ -83,5 +79,9 @@ var PdfJsTelemetry = {
       "PDF_VIEWER_TIME_TO_VIEW_MS"
     );
     histogram.add(ms);
+  },
+  onTagged(tagged) {
+    let histogram = Services.telemetry.getHistogramById("PDF_VIEWER_TAGGED");
+    histogram.add(tagged);
   },
 };

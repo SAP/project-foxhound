@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 # This file was copied from  mitmproxy/mitmproxy/addons/serverplayback.py release tag 4.0.4
 # and modified by Florin Strugariu
 
@@ -9,14 +13,13 @@ from __future__ import absolute_import, print_function
 import os
 import json
 import hashlib
-import urllib
 from collections import defaultdict
 import time
 import signal
 
 import typing
-from urllib import parse
 
+from six.moves import urllib
 from mitmproxy import ctx, http
 from mitmproxy import exceptions
 from mitmproxy import io
@@ -93,6 +96,7 @@ class AlternateServerPlayback:
         self._done = False
         self._replayed = 0
         self._not_replayed = 0
+        self._recordings_used = 0
         self.mitm_version = ctx.mitmproxy.version.VERSION
 
         ctx.log.info("MitmProxy version: %s" % self.mitm_version)
@@ -105,25 +109,43 @@ class AlternateServerPlayback:
             "Replay server responses from a saved file.",
         )
         loader.add_option(
-            "upload_dir", str, "",
+            "upload_dir",
+            str,
+            "",
             "Upload directory",
         )
 
     def load_flows(self, flows):
         """
-            Replay server responses from flows.
+        Replay server responses from flows.
         """
         for i in flows:
-            if i.type == 'websocket':
+            if i.type == "websocket":
                 # Mitmproxy can't replay WebSocket packages.
                 ctx.log.info(
                     "Recorded response is a WebSocketFlow. Removing from recording list as"
                     "  WebSockets are disabled"
                 )
-            elif i.response and self.mitm_version in ("4.0.2", "4.0.4", "5.1.1"):
-                # see: https://github.com/mitmproxy/mitmproxy/issues/3856
-                l = self.flowmap.setdefault(self._hash(i), [])
-                l.append(i)
+            elif i.response:
+                hash = self._hash(i)
+                if i.response.content is None and self.flowmap.get(hash, False):
+                    # To avoid 'Cannot assemble flow with missing content' we check
+                    # if the correct request has no content and hashed request already exists
+                    # if the hashed request already has content
+                    # then we do not add the new one end keep the existing one
+
+                    if not self.flowmap.get(hash)["flow"].response.content is None:
+                        ctx.log.info(
+                            "Duplicate recorded request found with content missing. "
+                            "Removing current request as it has no data. %s"
+                            % i.request.url
+                        )
+                        continue
+
+                f = self.flowmap.setdefault(hash, {"flow": None, "reply_count": 0})
+                # overwrite with new flow if already hashed
+                f["flow"] = i
+
             else:
                 ctx.log.info(
                     "Recorded request %s has no response. Removing from recording list"
@@ -144,31 +166,36 @@ class AlternateServerPlayback:
                 except exceptions.FlowReadException as e:
                     raise exceptions.CommandError(str(e))
                 self.load_flows(flows)
-                proto = os.path.splitext(path)[0] + ".json"
+                proto = os.path.join(os.path.dirname(path), "metadata.json")
                 if os.path.exists(proto):
                     ctx.log.info("Loading proto info from %s" % proto)
                     with open(proto) as f:
                         recording_info = json.loads(f.read())
-                    ctx.log.info(
-                        "Replaying file {} recorded on {}".format(
-                            os.path.basename(path), recording_info["recording_date"]
+                    if recording_info.get("http_protocol", False):
+                        ctx.log.info(
+                            "Replaying file {} recorded on {}".format(
+                                path, recording_info["recording_date"]
+                            )
                         )
-                    )
-                    _PROTO.update(recording_info["http_protocol"])
+                        _PROTO.update(recording_info["http_protocol"])
+                    else:
+                        ctx.log.warn(
+                            "Replaying file {} has no http_protocol info.".format(proto)
+                        )
         except Exception as e:
             ctx.log.error("Could not load recording file! Stopping playback process!")
-            ctx.log.info(e)
+            ctx.log.error(str(e))
             ctx.master.shutdown()
 
     def _hash(self, flow):
         """
-            Calculates a loose hash of the flow request.
+        Calculates a loose hash of the flow request.
         """
         r = flow.request
 
         # unquote url
         # See Bug 1509835
-        _, _, path, _, query, _ = urllib.parse.urlparse(parse.unquote(r.url))
+        _, _, path, _, query, _ = urllib.parse.urlparse(urllib.parse.unquote(r.url))
         queriesArray = urllib.parse.parse_qsl(query, keep_blank_values=True)
 
         key = [str(r.port), str(r.scheme), str(r.method), str(path)]
@@ -183,12 +210,16 @@ class AlternateServerPlayback:
 
     def next_flow(self, request):
         """
-            Returns the next flow object, or None if no matching flow was
-            found.
+        Returns the next flow object, or None if no matching flow was
+        found.
         """
         hsh = self._hash(request)
         if hsh in self.flowmap:
-            return self.flowmap[hsh][-1]
+            if self.flowmap[hsh]["reply_count"] == 0:
+                self._recordings_used += 1
+            self.flowmap[hsh]["reply_count"] += 1
+            # return the most recently added flow with this hash
+            return self.flowmap[hsh]["flow"]
 
     def configure(self, updated):
         if not self.configured and ctx.options.server_replay_files:
@@ -199,20 +230,27 @@ class AlternateServerPlayback:
         if self._done or not ctx.options.upload_dir:
             return
 
-        confidence = float(self._replayed) / float(self._replayed + self._not_replayed)
-        stats = {"totals": dict(self.netlocs),
-                 "calls": self.calls,
-                 "replayed": self._replayed,
-                 "not-replayed": self._not_replayed,
-                 "confidence": int(confidence * 100)}
-        file_name = "mitm_netlocs_%s.json" % \
-                    os.path.splitext(
-                        os.path.basename(
-                            ctx.options.server_replay_files[0]
-                        )
-                    )[0]
-        path = os.path.normpath(os.path.join(ctx.options.upload_dir,
-                                             file_name))
+        replay_confidence = float(self._replayed) / (
+            self._replayed + self._not_replayed
+        )
+        recording_proportion_used = (
+            0
+            if self._recordings_used == 0
+            else float(self._recordings_used) / len(self.flowmap)
+        )
+        stats = {
+            "totals": dict(self.netlocs),
+            "calls": self.calls,
+            "replayed": self._replayed,
+            "not-replayed": self._not_replayed,
+            "replay-confidence": int(replay_confidence * 100),
+            "recording-proportion-used": int(recording_proportion_used * 100),
+        }
+        file_name = (
+            "mitm_netlocs_%s.json"
+            % os.path.splitext(os.path.basename(ctx.options.server_replay_files[0]))[0]
+        )
+        path = os.path.normpath(os.path.join(ctx.options.upload_dir, file_name))
         try:
             with open(path, "w") as f:
                 f.write(json.dumps(stats, indent=2, sort_keys=True))
@@ -246,11 +284,17 @@ class AlternateServerPlayback:
 
                 # collecting stats only if we can dump them (see .done())
                 if ctx.options.upload_dir:
-                    parsed_url = urllib.parse.urlparse(parse.unquote(f.request.url))
+                    parsed_url = urllib.parse.urlparse(
+                        urllib.parse.unquote(f.request.url)
+                    )
                     self.netlocs[parsed_url.netloc][f.response.status_code] += 1
-                    self.calls.append({'time': str(time.time()),
-                                       'url': f.request.url,
-                                       'response_status': f.response.status_code})
+                    self.calls.append(
+                        {
+                            "time": str(time.time()),
+                            "url": f.request.url,
+                            "response_status": f.response.status_code,
+                        }
+                    )
             except Exception as e:
                 ctx.log.error("Could not generate response! Stopping playback process!")
                 ctx.log.info(e)
@@ -264,7 +308,7 @@ class AlternateServerPlayback:
 
 playback = AlternateServerPlayback()
 
-if hasattr(signal, 'SIGBREAK'):
+if hasattr(signal, "SIGBREAK"):
     # allows the addon to dump the stats even if mitmproxy
     # does not call done() like on windows termination
     # for this, the parent process sends CTRL_BREAK_EVENT which

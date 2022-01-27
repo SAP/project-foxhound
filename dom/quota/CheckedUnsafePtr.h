@@ -7,6 +7,8 @@
 #ifndef mozilla_CheckedUnsafePtr_h
 #define mozilla_CheckedUnsafePtr_h
 
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/DataMutex.h"
 #include "nsTArray.h"
 
@@ -83,10 +85,10 @@ template <typename T, CheckingSupport = T::SupportsChecking::value>
 class CheckedUnsafePtrBase;
 
 template <typename T, typename U, typename S = std::nullptr_t>
-using EnableIfCompatible =
-    std::enable_if_t<std::is_base_of<T, std::remove_reference_t<decltype(
-                                            *std::declval<U>())>>::value,
-                     S>;
+using EnableIfCompatible = std::enable_if_t<
+    std::is_base_of<
+        T, std::remove_reference_t<decltype(*std::declval<U>())>>::value,
+    S>;
 
 template <typename T>
 class CheckedUnsafePtrBase<T, CheckingSupport::Enabled>
@@ -387,6 +389,17 @@ struct nsTArray_RelocationStrategy<mozilla::CheckedUnsafePtr<T>> {
       T::SupportsChecking::value == mozilla::CheckingSupport::Enabled,
       nsTArray_RelocateUsingMoveConstructor<mozilla::CheckedUnsafePtr<T>>,
       nsTArray_RelocateUsingMemutils>;
+};
+
+template <typename T>
+struct nsTArray_RelocationStrategy<
+    mozilla::NotNull<mozilla::CheckedUnsafePtr<T>>> {
+  using Type =
+      std::conditional_t<T::SupportsChecking::value ==
+                             mozilla::CheckingSupport::Enabled,
+                         nsTArray_RelocateUsingMoveConstructor<
+                             mozilla::NotNull<mozilla::CheckedUnsafePtr<T>>>,
+                         nsTArray_RelocateUsingMemutils>;
 };
 
 #endif  // mozilla_CheckedUnsafePtr_h

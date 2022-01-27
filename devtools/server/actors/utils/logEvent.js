@@ -26,9 +26,11 @@ function getThrownMessage(completion) {
 module.exports.getThrownMessage = getThrownMessage;
 
 function logEvent({ threadActor, frame, level, expression, bindings }) {
-  const { sourceActor, line, column } = threadActor.sources.getFrameLocation(
-    frame
-  );
+  const {
+    sourceActor,
+    line,
+    column,
+  } = threadActor.sourcesManager.getFrameLocation(frame);
   const displayName = formatDisplayName(frame);
 
   // TODO remove this branch when (#1592584) lands (#1609540)
@@ -75,7 +77,7 @@ function logEvent({ threadActor, frame, level, expression, bindings }) {
   };
 
   const targetActor = threadActor._parent;
-  // Note that only BrowsingContextTarget actor support resource watcher
+  // Note that only WindowGlobalTarget actor support resource watcher
   // This is still missing for worker and content processes
   const consoleMessageWatcher = getResourceWatcher(
     targetActor,

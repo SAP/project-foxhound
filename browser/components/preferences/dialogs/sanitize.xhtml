@@ -14,7 +14,7 @@
         type="child"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         xmlns:html="http://www.w3.org/1999/xhtml"
-        persist="lastSelected screenX screenY"
+        persist="lastSelected"
         data-l10n-id="sanitize-prefs"
         data-l10n-attrs="style"
         onload="gSanitizeDialog.init();">
@@ -60,10 +60,10 @@
     <label><html:h2 data-l10n-id="data-section-label"/></label>
     <hbox>
       <vbox data-l10n-id="sanitize-prefs-style" data-l10n-attrs="style">
-        <checkbox data-l10n-id="item-site-preferences"
+        <checkbox data-l10n-id="item-site-settings"
                   preference="privacy.clearOnShutdown.siteSettings"/>
       </vbox>
-      <vbox>
+      <vbox flex="1">
         <checkbox data-l10n-id="item-offline-apps"
                   preference="privacy.clearOnShutdown.offlineApps"/>
       </vbox>

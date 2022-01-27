@@ -23,6 +23,9 @@
 #ifdef MOZ_AV1
 #  include "nsAVIFDecoder.h"
 #endif
+#ifdef MOZ_JXL
+#  include "nsJXLDecoder.h"
+#endif
 
 namespace mozilla {
 
@@ -88,6 +91,11 @@ DecoderType DecoderFactory::GetDecoderType(const char* aMimeType) {
     type = DecoderType::AVIF;
   }
 #endif
+#ifdef MOZ_JXL
+  else if (!strcmp(aMimeType, IMAGE_JXL) && StaticPrefs::image_jxl_enabled()) {
+    type = DecoderType::JXL;
+  }
+#endif
 
   return type;
 }
@@ -131,6 +139,11 @@ already_AddRefed<Decoder> DecoderFactory::GetDecoder(DecoderType aType,
       decoder = new nsAVIFDecoder(aImage);
       break;
 #endif
+#ifdef MOZ_JXL
+    case DecoderType::JXL:
+      decoder = new nsJXLDecoder(aImage);
+      break;
+#endif
     default:
       MOZ_ASSERT_UNREACHABLE("Unknown decoder type");
   }
@@ -157,7 +170,7 @@ nsresult DecoderFactory::CreateDecoder(
   // Initialize the decoder.
   decoder->SetMetadataDecode(false);
   decoder->SetIterator(aSourceBuffer->Iterator());
-  decoder->SetOutputSize(aOutputSize);
+  decoder->SetOutputSize(OrientedIntSize::FromUnknownSize(aOutputSize));
   decoder->SetDecoderFlags(aDecoderFlags | DecoderFlags::FIRST_FRAME_ONLY);
   decoder->SetSurfaceFlags(aSurfaceFlags);
 
@@ -307,7 +320,8 @@ already_AddRefed<IDecodingTask> DecoderFactory::CreateMetadataDecoder(
 already_AddRefed<Decoder> DecoderFactory::CreateDecoderForICOResource(
     DecoderType aType, SourceBufferIterator&& aIterator,
     NotNull<nsICODecoder*> aICODecoder, bool aIsMetadataDecode,
-    const Maybe<IntSize>& aExpectedSize, const Maybe<uint32_t>& aDataOffset
+    const Maybe<OrientedIntSize>& aExpectedSize,
+    const Maybe<uint32_t>& aDataOffset
     /* = Nothing() */) {
   // Create the decoder.
   RefPtr<Decoder> decoder;
@@ -376,7 +390,7 @@ already_AddRefed<Decoder> DecoderFactory::CreateAnonymousDecoder(
 
   // Set an output size for downscale-during-decode if requested.
   if (aOutputSize) {
-    decoder->SetOutputSize(*aOutputSize);
+    decoder->SetOutputSize(OrientedIntSize::FromUnknownSize(*aOutputSize));
   }
 
   if (NS_FAILED(decoder->Init())) {

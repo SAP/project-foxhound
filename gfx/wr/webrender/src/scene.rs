@@ -4,16 +4,17 @@
 
 use api::{BuiltDisplayList, DisplayListWithCache, ColorF, DynamicProperties, Epoch, FontRenderMode};
 use api::{PipelineId, PropertyBinding, PropertyBindingId, PropertyValue, MixBlendMode, StackingContext};
-use api::MemoryReport;
 use api::units::*;
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
+use crate::render_api::MemoryReport;
 use crate::composite::CompositorKind;
-use crate::clip::{ClipStore, ClipDataStore};
+use crate::clip::{ClipStore, ClipStoreStats};
 use crate::spatial_tree::SpatialTree;
 use crate::frame_builder::{ChasePrimitive, FrameBuilderConfig};
 use crate::hit_test::{HitTester, HitTestingScene, HitTestingSceneStats};
-use crate::internal_types::FastHashMap;
-use crate::prim_store::{PrimitiveStore, PrimitiveStoreStats, PictureIndex};
+use crate::internal_types::{FastHashMap, PlaneSplitter};
+use crate::picture_graph::PictureGraph;
+use crate::prim_store::{PrimitiveStore, PrimitiveStoreStats, PictureIndex, PrimitiveInstance};
 use crate::tile_cache::TileCacheConfig;
 use std::sync::Arc;
 
@@ -41,12 +42,23 @@ impl SceneProperties {
         }
     }
 
-    /// Set the current property list for this display list.
-    pub fn set_properties(&mut self, properties: DynamicProperties) {
-        self.pending_properties = Some(properties);
+    /// Reset the pending properties without flush.
+    pub fn reset_properties(&mut self) {
+        self.pending_properties = None;
     }
 
     /// Add to the current property list for this display list.
+    pub fn add_properties(&mut self, properties: DynamicProperties) {
+        let mut pending_properties = self.pending_properties
+            .take()
+            .unwrap_or_default();
+
+        pending_properties.extend(properties);
+
+        self.pending_properties = Some(pending_properties);
+    }
+
+    /// Add to the current transform property list for this display list.
     pub fn add_transforms(&mut self, transforms: Vec<PropertyValue<LayoutTransform>>) {
         let mut pending_properties = self.pending_properties
             .take()
@@ -60,8 +72,8 @@ impl SceneProperties {
     /// Flush any pending updates to the scene properties. Returns
     /// true if the properties have changed since the last flush
     /// was called. This code allows properties to be changed by
-    /// multiple set_properties and add_properties calls during a
-    /// single transaction, and still correctly determine if any
+    /// multiple reset_properties, add_properties and add_transforms calls
+    /// during a single transaction, and still correctly determine if any
     /// properties have changed. This can have significant power
     /// saving implications, allowing a frame build to be skipped
     /// if the properties haven't changed in many cases.
@@ -162,7 +174,6 @@ impl SceneProperties {
 pub struct ScenePipeline {
     pub pipeline_id: PipelineId,
     pub viewport_size: LayoutSize,
-    pub content_size: LayoutSize,
     pub background_color: Option<ColorF>,
     pub display_list: DisplayListWithCache,
 }
@@ -197,7 +208,6 @@ impl Scene {
         display_list: BuiltDisplayList,
         background_color: Option<ColorF>,
         viewport_size: LayoutSize,
-        content_size: LayoutSize,
     ) {
         // Adds a cache to the given display list. If this pipeline already had
         // a display list before, that display list is updated and used instead.
@@ -212,7 +222,6 @@ impl Scene {
         let new_pipeline = ScenePipeline {
             pipeline_id,
             viewport_size,
-            content_size,
             background_color,
             display_list,
         };
@@ -272,13 +281,15 @@ pub struct BuiltScene {
     pub pipeline_epochs: FastHashMap<PipelineId, Epoch>,
     pub output_rect: DeviceIntRect,
     pub background_color: Option<ColorF>,
-    pub root_pic_index: PictureIndex,
     pub prim_store: PrimitiveStore,
     pub clip_store: ClipStore,
     pub config: FrameBuilderConfig,
-    pub spatial_tree: SpatialTree,
     pub hit_testing_scene: Arc<HitTestingScene>,
     pub tile_cache_config: TileCacheConfig,
+    pub tile_cache_pictures: Vec<PictureIndex>,
+    pub picture_graph: PictureGraph,
+    pub plane_splitters: Vec<PlaneSplitter>,
+    pub prim_instances: Vec<PrimitiveInstance>,
 }
 
 impl BuiltScene {
@@ -288,28 +299,34 @@ impl BuiltScene {
             pipeline_epochs: FastHashMap::default(),
             output_rect: DeviceIntRect::zero(),
             background_color: None,
-            root_pic_index: PictureIndex(0),
             prim_store: PrimitiveStore::new(&PrimitiveStoreStats::empty()),
-            clip_store: ClipStore::new(),
-            spatial_tree: SpatialTree::new(),
+            clip_store: ClipStore::new(&ClipStoreStats::empty()),
             hit_testing_scene: Arc::new(HitTestingScene::new(&HitTestingSceneStats::empty())),
             tile_cache_config: TileCacheConfig::new(0),
+            tile_cache_pictures: Vec::new(),
+            picture_graph: PictureGraph::new(),
+            plane_splitters: Vec::new(),
+            prim_instances: Vec::new(),
             config: FrameBuilderConfig {
                 default_font_render_mode: FontRenderMode::Mono,
                 dual_source_blending_is_enabled: true,
                 dual_source_blending_is_supported: false,
                 chase_primitive: ChasePrimitive::Nothing,
-                global_enable_picture_caching: false,
                 testing: false,
                 gpu_supports_fast_clears: false,
                 gpu_supports_advanced_blend: false,
                 advanced_blend_is_coherent: false,
+                gpu_supports_render_target_partial_update: true,
+                external_images_require_copy: false,
                 batch_lookback_count: 0,
                 background_color: None,
                 compositor_kind: CompositorKind::default(),
                 tile_size_override: None,
                 max_depth_ids: 0,
                 max_target_size: 0,
+                force_invalidation: false,
+                is_software: false,
+                low_quality_pinch_zoom: false,
             },
         }
     }
@@ -319,18 +336,17 @@ impl BuiltScene {
         SceneStats {
             prim_store_stats: self.prim_store.get_stats(),
             hit_test_stats: self.hit_testing_scene.get_stats(),
+            clip_store_stats: self.clip_store.get_stats(),
         }
     }
 
     pub fn create_hit_tester(
         &mut self,
-        clip_data_store: &ClipDataStore,
+        spatial_tree: &SpatialTree,
     ) -> HitTester {
         HitTester::new(
             Arc::clone(&self.hit_testing_scene),
-            &self.spatial_tree,
-            &self.clip_store,
-            clip_data_store,
+            spatial_tree,
         )
     }
 }
@@ -342,6 +358,7 @@ impl BuiltScene {
 pub struct SceneStats {
     pub prim_store_stats: PrimitiveStoreStats,
     pub hit_test_stats: HitTestingSceneStats,
+    pub clip_store_stats: ClipStoreStats,
 }
 
 impl SceneStats {
@@ -349,6 +366,7 @@ impl SceneStats {
         SceneStats {
             prim_store_stats: PrimitiveStoreStats::empty(),
             hit_test_stats: HitTestingSceneStats::empty(),
+            clip_store_stats: ClipStoreStats::empty(),
         }
     }
 }

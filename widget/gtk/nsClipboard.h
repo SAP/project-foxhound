@@ -18,13 +18,20 @@
 #  include "nsTArray.h"
 #  include "Units.h"
 extern mozilla::LazyLogModule gClipboardLog;
-#  define LOGCLIP(args) MOZ_LOG(gClipboardLog, mozilla::LogLevel::Debug, args)
+#  define LOGCLIP(...) \
+    MOZ_LOG(gClipboardLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
 #else
-#  define LOGCLIP(args)
+#  define LOGCLIP(...)
 #endif /* MOZ_LOGGING */
+
+enum ClipboardDataType { CLIPBOARD_DATA, CLIPBOARD_TEXT, CLIPBOARD_TARGETS };
 
 class nsRetrievalContext {
  public:
+  // We intentionally use unsafe thread refcount as clipboard is used in
+  // main thread only.
+  NS_INLINE_DECL_REFCOUNTING(nsRetrievalContext)
+
   // Get actual clipboard content (GetClipboardData/GetClipboardText)
   // which has to be released by ReleaseClipboardData().
   virtual const char* GetClipboardData(const char* aMimeType,
@@ -39,6 +46,7 @@ class nsRetrievalContext {
 
   virtual bool HasSelectionSupport(void) = 0;
 
+ protected:
   virtual ~nsRetrievalContext() = default;
 };
 
@@ -73,16 +81,20 @@ class nsClipboard : public nsIClipboard, public nsIObserver {
 
   void ClearTransferable(int32_t aWhichClipboard);
 
+  bool FilterImportedFlavors(int32_t aWhichClipboard,
+                             nsTArray<nsCString>& aFlavors);
+
   // Hang on to our owners and transferables so we can transfer data
   // when asked.
   nsCOMPtr<nsIClipboardOwner> mSelectionOwner;
   nsCOMPtr<nsIClipboardOwner> mGlobalOwner;
   nsCOMPtr<nsITransferable> mSelectionTransferable;
   nsCOMPtr<nsITransferable> mGlobalTransferable;
-  mozilla::UniquePtr<nsRetrievalContext> mContext;
+  RefPtr<nsRetrievalContext> mContext;
 };
 
 extern const int kClipboardTimeout;
+extern const int kClipboardFastIterationNum;
 
 GdkAtom GetSelectionAtom(int32_t aWhichClipboard);
 int GetGeckoClipboardType(GtkClipboard* aGtkClipboard);

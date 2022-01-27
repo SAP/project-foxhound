@@ -3,7 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* globals log */
-/* globals main, makeUuid, deviceInfo, analytics, catcher, buildSettings, communication */
+/* globals main, deviceInfo, analytics, catcher, communication, browser */
 
 "use strict";
 
@@ -18,32 +18,19 @@ this.auth = (function() {
   let accountId = null;
 
   const fetchStoredInfo = catcher.watchPromise(
-    browser.storage.local.get(["registrationInfo", "abTests"]).then((result) => {
+    browser.storage.local.get(["registrationInfo", "abTests"]).then(result => {
       if (result.abTests) {
         abTests = result.abTests;
       }
       if (result.registrationInfo) {
         registrationInfo = result.registrationInfo;
       }
-  }));
-
-  function getRegistrationInfo() {
-    if (!registrationInfo) {
-      registrationInfo = generateRegistrationInfo();
-      log.info("Generating new device authentication ID", registrationInfo);
-      browser.storage.local.set({registrationInfo});
-    }
-    return registrationInfo;
-  }
-
-  exports.getDeviceId = function() {
-    return registrationInfo && registrationInfo.deviceId;
-  };
+    })
+  );
 
   function generateRegistrationInfo() {
     const info = {
-      deviceId: `anon${makeUuid()}`,
-      secret: makeUuid(),
+      secret: crypto.randomUUID(),
       registered: false,
     };
     return info;
@@ -77,11 +64,12 @@ this.auth = (function() {
         exc.popupMessage = "LOGIN_CONNECTION_ERROR";
         reject(exc);
       });
-      req.send(JSON.stringify({
-        deviceId: registrationInfo.deviceId,
-        secret: registrationInfo.secret,
-        deviceInfo: JSON.stringify(deviceInfo()),
-      }));
+      req.send(
+        JSON.stringify({
+          secret: registrationInfo.secret,
+          deviceInfo: JSON.stringify(deviceInfo()),
+        })
+      );
     });
   }
 
@@ -89,7 +77,11 @@ this.auth = (function() {
     const { ownershipCheck, noRegister } = options || {};
     return new Promise((resolve, reject) => {
       return fetchStoredInfo.then(() => {
-        const registrationInfo = getRegistrationInfo();
+        if (!registrationInfo) {
+          registrationInfo = generateRegistrationInfo();
+          log.info("Generating new device authentication ID", registrationInfo);
+          browser.storage.local.set({ registrationInfo });
+        }
         const loginUrl = main.getBackend() + "/api/login";
         // TODO: replace xhr with Fetch #2261
         const req = new XMLHttpRequest();
@@ -119,7 +111,7 @@ this.auth = (function() {
             analytics.sendEvent("login");
             saveAuthInfo(jsonResponse);
             if (ownershipCheck) {
-              resolve({isOwner: jsonResponse.isOwner});
+              resolve({ isOwner: jsonResponse.isOwner });
             } else {
               resolve(true);
             }
@@ -133,12 +125,13 @@ this.auth = (function() {
           reject(exc);
         });
         req.setRequestHeader("content-type", "application/json");
-        req.send(JSON.stringify({
-          deviceId: registrationInfo.deviceId,
-          secret: registrationInfo.secret,
-          deviceInfo: JSON.stringify(deviceInfo()),
-          ownershipCheck,
-        }));
+        req.send(
+          JSON.stringify({
+            secret: registrationInfo.secret,
+            deviceInfo: JSON.stringify(deviceInfo()),
+            ownershipCheck,
+          })
+        );
       });
     });
   }
@@ -152,12 +145,12 @@ this.auth = (function() {
       authHeader = responseJson.authHeader;
       if (!registrationInfo.registered) {
         registrationInfo.registered = true;
-        catcher.watchPromise(browser.storage.local.set({registrationInfo}));
+        catcher.watchPromise(browser.storage.local.set({ registrationInfo }));
       }
     }
     if (responseJson.abTests) {
       abTests = responseJson.abTests;
-      catcher.watchPromise(browser.storage.local.set({abTests}));
+      catcher.watchPromise(browser.storage.local.set({ abTests }));
     }
   }
 
@@ -176,7 +169,7 @@ this.auth = (function() {
     }
     return initPromise.then(() => {
       if (authHeader) {
-        return {"x-screenshots-auth": authHeader};
+        return { "x-screenshots-auth": authHeader };
       }
       log.warn("No auth header available");
       return {};
@@ -184,7 +177,7 @@ this.auth = (function() {
   };
 
   exports.getSentryPublicDSN = function() {
-    return sentryPublicDSN || buildSettings.defaultSentryDsn;
+    return sentryPublicDSN;
   };
 
   exports.getAbTests = function() {
@@ -202,23 +195,22 @@ this.auth = (function() {
         return null;
       }
 
-      return exports.authHeaders().then((authHeaders) => {
+      return exports.authHeaders().then(authHeaders => {
         let info = registrationInfo;
         if (info.registered) {
-          return login({ownershipCheck}).then((result) => {
+          return login({ ownershipCheck }).then(result => {
             return {
               isOwner: result && result.isOwner,
-              deviceId: registrationInfo.deviceId,
               accountId,
               authHeaders,
             };
           });
         }
-        info = Object.assign({authHeaders}, info);
+        info = Object.assign({ authHeaders }, info);
         return info;
       });
+    });
   });
-});
 
   return exports;
 })();

@@ -6,13 +6,8 @@
 
 "use strict";
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
 XPCOMUtils.defineLazyModuleGetters(this, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
-  Services: "resource://gre/modules/Services.jsm",
 });
 
 var { normalizeTime } = ExtensionCommon;
@@ -92,53 +87,6 @@ const convertNavHistoryContainerResultNode = (container, converter) => {
   }
   container.containerOpen = false;
   return results;
-};
-
-var _observer;
-
-const getHistoryObserver = () => {
-  if (!_observer) {
-    _observer = new (class extends EventEmitter {
-      onDeleteURI(uri, guid, reason) {
-        this.emit("visitRemoved", { allHistory: false, urls: [uri.spec] });
-      }
-      handlePlacesEvents(events) {
-        for (let event of events) {
-          let visit = {
-            id: event.pageGuid,
-            url: event.url,
-            title: event.lastKnownTitle || "",
-            lastVisitTime: event.visitTime,
-            visitCount: event.visitCount,
-            typedCount: event.typedCount,
-          };
-          this.emit("visited", visit);
-        }
-      }
-      onBeginUpdateBatch() {}
-      onEndUpdateBatch() {}
-      onTitleChanged(uri, title) {
-        this.emit("titleChanged", { url: uri.spec, title: title });
-      }
-      onClearHistory() {
-        this.emit("visitRemoved", { allHistory: true, urls: [] });
-      }
-      onPageChanged() {}
-      onFrecencyChanged() {}
-      onManyFrecenciesChanged() {}
-      onDeleteVisits(uri, partialRemoval, guid, reason) {
-        if (!partialRemoval) {
-          this.emit("visitRemoved", { allHistory: false, urls: [uri.spec] });
-        }
-      }
-    })();
-    PlacesUtils.observers.addListener(
-      ["page-visited"],
-      _observer.handlePlacesEvents.bind(_observer)
-    );
-    PlacesUtils.history.addObserver(_observer);
-  }
-  return _observer;
 };
 
 this.history = class extends ExtensionAPI {
@@ -258,13 +206,23 @@ this.history = class extends ExtensionAPI {
           context,
           name: "history.onVisited",
           register: fire => {
-            let listener = (event, data) => {
-              fire.sync(data);
+            const listener = events => {
+              for (const event of events) {
+                const visit = {
+                  id: event.pageGuid,
+                  url: event.url,
+                  title: event.lastKnownTitle || "",
+                  lastVisitTime: event.visitTime,
+                  visitCount: event.visitCount,
+                  typedCount: event.typedCount,
+                };
+                fire.sync(visit);
+              }
             };
 
-            getHistoryObserver().on("visited", listener);
+            PlacesUtils.observers.addListener(["page-visited"], listener);
             return () => {
-              getHistoryObserver().off("visited", listener);
+              PlacesUtils.observers.removeListener(["page-visited"], listener);
             };
           },
         }).api(),
@@ -273,13 +231,38 @@ this.history = class extends ExtensionAPI {
           context,
           name: "history.onVisitRemoved",
           register: fire => {
-            let listener = (event, data) => {
-              fire.sync(data);
+            const listener = events => {
+              const removedURLs = [];
+
+              for (const event of events) {
+                switch (event.type) {
+                  case "history-cleared": {
+                    fire.sync({ allHistory: true, urls: [] });
+                    break;
+                  }
+                  case "page-removed": {
+                    if (!event.isPartialVisistsRemoval) {
+                      removedURLs.push(event.url);
+                    }
+                    break;
+                  }
+                }
+              }
+
+              if (removedURLs.length) {
+                fire.sync({ allHistory: false, urls: removedURLs });
+              }
             };
 
-            getHistoryObserver().on("visitRemoved", listener);
+            PlacesUtils.observers.addListener(
+              ["history-cleared", "page-removed"],
+              listener
+            );
             return () => {
-              getHistoryObserver().off("visitRemoved", listener);
+              PlacesUtils.observers.removeListener(
+                ["history-cleared", "page-removed"],
+                listener
+              );
             };
           },
         }).api(),
@@ -288,13 +271,23 @@ this.history = class extends ExtensionAPI {
           context,
           name: "history.onTitleChanged",
           register: fire => {
-            let listener = (event, data) => {
-              fire.sync(data);
+            const listener = events => {
+              for (const event of events) {
+                const titleChanged = {
+                  id: event.pageGuid,
+                  url: event.url,
+                  title: event.title,
+                };
+                fire.sync(titleChanged);
+              }
             };
 
-            getHistoryObserver().on("titleChanged", listener);
+            PlacesUtils.observers.addListener(["page-title-changed"], listener);
             return () => {
-              getHistoryObserver().off("titleChanged", listener);
+              PlacesUtils.observers.removeListener(
+                ["page-title-changed"],
+                listener
+              );
             };
           },
         }).api(),

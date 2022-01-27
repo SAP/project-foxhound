@@ -7,8 +7,9 @@
 #define nsMenuItemX_h_
 
 #include "mozilla/RefPtr.h"
-#include "nsMenuBaseX.h"
+#include "nsISupports.h"
 #include "nsMenuGroupOwnerX.h"
+#include "nsMenuItemIconX.h"
 #include "nsChangeObserver.h"
 #include "nsStringFwd.h"
 
@@ -16,6 +17,7 @@
 
 class nsMenuItemIconX;
 class nsMenuX;
+class nsMenuParentX;
 
 namespace mozilla {
 namespace dom {
@@ -41,42 +43,62 @@ enum EMenuItemType {
 // Once instantiated, this object lives until its DOM node or its parent window
 // is destroyed. Do not hold references to this, they can become invalid any
 // time the DOM node can be destroyed.
-class nsMenuItemX : public nsMenuObjectX, public nsChangeObserver {
+class nsMenuItemX final : public nsChangeObserver,
+                          public nsMenuItemIconX::Listener {
  public:
-  nsMenuItemX();
-  virtual ~nsMenuItemX();
+  nsMenuItemX(nsMenuX* aParent, const nsString& aLabel, EMenuItemType aItemType,
+              nsMenuGroupOwnerX* aMenuGroupOwner, nsIContent* aNode);
+
+  bool IsVisible() const { return mIsVisible; }
+
+  // Unregisters nsMenuX from the nsMenuGroupOwner, and nulls out the group
+  // owner pointer. This is needed because nsMenuX is reference-counted and can
+  // outlive its owner, and the menu group owner asserts that everything has
+  // been unregistered when it is destroyed.
+  void DetachFromGroupOwner();
+
+  // Nulls out our reference to the parent.
+  // This is needed because nsMenuX is reference-counted and can outlive its
+  // parent.
+  void DetachFromParent() { mMenuParent = nullptr; }
+
+  NS_INLINE_DECL_REFCOUNTING(nsMenuItemX)
 
   NS_DECL_CHANGEOBSERVER
 
-  // nsMenuObjectX
-  void* NativeData() override { return (void*)mNativeMenuItem; }
-  nsMenuObjectTypeX MenuObjectType() override { return eMenuItemObjectType; }
+  // nsMenuItemIconX::Listener
+  void IconUpdated() override;
 
   // nsMenuItemX
-  nsresult Create(nsMenuX* aParent, const nsString& aLabel,
-                  EMenuItemType aItemType, nsMenuGroupOwnerX* aMenuGroupOwner,
-                  nsIContent* aNode);
   nsresult SetChecked(bool aIsChecked);
   EMenuItemType GetMenuItemType();
-  void DoCommand();
+  void DoCommand(NSEventModifierFlags aModifierFlags, int16_t aButton);
   nsresult DispatchDOMEvent(const nsString& eventName,
                             bool* preventDefaultCalled);
   void SetupIcon();
+  nsIContent* Content() { return mContent; }
+  NSMenuItem* NativeNSMenuItem() { return mNativeMenuItem; }
+
+  void Dump(uint32_t aIndent) const;
 
  protected:
-  void UncheckRadioSiblings(nsIContent* inCheckedElement);
+  virtual ~nsMenuItemX();
+
+  void UncheckRadioSiblings(nsIContent* aCheckedElement);
   void SetKeyEquiv();
+
+  nsCOMPtr<nsIContent> mContent;  // XUL <menuitem> or <menuseparator>
 
   EMenuItemType mType;
 
   // nsMenuItemX objects should always have a valid native menu item.
-  NSMenuItem* mNativeMenuItem;         // [strong]
-  nsMenuX* mMenuParent;                // [weak]
-  nsMenuGroupOwnerX* mMenuGroupOwner;  // [weak]
+  NSMenuItem* mNativeMenuItem = nil;             // [strong]
+  nsMenuX* mMenuParent = nullptr;                // [weak]
+  nsMenuGroupOwnerX* mMenuGroupOwner = nullptr;  // [weak]
   RefPtr<mozilla::dom::Element> mCommandElement;
-  // The icon object should never outlive its creating nsMenuItemX object.
-  RefPtr<nsMenuItemIconX> mIcon;
-  bool mIsChecked;
+  mozilla::UniquePtr<nsMenuItemIconX> mIcon;  // always non-null
+  bool mIsChecked = false;
+  bool mIsVisible = false;
 };
 
 #endif  // nsMenuItemX_h_

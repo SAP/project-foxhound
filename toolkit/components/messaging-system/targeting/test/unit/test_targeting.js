@@ -1,8 +1,14 @@
+const { ClientEnvironment } = ChromeUtils.import(
+  "resource://normandy/lib/ClientEnvironment.jsm"
+);
 const { TargetingContext } = ChromeUtils.import(
   "resource://messaging-system/targeting/Targeting.jsm"
 );
 const { TelemetryTestUtils } = ChromeUtils.import(
   "resource://testing-common/TelemetryTestUtils.jsm"
+);
+const { TestUtils } = ChromeUtils.import(
+  "resource://testing-common/TestUtils.jsm"
 );
 
 add_task(async function instance_with_default() {
@@ -199,6 +205,121 @@ add_task(async function test_telemetry_event_error() {
 
   try {
     await targeting.eval("ctx.bar");
+  } catch (e) {}
+
+  TelemetryTestUtils.assertEvents(expectedEvents);
+  Services.telemetry.clearEvents();
+});
+
+// Make sure that when using the Normandy-style ClientEnvironment context,
+// `liveTelemetry` works. `liveTelemetry` is a particularly tricky object to
+// proxy, so it's useful to check specifically.
+add_task(async function test_live_telemetry() {
+  let ctx = { env: ClientEnvironment };
+  let targeting = new TargetingContext();
+  // This shouldn't throw.
+  await targeting.eval("env.liveTelemetry.main", ctx);
+});
+
+add_task(async function test_default_targeting() {
+  const targeting = new TargetingContext();
+  const expected_attributes = [
+    "locale",
+    "localeLanguageCode",
+    // "region", // Not available in test, requires network access to determine
+    "userId",
+    "version",
+    "channel",
+    "platform",
+  ];
+
+  for (let attribute of expected_attributes) {
+    let res = await targeting.eval(`ctx.${attribute}`);
+    Assert.ok(res, `[eval] result for ${attribute} should not be null`);
+  }
+
+  for (let attribute of expected_attributes) {
+    let res = await targeting.evalWithDefault(attribute);
+    Assert.ok(
+      res,
+      `[evalWithDefault] result for ${attribute} should not be null`
+    );
+  }
+});
+
+add_task(async function test_targeting_os() {
+  const targeting = new TargetingContext();
+  await TestUtils.waitForCondition(() =>
+    targeting.eval("ctx.os.isWindows || ctx.os.isMac || ctx.os.isLinux")
+  );
+  let res = await targeting.eval(
+    `(ctx.os.isWindows && ctx.os.windowsVersion && ctx.os.windowsBuildNumber) ||
+     (ctx.os.isMac && ctx.os.macVersion && ctx.os.darwinVersion) ||
+     (ctx.os.isLinux && os.darwinVersion == null)
+    `
+  );
+  Assert.ok(res, `Should detect platform version got: ${res}`);
+});
+
+add_task(async function test_targeting_source_constructor() {
+  Services.telemetry.clearEvents();
+  const targeting = new TargetingContext(
+    {
+      foo: true,
+      get bar() {
+        throw new Error("bar");
+      },
+    },
+    { source: "unit_testing" }
+  );
+
+  let res = await targeting.eval("ctx.foo");
+  Assert.ok(res, "Should eval to true");
+
+  let expectedEvents = [
+    [
+      "messaging_experiments",
+      "targeting",
+      "attribute_error",
+      "ctx.bar",
+      { source: "unit_testing" },
+    ],
+  ];
+  try {
+    await targeting.eval("ctx.bar");
+  } catch (e) {}
+
+  TelemetryTestUtils.assertEvents(expectedEvents);
+  Services.telemetry.clearEvents();
+});
+
+add_task(async function test_targeting_source_override() {
+  Services.telemetry.clearEvents();
+  const targeting = new TargetingContext(
+    {
+      foo: true,
+      get bar() {
+        throw new Error("bar");
+      },
+    },
+    { source: "unit_testing" }
+  );
+
+  let res = await targeting.eval("ctx.foo");
+  Assert.ok(res, "Should eval to true");
+
+  let expectedEvents = [
+    [
+      "messaging_experiments",
+      "targeting",
+      "attribute_error",
+      "bar",
+      { source: "override" },
+    ],
+  ];
+  try {
+    targeting.setTelemetrySource("override");
+    await targeting.evalWithDefault("bar");
   } catch (e) {}
 
   TelemetryTestUtils.assertEvents(expectedEvents);

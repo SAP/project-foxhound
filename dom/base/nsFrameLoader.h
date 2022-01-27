@@ -19,18 +19,18 @@
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/LinkedList.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/Element.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WindowProxyHolder.h"
+#include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDocShell.h"
-#include "nsFrameMessageManager.h"
+#include "mozilla/dom/MessageManagerCallback.h"
 #include "nsID.h"
 #include "nsIFrame.h"
 #include "nsIMutationObserver.h"
@@ -61,6 +61,8 @@ class OriginAttributes;
 namespace dom {
 class ChromeMessageSender;
 class ContentParent;
+class Document;
+class Element;
 class TabListener;
 class InProcessBrowserChildMessageManager;
 class MessageSender;
@@ -70,6 +72,8 @@ class MutableTabContext;
 class BrowserBridgeChild;
 class RemoteBrowser;
 struct RemotenessOptions;
+struct NavigationIsolationOptions;
+class SessionStoreChangeListener;
 
 namespace ipc {
 class StructuredCloneData;
@@ -96,17 +100,18 @@ typedef struct _GtkWidget GtkWidget;
 
 class nsFrameLoader final : public nsStubMutationObserver,
                             public mozilla::dom::ipc::MessageManagerCallback,
-                            public nsWrapperCache {
+                            public nsWrapperCache,
+                            public mozilla::LinkedListElement<nsFrameLoader> {
   friend class AutoResetInShow;
   friend class AutoResetInFrameSwap;
   friend class nsFrameLoaderOwner;
-  typedef mozilla::dom::Document Document;
-  typedef mozilla::dom::Element Element;
-  typedef mozilla::dom::BrowserParent BrowserParent;
-  typedef mozilla::dom::BrowserBridgeChild BrowserBridgeChild;
-  typedef mozilla::dom::BrowsingContext BrowsingContext;
-  typedef mozilla::dom::BrowsingContextGroup BrowsingContextGroup;
-  typedef mozilla::dom::Promise Promise;
+  using Document = mozilla::dom::Document;
+  using Element = mozilla::dom::Element;
+  using BrowserParent = mozilla::dom::BrowserParent;
+  using BrowserBridgeChild = mozilla::dom::BrowserBridgeChild;
+  using BrowsingContext = mozilla::dom::BrowsingContext;
+  using BrowsingContextGroup = mozilla::dom::BrowsingContextGroup;
+  using Promise = mozilla::dom::Promise;
 
  public:
   // Called by Frame Elements to create a new FrameLoader.
@@ -118,6 +123,7 @@ class nsFrameLoader final : public nsStubMutationObserver,
   // FrameLoaders.
   static already_AddRefed<nsFrameLoader> Recreate(
       Element* aOwner, BrowsingContext* aContext, BrowsingContextGroup* aGroup,
+      const mozilla::dom::NavigationIsolationOptions& aRemotenessOptions,
       bool aIsRemote, bool aNetworkCreated, bool aPreserveContext);
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_FRAMELOADER_IID)
@@ -131,13 +137,15 @@ class nsFrameLoader final : public nsStubMutationObserver,
   void StartDestroy(bool aForProcessSwitch);
   void DestroyDocShell();
   void DestroyComplete();
-  nsIDocShell* GetExistingDocShell() const { return mDocShell; }
+  nsDocShell* GetExistingDocShell() const { return mDocShell; }
   mozilla::dom::InProcessBrowserChildMessageManager*
   GetBrowserChildMessageManager() const {
     return mChildMessageManager;
   }
   nsresult UpdatePositionAndSize(nsSubDocumentFrame* aIFrame);
   void SendIsUnderHiddenEmbedderElement(bool aIsUnderHiddenEmbedderElement);
+  void PropagateIsUnderHiddenEmbedderElement(
+      bool aIsUnderHiddenEmbedderElement);
 
   // When creating a nsFrameLoaderOwner which is a static clone, a
   // `nsFrameLoader` is not immediately attached to it. Instead, it is added to
@@ -146,12 +154,12 @@ class nsFrameLoader final : public nsStubMutationObserver,
   // After the parent document has been fully cloned, a new frameloader will be
   // created for the cloned iframe, and `FinishStaticClone` will be called on
   // it, which will clone the inner document of the source nsFrameLoader.
-  //
-  // The `aCloneDocShell` and `aCloneDocument` outparameters will be filled with
-  // the values from the newly cloned subframe.
   nsresult FinishStaticClone(nsFrameLoader* aStaticCloneOf,
-                             nsIDocShell** aCloneDocShell,
-                             Document** aCloneDocument);
+                             nsIPrintSettings* aPrintSettings,
+                             bool* aOutHasInProcessPrintCallbacks);
+
+  nsresult DoRemoteStaticClone(nsFrameLoader* aStaticCloneOf,
+                               nsIPrintSettings* aPrintSettings);
 
   // WebIDL methods
 
@@ -207,27 +215,22 @@ class nsFrameLoader final : public nsStubMutationObserver,
 
   void DeactivateRemoteFrame(mozilla::ErrorResult& aRv);
 
-  void SendCrossProcessMouseEvent(const nsAString& aType, float aX, float aY,
-                                  int32_t aButton, int32_t aClickCount,
-                                  int32_t aModifiers,
-                                  mozilla::ErrorResult& aRv);
-
   void ActivateFrameEvent(const nsAString& aType, bool aCapture,
                           mozilla::ErrorResult& aRv);
 
-  void RequestNotifyAfterRemotePaint();
-
   void RequestUpdatePosition(mozilla::ErrorResult& aRv);
 
-  bool RequestTabStateFlush(uint32_t aFlushId, bool aIsFinal = false);
+  already_AddRefed<Promise> RequestTabStateFlush(mozilla::ErrorResult& aRv);
 
   void RequestEpochUpdate(uint32_t aEpoch);
 
-  void RequestSHistoryUpdate(bool aImmediately = false);
+  void RequestSHistoryUpdate();
 
-  already_AddRefed<Promise> Print(uint64_t aOuterWindowID,
-                                  nsIPrintSettings* aPrintSettings,
-                                  mozilla::ErrorResult& aRv);
+  already_AddRefed<Promise> PrintPreview(nsIPrintSettings* aPrintSettings,
+                                         BrowsingContext* aSourceBC,
+                                         mozilla::ErrorResult& aRv);
+
+  void ExitPrintPreview();
 
   void StartPersistence(BrowsingContext* aContext,
                         nsIWebBrowserPersistDocumentReceiver* aRecv,
@@ -257,7 +260,7 @@ class nsFrameLoader final : public nsStubMutationObserver,
    */
   bool OwnerIsMozBrowserFrame();
 
-  nsIContent* GetParentObject() const { return mOwnerContent; }
+  nsIContent* GetParentObject() const;
 
   /**
    * MessageManagerCallback methods that we override.
@@ -308,17 +311,13 @@ class nsFrameLoader final : public nsStubMutationObserver,
    * Return the primary frame for our owning content, or null if it
    * can't be found.
    */
-  nsIFrame* GetPrimaryFrameOfOwningContent() const {
-    return mOwnerContent ? mOwnerContent->GetPrimaryFrame() : nullptr;
-  }
+  nsIFrame* GetPrimaryFrameOfOwningContent() const;
 
   /**
    * Return the document that owns this, or null if we don't have
    * an owner.
    */
-  Document* GetOwnerDoc() const {
-    return mOwnerContent ? mOwnerContent->OwnerDoc() : nullptr;
-  }
+  Document* GetOwnerDoc() const;
 
   /**
    * Returns whether this frame is a remote frame.
@@ -409,6 +408,7 @@ class nsFrameLoader final : public nsStubMutationObserver,
                            mozilla::dom::ContentParent* aContentParent);
 
   void MaybeNotifyCrashed(mozilla::dom::BrowsingContext* aBrowsingContext,
+                          mozilla::dom::ContentParentId aChildID,
                           mozilla::ipc::MessageChannel* aChannel);
 
   void FireErrorEvent();
@@ -486,6 +486,8 @@ class nsFrameLoader final : public nsStubMutationObserver,
   // browsing context for a newly opened tab/window is ready.
   void InvokeBrowsingContextReadyCallback();
 
+  void RequestFinalTabStateFlush();
+
   RefPtr<mozilla::dom::BrowsingContext> mPendingBrowsingContext;
   nsCOMPtr<nsIURI> mURIToLoad;
   nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
@@ -522,8 +524,11 @@ class nsFrameLoader final : public nsStubMutationObserver,
 
   RefPtr<mozilla::dom::TabListener> mSessionStoreListener;
 
+  RefPtr<mozilla::dom::SessionStoreChangeListener> mSessionStoreChangeListener;
+
   nsCString mRemoteType;
 
+  bool mInitialized : 1;
   bool mDepthTooGreat : 1;
   bool mIsTopLevelContent : 1;
   bool mDestroyCalled : 1;
@@ -550,10 +555,6 @@ class nsFrameLoader final : public nsStubMutationObserver,
   // When an out-of-process nsFrameLoader crashes, an event is fired on the
   // frame. To ensure this is only fired once, this bit is checked.
   bool mTabProcessCrashFired : 1;
-
-  // True when we're within the scope of MaybeNotifyCrashed, for detecting
-  // when we recurse back into ourselves from JS event listeners
-  bool mNotifyingCrash : 1;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsFrameLoader, NS_FRAMELOADER_IID)

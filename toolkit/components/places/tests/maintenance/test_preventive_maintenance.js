@@ -14,7 +14,6 @@
 var hs = PlacesUtils.history;
 var bs = PlacesUtils.bookmarks;
 var ts = PlacesUtils.tagging;
-var as = PlacesUtils.annotations;
 var fs = PlacesUtils.favicons;
 
 var mDBConn = hs.DBConnection;
@@ -41,6 +40,15 @@ async function cleanDatabase() {
     "DELETE FROM moz_bookmarks WHERE id > " + defaultBookmarksMaxId
   );
   mDBConn.executeSimpleSQL("DELETE FROM moz_bookmarks_deleted");
+  mDBConn.executeSimpleSQL("DELETE FROM moz_places_metadata_search_queries");
+  mDBConn.executeSimpleSQL("DELETE FROM moz_places_metadata_snapshots");
+  mDBConn.executeSimpleSQL("DELETE FROM moz_places_metadata_snapshots_extra");
+  mDBConn.executeSimpleSQL("DELETE FROM moz_places_metadata_snapshots_groups");
+  mDBConn.executeSimpleSQL(
+    "DELETE FROM moz_places_metadata_groups_to_snapshots"
+  );
+  mDBConn.executeSimpleSQL("DELETE FROM moz_session_metadata");
+  mDBConn.executeSimpleSQL("DELETE FROM moz_session_to_places");
 }
 
 function addPlace(
@@ -2130,6 +2138,33 @@ tests.push({
       url: "http://l4.moz.org/",
       keyword: "kw",
     });
+    await PlacesUtils.withConnectionWrapper(
+      "add snapshots and sessions",
+      async db => {
+        await db.execute(
+          `
+           INSERT INTO moz_places_metadata_snapshots
+             (place_id, first_interaction_at, last_interaction_at, document_type, created_at, user_persisted)
+           VALUES ((SELECT id FROM moz_places WHERE url_hash = hash(:url) AND url = :url), 0, 0, "MEDIA", 0, 0)
+          `,
+          { url: "http://l4.moz.org/" }
+        );
+        await db.execute(
+          `INSERT INTO moz_session_metadata (guid, last_saved_at)
+           VALUES ("guid", 0)`
+        );
+        await db.execute(
+          `
+           INSERT INTO moz_session_to_places (session_id, place_id, position)
+           VALUES (
+             (SELECT id FROM moz_session_metadata WHERE guid = "guid"),
+             (SELECT id FROM moz_places WHERE url_hash = hash(:url) AND url = :url),
+             1
+           )`,
+          { url: "http://l4.moz.org/" }
+        );
+      }
+    );
     Assert.equal(await this._getForeignCount(), 2);
   },
 
@@ -2144,7 +2179,7 @@ tests.push({
   },
 
   async check() {
-    Assert.equal(await this._getForeignCount(), 2);
+    Assert.equal(await this._getForeignCount(), 4);
   },
 });
 
@@ -2762,7 +2797,6 @@ tests.push({
       url: this._uri2,
       annotations: new Map([["anno", "anno"]]),
     });
-    as.setItemAnnotation(this._bookmarkId, "anno", "anno", 0, as.EXPIRE_NEVER);
   },
 
   async check() {
@@ -2790,7 +2824,6 @@ tests.push({
       includeAnnotations: true,
     });
     Assert.equal(pageInfo.annotations.get("anno"), "anno");
-    Assert.equal(as.getItemAnnotation(this._bookmarkId, "anno"), "anno");
 
     await new Promise(resolve => {
       fs.getFaviconURLForPage(this._uri2, aFaviconURI => {
@@ -2841,4 +2874,21 @@ add_task(async function test_preventive_maintenance() {
   Assert.equal(bs.getFolderIdForItem(bs.tagsFolder), bs.placesRoot);
   Assert.equal(bs.getFolderIdForItem(gUnfiledFolderId), bs.placesRoot);
   Assert.equal(bs.getFolderIdForItem(bs.toolbarFolder), bs.placesRoot);
+});
+
+// ------------------------------------------------------------------------------
+
+add_task(async function test_idle_daily() {
+  const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+  const sandbox = sinon.createSandbox();
+  sandbox.stub(PlacesDBUtils, "maintenanceOnIdle");
+  Services.prefs.clearUserPref("places.database.lastMaintenance");
+  Cc["@mozilla.org/places/databaseUtilsIdleMaintenance;1"]
+    .getService(Ci.nsIObserver)
+    .observe(null, "idle-daily", "");
+  Assert.ok(
+    PlacesDBUtils.maintenanceOnIdle.calledOnce,
+    "maintenanceOnIdle was invoked"
+  );
+  sandbox.restore();
 });

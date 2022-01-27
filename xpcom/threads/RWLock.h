@@ -10,8 +10,8 @@
 #define mozilla_RWLock_h
 
 #include "mozilla/Assertions.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/BlockingResourceBase.h"
-#include "mozilla/GuardObjects.h"
 
 #ifndef XP_WIN
 #  include <pthread.h>
@@ -55,20 +55,26 @@ class RWLock : public BlockingResourceBase {
 
 #ifdef DEBUG
   bool LockedForWritingByCurrentThread();
+  bool TryReadLock();
   void ReadLock();
   void ReadUnlock();
+  bool TryWriteLock();
   void WriteLock();
   void WriteUnlock();
 #else
+  bool TryReadLock() { return TryReadLockInternal(); }
   void ReadLock() { ReadLockInternal(); }
   void ReadUnlock() { ReadUnlockInternal(); }
+  bool TryWriteLock() { return TryWriteLockInternal(); }
   void WriteLock() { WriteLockInternal(); }
   void WriteUnlock() { WriteUnlockInternal(); }
 #endif
 
  private:
+  bool TryReadLockInternal();
   void ReadLockInternal();
   void ReadUnlockInternal();
+  bool TryWriteLockInternal();
   void WriteLockInternal();
   void WriteUnlockInternal();
 
@@ -91,11 +97,31 @@ class RWLock : public BlockingResourceBase {
 };
 
 template <typename T>
+class MOZ_RAII BaseAutoTryReadLock {
+ public:
+  explicit BaseAutoTryReadLock(T& aLock)
+      : mLock(aLock.TryReadLock() ? &aLock : nullptr) {}
+
+  ~BaseAutoTryReadLock() {
+    if (mLock) {
+      mLock->ReadUnlock();
+    }
+  }
+
+  explicit operator bool() const { return mLock; }
+
+ private:
+  BaseAutoTryReadLock() = delete;
+  BaseAutoTryReadLock(const BaseAutoTryReadLock&) = delete;
+  BaseAutoTryReadLock& operator=(const BaseAutoTryReadLock&) = delete;
+
+  T* mLock;
+};
+
+template <typename T>
 class MOZ_RAII BaseAutoReadLock {
  public:
-  explicit BaseAutoReadLock(T& aLock MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : mLock(&aLock) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+  explicit BaseAutoReadLock(T& aLock) : mLock(&aLock) {
     MOZ_ASSERT(mLock, "null lock");
     mLock->ReadLock();
   }
@@ -108,15 +134,34 @@ class MOZ_RAII BaseAutoReadLock {
   BaseAutoReadLock& operator=(const BaseAutoReadLock&) = delete;
 
   T* mLock;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
+};
+
+template <typename T>
+class MOZ_RAII BaseAutoTryWriteLock {
+ public:
+  explicit BaseAutoTryWriteLock(T& aLock)
+      : mLock(aLock.TryWriteLock() ? &aLock : nullptr) {}
+
+  ~BaseAutoTryWriteLock() {
+    if (mLock) {
+      mLock->WriteUnlock();
+    }
+  }
+
+  explicit operator bool() const { return mLock; }
+
+ private:
+  BaseAutoTryWriteLock() = delete;
+  BaseAutoTryWriteLock(const BaseAutoTryWriteLock&) = delete;
+  BaseAutoTryWriteLock& operator=(const BaseAutoTryWriteLock&) = delete;
+
+  T* mLock;
 };
 
 template <typename T>
 class MOZ_RAII BaseAutoWriteLock final {
  public:
-  explicit BaseAutoWriteLock(T& aLock MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : mLock(&aLock) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+  explicit BaseAutoWriteLock(T& aLock) : mLock(&aLock) {
     MOZ_ASSERT(mLock, "null lock");
     mLock->WriteLock();
   }
@@ -129,12 +174,19 @@ class MOZ_RAII BaseAutoWriteLock final {
   BaseAutoWriteLock& operator=(const BaseAutoWriteLock&) = delete;
 
   T* mLock;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
+
+// Read try-lock and unlock a RWLock with RAII semantics.  Much preferred to
+// bare calls to TryReadLock() and ReadUnlock().
+typedef BaseAutoTryReadLock<RWLock> AutoTryReadLock;
 
 // Read lock and unlock a RWLock with RAII semantics.  Much preferred to bare
 // calls to ReadLock() and ReadUnlock().
 typedef BaseAutoReadLock<RWLock> AutoReadLock;
+
+// Write try-lock and unlock a RWLock with RAII semantics.  Much preferred to
+// bare calls to TryWriteLock() and WriteUnlock().
+typedef BaseAutoTryWriteLock<RWLock> AutoTryWriteLock;
 
 // Write lock and unlock a RWLock with RAII semantics.  Much preferred to bare
 // calls to WriteLock() and WriteUnlock().
@@ -158,8 +210,10 @@ class StaticRWLock {
   StaticRWLock() { MOZ_ASSERT(!mLock); }
 #endif
 
+  bool TryReadLock() { return Lock()->TryReadLock(); }
   void ReadLock() { Lock()->ReadLock(); }
   void ReadUnlock() { Lock()->ReadUnlock(); }
+  bool TryWriteLock() { return Lock()->TryWriteLock(); }
   void WriteLock() { Lock()->WriteLock(); }
   void WriteUnlock() { Lock()->WriteUnlock(); }
 
@@ -193,7 +247,9 @@ class StaticRWLock {
   static void operator delete(void*);
 };
 
+typedef BaseAutoTryReadLock<StaticRWLock> StaticAutoTryReadLock;
 typedef BaseAutoReadLock<StaticRWLock> StaticAutoReadLock;
+typedef BaseAutoTryWriteLock<StaticRWLock> StaticAutoTryWriteLock;
 typedef BaseAutoWriteLock<StaticRWLock> StaticAutoWriteLock;
 
 }  // namespace detail

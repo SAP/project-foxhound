@@ -94,7 +94,7 @@ NS_IMETHODIMP
 BaseWebSocketChannel::GetNotificationCallbacks(
     nsIInterfaceRequestor** aNotificationCallbacks) {
   LOG(("BaseWebSocketChannel::GetNotificationCallbacks() %p\n", this));
-  NS_IF_ADDREF(*aNotificationCallbacks = mCallbacks);
+  *aNotificationCallbacks = do_AddRef(mCallbacks).take();
   return NS_OK;
 }
 
@@ -109,7 +109,7 @@ BaseWebSocketChannel::SetNotificationCallbacks(
 NS_IMETHODIMP
 BaseWebSocketChannel::GetLoadGroup(nsILoadGroup** aLoadGroup) {
   LOG(("BaseWebSocketChannel::GetLoadGroup() %p\n", this));
-  NS_IF_ADDREF(*aLoadGroup = mLoadGroup);
+  *aLoadGroup = do_AddRef(mLoadGroup).take();
   return NS_OK;
 }
 
@@ -129,7 +129,7 @@ BaseWebSocketChannel::SetLoadInfo(nsILoadInfo* aLoadInfo) {
 
 NS_IMETHODIMP
 BaseWebSocketChannel::GetLoadInfo(nsILoadInfo** aLoadInfo) {
-  NS_IF_ADDREF(*aLoadInfo = mLoadInfo);
+  *aLoadInfo = do_AddRef(mLoadInfo).take();
   return NS_OK;
 }
 
@@ -205,7 +205,7 @@ BaseWebSocketChannel::InitLoadInfoNative(
     nsINode* aLoadingNode, nsIPrincipal* aLoadingPrincipal,
     nsIPrincipal* aTriggeringPrincipal,
     nsICookieJarSettings* aCookieJarSettings, uint32_t aSecurityFlags,
-    uint32_t aContentPolicyType, uint32_t aSandboxFlags) {
+    nsContentPolicyType aContentPolicyType, uint32_t aSandboxFlags) {
   mLoadInfo = new LoadInfo(
       aLoadingPrincipal, aTriggeringPrincipal, aLoadingNode, aSecurityFlags,
       aContentPolicyType, Maybe<mozilla::dom::ClientInfo>(),
@@ -221,7 +221,7 @@ BaseWebSocketChannel::InitLoadInfo(nsINode* aLoadingNode,
                                    nsIPrincipal* aLoadingPrincipal,
                                    nsIPrincipal* aTriggeringPrincipal,
                                    uint32_t aSecurityFlags,
-                                   uint32_t aContentPolicyType) {
+                                   nsContentPolicyType aContentPolicyType) {
   return InitLoadInfoNative(aLoadingNode, aLoadingPrincipal,
                             aTriggeringPrincipal, nullptr, aSecurityFlags,
                             aContentPolicyType, 0);
@@ -267,10 +267,11 @@ NS_IMETHODIMP
 BaseWebSocketChannel::GetScheme(nsACString& aScheme) {
   LOG(("BaseWebSocketChannel::GetScheme() %p\n", this));
 
-  if (mEncrypted)
+  if (mEncrypted) {
     aScheme.AssignLiteral("wss");
-  else
+  } else {
     aScheme.AssignLiteral("ws");
+  }
   return NS_OK;
 }
 
@@ -278,10 +279,11 @@ NS_IMETHODIMP
 BaseWebSocketChannel::GetDefaultPort(int32_t* aDefaultPort) {
   LOG(("BaseWebSocketChannel::GetDefaultPort() %p\n", this));
 
-  if (mEncrypted)
+  if (mEncrypted) {
     *aDefaultPort = kDefaultWSSPort;
-  else
+  } else {
     *aDefaultPort = kDefaultWSPort;
+  }
   return NS_OK;
 }
 

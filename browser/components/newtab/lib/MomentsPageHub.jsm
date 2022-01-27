@@ -29,16 +29,22 @@ class _MomentsPageHub {
     this.id = "moments-page-hub";
     this.state = {};
     this.checkHomepageOverridePref = this.checkHomepageOverridePref.bind(this);
+    this._initialized = false;
   }
 
   async init(
     waitForInitialized,
-    { handleMessageRequest, addImpression, blockMessageById, dispatch }
+    { handleMessageRequest, addImpression, blockMessageById, sendTelemetry }
   ) {
+    if (this._initialized) {
+      return;
+    }
+
+    this._initialized = true;
     this._handleMessageRequest = handleMessageRequest;
     this._addImpression = addImpression;
     this._blockMessageById = blockMessageById;
-    this._dispatch = dispatch;
+    this._sendTelemetry = sendTelemetry;
 
     // Need to wait for ASRouter to initialize before trying to fetch messages
     await waitForInitialized;
@@ -55,15 +61,15 @@ class _MomentsPageHub {
     this.state = { _intervalId };
   }
 
-  _sendTelemetry(ping) {
-    this._dispatch({
+  _sendPing(ping) {
+    this._sendTelemetry({
       type: "MOMENTS_PAGE_TELEMETRY",
       data: { action: "moments_user_event", ...ping },
     });
   }
 
   sendUserEventTelemetry(message) {
-    this._sendTelemetry({
+    this._sendPing({
       message_id: message.id,
       bucket_id: message.id,
       event: "MOMENTS_PAGE_SET",
@@ -158,6 +164,7 @@ class _MomentsPageHub {
   uninit() {
     clearInterval(this.state._intervalId);
     this.state = {};
+    this._initialized = false;
   }
 }
 

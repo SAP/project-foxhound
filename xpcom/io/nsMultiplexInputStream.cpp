@@ -774,7 +774,7 @@ nsMultiplexInputStream::CloseWithStatus(nsresult aStatus) { return Close(); }
 
 // This class is used to inform nsMultiplexInputStream that it's time to execute
 // the asyncWait callback.
-class AsyncWaitRunnable final : public CancelableRunnable {
+class AsyncWaitRunnable final : public DiscardableRunnable {
   RefPtr<nsMultiplexInputStream> mStream;
 
  public:
@@ -796,7 +796,7 @@ class AsyncWaitRunnable final : public CancelableRunnable {
 
  private:
   explicit AsyncWaitRunnable(nsMultiplexInputStream* aStream)
-      : CancelableRunnable("AsyncWaitRunnable"), mStream(aStream) {
+      : DiscardableRunnable("AsyncWaitRunnable"), mStream(aStream) {
     MOZ_ASSERT(aStream);
   }
 };
@@ -982,11 +982,10 @@ void nsMultiplexInputStream::SerializeInternal(
     streams.SetCapacity(streamCount);
     for (uint32_t index = 0; index < streamCount; index++) {
       uint32_t sizeUsed = 0;
-      InputStreamParams childStreamParams;
       InputStreamHelper::SerializeInputStream(
-          mStreams[index].mOriginalStream, childStreamParams, aFileDescriptors,
-          aDelayedStart, maxSize.value(), &sizeUsed, aManager);
-      streams.AppendElement(childStreamParams);
+          mStreams[index].mOriginalStream, *streams.AppendElement(),
+          aFileDescriptors, aDelayedStart, maxSize.value(), &sizeUsed,
+          aManager);
 
       MOZ_ASSERT(maxSize.value() >= sizeUsed);
 
@@ -1002,7 +1001,7 @@ void nsMultiplexInputStream::SerializeInternal(
   params.status() = mStatus;
   params.startedReadingCurrent() = mStartedReadingCurrent;
 
-  aParams = params;
+  aParams = std::move(params);
 
   MOZ_ASSERT(aSizeUsed);
   *aSizeUsed = totalSizeUsed.value();

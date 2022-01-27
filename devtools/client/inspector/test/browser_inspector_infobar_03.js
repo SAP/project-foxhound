@@ -9,7 +9,9 @@
 const TEST_URI = URL_ROOT + "doc_inspector_infobar_03.html";
 
 add_task(async function() {
-  const { inspector, testActor } = await openInspectorForURL(TEST_URI);
+  const { inspector, highlighterTestFront } = await openInspectorForURL(
+    TEST_URI
+  );
 
   const testData = {
     selector: "body",
@@ -17,15 +19,15 @@ add_task(async function() {
     style: "position:fixed",
   };
 
-  await testPositionAndStyle(testData, inspector, testActor);
+  await testPositionAndStyle(testData, inspector, highlighterTestFront);
 });
 
-async function testPositionAndStyle(test, inspector, testActor) {
+async function testPositionAndStyle(test, inspector, highlighterTestFront) {
   info("Testing " + test.selector);
 
   await selectAndHighlightNode(test.selector, inspector);
 
-  let style = await testActor.getHighlighterNodeAttribute(
+  let style = await highlighterTestFront.getHighlighterNodeAttribute(
     "box-model-infobar-container",
     "style"
   );
@@ -36,9 +38,15 @@ async function testPositionAndStyle(test, inspector, testActor) {
     "Infobar shows on top of the page when page isn't scrolled"
   );
 
-  await testActor.scrollWindow(0, 500);
+  info("Scroll down");
+  SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+    return new Promise(resolve => {
+      content.addEventListener("scroll", () => resolve(), { once: true });
+      content.scrollTo({ top: 500 });
+    });
+  });
 
-  style = await testActor.getHighlighterNodeAttribute(
+  style = await highlighterTestFront.getHighlighterNodeAttribute(
     "box-model-infobar-container",
     "style"
   );

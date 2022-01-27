@@ -5,6 +5,7 @@ description:  Firefox is a powerful, extensible web browser with support for mod
 confinement: strict
 grade: stable
 base: core18
+compression: lzo
 
 apps:
   firefox:
@@ -13,17 +14,18 @@ apps:
     desktop: distribution/firefox.desktop
     extensions: [gnome-3-34]
     environment:
-      DISABLE_WAYLAND: 1
       HOME: "$SNAP_USER_COMMON"
       GTK_USE_PORTAL: 1
     slots:
       - dbus-daemon
+      - mpris
     plugs:
       - avahi-observe
       - browser-sandbox
       - camera
       - cups-control
       - gsettings
+      - hardware-observe
       - home
       - joystick
       - network
@@ -32,6 +34,7 @@ apps:
       - pulseaudio
       - removable-media
       - screen-inhibit-control
+      - system-packages-doc
       - u2f-devices
       - unity7
       - upower-observe
@@ -40,6 +43,13 @@ plugs:
   browser-sandbox:
     interface: browser-support
     allow-sandbox: true
+  etc-firefox-policies:
+    interface: system-files
+    read: [/etc/firefox/policies]
+
+layout:
+  /usr/share/libdrm:
+    bind: $SNAP/gnome-platform/usr/share/libdrm
 
 parts:
   firefox:
@@ -49,6 +59,7 @@ parts:
       - libxt6
       - libdbus-glib-1-2
       - libasound2
+      - libpci3
       - libpulse0
       - libgl1-mesa-dri
       - libgl1-mesa-glx

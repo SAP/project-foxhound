@@ -17,7 +17,9 @@ typedef Status __StatusTmp;
 typedef __StatusTmp Status;
 #endif
 
+class nsIDNSHTTPSSVCRecord;
 class nsIInterfaceRequestor;
+class nsISVCBRecord;
 class nsITransport;
 class nsIRequestContext;
 
@@ -176,6 +178,7 @@ class nsAHttpTransaction : public nsSupportsWeakReference {
   }
 
   virtual void DisableSpdy() {}
+  virtual void DisableHttp3(bool aAllowRetryHTTPSRR) {}
   virtual void MakeNonSticky() {}
   virtual void ReuseConnectionOnRestartOK(bool) {}
 
@@ -187,8 +190,6 @@ class nsAHttpTransaction : public nsSupportsWeakReference {
   // want to use the alt-svc on the restart.
   virtual void DoNotRemoveAltSvc() {}
 
-  // Returns true if early-data or fast open is possible.
-  [[nodiscard]] virtual bool CanDo0RTT() { return false; }
   // Returns true if early-data is possible and transaction will remember
   // that it is in 0RTT mode (to know should it rewide transaction or not
   // in the case of an error).
@@ -208,18 +209,18 @@ class nsAHttpTransaction : public nsSupportsWeakReference {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
-  [[nodiscard]] virtual nsresult RestartOnFastOpenError() {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-
-  virtual uint64_t TopLevelOuterContentWindowId() {
+  virtual uint64_t TopBrowsingContextId() {
     MOZ_ASSERT(false);
     return 0;
   }
 
-  virtual void SetFastOpenStatus(uint8_t aStatus) {}
-
   virtual void OnProxyConnectComplete(int32_t aResponseCode) {}
+
+  virtual nsresult FetchHTTPSRR() { return NS_ERROR_NOT_IMPLEMENTED; }
+  virtual nsresult OnHTTPSRRAvailable(nsIDNSHTTPSSVCRecord* aHTTPSSVCRecord,
+                                      nsISVCBRecord* aHighestPriorityRecord) {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsAHttpTransaction, NS_AHTTPTRANSACTION_IID)
@@ -250,6 +251,8 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsAHttpTransaction, NS_AHTTPTRANSACTION_IID)
 //-----------------------------------------------------------------------------
 
 class nsAHttpSegmentReader {
+  NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
+
  public:
   // any returned failure code stops segment iteration
   [[nodiscard]] virtual nsresult OnReadSegment(const char* segment,

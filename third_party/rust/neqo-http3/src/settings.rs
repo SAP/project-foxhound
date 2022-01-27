@@ -4,10 +4,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use crate::{Error, Res};
+#![allow(clippy::module_name_repetitions)]
+
+use crate::{Error, Http3Parameters, Res};
 use neqo_common::{Decoder, Encoder};
 use neqo_crypto::{ZeroRttCheckResult, ZeroRttChecker};
-use neqo_qpack::QpackSettings;
 use std::ops::Deref;
 
 type SettingsType = u64;
@@ -19,23 +20,29 @@ const SETTINGS_ZERO_RTT_VERSION: u64 = 1;
 const SETTINGS_MAX_HEADER_LIST_SIZE: SettingsType = 0x6;
 const SETTINGS_QPACK_MAX_TABLE_CAPACITY: SettingsType = 0x1;
 const SETTINGS_QPACK_BLOCKED_STREAMS: SettingsType = 0x7;
+const SETTINGS_ENABLE_WEB_TRANSPORT: SettingsType = 0x2b60_3742;
+
+pub const H3_RESERVED_SETTINGS: &[SettingsType] = &[0x2, 0x3, 0x4, 0x5];
 
 #[derive(Clone, PartialEq, Debug, Copy)]
-pub(crate) enum HSettingType {
+pub enum HSettingType {
     MaxHeaderListSize,
     MaxTableCapacity,
     BlockedStreams,
+    EnableWebTransport,
 }
 
 fn hsetting_default(setting_type: HSettingType) -> u64 {
     match setting_type {
         HSettingType::MaxHeaderListSize => 1 << 62,
-        HSettingType::MaxTableCapacity | HSettingType::BlockedStreams => 0,
+        HSettingType::MaxTableCapacity
+        | HSettingType::BlockedStreams
+        | HSettingType::EnableWebTransport => 0,
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct HSetting {
+pub struct HSetting {
     pub setting_type: HSettingType,
     pub value: u64,
 }
@@ -50,7 +57,7 @@ impl HSetting {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) struct HSettings {
+pub struct HSettings {
     settings: Vec<HSetting>,
 }
 
@@ -84,6 +91,10 @@ impl HSettings {
                         enc_inner.encode_varint(SETTINGS_QPACK_BLOCKED_STREAMS as u64);
                         enc_inner.encode_varint(iter.value);
                     }
+                    HSettingType::EnableWebTransport => {
+                        enc_inner.encode_varint(SETTINGS_ENABLE_WEB_TRANSPORT as u64);
+                        enc_inner.encode_varint(iter.value);
+                    }
                 }
             }
         });
@@ -94,6 +105,11 @@ impl HSettings {
             let t = dec.decode_varint();
             let v = dec.decode_varint();
 
+            if let Some(settings_type) = t {
+                if H3_RESERVED_SETTINGS.contains(&settings_type) {
+                    return Err(Error::HttpSettings);
+                }
+            }
             match (t, v) {
                 (Some(SETTINGS_MAX_HEADER_LIST_SIZE), Some(value)) => self
                     .settings
@@ -104,6 +120,9 @@ impl HSettings {
                 (Some(SETTINGS_QPACK_BLOCKED_STREAMS), Some(value)) => self
                     .settings
                     .push(HSetting::new(HSettingType::BlockedStreams, value)),
+                (Some(SETTINGS_ENABLE_WEB_TRANSPORT), Some(value)) => self
+                    .settings
+                    .push(HSetting::new(HSettingType::EnableWebTransport, value)),
                 // other supported settings here
                 (Some(_), Some(_)) => {} // ignore unknown setting, it is fine.
                 _ => return Err(Error::NotEnoughData),
@@ -120,25 +139,50 @@ impl Deref for HSettings {
     }
 }
 
+impl From<&Http3Parameters> for HSettings {
+    fn from(conn_param: &Http3Parameters) -> Self {
+        Self {
+            settings: vec![
+                HSetting {
+                    setting_type: HSettingType::MaxTableCapacity,
+                    value: conn_param.get_max_table_size_decoder(),
+                },
+                HSetting {
+                    setting_type: HSettingType::BlockedStreams,
+                    value: u64::from(conn_param.get_max_blocked_streams()),
+                },
+                HSetting {
+                    setting_type: HSettingType::EnableWebTransport,
+                    value: u64::from(conn_param.get_webtransport()),
+                },
+            ],
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct HttpZeroRttChecker {
-    settings: QpackSettings,
+    settings: Http3Parameters,
 }
 
 impl HttpZeroRttChecker {
     /// Right now we only have QPACK settings, so that is all this takes.
-    pub fn new(settings: QpackSettings) -> Self {
+    #[must_use]
+    pub fn new(settings: Http3Parameters) -> Self {
         Self { settings }
     }
 
     /// Save the settings that matter for 0-RTT.
-    pub fn save(settings: QpackSettings) -> Vec<u8> {
+    #[must_use]
+    pub fn save(settings: &Http3Parameters) -> Vec<u8> {
         let mut enc = Encoder::new();
         enc.encode_varint(SETTINGS_ZERO_RTT_VERSION)
             .encode_varint(SETTINGS_QPACK_MAX_TABLE_CAPACITY)
-            .encode_varint(settings.max_table_size_decoder)
+            .encode_varint(settings.get_max_table_size_decoder())
             .encode_varint(SETTINGS_QPACK_BLOCKED_STREAMS)
-            .encode_varint(settings.max_blocked_streams);
+            .encode_varint(settings.get_max_blocked_streams())
+            .encode_varint(SETTINGS_ENABLE_WEB_TRANSPORT)
+            .encode_varint(settings.get_webtransport());
         enc.into()
     }
 }
@@ -163,10 +207,19 @@ impl ZeroRttChecker for HttpZeroRttChecker {
         }
         if settings.iter().all(|setting| match setting.setting_type {
             HSettingType::BlockedStreams => {
-                u64::from(self.settings.max_blocked_streams) >= setting.value
+                u64::from(self.settings.get_max_blocked_streams()) >= setting.value
             }
-            HSettingType::MaxTableCapacity => self.settings.max_table_size_decoder >= setting.value,
-            _ => true,
+            HSettingType::MaxTableCapacity => {
+                self.settings.get_max_table_size_decoder() >= setting.value
+            }
+            HSettingType::EnableWebTransport => {
+                if setting.value > 0 {
+                    return false;
+                }
+                let value = setting.value == 1;
+                self.settings.get_webtransport() || !value
+            }
+            HSettingType::MaxHeaderListSize => true,
         }) {
             ZeroRttCheckResult::Accept
         } else {

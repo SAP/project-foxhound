@@ -1,4 +1,4 @@
-// |reftest| skip async -- class-methods-private is not supported
+// |reftest| async
 // This file was procedurally generated from the following sources:
 // - src/async-generators/yield-promise-reject-next-for-await-of-sync-iterator.case
 // - src/async-generators/default/async-class-decl-private-method.template

@@ -24,9 +24,10 @@ use cranelift_codegen::entity::EntityRef;
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
 use cranelift_codegen::ir::{self, InstBuilder, SourceLoc};
 use cranelift_codegen::isa;
-use cranelift_wasm::{FuncIndex, GlobalIndex, SignatureIndex, TableIndex, WasmResult};
 
-use smallvec::SmallVec;
+use cranelift_wasm::{
+    wasmparser, FuncIndex, GlobalIndex, SignatureIndex, TableIndex, TypeIndex, WasmResult,
+};
 
 use crate::compile;
 use crate::utils::BasicError;
@@ -40,8 +41,8 @@ pub use self::low_level::CraneliftFuncCompileInput as FuncCompileInput;
 pub use self::low_level::CraneliftMetadataEntry as MetadataEntry;
 pub use self::low_level::CraneliftModuleEnvironment as LowLevelModuleEnvironment;
 pub use self::low_level::CraneliftStaticEnvironment as StaticEnvironment;
-pub use self::low_level::FuncTypeIdDescKind;
 pub use self::low_level::Trap;
+pub use self::low_level::TypeIdDescKind;
 
 mod low_level;
 
@@ -54,8 +55,9 @@ fn typecode_to_type(type_code: TypeCode) -> WasmResult<Option<ir::Type>> {
         TypeCode::I64 => Ok(Some(ir::types::I64)),
         TypeCode::F32 => Ok(Some(ir::types::F32)),
         TypeCode::F64 => Ok(Some(ir::types::F64)),
+        TypeCode::V128 => Ok(Some(ir::types::I8X16)),
         TypeCode::FuncRef => Ok(Some(REF_TYPE)),
-        TypeCode::AnyRef => Ok(Some(REF_TYPE)),
+        TypeCode::ExternRef => Ok(Some(REF_TYPE)),
         TypeCode::BlockVoid => Ok(None),
         _ => Err(BasicError::new(format!("unknown type code: {:?}", type_code)).into()),
     }
@@ -63,15 +65,8 @@ fn typecode_to_type(type_code: TypeCode) -> WasmResult<Option<ir::Type>> {
 
 /// Convert a non-void `TypeCode` into the equivalent Cranelift type.
 #[inline]
-fn typecode_to_nonvoid_type(type_code: TypeCode) -> WasmResult<ir::Type> {
+pub(crate) fn typecode_to_nonvoid_type(type_code: TypeCode) -> WasmResult<ir::Type> {
     Ok(typecode_to_type(type_code)?.expect("unexpected void type"))
-}
-
-/// Convert a `TypeCode` into the equivalent Cranelift type.
-#[inline]
-fn valtype_to_type(val_type: BD_ValType) -> WasmResult<ir::Type> {
-    let type_code = unsafe { low_level::env_unpack(val_type) };
-    typecode_to_nonvoid_type(type_code)
 }
 
 /// Convert a u32 into a `BD_SymbolicAddress`.
@@ -95,20 +90,32 @@ impl GlobalDesc {
         unsafe { low_level::global_isConstant(self.0) }
     }
 
+    pub fn is_mutable(self) -> bool {
+        unsafe { low_level::global_isMutable(self.0) }
+    }
+
     pub fn is_indirect(self) -> bool {
         unsafe { low_level::global_isIndirect(self.0) }
     }
 
-    /// Insert an instruction at `pos` that materialized the constant value.
+    /// Insert an instruction at `pos` that materializes the constant value.
     pub fn emit_constant(self, pos: &mut FuncCursor) -> WasmResult<ir::Value> {
         unsafe {
             let v = low_level::global_constantValue(self.0);
             match v.t {
-                TypeCode::I32 => Ok(pos.ins().iconst(ir::types::I32, i64::from(v.u.i32))),
-                TypeCode::I64 => Ok(pos.ins().iconst(ir::types::I64, v.u.i64)),
-                TypeCode::F32 => Ok(pos.ins().f32const(Ieee32::with_bits(v.u.i32 as u32))),
-                TypeCode::F64 => Ok(pos.ins().f64const(Ieee64::with_bits(v.u.i64 as u64))),
-                TypeCode::OptRef | TypeCode::AnyRef | TypeCode::FuncRef => {
+                TypeCode::I32 => Ok(pos.ins().iconst(ir::types::I32, i64::from(v.u.i32_))),
+                TypeCode::I64 => Ok(pos.ins().iconst(ir::types::I64, v.u.i64_)),
+                TypeCode::F32 => Ok(pos.ins().f32const(Ieee32::with_bits(v.u.i32_ as u32))),
+                TypeCode::F64 => Ok(pos.ins().f64const(Ieee64::with_bits(v.u.i64_ as u64))),
+                TypeCode::V128 => {
+                    let c = pos
+                        .func
+                        .dfg
+                        .constants
+                        .insert(ir::ConstantData::from(&v.u.v128 as &[u8]));
+                    Ok(pos.ins().vconst(ir::types::I8X16, c))
+                }
+                TypeCode::NullableRef | TypeCode::ExternRef | TypeCode::FuncRef => {
                     assert!(v.u.r as usize == 0);
                     Ok(pos.ins().null(REF_TYPE))
                 }
@@ -121,6 +128,10 @@ impl GlobalDesc {
     pub fn tls_offset(self) -> usize {
         unsafe { low_level::global_tlsOffset(self.0) }
     }
+
+    pub fn content_type(self) -> wasmparser::Type {
+        typecode_to_parser_type(unsafe { low_level::global_type(self.0) })
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -131,81 +142,169 @@ impl TableDesc {
     pub fn tls_offset(self) -> usize {
         unsafe { low_level::table_tlsOffset(self.0) }
     }
+
+    pub fn element_type(self) -> wasmparser::Type {
+        typecode_to_parser_type(unsafe { low_level::table_elementTypeCode(self.0) })
+    }
+
+    pub fn resizable_limits(self) -> wasmparser::ResizableLimits {
+        let initial = unsafe { low_level::table_initialLimit(self.0) };
+        let maximum = unsafe { low_level::table_initialLimit(self.0) };
+        let maximum = if maximum == u32::max_value() {
+            None
+        } else {
+            Some(maximum)
+        };
+        wasmparser::ResizableLimits { initial, maximum }
+    }
 }
 
-#[derive(Clone, Copy)]
-pub struct FuncTypeWithId(*const low_level::FuncTypeWithId);
+#[derive(Clone)]
+pub struct FuncType {
+    ptr: *const low_level::FuncType,
+    args: Vec<TypeCode>,
+    results: Vec<TypeCode>,
+}
 
-impl FuncTypeWithId {
-    pub fn args<'a>(self) -> WasmResult<SmallVec<[ir::Type; 4]>> {
-        let num_args = unsafe { low_level::funcType_numArgs(self.0) };
-        // The `funcType_args` callback crashes when there are no arguments. Also note that
-        // `slice::from_raw_parts()` requires a non-null pointer for empty slices.
-        // TODO: We should get all the parts of a signature in a single callback that returns a
-        // struct.
-        if num_args == 0 {
-            Ok(SmallVec::new())
-        } else {
-            let args = unsafe { slice::from_raw_parts(low_level::funcType_args(self.0), num_args) };
-            let mut ret = SmallVec::new();
-            for &arg in args {
-                ret.push(valtype_to_type(arg)?);
-            }
-            Ok(ret)
-        }
+impl FuncType {
+    /// Creates a new FuncType, caching all the values it requires.
+    pub(crate) fn new(ptr: *const low_level::FuncType) -> Self {
+        let num_args = unsafe { low_level::funcType_numArgs(ptr) };
+        let args = unsafe { slice::from_raw_parts(low_level::funcType_args(ptr), num_args) };
+        let args = args
+            .iter()
+            .map(|val_type| unsafe { low_level::env_unpack(*val_type) })
+            .collect();
+
+        let num_results = unsafe { low_level::funcType_numResults(ptr) };
+        let results =
+            unsafe { slice::from_raw_parts(low_level::funcType_results(ptr), num_results) };
+        let results = results
+            .iter()
+            .map(|val_type| unsafe { low_level::env_unpack(*val_type) })
+            .collect();
+
+        Self { ptr, args, results }
     }
 
-    pub fn results<'a>(self) -> WasmResult<Vec<ir::Type>> {
-        let num_results = unsafe { low_level::funcType_numResults(self.0) };
-        // The same comments as FuncTypeWithId::args apply here.
-        if num_results == 0 {
-            Ok(Vec::new())
-        } else {
-            let results =
-                unsafe { slice::from_raw_parts(low_level::funcType_results(self.0), num_results) };
-            let mut ret = Vec::new();
-            for &result in results {
-                ret.push(valtype_to_type(result)?);
-            }
-            Ok(ret)
-        }
+    pub(crate) fn args(&self) -> &[TypeCode] {
+        &self.args
+    }
+    pub(crate) fn results(&self) -> &[TypeCode] {
+        &self.results
+    }
+}
+
+#[derive(Clone)]
+pub struct TypeIdDesc {
+    ptr: *const low_level::TypeIdDesc,
+}
+
+impl TypeIdDesc {
+    pub(crate) fn new(ptr: *const low_level::TypeIdDesc) -> Self {
+        Self { ptr }
     }
 
-    pub fn id_kind(self) -> FuncTypeIdDescKind {
-        unsafe { low_level::funcType_idKind(self.0) }
+    pub(crate) fn id_kind(&self) -> TypeIdDescKind {
+        unsafe { low_level::funcType_idKind(self.ptr) }
     }
-
-    pub fn id_immediate(self) -> usize {
-        unsafe { low_level::funcType_idImmediate(self.0) }
+    pub(crate) fn id_immediate(&self) -> usize {
+        unsafe { low_level::funcType_idImmediate(self.ptr) }
     }
+    pub(crate) fn id_tls_offset(&self) -> usize {
+        unsafe { low_level::funcType_idTlsOffset(self.ptr) }
+    }
+}
 
-    pub fn id_tls_offset(self) -> usize {
-        unsafe { low_level::funcType_idTlsOffset(self.0) }
+fn typecode_to_parser_type(ty: TypeCode) -> wasmparser::Type {
+    match ty {
+        TypeCode::I32 => wasmparser::Type::I32,
+        TypeCode::I64 => wasmparser::Type::I64,
+        TypeCode::F32 => wasmparser::Type::F32,
+        TypeCode::F64 => wasmparser::Type::F64,
+        TypeCode::V128 => wasmparser::Type::V128,
+        TypeCode::FuncRef => wasmparser::Type::FuncRef,
+        TypeCode::ExternRef => wasmparser::Type::ExternRef,
+        TypeCode::BlockVoid => wasmparser::Type::EmptyBlockType,
+        _ => panic!("unknown type code: {:?}", ty),
+    }
+}
+
+impl wasmparser::WasmFuncType for FuncType {
+    fn len_inputs(&self) -> usize {
+        self.args.len()
+    }
+    fn len_outputs(&self) -> usize {
+        self.results.len()
+    }
+    fn input_at(&self, at: u32) -> Option<wasmparser::Type> {
+        self.args
+            .get(at as usize)
+            .map(|ty| typecode_to_parser_type(*ty))
+    }
+    fn output_at(&self, at: u32) -> Option<wasmparser::Type> {
+        self.results
+            .get(at as usize)
+            .map(|ty| typecode_to_parser_type(*ty))
     }
 }
 
 /// Thin wrapper for the CraneliftModuleEnvironment structure.
 
-#[derive(Clone, Copy)]
 pub struct ModuleEnvironment<'a> {
     env: &'a CraneliftModuleEnvironment,
+    /// The `WasmModuleResources` trait requires us to return a borrow to a `FuncType`, so we
+    /// eagerly construct these.
+    types: Vec<FuncType>,
+    /// Similar to `types`, we need to have a persistently-stored `FuncType` to return. The
+    /// types in `func_sigs` are a subset of those in `types`, but we don't want to have to
+    /// maintain an index from function to signature ID, so we store these directly.
+    func_sigs: Vec<FuncType>,
 }
 
 impl<'a> ModuleEnvironment<'a> {
-    pub fn new(env: &'a CraneliftModuleEnvironment) -> Self {
-        Self { env }
+    pub(crate) fn new(env: &'a CraneliftModuleEnvironment) -> Self {
+        let num_types = unsafe { low_level::env_num_types(env) };
+        let mut types = Vec::with_capacity(num_types);
+        for i in 0..num_types {
+            let t = FuncType::new(unsafe { low_level::env_signature(env, i) });
+            types.push(t);
+        }
+        let num_func_sigs = unsafe { low_level::env_num_funcs(env) };
+        let mut func_sigs = Vec::with_capacity(num_func_sigs);
+        for i in 0..num_func_sigs {
+            let t = FuncType::new(unsafe { low_level::env_func_sig(env, i) });
+            func_sigs.push(t);
+        }
+        Self {
+            env,
+            types,
+            func_sigs,
+        }
+    }
+    pub fn has_memory(&self) -> bool {
+        unsafe { low_level::env_has_memory(self.env) }
     }
     pub fn uses_shared_memory(&self) -> bool {
         unsafe { low_level::env_uses_shared_memory(self.env) }
     }
+    pub fn num_tables(&self) -> usize {
+        unsafe { low_level::env_num_tables(self.env) }
+    }
     pub fn num_types(&self) -> usize {
-        unsafe { low_level::env_num_types(self.env) }
+        self.types.len()
     }
-    pub fn type_(&self, index: usize) -> FuncTypeWithId {
-        FuncTypeWithId(unsafe { low_level::env_type(self.env, index) })
+    pub fn type_(&self, index: usize) -> FuncType {
+        self.types[index].clone()
     }
-    pub fn func_sig(&self, func_index: FuncIndex) -> FuncTypeWithId {
-        FuncTypeWithId(unsafe { low_level::env_func_sig(self.env, func_index.index()) })
+    pub fn num_func_sigs(&self) -> usize {
+        self.func_sigs.len()
+    }
+    pub fn func_sig(&self, func_index: FuncIndex) -> FuncType {
+        self.func_sigs[func_index.index()].clone()
+    }
+    pub fn func_sig_index(&self, func_index: FuncIndex) -> SignatureIndex {
+        SignatureIndex::new(unsafe { low_level::env_func_sig_index(self.env, func_index.index()) })
     }
     pub fn func_import_tls_offset(&self, func_index: FuncIndex) -> usize {
         unsafe { low_level::env_func_import_tls_offset(self.env, func_index.index()) }
@@ -213,8 +312,21 @@ impl<'a> ModuleEnvironment<'a> {
     pub fn func_is_import(&self, func_index: FuncIndex) -> bool {
         unsafe { low_level::env_func_is_import(self.env, func_index.index()) }
     }
-    pub fn signature(&self, sig_index: SignatureIndex) -> FuncTypeWithId {
-        FuncTypeWithId(unsafe { low_level::env_signature(self.env, sig_index.index()) })
+    pub fn signature(&self, type_index: TypeIndex) -> FuncType {
+        // This function takes `TypeIndex` rather than the `SignatureIndex` that one
+        // might expect.  Why?  https://github.com/bytecodealliance/wasmtime/pull/2115
+        // introduces two new types to the type section as viewed by Cranelift.  This is
+        // in support of the module linking proposal.  So now a type index (for
+        // Cranelift) can refer to a func, module, or instance type.  When the type index
+        // refers to a func type, it can also be used to get the signature index which
+        // can be used to get the ir::Signature for that func type.  For us, Cranelift is
+        // only used with function types so we can just assume type index and signature
+        // index are 1:1.  If and when we come to support the module linking proposal,
+        // this will need to be revisited.
+        FuncType::new(unsafe { low_level::env_signature(self.env, type_index.index()) })
+    }
+    pub fn signature_id(&self, type_index: TypeIndex) -> TypeIdDesc {
+        TypeIdDesc::new(unsafe { low_level::env_signature_id(self.env, type_index.index()) })
     }
     pub fn table(&self, table_index: TableIndex) -> TableDesc {
         TableDesc(unsafe { low_level::env_table(self.env, table_index.index()) })
@@ -222,8 +334,100 @@ impl<'a> ModuleEnvironment<'a> {
     pub fn global(&self, global_index: GlobalIndex) -> GlobalDesc {
         GlobalDesc(unsafe { low_level::env_global(self.env, global_index.index()) })
     }
-    pub fn min_memory_length(&self) -> i64 {
-        i64::from(self.env.min_memory_length)
+    pub fn min_memory_length(&self) -> u32 {
+        self.env.min_memory_length
+    }
+    pub fn max_memory_length(&self) -> Option<u32> {
+        let max = unsafe { low_level::env_max_memory(self.env) };
+        if max == u32::max_value() {
+            None
+        } else {
+            Some(max)
+        }
+    }
+}
+
+impl<'module> wasmparser::WasmModuleResources for ModuleEnvironment<'module> {
+    type FuncType = FuncType;
+    fn table_at(&self, at: u32) -> Option<wasmparser::TableType> {
+        if (at as usize) < self.num_tables() {
+            let desc = TableDesc(unsafe { low_level::env_table(self.env, at as usize) });
+            let element_type = desc.element_type();
+            let limits = desc.resizable_limits();
+            Some(wasmparser::TableType {
+                element_type,
+                limits,
+            })
+        } else {
+            None
+        }
+    }
+    fn memory_at(&self, at: u32) -> Option<wasmparser::MemoryType> {
+        if at == 0 {
+            let has_memory = self.has_memory();
+            if has_memory {
+                let shared = self.uses_shared_memory();
+                let initial = self.min_memory_length() as u32;
+                let maximum = self.max_memory_length();
+                Some(wasmparser::MemoryType::M32 {
+                    limits: wasmparser::ResizableLimits { initial, maximum },
+                    shared,
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+    fn event_at(&self, _at: u32) -> Option<&Self::FuncType> {
+        panic!("unexpected exception operation");
+    }
+    fn global_at(&self, at: u32) -> Option<wasmparser::GlobalType> {
+        let num_globals = unsafe { low_level::env_num_globals(self.env) };
+        if (at as usize) < num_globals {
+            let desc = self.global(GlobalIndex::new(at as usize));
+            let mutable = desc.is_mutable();
+            let content_type = desc.content_type();
+            Some(wasmparser::GlobalType {
+                mutable,
+                content_type,
+            })
+        } else {
+            None
+        }
+    }
+    fn func_type_at(&self, type_idx: u32) -> Option<&Self::FuncType> {
+        if (type_idx as usize) < self.types.len() {
+            Some(&self.types[type_idx as usize])
+        } else {
+            None
+        }
+    }
+    fn type_of_function(&self, func_idx: u32) -> Option<&Self::FuncType> {
+        if (func_idx as usize) < self.func_sigs.len() {
+            Some(&self.func_sigs[func_idx as usize])
+        } else {
+            None
+        }
+    }
+    fn element_type_at(&self, at: u32) -> Option<wasmparser::Type> {
+        let num_elems = self.element_count();
+        if at < num_elems {
+            let elem_type = unsafe { low_level::env_elem_typecode(self.env, at) };
+            Some(typecode_to_parser_type(elem_type))
+        } else {
+            None
+        }
+    }
+    fn element_count(&self) -> u32 {
+        unsafe { low_level::env_num_elems(self.env) as u32 }
+    }
+    fn data_count(&self) -> u32 {
+        unsafe { low_level::env_num_datas(self.env) as u32 }
+    }
+    fn is_function_referenced(&self, idx: u32) -> bool {
+        unsafe { low_level::env_is_func_valid_for_ref(self.env, idx) }
     }
 }
 
@@ -301,9 +505,9 @@ impl StaticEnvironment {
     /// Returns the default calling convention on this machine.
     pub fn call_conv(&self) -> isa::CallConv {
         if self.platform_is_windows {
-            isa::CallConv::BaldrdashWindows
+            unimplemented!("No FastCall variant of Baldrdash2020")
         } else {
-            isa::CallConv::BaldrdashSystemV
+            isa::CallConv::Baldrdash2020
         }
     }
 }
@@ -315,7 +519,7 @@ impl Stackmaps {
         &mut self,
         inbound_args_size: u32,
         offset: CodeOffset,
-        map: &cranelift_codegen::binemit::Stackmap,
+        map: &cranelift_codegen::binemit::StackMap,
     ) {
         unsafe {
             let bitslice = map.as_slice();

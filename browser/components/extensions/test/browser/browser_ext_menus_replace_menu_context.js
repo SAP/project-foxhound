@@ -6,7 +6,7 @@
 function getVisibleChildrenIds(menuElem) {
   return Array.from(menuElem.children)
     .filter(elem => !elem.hidden)
-    .map(elem => elem.id || elem.tagName);
+    .map(elem => (elem.tagName != "menuseparator" ? elem.id : elem.tagName));
 }
 
 function checkIsDefaultMenuItemVisible(visibleMenuItemIds) {

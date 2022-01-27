@@ -9,6 +9,8 @@ const WINDOW_OPEN_COUNT = "browser.engagement.window_open_event_count";
 const TOTAL_URI_COUNT = "browser.engagement.total_uri_count";
 const UNIQUE_DOMAINS_COUNT = "browser.engagement.unique_domains_count";
 const UNFILTERED_URI_COUNT = "browser.engagement.unfiltered_uri_count";
+const TOTAL_URI_COUNT_NORMAL_AND_PRIVATE_MODE =
+  "browser.engagement.total_uri_count_normal_and_private_mode";
 
 const TELEMETRY_SUBSESSION_TOPIC = "internal-telemetry-after-subsession-split";
 
@@ -24,75 +26,95 @@ const { SessionStore } = ChromeUtils.import(
   "resource:///modules/sessionstore/SessionStore.jsm"
 );
 
+// Glean's here on `window`, but eslint doesn't know that. bug 1715542.
+/* global Glean:false */
+
 // Reset internal URI counter in case URIs were opened by other tests.
 Services.obs.notifyObservers(null, TELEMETRY_SUBSESSION_TOPIC);
 
 /**
  * Get a snapshot of the scalars and check them against the provided values.
  */
-let checkScalars = countsObject => {
+let checkScalars = (countsObject, skipGleanCheck = false) => {
   const scalars = TelemetryTestUtils.getProcessScalars("parent");
 
   // Check the expected values. Scalars that are never set must not be reported.
-  TelemetryTestUtils.assertScalar(
-    scalars,
+  const checkScalar = (key, val, msg) =>
+    val > 0
+      ? TelemetryTestUtils.assertScalar(scalars, key, val, msg)
+      : TelemetryTestUtils.assertScalarUnset(scalars, key);
+  checkScalar(
     MAX_CONCURRENT_TABS,
     countsObject.maxTabs,
     "The maximum tab count must match the expected value."
   );
-  TelemetryTestUtils.assertScalar(
-    scalars,
+  checkScalar(
     TAB_EVENT_COUNT,
     countsObject.tabOpenCount,
     "The number of open tab event count must match the expected value."
   );
-  TelemetryTestUtils.assertScalar(
-    scalars,
+  checkScalar(
     MAX_TAB_PINNED,
     countsObject.maxTabsPinned,
     "The maximum tabs pinned count must match the expected value."
   );
-  TelemetryTestUtils.assertScalar(
-    scalars,
+  checkScalar(
     TAB_PINNED_EVENT,
     countsObject.tabPinnedCount,
     "The number of tab pinned event count must match the expected value."
   );
-  TelemetryTestUtils.assertScalar(
-    scalars,
+  checkScalar(
     MAX_CONCURRENT_WINDOWS,
     countsObject.maxWindows,
     "The maximum window count must match the expected value."
   );
-  TelemetryTestUtils.assertScalar(
-    scalars,
+  checkScalar(
     WINDOW_OPEN_COUNT,
     countsObject.windowsOpenCount,
     "The number of window open event count must match the expected value."
   );
-  TelemetryTestUtils.assertScalar(
-    scalars,
+  checkScalar(
     TOTAL_URI_COUNT,
     countsObject.totalURIs,
     "The total URI count must match the expected value."
   );
-  TelemetryTestUtils.assertScalar(
-    scalars,
+  checkScalar(
     UNIQUE_DOMAINS_COUNT,
     countsObject.domainCount,
     "The unique domains count must match the expected value."
   );
-  TelemetryTestUtils.assertScalar(
-    scalars,
+  checkScalar(
     UNFILTERED_URI_COUNT,
     countsObject.totalUnfilteredURIs,
     "The unfiltered URI count must match the expected value."
   );
+  checkScalar(
+    TOTAL_URI_COUNT_NORMAL_AND_PRIVATE_MODE,
+    countsObject.totalURIsNormalAndPrivateMode,
+    "The total URI count for both normal and private mode must match the expected value."
+  );
+  if (!skipGleanCheck) {
+    if (countsObject.totalURIsNormalAndPrivateMode == 0) {
+      Assert.equal(
+        Glean.browserEngagement.uriCount.testGetValue(),
+        undefined,
+        "Total URI count reported in Glean must be unset."
+      );
+    } else {
+      Assert.equal(
+        countsObject.totalURIsNormalAndPrivateMode,
+        Glean.browserEngagement.uriCount.testGetValue(),
+        "The total URI count reported in Glean must be as expected."
+      );
+    }
+  }
 };
 
 add_task(async function test_tabsAndWindows() {
   // Let's reset the counts.
   Services.telemetry.clearScalars();
+  let FOG = Cc["@mozilla.org/toolkit/glean;1"].createInstance(Ci.nsIFOG);
+  FOG.testResetFOG();
 
   let openedTabs = [];
   let expectedTabOpenCount = 0;
@@ -101,6 +123,7 @@ add_task(async function test_tabsAndWindows() {
   let expectedMaxWins = 0;
   let expectedMaxTabsPinned = 0;
   let expectedTabPinned = 0;
+  let expectedTotalURIs = 0;
 
   // Add a new tab and check that the count is right.
   openedTabs.push(
@@ -121,11 +144,12 @@ add_task(async function test_tabsAndWindows() {
     tabOpenCount: expectedTabOpenCount,
     maxWindows: expectedMaxWins,
     windowsOpenCount: expectedWinOpenCount,
-    totalURIs: 0,
+    totalURIs: expectedTotalURIs,
     domainCount: 0,
     totalUnfilteredURIs: 0,
     maxTabsPinned: expectedMaxTabsPinned,
     tabPinnedCount: expectedTabPinned,
+    totalURIsNormalAndPrivateMode: expectedTotalURIs,
   });
 
   // Add two new tabs in the same window.
@@ -150,11 +174,12 @@ add_task(async function test_tabsAndWindows() {
     tabOpenCount: expectedTabOpenCount,
     maxWindows: expectedMaxWins,
     windowsOpenCount: expectedWinOpenCount,
-    totalURIs: 0,
+    totalURIs: expectedTotalURIs,
     domainCount: 0,
     totalUnfilteredURIs: 0,
     maxTabsPinned: expectedMaxTabsPinned,
     tabPinnedCount: expectedTabPinned,
+    totalURIsNormalAndPrivateMode: expectedTotalURIs,
   });
 
   // Add a new window and then some tabs in it. An empty new windows counts as a tab.
@@ -181,11 +206,12 @@ add_task(async function test_tabsAndWindows() {
     tabOpenCount: expectedTabOpenCount,
     maxWindows: expectedMaxWins,
     windowsOpenCount: expectedWinOpenCount,
-    totalURIs: 0,
+    totalURIs: expectedTotalURIs,
     domainCount: 0,
     totalUnfilteredURIs: 0,
     maxTabsPinned: expectedMaxTabsPinned,
     tabPinnedCount: expectedTabPinned,
+    totalURIsNormalAndPrivateMode: expectedTotalURIs,
   });
 
   // Remove all the extra windows and tabs.
@@ -200,11 +226,12 @@ add_task(async function test_tabsAndWindows() {
     tabOpenCount: expectedTabOpenCount,
     maxWindows: expectedMaxWins,
     windowsOpenCount: expectedWinOpenCount,
-    totalURIs: 0,
+    totalURIs: expectedTotalURIs,
     domainCount: 0,
     totalUnfilteredURIs: 0,
     maxTabsPinned: expectedMaxTabsPinned,
     tabPinnedCount: expectedTabPinned,
+    totalURIsNormalAndPrivateMode: expectedTotalURIs,
   });
 });
 
@@ -231,16 +258,19 @@ add_task(async function test_subsessionSplit() {
   // Check that the scalars have the right values. We expect 2 unfiltered URI loads
   // (about:mozilla and www.example.com, but no about:blank) and 1 URI totalURIs
   // (only www.example.com).
+  let expectedTotalURIs = 1;
+
   checkScalars({
     maxTabs: 5,
     tabOpenCount: 4,
     maxWindows: 2,
     windowsOpenCount: 1,
-    totalURIs: 1,
+    totalURIs: expectedTotalURIs,
     domainCount: 1,
     totalUnfilteredURIs: 2,
     maxTabsPinned: 0,
     tabPinnedCount: 0,
+    totalURIsNormalAndPrivateMode: expectedTotalURIs,
   });
 
   // Remove a tab.
@@ -254,17 +284,23 @@ add_task(async function test_subsessionSplit() {
   // After a subsession split, only the MAX_CONCURRENT_* scalars must be available
   // and have the correct value. No tabs, windows or URIs were opened so other scalars
   // must not be reported.
-  checkScalars({
-    maxTabs: 4,
-    tabOpenCount: 0,
-    maxWindows: 2,
-    windowsOpenCount: 0,
-    totalURIs: 0,
-    domainCount: 0,
-    totalUnfilteredURIs: 0,
-    maxTabsPinned: 0,
-    tabPinnedCount: 0,
-  });
+  expectedTotalURIs = 0;
+
+  checkScalars(
+    {
+      maxTabs: 4,
+      tabOpenCount: 0,
+      maxWindows: 2,
+      windowsOpenCount: 0,
+      totalURIs: expectedTotalURIs,
+      domainCount: 0,
+      totalUnfilteredURIs: 0,
+      maxTabsPinned: 0,
+      tabPinnedCount: 0,
+      totalURIsNormalAndPrivateMode: expectedTotalURIs,
+    },
+    true
+  );
 
   // Remove all the extra windows and tabs.
   for (let tab of openedTabs) {
@@ -306,7 +342,7 @@ add_task(async function test_tabsHistogram() {
   );
   openedTabs.push(tab);
   BrowserUsageTelemetry._lastRecordTabCount = 0;
-  await BrowserTestUtils.loadURI(tab.linkedBrowser, "http://example.com/");
+  BrowserTestUtils.loadURI(tab.linkedBrowser, "http://example.com/");
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
   checkTabCountHistogram(
     tabCountHist.snapshot(),
@@ -382,7 +418,7 @@ add_task(async function test_tabsHistogram() {
     Date.now() - MINIMUM_TAB_COUNT_INTERVAL_MS / 2;
   {
     let oldLastRecordTabCount = BrowserUsageTelemetry._lastRecordTabCount;
-    await BrowserTestUtils.loadURI(tab.linkedBrowser, "http://example.com/");
+    BrowserTestUtils.loadURI(tab.linkedBrowser, "http://example.com/");
     await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
     checkTabCountHistogram(
       tabCountHist.snapshot(),
@@ -400,7 +436,7 @@ add_task(async function test_tabsHistogram() {
     Date.now() - (MINIMUM_TAB_COUNT_INTERVAL_MS + 1000);
   {
     let oldLastRecordTabCount = BrowserUsageTelemetry._lastRecordTabCount;
-    await BrowserTestUtils.loadURI(tab.linkedBrowser, "http://example.com/");
+    BrowserTestUtils.loadURI(tab.linkedBrowser, "http://example.com/");
     await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
     checkTabCountHistogram(
       tabCountHist.snapshot(),
@@ -561,4 +597,71 @@ add_task(async function test_loadedTabsHistogram() {
   }
 
   await BrowserTestUtils.closeWindow(win);
+});
+
+add_task(async function test_restored_max_pinned_count() {
+  // Following pinned tab testing example from
+  // https://searchfox.org/mozilla-central/rev/1843375acbbca68127713e402be222350ac99301/browser/components/sessionstore/test/browser_pinned_tabs.js
+  Services.telemetry.clearScalars();
+  const { E10SUtils } = ChromeUtils.import(
+    "resource://gre/modules/E10SUtils.jsm"
+  );
+  const BACKUP_STATE = SessionStore.getBrowserState();
+  const triggeringPrincipal_base64 = E10SUtils.SERIALIZED_SYSTEMPRINCIPAL;
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.sessionstore.restore_on_demand", true],
+      ["browser.sessionstore.restore_tabs_lazily", true],
+    ],
+  });
+  let sessionRestoredPromise = new Promise(resolve => {
+    Services.obs.addObserver(resolve, "sessionstore-browser-state-restored");
+  });
+
+  info("Set browser state to 1 pinned tab.");
+  await SessionStore.setBrowserState(
+    JSON.stringify({
+      windows: [
+        {
+          selected: 1,
+          tabs: [
+            {
+              pinned: true,
+              entries: [
+                { url: "https://example.com", triggeringPrincipal_base64 },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+  );
+
+  info("Await `sessionstore-browser-state-restored` promise.");
+  await sessionRestoredPromise;
+
+  const scalars = TelemetryTestUtils.getProcessScalars("parent");
+
+  TelemetryTestUtils.assertScalar(
+    scalars,
+    MAX_TAB_PINNED,
+    1,
+    "The maximum tabs pinned count must match the expected value."
+  );
+
+  gBrowser.unpinTab(gBrowser.selectedTab);
+
+  TelemetryTestUtils.assertScalar(
+    scalars,
+    MAX_TAB_PINNED,
+    1,
+    "The maximum tabs pinned count must match the expected value."
+  );
+
+  sessionRestoredPromise = new Promise(resolve => {
+    Services.obs.addObserver(resolve, "sessionstore-browser-state-restored");
+  });
+  await SessionStore.setBrowserState(BACKUP_STATE);
+  await SpecialPowers.popPrefEnv();
+  await sessionRestoredPromise;
 });

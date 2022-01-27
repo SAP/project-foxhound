@@ -9,10 +9,6 @@ const { ExtensionParent } = ChromeUtils.import(
 
 AddonTestUtils.initMochitest(this);
 
-function getAddonCard(doc, id) {
-  return doc.querySelector(`addon-card[addon-id="${id}"]`);
-}
-
 // This test function helps to detect when an addon options browser have been
 // inserted in the about:addons page.
 function waitOptionsBrowserInserted() {
@@ -82,7 +78,7 @@ add_task(async function testInlineOptions() {
   let doc = win.document;
 
   // Make sure we found the right card.
-  let card = getAddonCard(doc, id);
+  let card = getAddonCard(win, id);
   ok(card, "Found the card");
 
   // The preferences option should be visible.
@@ -200,7 +196,7 @@ add_task(async function testCardRerender() {
   let win = await loadInitialView("extension");
   let doc = win.document;
 
-  let card = getAddonCard(doc, id);
+  let card = getAddonCard(win, id);
   let loaded = waitForViewLoad(win);
   card.querySelector('[action="expand"]').click();
   await loaded;
@@ -302,7 +298,7 @@ add_task(async function testRemovedOnDisable() {
 
   // Opens the prefs page.
   let loaded = waitForViewLoad(win);
-  getAddonCard(doc, id)
+  getAddonCard(win, id)
     .querySelector("[action=preferences]")
     .click();
   await loaded;
@@ -311,7 +307,7 @@ add_task(async function testRemovedOnDisable() {
   ok(inlineOptions, "There's an inline-options-browser element");
   ok(inlineOptions.querySelector("browser"), "The browser exists");
 
-  let card = getAddonCard(doc, id);
+  let card = getAddonCard(win, id);
   let { deck } = card.details;
   is(deck.selectedViewName, "preferences", "Preferences are the active tab");
 
@@ -390,7 +386,7 @@ add_task(async function testUpgradeTemporary() {
   let win = await loadInitialView("extension");
   let doc = win.document;
 
-  let card = getAddonCard(doc, id);
+  let card = getAddonCard(win, id);
   let loaded = waitForViewLoad(win);
   card.querySelector('[action="expand"]').click();
   await loaded;
@@ -449,7 +445,7 @@ add_task(async function testReloadExtension() {
   let win = await loadInitialView("extension");
   let doc = win.document;
 
-  let card = getAddonCard(doc, id);
+  let card = getAddonCard(win, id);
   let loaded = waitForViewLoad(win);
   card.querySelector('[action="expand"]').click();
   await loaded;
@@ -475,4 +471,65 @@ add_task(async function testReloadExtension() {
 
   await closeView(win);
   await addon.uninstall();
+});
+
+async function testOptionsZoom(type = "full") {
+  let id = `${type}-zoom@mochi.test`;
+  let zoomProp = `${type}Zoom`;
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      applications: { gecko: { id } },
+      options_ui: {
+        page: "options.html",
+      },
+    },
+    files: {
+      "options.html": `
+        <html>
+          <body>
+            <p>Some text</p>
+          </body>
+        </html>
+      `,
+    },
+    useAddonManager: "permanent",
+  });
+  await extension.startup();
+
+  let win = await loadInitialView("extension");
+  let doc = win.document;
+
+  gBrowser.selectedBrowser[zoomProp] = 2;
+
+  let card = getAddonCard(win, id);
+  let loaded = waitForViewLoad(win);
+  card.querySelector('[action="expand"]').click();
+  await loaded;
+
+  card = doc.querySelector("addon-card");
+
+  let browserAdded = waitOptionsBrowserInserted();
+  card.querySelector('.tab-button[name="preferences"]').click();
+  let optionsBrowser = await browserAdded;
+
+  is(optionsBrowser[zoomProp], 2, `Options browser inherited ${zoomProp}`);
+
+  gBrowser.selectedBrowser[zoomProp] = 0.5;
+
+  is(
+    optionsBrowser[zoomProp],
+    0.5,
+    `Options browser reacts to ${zoomProp} change`
+  );
+
+  await closeView(win);
+  await extension.unload();
+}
+
+add_task(function testOptionsFullZoom() {
+  return testOptionsZoom("full");
+});
+
+add_task(function testOptionsTextZoom() {
+  return testOptionsZoom("text");
 });

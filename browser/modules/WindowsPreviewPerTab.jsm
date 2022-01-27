@@ -718,8 +718,10 @@ var AeroPeek = {
       return;
     }
 
-    this.prefs.addObserver(TOGGLE_PREF_NAME, this, true);
-    this.enabled = this._prefenabled = this.prefs.getBoolPref(TOGGLE_PREF_NAME);
+    Services.prefs.addObserver(TOGGLE_PREF_NAME, this, true);
+    this.enabled = this._prefenabled = Services.prefs.getBoolPref(
+      TOGGLE_PREF_NAME
+    );
     this.initialized = true;
   },
 
@@ -768,15 +770,21 @@ var AeroPeek = {
 
   enable() {
     if (!this._observersAdded) {
-      this.prefs.addObserver(DISABLE_THRESHOLD_PREF_NAME, this, true);
-      this.prefs.addObserver(CACHE_EXPIRATION_TIME_PREF_NAME, this, true);
-      PlacesUtils.history.addObserver(this, true);
+      Services.prefs.addObserver(DISABLE_THRESHOLD_PREF_NAME, this, true);
+      Services.prefs.addObserver(CACHE_EXPIRATION_TIME_PREF_NAME, this, true);
+      this._placesListener = this.handlePlacesEvents.bind(this);
+      PlacesUtils.observers.addListener(
+        ["favicon-changed"],
+        this._placesListener
+      );
       this._observersAdded = true;
     }
 
-    this.cacheLifespan = this.prefs.getIntPref(CACHE_EXPIRATION_TIME_PREF_NAME);
+    this.cacheLifespan = Services.prefs.getIntPref(
+      CACHE_EXPIRATION_TIME_PREF_NAME
+    );
 
-    this.maxpreviews = this.prefs.getIntPref(DISABLE_THRESHOLD_PREF_NAME);
+    this.maxpreviews = Services.prefs.getIntPref(DISABLE_THRESHOLD_PREF_NAME);
 
     // If the user toggled us on/off while the browser was already up
     // (rather than this code running on startup because the pref was
@@ -798,6 +806,10 @@ var AeroPeek = {
       tabWinObject.destroy(); // This will remove us from the array.
       delete tabWinObject.win.gTaskbarTabGroup; // Tidy up the window.
     }
+    PlacesUtils.observers.removeListener(
+      ["favicon-changed"],
+      this._placesListener
+    );
   },
 
   addPreview(preview) {
@@ -853,7 +865,7 @@ var AeroPeek = {
   // nsIObserver
   observe(aSubject, aTopic, aData) {
     if (aTopic == "nsPref:changed" && aData == TOGGLE_PREF_NAME) {
-      this._prefenabled = this.prefs.getBoolPref(TOGGLE_PREF_NAME);
+      this._prefenabled = Services.prefs.getBoolPref(TOGGLE_PREF_NAME);
     }
     if (!this._prefenabled) {
       return;
@@ -865,7 +877,9 @@ var AeroPeek = {
         }
 
         if (aData == DISABLE_THRESHOLD_PREF_NAME) {
-          this.maxpreviews = this.prefs.getIntPref(DISABLE_THRESHOLD_PREF_NAME);
+          this.maxpreviews = Services.prefs.getIntPref(
+            DISABLE_THRESHOLD_PREF_NAME
+          );
         }
         // Might need to enable/disable ourselves
         this.checkPreviewCount();
@@ -879,24 +893,16 @@ var AeroPeek = {
     }
   },
 
-  /* nsINavHistoryObserver implementation */
-  onBeginUpdateBatch() {},
-  onEndUpdateBatch() {},
-  onTitleChanged() {},
-  onFrecencyChanged() {},
-  onManyFrecenciesChanged() {},
-  onDeleteURI() {},
-  onClearHistory() {},
-  onDeleteVisits() {},
-  onPageChanged(uri, changedConst, newValue) {
-    if (
-      this.enabled &&
-      changedConst == Ci.nsINavHistoryObserver.ATTRIBUTE_FAVICON
-    ) {
-      for (let win of this.windows) {
-        for (let [tab] of win.previews) {
-          if (tab.getAttribute("image") == newValue) {
-            win.updateFavicon(tab, newValue);
+  handlePlacesEvents(events) {
+    for (let event of events) {
+      switch (event.type) {
+        case "favicon-changed": {
+          for (let win of this.windows) {
+            for (let [tab] of win.previews) {
+              if (tab.getAttribute("image") == event.faviconUrl) {
+                win.updateFavicon(tab, event.faviconUrl);
+              }
+            }
           }
         }
       }
@@ -905,20 +911,12 @@ var AeroPeek = {
 
   QueryInterface: ChromeUtils.generateQI([
     "nsISupportsWeakReference",
-    "nsINavHistoryObserver",
     "nsIObserver",
   ]),
 };
 
 XPCOMUtils.defineLazyGetter(AeroPeek, "cacheTimer", () =>
   Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer)
-);
-
-XPCOMUtils.defineLazyServiceGetter(
-  AeroPeek,
-  "prefs",
-  "@mozilla.org/preferences-service;1",
-  "nsIPrefBranch"
 );
 
 AeroPeek.initialize();

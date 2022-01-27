@@ -8,15 +8,12 @@
 
 #include "frontend/BytecodeEmitter.h"
 #include "frontend/EmitterScope.h"
-#include "frontend/SourceNotes.h"
 #include "vm/Opcodes.h"
-#include "vm/Scope.h"
 #include "vm/StencilEnums.h"  // TryNoteKind
 
 using namespace js;
 using namespace js::frontend;
 
-using mozilla::Maybe;
 using mozilla::Nothing;
 
 ForInEmitter::ForInEmitter(BytecodeEmitter* bce,
@@ -57,7 +54,7 @@ bool ForInEmitter::emitInitialize() {
     //              [stack] ITER NEXTITERVAL? ISNOITER
     return false;
   }
-  if (!bce_->emitJump(JSOp::IfNe, &loopInfo_->breaks)) {
+  if (!bce_->emitJump(JSOp::JumpIfTrue, &loopInfo_->breaks)) {
     //              [stack] ITER NEXTITERVAL?
     return false;
   }
@@ -93,11 +90,6 @@ bool ForInEmitter::emitInitialize() {
 #endif
   MOZ_ASSERT(loopDepth_ >= 2);
 
-  if (!bce_->emit1(JSOp::IterNext)) {
-    //              [stack] ITER ITERVAL
-    return false;
-  }
-
 #ifdef DEBUG
   state_ = State::Initialize;
 #endif
@@ -116,14 +108,12 @@ bool ForInEmitter::emitBody() {
   return true;
 }
 
-bool ForInEmitter::emitEnd(const Maybe<uint32_t>& forPos) {
+bool ForInEmitter::emitEnd(uint32_t forPos) {
   MOZ_ASSERT(state_ == State::Body);
 
-  if (forPos) {
-    // Make sure this code is attributed to the "for".
-    if (!bce_->updateSourceCoordNotes(*forPos)) {
-      return false;
-    }
+  // Make sure this code is attributed to the "for".
+  if (!bce_->updateSourceCoordNotes(forPos)) {
+    return false;
   }
 
   if (!loopInfo_->emitContinueTarget(bce_)) {

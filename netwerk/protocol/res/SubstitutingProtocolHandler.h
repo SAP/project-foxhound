@@ -9,7 +9,7 @@
 
 #include "nsISubstitutingProtocolHandler.h"
 
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsStandardURL.h"
 #include "nsJARURI.h"
 #include "mozilla/chrome/RegistryMessageUtils.h"
@@ -45,7 +45,7 @@ class SubstitutingProtocolHandler {
                   nsIURI* aBaseURI, nsIURI** aResult);
 
   [[nodiscard]] nsresult CollectSubstitutions(
-      nsTArray<SubstitutionMapping>& aResources);
+      nsTArray<SubstitutionMapping>& aMappings);
 
  protected:
   virtual ~SubstitutingProtocolHandler() = default;
@@ -92,12 +92,8 @@ class SubstitutingProtocolHandler {
 
  private:
   struct SubstitutionEntry {
-    SubstitutionEntry() : flags(0) {}
-
-    ~SubstitutionEntry() = default;
-
     nsCOMPtr<nsIURI> baseURI;
-    uint32_t flags;
+    uint32_t flags = 0;
   };
 
   // Notifies all observers that a new substitution from |aRoot| to
@@ -108,7 +104,7 @@ class SubstitutingProtocolHandler {
   Maybe<uint32_t> mFlags;
 
   RWLock mSubstitutionsLock;
-  nsDataHashtable<nsCStringHashKey, SubstitutionEntry> mSubstitutions;
+  nsTHashMap<nsCStringHashKey, SubstitutionEntry> mSubstitutions;
   nsCOMPtr<nsIIOService> mIOService;
 
   // Returns a SubstitutingJARURI if |aUrl| maps to a |jar:| URI,

@@ -23,7 +23,7 @@ const { Toolbox } = require("devtools/client/framework/toolbox");
 
 /**
  * Initialize and connect a DevToolsServer and DevToolsClient. Note: This test
- * does not use TargetFactory, so it has to set up the DevToolsServer and
+ * does not use TabDescriptorFactory, so it has to set up the DevToolsServer and
  * DevToolsClient on its own.
  * @return {Promise} Resolves with an instance of the DevToolsClient class
  */
@@ -37,26 +37,25 @@ async function setupLocalDevToolsServerAndClient() {
 
 /**
  * Set up and optionally open the `about:debugging` toolbox for a given extension.
- * @param {String} id - The id for the extension to be targeted by the toolbox.
- * @param {Object} options - Configuration options with various optional fields:
- *   - {Boolean} openToolbox - If true, open the toolbox
- * @return {Promise} Resolves with a web extension actor target object and the toolbox
- * and storage objects when the toolbox has been setup
+ *
+ * @param {String} id
+ *        The id for the extension to be targeted by the toolbox.
+ * @return {Promise} Resolves with a web extension actor target object and the
+ *         toolbox and storage objects when the toolbox has been setup
  */
-async function setupExtensionDebuggingToolbox(id, options = {}) {
-  const { openToolbox = false } = options;
-
+async function setupExtensionDebuggingToolbox(id) {
   const client = await setupLocalDevToolsServerAndClient();
-  const front = await client.mainRoot.getAddon({ id });
-  const target = await front.getTarget();
-  target.shouldCloseClient = true;
+  const descriptor = await client.mainRoot.getAddon({ id });
+  // As this mimic about:debugging toolbox, by default, the toolbox won't close
+  // the client on shutdown. So request it to do that here, via the descriptor.
+  descriptor.shouldCloseClient = true;
 
-  let toolbox;
-  let storage;
-  if (openToolbox) {
-    const res = await openStoragePanel(null, target, Toolbox.HostType.WINDOW);
-    ({ toolbox, storage } = res);
-  }
+  const { toolbox, storage } = await openStoragePanel({
+    descriptor,
+    hostType: Toolbox.HostType.WINDOW,
+  });
+
+  const target = toolbox.target;
 
   return { target, toolbox, storage };
 }
@@ -190,9 +189,9 @@ add_task(
     await extension.awaitMessage("storage-local-onChanged");
 
     info("Open the addon toolbox storage panel");
-    const { target } = await setupExtensionDebuggingToolbox(extension.id, {
-      openToolbox: true,
-    });
+    const { target, toolbox } = await setupExtensionDebuggingToolbox(
+      extension.id
+    );
 
     await selectTreeItem(["extensionStorage", host]);
 
@@ -238,7 +237,7 @@ add_task(
     }
 
     info("Shut down the test");
-    await gDevTools.closeToolbox(target);
+    await toolbox.destroy();
     await extension.unload();
     await target.destroy();
   }

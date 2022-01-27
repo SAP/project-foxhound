@@ -6,8 +6,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ParentChannelWrapper.h"
+#include "mozilla/net/HttpBaseChannel.h"
 #include "mozilla/net/UrlClassifierCommon.h"
-#include "nsIRedirectChannelRegistrar.h"
+#include "mozilla/net/RedirectChannelRegistrar.h"
+#include "nsIViewSourceChannel.h"
+#include "nsNetUtil.h"
+#include "nsQueryObject.h"
+#include "mozilla/dom/RemoteType.h"
 
 namespace mozilla {
 namespace net {
@@ -21,7 +26,16 @@ void ParentChannelWrapper::Register(uint64_t aRegistrarId) {
   nsCOMPtr<nsIChannel> dummy;
   MOZ_ALWAYS_SUCCEEDS(
       NS_LinkRedirectChannels(aRegistrarId, this, getter_AddRefs(dummy)));
-  MOZ_ASSERT(dummy == mChannel);
+
+#ifdef DEBUG
+  // The channel registered with the RedirectChannelRegistrar will be the inner
+  // channel when dealing with view-source loads.
+  if (nsCOMPtr<nsIViewSourceChannel> viewSource = do_QueryInterface(mChannel)) {
+    MOZ_ASSERT(dummy == viewSource->GetInnerChannel());
+  } else {
+    MOZ_ASSERT(dummy == mChannel);
+  }
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////

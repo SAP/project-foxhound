@@ -1,12 +1,20 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 zh_Hant{
     %%Parent{"root"}
     AuxExemplarCharacters{
-        "[乍 乳 仂 伏 佐 侶 僳 兆 兌 兹 划 别 券 勳 匕 匙 匣 卑 卞 占 叉 叶 吻 哺 嘟 噘 堤 墎 壤 奥 妖 嬰 孜 峇 嶼 巽 巾 帆"
-        " 廁 廚 弋 弓 懸 戟 扳 捂 摔 暈 栗 框 桶 桿 楔 櫃 涅 渾 澎 煎 燕 燦 燭 牡 狄 琳 瑚 甫 疊 皺 盒 眨 眩 碑 礁 筒 簍 糰"
-        " 紋 紗 纏 纜 羯 聳 肖 艇 芒 苗 茨 菱 蓬 虹 蚩 蛛 蜀 蜘 蝴 蝸 蠟 裘 裙 謬 豚 跨 躬 遞 酋 釘 鈔 鈕 鉛 鎚 鎬 鐺 鑰 鑽"
-        " 隴 霄 鞠 餵 骰 骷 髏 鯉 鳶]"
+        "[乍 乳 仂 伏 佐 侶 俏 倉 偽 傅 傘 僳 兆 兌 兹 凋 凍 凸 划 刨 别 刮 券 剃 勳 勾 匕 匙 匣 匯 卑 卞 占 卹 叉 叶 吻 哺"
+        " 唇 唵 啤 喪 喲 嘟 噁 噓 噘 嚏 坑 堤 墅 墎 墓 墟 墳 壤 壩 壺 奥 妖 嬰 孕 孜 孵 寺 尿 屍 屑 峇 嶼 巽 巾 帆 帚 幟 廁"
+        " 廈 廚 廟 弋 弓 忡 憊 懨 懸 戟 扮 扳 捂 捏 捧 掠 掰 揹 搏 摀 摔 撕 撲 攀 攤 敞 斑 斜 斧 暈 暮 曇 曬 曳 朔 杖 枯 栓"
+        " 栗 栽 框 桶 桿 棍 棕 棺 椒 楔 槌 橄 橇 橘 橙 檬 檸 櫃 櫚 櫻 欖 欠 残 殭 汁 沫 沮 泣 浣 浴 涅 涎 涮 淇 淋 渾 湘 溜"
+        " 漿 澎 澡 濕 灘 烘 烹 焊 焙 焰 煎 煮 燕 燙 燦 燭 爍 牡 犀 犬 狄 狡 狸 猩 猾 猿 獺 獾 琳 瑚 瓢 甕 甫 疊 疲 疾 瘦 瘧"
+        " 皂 皺 皿 盆 盈 盒 盔 盥 眨 眩 睏 瞇 瞌 瞪 碑 磚 礁 礫 祈 禱 禿 稻 穀 窄 竿 筒 筷 箏 箔 篷 簍 籠 糖 糰 紉 紋 紗 紮"
+        " 紳 綽 綿 縫 繃 繡 繩 纏 纖 纜 罈 罐 罩 羯 聳 聾 肌 肖 肺 脈 脖 腐 腹 膚 膠 臂 臟 艇 芒 芙 芭 芽 苗 苣 茄 茨 茵 茸"
+        " 莓 莖 菇 菌 菱 萎 萵 葵 蒜 蒸 蓄 蓉 蓬 蔔 蔥 蔬 蕉 蕾 薑 薯 蘋 蘑 蘿 虹 蚊 蚓 蚩 蚯 蛛 蜀 蜘 蜥 蜴 蝙 蝟 蝠 蝦 蝴"
+        " 蝸 螂 螃 螞 螺 蟀 蟄 蟋 蟑 蟳 蟻 蠅 蠕 蠟 蠣 衫 袍 裏 裘 裙 裱 裹 褐 襪 襯 訝 診 謎 謬 豎 豔 豚 豹 贛 跆 跨 跪 踩"
+        " 躬 軸 轎 辜 辣 遞 鄙 酋 酪 醬 釘 鈔 鈕 鉅 鉛 鉤 鋁 錨 錶 鍊 鎚 鎬 鏈 鏢 鐺 鑰 鑽 鑿 閩 阱 隴 雀 雌 霄 霜 静 靴 鞠"
+        " 鞭 頌 頸 顛 颱 飆 飪 餃 餌 餚 餵 餾 駝 駱 驕 骰 骷 髏 鬍 魷 鮑 鯉 鯊 鯨 鱷 鳩 鳶 鴨 鵡 鶴 鸚 鹽 黛 鼬 龐]"
     }
     Ellipsis{
         final{"{0}…"}
@@ -1376,14 +1384,13 @@ zh_Hant{
             }
         }
     }
-    Version{"37"}
     calendar{
         buddhist{
             DateTimePatterns{
-                "ah:mm:ss [zzzz]",
-                "ah:mm:ss [z]",
-                "ah:mm:ss",
-                "ah:mm",
+                "Bh:mm:ss [zzzz]",
+                "Bh:mm:ss [z]",
+                "Bh:mm:ss",
+                "Bh:mm",
                 "Gy年M月d日EEEE",
                 "Gy年M月d日",
                 "Gy年M月d日",
@@ -1394,6 +1401,16 @@ zh_Hant{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "Bhmmsszzzz",
+                "Bhmmssz",
+                "Bhmmss",
+                "Bhmm",
+                "GyMEEEEd",
+                "GyMd",
+                "GyMd",
+                "GyMd",
+            }
             availableFormats{
                 E{"ccc"}
                 Ed{"d日（E）"}
@@ -1401,6 +1418,7 @@ zh_Hant{
                 GyMMM{"Gy年M月"}
                 GyMMMEd{"Gy年M月d日E"}
                 GyMMMd{"Gy年M月d日"}
+                GyMd{"Gy/M/d"}
                 M{"M月"}
                 MEd{"M/d（E）"}
                 MMM{"LLL"}
@@ -1476,22 +1494,22 @@ zh_Hant{
                     d{"d日至d日"}
                 }
                 h{
-                    a{"ah時至ah時"}
-                    h{"ah時至h時"}
+                    B{"Bh時至Bh時"}
+                    h{"Bh時至h時"}
                 }
                 hm{
-                    a{"ah:mm至ah:mm"}
-                    h{"ah:mm至h:mm"}
-                    m{"ah:mm至h:mm"}
+                    B{"Bh:mm至Bh:mm"}
+                    h{"Bh:mm至h:mm"}
+                    m{"Bh:mm至h:mm"}
                 }
                 hmv{
-                    a{"ah:mm至ah:mm [v]"}
-                    h{"ah:mm至h:mm [v]"}
-                    m{"ah:mm至h:mm [v]"}
+                    B{"Bh:mm至Bh:mm [v]"}
+                    h{"Bh:mm至h:mm [v]"}
+                    m{"Bh:mm至h:mm [v]"}
                 }
                 hv{
-                    a{"ah時至ah時 [v]"}
-                    h{"ah時至h時 [v]"}
+                    B{"Bh時至Bh時 [v]"}
+                    h{"Bh時至h時 [v]"}
                 }
                 y{
                     y{"G y至y"}
@@ -1532,10 +1550,10 @@ zh_Hant{
         }
         chinese{
             DateTimePatterns{
-                "ah:mm:ss [zzzz]",
-                "ah:mm:ss [z]",
-                "ah:mm:ss",
-                "ah:mm",
+                "Bh:mm:ss [zzzz]",
+                "Bh:mm:ss [z]",
+                "Bh:mm:ss",
+                "Bh:mm",
                 {
                     "rU年MMMd EEEE",
                     "d=hanidays",
@@ -1555,6 +1573,25 @@ zh_Hant{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "Bhmmsszzzz",
+                "Bhmmssz",
+                "Bhmmss",
+                "Bhmm",
+                {
+                    "rMMMEEEEd",
+                    "d=hanidays",
+                }
+                {
+                    "rMMMd",
+                    "d=hanidays",
+                }
+                {
+                    "rMMMd",
+                    "d=hanidays",
+                }
+                "rMd",
+            }
             availableFormats{
                 Bh{"Bh時"}
                 Bhm{"Bh:mm"}
@@ -1566,6 +1603,9 @@ zh_Hant{
                 Gy{"rU年"}
                 GyMMM{"rU年MMM"}
                 GyMMMEd{"rU年MMMdE"}
+                GyMMMM{"r(U)MMMM"}
+                GyMMMMEd{"r(U)MMMMd日 E"}
+                GyMMMMd{"r(U)MMMMd日"}
                 GyMMMd{"r年MMMd"}
                 H{"HH時"}
                 Hm{"HH:mm"}
@@ -1582,9 +1622,9 @@ zh_Hant{
                 UMMMd{"U年MMMd"}
                 UMd{"U年MMMd"}
                 d{"d日"}
-                h{"ah時"}
-                hm{"ah:mm"}
-                hms{"ah:mm:ss"}
+                h{"Bh時"}
+                hm{"Bh:mm"}
+                hms{"Bh:mm:ss"}
                 ms{"mm:ss"}
                 y{"rU年"}
                 yMd{"r年MMMd"}
@@ -1594,6 +1634,8 @@ zh_Hant{
                 yyyyMMM{"rU年MMM"}
                 yyyyMMMEd{"rU年MMMdE"}
                 yyyyMMMM{"rU年MMMM"}
+                yyyyMMMMEd{"r(U)MMMMd日 E"}
+                yyyyMMMMd{"r(U)MMMMd日"}
                 yyyyMMMd{"r年MMMd"}
                 yyyyMd{"r年MMMd"}
                 yyyyQQQ{"rU年QQQQ"}
@@ -2390,22 +2432,22 @@ zh_Hant{
                 }
                 fallback{"{0}至{1}"}
                 h{
-                    a{"ah時至ah時"}
-                    h{"ah時至h時"}
+                    B{"Bh時至Bh時"}
+                    h{"Bh時至h時"}
                 }
                 hm{
-                    a{"ah:mm至ah:mm"}
-                    h{"ah:mm至h:mm"}
-                    m{"ah:mm至h:mm"}
+                    B{"Bh:mm至Bh:mm"}
+                    h{"Bh:mm至h:mm"}
+                    m{"Bh:mm至h:mm"}
                 }
                 hmv{
-                    a{"ah:mm至ah:mm [v]"}
-                    h{"ah:mm至h:mm [v]"}
-                    m{"ah:mm至h:mm [v]"}
+                    B{"Bh:mm至Bh:mm [v]"}
+                    h{"Bh:mm至h:mm [v]"}
+                    m{"Bh:mm至h:mm [v]"}
                 }
                 hv{
-                    a{"ah時至ah時 [v]"}
-                    h{"ah時至h時 [v]"}
+                    B{"Bh時至Bh時 [v]"}
+                    h{"Bh時至h時 [v]"}
                 }
                 y{
                     y{"rU至rU"}
@@ -2565,10 +2607,10 @@ zh_Hant{
         }
         coptic{
             DateTimePatterns{
-                "ah:mm:ss [zzzz]",
-                "ah:mm:ss [z]",
-                "ah:mm:ss",
-                "ah:mm",
+                "Bh:mm:ss [zzzz]",
+                "Bh:mm:ss [z]",
+                "Bh:mm:ss",
+                "Bh:mm",
                 "G y年M月d日 EEEE",
                 "G y年M月d日",
                 "G y年M月d日",
@@ -2578,6 +2620,16 @@ zh_Hant{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "Bhmmsszzzz",
+                "Bhmmssz",
+                "Bhmmss",
+                "Bhmm",
+                "GyMEEEEd",
+                "GyMd",
+                "GyMd",
+                "GyMd",
             }
             availableFormats{
                 E{"ccc"}
@@ -2664,22 +2716,22 @@ zh_Hant{
                     d{"d日至d日"}
                 }
                 h{
-                    a{"ah時至ah時"}
-                    h{"ah時至h時"}
+                    B{"Bh時至Bh時"}
+                    h{"Bh時至h時"}
                 }
                 hm{
-                    a{"ah:mm至ah:mm"}
-                    h{"ah:mm至h:mm"}
-                    m{"ah:mm至h:mm"}
+                    B{"Bh:mm至Bh:mm"}
+                    h{"Bh:mm至h:mm"}
+                    m{"Bh:mm至h:mm"}
                 }
                 hmv{
-                    a{"ah:mm至ah:mm [v]"}
-                    h{"ah:mm至h:mm [v]"}
-                    m{"ah:mm至h:mm [v]"}
+                    B{"Bh:mm至Bh:mm [v]"}
+                    h{"Bh:mm至h:mm [v]"}
+                    m{"Bh:mm至h:mm [v]"}
                 }
                 hv{
-                    a{"ah時至ah時 [v]"}
-                    h{"ah時至h時 [v]"}
+                    B{"Bh時至Bh時 [v]"}
+                    h{"Bh時至h時 [v]"}
                 }
                 y{
                     y{"G y至y"}
@@ -2816,10 +2868,10 @@ zh_Hant{
         }
         dangi{
             DateTimePatterns{
-                "ah:mm:ss [zzzz]",
-                "ah:mm:ss [z]",
-                "ah:mm:ss",
-                "ah:mm",
+                "Bh:mm:ss [zzzz]",
+                "Bh:mm:ss [z]",
+                "Bh:mm:ss",
+                "Bh:mm",
                 "U年MMMd日EEEE",
                 "U年MMMd日",
                 "U年MMMd日",
@@ -2829,6 +2881,16 @@ zh_Hant{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "Bhmmsszzzz",
+                "Bhmmssz",
+                "Bhmmss",
+                "Bhmm",
+                "UMMMEEEEd",
+                "UMMMd",
+                "UMMMd",
+                "UMd",
             }
             availableFormats{
                 Ed{"d日E"}
@@ -3644,22 +3706,22 @@ zh_Hant{
                 }
                 fallback{"{0}至{1}"}
                 h{
-                    a{"ah時至ah時"}
-                    h{"ah時至h時"}
+                    B{"Bh時至Bh時"}
+                    h{"Bh時至h時"}
                 }
                 hm{
-                    a{"ah:mm至ah:mm"}
-                    h{"ah:mm至h:mm"}
-                    m{"ah:mm至h:mm"}
+                    B{"Bh:mm至Bh:mm"}
+                    h{"Bh:mm至h:mm"}
+                    m{"Bh:mm至h:mm"}
                 }
                 hmv{
-                    a{"ah:mm至ah:mm [v]"}
-                    h{"ah:mm至h:mm [v]"}
-                    m{"ah:mm至h:mm [v]"}
+                    B{"Bh:mm至Bh:mm [v]"}
+                    h{"Bh:mm至h:mm [v]"}
+                    m{"Bh:mm至h:mm [v]"}
                 }
                 hv{
-                    a{"ah時至ah時 [v]"}
-                    h{"ah時至h時 [v]"}
+                    B{"Bh時至Bh時 [v]"}
+                    h{"Bh時至h時 [v]"}
                 }
                 y{
                     y{"rU至rU"}
@@ -3819,10 +3881,10 @@ zh_Hant{
         }
         ethiopic{
             DateTimePatterns{
-                "ah:mm:ss [zzzz]",
-                "ah:mm:ss [z]",
-                "ah:mm:ss",
-                "ah:mm",
+                "Bh:mm:ss [zzzz]",
+                "Bh:mm:ss [z]",
+                "Bh:mm:ss",
+                "Bh:mm",
                 "G y年M月d日 EEEE",
                 "G y年M月d日",
                 "G y年M月d日",
@@ -3832,6 +3894,16 @@ zh_Hant{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "Bhmmsszzzz",
+                "Bhmmssz",
+                "Bhmmss",
+                "Bhmm",
+                "GyMEEEEd",
+                "GyMd",
+                "GyMd",
+                "GyMd",
             }
             availableFormats{
                 E{"ccc"}
@@ -3918,22 +3990,22 @@ zh_Hant{
                     d{"d日至d日"}
                 }
                 h{
-                    a{"ah時至ah時"}
-                    h{"ah時至h時"}
+                    B{"Bh時至Bh時"}
+                    h{"Bh時至h時"}
                 }
                 hm{
-                    a{"ah:mm至ah:mm"}
-                    h{"ah:mm至h:mm"}
-                    m{"ah:mm至h:mm"}
+                    B{"Bh:mm至Bh:mm"}
+                    h{"Bh:mm至h:mm"}
+                    m{"Bh:mm至h:mm"}
                 }
                 hmv{
-                    a{"ah:mm至ah:mm [v]"}
-                    h{"ah:mm至h:mm [v]"}
-                    m{"ah:mm至h:mm [v]"}
+                    B{"Bh:mm至Bh:mm [v]"}
+                    h{"Bh:mm至h:mm [v]"}
+                    m{"Bh:mm至h:mm [v]"}
                 }
                 hv{
-                    a{"ah時至ah時 [v]"}
-                    h{"ah時至h時 [v]"}
+                    B{"Bh時至Bh時 [v]"}
+                    h{"Bh時至h時 [v]"}
                 }
                 y{
                     y{"G y至y"}
@@ -4083,10 +4155,10 @@ zh_Hant{
         }
         generic{
             DateTimePatterns{
-                "ah:mm:ss [zzzz]",
-                "ah:mm:ss [z]",
-                "ah:mm:ss",
-                "ah:mm",
+                "Bh:mm:ss [zzzz]",
+                "Bh:mm:ss [z]",
+                "Bh:mm:ss",
+                "Bh:mm",
                 "G y年M月d日 EEEE",
                 "G y年M月d日",
                 "G y年M月d日",
@@ -4096,6 +4168,16 @@ zh_Hant{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "Bhmmsszzzz",
+                "Bhmmssz",
+                "Bhmmss",
+                "Bhmm",
+                "GyMEEEEd",
+                "GyMd",
+                "GyMd",
+                "GyMd",
             }
             availableFormats{
                 Bh{"Bh時"}
@@ -4107,12 +4189,13 @@ zh_Hant{
                 EHm{"E HH:mm"}
                 EHms{"E HH:mm:ss"}
                 Ed{"d E"}
-                Ehm{"E ah:mm"}
-                Ehms{"E ah:mm:ss"}
+                Ehm{"E Bh:mm"}
+                Ehms{"E Bh:mm:ss"}
                 Gy{"G y年"}
                 GyMMM{"G y年M月"}
                 GyMMMEd{"G y年M月d日 E"}
                 GyMMMd{"G y年M月d日"}
+                GyMd{"G y/M/d"}
                 H{"H時"}
                 Hm{"H:mm"}
                 Hms{"H:mm:ss"}
@@ -4124,9 +4207,9 @@ zh_Hant{
                 MMMd{"M月d日"}
                 Md{"M/d"}
                 d{"d日"}
-                h{"ah時"}
-                hm{"ah:mm"}
-                hms{"ah:mm:ss"}
+                h{"Bh時"}
+                hm{"Bh:mm"}
+                hms{"Bh:mm:ss"}
                 ms{"mm:ss"}
                 y{"G y年"}
                 yyyy{"G y年"}
@@ -4184,22 +4267,22 @@ zh_Hant{
                     d{"d日至d日"}
                 }
                 h{
-                    a{"ah時至ah時"}
-                    h{"ah時至h時"}
+                    B{"Bh時至Bh時"}
+                    h{"Bh時至h時"}
                 }
                 hm{
-                    a{"ah:mm至ah:mm"}
-                    h{"ah:mm至h:mm"}
-                    m{"ah:mm至h:mm"}
+                    B{"Bh:mm至Bh:mm"}
+                    h{"Bh:mm至h:mm"}
+                    m{"Bh:mm至h:mm"}
                 }
                 hmv{
-                    a{"ah:mm至ah:mm [v]"}
-                    h{"ah:mm至h:mm [v]"}
-                    m{"ah:mm至h:mm [v]"}
+                    B{"Bh:mm至Bh:mm [v]"}
+                    h{"Bh:mm至h:mm [v]"}
+                    m{"Bh:mm至h:mm [v]"}
                 }
                 hv{
-                    a{"ah時至ah時 [v]"}
-                    h{"ah時至h時 [v]"}
+                    B{"Bh時至Bh時 [v]"}
+                    h{"Bh時至h時 [v]"}
                 }
                 y{
                     y{"G y至y"}
@@ -4252,10 +4335,10 @@ zh_Hant{
                 "下午",
             }
             DateTimePatterns{
-                "ah:mm:ss [zzzz]",
-                "ah:mm:ss [z]",
-                "ah:mm:ss",
-                "ah:mm",
+                "Bh:mm:ss [zzzz]",
+                "Bh:mm:ss [z]",
+                "Bh:mm:ss",
+                "Bh:mm",
                 "y年M月d日 EEEE",
                 "y年M月d日",
                 "y年M月d日",
@@ -4265,6 +4348,16 @@ zh_Hant{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "Bhmmsszzzz",
+                "Bhmmssz",
+                "Bhmmss",
+                "Bhmm",
+                "yMEEEEd",
+                "yMd",
+                "yMd",
+                "yMd",
             }
             appendItems{
                 Timezone{"{0} {1}"}
@@ -4279,12 +4372,13 @@ zh_Hant{
                 EHm{"E HH:mm"}
                 EHms{"E HH:mm:ss"}
                 Ed{"d E"}
-                Ehm{"E ah:mm"}
-                Ehms{"E ah:mm:ss"}
+                Ehm{"E Bh:mm"}
+                Ehms{"E Bh:mm:ss"}
                 Gy{"Gy年"}
                 GyMMM{"Gy年M月"}
                 GyMMMEd{"Gy年M月d日 E"}
                 GyMMMd{"Gy年M月d日"}
+                GyMd{"G y/M/d"}
                 H{"H時"}
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
@@ -4302,14 +4396,15 @@ zh_Hant{
                 MMdd{"MM/dd"}
                 Md{"M/d"}
                 d{"d日"}
-                h{"ah時"}
-                hm{"ah:mm"}
-                hms{"ah:mm:ss"}
-                hmsv{"ah:mm:ss [v]"}
-                hmv{"ah:mm [v]"}
+                h{"Bh時"}
+                hm{"Bh:mm"}
+                hms{"Bh:mm:ss"}
+                hmsv{"Bh:mm:ss [v]"}
+                hmv{"Bh:mm [v]"}
                 ms{"mm:ss"}
                 y{"y年"}
                 yM{"y/M"}
+                yMEEEEd{"y年M月d日 EEEE"}
                 yMEd{"y/M/d（E）"}
                 yMM{"y/MM"}
                 yMMM{"y年M月"}
@@ -4494,6 +4589,53 @@ zh_Hant{
                 }
             }
             intervalFormats{
+                Bh{
+                    B{"Bh時 – Bh時"}
+                    h{"Bh–h時"}
+                }
+                Bhm{
+                    B{"Bh:mm – Bh:mm"}
+                    h{"Bh:mm–h:mm"}
+                    m{"Bh:mm–h:mm"}
+                }
+                Gy{
+                    G{"Gy – Gy"}
+                    y{"Gy–y"}
+                }
+                GyM{
+                    G{"GGGGGy-MM – GGGGGy-MM"}
+                    M{"GGGGGy-MM – y-MM"}
+                    y{"GGGGGy-MM – y-MM"}
+                }
+                GyMEd{
+                    G{"GGGGGy-MM-dd, E – GGGGGy-MM-dd, E"}
+                    M{"GGGGGy-MM-dd, E – y-MM-dd, E"}
+                    d{"GGGGGy-MM-dd, E – y-MM-dd, E"}
+                    y{"GGGGGy-MM-dd, E – y-MM-dd, E"}
+                }
+                GyMMM{
+                    G{"Gy年MMM – Gy年MMM"}
+                    M{"Gy年MMM–MMM"}
+                    y{"Gy年MMM – y年MMM"}
+                }
+                GyMMMEd{
+                    G{"Gy年MMMd日, E – Gy年MMMd日, E"}
+                    M{"Gy年MMMd日, E – MMMd日, E"}
+                    d{"Gy年MMMd日, E – MMMd日, E"}
+                    y{"Gy年MMMd日, E – y年MMMd日, E"}
+                }
+                GyMMMd{
+                    G{"Gy年MMMd日 – Gy年MMMd日"}
+                    M{"Gy年MMMd日 – MMMd日"}
+                    d{"Gy年MMMd–d日"}
+                    y{"Gy年MMMd日 – y年MMMd日"}
+                }
+                GyMd{
+                    G{"GGGGGy-MM-dd – GGGGGy-MM-dd"}
+                    M{"GGGGGy-MM-dd – y-MM-dd"}
+                    d{"GGGGGy-MM-dd – y-MM-dd"}
+                    y{"GGGGGy-MM-dd – y-MM-dd"}
+                }
                 H{
                     H{"HH – HH"}
                 }
@@ -4537,22 +4679,26 @@ zh_Hant{
                     d{"d日至d日"}
                 }
                 h{
+                    B{"Bh時至Bh時"}
                     a{"ah時至ah時"}
-                    h{"ah時至h時"}
+                    h{"Bh時至h時"}
                 }
                 hm{
+                    B{"Bh:mm至Bh:mm"}
                     a{"ah:mm至ah:mm"}
-                    h{"ah:mm至h:mm"}
-                    m{"ah:mm至h:mm"}
+                    h{"Bh:mm至h:mm"}
+                    m{"Bh:mm至h:mm"}
                 }
                 hmv{
+                    B{"Bh:mm至Bh:mm [v]"}
                     a{"ah:mm至ah:mm [v]"}
-                    h{"ah:mm至h:mm [v]"}
-                    m{"ah:mm至h:mm [v]"}
+                    h{"Bh:mm至h:mm [v]"}
+                    m{"Bh:mm至h:mm [v]"}
                 }
                 hv{
+                    B{"Bh時至Bh時 [v]"}
                     a{"ah時至ah時 [v]"}
-                    h{"ah時至h時 [v]"}
+                    h{"Bh時至h時 [v]"}
                 }
                 y{
                     y{"y至y"}
@@ -4719,10 +4865,10 @@ zh_Hant{
         }
         hebrew{
             DateTimePatterns{
-                "ah:mm:ss [zzzz]",
-                "ah:mm:ss [z]",
-                "ah:mm:ss",
-                "ah:mm",
+                "Bh:mm:ss [zzzz]",
+                "Bh:mm:ss [z]",
+                "Bh:mm:ss",
+                "Bh:mm",
                 "Gy年M月d日EEEE",
                 "Gy年M月d日",
                 "Gy年M月d日",
@@ -4732,6 +4878,16 @@ zh_Hant{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "Bhmmsszzzz",
+                "Bhmmssz",
+                "Bhmmss",
+                "Bhmm",
+                "GyMEEEEd",
+                "GyMd",
+                "GyMd",
+                "GyMd",
             }
             availableFormats{
                 E{"ccc"}
@@ -4815,22 +4971,22 @@ zh_Hant{
                     d{"d日至d日"}
                 }
                 h{
-                    a{"ah時至ah時"}
-                    h{"ah時至h時"}
+                    B{"Bh時至Bh時"}
+                    h{"Bh時至h時"}
                 }
                 hm{
-                    a{"ah:mm至ah:mm"}
-                    h{"ah:mm至h:mm"}
-                    m{"ah:mm至h:mm"}
+                    B{"Bh:mm至Bh:mm"}
+                    h{"Bh:mm至h:mm"}
+                    m{"Bh:mm至h:mm"}
                 }
                 hmv{
-                    a{"ah:mm至ah:mm [v]"}
-                    h{"ah:mm至h:mm [v]"}
-                    m{"ah:mm至h:mm [v]"}
+                    B{"Bh:mm至Bh:mm [v]"}
+                    h{"Bh:mm至h:mm [v]"}
+                    m{"Bh:mm至h:mm [v]"}
                 }
                 hv{
-                    a{"ah時至ah時 [v]"}
-                    h{"ah時至h時 [v]"}
+                    B{"Bh時至Bh時 [v]"}
+                    h{"Bh時至h時 [v]"}
                 }
                 y{
                     y{"G y至y"}
@@ -4973,10 +5129,10 @@ zh_Hant{
         }
         indian{
             DateTimePatterns{
-                "ah:mm:ss [zzzz]",
-                "ah:mm:ss [z]",
-                "ah:mm:ss",
-                "ah:mm",
+                "Bh:mm:ss [zzzz]",
+                "Bh:mm:ss [z]",
+                "Bh:mm:ss",
+                "Bh:mm",
                 "G y年M月d日 EEEE",
                 "G y年M月d日",
                 "G y年M月d日",
@@ -4986,6 +5142,16 @@ zh_Hant{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "Bhmmsszzzz",
+                "Bhmmssz",
+                "Bhmmss",
+                "Bhmm",
+                "GyMEEEEd",
+                "GyMd",
+                "GyMd",
+                "GyMd",
             }
             availableFormats{
                 E{"ccc"}
@@ -5069,22 +5235,22 @@ zh_Hant{
                     d{"d日至d日"}
                 }
                 h{
-                    a{"ah時至ah時"}
-                    h{"ah時至h時"}
+                    B{"Bh時至Bh時"}
+                    h{"Bh時至h時"}
                 }
                 hm{
-                    a{"ah:mm至ah:mm"}
-                    h{"ah:mm至h:mm"}
-                    m{"ah:mm至h:mm"}
+                    B{"Bh:mm至Bh:mm"}
+                    h{"Bh:mm至h:mm"}
+                    m{"Bh:mm至h:mm"}
                 }
                 hmv{
-                    a{"ah:mm至ah:mm [v]"}
-                    h{"ah:mm至h:mm [v]"}
-                    m{"ah:mm至h:mm [v]"}
+                    B{"Bh:mm至Bh:mm [v]"}
+                    h{"Bh:mm至h:mm [v]"}
+                    m{"Bh:mm至h:mm [v]"}
                 }
                 hv{
-                    a{"ah時至ah時 [v]"}
-                    h{"ah時至h時 [v]"}
+                    B{"Bh時至Bh時 [v]"}
+                    h{"Bh時至h時 [v]"}
                 }
                 y{
                     y{"G y至y"}
@@ -5215,10 +5381,10 @@ zh_Hant{
         }
         islamic{
             DateTimePatterns{
-                "ah:mm:ss [zzzz]",
-                "ah:mm:ss [z]",
-                "ah:mm:ss",
-                "ah:mm",
+                "Bh:mm:ss [zzzz]",
+                "Bh:mm:ss [z]",
+                "Bh:mm:ss",
+                "Bh:mm",
                 "Gy年M月d日EEEE",
                 "Gy年M月d日",
                 "Gy年M月d日",
@@ -5228,6 +5394,16 @@ zh_Hant{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "Bhmmsszzzz",
+                "Bhmmssz",
+                "Bhmmss",
+                "Bhmm",
+                "GyMEEEEd",
+                "GyMd",
+                "GyMd",
+                "GyMd",
             }
             availableFormats{
                 E{"ccc"}
@@ -5311,22 +5487,22 @@ zh_Hant{
                     d{"d日至d日"}
                 }
                 h{
-                    a{"ah時至ah時"}
-                    h{"ah時至h時"}
+                    B{"Bh時至Bh時"}
+                    h{"Bh時至h時"}
                 }
                 hm{
-                    a{"ah:mm至ah:mm"}
-                    h{"ah:mm至h:mm"}
-                    m{"ah:mm至h:mm"}
+                    B{"Bh:mm至Bh:mm"}
+                    h{"Bh:mm至h:mm"}
+                    m{"Bh:mm至h:mm"}
                 }
                 hmv{
-                    a{"ah:mm至ah:mm [v]"}
-                    h{"ah:mm至h:mm [v]"}
-                    m{"ah:mm至h:mm [v]"}
+                    B{"Bh:mm至Bh:mm [v]"}
+                    h{"Bh:mm至h:mm [v]"}
+                    m{"Bh:mm至h:mm [v]"}
                 }
                 hv{
-                    a{"ah時至ah時 [v]"}
-                    h{"ah時至h時 [v]"}
+                    B{"Bh時至Bh時 [v]"}
+                    h{"Bh時至h時 [v]"}
                 }
                 y{
                     y{"G y至y"}
@@ -5457,10 +5633,10 @@ zh_Hant{
         }
         japanese{
             DateTimePatterns{
-                "ah:mm:ss [zzzz]",
-                "ah:mm:ss [z]",
-                "ah:mm:ss",
-                "ah:mm",
+                "Bh:mm:ss [zzzz]",
+                "Bh:mm:ss [z]",
+                "Bh:mm:ss",
+                "Bh:mm",
                 "Gy年M月d日EEEE",
                 "Gy年M月d日",
                 "Gy年M月d日",
@@ -5470,6 +5646,16 @@ zh_Hant{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "Bhmmsszzzz",
+                "Bhmmssz",
+                "Bhmmss",
+                "Bhmm",
+                "GyMEEEEd",
+                "GyMd",
+                "GyMd",
+                "GyMd",
             }
             availableFormats{
                 E{"ccc"}
@@ -5487,9 +5673,9 @@ zh_Hant{
                 MMMEd{"M月d日E"}
                 Md{"M/d"}
                 d{"d日"}
-                h{"ah時"}
-                hm{"ah:mm"}
-                hms{"ah:mm:ss"}
+                h{"Bh時"}
+                hm{"Bh:mm"}
+                hms{"Bh:mm:ss"}
                 ms{"mm:ss"}
                 y{"Gy年"}
                 yyyy{"Gy年"}
@@ -6266,22 +6452,22 @@ zh_Hant{
                     d{"d日至d日"}
                 }
                 h{
-                    a{"ah時至ah時"}
-                    h{"ah時至h時"}
+                    B{"Bh時至Bh時"}
+                    h{"Bh時至h時"}
                 }
                 hm{
-                    a{"ah:mm至ah:mm"}
-                    h{"ah:mm至h:mm"}
-                    m{"ah:mm至h:mm"}
+                    B{"Bh:mm至Bh:mm"}
+                    h{"Bh:mm至h:mm"}
+                    m{"Bh:mm至h:mm"}
                 }
                 hmv{
-                    a{"ah:mm至ah:mm [v]"}
-                    h{"ah:mm至h:mm [v]"}
-                    m{"ah:mm至h:mm [v]"}
+                    B{"Bh:mm至Bh:mm [v]"}
+                    h{"Bh:mm至h:mm [v]"}
+                    m{"Bh:mm至h:mm [v]"}
                 }
                 hv{
-                    a{"ah時至ah時 [v]"}
-                    h{"ah時至h時 [v]"}
+                    B{"Bh時至Bh時 [v]"}
+                    h{"Bh時至h時 [v]"}
                 }
                 y{
                     y{"G y至y"}
@@ -6322,10 +6508,10 @@ zh_Hant{
         }
         persian{
             DateTimePatterns{
-                "ah:mm:ss [zzzz]",
-                "ah:mm:ss [z]",
-                "ah:mm:ss",
-                "ah:mm",
+                "Bh:mm:ss [zzzz]",
+                "Bh:mm:ss [z]",
+                "Bh:mm:ss",
+                "Bh:mm",
                 "G y年M月d日 EEEE",
                 "G y年M月d日",
                 "G y年M月d日",
@@ -6335,6 +6521,16 @@ zh_Hant{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "Bhmmsszzzz",
+                "Bhmmssz",
+                "Bhmmss",
+                "Bhmm",
+                "GyMEEEEd",
+                "GyMd",
+                "GyMd",
+                "GyMd",
             }
             availableFormats{
                 E{"ccc"}
@@ -6418,22 +6614,22 @@ zh_Hant{
                     d{"d日至d日"}
                 }
                 h{
-                    a{"ah時至ah時"}
-                    h{"ah時至h時"}
+                    B{"Bh時至Bh時"}
+                    h{"Bh時至h時"}
                 }
                 hm{
-                    a{"ah:mm至ah:mm"}
-                    h{"ah:mm至h:mm"}
-                    m{"ah:mm至h:mm"}
+                    B{"Bh:mm至Bh:mm"}
+                    h{"Bh:mm至h:mm"}
+                    m{"Bh:mm至h:mm"}
                 }
                 hmv{
-                    a{"ah:mm至ah:mm [v]"}
-                    h{"ah:mm至h:mm [v]"}
-                    m{"ah:mm至h:mm [v]"}
+                    B{"Bh:mm至Bh:mm [v]"}
+                    h{"Bh:mm至h:mm [v]"}
+                    m{"Bh:mm至h:mm [v]"}
                 }
                 hv{
-                    a{"ah時至ah時 [v]"}
-                    h{"ah時至h時 [v]"}
+                    B{"Bh時至Bh時 [v]"}
+                    h{"Bh時至h時 [v]"}
                 }
                 y{
                     y{"G y至y"}
@@ -6564,10 +6760,10 @@ zh_Hant{
         }
         roc{
             DateTimePatterns{
-                "ah:mm:ss [zzzz]",
-                "ah:mm:ss [z]",
-                "ah:mm:ss",
-                "ah:mm",
+                "Bh:mm:ss [zzzz]",
+                "Bh:mm:ss [z]",
+                "Bh:mm:ss",
+                "Bh:mm",
                 "Gy年M月d日 EEEE",
                 "Gy年M月d日",
                 "Gy年M月d日",
@@ -6578,6 +6774,16 @@ zh_Hant{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "Bhmmsszzzz",
+                "Bhmmssz",
+                "Bhmmss",
+                "Bhmm",
+                "GyMEEEEd",
+                "GyMd",
+                "GyMd",
+                "GyMd",
+            }
             availableFormats{
                 E{"ccc"}
                 Ed{"d E"}
@@ -6585,6 +6791,10 @@ zh_Hant{
                 GyMMM{"Gy年M月"}
                 GyMMMEd{"Gy年M月d日E"}
                 GyMMMd{"Gy年M月d日"}
+                GyMd{"Gy/M/d"}
+                H{"H時"}
+                Hm{"H:mm"}
+                Hms{"H:mm:ss"}
                 M{"M月"}
                 MEd{"M/d（E）"}
                 MMM{"LLL"}
@@ -6593,6 +6803,9 @@ zh_Hant{
                 MMMd{"M月d日"}
                 Md{"M/d"}
                 d{"d日"}
+                h{"Bh時"}
+                hm{"Bh:mm"}
+                hms{"Bh:mm:ss"}
                 y{"Gy年"}
                 yyyy{"Gy年"}
                 yyyyM{"Gy/M"}
@@ -6663,22 +6876,22 @@ zh_Hant{
                     d{"d日至d日"}
                 }
                 h{
-                    a{"ah時至ah時"}
-                    h{"ah時至h時"}
+                    B{"Bh時至Bh時"}
+                    h{"Bh時至h時"}
                 }
                 hm{
-                    a{"ah:mm至ah:mm"}
-                    h{"ah:mm至h:mm"}
-                    m{"ah:mm至h:mm"}
+                    B{"Bh:mm至Bh:mm"}
+                    h{"Bh:mm至h:mm"}
+                    m{"Bh:mm至h:mm"}
                 }
                 hmv{
-                    a{"ah:mm至ah:mm [v]"}
-                    h{"ah:mm至h:mm [v]"}
-                    m{"ah:mm至h:mm [v]"}
+                    B{"Bh:mm至Bh:mm [v]"}
+                    h{"Bh:mm至h:mm [v]"}
+                    m{"Bh:mm至h:mm [v]"}
                 }
                 hv{
-                    a{"ah時至ah時 [v]"}
-                    h{"ah時至h時 [v]"}
+                    B{"Bh時至Bh時 [v]"}
+                    h{"Bh時至h時 [v]"}
                 }
                 y{
                     y{"G y至y"}

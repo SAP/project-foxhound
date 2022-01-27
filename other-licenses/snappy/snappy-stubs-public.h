@@ -39,14 +39,14 @@
 #include <stdint.h>
 
 #if defined IS_BIG_ENDIAN || defined __BIG_ENDIAN__
-#define WORDS_BIGENDIAN
+#  define WORDS_BIGENDIAN
 #endif
 
 #define SNAPPY_MAJOR 1
 #define SNAPPY_MINOR 1
-#define SNAPPY_PATCHLEVEL 3
+#define SNAPPY_PATCHLEVEL 8
 #define SNAPPY_VERSION \
-    ((SNAPPY_MAJOR << 16) | (SNAPPY_MINOR << 8) | SNAPPY_PATCHLEVEL)
+  ((SNAPPY_MAJOR << 16) | (SNAPPY_MINOR << 8) | SNAPPY_PATCHLEVEL)
 
 #include <string>
 
@@ -64,22 +64,22 @@ typedef uint64_t uint64;
 typedef std::string string;
 
 #ifndef DISALLOW_COPY_AND_ASSIGN
-#define DISALLOW_COPY_AND_ASSIGN(TypeName) \
-  TypeName(const TypeName&);               \
-  void operator=(const TypeName&)
+#  define DISALLOW_COPY_AND_ASSIGN(TypeName) \
+    TypeName(const TypeName&);               \
+    void operator=(const TypeName&)
 #endif
 
 struct iovec {
-	void* iov_base;
-	size_t iov_len;
+  void* iov_base;
+  size_t iov_len;
 };
 
 #if defined(_WIN32) || defined(_WIN64)
-#if defined(_WIN64)
+#  if defined(_WIN64)
 typedef __int64 LONG_PTR;
-#else
+#  else
 typedef long LONG_PTR;
-#endif
+#  endif
 typedef LONG_PTR SSIZE_T;
 typedef SSIZE_T ssize_t;
 #endif

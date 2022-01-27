@@ -11,6 +11,7 @@
 #include "ContentBlockingUserInteraction.h"
 
 #include "mozilla/net/HttpBaseChannel.h"
+#include "mozilla/Telemetry.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
 #include "nsICookieService.h"
@@ -196,7 +197,8 @@ void DynamicFpiRedirectHeuristic(nsIChannel* aOldChannel, nsIURI* aOldURI,
 
   nsresult rv;
 
-  if (!StaticPrefs::
+  if (!StaticPrefs::privacy_antitracking_enableWebcompat() ||
+      !StaticPrefs::
           privacy_restrict3rdpartystorage_heuristic_recently_visited()) {
     return;
   }
@@ -215,8 +217,9 @@ void DynamicFpiRedirectHeuristic(nsIChannel* aOldChannel, nsIURI* aOldURI,
   nsCOMPtr<nsILoadInfo> newLoadInfo = aNewChannel->LoadInfo();
   MOZ_ASSERT(newLoadInfo);
 
-  nsContentPolicyType contentType = oldLoadInfo->GetExternalContentPolicyType();
-  if (contentType != nsIContentPolicy::TYPE_DOCUMENT ||
+  ExtContentPolicyType contentType =
+      oldLoadInfo->GetExternalContentPolicyType();
+  if (contentType != ExtContentPolicy::TYPE_DOCUMENT ||
       !aOldChannel->IsDocument()) {
     LOG_SPEC(("Ignoring redirect for %s because it's not a document", _spec),
              aOldURI);
@@ -319,6 +322,11 @@ void DynamicFpiRedirectHeuristic(nsIChannel* aOldChannel, nsIURI* aOldURI,
        newOrigin.get()));
 
   AddConsoleReport(aNewChannel, aNewURI, oldOrigin, newOrigin);
+
+  Telemetry::AccumulateCategorical(
+      Telemetry::LABELS_STORAGE_ACCESS_GRANTED_COUNT::StorageGranted);
+  Telemetry::AccumulateCategorical(
+      Telemetry::LABELS_STORAGE_ACCESS_GRANTED_COUNT::Redirect);
 
   // We don't care about this promise because the operation is actually sync.
   RefPtr<ContentBlocking::ParentAccessGrantPromise> promise =

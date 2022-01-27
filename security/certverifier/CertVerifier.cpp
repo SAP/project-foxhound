@@ -11,6 +11,7 @@
 #include "CTDiversityPolicy.h"
 #include "CTKnownLogs.h"
 #include "CTLogVerifier.h"
+#include "CSTrustDomain.h"
 #include "ExtendedValidation.h"
 #include "MultiLogCTVerifier.h"
 #include "NSSCertDBTrustDomain.h"
@@ -19,12 +20,15 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Casting.h"
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/Logging.h"
 #include "nsNSSComponent.h"
 #include "nsPromiseFlatString.h"
 #include "nsServiceManagerUtils.h"
 #include "pk11pub.h"
 #include "mozpkix/pkix.h"
+#include "mozpkix/pkixcheck.h"
 #include "mozpkix/pkixnss.h"
+#include "mozpkix/pkixutil.h"
 #include "secmod.h"
 
 using namespace mozilla::ct;
@@ -35,19 +39,32 @@ mozilla::LazyLogModule gCertVerifierLog("certverifier");
 
 // Returns the certificate validity period in calendar months (rounded down).
 // "extern" to allow unit tests in CTPolicyEnforcerTest.cpp.
-extern mozilla::pkix::Result GetCertLifetimeInFullMonths(PRTime certNotBefore,
-                                                         PRTime certNotAfter,
+extern mozilla::pkix::Result GetCertLifetimeInFullMonths(Time certNotBefore,
+                                                         Time certNotAfter,
                                                          size_t& months) {
   if (certNotBefore >= certNotAfter) {
     MOZ_ASSERT_UNREACHABLE("Expected notBefore < notAfter");
     return mozilla::pkix::Result::FATAL_ERROR_INVALID_ARGS;
   }
+  uint64_t notBeforeSeconds;
+  Result rv = SecondsSinceEpochFromTime(certNotBefore, &notBeforeSeconds);
+  if (rv != Success) {
+    return rv;
+  }
+  uint64_t notAfterSeconds;
+  rv = SecondsSinceEpochFromTime(certNotAfter, &notAfterSeconds);
+  if (rv != Success) {
+    return rv;
+  }
+  // PRTime is microseconds
+  PRTime notBeforePR = static_cast<PRTime>(notBeforeSeconds) * 1000000;
+  PRTime notAfterPR = static_cast<PRTime>(notAfterSeconds) * 1000000;
 
   PRExplodedTime explodedNotBefore;
   PRExplodedTime explodedNotAfter;
 
-  PR_ExplodeTime(certNotBefore, PR_LocalTimeParameters, &explodedNotBefore);
-  PR_ExplodeTime(certNotAfter, PR_LocalTimeParameters, &explodedNotAfter);
+  PR_ExplodeTime(notBeforePR, PR_LocalTimeParameters, &explodedNotBefore);
+  PR_ExplodeTime(notAfterPR, PR_LocalTimeParameters, &explodedNotAfter);
 
   PRInt32 signedMonths =
       (explodedNotAfter.tm_year - explodedNotBefore.tm_year) * 12 +
@@ -85,26 +102,24 @@ void CertificateTransparencyInfo::Reset() {
 CertVerifier::CertVerifier(OcspDownloadConfig odc, OcspStrictConfig osc,
                            mozilla::TimeDuration ocspTimeoutSoft,
                            mozilla::TimeDuration ocspTimeoutHard,
-                           uint32_t certShortLifetimeInDays,
-                           PinningMode pinningMode, SHA1Mode sha1Mode,
+                           uint32_t certShortLifetimeInDays, SHA1Mode sha1Mode,
                            BRNameMatchingPolicy::Mode nameMatchingMode,
                            NetscapeStepUpPolicy netscapeStepUpPolicy,
                            CertificateTransparencyMode ctMode,
-                           DistrustedCAPolicy distrustedCAPolicy,
                            CRLiteMode crliteMode,
+                           uint64_t crliteCTMergeDelaySeconds,
                            const Vector<EnterpriseCert>& thirdPartyCerts)
     : mOCSPDownloadConfig(odc),
       mOCSPStrict(osc == ocspStrict),
       mOCSPTimeoutSoft(ocspTimeoutSoft),
       mOCSPTimeoutHard(ocspTimeoutHard),
       mCertShortLifetimeInDays(certShortLifetimeInDays),
-      mPinningMode(pinningMode),
       mSHA1Mode(sha1Mode),
       mNameMatchingMode(nameMatchingMode),
       mNetscapeStepUpPolicy(netscapeStepUpPolicy),
       mCTMode(ctMode),
-      mDistrustedCAPolicy(distrustedCAPolicy),
-      mCRLiteMode(crliteMode) {
+      mCRLiteMode(crliteMode),
+      mCRLiteCTMergeDelaySeconds(crliteCTMergeDelaySeconds) {
   LoadKnownCTLogs();
   for (const auto& root : thirdPartyCerts) {
     EnterpriseCert rootCopy;
@@ -130,24 +145,21 @@ CertVerifier::CertVerifier(OcspDownloadConfig odc, OcspStrictConfig osc,
 
 CertVerifier::~CertVerifier() = default;
 
-Result IsCertChainRootBuiltInRoot(const UniqueCERTCertList& chain,
+Result IsCertChainRootBuiltInRoot(const nsTArray<nsTArray<uint8_t>>& chain,
                                   bool& result) {
-  if (!chain || CERT_LIST_EMPTY(chain)) {
+  if (chain.IsEmpty()) {
     return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
-  CERTCertListNode* rootNode = CERT_LIST_TAIL(chain);
-  if (!rootNode) {
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
+  const nsTArray<uint8_t>& rootBytes = chain.LastElement();
+  Input rootInput;
+  Result rv = rootInput.Init(rootBytes.Elements(), rootBytes.Length());
+  if (rv != Result::Success) {
+    return rv;
   }
-  CERTCertificate* root = rootNode->cert;
-  if (!root) {
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
-  }
-  return IsCertBuiltInRoot(root, result);
+  return IsCertBuiltInRoot(rootInput, result);
 }
 
-Result IsDelegatedCredentialAcceptable(const DelegatedCredentialInfo& dcInfo,
-                                       SECOidTag evOidPolicyTag) {
+Result IsDelegatedCredentialAcceptable(const DelegatedCredentialInfo& dcInfo) {
   bool isEcdsa = dcInfo.scheme == ssl_sig_ecdsa_secp256r1_sha256 ||
                  dcInfo.scheme == ssl_sig_ecdsa_secp384r1_sha384 ||
                  dcInfo.scheme == ssl_sig_ecdsa_secp521r1_sha512;
@@ -167,8 +179,16 @@ Result IsDelegatedCredentialAcceptable(const DelegatedCredentialInfo& dcInfo,
 // has been added to the NSS trust store, because it has been approved
 // for inclusion according to the Mozilla CA policy, and might be accepted
 // by Mozilla applications as an issuer for certificates seen on the public web.
-Result IsCertBuiltInRoot(CERTCertificate* cert, bool& result) {
+Result IsCertBuiltInRoot(Input certInput, bool& result) {
   if (NS_FAILED(BlockUntilLoadableCertsLoaded())) {
+    return Result::FATAL_ERROR_LIBRARY_FAILURE;
+  }
+
+  CERTCertDBHandle* certDB(CERT_GetDefaultCertDB());
+  SECItem certDER(UnsafeMapInputToSECItem(certInput));
+  UniqueCERTCertificate cert(
+      CERT_NewTempCertificate(certDB, &certDER, nullptr, false, true));
+  if (!cert) {
     return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
 
@@ -178,7 +198,7 @@ Result IsCertBuiltInRoot(CERTCertificate* cert, bool& result) {
   if (!component) {
     return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
-  nsresult rv = component->IsCertTestBuiltInRoot(cert, &result);
+  nsresult rv = component->IsCertTestBuiltInRoot(cert.get(), &result);
   if (NS_FAILED(rv)) {
     return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
@@ -205,7 +225,8 @@ Result IsCertBuiltInRoot(CERTCertificate* cert, bool& result) {
       // If the certificate has attribute CKA_NSS_MOZILLA_CA_POLICY set to true,
       // then we treat it as a "builtin root".
       if (PK11_IsPresent(slot) && PK11_HasRootCerts(slot)) {
-        CK_OBJECT_HANDLE handle = PK11_FindCertInSlot(slot, cert, nullptr);
+        CK_OBJECT_HANDLE handle =
+            PK11_FindCertInSlot(slot, cert.get(), nullptr);
         if (handle != CK_INVALID_HANDLE &&
             PK11_HasAttributeSet(slot, handle, CKA_NSS_MOZILLA_CA_POLICY,
                                  false)) {
@@ -281,8 +302,8 @@ void CertVerifier::LoadKnownCTLogs() {
 }
 
 Result CertVerifier::VerifyCertificateTransparencyPolicy(
-    NSSCertDBTrustDomain& trustDomain, const UniqueCERTCertList& builtChain,
-    Input sctsFromTLS, Time time,
+    NSSCertDBTrustDomain& trustDomain,
+    const nsTArray<nsTArray<uint8_t>>& builtChain, Input sctsFromTLS, Time time,
     /*optional out*/ CertificateTransparencyInfo* ctInfo) {
   if (ctInfo) {
     ctInfo->Reset();
@@ -294,7 +315,7 @@ Result CertVerifier::VerifyCertificateTransparencyPolicy(
     ctInfo->enabled = true;
   }
 
-  if (!builtChain || CERT_LIST_EMPTY(builtChain)) {
+  if (builtChain.IsEmpty()) {
     return Result::FATAL_ERROR_INVALID_ARGS;
   }
 
@@ -316,12 +337,7 @@ Result CertVerifier::VerifyCertificateTransparencyPolicy(
              static_cast<size_t>(sctsFromTLS.GetLength())));
   }
 
-  CERTCertListNode* endEntityNode = CERT_LIST_HEAD(builtChain);
-  if (!endEntityNode || CERT_LIST_END(endEntityNode, builtChain)) {
-    return Result::FATAL_ERROR_INVALID_ARGS;
-  }
-  CERTCertListNode* issuerNode = CERT_LIST_NEXT(endEntityNode);
-  if (!issuerNode || CERT_LIST_END(issuerNode, builtChain)) {
+  if (builtChain.Length() == 1) {
     // Issuer certificate is required for SCT verification.
     // If we've arrived here, we probably have a "trust chain" with only one
     // certificate (i.e. a self-signed end-entity that has been set as a trust
@@ -338,34 +354,30 @@ Result CertVerifier::VerifyCertificateTransparencyPolicy(
     return Success;
   }
 
-  CERTCertificate* endEntity = endEntityNode->cert;
-  CERTCertificate* issuer = issuerNode->cert;
-  if (!endEntity || !issuer) {
-    return Result::FATAL_ERROR_INVALID_ARGS;
-  }
-
-  if (endEntity->subjectName) {
-    MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
-            ("Verifying CT Policy compliance of subject %s\n",
-             endEntity->subjectName));
-  }
-
-  Input endEntityDER;
+  const nsTArray<uint8_t>& endEntityBytes = builtChain.ElementAt(0);
+  Input endEntityInput;
   Result rv =
-      endEntityDER.Init(endEntity->derCert.data, endEntity->derCert.len);
+      endEntityInput.Init(endEntityBytes.Elements(), endEntityBytes.Length());
   if (rv != Success) {
     return rv;
   }
 
-  Input issuerPublicKeyDER;
-  rv = issuerPublicKeyDER.Init(issuer->derPublicKey.data,
-                               issuer->derPublicKey.len);
+  const nsTArray<uint8_t>& issuerBytes = builtChain.ElementAt(1);
+  Input issuerInput;
+  rv = issuerInput.Init(issuerBytes.Elements(), issuerBytes.Length());
   if (rv != Success) {
     return rv;
   }
+
+  BackCert issuerBackCert(issuerInput, EndEntityOrCA::MustBeCA, nullptr);
+  rv = issuerBackCert.Init();
+  if (rv != Success) {
+    return rv;
+  }
+  Input issuerPublicKeyInput = issuerBackCert.GetSubjectPublicKeyInfo();
 
   CTVerifyResult result;
-  rv = mCTVerifier->Verify(endEntityDER, issuerPublicKeyDER, embeddedSCTs,
+  rv = mCTVerifier->Verify(endEntityInput, issuerPublicKeyInput, embeddedSCTs,
                            sctsFromOCSP, sctsFromTLS, time, result);
   if (rv != Success) {
     MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
@@ -412,10 +424,17 @@ Result CertVerifier::VerifyCertificateTransparencyPolicy(
          invalidSignatureCount, invalidTimestampCount, result.decodingErrors));
   }
 
-  PRTime notBefore;
-  PRTime notAfter;
-  if (CERT_GetCertTimes(endEntity, &notBefore, &notAfter) != SECSuccess) {
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
+  BackCert endEntityBackCert(endEntityInput, EndEntityOrCA::MustBeEndEntity,
+                             nullptr);
+  rv = endEntityBackCert.Init();
+  if (rv != Success) {
+    return rv;
+  }
+  Time notBefore(Time::uninitialized);
+  Time notAfter(Time::uninitialized);
+  rv = ParseValidity(endEntityBackCert.GetValidity(), &notBefore, &notAfter);
+  if (rv != Success) {
+    return rv;
   }
   size_t lifetimeInMonths;
   rv = GetCertLifetimeInFullMonths(notBefore, notAfter, lifetimeInMonths);
@@ -427,7 +446,7 @@ Result CertVerifier::VerifyCertificateTransparencyPolicy(
   GetCTLogOperatorsFromVerifiedSCTList(result.verifiedScts, allOperators);
 
   CTLogOperatorList dependentOperators;
-  rv = mCTDiversityPolicy->GetDependentOperators(builtChain.get(), allOperators,
+  rv = mCTDiversityPolicy->GetDependentOperators(builtChain, allOperators,
                                                  dependentOperators);
   if (rv != Success) {
     return rv;
@@ -464,24 +483,22 @@ bool CertVerifier::SHA1ModeMoreRestrictiveThanGivenMode(SHA1Mode mode) {
 }
 
 Result CertVerifier::VerifyCert(
-    CERTCertificate* cert, SECCertificateUsage usage, Time time, void* pinArg,
-    const char* hostname,
-    /*out*/ UniqueCERTCertList& builtChain,
+    const nsTArray<uint8_t>& certBytes, SECCertificateUsage usage, Time time,
+    void* pinArg, const char* hostname,
+    /*out*/ nsTArray<nsTArray<uint8_t>>& builtChain,
     /*optional*/ const Flags flags,
     /*optional*/ const Maybe<nsTArray<nsTArray<uint8_t>>>& extraCertificates,
     /*optional*/ const Maybe<nsTArray<uint8_t>>& stapledOCSPResponseArg,
     /*optional*/ const Maybe<nsTArray<uint8_t>>& sctsFromTLS,
     /*optional*/ const OriginAttributes& originAttributes,
-    /*optional out*/ SECOidTag* evOidPolicy,
+    /*optional out*/ EVStatus* evStatus,
     /*optional out*/ OCSPStaplingStatus* ocspStaplingStatus,
     /*optional out*/ KeySizeStatus* keySizeStatus,
     /*optional out*/ SHA1ModeResult* sha1ModeResult,
     /*optional out*/ PinningTelemetryInfo* pinningTelemetryInfo,
-    /*optional out*/ CertificateTransparencyInfo* ctInfo,
-    /*optional out*/ CRLiteTelemetryInfo* crliteInfo) {
+    /*optional out*/ CertificateTransparencyInfo* ctInfo) {
   MOZ_LOG(gCertVerifierLog, LogLevel::Debug, ("Top of VerifyCert\n"));
 
-  MOZ_ASSERT(cert);
   MOZ_ASSERT(usage == certificateUsageSSLServer || !(flags & FLAG_MUST_BE_EV));
   MOZ_ASSERT(usage == certificateUsageSSLServer || !keySizeStatus);
   MOZ_ASSERT(usage == certificateUsageSSLServer || !sha1ModeResult);
@@ -493,8 +510,8 @@ Result CertVerifier::VerifyCert(
     return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
 
-  if (evOidPolicy) {
-    *evOidPolicy = SEC_OID_UNKNOWN;
+  if (evStatus) {
+    *evStatus = EVStatus::NotEV;
   }
   if (ocspStaplingStatus) {
     if (usage != certificateUsageSSLServer) {
@@ -517,13 +534,12 @@ Result CertVerifier::VerifyCert(
     *sha1ModeResult = SHA1ModeResult::NeverChecked;
   }
 
-  if (!cert ||
-      (usage != certificateUsageSSLServer && (flags & FLAG_MUST_BE_EV))) {
+  if (usage != certificateUsageSSLServer && (flags & FLAG_MUST_BE_EV)) {
     return Result::FATAL_ERROR_INVALID_ARGS;
   }
 
   Input certDER;
-  Result rv = certDER.Init(cert->derCert.data, cert->derCert.len);
+  Result rv = certDER.Init(certBytes.Elements(), certBytes.Length());
   if (rv != Success) {
     return rv;
   }
@@ -534,8 +550,8 @@ Result CertVerifier::VerifyCert(
       (mOCSPDownloadConfig == ocspOff) || (mOCSPDownloadConfig == ocspEVOnly) ||
               (flags & FLAG_LOCAL_ONLY)
           ? NSSCertDBTrustDomain::NeverFetchOCSP
-          : !mOCSPStrict ? NSSCertDBTrustDomain::FetchOCSPForDVSoftFail
-                         : NSSCertDBTrustDomain::FetchOCSPForDVHardFail;
+      : !mOCSPStrict ? NSSCertDBTrustDomain::FetchOCSPForDVSoftFail
+                     : NSSCertDBTrustDomain::FetchOCSPForDVHardFail;
 
   Input stapledOCSPResponseInput;
   const Input* stapledOCSPResponse = nullptr;
@@ -563,12 +579,12 @@ Result CertVerifier::VerifyCert(
       // just use trustEmail as it is the closest alternative.
       NSSCertDBTrustDomain trustDomain(
           trustEmail, defaultOCSPFetching, mOCSPCache, pinArg, mOCSPTimeoutSoft,
-          mOCSPTimeoutHard, mCertShortLifetimeInDays, pinningDisabled,
-          MIN_RSA_BITS_WEAK, ValidityCheckingMode::CheckingOff,
-          SHA1Mode::Allowed, NetscapeStepUpPolicy::NeverMatch,
-          mDistrustedCAPolicy, mCRLiteMode, originAttributes,
-          mThirdPartyRootInputs, mThirdPartyIntermediateInputs,
-          extraCertificates, builtChain, nullptr, nullptr);
+          mOCSPTimeoutHard, mCertShortLifetimeInDays, MIN_RSA_BITS_WEAK,
+          ValidityCheckingMode::CheckingOff, SHA1Mode::Allowed,
+          NetscapeStepUpPolicy::NeverMatch, mCRLiteMode,
+          mCRLiteCTMergeDelaySeconds, originAttributes, mThirdPartyRootInputs,
+          mThirdPartyIntermediateInputs, extraCertificates, builtChain, nullptr,
+          nullptr);
       rv = BuildCertChain(
           trustDomain, certDER, time, EndEntityOrCA::MustBeEndEntity,
           KeyUsage::digitalSignature, KeyPurposeId::id_kp_clientAuth,
@@ -605,8 +621,6 @@ Result CertVerifier::VerifyCert(
                         MOZ_ARRAY_LENGTH(sha1ModeResults),
                     "digestAlgorithm array lengths differ");
 
-      rv = Result::ERROR_UNKNOWN_ERROR;
-
       // Try to validate for EV first.
       NSSCertDBTrustDomain::OCSPFetching evOCSPFetching =
           (mOCSPDownloadConfig == ocspOff) || (flags & FLAG_LOCAL_ONLY)
@@ -614,8 +628,8 @@ Result CertVerifier::VerifyCert(
               : NSSCertDBTrustDomain::FetchOCSPForEV;
 
       CertPolicyId evPolicy;
-      SECOidTag evPolicyOidTag;
-      bool foundEVPolicy = GetFirstEVPolicy(*cert, evPolicy, evPolicyOidTag);
+      bool foundEVPolicy = GetFirstEVPolicy(certBytes, evPolicy);
+      rv = Result::ERROR_UNKNOWN_ERROR;
       for (size_t i = 0;
            i < sha1ModeConfigurationsCount && rv != Success && foundEVPolicy;
            i++) {
@@ -634,19 +648,15 @@ Result CertVerifier::VerifyCert(
         if (pinningTelemetryInfo) {
           pinningTelemetryInfo->Reset();
         }
-        if (crliteInfo) {
-          crliteInfo->Reset();
-        }
 
         NSSCertDBTrustDomain trustDomain(
             trustSSL, evOCSPFetching, mOCSPCache, pinArg, mOCSPTimeoutSoft,
-            mOCSPTimeoutHard, mCertShortLifetimeInDays, mPinningMode,
-            MIN_RSA_BITS, ValidityCheckingMode::CheckForEV,
-            sha1ModeConfigurations[i], mNetscapeStepUpPolicy,
-            mDistrustedCAPolicy, mCRLiteMode, originAttributes,
-            mThirdPartyRootInputs, mThirdPartyIntermediateInputs,
-            extraCertificates, builtChain, pinningTelemetryInfo, crliteInfo,
-            hostname);
+            mOCSPTimeoutHard, mCertShortLifetimeInDays, MIN_RSA_BITS,
+            ValidityCheckingMode::CheckForEV, sha1ModeConfigurations[i],
+            mNetscapeStepUpPolicy, mCRLiteMode, mCRLiteCTMergeDelaySeconds,
+            originAttributes, mThirdPartyRootInputs,
+            mThirdPartyIntermediateInputs, extraCertificates, builtChain,
+            pinningTelemetryInfo, hostname);
         rv = BuildCertChainForOneKeyUsage(
             trustDomain, certDER, time,
             KeyUsage::digitalSignature,  // (EC)DHE
@@ -669,8 +679,8 @@ Result CertVerifier::VerifyCert(
           MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
                   ("cert is EV with status %i\n",
                    static_cast<int>(sha1ModeResults[i])));
-          if (evOidPolicy) {
-            *evOidPolicy = evPolicyOidTag;
+          if (evStatus) {
+            *evStatus = foundEVPolicy ? EVStatus::EV : EVStatus::NotEV;
           }
           if (sha1ModeResult) {
             *sha1ModeResult = sha1ModeResults[i];
@@ -720,19 +730,15 @@ Result CertVerifier::VerifyCert(
           if (pinningTelemetryInfo) {
             pinningTelemetryInfo->Reset();
           }
-          if (crliteInfo) {
-            crliteInfo->Reset();
-          }
 
           NSSCertDBTrustDomain trustDomain(
               trustSSL, defaultOCSPFetching, mOCSPCache, pinArg,
               mOCSPTimeoutSoft, mOCSPTimeoutHard, mCertShortLifetimeInDays,
-              mPinningMode, keySizeOptions[i],
-              ValidityCheckingMode::CheckingOff, sha1ModeConfigurations[j],
-              mNetscapeStepUpPolicy, mDistrustedCAPolicy, mCRLiteMode,
-              originAttributes, mThirdPartyRootInputs,
-              mThirdPartyIntermediateInputs, extraCertificates, builtChain,
-              pinningTelemetryInfo, crliteInfo, hostname);
+              keySizeOptions[i], ValidityCheckingMode::CheckingOff,
+              sha1ModeConfigurations[j], mNetscapeStepUpPolicy, mCRLiteMode,
+              mCRLiteCTMergeDelaySeconds, originAttributes,
+              mThirdPartyRootInputs, mThirdPartyIntermediateInputs,
+              extraCertificates, builtChain, pinningTelemetryInfo, hostname);
           rv = BuildCertChainForOneKeyUsage(
               trustDomain, certDER, time,
               KeyUsage::digitalSignature,  //(EC)DHE
@@ -797,10 +803,10 @@ Result CertVerifier::VerifyCert(
     case certificateUsageSSLCA: {
       NSSCertDBTrustDomain trustDomain(
           trustSSL, defaultOCSPFetching, mOCSPCache, pinArg, mOCSPTimeoutSoft,
-          mOCSPTimeoutHard, mCertShortLifetimeInDays, pinningDisabled,
-          MIN_RSA_BITS_WEAK, ValidityCheckingMode::CheckingOff,
-          SHA1Mode::Allowed, mNetscapeStepUpPolicy, mDistrustedCAPolicy,
-          mCRLiteMode, originAttributes, mThirdPartyRootInputs,
+          mOCSPTimeoutHard, mCertShortLifetimeInDays, MIN_RSA_BITS_WEAK,
+          ValidityCheckingMode::CheckingOff, SHA1Mode::Allowed,
+          mNetscapeStepUpPolicy, mCRLiteMode, mCRLiteCTMergeDelaySeconds,
+          originAttributes, mThirdPartyRootInputs,
           mThirdPartyIntermediateInputs, extraCertificates, builtChain, nullptr,
           nullptr);
       rv = BuildCertChain(trustDomain, certDER, time, EndEntityOrCA::MustBeCA,
@@ -812,12 +818,12 @@ Result CertVerifier::VerifyCert(
     case certificateUsageEmailSigner: {
       NSSCertDBTrustDomain trustDomain(
           trustEmail, defaultOCSPFetching, mOCSPCache, pinArg, mOCSPTimeoutSoft,
-          mOCSPTimeoutHard, mCertShortLifetimeInDays, pinningDisabled,
-          MIN_RSA_BITS_WEAK, ValidityCheckingMode::CheckingOff,
-          SHA1Mode::Allowed, NetscapeStepUpPolicy::NeverMatch,
-          mDistrustedCAPolicy, mCRLiteMode, originAttributes,
-          mThirdPartyRootInputs, mThirdPartyIntermediateInputs,
-          extraCertificates, builtChain, nullptr, nullptr);
+          mOCSPTimeoutHard, mCertShortLifetimeInDays, MIN_RSA_BITS_WEAK,
+          ValidityCheckingMode::CheckingOff, SHA1Mode::Allowed,
+          NetscapeStepUpPolicy::NeverMatch, mCRLiteMode,
+          mCRLiteCTMergeDelaySeconds, originAttributes, mThirdPartyRootInputs,
+          mThirdPartyIntermediateInputs, extraCertificates, builtChain, nullptr,
+          nullptr);
       rv = BuildCertChain(
           trustDomain, certDER, time, EndEntityOrCA::MustBeEndEntity,
           KeyUsage::digitalSignature, KeyPurposeId::id_kp_emailProtection,
@@ -837,12 +843,12 @@ Result CertVerifier::VerifyCert(
       // based on the result of the verification(s).
       NSSCertDBTrustDomain trustDomain(
           trustEmail, defaultOCSPFetching, mOCSPCache, pinArg, mOCSPTimeoutSoft,
-          mOCSPTimeoutHard, mCertShortLifetimeInDays, pinningDisabled,
-          MIN_RSA_BITS_WEAK, ValidityCheckingMode::CheckingOff,
-          SHA1Mode::Allowed, NetscapeStepUpPolicy::NeverMatch,
-          mDistrustedCAPolicy, mCRLiteMode, originAttributes,
-          mThirdPartyRootInputs, mThirdPartyIntermediateInputs,
-          extraCertificates, builtChain, nullptr, nullptr);
+          mOCSPTimeoutHard, mCertShortLifetimeInDays, MIN_RSA_BITS_WEAK,
+          ValidityCheckingMode::CheckingOff, SHA1Mode::Allowed,
+          NetscapeStepUpPolicy::NeverMatch, mCRLiteMode,
+          mCRLiteCTMergeDelaySeconds, originAttributes, mThirdPartyRootInputs,
+          mThirdPartyIntermediateInputs, extraCertificates, builtChain, nullptr,
+          nullptr);
       rv = BuildCertChain(trustDomain, certDER, time,
                           EndEntityOrCA::MustBeEndEntity,
                           KeyUsage::keyEncipherment,  // RSA
@@ -869,54 +875,45 @@ Result CertVerifier::VerifyCert(
   return Success;
 }
 
-static bool CertIsSelfSigned(const UniqueCERTCertificate& cert, void* pinarg) {
-  if (!SECITEM_ItemsAreEqual(&cert->derIssuer, &cert->derSubject)) {
+static bool CertIsSelfSigned(const BackCert& backCert, void* pinarg) {
+  if (!InputsAreEqual(backCert.GetIssuer(), backCert.GetSubject())) {
     return false;
   }
 
-  // Check that the certificate is signed with the cert's spki.
-  SECStatus rv = CERT_VerifySignedDataWithPublicKeyInfo(
-      const_cast<CERTSignedData*>(&cert->signatureWrap),
-      const_cast<CERTSubjectPublicKeyInfo*>(&cert->subjectPublicKeyInfo),
-      pinarg);
-  if (rv != SECSuccess) {
-    return false;
-  }
-
-  return true;
+  nsTArray<nsTArray<uint8_t>> emptyCertList;
+  // CSTrustDomain is only used for the signature verification callbacks
+  mozilla::psm::CSTrustDomain trustDomain(emptyCertList);
+  Result rv = VerifySignedData(trustDomain, backCert.GetSignedData(),
+                               backCert.GetSubjectPublicKeyInfo());
+  return rv == Success;
 }
 
 Result CertVerifier::VerifySSLServerCert(
-    const UniqueCERTCertificate& peerCert, Time time,
+    const nsTArray<uint8_t>& peerCertBytes, Time time,
     /*optional*/ void* pinarg, const nsACString& hostname,
-    /*out*/ UniqueCERTCertList& builtChain,
+    /*out*/ nsTArray<nsTArray<uint8_t>>& builtChain,
     /*optional*/ Flags flags,
     /*optional*/ const Maybe<nsTArray<nsTArray<uint8_t>>>& extraCertificates,
     /*optional*/ const Maybe<nsTArray<uint8_t>>& stapledOCSPResponse,
     /*optional*/ const Maybe<nsTArray<uint8_t>>& sctsFromTLS,
     /*optional*/ const Maybe<DelegatedCredentialInfo>& dcInfo,
     /*optional*/ const OriginAttributes& originAttributes,
-    /*optional*/ bool saveIntermediatesInPermanentDatabase,
-    /*optional out*/ SECOidTag* evOidPolicy,
+    /*optional out*/ EVStatus* evStatus,
     /*optional out*/ OCSPStaplingStatus* ocspStaplingStatus,
     /*optional out*/ KeySizeStatus* keySizeStatus,
     /*optional out*/ SHA1ModeResult* sha1ModeResult,
     /*optional out*/ PinningTelemetryInfo* pinningTelemetryInfo,
     /*optional out*/ CertificateTransparencyInfo* ctInfo,
-    /*optional out*/ CRLiteTelemetryInfo* crliteInfo,
     /*optional out*/ bool* isBuiltCertChainRootBuiltInRoot) {
-  MOZ_ASSERT(peerCert);
   // XXX: MOZ_ASSERT(pinarg);
   MOZ_ASSERT(!hostname.IsEmpty());
-
-  SECOidTag evPolicyOidTag = SEC_OID_UNKNOWN;
 
   if (isBuiltCertChainRootBuiltInRoot) {
     *isBuiltCertChainRootBuiltInRoot = false;
   }
 
-  if (evOidPolicy) {
-    *evOidPolicy = evPolicyOidTag;
+  if (evStatus) {
+    *evStatus = EVStatus::NotEV;
   }
 
   if (hostname.IsEmpty()) {
@@ -925,15 +922,27 @@ Result CertVerifier::VerifySSLServerCert(
 
   // CreateCertErrorRunnable assumes that CheckCertHostname is only called
   // if VerifyCert succeeded.
-  Result rv = VerifyCert(peerCert.get(), certificateUsageSSLServer, time,
-                         pinarg, PromiseFlatCString(hostname).get(), builtChain,
-                         flags, extraCertificates, stapledOCSPResponse,
-                         sctsFromTLS, originAttributes, &evPolicyOidTag,
-                         ocspStaplingStatus, keySizeStatus, sha1ModeResult,
-                         pinningTelemetryInfo, ctInfo, crliteInfo);
+  Input peerCertInput;
+  Result rv =
+      peerCertInput.Init(peerCertBytes.Elements(), peerCertBytes.Length());
   if (rv != Success) {
+    return rv;
+  }
+  rv = VerifyCert(peerCertBytes, certificateUsageSSLServer, time, pinarg,
+                  PromiseFlatCString(hostname).get(), builtChain, flags,
+                  extraCertificates, stapledOCSPResponse, sctsFromTLS,
+                  originAttributes, evStatus, ocspStaplingStatus, keySizeStatus,
+                  sha1ModeResult, pinningTelemetryInfo, ctInfo);
+  if (rv != Success) {
+    // we don't use the certificate for path building, so this parameter doesn't
+    // matter
+    EndEntityOrCA notUsedForPaths = EndEntityOrCA::MustBeEndEntity;
+    BackCert peerBackCert(peerCertInput, notUsedForPaths, nullptr);
+    if (peerBackCert.Init() != Success) {
+      return rv;
+    }
     if (rv == Result::ERROR_UNKNOWN_ISSUER &&
-        CertIsSelfSigned(peerCert, pinarg)) {
+        CertIsSelfSigned(peerBackCert, pinarg)) {
       // In this case we didn't find any issuer for the certificate and the
       // certificate is self-signed.
       return Result::ERROR_SELF_SIGNED_CERT;
@@ -951,7 +960,13 @@ Result CertVerifier::VerifySSLServerCert(
       }
       // IssuerMatchesMitmCanary succeeds if the issuer matches the canary and
       // the feature is enabled.
-      nsresult rv = component->IssuerMatchesMitmCanary(peerCert->issuerName);
+      Input issuerNameInput = peerBackCert.GetIssuer();
+      SECItem issuerNameItem = UnsafeMapInputToSECItem(issuerNameInput);
+      UniquePORTString issuerName(CERT_DerNameToAscii(&issuerNameItem));
+      if (!issuerName) {
+        return Result::ERROR_BAD_DER;
+      }
+      nsresult rv = component->IssuerMatchesMitmCanary(issuerName.get());
       if (NS_SUCCEEDED(rv)) {
         return Result::ERROR_MITM_DETECTED;
       }
@@ -960,16 +975,10 @@ Result CertVerifier::VerifySSLServerCert(
   }
 
   if (dcInfo) {
-    rv = IsDelegatedCredentialAcceptable(*dcInfo, evPolicyOidTag);
+    rv = IsDelegatedCredentialAcceptable(*dcInfo);
     if (rv != Success) {
       return rv;
     }
-  }
-
-  Input peerCertInput;
-  rv = peerCertInput.Init(peerCert->derCert.data, peerCert->derCert.len);
-  if (rv != Success) {
-    return rv;
   }
 
   Input stapledOCSPResponseInput;
@@ -1019,14 +1028,6 @@ Result CertVerifier::VerifySSLServerCert(
     }
 
     return rv;
-  }
-
-  if (saveIntermediatesInPermanentDatabase) {
-    SaveIntermediateCerts(builtChain);
-  }
-
-  if (evOidPolicy) {
-    *evOidPolicy = evPolicyOidTag;
   }
 
   return Success;

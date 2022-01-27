@@ -27,7 +27,7 @@ loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
 
 loader.lazyRequireGetter(
   this,
-  "createRootFront",
+  ["createRootFront", "Front"],
   "devtools/shared/protocol",
   true
 );
@@ -38,7 +38,6 @@ loader.lazyRequireGetter(
   "devtools/client/fronts/object",
   true
 );
-loader.lazyRequireGetter(this, "Front", "devtools/shared/protocol", true);
 
 /**
  * Creates a client for the remote debugging protocol server. This client
@@ -114,33 +113,26 @@ DevToolsClient.prototype = {
    *         Resolves after the underlying transport is closed.
    */
   close() {
-    const promise = new Promise(resolve => {
-      // Disable detach event notifications, because event handlers will be in a
-      // cleared scope by the time they run.
-      this._eventsEnabled = false;
+    if (this._transportClosed) {
+      return Promise.resolve();
+    }
+    if (this._closePromise) {
+      return this._closePromise;
+    }
+    // Immediately set the destroy promise,
+    // as the following code is fully synchronous and can be reentrant.
+    this._closePromise = this.once("closed");
 
-      const cleanup = () => {
-        if (this._transport) {
-          this._transport.close();
-        }
-        this._transport = null;
-      };
+    // Disable detach event notifications, because event handlers will be in a
+    // cleared scope by the time they run.
+    this._eventsEnabled = false;
 
-      // If the connection is already closed,
-      // there is no need to detach client
-      // as we won't be able to send any message.
-      if (this._closed) {
-        cleanup();
-        resolve();
-        return;
-      }
+    if (this._transport) {
+      this._transport.close();
+      this._transport = null;
+    }
 
-      this.once("closed", resolve);
-
-      cleanup();
-    });
-
-    return promise;
+    return this._closePromise;
   },
 
   /**
@@ -221,7 +213,7 @@ DevToolsClient.prototype = {
       return onResponse(response) || response;
     };
 
-    if (this._closed) {
+    if (this._transportClosed) {
       const msg =
         "'" +
         type +
@@ -345,9 +337,6 @@ DevToolsClient.prototype = {
    *                     that is copied.  See stream-utils.js.
    */
   startBulkRequest(request) {
-    if (!this.traits.bulk) {
-      throw Error("Server doesn't support bulk transfers");
-    }
     if (!this.mainRoot) {
       throw Error("Have not yet received a hello packet from the server.");
     }
@@ -599,11 +588,11 @@ DevToolsClient.prototype = {
    *        The status code that corresponds to the reason for closing
    *        the stream.
    */
-  onClosed() {
-    if (this._closed) {
+  onTransportClosed() {
+    if (this._transportClosed) {
       return;
     }
-    this._closed = true;
+    this._transportClosed = true;
     this.emit("closed");
 
     this.purgeRequests();
@@ -681,6 +670,19 @@ DevToolsClient.prototype = {
       activeRequestsToReject = activeRequestsToReject.concat(request);
     });
     activeRequestsToReject.forEach(request => reject("active", request));
+
+    // Also purge protocol.js requests
+    const fronts = this.getAllFronts();
+
+    for (const front of fronts) {
+      if (!front.isDestroyed() && front.actorID.startsWith(prefix)) {
+        // Call Front.baseFrontClassDestroy nstead of Front.destroy in order to flush requests
+        // and nullify front.actorID immediately, even if Front.destroy is overloaded
+        // by an async function which would otherwise be able to try emitting new request
+        // after the purge.
+        front.baseFrontClassDestroy();
+      }
+    }
   },
 
   /**
@@ -709,23 +711,7 @@ DevToolsClient.prototype = {
     });
 
     // protocol.js
-    // Use a Set because some fronts (like domwalker) seem to have multiple parents.
-    const fronts = new Set();
-    const poolsToVisit = [...this._pools];
-
-    // With protocol.js, each front can potentially have it's own pools containing child
-    // fronts, forming a tree.  Descend through all the pools to locate all child fronts.
-    while (poolsToVisit.length) {
-      const pool = poolsToVisit.shift();
-      // `_pools` contains either Front's or Pool's, we only want to collect Fronts here.
-      // Front inherits from Pool which exposes `poolChildren`.
-      if (pool instanceof Front) {
-        fronts.add(pool);
-      }
-      for (const child of pool.poolChildren()) {
-        poolsToVisit.push(child);
-      }
-    }
+    const fronts = this.getAllFronts();
 
     // For each front, wait for its requests to settle
     for (const front of fronts) {
@@ -749,6 +735,27 @@ DevToolsClient.prototype = {
         // Repeat, more requests may have started in response to those we just waited for
         return this.waitForRequestsToSettle();
       });
+  },
+
+  getAllFronts() {
+    // Use a Set because some fronts (like domwalker) seem to have multiple parents.
+    const fronts = new Set();
+    const poolsToVisit = [...this._pools];
+
+    // With protocol.js, each front can potentially have its own pools containing child
+    // fronts, forming a tree.  Descend through all the pools to locate all child fronts.
+    while (poolsToVisit.length) {
+      const pool = poolsToVisit.shift();
+      // `_pools` contains either Fronts or Pools, we only want to collect Fronts here.
+      // Front inherits from Pool which exposes `poolChildren`.
+      if (pool instanceof Front) {
+        fronts.add(pool);
+      }
+      for (const child of pool.poolChildren()) {
+        poolsToVisit.push(child);
+      }
+    }
+    return fronts;
   },
 
   /**

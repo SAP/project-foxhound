@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
-import utils from './utils';
+import utils from './utils.js';
 import expect from 'expect';
 import {
   getTestState,
   setupTestBrowserHooks,
   setupTestPageAndContextHooks,
-} from './mocha-utils';
+  itFailsFirefox,
+  describeFailsFirefox,
+} from './mocha-utils'; // eslint-disable-line import/extensions
 import os from 'os';
 
 describe('navigation', function () {
@@ -191,7 +193,7 @@ describe('navigation', function () {
 
       let error = null;
       await page
-        // @ts-expect-error
+        // @ts-expect-error purposefully passing an old option
         .goto(server.EMPTY_PAGE, { waitUntil: 'networkidle' })
         .catch((error_) => (error = error_));
       expect(error.message).toContain(
@@ -493,7 +495,7 @@ describe('navigation', function () {
       const [response] = await Promise.all([
         page.waitForNavigation(),
         page.evaluate(
-          (url) => (window.location.href = url),
+          (url: string) => (window.location.href = url),
           server.PREFIX + '/grid.html'
         ),
       ]);
@@ -611,7 +613,7 @@ describe('navigation', function () {
           server.PREFIX + '/frames/one-frame.html'
         );
         const frame = await utils.waitEvent(page, 'frameattached');
-        await new Promise((fulfill) => {
+        await new Promise<void>((fulfill) => {
           page.on('framenavigated', (f) => {
             if (f === frame) fulfill();
           });
@@ -731,7 +733,7 @@ describe('navigation', function () {
       const [response] = await Promise.all([
         frame.waitForNavigation(),
         frame.evaluate(
-          (url) => (window.location.href = url),
+          (url: string) => (window.location.href = url),
           server.PREFIX + '/grid.html'
         ),
       ]);

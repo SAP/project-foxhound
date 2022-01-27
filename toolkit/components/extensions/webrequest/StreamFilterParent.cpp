@@ -6,10 +6,11 @@
 
 #include "StreamFilterParent.h"
 
-#include "mozilla/ScopeExit.h"
+#include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/net/ChannelEventQueue.h"
+#include "mozilla/StaticPrefs_extensions.h"
 #include "nsHttpChannel.h"
 #include "nsIChannel.h"
 #include "nsIInputStream.h"
@@ -19,6 +20,7 @@
 #include "nsSocketTransportService2.h"
 #include "nsStringStream.h"
 #include "mozilla/net/DocumentChannelChild.h"
+#include "nsIViewSourceChannel.h"
 
 namespace mozilla {
 namespace extensions {
@@ -106,6 +108,7 @@ StreamFilterParent::~StreamFilterParent() {
   NS_ReleaseOnMainThread("StreamFilterParent::mOrigListener",
                          mOrigListener.forget());
   NS_ReleaseOnMainThread("StreamFilterParent::mContext", mContext.forget());
+  mQueue->NotifyReleasingOwner();
 }
 
 auto StreamFilterParent::Create(dom::ContentParent* aContentParent,
@@ -122,6 +125,19 @@ auto StreamFilterParent::Create(dom::ContentParent* aContentParent,
   RefPtr<mozilla::net::nsHttpChannel> chan = do_QueryObject(channel);
   if (!chan) {
     return ChildEndpointPromise::CreateAndReject(false, __func__);
+  }
+
+  nsCOMPtr<nsIChannel> genChan(do_QueryInterface(channel));
+  if (!StaticPrefs::extensions_filterResponseServiceWorkerScript_disabled() &&
+      ChannelWrapper::IsServiceWorkerScript(genChan)) {
+    RefPtr<extensions::WebExtensionPolicy> addonPolicy =
+        ExtensionPolicyService::GetSingleton().GetByID(aAddonId);
+
+    if (!addonPolicy ||
+        !addonPolicy->HasPermission(
+            nsGkAtoms::webRequestFilterResponse_serviceWorkerScript)) {
+      return ChildEndpointPromise::CreateAndReject(false, __func__);
+    }
   }
 
   // Disable alt-data for extension stream listeners.
@@ -157,9 +173,23 @@ void StreamFilterParent::Init(nsIChannel* aChannel) {
   mChannel = aChannel;
 
   nsCOMPtr<nsITraceableChannel> traceable = do_QueryInterface(aChannel);
-  MOZ_RELEASE_ASSERT(traceable);
+  if (MOZ_UNLIKELY(!traceable)) {
+    // nsViewSourceChannel is not nsITraceableChannel, but wraps one. Unwrap it.
+    nsCOMPtr<nsIViewSourceChannel> vsc = do_QueryInterface(aChannel);
+    if (vsc) {
+      traceable = do_QueryObject(vsc->GetInnerChannel());
+      // OnStartRequest etc. is passed the unwrapped channel, so update mChannel
+      // to prevent OnStartRequest from mistaking it for a redirect, which would
+      // close the filter.
+      mChannel = do_QueryObject(traceable);
+    }
+    // TODO bug 1683403: Replace assertion; Close StreamFilter instead.
+    MOZ_RELEASE_ASSERT(traceable);
+  }
 
-  nsresult rv = traceable->SetNewListener(this, getter_AddRefs(mOrigListener));
+  nsresult rv =
+      traceable->SetNewListener(this, /* aMustApplyContentConversion = */ true,
+                                getter_AddRefs(mOrigListener));
   MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
 }
 
@@ -355,7 +385,7 @@ nsresult StreamFilterParent::Write(Data& aData) {
   nsCOMPtr<nsIInputStream> stream;
   nsresult rv = NS_NewByteInputStream(
       getter_AddRefs(stream),
-      MakeSpan(reinterpret_cast<char*>(aData.Elements()), aData.Length()),
+      Span(reinterpret_cast<char*>(aData.Elements()), aData.Length()),
       NS_ASSIGNMENT_DEPEND);
   NS_ENSURE_SUCCESS(rv, rv);
 

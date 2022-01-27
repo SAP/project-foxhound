@@ -2,12 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+const sharedJestConfig = require(`${__dirname}/../shared/test-helpers/shared-jest.config`);
+
 const { resolve } = require("path");
 const rootDir = resolve(__dirname);
 module.exports = {
   rootDir,
   displayName: "test",
   testURL: "http://localhost/",
+  testEnvironment: "jsdom",
   testPathIgnorePatterns: [
     "/node_modules/",
     "/helpers/",
@@ -17,11 +20,7 @@ module.exports = {
     "package.json",
     "<rootDir>/packages",
   ],
-  modulePathIgnorePatterns: [
-    "test/mochitest",
-    "<rootDir>/firefox/",
-    "<rootDir>/src/client/firefox/",
-  ],
+  modulePathIgnorePatterns: ["test/mochitest"],
   collectCoverageFrom: [
     "src/**/*.js",
     "!src/**/fixtures/*.js",
@@ -30,20 +29,19 @@ module.exports = {
     "!**/*.mock.js",
     "!**/*.spec.js",
   ],
+  transform: {
+    "\\.[jt]sx?$": "babel-jest",
+  },
   transformIgnorePatterns: ["node_modules/(?!(devtools-|react-aria-))"],
-  setupTestFrameworkScriptFile: "<rootDir>/src/test/tests-setup.js",
+  setupFilesAfterEnv: ["<rootDir>/src/test/tests-setup.js"],
   setupFiles: ["<rootDir>/src/test/shim.js", "jest-localstorage-mock"],
   snapshotSerializers: [
     "jest-serializer-babel-ast",
     "enzyme-to-json/serializer",
   ],
   moduleNameMapper: {
+    ...sharedJestConfig.moduleNameMapper,
     "\\.css$": "<rootDir>/src/test/__mocks__/styleMock.js",
     "\\.svg$": "<rootDir>/src/test/__mocks__/svgMock.js",
-    "^Services": "<rootDir>/src/test/fixtures/Services",
-    "^chrome": "<rootDir>/src/test/fixtures/Chrome",
-    "^ChromeUtils": "<rootDir>/src/test/fixtures/ChromeUtils",
-    // Map all require("devtools/...") to the real devtools root.
-    "^devtools\\/(.*)": "<rootDir>/../../$1",
   },
 };

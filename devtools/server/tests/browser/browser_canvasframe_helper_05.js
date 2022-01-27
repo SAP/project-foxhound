@@ -13,7 +13,7 @@ add_task(async function() {
   const browser = await addTab(TEST_URL);
   await SpecialPowers.spawn(browser, [], async function() {
     const { require } = ChromeUtils.import(
-      "resource://devtools/shared/Loader.jsm"
+      "resource://devtools/shared/loader/Loader.jsm"
     );
     const {
       HighlighterEnvironment,
@@ -45,6 +45,7 @@ add_task(async function() {
     const env = new HighlighterEnvironment();
     env.initFromWindow(doc.defaultView);
     const helper = new CanvasFrameAnonymousContentHelper(env, nodeBuilder);
+    await helper.initialize();
 
     info("Getting the parent and child elements");
     const parentEl = helper.getElement("parent-element");

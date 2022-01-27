@@ -4,17 +4,6 @@
 
 "use strict";
 
-var { ExtensionCommon } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionCommon.jsm"
-);
-
-// eslint-disable-next-line no-unused-vars
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
-
 // These are defined on "global" which is used for the same scopes as the other
 // ext-c-*.js files.
 /* exported EventManager */
@@ -51,6 +40,11 @@ extensions.registerModules({
     url: "chrome://extensions/content/child/ext-runtime.js",
     scopes: ["addon_child", "content_child", "devtools_child"],
     paths: [["runtime"]],
+  },
+  scripting: {
+    url: "chrome://extensions/content/child/ext-scripting.js",
+    scopes: ["addon_child"],
+    paths: [["scripting"]],
   },
   storage: {
     url: "chrome://extensions/content/child/ext-storage.js",

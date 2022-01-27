@@ -46,10 +46,14 @@ function getTestCases(cssProperties) {
       { total: getSuggestionNumberFor("ba"), current: 0, inserted: 1 },
     ],
     [
-      "VK_TAB",
+      "VK_DOWN",
       { total: getSuggestionNumberFor("ba"), current: 1, inserted: 1 },
     ],
-    ["VK_RETURN", { current: 1, inserted: 1, entered: 1 }],
+    [
+      "VK_TAB",
+      { total: getSuggestionNumberFor("ba"), current: 2, inserted: 1 },
+    ],
+    ["VK_RETURN", { current: 2, inserted: 1, entered: 1 }],
     ["b", { total: getSuggestionNumberFor("background", "b"), current: 0 }],
     ["l", { total: getSuggestionNumberFor("background", "bl"), current: 0 }],
     [
@@ -126,6 +130,13 @@ function getTestCases(cssProperties) {
 }
 
 add_task(async function() {
+  // We try to type "background" above, so backdrop-filter enabledness affects
+  // the expectations. Instead of branching on the test set the pref to true
+  // here as that is the end state, and it doesn't interact with the test in
+  // other ways.
+  await SpecialPowers.pushPrefEnv({
+    set: [["layout.css.backdrop-filter.enabled", true]],
+  });
   const { panel, ui } = await openStyleEditorForURL(TESTCASE_URI);
   const { cssProperties } = ui;
   const testCases = getTestCases(cssProperties);

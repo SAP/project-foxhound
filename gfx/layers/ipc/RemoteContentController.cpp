@@ -12,6 +12,7 @@
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/APZCTreeManagerParent.h"  // for APZCTreeManagerParent
 #include "mozilla/layers/APZThreadUtils.h"
+#include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/MatrixMessage.h"
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/Unused.h"
@@ -35,13 +36,14 @@ RemoteContentController::RemoteContentController()
 RemoteContentController::~RemoteContentController() = default;
 
 void RemoteContentController::NotifyLayerTransforms(
-    const nsTArray<MatrixMessage>& aTransforms) {
+    nsTArray<MatrixMessage>&& aTransforms) {
   if (!mCompositorThread->IsOnCurrentThread()) {
     // We have to send messages from the compositor thread
     mCompositorThread->Dispatch(
-        NewRunnableMethod<CopyableTArray<MatrixMessage>>(
+        NewRunnableMethod<StoreCopyPassByRRef<nsTArray<MatrixMessage>>>(
             "layers::RemoteContentController::NotifyLayerTransforms", this,
-            &RemoteContentController::NotifyLayerTransforms, aTransforms));
+            &RemoteContentController::NotifyLayerTransforms,
+            std::move(aTransforms)));
     return;
   }
 
@@ -243,7 +245,7 @@ void RemoteContentController::UpdateOverscrollVelocity(
     }
 #endif
 
-    MOZ_ASSERT(NS_IsMainThread());
+    MOZ_RELEASE_ASSERT(NS_IsMainThread());
     RefPtr<GeckoContentController> rootController =
         CompositorBridgeParent::GetGeckoContentControllerForRoot(
             aGuid.mLayersId);
@@ -268,7 +270,7 @@ void RemoteContentController::UpdateOverscrollOffset(
     }
 #endif
 
-    MOZ_ASSERT(NS_IsMainThread());
+    MOZ_RELEASE_ASSERT(NS_IsMainThread());
     RefPtr<GeckoContentController> rootController =
         CompositorBridgeParent::GetGeckoContentControllerForRoot(
             aGuid.mLayersId);

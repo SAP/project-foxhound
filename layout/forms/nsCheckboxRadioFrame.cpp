@@ -9,15 +9,11 @@
 #include "nsGkAtoms.h"
 #include "nsLayoutUtils.h"
 #include "mozilla/dom/HTMLInputElement.h"
-#include "mozilla/EventStateManager.h"
-#include "mozilla/LookAndFeel.h"
 #include "mozilla/PresShell.h"
-#include "nsDeviceContext.h"
 #include "nsIContent.h"
 #include "nsStyleConsts.h"
 
 using namespace mozilla;
-using mozilla::dom::Element;
 using mozilla::dom::HTMLInputElement;
 
 //#define FCF_NOISY
@@ -34,18 +30,18 @@ nsCheckboxRadioFrame::nsCheckboxRadioFrame(ComputedStyle* aStyle,
 
 nsCheckboxRadioFrame::~nsCheckboxRadioFrame() = default;
 
-void nsCheckboxRadioFrame::DestroyFrom(nsIFrame* aDestructRoot,
-                                       PostDestroyData& aPostDestroyData) {
-  // Unregister the access key registered in reflow
-  nsCheckboxRadioFrame::RegUnRegAccessKey(static_cast<nsIFrame*>(this), false);
-  nsAtomicContainerFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
-}
-
 NS_IMPL_FRAMEARENA_HELPERS(nsCheckboxRadioFrame)
 
 NS_QUERYFRAME_HEAD(nsCheckboxRadioFrame)
   NS_QUERYFRAME_ENTRY(nsIFormControlFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsAtomicContainerFrame)
+
+nscoord nsCheckboxRadioFrame::DefaultSize() {
+  if (StyleDisplay()->HasAppearance()) {
+    return PresContext()->Theme()->GetCheckboxRadioPrefSize();
+  }
+  return CSSPixel::ToAppUnits(9);
+}
 
 /* virtual */
 nscoord nsCheckboxRadioFrame::GetMinISize(gfxContext* aRenderingContext) {
@@ -67,7 +63,7 @@ nscoord nsCheckboxRadioFrame::GetPrefISize(gfxContext* aRenderingContext) {
 LogicalSize nsCheckboxRadioFrame::ComputeAutoSize(
     gfxContext* aRC, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
   LogicalSize size(aWM, 0, 0);
   if (!StyleDisplay()->HasAppearance()) {
@@ -76,7 +72,8 @@ LogicalSize nsCheckboxRadioFrame::ComputeAutoSize(
 
   // Note: this call always set the BSize to NS_UNCONSTRAINEDSIZE.
   size = nsAtomicContainerFrame::ComputeAutoSize(
-      aRC, aWM, aCBSize, aAvailableISize, aMargin, aBorder, aPadding, aFlags);
+      aRC, aWM, aCBSize, aAvailableISize, aMargin, aBorderPadding,
+      aSizeOverrides, aFlags);
   size.BSize(aWM) = DefaultSize();
   return size;
 }
@@ -117,12 +114,8 @@ void nsCheckboxRadioFrame::Reflow(nsPresContext* aPresContext,
       ("enter nsCheckboxRadioFrame::Reflow: aMaxSize=%d,%d",
        aReflowInput.AvailableWidth(), aReflowInput.AvailableHeight()));
 
-  if (mState & NS_FRAME_FIRST_REFLOW) {
-    RegUnRegAccessKey(static_cast<nsIFrame*>(this), true);
-  }
-
-  aDesiredSize.SetSize(aReflowInput.GetWritingMode(),
-                       aReflowInput.ComputedSizeWithBorderPadding());
+  const auto wm = aReflowInput.GetWritingMode();
+  aDesiredSize.SetSize(wm, aReflowInput.ComputedSizeWithBorderPadding(wm));
 
   if (nsLayoutUtils::FontSizeInflationEnabled(aPresContext)) {
     float inflation = nsLayoutUtils::FontSizeInflationFor(this);
@@ -137,30 +130,6 @@ void nsCheckboxRadioFrame::Reflow(nsPresContext* aPresContext,
 
   aDesiredSize.SetOverflowAreasToDesiredBounds();
   FinishAndStoreOverflow(&aDesiredSize);
-}
-
-nsresult nsCheckboxRadioFrame::RegUnRegAccessKey(nsIFrame* aFrame,
-                                                 bool aDoReg) {
-  NS_ENSURE_ARG_POINTER(aFrame);
-
-  nsPresContext* presContext = aFrame->PresContext();
-
-  NS_ASSERTION(presContext, "aPresContext is NULL in RegUnRegAccessKey!");
-
-  nsAutoString accessKey;
-
-  Element* content = aFrame->GetContent()->AsElement();
-  content->GetAttr(kNameSpaceID_None, nsGkAtoms::accesskey, accessKey);
-  if (!accessKey.IsEmpty()) {
-    EventStateManager* stateManager = presContext->EventStateManager();
-    if (aDoReg) {
-      stateManager->RegisterAccessKey(content, (uint32_t)accessKey.First());
-    } else {
-      stateManager->UnregisterAccessKey(content, (uint32_t)accessKey.First());
-    }
-    return NS_OK;
-  }
-  return NS_ERROR_FAILURE;
 }
 
 void nsCheckboxRadioFrame::SetFocus(bool aOn, bool aRepaint) {}
@@ -185,19 +154,4 @@ void nsCheckboxRadioFrame::GetCurrentCheckState(bool* aState) {
 nsresult nsCheckboxRadioFrame::SetFormProperty(nsAtom* aName,
                                                const nsAString& aValue) {
   return NS_OK;
-}
-
-// static
-nsRect nsCheckboxRadioFrame::GetUsableScreenRect(nsPresContext* aPresContext) {
-  nsRect screen;
-
-  nsDeviceContext* context = aPresContext->DeviceContext();
-  int32_t dropdownCanOverlapOSBar =
-      LookAndFeel::GetInt(LookAndFeel::IntID::MenusCanOverlapOSBar, 0);
-  if (dropdownCanOverlapOSBar)
-    context->GetRect(screen);
-  else
-    context->GetClientRect(screen);
-
-  return screen;
 }

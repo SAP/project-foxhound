@@ -1,20 +1,25 @@
 "use strict";
 
 // Check TopSites edit modal and overlay show up.
-test_newtab(
+test_newtab({
+  before: setTestTopSites,
   // it should be able to click the topsites add button to reveal the add top site modal and overlay.
-  function topsites_edit() {
-    // Open the section context menu.
-    content.document
-      .querySelector(".top-sites .section-top-bar .context-menu-button")
-      .click();
-    let contextMenu = content.document.querySelector(
-      ".top-sites .section-top-bar .context-menu"
+  test: async function topsites_edit() {
+    await ContentTaskUtils.waitForCondition(
+      () => content.document.querySelector(".top-sites .context-menu-button"),
+      "Should find a visible topsite context menu button [topsites_edit]"
     );
-    ok(contextMenu, "Should find a visible topsite context menu");
+
+    // Open the section context menu.
+    content.document.querySelector(".top-sites .context-menu-button").click();
+
+    await ContentTaskUtils.waitForCondition(
+      () => content.document.querySelector(".top-sites .context-menu"),
+      "Should find a visible topsite context menu [topsites_edit]"
+    );
 
     const topsitesAddBtn = content.document.querySelector(
-      ".top-sites .context-menu-item button"
+      ".top-sites li:nth-child(2) button"
     );
     topsitesAddBtn.click();
 
@@ -23,16 +28,15 @@ test_newtab(
 
     found = content.document.querySelector(".modalOverlayOuter");
     ok(found && !found.hidden, "Should find a visible overlay");
-  }
-);
+  },
+});
 
 // Test pin/unpin context menu options.
 test_newtab({
   before: setDefaultTopSites,
   // it should pin the website when we click the first option of the topsite context menu.
   test: async function topsites_pin_unpin() {
-    const siteSelector =
-      ".top-site-outer:not(.search-shortcut):not(.placeholder)";
+    const siteSelector = ".top-site-outer:not(.search-shortcut, .placeholder)";
     await ContentTaskUtils.waitForCondition(
       () => content.document.querySelector(siteSelector),
       "Topsite tippytop icon not found"
@@ -81,7 +85,7 @@ test_newtab({
 
 // Check Topsites add
 test_newtab({
-  before: setDefaultTopSites,
+  before: setTestTopSites,
   // it should be able to click the topsites edit button to reveal the edit topsites modal and overlay.
   test: async function topsites_add() {
     let nativeInputValueSetter = Object.getOwnPropertyDescriptor(
@@ -90,19 +94,31 @@ test_newtab({
     ).set;
     let event = new content.Event("input", { bubbles: true });
 
-    // Find the add topsites button
-    content.document
-      .querySelector(".top-sites .section-top-bar .context-menu-button")
-      .click();
-    let contextMenu = content.document.querySelector(
-      ".top-sites .section-top-bar .context-menu"
+    // Wait for context menu button to load
+    await ContentTaskUtils.waitForCondition(
+      () => content.document.querySelector(".top-sites .context-menu-button"),
+      "Should find a visible topsite context menu button [topsites_add]"
     );
-    ok(contextMenu, "Should find a visible topsite context menu");
 
-    const topsitesAddBtn = content.document.querySelector(
-      ".top-sites .context-menu-item button"
+    content.document.querySelector(".top-sites .context-menu-button").click();
+
+    // Wait for context menu to load
+    await ContentTaskUtils.waitForCondition(
+      () => content.document.querySelector(".top-sites .context-menu"),
+      "Should find a visible topsite context menu [topsites_add]"
     );
+
+    // Find topsites edit button
+    const topsitesAddBtn = content.document.querySelector(
+      ".top-sites li:nth-child(2) button"
+    );
+
     topsitesAddBtn.click();
+
+    await ContentTaskUtils.waitForCondition(
+      () => content.document.querySelector(".modalOverlayOuter"),
+      "No overlay found"
+    );
 
     let found = content.document.querySelector(".modalOverlayOuter");
     ok(found && !found.hidden, "Should find a visible overlay");
@@ -134,15 +150,13 @@ test_newtab({
     // Wait for Topsite to be populated
     await ContentTaskUtils.waitForCondition(
       () =>
-        content.document
-          .querySelector(".top-site-outer:first-child a")
-          .getAttribute("href") === "https://bugzilla.mozilla.org",
+        content.document.querySelector("[href='https://bugzilla.mozilla.org']"),
       "No Topsite found"
     );
 
     // Remove topsite after test is complete
     let topsiteContextBtn = content.document.querySelector(
-      ".top-sites-list .context-menu-button"
+      ".top-sites-list li:nth-child(1) .context-menu-button"
     );
     topsiteContextBtn.click();
     await ContentTaskUtils.waitForCondition(
@@ -150,21 +164,17 @@ test_newtab({
       "No context menu found"
     );
 
-    let contextMen = content.document.querySelector(
-      ".top-sites-list .context-menu"
-    );
-
-    const dismissBtn = contextMen.querySelector(
-      ".top-sites .context-menu-item button .icon-dismiss"
+    const dismissBtn = content.document.querySelector(
+      ".top-sites li:nth-child(7) button"
     );
     dismissBtn.click();
 
     // Wait for Topsite to be removed
     await ContentTaskUtils.waitForCondition(
       () =>
-        content.document
-          .querySelector(".top-site-outer:first-child a")
-          .getAttribute("href") !== "https://bugzilla.mozilla.org",
+        !content.document.querySelector(
+          "[href='https://bugzilla.mozilla.org']"
+        ),
       "Topsite not removed"
     );
   },
@@ -181,21 +191,109 @@ test_newtab({
     const searchTopSites = content.document.querySelectorAll(".title.pinned");
     ok(
       searchTopSites.length >= 1,
-      "There should be at least 2 search topsites"
+      "There should be at least 1 search topsites"
     );
 
     searchTopSites[0].click();
 
-    return searchTopSites[0].innerText;
+    return searchTopSites[0].innerText.trim();
   },
-  after(searchTopSiteTag) {
+  async after(searchTopSiteTag) {
     ok(
       gURLBar.focused,
       "We clicked a search topsite the focus should be in location bar"
     );
+    let engine = await Services.search.getEngineByAlias(searchTopSiteTag);
+
+    // We don't use UrlbarTestUtils.assertSearchMode here since the newtab
+    // testing scope doesn't integrate well with UrlbarTestUtils.
+    Assert.deepEqual(
+      gURLBar.searchMode,
+      {
+        engineName: engine.name,
+        entry: "topsites_newtab",
+        isPreview: false,
+        isGeneralPurposeEngine: false,
+      },
+      "The Urlbar is in search mode."
+    );
     ok(
-      gURLBar.value.includes(searchTopSiteTag),
-      "Should contain the tag of the search topsite clicked"
+      gURLBar.hasAttribute("searchmode"),
+      "The Urlbar has the searchmode attribute."
     );
   },
+});
+
+// test_newtab is not used here as this test requires two steps into the
+// content process with chrome process activity in-between.
+add_task(async function test_search_topsite_remove_engine() {
+  // Open about:newtab without using the default load listener
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:newtab",
+    false
+  );
+
+  // Specially wait for potentially preloaded browsers
+  let browser = tab.linkedBrowser;
+  await waitForPreloaded(browser);
+
+  // Add shared helpers to the content process
+  SpecialPowers.spawn(browser, [], addContentHelpers);
+
+  // Wait for React to render something
+  await BrowserTestUtils.waitForCondition(
+    () =>
+      SpecialPowers.spawn(
+        browser,
+        [],
+        () => content.document.getElementById("root").children.length
+      ),
+    "Should render activity stream content"
+  );
+
+  await setDefaultTopSites();
+
+  let [topSiteAlias, numTopSites] = await SpecialPowers.spawn(
+    browser,
+    [],
+    async () => {
+      await ContentTaskUtils.waitForCondition(
+        () => content.document.querySelector(".search-shortcut .title.pinned"),
+        "Wait for pinned search topsites"
+      );
+
+      const searchTopSites = content.document.querySelectorAll(".title.pinned");
+      ok(searchTopSites.length >= 1, "There should be at least one topsite");
+      return [searchTopSites[0].innerText.trim(), searchTopSites.length];
+    }
+  );
+
+  await Services.search.removeEngine(
+    await Services.search.getEngineByAlias(topSiteAlias)
+  );
+
+  registerCleanupFunction(() => {
+    Services.search.restoreDefaultEngines();
+  });
+
+  await SpecialPowers.spawn(
+    browser,
+    [numTopSites],
+    async originalNumTopSites => {
+      await ContentTaskUtils.waitForCondition(
+        () => !content.document.querySelector(".search-shortcut .title.pinned"),
+        "Wait for pinned search topsites"
+      );
+
+      const searchTopSites = content.document.querySelectorAll(".title.pinned");
+      is(
+        searchTopSites.length,
+        originalNumTopSites - 1,
+        "There should be one less search topsites"
+      );
+    }
+  );
+
+  BrowserTestUtils.removeTab(tab);
 });

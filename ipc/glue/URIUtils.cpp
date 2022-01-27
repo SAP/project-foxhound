@@ -11,7 +11,7 @@
 #include "mozilla/dom/BlobURL.h"
 #include "mozilla/net/DefaultURI.h"
 #include "mozilla/net/SubstitutingURL.h"
-#include "mozilla/NullPrincipalURI.h"
+#include "nsAboutProtocolHandler.h"
 #include "nsComponentManagerUtils.h"
 #include "nsDebug.h"
 #include "nsID.h"
@@ -39,7 +39,6 @@ namespace mozilla {
 namespace ipc {
 
 void SerializeURI(nsIURI* aURI, URIParams& aParams) {
-  MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aURI);
 
   aURI->Serialize(aParams);
@@ -49,8 +48,6 @@ void SerializeURI(nsIURI* aURI, URIParams& aParams) {
 }
 
 void SerializeURI(nsIURI* aURI, Maybe<URIParams>& aParams) {
-  MOZ_ASSERT(NS_IsMainThread());
-
   if (aURI) {
     URIParams params;
     SerializeURI(aURI, params);
@@ -61,8 +58,6 @@ void SerializeURI(nsIURI* aURI, Maybe<URIParams>& aParams) {
 }
 
 already_AddRefed<nsIURI> DeserializeURI(const URIParams& aParams) {
-  MOZ_ASSERT(NS_IsMainThread());
-
   nsCOMPtr<nsIURIMutator> mutator;
 
   switch (aParams.type()) {
@@ -90,10 +85,6 @@ already_AddRefed<nsIURI> DeserializeURI(const URIParams& aParams) {
       mutator = do_CreateInstance(kIconURIMutatorCID);
       break;
 
-    case URIParams::TNullPrincipalURIParams:
-      mutator = new NullPrincipalURI::Mutator();
-      break;
-
     case URIParams::TSimpleNestedURIParams:
       mutator = new net::nsSimpleNestedURI::Mutator();
       break;
@@ -104,6 +95,10 @@ already_AddRefed<nsIURI> DeserializeURI(const URIParams& aParams) {
 
     case URIParams::TDefaultURIParams:
       mutator = new mozilla::net::DefaultURI::Mutator();
+      break;
+
+    case URIParams::TNestedAboutURIParams:
+      mutator = new net::nsNestedAboutURI::Mutator();
       break;
 
     default:
@@ -127,8 +122,6 @@ already_AddRefed<nsIURI> DeserializeURI(const URIParams& aParams) {
 }
 
 already_AddRefed<nsIURI> DeserializeURI(const Maybe<URIParams>& aParams) {
-  MOZ_ASSERT(NS_IsMainThread());
-
   nsCOMPtr<nsIURI> uri;
 
   if (aParams.isSome()) {

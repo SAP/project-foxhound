@@ -6,7 +6,7 @@
 
 "use strict";
 
-const TEST_URI = `data:text/html,<meta charset=utf8>console API calls<script>
+const TEST_URI = `data:text/html,<!DOCTYPE html><meta charset=utf8>console API calls<script>
   console.log({
     contentObject: "YAY!",
     deep: ["hello", "world"]
@@ -34,10 +34,11 @@ add_task(async function() {
   const oi = objectMessage.querySelector(".tree");
   oi.querySelector(".arrow").click();
   // The object inspector now looks like:
-  // ▼ {…}
+  // ▼ Object { contentObject: "YAY!", deep: (1) […] }
   // |  contentObject: "YAY!"
   // |  ▶︎ deep: Array [ "hello", "world" ]
   // |  ▶︎ <prototype>
+
   await waitFor(() => oi.querySelectorAll(".node").length === 4);
   ok(true, "The ObjectInspector was expanded");
   oi.scrollIntoView();
@@ -52,12 +53,9 @@ add_task(async function() {
   info("Check that inner object can be copied to clipboard");
   await testCopyObject(
     hud,
-    oi.querySelector(".objectBox-array"),
+    oi.querySelectorAll(".node")[2].querySelector(".objectBox-array"),
     JSON.stringify(["hello", "world"], null, 2)
   );
-
-  info("Close the browser console");
-  await BrowserConsoleManager.toggleBrowserConsole();
 });
 
 async function testCopyObject(hud, element, expected) {

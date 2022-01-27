@@ -16,6 +16,7 @@
 #    include "nsTHashtable.h"
 #  endif
 
+#  include "mozilla/Attributes.h"
 #  include "mozilla/CondVar.h"
 #  include "mozilla/DeadlockDetector.h"
 #  include "mozilla/RecursiveMutex.h"
@@ -55,20 +56,16 @@ void BlockingResourceBase::StackWalkCallback(uint32_t aFrameNumber, void* aPc,
 #  endif
 }
 
-void BlockingResourceBase::GetStackTrace(AcquisitionState& aState) {
+void BlockingResourceBase::GetStackTrace(AcquisitionState& aState,
+                                         const void* aFirstFramePC) {
 #  ifndef MOZ_CALLSTACK_DISABLED
-  // Skip this function and the calling function.
-  const uint32_t kSkipFrames = 2;
-
   // Clear the array...
   aState.reset();
   // ...and create a new one; this also puts the state to 'acquired' status
   // regardless of whether we obtain a stack trace or not.
   aState.emplace();
 
-  // NB: Ignore the return value, there's nothing useful we can do if this
-  //     this fails.
-  MozStackWalk(StackWalkCallback, kSkipFrames, kAcquisitionStateStackSize,
+  MozStackWalk(StackWalkCallback, aFirstFramePC, kAcquisitionStateStackSize,
                aState.ptr());
 #  endif
 }
@@ -212,7 +209,7 @@ void BlockingResourceBase::Shutdown() {
   sDeadlockDetector = 0;
 }
 
-void BlockingResourceBase::CheckAcquire() {
+MOZ_NEVER_INLINE void BlockingResourceBase::CheckAcquire() {
   if (mType == eCondVar) {
     MOZ_ASSERT_UNREACHABLE(
         "FIXME bug 456272: annots. to allow CheckAcquire()ing condvars");
@@ -228,7 +225,7 @@ void BlockingResourceBase::CheckAcquire() {
 
 #  ifndef MOZ_CALLSTACK_DISABLED
   // Update the current stack before printing.
-  GetStackTrace(mAcquired);
+  GetStackTrace(mAcquired, CallerPC());
 #  endif
 
   fputs("###!!! ERROR: Potential deadlock detected:\n", stderr);
@@ -251,7 +248,7 @@ void BlockingResourceBase::CheckAcquire() {
   }
 }
 
-void BlockingResourceBase::Acquire() {
+MOZ_NEVER_INLINE void BlockingResourceBase::Acquire() {
   if (mType == eCondVar) {
     MOZ_ASSERT_UNREACHABLE(
         "FIXME bug 456272: annots. to allow Acquire()ing condvars");
@@ -265,11 +262,12 @@ void BlockingResourceBase::Acquire() {
   mAcquired = true;
 #  else
   // Take a stack snapshot.
-  GetStackTrace(mAcquired);
+  GetStackTrace(mAcquired, CallerPC());
   MOZ_ASSERT(IsAcquired());
 
   if (!mFirstSeen) {
-    mFirstSeen = mAcquired;
+    mFirstSeen = mAcquired.map(
+        [](AcquisitionState::ValueType& state) { return state.Clone(); });
   }
 #  endif
 }
@@ -288,11 +286,6 @@ void BlockingResourceBase::Release() {
   if (chainFront == this) {
     ResourceChainRemove();
   } else {
-    // not an error, but makes code hard to reason about.
-    NS_WARNING("Resource acquired is being released in non-LIFO order; why?\n");
-    nsCString tmp;
-    Print(tmp);
-
     // remove this resource from wherever it lives in the chain
     // we walk backwards in order of acquisition:
     //  (1)  ...node<-prev<-curr...
@@ -321,7 +314,6 @@ void OffTheBooksMutex::Lock() {
 }
 
 bool OffTheBooksMutex::TryLock() {
-  CheckAcquire();
   bool locked = this->tryLock();
   if (locked) {
     mOwningThread = PR_GetCurrentThread();
@@ -344,6 +336,12 @@ void OffTheBooksMutex::AssertCurrentThreadOwns() const {
 // Debug implementation of RWLock
 //
 
+bool RWLock::TryReadLock() {
+  bool locked = this->TryReadLockInternal();
+  MOZ_ASSERT_IF(locked, mOwningThread == nullptr);
+  return locked;
+}
+
 void RWLock::ReadLock() {
   // All we want to ensure here is that we're not attempting to acquire the
   // read lock while this thread is holding the write lock.
@@ -355,6 +353,15 @@ void RWLock::ReadLock() {
 void RWLock::ReadUnlock() {
   MOZ_ASSERT(mOwningThread == nullptr);
   this->ReadUnlockInternal();
+}
+
+bool RWLock::TryWriteLock() {
+  bool locked = this->TryWriteLockInternal();
+  if (locked) {
+    mOwningThread = PR_GetCurrentThread();
+    Acquire();
+  }
+  return locked;
 }
 
 void RWLock::WriteLock() {
@@ -423,10 +430,9 @@ nsresult ReentrantMonitor::Wait(PRIntervalTime aInterval) {
 
   // save monitor state and reset it to empty
   int32_t savedEntryCount = mEntryCount;
-  AcquisitionState savedAcquisitionState = GetAcquisitionState();
+  AcquisitionState savedAcquisitionState = TakeAcquisitionState();
   BlockingResourceBase* savedChainPrev = mChainPrev;
   mEntryCount = 0;
-  ClearAcquisitionState();
   mChainPrev = 0;
 
   nsresult rv;
@@ -441,7 +447,7 @@ nsresult ReentrantMonitor::Wait(PRIntervalTime aInterval) {
 
   // restore saved state
   mEntryCount = savedEntryCount;
-  SetAcquisitionState(savedAcquisitionState);
+  SetAcquisitionState(std::move(savedAcquisitionState));
   mChainPrev = savedChainPrev;
 
   return rv;
@@ -513,10 +519,9 @@ CVStatus OffTheBooksCondVar::Wait(TimeDuration aDuration) {
   AssertCurrentThreadOwnsMutex();
 
   // save mutex state and reset to empty
-  AcquisitionState savedAcquisitionState = mLock->GetAcquisitionState();
+  AcquisitionState savedAcquisitionState = mLock->TakeAcquisitionState();
   BlockingResourceBase* savedChainPrev = mLock->mChainPrev;
   PRThread* savedOwningThread = mLock->mOwningThread;
-  mLock->ClearAcquisitionState();
   mLock->mChainPrev = 0;
   mLock->mOwningThread = nullptr;
 
@@ -530,7 +535,7 @@ CVStatus OffTheBooksCondVar::Wait(TimeDuration aDuration) {
   }
 
   // restore saved state
-  mLock->SetAcquisitionState(savedAcquisitionState);
+  mLock->SetAcquisitionState(std::move(savedAcquisitionState));
   mLock->mChainPrev = savedChainPrev;
   mLock->mOwningThread = savedOwningThread;
 

@@ -6,8 +6,12 @@
 
 #include "DAV1DDecoder.h"
 
+#include "gfxUtils.h"
+#include "ImageContainer.h"
+#include "mozilla/TaskQueue.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "nsThreadUtils.h"
+#include "VideoUtils.h"
 
 #undef LOG
 #define LOG(arg, ...)                                                  \
@@ -18,8 +22,11 @@ namespace mozilla {
 
 DAV1DDecoder::DAV1DDecoder(const CreateDecoderParams& aParams)
     : mInfo(aParams.VideoConfig()),
-      mTaskQueue(aParams.mTaskQueue),
-      mImageContainer(aParams.mImageContainer) {}
+      mTaskQueue(
+          new TaskQueue(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
+                        "Dav1dDecoder")),
+      mImageContainer(aParams.mImageContainer),
+      mImageAllocator(aParams.mKnowsCompositor) {}
 
 RefPtr<MediaDataDecoder::InitPromise> DAV1DDecoder::Init() {
   Dav1dSettings settings;
@@ -30,13 +37,8 @@ RefPtr<MediaDataDecoder::InitPromise> DAV1DDecoder::Init() {
   } else if (mInfo.mDisplay.width >= 1024) {
     decoder_threads = 4;
   }
-  settings.n_frame_threads =
+  settings.n_threads =
       static_cast<int>(std::min(decoder_threads, GetNumberOfProcessors()));
-  // There is not much improvement with more than 2 tile threads at least with
-  // the content being currently served. The ideal number of tile thread would
-  // much the tile count of the content. Maybe dav1d can help to do that in the
-  // future.
-  settings.n_tile_threads = 2;
 
   int res = dav1d_open(&mContext, &settings);
   if (res < 0) {
@@ -96,7 +98,7 @@ RefPtr<MediaDataDecoder::DecodePromise> DAV1DDecoder::InvokeDecode(
   // release callback are not coming in the same order that the
   // buffers have been added in the decoder (threading ordering
   // inside decoder)
-  mDecodingBuffers.Put(aSample->Data(), RefPtr{aSample});
+  mDecodingBuffers.InsertOrUpdate(aSample->Data(), RefPtr{aSample});
   Dav1dData data;
   int res = dav1d_data_wrap(&data, aSample->Data(), aSample->Size(),
                             ReleaseDataBuffer_s, this);
@@ -182,35 +184,32 @@ int DAV1DDecoder::GetPicture(DecodedData& aData, MediaResult& aResult) {
   return 0;
 }
 
+// When returning Nothing(), the caller chooses the appropriate default
+/* static */ Maybe<gfx::YUVColorSpace> DAV1DDecoder::GetColorSpace(
+    const Dav1dPicture& aPicture, LazyLogModule& aLogger) {
+  if (!aPicture.seq_hdr || !aPicture.seq_hdr->color_description_present) {
+    return Nothing();
+  }
+
+  return gfxUtils::CicpToColorSpace(
+      static_cast<gfx::CICP::MatrixCoefficients>(aPicture.seq_hdr->mtrx),
+      static_cast<gfx::CICP::ColourPrimaries>(aPicture.seq_hdr->pri), aLogger);
+}
+
 already_AddRefed<VideoData> DAV1DDecoder::ConstructImage(
     const Dav1dPicture& aPicture) {
   VideoData::YCbCrBuffer b;
   if (aPicture.p.bpc == 10) {
-    b.mColorDepth = ColorDepth::COLOR_10;
+    b.mColorDepth = gfx::ColorDepth::COLOR_10;
   } else if (aPicture.p.bpc == 12) {
-    b.mColorDepth = ColorDepth::COLOR_12;
+    b.mColorDepth = gfx::ColorDepth::COLOR_12;
+  } else {
+    b.mColorDepth = gfx::ColorDepth::COLOR_8;
   }
 
-  // On every other case use the default (BT601).
-  if (aPicture.seq_hdr->color_description_present) {
-    switch (aPicture.seq_hdr->mtrx) {
-      case DAV1D_MC_BT2020_NCL:
-      case DAV1D_MC_BT2020_CL:
-        b.mYUVColorSpace = YUVColorSpace::BT2020;
-        break;
-      case DAV1D_MC_BT601:
-        b.mYUVColorSpace = YUVColorSpace::BT601;
-        break;
-      case DAV1D_MC_BT709:
-        b.mYUVColorSpace = YUVColorSpace::BT709;
-        break;
-      default:
-        break;
-    }
-  }
-  if (b.mYUVColorSpace == YUVColorSpace::UNKNOWN) {
-    b.mYUVColorSpace = DefaultColorSpace({aPicture.p.w, aPicture.p.h});
-  }
+  b.mYUVColorSpace =
+      DAV1DDecoder::GetColorSpace(aPicture, sPDMLog)
+          .valueOr(DefaultColorSpace({aPicture.p.w, aPicture.p.h}));
   b.mColorRange = aPicture.seq_hdr->color_range ? gfx::ColorRange::FULL
                                                 : gfx::ColorRange::LIMITED;
 
@@ -250,7 +249,7 @@ already_AddRefed<VideoData> DAV1DDecoder::ConstructImage(
 
   return VideoData::CreateAndCopyData(
       mInfo, mImageContainer, offset, timecode, duration, b, keyframe, timecode,
-      mInfo.ScaledImageRect(aPicture.p.w, aPicture.p.h));
+      mInfo.ScaledImageRect(aPicture.p.w, aPicture.p.h), mImageAllocator);
 }
 
 RefPtr<MediaDataDecoder::DecodePromise> DAV1DDecoder::Drain() {
@@ -281,7 +280,7 @@ RefPtr<ShutdownPromise> DAV1DDecoder::Shutdown() {
   RefPtr<DAV1DDecoder> self = this;
   return InvokeAsync(mTaskQueue, __func__, [self]() {
     dav1d_close(&self->mContext);
-    return ShutdownPromise::CreateAndResolve(true, __func__);
+    return self->mTaskQueue->BeginShutdown();
   });
 }
 

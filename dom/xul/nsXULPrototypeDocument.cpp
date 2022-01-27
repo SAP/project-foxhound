@@ -25,6 +25,8 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "nsXULPrototypeCache.h"
 #include "mozilla/DeclarationBlock.h"
+#include "mozilla/dom/CustomElementRegistry.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Text.h"
 
@@ -40,11 +42,7 @@ uint32_t nsXULPrototypeDocument::gRefCnt;
 //
 
 nsXULPrototypeDocument::nsXULPrototypeDocument()
-    : mRoot(nullptr),
-      mLoaded(false),
-      mCCGeneration(0),
-      mGCNumber(0),
-      mWasL10nCached(false) {
+    : mRoot(nullptr), mLoaded(false), mCCGeneration(0), mWasL10nCached(false) {
   ++gRefCnt;
 }
 
@@ -425,21 +423,6 @@ nsresult nsXULPrototypeDocument::NotifyLoadDone() {
   return NS_OK;
 }
 
-void nsXULPrototypeDocument::TraceProtos(JSTracer* aTrc) {
-  // Only trace the protos once per GC if we are marking.
-  if (aTrc->isMarkingTracer()) {
-    uint32_t currentGCNumber = aTrc->gcNumberForMarking();
-    if (mGCNumber == currentGCNumber) {
-      return;
-    }
-    mGCNumber = currentGCNumber;
-  }
-
-  if (mRoot) {
-    mRoot->TraceAllScripts(aTrc);
-  }
-}
-
 void nsXULPrototypeDocument::SetIsL10nCached(bool aIsCached) {
   mWasL10nCached = aIsCached;
 }
@@ -477,6 +460,12 @@ void nsXULPrototypeDocument::RebuildPrototypeFromElement(
 
     protoAttr++;
   }
+
+  // Make sure the mIsAtom is correct in case this prototype element has been
+  // completely rebuilt.
+  CustomElementData* ceData = aElement->GetCustomElementData();
+  nsAtom* isAtom = ceData ? ceData->GetIs(aElement) : nullptr;
+  aPrototype->mIsAtom = isAtom;
 
   if (aDeep) {
     // We have to rebuild the prototype children from this element.

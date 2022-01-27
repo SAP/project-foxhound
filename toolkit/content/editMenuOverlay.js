@@ -114,12 +114,12 @@ window.addEventListener("contextmenu", e => {
       MozXULElement.parseXULToFragment(`
       <menupopup id="textbox-contextmenu" class="textbox-contextmenu">
         <menuitem data-l10n-id="text-action-undo" command="cmd_undo"></menuitem>
+        <menuitem data-l10n-id="text-action-redo" command="cmd_redo"></menuitem>
         <menuseparator></menuseparator>
         <menuitem data-l10n-id="text-action-cut" command="cmd_cut"></menuitem>
         <menuitem data-l10n-id="text-action-copy" command="cmd_copy"></menuitem>
         <menuitem data-l10n-id="text-action-paste" command="cmd_paste"></menuitem>
         <menuitem data-l10n-id="text-action-delete" command="cmd_delete"></menuitem>
-        <menuseparator></menuseparator>
         <menuitem data-l10n-id="text-action-select-all" command="cmd_selectAll"></menuitem>
       </menupopup>
     `)
@@ -128,7 +128,7 @@ window.addEventListener("contextmenu", e => {
   }
 
   goUpdateGlobalEditMenuItems(true);
-  popup.openPopupAtScreen(e.screenX, e.screenY, true);
+  popup.openPopupAtScreen(e.screenX, e.screenY, true, e);
   // Don't show any other context menu at the same time. There can be a
   // context menu from an ancestor too but we only want to show this one.
   e.preventDefault();

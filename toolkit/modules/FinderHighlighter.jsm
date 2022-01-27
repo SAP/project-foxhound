@@ -180,12 +180,18 @@ function FinderHighlighter(finder, useTop = false) {
   this._modal = Services.prefs.getBoolPref(kModalHighlightPref);
   this._useSubFrames = false;
   this._useTop = useTop;
+  this._marksListener = null;
+  this._testing = false;
   this.finder = finder;
 }
 
 FinderHighlighter.prototype = {
   get iterator() {
     return this.finder.iterator;
+  },
+
+  enableTesting(enable) {
+    this._testing = enable;
   },
 
   // Get the top-most window when allowed. When out-of-process frames are used,
@@ -594,6 +600,118 @@ FinderHighlighter.prototype = {
     this._removeRangeOutline(window);
   },
 
+  // Update the tick marks that should appear on the page's vertical scrollbar.
+  updateScrollMarks() {
+    // Only show scrollbar marks when normal highlighting is enabled.
+    if (this.useModal() || !this._highlightAll) {
+      this.removeScrollMarks();
+      return;
+    }
+
+    let marks = new Set(); // Use a set so duplicate values are removed.
+    let window = this.finder._getWindow();
+    let yStart = window.scrollY;
+
+    let hasRanges = false;
+    if (window) {
+      let controllers = [this.finder._getSelectionController(window)];
+      let editors = this.editors;
+      if (editors) {
+        // Add the selection controllers from any input fields.
+        controllers.push(...editors.map(editor => editor.selectionController));
+      }
+
+      for (let controller of controllers) {
+        let findSelection = controller.getSelection(
+          Ci.nsISelectionController.SELECTION_FIND
+        );
+
+        let rangeCount = findSelection.rangeCount;
+        if (rangeCount > 0) {
+          hasRanges = true;
+        }
+
+        // No need to calculate the mark positions if there is no visible scrollbar.
+        if (window.scrollMaxY > 0) {
+          // Use the body's scrollHeight if available.
+          let scrollElement =
+            window.document.body || window.document.documentElement;
+          let yAdj = window.scrollMaxY / scrollElement.scrollHeight;
+
+          for (let r = 0; r < rangeCount; r++) {
+            let rect = findSelection.getRangeAt(r).getBoundingClientRect();
+            let yPos = Math.round((yStart + rect.y + rect.height / 2) * yAdj); // use the midpoint
+            marks.add(yPos);
+          }
+        }
+      }
+    }
+
+    if (hasRanges) {
+      // Assign the marks to the window and add a listener for the MozScrolledAreaChanged
+      // event which fires whenever the scrollable area's size is updated.
+      this.setScrollMarks(window, Array.from(marks));
+
+      if (!this._marksListener) {
+        this._marksListener = event => {
+          this.updateScrollMarks();
+        };
+
+        window.addEventListener(
+          "MozScrolledAreaChanged",
+          this._marksListener,
+          true
+        );
+        window.addEventListener("resize", this._marksListener);
+      }
+    } else if (this._marksListener) {
+      // No results were found so remove any existing ones and the MozScrolledAreaChanged listener.
+      this.removeScrollMarks();
+    }
+  },
+
+  removeScrollMarks() {
+    let window;
+    try {
+      window = this.finder._getWindow();
+    } catch (ex) {
+      // An exception can happen after changing remoteness but this
+      // would have deleted the marks anyway.
+      return;
+    }
+
+    if (this._marksListener) {
+      window.removeEventListener(
+        "MozScrolledAreaChanged",
+        this._marksListener,
+        true
+      );
+      window.removeEventListener("resize", this._marksListener);
+      this._marksListener = null;
+    }
+    this.setScrollMarks(window, []);
+  },
+
+  /**
+   * Set the scrollbar marks for a current search. If testing mode is enabled, fire a
+   * find-scrollmarks-changed event at the window.
+   *
+   * @param window window to set the scrollbar marks on
+   * @param marks array of integer scrollbar mark positions
+   */
+  setScrollMarks(window, marks) {
+    window.setScrollMarks(marks);
+
+    // Fire an event containing the found mark values if testing mode is enabled.
+    if (this._testing) {
+      window.dispatchEvent(
+        new CustomEvent("find-scrollmarks-changed", {
+          detail: Array.from(marks),
+        })
+      );
+    }
+  },
+
   /**
    * When the current page is refreshed or navigated away from, the CanvasFrame
    * contents is not valid anymore, i.e. all anonymous content is destroyed.
@@ -626,6 +744,7 @@ FinderHighlighter.prototype = {
       this.clear(window);
     }
     this._modal = useModalHighlight;
+    this.updateScrollMarks();
   },
 
   /**
@@ -644,6 +763,8 @@ FinderHighlighter.prototype = {
       this.clear(window);
       this._scheduleRepaintOfMask(window);
     }
+
+    this.updateScrollMarks();
   },
 
   /**
@@ -1889,9 +2010,8 @@ FinderHighlighter.prototype = {
     }
   },
 
-  WillDeleteSelection(selection) {
-    let editor = this._getEditableNode(selection.getRangeAt(0).startContainer)
-      .editor;
+  WillDeleteRanges(rangesToDelete) {
+    let { editor } = this._getEditableNode(rangesToDelete[0].startContainer);
     let controller = editor.selectionController;
     let fSelection = controller.getSelection(
       Ci.nsISelectionController.SELECTION_FIND
@@ -1901,7 +2021,7 @@ FinderHighlighter.prototype = {
     let numberOfDeletedSelections = 0;
     let numberOfMatches = fSelection.rangeCount;
 
-    // We need to test if any ranges in the deleted selection (selection)
+    // We need to test if any ranges to be deleted
     // are in any of the ranges of the find selection
     // Usually both selections will only contain one range, however
     // either may contain more than one.
@@ -1910,12 +2030,11 @@ FinderHighlighter.prototype = {
       shouldDelete[fIndex] = false;
       let fRange = fSelection.getRangeAt(fIndex);
 
-      for (let index = 0; index < selection.rangeCount; index++) {
+      for (let selRange of rangesToDelete) {
         if (shouldDelete[fIndex]) {
           continue;
         }
 
-        let selRange = selection.getRangeAt(index);
         let doesOverlap = this._checkOverlap(selRange, fRange);
         if (doesOverlap) {
           shouldDelete[fIndex] = true;

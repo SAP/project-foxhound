@@ -15,6 +15,7 @@
 #endif
 #include "MediaContainerType.h"
 #include "PDMFactory.h"
+#include "PlatformDecoderModule.h"
 #include "VideoUtils.h"
 
 namespace mozilla {
@@ -106,7 +107,8 @@ bool WebMDecoder::IsSupportedType(const MediaContainerType& aContainerType) {
   // color depth
   RefPtr<PDMFactory> platform = new PDMFactory();
   for (const auto& track : tracks) {
-    if (!track || !platform->Supports(*track, nullptr /* diagnostic */)) {
+    if (!track || !platform->Supports(SupportDecoderParams(*track),
+                                      nullptr /* diagnostic */)) {
       return false;
     }
   }

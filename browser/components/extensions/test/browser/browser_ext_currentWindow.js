@@ -62,10 +62,10 @@ add_task(async function() {
 
   await focusWindow(win2);
 
-  await BrowserTestUtils.loadURI(win1.gBrowser.selectedBrowser, "about:robots");
+  BrowserTestUtils.loadURI(win1.gBrowser.selectedBrowser, "about:robots");
   await BrowserTestUtils.browserLoaded(win1.gBrowser.selectedBrowser);
 
-  await BrowserTestUtils.loadURI(win2.gBrowser.selectedBrowser, "about:config");
+  BrowserTestUtils.loadURI(win2.gBrowser.selectedBrowser, "about:config");
   await BrowserTestUtils.browserLoaded(win2.gBrowser.selectedBrowser);
 
   let extension = ExtensionTestUtils.loadExtension({
@@ -105,11 +105,11 @@ add_task(async function() {
     extension.awaitMessage("background-ready"),
   ]);
 
-  let {
+  const {
     Management: {
       global: { windowTracker },
     },
-  } = ChromeUtils.import("resource://gre/modules/Extension.jsm", null);
+  } = ChromeUtils.import("resource://gre/modules/Extension.jsm");
 
   let winId1 = windowTracker.getId(win1);
   let winId2 = windowTracker.getId(win2);

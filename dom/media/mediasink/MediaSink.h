@@ -13,6 +13,8 @@
 #include "mozilla/dom/MediaDebugInfoBinding.h"
 #include "nsISupportsImpl.h"
 
+class AudioDeviceInfo;
+
 namespace mozilla {
 
 class TimeStamp;
@@ -69,6 +71,11 @@ class MediaSink {
   // Do nothing if this sink has no audio track.
   // Can be called in any state.
   virtual void SetVolume(double aVolume) {}
+
+  // Set the audio stream name.
+  // Does nothing if this sink has no audio stream.
+  // Can be called in any state.
+  virtual void SetStreamName(const nsAString& aStreamName) {}
 
   // Set the playback rate.
   // Can be called in any state.

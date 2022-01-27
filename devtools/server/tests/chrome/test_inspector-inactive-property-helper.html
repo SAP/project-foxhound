@@ -10,7 +10,7 @@
 SimpleTest.waitForExplicitFinish();
 
 (async function() {
-  const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+  const { require } = ChromeUtils.import("resource://devtools/shared/loader/Loader.jsm");
   const Services = require("Services");
   const { inactivePropertyHelper } = require("devtools/server/actors/utils/inactive-property-helper");
   let { isPropertyUsed } = inactivePropertyHelper;
@@ -43,19 +43,24 @@ SimpleTest.waitForExplicitFinish();
   // - {Boolean} isActive: should the property be active (isPropertyUsed `used` result).
   const testFiles = [
     "align-content.js",
-    "align-place-self.js",
+    "flex-grid-item-properties.js",
     "float.js",
     "gap.js",
+    "grid-container-properties.js",
     "grid-with-absolute-properties.js",
+    "margin-padding.js",
     "max-min-width-height.js",
     "place-items-content.js",
     "positioned.js",
+    "scroll-padding.js",
     "vertical-align.js",
-    "text-overflow.js"
+    "table.js",
+    "text-overflow.js",
   ].map(file => `${FOLDER}/${file}`);
 
   // Import all the test cases
   const tests =
+  // eslint-disable-next-line no-unsanitized/method
     (await Promise.all(testFiles.map(f => import(f).then(data => data.default)))).flat();
 
   for (const {

@@ -16,6 +16,7 @@
 #include "nsXULPopupManager.h"
 #include "nsIScriptContext.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "nsServiceManagerUtils.h"
 #include "nsLayoutUtils.h"
 #include "mozilla/ReflowInput.h"
@@ -100,16 +101,15 @@ nsresult nsXULPopupListener::HandleEvent(Event* aEvent) {
   }
 
   // Get the node that was clicked on.
-  EventTarget* target = mouseEvent->GetTarget();
-  nsCOMPtr<nsIContent> targetContent = do_QueryInterface(target);
+  nsCOMPtr<nsIContent> targetContent =
+      nsIContent::FromEventTargetOrNull(mouseEvent->GetTarget());
   if (!targetContent) {
     return NS_OK;
   }
 
-  {
-    EventTarget* originalTarget = mouseEvent->GetOriginalTarget();
-    nsCOMPtr<nsIContent> content = do_QueryInterface(originalTarget);
-    if (content && EventStateManager::IsTopLevelRemoteTarget(content)) {
+  if (nsIContent* content =
+          nsIContent::FromEventTargetOrNull(mouseEvent->GetOriginalTarget())) {
+    if (EventStateManager::IsTopLevelRemoteTarget(content)) {
       return NS_OK;
     }
   }
@@ -121,15 +121,6 @@ nsresult nsXULPopupListener::HandleEvent(Event* aEvent) {
     bool eventEnabled =
         Preferences::GetBool("dom.event.contextmenu.enabled", true);
     if (!eventEnabled) {
-      // If the target node is for plug-in, we should not open XUL context
-      // menu on windowless plug-ins.
-      nsCOMPtr<nsIObjectLoadingContent> olc = do_QueryInterface(targetContent);
-      uint32_t type;
-      if (olc && NS_SUCCEEDED(olc->GetDisplayedType(&type)) &&
-          type == nsIObjectLoadingContent::TYPE_PLUGIN) {
-        return NS_OK;
-      }
-
       // The user wants his contextmenus.  Let's make sure that this is a
       // website and not chrome since there could be places in chrome which
       // don't want contextmenus.
@@ -193,16 +184,15 @@ nsresult nsXULPopupListener::FireFocusOnTargetContent(
   nsIFrame* targetFrame = aTargetContent->GetPrimaryFrame();
   if (!targetFrame) return NS_ERROR_FAILURE;
 
-  const nsStyleUI* ui = targetFrame->StyleUI();
-  bool suppressBlur = (ui->mUserFocus == StyleUserFocus::Ignore);
+  const bool suppressBlur =
+      targetFrame->StyleUI()->UserFocus() == StyleUserFocus::Ignore;
 
   RefPtr<Element> newFocusElement;
 
   nsIFrame* currFrame = targetFrame;
   // Look for the nearest enclosing focusable frame.
   while (currFrame) {
-    int32_t tabIndexUnused;
-    if (currFrame->IsFocusable(&tabIndexUnused, true) &&
+    if (currFrame->IsFocusable(/* aWithMouse = */ true) &&
         currFrame->GetContent()->IsElement()) {
       newFocusElement = currFrame->GetContent()->AsElement();
       break;
@@ -210,8 +200,7 @@ nsresult nsXULPopupListener::FireFocusOnTargetContent(
     currFrame = currFrame->GetParent();
   }
 
-  nsIFocusManager* fm = nsFocusManager::GetFocusManager();
-  if (fm) {
+  if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
     if (newFocusElement) {
       uint32_t focusFlags =
           nsIFocusManager::FLAG_BYMOUSE | nsIFocusManager::FLAG_NOSCROLL;
@@ -344,8 +333,8 @@ nsresult nsXULPopupListener::LaunchPopup(MouseEvent* aEvent) {
       (mPopupContent->HasAttr(kNameSpaceID_None, nsGkAtoms::position) ||
        (mPopupContent->HasAttr(kNameSpaceID_None, nsGkAtoms::popupanchor) &&
         mPopupContent->HasAttr(kNameSpaceID_None, nsGkAtoms::popupalign)))) {
-    pm->ShowPopup(mPopupContent, mElement, EmptyString(), 0, 0, false, true,
-                  false, aEvent);
+    pm->ShowPopup(mPopupContent, mElement, u""_ns, 0, 0, false, true, false,
+                  aEvent);
   } else {
     int32_t xPos = aEvent->ScreenX(CallerType::System);
     int32_t yPos = aEvent->ScreenY(CallerType::System);

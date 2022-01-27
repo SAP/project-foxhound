@@ -31,7 +31,7 @@ class AboutReaderChild extends JSWindowActorChild {
     this._isLeavingReaderableReaderMode = false;
   }
 
-  willDestroy() {
+  didDestroy() {
     this.cancelPotentialPendingReadabilityCheck();
     this.readerModeHidden();
   }
@@ -54,17 +54,24 @@ class AboutReaderChild extends JSWindowActorChild {
           // Get the article data and cache it in the parent process. The reader mode
           // page will retrieve it when it has loaded.
           let article = await this._articlePromise;
-          await this.sendQuery("Reader:CacheArticle", article);
-          ReaderMode.enterReaderMode(this.docShell, this.contentWindow);
+          this.sendAsyncMessage("Reader:EnterReaderMode", article);
         } else {
           this._isLeavingReaderableReaderMode = this.isReaderableAboutReader;
-          ReaderMode.leaveReaderMode(this.docShell, this.contentWindow);
+          this.sendAsyncMessage("Reader:LeaveReaderMode", {});
         }
         break;
 
       case "Reader:PushState":
         this.updateReaderButton(!!(message.data && message.data.isArticle));
         break;
+      case "Reader:EnterReaderMode": {
+        ReaderMode.enterReaderMode(this.docShell, this.contentWindow);
+        break;
+      }
+      case "Reader:LeaveReaderMode": {
+        ReaderMode.leaveReaderMode(this.docShell, this.contentWindow);
+        break;
+      }
     }
 
     // Forward the message to the reader if it has been created.
@@ -120,16 +127,14 @@ class AboutReaderChild extends JSWindowActorChild {
         this.sendAsyncMessage("Reader:UpdateReaderButton", {
           isArticle: this._isLeavingReaderableReaderMode,
         });
-        if (this._isLeavingReaderableReaderMode) {
-          this._isLeavingReaderableReaderMode = false;
-        }
+        this._isLeavingReaderableReaderMode = false;
         break;
 
       case "pageshow":
         // If a page is loaded from the bfcache, we won't get a "DOMContentLoaded"
         // event, so we need to rely on "pageshow" in this case.
-        if (aEvent.persisted) {
-          this.updateReaderButton();
+        if (aEvent.persisted && this.canDoReadabilityCheck()) {
+          this.performReadabilityCheckNow();
         }
         break;
     }
@@ -142,18 +147,22 @@ class AboutReaderChild extends JSWindowActorChild {
    * painted is not going to work.
    */
   updateReaderButton(forceNonArticle) {
-    if (
-      !Readerable.isEnabledForParseOnLoad ||
-      this.isAboutReader ||
-      !this.contentWindow ||
-      !this.contentWindow.windowRoot ||
-      !(this.document instanceof this.contentWindow.HTMLDocument) ||
-      this.document.mozSyntheticDocument
-    ) {
+    if (!this.canDoReadabilityCheck()) {
       return;
     }
 
     this.scheduleReadabilityCheckPostPaint(forceNonArticle);
+  }
+
+  canDoReadabilityCheck() {
+    return (
+      Readerable.isEnabledForParseOnLoad &&
+      !this.isAboutReader &&
+      this.contentWindow &&
+      this.contentWindow.windowRoot &&
+      this.document instanceof this.contentWindow.HTMLDocument &&
+      !this.document.mozSyntheticDocument
+    );
   }
 
   cancelPotentialPendingReadabilityCheck() {
@@ -197,6 +206,10 @@ class AboutReaderChild extends JSWindowActorChild {
       return;
     }
 
+    this.performReadabilityCheckNow(forceNonArticle);
+  }
+
+  performReadabilityCheckNow(forceNonArticle) {
     this.cancelPotentialPendingReadabilityCheck();
 
     // Ignore errors from actors that have been unloaded before the
@@ -210,7 +223,10 @@ class AboutReaderChild extends JSWindowActorChild {
 
     // Only send updates when there are articles; there's no point updating with
     // |false| all the time.
-    if (Readerable.isProbablyReaderable(document)) {
+    if (
+      Readerable.shouldCheckUri(document.baseURIObject, true) &&
+      Readerable.isProbablyReaderable(document)
+    ) {
       this.sendAsyncMessage("Reader:UpdateReaderButton", {
         isArticle: true,
       });

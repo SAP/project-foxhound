@@ -6,14 +6,20 @@
 
 #include "mozilla/dom/ImageData.h"
 
-#include "mozilla/CheckedInt.h"
-#include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/dom/ImageDataBinding.h"
-
+#include "ErrorList.h"
+#include "js/StructuredClone.h"
+#include "js/Value.h"
 #include "jsapi.h"
+#include "jsfriendapi.h"
+#include "mozilla/CheckedInt.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/ImageDataBinding.h"
+#include "nsCycleCollectionNoteChild.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(ImageData)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(ImageData)
@@ -90,7 +96,6 @@ void ImageData::HoldData() { mozilla::HoldJSObjects(this); }
 
 void ImageData::DropData() {
   if (mData) {
-    mData = nullptr;
     mozilla::DropJSObjects(this);
   }
 }
@@ -129,5 +134,4 @@ bool ImageData::WriteStructuredClone(JSContext* aCx,
          JS_WriteTypedArray(aWriter, arrayValue);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -8,24 +8,32 @@
 
 #include "mozilla/URLExtraData.h"
 
-#include "mozilla/NullPrincipalURI.h"
 #include "nsProxyRelease.h"
 #include "ReferrerInfo.h"
 
 namespace mozilla {
 
 StaticRefPtr<URLExtraData> URLExtraData::sDummy;
+StaticRefPtr<URLExtraData> URLExtraData::sDummyChrome;
 
 /* static */
-void URLExtraData::InitDummy() {
-  RefPtr<nsIURI> baseURI = new NullPrincipalURI();
+void URLExtraData::Init() {
+  RefPtr<nsIURI> baseURI = NullPrincipal::CreateURI();
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new dom::ReferrerInfo(nullptr);
-  sDummy = new URLExtraData(baseURI.forget(), referrerInfo.forget(),
+  sDummy = new URLExtraData(do_AddRef(baseURI), do_AddRef(referrerInfo),
                             NullPrincipal::CreateWithoutOriginAttributes());
+
+  sDummyChrome =
+      new URLExtraData(baseURI.forget(), referrerInfo.forget(),
+                       NullPrincipal::CreateWithoutOriginAttributes());
+  sDummyChrome->mChromeRulesEnabled = true;
 }
 
 /* static */
-void URLExtraData::ReleaseDummy() { sDummy = nullptr; }
+void URLExtraData::Shutdown() {
+  sDummy = nullptr;
+  sDummyChrome = nullptr;
+}
 
 URLExtraData::~URLExtraData() {
   if (!NS_IsMainThread()) {

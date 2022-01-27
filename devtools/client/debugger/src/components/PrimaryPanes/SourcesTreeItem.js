@@ -2,16 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 import React, { Component } from "react";
 import { connect } from "../../utils/connect";
 import classnames from "classnames";
-import { showMenu } from "devtools-contextmenu";
+import { showMenu } from "../../context-menu/menu";
 
 import SourceIcon from "../shared/SourceIcon";
 import AccessibleImage from "../shared/AccessibleImage";
-import { isWorker } from "../../utils/threads";
 
 import {
   getGeneratedSourceByURL,
@@ -28,71 +25,19 @@ import {
   isUrlExtension,
   isExtensionDirectoryPath,
   shouldBlackbox,
+  sourceTypes,
 } from "../../utils/source";
-import { isDirectory, getPathWithoutThread } from "../../utils/sources-tree";
+import {
+  isDirectory,
+  getPathWithoutThread,
+  getFileExtension,
+} from "../../utils/sources-tree";
 import { copyToTheClipboard } from "../../utils/clipboard";
 import { features } from "../../utils/prefs";
 import { downloadFile } from "../../utils/utils";
 import { isFulfilled } from "../../utils/async-value";
 
-import type { TreeNode, SourcesGroups } from "../../utils/sources-tree/types";
-import type { Source, Context, Thread, SourceContent, URL } from "../../types";
-
-type OwnProps = {|
-  item: TreeNode,
-  threads: Thread[],
-  depth: number,
-  focused: boolean,
-  autoExpand: ?boolean,
-  expanded: boolean,
-  focusItem: TreeNode => void,
-  selectItem: TreeNode => void,
-  source: ?Source,
-  debuggeeUrl: URL,
-  projectRoot: string,
-  setExpanded: (TreeNode, boolean, boolean) => void,
-  getSourcesGroups: TreeNode => SourcesGroups,
-|};
-type Props = {
-  source: ?Source,
-  item: TreeNode,
-  autoExpand: ?boolean,
-  cx: Context,
-  debuggeeUrl: URL,
-  projectRoot: string,
-  extensionName: string | null,
-  sourceContent: ?SourceContent,
-  depth: number,
-  focused: boolean,
-  expanded: boolean,
-  threads: Thread[],
-  hasMatchingGeneratedSource: boolean,
-  hasSiblingOfSameName: boolean,
-  hasPrettyTab: boolean,
-  focusItem: TreeNode => void,
-  selectItem: TreeNode => void,
-  setExpanded: (TreeNode, boolean, boolean) => void,
-  clearProjectDirectoryRoot: typeof actions.clearProjectDirectoryRoot,
-  setProjectDirectoryRoot: typeof actions.setProjectDirectoryRoot,
-  toggleBlackBox: typeof actions.toggleBlackBox,
-  loadSourceText: typeof actions.loadSourceText,
-  blackBoxSources: typeof actions.blackBoxSources,
-  getSourcesGroups: TreeNode => SourcesGroups,
-};
-
-type State = {};
-
-type MenuOption = {
-  id: string,
-  label: ?string,
-  disabled?: boolean,
-  click?: () => any,
-  submenu?: MenuOption[],
-};
-
-type ContextMenu = Array<MenuOption>;
-
-class SourceTreeItem extends Component<Props, State> {
+class SourceTreeItem extends Component {
   componentDidMount() {
     const { autoExpand, item } = this.props;
     if (autoExpand) {
@@ -100,7 +45,7 @@ class SourceTreeItem extends Component<Props, State> {
     }
   }
 
-  onClick = (e: MouseEvent) => {
+  onClick = e => {
     const { item, focusItem, selectItem } = this.props;
 
     focusItem(item);
@@ -109,7 +54,7 @@ class SourceTreeItem extends Component<Props, State> {
     }
   };
 
-  onContextMenu = (event: Event, item: TreeNode) => {
+  onContextMenu = (event, item) => {
     const copySourceUri2Label = L10N.getStr("copySourceUri2");
     const copySourceUri2Key = L10N.getStr("copySourceUri2.accesskey");
     const setDirectoryRootLabel = L10N.getStr("setDirectoryRoot.label");
@@ -164,7 +109,7 @@ class SourceTreeItem extends Component<Props, State> {
 
       if (features.root) {
         const { path } = item;
-        const { cx, projectRoot } = this.props;
+        const { cx, depth, projectRoot } = this.props;
 
         if (projectRoot.endsWith(path)) {
           menuOptions.push({
@@ -179,7 +124,12 @@ class SourceTreeItem extends Component<Props, State> {
             label: setDirectoryRootLabel,
             accesskey: setDirectoryRootKey,
             disabled: false,
-            click: () => this.props.setProjectDirectoryRoot(cx, path),
+            click: () =>
+              this.props.setProjectDirectoryRoot(
+                cx,
+                path,
+                this.renderItemName(depth)
+              ),
           });
         }
       }
@@ -190,7 +140,7 @@ class SourceTreeItem extends Component<Props, State> {
     showMenu(event, menuOptions);
   };
 
-  handleDownloadFile = async (cx: Context, source: ?Source, item: TreeNode) => {
+  handleDownloadFile = async (cx, source, item) => {
     if (!source) {
       return;
     }
@@ -205,7 +155,7 @@ class SourceTreeItem extends Component<Props, State> {
     downloadFile(data, item.name);
   };
 
-  addBlackboxAllOption = (menuOptions: ContextMenu, item: TreeNode) => {
+  addBlackboxAllOption = (menuOptions, item) => {
     const { cx, depth, projectRoot } = this.props;
     const { sourcesInside, sourcesOuside } = this.props.getSourcesGroups(item);
     const allInsideBlackBoxed = sourcesInside.every(
@@ -273,7 +223,7 @@ class SourceTreeItem extends Component<Props, State> {
     }
   };
 
-  addCollapseExpandAllOptions = (menuOptions: ContextMenu, item: TreeNode) => {
+  addCollapseExpandAllOptions = (menuOptions, item) => {
     const { setExpanded } = this.props;
 
     menuOptions.push({
@@ -300,7 +250,7 @@ class SourceTreeItem extends Component<Props, State> {
     );
   }
 
-  renderIcon(item: TreeNode, depth: number) {
+  renderIcon(item, depth) {
     const {
       debuggeeUrl,
       projectRoot,
@@ -322,7 +272,7 @@ class SourceTreeItem extends Component<Props, State> {
       const thread = threads.find(thrd => thrd.actor == item.name);
 
       if (thread) {
-        const icon = isWorker(thread) ? "worker" : "window";
+        const icon = thread.targetType.includes("worker") ? "worker" : "window";
         return (
           <AccessibleImage
             className={classnames(icon, {
@@ -356,7 +306,13 @@ class SourceTreeItem extends Component<Props, State> {
       return (
         <SourceIcon
           source={source}
-          modifier={icon => (icon === "extension" ? "javascript" : icon)}
+          modifier={icon =>
+            // In the SourceTree, extension files should use the file-extension based icon,
+            // whereas we use the extension icon in other Components (eg. source tabs and breakpoints pane).
+            icon === "extension"
+              ? sourceTypes[getFileExtension(source)] || "javascript"
+              : icon
+          }
         />
       );
     }
@@ -364,7 +320,7 @@ class SourceTreeItem extends Component<Props, State> {
     return null;
   }
 
-  renderItemName(depth: number) {
+  renderItemName(depth) {
     const { item, threads, extensionName } = this.props;
 
     if (depth === 0) {
@@ -429,7 +385,7 @@ class SourceTreeItem extends Component<Props, State> {
   }
 }
 
-function getHasMatchingGeneratedSource(state, source: ?Source) {
+function getHasMatchingGeneratedSource(state, source) {
   if (!source || !isOriginalSource(source)) {
     return false;
   }
@@ -437,7 +393,7 @@ function getHasMatchingGeneratedSource(state, source: ?Source) {
   return !!getGeneratedSourceByURL(state, source.url);
 }
 
-function getSourceContentValue(state, source: Source) {
+function getSourceContentValue(state, source) {
   const content = getSourceContent(state, source.id);
   return content && isFulfilled(content) ? content.value : null;
 }
@@ -446,7 +402,7 @@ function isExtensionDirectory(depth, extensionName) {
   return extensionName && (depth === 1 || depth === 0);
 }
 
-const mapStateToProps = (state, props: OwnProps) => {
+const mapStateToProps = (state, props) => {
   const { source, item } = props;
   return {
     cx: getContext(state),
@@ -461,7 +417,7 @@ const mapStateToProps = (state, props: OwnProps) => {
   };
 };
 
-export default connect<Props, OwnProps, _, _, _, _>(mapStateToProps, {
+export default connect(mapStateToProps, {
   setProjectDirectoryRoot: actions.setProjectDirectoryRoot,
   clearProjectDirectoryRoot: actions.clearProjectDirectoryRoot,
   toggleBlackBox: actions.toggleBlackBox,

@@ -10,10 +10,10 @@ $excerpt-line-height: 20;
   position: relative;
 
   .playhead {
-    background: $blue-60 url('../data/content/assets/glyph-playhead.svg') no-repeat 12px center;
+    background: var(--newtab-primary-action-background) url('chrome://activity-stream/content/data/content/assets/glyph-playhead.svg') no-repeat 12px center;
     border-radius: 20px;
     bottom: -16px;
-    color: $white-0;
+    color: color-mix(in srgb, var(--newtab-primary-element-text-color) 0%, transparent);
     display: flex;
     flex-direction: column;
     height: 40px;
@@ -25,7 +25,7 @@ $excerpt-line-height: 20;
     transition: padding 100ms ease-in-out 0ms, color 100ms linear 100ms;
 
     &:hover {
-      color: $white-100;
+      color: var(--newtab-primary-element-text-color);
       padding: 0 20px 0 40px;
     }
 
@@ -53,13 +53,112 @@ $excerpt-line-height: 20;
     position: relative;
   }
 
+  .card-stp-button-hover-background {
+    opacity: 0;
+    width: 100%;
+    position: absolute;
+    top: 0;
+    height: 0;
+    transition: opacity;
+    transition-duration: 0s;
+    padding-top: 50%;
+    pointer-events: none;
+    background: $black-40;
+    border-radius: 8px;
+
+    .card-stp-button-position-wrapper {
+      position: absolute;
+      margin-top: -16px;
+      left: 0;
+      right: 0;
+      top: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .icon-pocket-save,
+    .icon-pocket {
+      margin-inline-end: 4px;
+      height: 15px;
+      width: 15px;
+      background-size: 15px;
+    }
+
+    .icon-pocket {
+      fill: $pocket-icon-fill;
+    }
+
+    .context-menu-button {
+      position: static;
+      transition: none;
+    }
+
+    .context-menu-position-container {
+      position: relative;
+    }
+
+    .context-menu {
+      margin-inline-start: 18.5px;
+      inset-inline-start: auto;
+      position: absolute;
+      top: 20.25px;
+    }
+
+    .card-stp-button {
+      display: flex;
+      margin-inline-end: 12px;
+      font-weight: 400;
+      font-size: 13px;
+      line-height: 16px;
+      background-color: var(--newtab-background-color-secondary);
+      border: 0;
+      border-radius: 4px;
+      padding: 8px;
+      white-space: nowrap;
+
+      &:hover {
+        .icon-pocket-save {
+          fill: $pocket-icon-fill;
+        }
+      }
+    }
+
+    button,
+    .context-menu {
+      pointer-events: auto;
+    }
+
+    button {
+      cursor: pointer;
+    }
+  }
+
+  &.last-item {
+    .card-stp-button-hover-background {
+      .context-menu {
+        margin-inline-start: auto;
+        margin-inline-end: 18.5px;
+      }
+    }
+  }
+
+  &:hover,
+  &.active {
+    .card-stp-button-hover-background {
+      display: block;
+      opacity: 1;
+      transition-duration: 0.3s;
+    }
+  }
+
   .img {
     height: 0;
     padding-top: 50%; // 2:1 aspect ratio
 
     img {
       border-radius: 4px;
-      box-shadow: inset 0 0 0 0.5px $black-15;
+      box-shadow: $shadow-image-inset;
     }
   }
 
@@ -69,56 +168,48 @@ $excerpt-line-height: 20;
     flex-direction: column;
 
     &:hover {
-      @include ds-fade-in($grey-30);
-
-      @include dark-theme-only {
-        @include ds-fade-in($grey-60);
-      }
-
       header {
-        @include dark-theme-only {
-          color: $blue-40;
-        }
-
-        color: $blue-60;
+        color: var(--newtab-primary-action-background);
       }
     }
 
     &:focus {
-      @include ds-fade-in;
+      @include ds-focus;
 
-      @include dark-theme-only {
-        @include ds-fade-in($blue-40-40);
-      }
+      transition: none;
 
       header {
-        @include dark-theme-only {
-          color: $blue-40;
-        }
-
-        color: $blue-60;
+        color: var(--newtab-primary-action-background);
       }
     }
 
     &:active {
-      @include ds-fade-in($grey-30);
-
-      @include dark-theme-only {
-        @include ds-fade-in($grey-60);
-      }
-
       header {
-        @include dark-theme-only {
-          color: $blue-50;
-        }
-
-        color: $blue-70;
+        color: var(--newtab-primary-element-active-color);
       }
     }
   }
 
   &.video-card .meta {
     margin-top: 4px;
+  }
+
+  &.last-card-message {
+    .ds-last-card-desc {
+      font-size: 13px;
+      color: var(--newtab-text-secondary-color);
+    }
+
+    .ds-last-card-desc,
+    .title {
+      text-align: center;
+    }
+
+    .last-card-message-image {
+      object-fit: contain;
+      background: transparent;
+      box-shadow: none;
+    }
   }
 
   .meta {
@@ -147,22 +238,14 @@ $excerpt-line-height: 20;
     }
 
     .source {
-      @include dark-theme-only {
-        color: $grey-40;
-      }
-
       -webkit-line-clamp: 1;
       margin-bottom: 2px;
       font-size: 13px;
-      color: $grey-50;
+      color: var(--newtab-text-secondary-color);
     }
 
     .cta-button {
-      @include dark-theme-only {
-        color: $grey-10;
-        background: $grey-90-70;
-      }
-
+      background-color: var(--newtab-button-secondary-color);
       width: 100%;
       margin: 12px 0 4px;
       box-shadow: none;
@@ -171,42 +254,16 @@ $excerpt-line-height: 20;
       font-size: 14px;
       font-weight: 600;
       padding: 5px 8px 7px;
-      border: 0;
-      color: $grey-90;
-      background: $grey-90-10;
-
-      &:focus {
-        @include dark-theme-only {
-          background: $grey-90-70;
-          box-shadow: 0 0 0 2px $grey-80, 0 0 0 5px $blue-50-50;
-        }
-
-        background: $grey-90-10;
-        box-shadow: 0 0 0 2px $white, 0 0 0 5px $blue-50-50;
-      }
-
-      &:hover {
-        @include dark-theme-only {
-          background: $grey-90-50;
-        }
-
-        background: $grey-90-20;
-      }
+      border: $border-primary;
 
       &:active {
-        @include dark-theme-only {
-          background: $grey-90-70;
-        }
-
-        background: $grey-90-30;
+        box-shadow: $shadow-primary;
       }
     }
 
     .cta-link {
-      @include dark-theme-only {
-        color: $blue-40;
-        fill: $blue-40;
-      }
+      color: var(--newtab-primary-action-background);
+      fill: var(--newtab-primary-action-background);
 
       font-size: 15px;
       font-weight: 600;
@@ -216,28 +273,17 @@ $excerpt-line-height: 20;
       background-size: auto;
       background-position: right 1.5px;
       padding-right: 9px;
-      color: $blue-60;
-      fill: $blue-60;
 
       &:focus {
-        @include dark-theme-only {
-          box-shadow: 0 0 0 1px $grey-80, 0 0 0 4px $blue-50-50;
-        }
+        box-shadow: $shadow-primary;
 
-        box-shadow: 0 0 0 1px $white, 0 0 0 4px $blue-50-50;
         border-radius: 4px;
         outline: 0;
       }
 
       &:active {
-        @include dark-theme-only {
-          color: $blue-50;
-          fill: $blue-50;
-          box-shadow: none;
-        }
-
-        color: $blue-70;
-        fill: $blue-70;
+        color: var(--newtab-primary-element-active-color);
+        fill: var(--newtab-primary-element-active-color);
         box-shadow: none;
       }
 
@@ -248,23 +294,15 @@ $excerpt-line-height: 20;
   }
 
   header {
-    @include dark-theme-only {
-      color: $grey-10;
-    }
-
     line-height: $header-line-height * 1px;
     font-size: $header-font-size * 1px;
-    color: $grey-90;
+    color: var(--newtab-text-primary-color);
   }
 
   p {
-    @include dark-theme-only {
-      color: $grey-10;
-    }
-
     font-size: $excerpt-font-size * 1px;
     line-height: $excerpt-line-height * 1px;
-    color: $grey-90;
+    color: var(--newtab-text-primary-color);
     margin: 0;
   }
 }

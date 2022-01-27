@@ -6,24 +6,36 @@
 
 #include "mozilla/dom/DOMMatrix.h"
 
-#include "mozilla/dom/BindingUtils.h"
+#include <cmath>
+#include <cstdint>
+#include <new>
+#include "ErrorList.h"
+#include "js/Conversions.h"
+#include "js/Equality.h"
+#include "js/StructuredClone.h"
+#include "js/Value.h"
+#include "mozilla/Casting.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/FloatingPoint.h"
+#include "mozilla/MacroForEach.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/ServoCSSParser.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/DOMMatrixBinding.h"
 #include "mozilla/dom/DOMPoint.h"
 #include "mozilla/dom/DOMPointBinding.h"
-#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/ToJSValue.h"
-#include "mozilla/ServoCSSParser.h"
-#include "nsGlobalWindowInner.h"
-#include "nsStyleTransformMatrix.h"
-#include "nsGlobalWindowInner.h"
+#include "mozilla/gfx/BasePoint.h"
+#include "mozilla/gfx/BasePoint4D.h"
+#include "mozilla/gfx/Point.h"
+#include "nsIGlobalObject.h"
+#include "nsPIDOMWindow.h"
+#include "nsString.h"
+#include "nsStringFlags.h"
+#include "nsTArray.h"
+#include "nsTLiteralString.h"
 
-#include <math.h>
-
-#include "js/Conversions.h"  // JS::NumberToString
-#include "js/Equality.h"     // JS::SameValueZero
-
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 template <typename T>
 static void SetDataInMatrix(DOMMatrixReadOnly* aMatrix, const T* aData,
@@ -1021,5 +1033,4 @@ JSObject* DOMMatrix::WrapObject(JSContext* aCx,
   return DOMMatrix_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

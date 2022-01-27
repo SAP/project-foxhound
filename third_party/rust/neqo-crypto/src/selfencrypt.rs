@@ -4,11 +4,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use crate::aead::Aead;
 use crate::constants::{Cipher, Version};
 use crate::err::{Error, Res};
-use crate::hkdf;
 use crate::p11::{random, SymKey};
+use crate::{hkdf, Aead};
 
 use neqo_common::{hex, qinfo, qtrace, Encoder};
 
@@ -42,7 +41,7 @@ impl SelfEncrypt {
 
     fn make_aead(&self, k: &SymKey, salt: &[u8]) -> Res<Aead> {
         debug_assert_eq!(salt.len(), Self::SALT_LENGTH);
-        let salt = hkdf::import_key(self.version, self.cipher, salt)?;
+        let salt = hkdf::import_key(self.version, salt)?;
         let secret = hkdf::extract(self.version, self.cipher, Some(&salt), k)?;
         Aead::new(self.version, self.cipher, &secret, "neqo self")
     }

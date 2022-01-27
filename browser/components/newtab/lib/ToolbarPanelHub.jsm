@@ -57,11 +57,17 @@ class _ToolbarPanelHub {
     );
 
     this.state = {};
+    this._initialized = false;
   }
 
-  async init(waitForInitialized, { getMessages, dispatch }) {
+  async init(waitForInitialized, { getMessages, sendTelemetry }) {
+    if (this._initialized) {
+      return;
+    }
+
+    this._initialized = true;
     this._getMessages = getMessages;
-    this._dispatch = dispatch;
+    this._sendTelemetry = sendTelemetry;
     // Wait for ASRouter messages to become available in order to know
     // if we can show the What's New panel
     await waitForInitialized;
@@ -78,6 +84,7 @@ class _ToolbarPanelHub {
   }
 
   uninit() {
+    this._initialized = false;
     EveryWindow.unregisterCallback(TOOLBAR_BUTTON_ID);
     EveryWindow.unregisterCallback(APPMENU_BUTTON_ID);
   }
@@ -91,7 +98,19 @@ class _ToolbarPanelHub {
   }
 
   toggleWhatsNewPref(event) {
-    Preferences.set(WHATSNEW_ENABLED_PREF, event.target.checked);
+    // Checkbox onclick handler gets called before the checkbox state gets toggled,
+    // so we have to call it with the opposite value.
+    let newValue = !event.target.checked;
+    Preferences.set(WHATSNEW_ENABLED_PREF, newValue);
+
+    this.sendUserEventTelemetry(
+      event.target.ownerGlobal,
+      "WNP_PREF_TOGGLE",
+      // Message id is not applicable in this case, the notification state
+      // is not related to a particular message
+      { id: "n/a" },
+      { value: { prefValue: newValue } }
+    );
   }
 
   maybeInsertFTL(win) {
@@ -294,7 +313,7 @@ class _ToolbarPanelHub {
       );
     }
 
-    const wrapperEl = RemoteL10n.createElement(doc, "button");
+    const wrapperEl = RemoteL10n.createElement(doc, "div");
     wrapperEl.doCommand = () => this._dispatchUserAction(win, message);
     wrapperEl.classList.add("whatsNew-message-body");
     messageEl.appendChild(wrapperEl);
@@ -342,27 +361,6 @@ class _ToolbarPanelHub {
         attributes: this.state.contentArguments,
       })
     );
-
-    switch (content.layout) {
-      case "tracking-protections":
-        wrapperEl.appendChild(
-          RemoteL10n.createElement(doc, "h4", {
-            classList: "whatsNew-message-subtitle",
-            content: content.subtitle,
-            attributes: this.state.contentArguments,
-          })
-        );
-        wrapperEl.appendChild(
-          RemoteL10n.createElement(doc, "h2", {
-            classList: "whatsNew-message-title-large",
-            content: this.state.contentArguments[
-              content.layout_title_content_variable
-            ],
-            attributes: this.state.contentArguments,
-          })
-        );
-        break;
-    }
 
     wrapperEl.appendChild(
       RemoteL10n.createElement(doc, "p", {
@@ -463,8 +461,11 @@ class _ToolbarPanelHub {
     );
   }
 
-  _hideAppmenuButton(win) {
-    this._hideElement(win.browser.ownerDocument, APPMENU_BUTTON_ID);
+  _hideAppmenuButton(win, windowClosed) {
+    // No need to do something if the window is going away
+    if (!windowClosed) {
+      this._hideElement(win.browser.ownerDocument, APPMENU_BUTTON_ID);
+    }
   }
 
   _showToolbarButton(win) {
@@ -478,17 +479,20 @@ class _ToolbarPanelHub {
   }
 
   _showElement(document, id, string_id) {
-    const el = document.getElementById(id);
+    const el = PanelMultiView.getViewNode(document, id);
     document.l10n.setAttributes(el, string_id);
-    el.removeAttribute("hidden");
+    el.hidden = false;
   }
 
   _hideElement(document, id) {
-    document.getElementById(id).setAttribute("hidden", true);
+    const el = PanelMultiView.getViewNode(document, id);
+    if (el) {
+      el.hidden = true;
+    }
   }
 
-  _sendTelemetry(ping) {
-    this._dispatch({
+  _sendPing(ping) {
+    this._sendTelemetry({
       type: "TOOLBAR_PANEL_TELEMETRY",
       data: { action: "whats-new-panel_user_event", ...ping },
     });
@@ -502,9 +506,8 @@ class _ToolbarPanelHub {
         win.ownerGlobal.gBrowser.selectedBrowser
       )
     ) {
-      this._sendTelemetry({
+      this._sendPing({
         message_id: message.id,
-        bucket_id: message.id,
         event,
         event_context: options.value,
       });
@@ -528,10 +531,12 @@ class _ToolbarPanelHub {
       const learnMoreLink = doc.querySelector(
         "#messaging-system-message-container .text-link"
       );
-      container.toggleAttribute("disabled");
-      infoButton.toggleAttribute("checked");
-      panelContainer.toggleAttribute("infoMessageShowing");
-      learnMoreLink.disabled = !learnMoreLink.disabled;
+      if (learnMoreLink) {
+        container.toggleAttribute("disabled");
+        infoButton.toggleAttribute("checked");
+        panelContainer.toggleAttribute("infoMessageShowing");
+        learnMoreLink.disabled = !learnMoreLink.disabled;
+      }
     };
     if (!container.childElementCount) {
       const message = await this._getMessages({
@@ -581,8 +586,8 @@ class _ToolbarPanelHub {
    * @param {object[]} messages Messages selected from devtools page
    */
   forceShowMessage(browser, messages) {
-    const win = browser.browser.ownerGlobal;
-    const doc = browser.browser.ownerDocument;
+    const win = browser.ownerGlobal;
+    const doc = browser.ownerDocument;
     this.removeMessages(win, WHATS_NEW_PANEL_SELECTOR);
     this.renderMessages(win, doc, WHATS_NEW_PANEL_SELECTOR, {
       force: true,

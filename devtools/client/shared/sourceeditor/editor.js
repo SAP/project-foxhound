@@ -95,6 +95,7 @@ Editor.modes = {
   css: { name: "css" },
   fs: { name: "x-shader/x-fragment" },
   haxe: { name: "haxe" },
+  http: { name: "http" },
   html: { name: "htmlmixed" },
   js: { name: "javascript" },
   text: { name: "text" },
@@ -136,6 +137,9 @@ function Editor(config) {
     tabSize: tabSize,
     contextMenu: null,
     matchBrackets: true,
+    highlightSelectionMatches: {
+      wordsOnly: true,
+    },
     extraKeys: {},
     indentWithTabs: useTabs,
     inputStyle: "accessibleTextArea",

@@ -19,6 +19,7 @@
 
 #include "mozStorageConnection.h"
 #include "mozIStorageStatement.h"
+#include "mozIStorageStatementCallback.h"
 #include "mozIStorageAsyncStatement.h"
 #include "mozIStoragePendingStatement.h"
 #include "mozIStorageError.h"
@@ -152,7 +153,7 @@ bool Vacuumer::execute() {
   nsAutoString databaseFilename;
   rv = databaseFile->GetLeafName(databaseFilename);
   NS_ENSURE_SUCCESS(rv, false);
-  mDBFilename = NS_ConvertUTF16toUTF8(databaseFilename);
+  CopyUTF16toUTF8(databaseFilename, mDBFilename);
   MOZ_ASSERT(!mDBFilename.IsEmpty(), "Database filename cannot be empty");
 
   // Check interval from last vacuum.

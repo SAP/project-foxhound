@@ -10,7 +10,6 @@
 #  include "Intervals.h"
 #  include "MediaData.h"
 #  include "mozilla/Attributes.h"
-#  include "mozilla/GuardObjects.h"
 #  include "mozilla/UniquePtr.h"
 #  include "nsISeekableStream.h"
 #  include "nsThreadUtils.h"
@@ -55,7 +54,8 @@ class MediaResource : public DecoderDoctorLifeLogger<MediaResource> {
   // Note that this means it's safe for references to this object to be
   // released on a non main thread, but the destructor will always run on
   // the main thread.
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_DESTROY(MediaResource, Destroy());
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_DELETE_ON_MAIN_THREAD(
+      MediaResource)
 
   // Close the resource, stop any listeners, channels, etc.
   // Cancels any currently blocking Read request and forces that request to
@@ -116,9 +116,6 @@ class MediaResource : public DecoderDoctorLifeLogger<MediaResource> {
 
  protected:
   virtual ~MediaResource() = default;
-
- private:
-  void Destroy();
 };
 
 /**
@@ -130,9 +127,7 @@ class MediaResource : public DecoderDoctorLifeLogger<MediaResource> {
 template <class T>
 class MOZ_RAII AutoPinned {
  public:
-  explicit AutoPinned(T* aResource MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : mResource(aResource) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+  explicit AutoPinned(T* aResource) : mResource(aResource) {
     MOZ_ASSERT(mResource);
     mResource->Pin();
   }
@@ -144,7 +139,6 @@ class MOZ_RAII AutoPinned {
 
  private:
   T* mResource;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 DDLoggedTypeDeclName(MediaResourceIndex);

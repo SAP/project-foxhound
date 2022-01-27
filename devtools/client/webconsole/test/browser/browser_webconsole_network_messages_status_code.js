@@ -5,7 +5,7 @@
 
 const TEST_FILE = "test-network-request.html";
 const TEST_PATH =
-  "http://example.com/browser/devtools/client/webconsole/" + "test/browser/";
+  "https://example.com/browser/devtools/client/webconsole/" + "test/browser/";
 const TEST_URI = TEST_PATH + TEST_FILE;
 
 const NET_PREF = "devtools.webconsole.filter.net";
@@ -28,11 +28,7 @@ registerCleanupFunction(async function() {
 add_task(async function task() {
   const hud = await openNewTabAndConsole(TEST_URI);
 
-  const currentTab = gBrowser.selectedTab;
-  const target = await TargetFactory.forTab(currentTab);
-  const toolbox = gDevTools.getToolbox(target);
-  const { ui } = toolbox.getCurrentPanel().hud;
-  const onNetworkMessageUpdate = ui.once("network-message-updated");
+  const onNetworkMessageUpdate = hud.ui.once("network-messages-updated");
 
   // Fire an XHR POST request.
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
@@ -43,50 +39,26 @@ add_task(async function task() {
   await onNetworkMessageUpdate;
 
   const xhrUrl = TEST_PATH + "test-data.json";
-  const messageNode = await waitFor(() => findMessage(hud, xhrUrl));
-  const statusCodeNode = messageNode.querySelector(".status-code");
-  info("Network message found.");
+  const messageNode = await waitFor(() => findMessage(hud, xhrUrl, ".network"));
+  ok(!!messageNode, "Network message found.");
 
+  const statusCodeNode = await waitFor(() =>
+    messageNode.querySelector(".status-code")
+  );
   is(
     statusCodeNode.title,
     l10n.getStr("webConsoleMoreInfoLabel"),
     "Status code has the expected tooltip"
   );
 
-  const {
-    rightClickMouseEvent,
-    rightClickCtrlOrCmdKeyMouseEvent,
-  } = getMouseEvents();
+  info("Left click status code node and observe the link opens.");
+  const { link, where } = await simulateLinkClick(statusCodeNode);
+  is(link, LEARN_MORE_URI, `Clicking the provided link opens ${link}`);
+  is(where, "tab", "Link opened in correct tab.");
 
-  const testCases = [
-    { clickEvent: null, link: LEARN_MORE_URI, where: "tab" },
-    { clickEvent: rightClickMouseEvent, link: null, where: null },
-    { clickEvent: rightClickCtrlOrCmdKeyMouseEvent, link: null, where: null },
-  ];
-
-  for (const testCase of testCases) {
-    info("Test case");
-    const { clickEvent } = testCase;
-    const onConsoleMenuOpened = [
-      rightClickMouseEvent,
-      rightClickCtrlOrCmdKeyMouseEvent,
-    ].includes(clickEvent)
-      ? hud.ui.wrapper.once("menu-open")
-      : null;
-
-    const { link, where } = await simulateLinkClick(
-      statusCodeNode,
-      testCase.clickEvent
-    );
-    is(link, testCase.link, `Clicking the provided link opens ${link}`);
-    is(where, testCase.where, `Link opened in correct tab`);
-
-    if (onConsoleMenuOpened) {
-      info("Check if context menu is opened on right clicking the status-code");
-      await onConsoleMenuOpened;
-      ok(true, "Console menu is opened");
-    }
-  }
+  info("Right click status code node and observe the context menu opening.");
+  await openContextMenu(hud, statusCodeNode);
+  await hideContextMenu(hud);
 
   await new Promise(resolve => {
     Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
@@ -94,24 +66,3 @@ add_task(async function task() {
     );
   });
 });
-
-function getMouseEvents() {
-  const isOSX = Services.appinfo.OS == "Darwin";
-
-  const rightClickMouseEvent = new MouseEvent("contextmenu", {
-    bubbles: true,
-    button: 2,
-    view: window,
-  });
-  const rightClickCtrlOrCmdKeyMouseEvent = new MouseEvent("contextmenu", {
-    bubbles: true,
-    button: 2,
-    [isOSX ? "metaKey" : "ctrlKey"]: true,
-    view: window,
-  });
-
-  return {
-    rightClickMouseEvent,
-    rightClickCtrlOrCmdKeyMouseEvent,
-  };
-}

@@ -5,12 +5,13 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 UNIFIED_SOURCES += [
-    'TestCOM.cpp',
-    'TestNtPathToDosPath.cpp',
+    "TestCOM.cpp",
+    "TestNtPathToDosPath.cpp",
+    "TestPoisonIOInterposer.cpp",
 ]
 
 OS_LIBS += [
-    'mpr',
+    "mpr",
 ]
 
-FINAL_LIBRARY = 'xul-gtest'
+FINAL_LIBRARY = "xul-gtest"

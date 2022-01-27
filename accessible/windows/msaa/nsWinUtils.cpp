@@ -14,12 +14,12 @@
 
 #include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_accessibility.h"
 #include "nsArrayUtils.h"
 #include "nsICSSDeclaration.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "nsXULAppAPI.h"
-#include "ProxyWrappers.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -49,7 +49,7 @@ already_AddRefed<nsICSSDeclaration> nsWinUtils::GetComputedStyleDeclaration(
   ErrorResult dummy;
   nsCOMPtr<Element> domElement(do_QueryInterface(elm));
   nsCOMPtr<nsICSSDeclaration> cssDecl =
-      window->GetComputedStyle(*domElement, EmptyString(), dummy);
+      window->GetComputedStyle(*domElement, u""_ns, dummy);
   dummy.SuppressException();
   return cssDecl.forget();
 }
@@ -60,7 +60,7 @@ bool nsWinUtils::MaybeStartWindowEmulation() {
   if (IPCAccessibilityActive()) return false;
 
   if (Compatibility::IsJAWS() || Compatibility::IsWE() ||
-      Compatibility::IsDolphin() || XRE_IsContentProcess()) {
+      Compatibility::IsDolphin() || Compatibility::IsVisperoShared()) {
     RegisterNativeWindow(kClassNameTabContent);
     sWindowEmulationStarted = true;
     return true;
@@ -136,26 +136,26 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
       // for details).
       int32_t objId = static_cast<DWORD>(lParam);
       if (objId == OBJID_CLIENT) {
-        IAccessible* msaaAccessible = nullptr;
+        RefPtr<IAccessible> msaaAccessible;
         DocAccessible* document =
             reinterpret_cast<DocAccessible*>(::GetPropW(hWnd, kPropNameDocAcc));
         if (document) {
-          document->GetNativeInterface(
-              (void**)&msaaAccessible);  // does an addref
+          document->GetNativeInterface(getter_AddRefs(msaaAccessible));
         } else {
           DocAccessibleParent* docParent = static_cast<DocAccessibleParent*>(
               ::GetPropW(hWnd, kPropNameDocAccParent));
           if (docParent) {
-            auto wrapper = WrapperFor(docParent);
-            wrapper->GetNativeInterface(
-                (void**)&msaaAccessible);  // does an addref
+            if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+              msaaAccessible = MsaaAccessible::GetFrom(docParent);
+            } else {
+              docParent->GetCOMInterface(getter_AddRefs(msaaAccessible));
+            }
           }
         }
         if (msaaAccessible) {
           LRESULT result =
               ::LresultFromObject(IID_IAccessible, wParam,
                                   msaaAccessible);  // does an addref
-          msaaAccessible->Release();                // release extra addref
           return result;
         }
       }

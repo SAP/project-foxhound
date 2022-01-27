@@ -35,7 +35,7 @@ add_task(function losslessDecode() {
     UrlbarUtils.RESULT_SOURCE.TABS,
     { url }
   );
-  gURLBar.setValueFromResult(result);
+  gURLBar.setValueFromResult({ result });
   // Since this is directly setting textValue, it is expected to be trimmed.
   Assert.equal(
     gURLBar.inputField.value,
@@ -133,9 +133,12 @@ async function checkInput(inputStr) {
     inputStr.replace("\\", "/"),
     "Should be displaying the correct text"
   );
+  let [action] = await document.l10n.formatValues([
+    { id: "urlbar-result-action-visit" },
+  ]);
   Assert.equal(
     result.displayed.action,
-    UrlbarUtils.strings.GetStringFromName("visit"),
+    action,
     "Should be displaying the correct action text"
   );
 }

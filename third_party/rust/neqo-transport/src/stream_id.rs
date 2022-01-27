@@ -6,37 +6,14 @@
 
 // Stream ID and stream index handling.
 
-use std::ops::AddAssign;
-
 use neqo_common::Role;
 
-use crate::connection::{LOCAL_STREAM_LIMIT_BIDI, LOCAL_STREAM_LIMIT_UNI};
-use crate::frame::StreamType;
+#[derive(PartialEq, Debug, Copy, Clone, PartialOrd, Eq, Ord, Hash)]
 
-pub struct StreamIndexes {
-    pub local_max_stream_uni: StreamIndex,
-    pub local_max_stream_bidi: StreamIndex,
-    pub local_next_stream_uni: StreamIndex,
-    pub local_next_stream_bidi: StreamIndex,
-    pub remote_max_stream_uni: StreamIndex,
-    pub remote_max_stream_bidi: StreamIndex,
-    pub remote_next_stream_uni: StreamIndex,
-    pub remote_next_stream_bidi: StreamIndex,
-}
-
-impl StreamIndexes {
-    pub fn new() -> Self {
-        Self {
-            local_max_stream_bidi: StreamIndex::new(LOCAL_STREAM_LIMIT_BIDI),
-            local_max_stream_uni: StreamIndex::new(LOCAL_STREAM_LIMIT_UNI),
-            local_next_stream_uni: StreamIndex::new(0),
-            local_next_stream_bidi: StreamIndex::new(0),
-            remote_max_stream_bidi: StreamIndex::new(0),
-            remote_max_stream_uni: StreamIndex::new(0),
-            remote_next_stream_uni: StreamIndex::new(0),
-            remote_next_stream_bidi: StreamIndex::new(0),
-        }
-    }
+/// The type of stream, either Bi-Directional or Uni-Directional.
+pub enum StreamType {
+    BiDi,
+    UniDi,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Ord, PartialOrd, Hash)]
@@ -45,6 +22,14 @@ pub struct StreamId(u64);
 impl StreamId {
     pub const fn new(id: u64) -> Self {
         Self(id)
+    }
+
+    pub fn init(stream_type: StreamType, role: Role) -> Self {
+        let type_val = match stream_type {
+            StreamType::BiDi => 0,
+            StreamType::UniDi => 2,
+        };
+        Self(type_val + Self::role_bit(role))
     }
 
     pub fn as_u64(self) -> u64 {
@@ -102,6 +87,18 @@ impl StreamId {
     pub fn is_recv_only(self, my_role: Role) -> bool {
         self.is_uni() && self.is_remote_initiated(my_role)
     }
+
+    pub fn next(&mut self) {
+        self.0 += 4;
+    }
+
+    /// This returns a bit that is shared by all streams created by this role.
+    pub fn role_bit(role: Role) -> u64 {
+        match role {
+            Role::Server => 1,
+            Role::Client => 0,
+        }
+    }
 }
 
 impl From<u64> for StreamId {
@@ -116,46 +113,58 @@ impl PartialEq<u64> for StreamId {
     }
 }
 
+impl AsRef<u64> for StreamId {
+    fn as_ref(&self) -> &u64 {
+        &self.0
+    }
+}
+
 impl ::std::fmt::Display for StreamId {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         write!(f, "{}", self.as_u64())
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy, Ord, PartialOrd, Hash)]
-pub struct StreamIndex(u64);
+#[cfg(test)]
+mod test {
+    use super::StreamId;
+    use neqo_common::Role;
 
-impl StreamIndex {
-    pub fn new(val: u64) -> Self {
-        Self(val)
+    #[test]
+    fn bidi_stream_properties() {
+        let id1 = StreamId::from(16);
+        assert!(id1.is_bidi());
+        assert!(!id1.is_uni());
+        assert!(id1.is_client_initiated());
+        assert!(!id1.is_server_initiated());
+        assert_eq!(id1.role(), Role::Client);
+        assert!(id1.is_self_initiated(Role::Client));
+        assert!(!id1.is_self_initiated(Role::Server));
+        assert!(!id1.is_remote_initiated(Role::Client));
+        assert!(id1.is_remote_initiated(Role::Server));
+        assert!(!id1.is_send_only(Role::Server));
+        assert!(!id1.is_send_only(Role::Client));
+        assert!(!id1.is_recv_only(Role::Server));
+        assert!(!id1.is_recv_only(Role::Client));
+        assert_eq!(id1.as_u64(), 16);
     }
 
-    pub fn to_stream_id(self, stream_type: StreamType, role: Role) -> StreamId {
-        let type_val = match stream_type {
-            StreamType::BiDi => 0,
-            StreamType::UniDi => 2,
-        };
-        let role_val = match role {
-            Role::Server => 1,
-            Role::Client => 0,
-        };
-
-        StreamId::from((self.0 << 2) + type_val + role_val)
-    }
-
-    pub fn as_u64(self) -> u64 {
-        self.0
-    }
-}
-
-impl From<StreamId> for StreamIndex {
-    fn from(val: StreamId) -> Self {
-        Self(val.as_u64() >> 2)
-    }
-}
-
-impl AddAssign<u64> for StreamIndex {
-    fn add_assign(&mut self, other: u64) {
-        *self = Self::new(self.as_u64() + other)
+    #[test]
+    fn uni_stream_properties() {
+        let id2 = StreamId::from(35);
+        assert!(!id2.is_bidi());
+        assert!(id2.is_uni());
+        assert!(!id2.is_client_initiated());
+        assert!(id2.is_server_initiated());
+        assert_eq!(id2.role(), Role::Server);
+        assert!(!id2.is_self_initiated(Role::Client));
+        assert!(id2.is_self_initiated(Role::Server));
+        assert!(id2.is_remote_initiated(Role::Client));
+        assert!(!id2.is_remote_initiated(Role::Server));
+        assert!(id2.is_send_only(Role::Server));
+        assert!(!id2.is_send_only(Role::Client));
+        assert!(!id2.is_recv_only(Role::Server));
+        assert!(id2.is_recv_only(Role::Client));
+        assert_eq!(id2.as_u64(), 35);
     }
 }

@@ -19,7 +19,9 @@ import {
   getTestState,
   setupTestBrowserHooks,
   setupTestPageAndContextHooks,
-} from './mocha-utils';
+  itFailsFirefox,
+  describeFailsFirefox,
+} from './mocha-utils'; // eslint-disable-line import/extensions
 
 describe('Emulation', () => {
   setupTestBrowserHooks();
@@ -88,18 +90,15 @@ describe('Emulation', () => {
         'YES'
       );
     });
-    it(
-      'should detect touch when applying viewport with touches',
-      async () => {
-        const { page, server } = getTestState();
+    it('should detect touch when applying viewport with touches', async () => {
+      const { page, server } = getTestState();
 
-        await page.setViewport({ width: 800, height: 600, hasTouch: true });
-        await page.addScriptTag({ url: server.PREFIX + '/modernizr.js' });
-        expect(
-          await page.evaluate(() => globalThis.Modernizr.touchevents)
-        ).toBe(true);
-      }
-    );
+      await page.setViewport({ width: 800, height: 600, hasTouch: true });
+      await page.addScriptTag({ url: server.PREFIX + '/modernizr.js' });
+      expect(await page.evaluate(() => globalThis.Modernizr.touchevents)).toBe(
+        true
+      );
+    });
     it('should support landscape emulation', async () => {
       const { page, server } = getTestState();
 
@@ -136,7 +135,7 @@ describe('Emulation', () => {
       await page.goto(server.PREFIX + '/input/button.html');
       const button = await page.$('button');
       await page.evaluate(
-        (button) => (button.style.marginTop = '200px'),
+        (button: HTMLElement) => (button.style.marginTop = '200px'),
         button
       );
       await button.click();
@@ -243,6 +242,38 @@ describe('Emulation', () => {
           () => matchMedia('(prefers-color-scheme: dark)').matches
         )
       ).toBe(false);
+      await page.emulateMediaFeatures([{ name: 'color-gamut', value: 'srgb' }]);
+      expect(
+        await page.evaluate(() => matchMedia('(color-gamut: p3)').matches)
+      ).toBe(false);
+      expect(
+        await page.evaluate(() => matchMedia('(color-gamut: srgb)').matches)
+      ).toBe(true);
+      expect(
+        await page.evaluate(() => matchMedia('(color-gamut: rec2020)').matches)
+      ).toBe(false);
+      await page.emulateMediaFeatures([{ name: 'color-gamut', value: 'p3' }]);
+      expect(
+        await page.evaluate(() => matchMedia('(color-gamut: p3)').matches)
+      ).toBe(true);
+      expect(
+        await page.evaluate(() => matchMedia('(color-gamut: srgb)').matches)
+      ).toBe(true);
+      expect(
+        await page.evaluate(() => matchMedia('(color-gamut: rec2020)').matches)
+      ).toBe(false);
+      await page.emulateMediaFeatures([
+        { name: 'color-gamut', value: 'rec2020' },
+      ]);
+      expect(
+        await page.evaluate(() => matchMedia('(color-gamut: p3)').matches)
+      ).toBe(true);
+      expect(
+        await page.evaluate(() => matchMedia('(color-gamut: srgb)').matches)
+      ).toBe(true);
+      expect(
+        await page.evaluate(() => matchMedia('(color-gamut: rec2020)').matches)
+      ).toBe(true);
     });
     it('should throw in case of bad argument', async () => {
       const { page } = getTestState();
@@ -259,7 +290,7 @@ describe('Emulation', () => {
     it('should work', async () => {
       const { page } = getTestState();
 
-      page.evaluate(() => {
+      await page.evaluate(() => {
         globalThis.date = new Date(1479579154987);
       });
       await page.emulateTimezone('America/Jamaica');
@@ -353,6 +384,28 @@ describe('Emulation', () => {
         .emulateVisionDeficiency('invalid')
         .catch((error_) => (error = error_));
       expect(error.message).toBe('Unsupported vision deficiency: invalid');
+    });
+  });
+
+  describe('Page.emulateNetworkConditions', function () {
+    it('should change navigator.connection.effectiveType', async () => {
+      const { page, puppeteer } = getTestState();
+
+      const slow3G = puppeteer.networkConditions['Slow 3G'];
+      const fast3G = puppeteer.networkConditions['Fast 3G'];
+
+      expect(
+        await page.evaluate('window.navigator.connection.effectiveType')
+      ).toBe('4g');
+      await page.emulateNetworkConditions(fast3G);
+      expect(
+        await page.evaluate('window.navigator.connection.effectiveType')
+      ).toBe('3g');
+      await page.emulateNetworkConditions(slow3G);
+      expect(
+        await page.evaluate('window.navigator.connection.effectiveType')
+      ).toBe('2g');
+      await page.emulateNetworkConditions(null);
     });
   });
 });

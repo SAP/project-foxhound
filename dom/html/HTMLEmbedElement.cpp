@@ -14,7 +14,6 @@
 #include "mozilla/dom/ElementInlines.h"
 
 #include "mozilla/dom/Document.h"
-#include "nsIPluginDocument.h"
 #include "nsThreadUtils.h"
 #include "nsIWidget.h"
 #include "nsContentUtils.h"
@@ -27,8 +26,7 @@
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(Embed)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 HTMLEmbedElement::HTMLEmbedElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
@@ -42,9 +40,6 @@ HTMLEmbedElement::HTMLEmbedElement(
 }
 
 HTMLEmbedElement::~HTMLEmbedElement() {
-#ifdef XP_MACOSX
-  HTMLObjectElement::OnFocusBlurPlugin(this, false);
-#endif
   UnregisterActivityObserver();
   nsImageLoadingContent::Destroy();
 }
@@ -56,22 +51,17 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLEmbedElement,
   nsObjectLoadingContent::Traverse(tmp, cb);
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLEmbedElement,
+                                                nsGenericHTMLElement)
+  nsObjectLoadingContent::Unlink(tmp);
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(
     HTMLEmbedElement, nsGenericHTMLElement, nsIRequestObserver,
     nsIStreamListener, nsFrameLoaderOwner, nsIObjectLoadingContent,
     imgINotificationObserver, nsIImageLoadingContent, nsIChannelEventSink)
 
 NS_IMPL_ELEMENT_CLONE(HTMLEmbedElement)
-
-#ifdef XP_MACOSX
-
-NS_IMETHODIMP
-HTMLEmbedElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
-  HTMLObjectElement::HandleFocusBlurPlugin(this, aVisitor.mEvent);
-  return NS_OK;
-}
-
-#endif  // #ifdef XP_MACOSX
 
 void HTMLEmbedElement::AsyncEventRunning(AsyncEventDispatcher* aEvent) {
   nsImageLoadingContent::AsyncEventRunning(aEvent);
@@ -85,30 +75,15 @@ nsresult HTMLEmbedElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (IsInComposedDoc()) {
-    // Don't kick off load from being bound to a plugin document - the plugin
-    // document will call nsObjectLoadingContent::InitializeFromChannel() for
-    // the initial load.
-    nsCOMPtr<nsIPluginDocument> pluginDoc =
-        do_QueryInterface(&aContext.OwnerDoc());
-    if (!pluginDoc) {
-      void (HTMLEmbedElement::*start)() = &HTMLEmbedElement::StartObjectLoad;
-      nsContentUtils::AddScriptRunner(
-          NewRunnableMethod("dom::HTMLEmbedElement::BindToTree", this, start));
-    }
+    void (HTMLEmbedElement::*start)() = &HTMLEmbedElement::StartObjectLoad;
+    nsContentUtils::AddScriptRunner(
+        NewRunnableMethod("dom::HTMLEmbedElement::BindToTree", this, start));
   }
 
   return NS_OK;
 }
 
 void HTMLEmbedElement::UnbindFromTree(bool aNullParent) {
-#ifdef XP_MACOSX
-  // When a page is reloaded (when an Document's content is removed), the
-  // focused element isn't necessarily sent an eBlur event. See
-  // nsFocusManager::ContentRemoved(). This means that a widget may think it
-  // still contains a focused plugin when it doesn't -- which in turn can
-  // disable text input in the browser window. See bug 1137229.
-  HTMLObjectElement::OnFocusBlurPlugin(this, false);
-#endif
   nsObjectLoadingContent::UnbindFromTree(aNullParent);
   nsGenericHTMLElement::UnbindFromTree(aNullParent);
 }
@@ -137,7 +112,7 @@ nsresult HTMLEmbedElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
   if (aNamespaceID == kNameSpaceID_None &&
       aName == nsGkAtoms::allowfullscreen && mFrameLoader) {
     if (auto* bc = mFrameLoader->GetExtantBrowsingContext()) {
-      bc->SetFullscreenAllowedByOwner(AllowFullscreen());
+      MOZ_ALWAYS_SUCCEEDS(bc->SetFullscreenAllowedByOwner(AllowFullscreen()));
     }
   }
 
@@ -167,8 +142,14 @@ nsresult HTMLEmbedElement::AfterMaybeChangeAttr(int32_t aNamespaceID,
       // a document, just in case that the caller wants to set additional
       // attributes before inserting the node into the document.
       if (aNotify && IsInComposedDoc() && !BlockEmbedOrObjectContentLoading()) {
-        nsresult rv = LoadObject(aNotify, true);
-        NS_ENSURE_SUCCESS(rv, rv);
+        nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
+            "HTMLEmbedElement::LoadObject",
+            [self = RefPtr<HTMLEmbedElement>(this), aNotify]() {
+              if (self->IsInComposedDoc()) {
+                self->LoadObject(aNotify, true);
+              }
+            }));
+        return NS_OK;
       }
     }
   }
@@ -178,7 +159,17 @@ nsresult HTMLEmbedElement::AfterMaybeChangeAttr(int32_t aNamespaceID,
 
 bool HTMLEmbedElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
                                        int32_t* aTabIndex) {
-  // Has plugin content: let the plugin decide what to do in terms of
+  // Plugins that show the empty fallback should not accept focus.
+  if (Type() == eType_Fallback) {
+    if (aTabIndex) {
+      *aTabIndex = -1;
+    }
+
+    *aIsFocusable = false;
+    return false;
+  }
+
+  // Has non-plugin content: let the plugin decide what to do in terms of
   // internal focus from mouse clicks
   if (aTabIndex) {
     *aTabIndex = TabIndex();
@@ -188,14 +179,6 @@ bool HTMLEmbedElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
 
   // Let the plugin decide, so override.
   return true;
-}
-
-nsIContent::IMEState HTMLEmbedElement::GetDesiredIMEState() {
-  if (Type() == eType_Plugin) {
-    return IMEState(IMEState::PLUGIN);
-  }
-
-  return nsGenericHTMLElement::GetDesiredIMEState();
 }
 
 bool HTMLEmbedElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
@@ -292,20 +275,11 @@ nsresult HTMLEmbedElement::CopyInnerTo(HTMLEmbedElement* aDest) {
 
 JSObject* HTMLEmbedElement::WrapNode(JSContext* aCx,
                                      JS::Handle<JSObject*> aGivenProto) {
-  JSObject* obj;
-  obj = HTMLEmbedElement_Binding::Wrap(aCx, this, aGivenProto);
-
-  if (!obj) {
-    return nullptr;
-  }
-  JS::Rooted<JSObject*> rootedObj(aCx, obj);
-  SetupProtoChain(aCx, rootedObj);
-  return rootedObj;
+  return HTMLEmbedElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
 nsContentPolicyType HTMLEmbedElement::GetContentPolicyType() const {
   return nsIContentPolicy::TYPE_INTERNAL_EMBED;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

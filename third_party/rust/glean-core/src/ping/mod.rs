@@ -14,10 +14,25 @@ use serde_json::{json, Value as JsonValue};
 use crate::common_metric_data::{CommonMetricData, Lifetime};
 use crate::metrics::{CounterMetric, DatetimeMetric, Metric, MetricType, PingType, TimeUnit};
 use crate::storage::StorageManager;
-use crate::util::{get_iso_time_string, local_now_with_offset};
+use crate::upload::HeaderMap;
+use crate::util::{get_iso_time_string, local_now_with_offset_and_record};
 use crate::{
     Glean, Result, DELETION_REQUEST_PINGS_DIRECTORY, INTERNAL_STORAGE, PENDING_PINGS_DIRECTORY,
 };
+
+/// Holds everything you need to store or send a ping.
+pub struct Ping<'a> {
+    /// The unique document id.
+    pub doc_id: &'a str,
+    /// The ping's name.
+    pub name: &'a str,
+    /// The path on the server to use when uplaoding this ping.
+    pub url_path: &'a str,
+    /// The payload, including `*_info` fields.
+    pub content: JsonValue,
+    /// The headers to upload with the payload.
+    pub headers: HeaderMap,
+}
 
 /// Collect a ping's data, assemble it into its full payload and store it on disk.
 pub struct PingMaker;
@@ -42,12 +57,12 @@ impl Default for PingMaker {
 }
 
 impl PingMaker {
-    /// Create a new PingMaker.
+    /// Creates a new [`PingMaker`].
     pub fn new() -> Self {
         Self
     }
 
-    /// Get, and then increment, the sequence number for a given ping.
+    /// Gets, and then increments, the sequence number for a given ping.
     ///
     /// This is crate-internal exclusively for enabling the migration tests.
     pub(super) fn get_ping_seq(&self, glean: &Glean, storage_name: &str) -> usize {
@@ -65,6 +80,7 @@ impl PingMaker {
             glean.storage(),
             INTERNAL_STORAGE,
             &seq.meta().identifier(glean),
+            seq.meta().lifetime,
         ) {
             Some(Metric::Counter(i)) => i,
             _ => 0,
@@ -76,7 +92,7 @@ impl PingMaker {
         current_seq as usize
     }
 
-    /// Get the formatted start and end times for this ping and update for the next ping.
+    /// Gets the formatted start and end times for this ping and update for the next ping.
     fn get_start_end_times(&self, glean: &Glean, storage_name: &str) -> (String, String) {
         let time_unit = TimeUnit::Minute;
 
@@ -96,7 +112,7 @@ impl PingMaker {
         let start_time_data = start_time
             .get_value(glean, INTERNAL_STORAGE)
             .unwrap_or_else(|| glean.start_time());
-        let end_time_data = local_now_with_offset();
+        let end_time_data = local_now_with_offset_and_record(glean);
 
         // Update the start time with the current time.
         start_time.set(glean, Some(end_time_data));
@@ -159,24 +175,55 @@ impl PingMaker {
         json!(map)
     }
 
-    /// Collect a snapshot for the given ping from storage and attach required meta information.
+    /// Build the headers to be persisted and sent with a ping.
     ///
-    /// ## Arguments
+    /// Currently the only headers we persist are `X-Debug-ID` and `X-Source-Tags`.
     ///
-    /// * `glean` - the Glean instance to collect data from.
+    /// # Arguments
+    ///
+    /// * `glean` - the [`Glean`] instance to collect headers from.
+    ///
+    /// # Returns
+    ///
+    /// A map of header names to header values.
+    /// Might be empty if there are no extra headers to send.
+    /// ```
+    fn get_headers(&self, glean: &Glean) -> HeaderMap {
+        let mut headers_map = HeaderMap::new();
+
+        if let Some(debug_view_tag) = glean.debug_view_tag() {
+            headers_map.insert("X-Debug-ID".to_string(), debug_view_tag.to_string());
+        }
+
+        if let Some(source_tags) = glean.source_tags() {
+            headers_map.insert("X-Source-Tags".to_string(), source_tags.join(","));
+        }
+
+        headers_map
+    }
+
+    /// Collects a snapshot for the given ping from storage and attach required meta information.
+    ///
+    /// # Arguments
+    ///
+    /// * `glean` - the [`Glean`] instance to collect data from.
     /// * `ping` - the ping to collect for.
     /// * `reason` - an optional reason code to include in the ping.
+    /// * `doc_id` - the ping's unique document identifier.
+    /// * `url_path` - the path on the server to upload this ping to.
     ///
-    /// ## Return value
+    /// # Returns
     ///
-    /// Returns a fully assembled JSON representation of the ping payload.
+    /// A fully assembled representation of the ping payload and associated metadata.
     /// If there is no data stored for the ping, `None` is returned.
-    pub fn collect(
+    pub fn collect<'a>(
         &self,
         glean: &Glean,
-        ping: &PingType,
+        ping: &'a PingType,
         reason: Option<&str>,
-    ) -> Option<JsonValue> {
+        doc_id: &'a str,
+        url_path: &'a str,
+    ) -> Option<Ping<'a>> {
         info!("Collecting {}", ping.name);
 
         let metrics_data = StorageManager.snapshot_as_json(glean.storage(), &ping.name, true);
@@ -205,21 +252,26 @@ impl PingMaker {
             json_obj.insert("events".to_string(), events_data);
         }
 
-        Some(json)
+        Some(Ping {
+            content: json,
+            name: &ping.name,
+            doc_id,
+            url_path,
+            headers: self.get_headers(glean),
+        })
     }
 
-    /// Collect a snapshot for the given ping from storage and attach required meta information,
-    /// returning it as a string containing JSON.
+    /// Collects a snapshot for the given ping from storage and attach required meta information.
     ///
-    /// ## Arguments
+    /// # Arguments
     ///
-    /// * `glean` - the Glean instance to collect data from.
+    /// * `glean` - the [`Glean`] instance to collect data from.
     /// * `ping` - the ping to collect for.
     /// * `reason` - an optional reason code to include in the ping.
     ///
-    /// ## Return value
+    /// # Returns
     ///
-    /// Returns a fully assembled ping payload in a string encoded as JSON.
+    /// A fully assembled ping payload in a string encoded as JSON.
     /// If there is no data stored for the ping, `None` is returned.
     pub fn collect_string(
         &self,
@@ -227,11 +279,11 @@ impl PingMaker {
         ping: &PingType,
         reason: Option<&str>,
     ) -> Option<String> {
-        self.collect(glean, ping, reason)
-            .map(|ping| ::serde_json::to_string_pretty(&ping).unwrap())
+        self.collect(glean, ping, reason, "", "")
+            .map(|ping| ::serde_json::to_string_pretty(&ping.content).unwrap())
     }
 
-    /// Get path to a directory for ping storage.
+    /// Gets the path to a directory for ping storage.
     ///
     /// The directory will be created inside the `data_path`.
     /// The `pings` directory (and its parents) is created if it does not exist.
@@ -248,7 +300,7 @@ impl PingMaker {
         Ok(pings_dir)
     }
 
-    /// Get path to a directory for temporary storage.
+    /// Gets path to a directory for temporary storage.
     ///
     /// The directory will be created inside the `data_path`.
     /// The `tmp` directory (and its parents) is created if it does not exist.
@@ -258,30 +310,32 @@ impl PingMaker {
         Ok(pings_dir)
     }
 
-    /// Store a ping to disk in the pings directory.
-    pub fn store_ping(
-        &self,
-        doc_id: &str,
-        ping_name: &str,
-        data_path: &Path,
-        url_path: &str,
-        ping_content: &JsonValue,
-    ) -> std::io::Result<()> {
-        let pings_dir = self.get_pings_dir(data_path, Some(ping_name))?;
+    /// Stores a ping to disk in the pings directory.
+    pub fn store_ping(&self, data_path: &Path, ping: &Ping) -> std::io::Result<()> {
+        let pings_dir = self.get_pings_dir(data_path, Some(ping.name))?;
         let temp_dir = self.get_tmp_dir(data_path)?;
 
         // Write to a temporary location and then move when done,
         // for transactional writes.
-        let temp_ping_path = temp_dir.join(doc_id);
-        let ping_path = pings_dir.join(doc_id);
+        let temp_ping_path = temp_dir.join(ping.doc_id);
+        let ping_path = pings_dir.join(ping.doc_id);
 
-        log::debug!("Storing ping '{}' at '{}'", doc_id, ping_path.display());
+        log::debug!(
+            "Storing ping '{}' at '{}'",
+            ping.doc_id,
+            ping_path.display()
+        );
 
         {
             let mut file = File::create(&temp_ping_path)?;
-            file.write_all(url_path.as_bytes())?;
+            file.write_all(ping.url_path.as_bytes())?;
             file.write_all(b"\n")?;
-            file.write_all(::serde_json::to_string(ping_content)?.as_bytes())?;
+            file.write_all(::serde_json::to_string(&ping.content)?.as_bytes())?;
+            if !ping.headers.is_empty() {
+                file.write_all(b"\n{\"headers\":")?;
+                file.write_all(::serde_json::to_string(&ping.headers)?.as_bytes())?;
+                file.write_all(b"}")?;
+            }
         }
 
         if let Err(e) = std::fs::rename(&temp_ping_path, &ping_path) {
@@ -296,7 +350,7 @@ impl PingMaker {
         Ok(())
     }
 
-    /// Clear any pending pings in the queue.
+    /// Clears any pending pings in the queue.
     pub fn clear_pending_pings(&self, data_path: &Path) -> Result<()> {
         let pings_dir = self.get_pings_dir(data_path, None)?;
 

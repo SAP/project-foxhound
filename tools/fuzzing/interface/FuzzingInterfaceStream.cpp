@@ -7,6 +7,10 @@
  * Interface implementation for the unified fuzzing interface
  */
 
+#include "nsIFile.h"
+#include "nsIPrefService.h"
+#include "nsIProperties.h"
+
 #include "FuzzingInterfaceStream.h"
 
 #include "mozilla/Assertions.h"
@@ -17,7 +21,7 @@
 
 namespace mozilla {
 
-#ifdef __AFL_COMPILER
+#ifdef AFLFUZZ
 
 void afl_interface_stream(const char* testFile,
                           FuzzingTestFuncStream testFunc) {

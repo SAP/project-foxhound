@@ -21,6 +21,7 @@
 #include "nsContentUtils.h"
 #include "nsGkAtoms.h"
 #include "nsAtom.h"
+#include "nsDocShell.h"
 #include "nsIContent.h"
 #include "mozilla/dom/Document.h"
 #include "nsIFrame.h"
@@ -36,9 +37,10 @@
 
 namespace mozilla {
 
-typedef ContentEventHandler::NodePosition NodePosition;
-typedef ContentEventHandler::NodePositionBefore NodePositionBefore;
+using NodePosition = ContentEventHandler::NodePosition;
+using NodePositionBefore = ContentEventHandler::NodePositionBefore;
 
+using namespace dom;
 using namespace widget;
 
 LazyLogModule sIMECOLog("IMEContentObserver");
@@ -140,8 +142,8 @@ IMEContentObserver::IMEContentObserver()
 #endif
 }
 
-void IMEContentObserver::Init(nsIWidget* aWidget, nsPresContext* aPresContext,
-                              nsIContent* aContent, EditorBase* aEditorBase) {
+void IMEContentObserver::Init(nsIWidget& aWidget, nsPresContext& aPresContext,
+                              nsIContent* aContent, EditorBase& aEditorBase) {
   State state = GetState();
   if (NS_WARN_IF(state == eState_Observing)) {
     return;  // Nothing to do.
@@ -155,22 +157,19 @@ void IMEContentObserver::Init(nsIWidget* aWidget, nsPresContext* aPresContext,
     Clear();
   }
 
-  mESM = aPresContext->EventStateManager();
+  mESM = aPresContext.EventStateManager();
   mESM->OnStartToObserveContent(this);
 
-  mWidget = aWidget;
+  mWidget = &aWidget;
   mIMENotificationRequests = &mWidget->IMENotificationRequestsRef();
 
-  if (aWidget->GetInputContext().mIMEState.mEnabled == IMEState::PLUGIN) {
-    if (!InitWithPlugin(aPresContext, aContent)) {
-      Clear();
-      return;
-    }
-  } else {
-    if (!InitWithEditor(aPresContext, aContent, aEditorBase)) {
-      Clear();
-      return;
-    }
+  if (!InitWithEditor(aPresContext, aContent, aEditorBase)) {
+    MOZ_LOG(sIMECOLog, LogLevel::Debug,
+            ("0x%p IMEContentObserver::Init() FAILED, due to InitWithEditor() "
+             "failure",
+             this));
+    Clear();
+    return;
   }
 
   if (firstInitialization) {
@@ -205,6 +204,10 @@ void IMEContentObserver::OnIMEReceivedFocus() {
   // call of Init() with the latest content may occur.  In such case, we
   // shouldn't keep first initialization which notified IME of focus.
   if (GetState() != eState_Initializing) {
+    MOZ_LOG(sIMECOLog, LogLevel::Debug,
+            ("0x%p IMEContentObserver::OnIMEReceivedFocus(), "
+             "but the state is not \"initializing\", so does nothing",
+             this));
     return;
   }
 
@@ -212,6 +215,10 @@ void IMEContentObserver::OnIMEReceivedFocus() {
   // instance via IMEStateManager::UpdateIMEState().  So, this
   // instance might already have been destroyed, check it.
   if (!mRootContent) {
+    MOZ_LOG(sIMECOLog, LogLevel::Debug,
+            ("0x%p IMEContentObserver::OnIMEReceivedFocus(), "
+             "but mRootContent has already been cleared, so does nothing",
+             this));
     return;
   }
 
@@ -227,22 +234,17 @@ void IMEContentObserver::OnIMEReceivedFocus() {
   FlushMergeableNotifications();
 }
 
-bool IMEContentObserver::InitWithEditor(nsPresContext* aPresContext,
+bool IMEContentObserver::InitWithEditor(nsPresContext& aPresContext,
                                         nsIContent* aContent,
-                                        EditorBase* aEditorBase) {
-  MOZ_ASSERT(aEditorBase);
-
-  mEditableNode = IMEStateManager::GetRootEditableNode(aPresContext, aContent);
+                                        EditorBase& aEditorBase) {
+  mEditableNode = IMEStateManager::GetRootEditableNode(&aPresContext, aContent);
   if (NS_WARN_IF(!mEditableNode)) {
     return false;
   }
 
-  mEditorBase = aEditorBase;
-  if (NS_WARN_IF(!mEditorBase)) {
-    return false;
-  }
+  mEditorBase = &aEditorBase;
 
-  PresShell* presShell = aPresContext->GetPresShell();
+  RefPtr<PresShell> presShell = aPresContext.GetPresShell();
 
   // get selection and root content
   nsCOMPtr<nsISelectionController> selCon;
@@ -252,7 +254,7 @@ bool IMEContentObserver::InitWithEditor(nsPresContext* aPresContext,
       return false;
     }
 
-    frame->GetSelectionController(aPresContext, getter_AddRefs(selCon));
+    frame->GetSelectionController(&aPresContext, getter_AddRefs(selCon));
   } else {
     // mEditableNode is a document
     selCon = presShell;
@@ -272,10 +274,11 @@ bool IMEContentObserver::InitWithEditor(nsPresContext* aPresContext,
       return false;
     }
 
-    mRootContent =
-        selRange->GetStartContainer()->GetSelectionRootContent(presShell);
+    nsCOMPtr<nsINode> startContainer = selRange->GetStartContainer();
+    mRootContent = startContainer->GetSelectionRootContent(presShell);
   } else {
-    mRootContent = mEditableNode->GetSelectionRootContent(presShell);
+    nsCOMPtr<nsINode> editableNode = mEditableNode;
+    mRootContent = editableNode->GetSelectionRootContent(presShell);
   }
   if (!mRootContent && mEditableNode->IsDocument()) {
     // The document node is editable, but there are no contents, this document
@@ -287,59 +290,14 @@ bool IMEContentObserver::InitWithEditor(nsPresContext* aPresContext,
     return false;
   }
 
-  mDocShell = aPresContext->GetDocShell();
+  mDocShell = aPresContext.GetDocShell();
   if (NS_WARN_IF(!mDocShell)) {
     return false;
   }
 
   mDocumentObserver = new DocumentObserver(*this);
 
-  MOZ_ASSERT(!WasInitializedWithPlugin());
-
   return true;
-}
-
-bool IMEContentObserver::InitWithPlugin(nsPresContext* aPresContext,
-                                        nsIContent* aContent) {
-  if (NS_WARN_IF(!aContent) ||
-      NS_WARN_IF(aContent->GetDesiredIMEState().mEnabled != IMEState::PLUGIN)) {
-    return false;
-  }
-  nsIFrame* frame = aContent->GetPrimaryFrame();
-  if (NS_WARN_IF(!frame)) {
-    return false;
-  }
-  nsCOMPtr<nsISelectionController> selCon;
-  frame->GetSelectionController(aPresContext, getter_AddRefs(selCon));
-  if (NS_WARN_IF(!selCon)) {
-    return false;
-  }
-  mSelection = selCon->GetSelection(nsISelectionController::SELECTION_NORMAL);
-  if (NS_WARN_IF(!mSelection)) {
-    return false;
-  }
-
-  mEditorBase = nullptr;
-  mEditableNode = aContent;
-  mRootContent = aContent;
-  // Should be safe to clear mDocumentObserver here even though it *might*
-  // grab this instance because this is called by Init() and the callers of
-  // it and MaybeReinitialize() grabs this instance with local RefPtr.
-  // So, this won't cause refcount of this instance become 0.
-  mDocumentObserver = nullptr;
-
-  mDocShell = aPresContext->GetDocShell();
-  if (NS_WARN_IF(!mDocShell)) {
-    return false;
-  }
-
-  MOZ_ASSERT(WasInitializedWithPlugin());
-
-  return true;
-}
-
-bool IMEContentObserver::WasInitializedWithPlugin() const {
-  return mDocShell && !mEditorBase;
 }
 
 void IMEContentObserver::Clear() {
@@ -378,18 +336,13 @@ void IMEContentObserver::ObserveEditableNode() {
     mEditorBase->SetIMEContentObserver(this);
   }
 
-  if (!WasInitializedWithPlugin()) {
-    // Add text change observer only when this starts to observe
-    // non-plugin content since we cannot detect text changes in
-    // plugins.
-    mRootContent->AddMutationObserver(this);
-    // If it's in a document (should be so), we can use document observer to
-    // reduce redundant computation of text change offsets.
-    Document* doc = mRootContent->GetComposedDoc();
-    if (doc) {
-      RefPtr<DocumentObserver> documentObserver = mDocumentObserver;
-      documentObserver->Observe(doc);
-    }
+  mRootContent->AddMutationObserver(this);
+  // If it's in a document (should be so), we can use document observer to
+  // reduce redundant computation of text change offsets.
+  Document* doc = mRootContent->GetComposedDoc();
+  if (doc) {
+    RefPtr<DocumentObserver> documentObserver = mDocumentObserver;
+    documentObserver->Observe(doc);
   }
 
   if (mDocShell) {
@@ -475,6 +428,9 @@ nsPresContext* IMEContentObserver::GetPresContext() const {
 void IMEContentObserver::Destroy() {
   // WARNING: When you change this method, you have to check Unlink() too.
 
+  // Note that don't send any notifications later from here.  I.e., notify
+  // IMEStateManager of the blur synchronously because IMEStateManager needs to
+  // stop notifying the main process if this is requested by the main process.
   NotifyIMEOfBlur();
   UnregisterObservers();
   Clear();
@@ -492,23 +448,29 @@ bool IMEContentObserver::Destroyed() const { return !mWidget; }
 
 void IMEContentObserver::DisconnectFromEventStateManager() { mESM = nullptr; }
 
-bool IMEContentObserver::MaybeReinitialize(nsIWidget* aWidget,
-                                           nsPresContext* aPresContext,
+bool IMEContentObserver::MaybeReinitialize(nsIWidget& aWidget,
+                                           nsPresContext& aPresContext,
                                            nsIContent* aContent,
-                                           EditorBase* aEditorBase) {
-  if (!IsObservingContent(aPresContext, aContent)) {
+                                           EditorBase& aEditorBase) {
+  if (!IsObservingContent(&aPresContext, aContent)) {
     return false;
   }
 
   if (GetState() == eState_StoppedObserving) {
     Init(aWidget, aPresContext, aContent, aEditorBase);
   }
-  return IsManaging(aPresContext, aContent);
+  return IsManaging(&aPresContext, aContent);
 }
 
 bool IMEContentObserver::IsManaging(nsPresContext* aPresContext,
                                     nsIContent* aContent) const {
   return GetState() == eState_Observing &&
+         IsObservingContent(aPresContext, aContent);
+}
+
+bool IMEContentObserver::IsBeingInitializedFor(nsPresContext* aPresContext,
+                                               nsIContent* aContent) const {
+  return GetState() == eState_Initializing &&
          IsObservingContent(aPresContext, aContent);
 }
 
@@ -542,10 +504,8 @@ IMEContentObserver::State IMEContentObserver::GetState() const {
 
 bool IMEContentObserver::IsObservingContent(nsPresContext* aPresContext,
                                             nsIContent* aContent) const {
-  return IsInitializedWithPlugin()
-             ? mRootContent == aContent && mRootContent != nullptr
-             : mEditableNode ==
-                   IMEStateManager::GetRootEditableNode(aPresContext, aContent);
+  return mEditableNode ==
+         IMEStateManager::GetRootEditableNode(aPresContext, aContent);
 }
 
 bool IMEContentObserver::IsEditorHandlingEventForComposition() const {
@@ -572,7 +532,7 @@ bool IMEContentObserver::IsEditorComposing() const {
 }
 
 nsresult IMEContentObserver::GetSelectionAndRoot(
-    dom::Selection** aSelection, nsIContent** aRootContent) const {
+    Selection** aSelection, nsIContent** aRootContent) const {
   if (!mEditableNode || !mSelection) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -642,17 +602,18 @@ nsresult IMEContentObserver::HandleQueryContentEvent(
                                    !mNeedsToNotifyIMEOfSelectionChange;
   if (isSelectionCacheAvailable && aEvent->mMessage == eQuerySelectedText &&
       aEvent->mInput.mSelectionType == SelectionType::eNormal) {
-    aEvent->mReply.mContentsRoot = mRootContent;
-    aEvent->mReply.mHasSelection = !mSelectionData.IsCollapsed();
-    aEvent->mReply.mOffset = mSelectionData.mOffset;
-    aEvent->mReply.mString = mSelectionData.String();
-    aEvent->mReply.mWritingMode = mSelectionData.GetWritingMode();
-    aEvent->mReply.mReversed = mSelectionData.mReversed;
-    aEvent->mSucceeded = true;
+    aEvent->EmplaceReply();
+    aEvent->mReply->mOffsetAndData.emplace(mSelectionData.mOffset,
+                                           mSelectionData.String(),
+                                           OffsetAndDataFor::SelectedString);
+    aEvent->mReply->mContentsRoot = mRootContent;
+    aEvent->mReply->mHasSelection = !mSelectionData.IsCollapsed();
+    aEvent->mReply->mWritingMode = mSelectionData.GetWritingMode();
+    aEvent->mReply->mReversed = mSelectionData.mReversed;
     MOZ_LOG(sIMECOLog, LogLevel::Debug,
             ("0x%p IMEContentObserver::HandleQueryContentEvent(aEvent={ "
-             "mMessage=%s })",
-             this, ToChar(aEvent->mMessage)));
+             "mMessage=%s, mReply=%s })",
+             this, ToChar(aEvent->mMessage), ToString(aEvent->mReply).c_str()));
     return NS_OK;
   }
 
@@ -694,7 +655,7 @@ nsresult IMEContentObserver::HandleQueryContentEvent(
   if (NS_WARN_IF(Destroyed())) {
     // If this has already destroyed during querying the content, the query
     // is outdated even if it's succeeded.  So, make the query fail.
-    aEvent->mSucceeded = false;
+    aEvent->mReply.reset();
     MOZ_LOG(sIMECOLog, LogLevel::Warning,
             ("0x%p IMEContentObserver::HandleQueryContentEvent(), WARNING, "
              "IMEContentObserver has been destroyed during the query, "
@@ -703,10 +664,10 @@ nsresult IMEContentObserver::HandleQueryContentEvent(
     return rv;
   }
 
-  if (!IsInitializedWithPlugin() &&
-      NS_WARN_IF(aEvent->mReply.mContentsRoot != mRootContent)) {
+  if (aEvent->Succeeded() &&
+      NS_WARN_IF(aEvent->mReply->mContentsRoot != mRootContent)) {
     // Focus has changed unexpectedly, so make the query fail.
-    aEvent->mSucceeded = false;
+    aEvent->mReply.reset();
   }
   return rv;
 }
@@ -735,13 +696,13 @@ bool IMEContentObserver::OnMouseButtonEvent(nsPresContext* aPresContext,
 
   RefPtr<IMEContentObserver> kungFuDeathGrip(this);
 
-  WidgetQueryContentEvent charAtPt(true, eQueryCharacterAtPoint,
-                                   aMouseEvent->mWidget);
-  charAtPt.mRefPoint = aMouseEvent->mRefPoint;
+  WidgetQueryContentEvent queryCharAtPointEvent(true, eQueryCharacterAtPoint,
+                                                aMouseEvent->mWidget);
+  queryCharAtPointEvent.mRefPoint = aMouseEvent->mRefPoint;
   ContentEventHandler handler(aPresContext);
-  handler.OnQueryCharacterAtPoint(&charAtPt);
-  if (NS_WARN_IF(!charAtPt.mSucceeded) ||
-      charAtPt.mReply.mOffset == WidgetQueryContentEvent::NOT_FOUND) {
+  handler.OnQueryCharacterAtPoint(&queryCharAtPointEvent);
+  if (NS_WARN_IF(queryCharAtPointEvent.Failed()) ||
+      queryCharAtPointEvent.DidNotFindChar()) {
     return false;
   }
 
@@ -755,23 +716,26 @@ bool IMEContentObserver::OnMouseButtonEvent(nsPresContext* aPresContext,
   // We should notify it with offset in the widget.
   nsIWidget* topLevelWidget = mWidget->GetTopLevelWidget();
   if (topLevelWidget && topLevelWidget != mWidget) {
-    charAtPt.mReply.mRect.MoveBy(topLevelWidget->WidgetToScreenOffset() -
-                                 mWidget->WidgetToScreenOffset());
+    queryCharAtPointEvent.mReply->mRect.MoveBy(
+        topLevelWidget->WidgetToScreenOffset() -
+        mWidget->WidgetToScreenOffset());
   }
   // The refPt is relative to its widget.
   // We should notify it with offset in the widget.
   if (aMouseEvent->mWidget != mWidget) {
-    charAtPt.mRefPoint += aMouseEvent->mWidget->WidgetToScreenOffset() -
-                          mWidget->WidgetToScreenOffset();
+    queryCharAtPointEvent.mRefPoint +=
+        aMouseEvent->mWidget->WidgetToScreenOffset() -
+        mWidget->WidgetToScreenOffset();
   }
 
   IMENotification notification(NOTIFY_IME_OF_MOUSE_BUTTON_EVENT);
   notification.mMouseButtonEventData.mEventMessage = aMouseEvent->mMessage;
-  notification.mMouseButtonEventData.mOffset = charAtPt.mReply.mOffset;
-  notification.mMouseButtonEventData.mCursorPos.Set(
-      charAtPt.mRefPoint.ToUnknownPoint());
-  notification.mMouseButtonEventData.mCharRect.Set(
-      charAtPt.mReply.mRect.ToUnknownRect());
+  notification.mMouseButtonEventData.mOffset =
+      queryCharAtPointEvent.mReply->StartOffset();
+  notification.mMouseButtonEventData.mCursorPos =
+      queryCharAtPointEvent.mRefPoint;
+  notification.mMouseButtonEventData.mCharRect =
+      queryCharAtPointEvent.mReply->mRect;
   notification.mMouseButtonEventData.mButton = aMouseEvent->mButton;
   notification.mMouseButtonEventData.mButtons = aMouseEvent->mButtons;
   notification.mMouseButtonEventData.mModifiers = aMouseEvent->mModifiers;
@@ -790,7 +754,10 @@ bool IMEContentObserver::OnMouseButtonEvent(nsPresContext* aPresContext,
 
 void IMEContentObserver::CharacterDataWillChange(
     nsIContent* aContent, const CharacterDataChangeInfo& aInfo) {
-  NS_ASSERTION(aContent->IsText(), "character data changed for non-text node");
+  if (!aContent->IsText()) {
+    return;  // Ignore if it's a comment node or something other invisible data
+             // node.
+  }
   MOZ_ASSERT(mPreCharacterDataChangeLength < 0,
              "CharacterDataChanged() should've reset "
              "mPreCharacterDataChangeLength");
@@ -810,7 +777,7 @@ void IMEContentObserver::CharacterDataWillChange(
   MaybeNotifyIMEOfAddedTextDuringDocumentChange();
 
   mPreCharacterDataChangeLength = ContentEventHandler::GetNativeTextLength(
-      aContent, aInfo.mChangeStart, aInfo.mChangeEnd);
+      *aContent->AsText(), aInfo.mChangeStart, aInfo.mChangeEnd);
   MOZ_ASSERT(
       mPreCharacterDataChangeLength >= aInfo.mChangeEnd - aInfo.mChangeStart,
       "The computed length must be same as or larger than XP length");
@@ -818,7 +785,10 @@ void IMEContentObserver::CharacterDataWillChange(
 
 void IMEContentObserver::CharacterDataChanged(
     nsIContent* aContent, const CharacterDataChangeInfo& aInfo) {
-  NS_ASSERTION(aContent->IsText(), "character data changed for non-text node");
+  if (!aContent->IsText()) {
+    return;  // Ignore if it's a comment node or something other invisible data
+             // node.
+  }
 
   if (!NeedsTextChangeNotification() ||
       !nsContentUtils::IsInSameAnonymousTree(mRootContent, aContent)) {
@@ -848,7 +818,8 @@ void IMEContentObserver::CharacterDataChanged(
   }
 
   uint32_t newLength = ContentEventHandler::GetNativeTextLength(
-      aContent, aInfo.mChangeStart, aInfo.mChangeStart + aInfo.mReplaceLength);
+      *aContent->AsText(), aInfo.mChangeStart,
+      aInfo.mChangeStart + aInfo.mReplaceLength);
 
   uint32_t oldEnd = offset + static_cast<uint32_t>(removedLength);
   uint32_t newEnd = offset + newLength;
@@ -999,8 +970,8 @@ void IMEContentObserver::ContentRemoved(nsIContent* aChild,
 
   // get offset at the end of the deleted node
   uint32_t textLength = 0;
-  if (aChild->IsText()) {
-    textLength = ContentEventHandler::GetNativeTextLength(aChild);
+  if (const Text* textNode = Text::FromNode(aChild)) {
+    textLength = ContentEventHandler::GetNativeTextLength(*textNode);
   } else {
     uint32_t nodeLength = static_cast<int32_t>(aChild->GetChildCount());
     rv = ContentEventHandler::GetFlatTextLengthInRange(
@@ -1298,28 +1269,28 @@ void IMEContentObserver::MaybeNotifyCompositionEventHandled() {
 bool IMEContentObserver::UpdateSelectionCache(bool aRequireFlush /* = true */) {
   MOZ_ASSERT(IsSafeToNotifyIME());
 
-  if (WasInitializedWithPlugin()) {
-    return false;
-  }
-
   mSelectionData.ClearSelectionData();
 
   // XXX Cannot we cache some information for reducing the cost to compute
   //     selection offset and writing mode?
-  WidgetQueryContentEvent selection(true, eQuerySelectedText, mWidget);
-  selection.mNeedsToFlushLayout = aRequireFlush;
+  WidgetQueryContentEvent querySelectedTextEvent(true, eQuerySelectedText,
+                                                 mWidget);
+  querySelectedTextEvent.mNeedsToFlushLayout = aRequireFlush;
   ContentEventHandler handler(GetPresContext());
-  handler.OnQuerySelectedText(&selection);
-  if (NS_WARN_IF(!selection.mSucceeded) ||
-      NS_WARN_IF(selection.mReply.mContentsRoot != mRootContent)) {
+  handler.OnQuerySelectedText(&querySelectedTextEvent);
+  if (NS_WARN_IF(querySelectedTextEvent.DidNotFindSelection()) ||
+      NS_WARN_IF(querySelectedTextEvent.mReply->mContentsRoot !=
+                 mRootContent)) {
     return false;
   }
+  MOZ_ASSERT(querySelectedTextEvent.mReply->mOffsetAndData.isSome());
 
-  mFocusedWidget = selection.mReply.mFocusedWidget;
-  mSelectionData.mOffset = selection.mReply.mOffset;
-  *mSelectionData.mString = selection.mReply.mString;
-  mSelectionData.SetWritingMode(selection.GetWritingMode());
-  mSelectionData.mReversed = selection.mReply.mReversed;
+  mFocusedWidget = querySelectedTextEvent.mReply->mFocusedWidget;
+  mSelectionData.mOffset = querySelectedTextEvent.mReply->StartOffset();
+  *mSelectionData.mString = querySelectedTextEvent.mReply->DataRef();
+  mSelectionData.SetWritingMode(
+      querySelectedTextEvent.mReply->WritingModeRef());
+  mSelectionData.mReversed = querySelectedTextEvent.mReply->mReversed;
 
   // WARNING: Don't modify the reason of selection change here.
 
@@ -1455,9 +1426,30 @@ void IMEContentObserver::FlushMergeableNotifications() {
 }
 
 void IMEContentObserver::TryToFlushPendingNotifications(bool aAllowAsync) {
-  if (!mQueuedSender || mSendingNotification != NOTIFY_IME_OF_NOTHING ||
-      (XRE_IsContentProcess() && aAllowAsync)) {
+  // If a sender instance is sending notifications, we shouldn't try to create
+  // a new sender again because the sender will recreate by itself if there are
+  // new pending notifications.
+  if (mSendingNotification != NOTIFY_IME_OF_NOTHING) {
     return;
+  }
+
+  // When the caller allows to put off notifying IME, we can wait the next
+  // call of this method or to run the queued sender.
+  if (mQueuedSender && XRE_IsContentProcess() && aAllowAsync) {
+    return;
+  }
+
+  if (!mQueuedSender) {
+    // If it was not safe to dispatch notifications when the pending
+    // notifications are posted, this may not have IMENotificationSender
+    // instance because it couldn't dispatch it, e.g., when an edit sub-action
+    // is being handled in the editor, we shouldn't do it even if it's safe to
+    // run script.  Therefore, we need to create the sender instance here in the
+    // case.
+    if (!NeedsToNotifyIMEOfSomething()) {
+      return;
+    }
+    mQueuedSender = new IMENotificationSender(this);
   }
 
   MOZ_LOG(sIMECOLog, LogLevel::Debug,

@@ -24,18 +24,18 @@ let whitelist = [
   },
   // UA-only media features.
   {
-    sourceName: /\b(autocomplete-item|svg)\.css$/,
+    sourceName: /\b(autocomplete-item)\.css$/,
     errorMessage: /Expected media feature name but found \u2018-moz.*/i,
     isFromDevTools: false,
+    platforms: ["windows"],
   },
-
   {
-    sourceName: /\b(contenteditable|EditorOverride|svg|forms|html|mathml|ua|pluginproblem)\.css$/i,
+    sourceName: /\b(contenteditable|EditorOverride|svg|forms|html|mathml|ua)\.css$/i,
     errorMessage: /Unknown pseudo-class.*-moz-/i,
     isFromDevTools: false,
   },
   {
-    sourceName: /\b(html|mathml|ua|forms|svg)\.css$/i,
+    sourceName: /\b(minimal-xul|html|mathml|ua|forms|svg|manageDialog|autocomplete-item-shared|formautofill)\.css$/i,
     errorMessage: /Unknown property.*-moz-/i,
     isFromDevTools: false,
   },
@@ -59,34 +59,38 @@ let whitelist = [
     errorMessage: /Property contained reference to invalid variable.*color/i,
     isFromDevTools: true,
   },
+  // PDF.js uses a property that is currently only supported in chrome.
+  {
+    sourceName: /web\/viewer\.css$/i,
+    errorMessage: /Unknown property ‘text-size-adjust’\. {2}Declaration dropped\./i,
+    isFromDevTools: false,
+  },
 ];
 
-if (
-  !Services.prefs.getBoolPref(
-    "layout.css.xul-box-display-values.content.enabled"
-  )
-) {
-  // These are UA sheets which use non-content-exposed `display` values.
+if (!Services.prefs.getBoolPref("layout.css.color-mix.enabled")) {
+  // Reserved to UA sheets unless layout.css.color-mix.enabled flipped to true.
   whitelist.push({
-    sourceName: /(skin\/shared\/Heartbeat|((?:res|gre-resources)\/(ua|html)))\.css$/i,
-    errorMessage: /Error in parsing value for .*\bdisplay\b/i,
+    sourceName: /\b(autocomplete-item)\.css$/,
+    errorMessage: /Expected color but found \u2018color-mix\u2019./i,
+    isFromDevTools: false,
+    platforms: ["windows"],
+  });
+}
+
+if (!Services.prefs.getBoolPref("layout.css.math-depth.enabled")) {
+  // mathml.css UA sheet rule for math-depth.
+  whitelist.push({
+    sourceName: /\b(minimal-xul|mathml)\.css$/i,
+    errorMessage: /Unknown property .*\bmath-depth\b/i,
     isFromDevTools: false,
   });
 }
 
-if (Services.prefs.getBoolPref("layout.css.file-chooser-button.enabled")) {
-  // System colors reserved to UA / chrome sheets
+if (!Services.prefs.getBoolPref("layout.css.math-style.enabled")) {
+  // mathml.css UA sheet rule for math-style.
   whitelist.push({
-    sourceName: /(?:res|gre-resources)\/forms\.css$/i,
-    errorMessage: /Expected color but found \u2018-moz.*/i,
-    platforms: ["linux"],
-    isFromDevTools: false,
-  });
-} else {
-  // Reserved to UA sheets, behind a pref for content.
-  whitelist.push({
-    sourceName: /(?:res|gre-resources)\/forms\.css$/i,
-    errorMessage: /Unknown pseudo-.*file-chooser-button/i,
+    sourceName: /(?:res|gre-resources)\/mathml\.css$/i,
+    errorMessage: /Unknown property .*\bmath-style\b/i,
     isFromDevTools: false,
   });
 }
@@ -96,6 +100,14 @@ if (!Services.prefs.getBoolPref("layout.css.scroll-anchoring.enabled")) {
     sourceName: /webconsole\.css$/i,
     errorMessage: /Unknown property .*\boverflow-anchor\b/i,
     isFromDevTools: true,
+  });
+}
+
+if (!Services.prefs.getBoolPref("layout.css.forced-colors.enabled")) {
+  whitelist.push({
+    sourceName: /pdf\.js\/web\/viewer\.css$/,
+    errorMessage: /Expected media feature name but found ‘forced-colors’*/i,
+    isFromDevTools: false,
   });
 }
 
@@ -118,6 +130,14 @@ let propNameWhitelist = [
   // when expanding the shorthands. See https://github.com/w3c/csswg-drafts/issues/2515
   { propName: "--bezier-diagonal-color", isFromDevTools: true },
   { propName: "--bezier-grid-color", isFromDevTools: true },
+  { propName: "--page-border", isFromDevTools: false },
+
+  // This variable is used from CSS embedded in JS in adjustableTitle.js
+  { propName: "--icon-url", isFromDevTools: false },
+
+  // This variable is used from CSS embedded in JS in pdf.js
+  { propName: "--zoom-factor", isFromDevTools: false },
+  { propName: "--viewport-scale-factor", isFromDevTools: false },
 ];
 
 // Add suffix to stylesheets' URI so that we always load them here and
@@ -432,10 +452,24 @@ add_task(async function checkAllTheCSS() {
   await throttledMapPromises(allPromises, loadCSS);
 
   // Check if all the files referenced from CSS actually exist.
+  // Files in browser/ should never be referenced outside browser/.
   for (let [image, references] of imageURIsToReferencesMap) {
     if (!chromeFileExists(image)) {
       for (let ref of references) {
         ok(false, "missing " + image + " referenced from " + ref);
+      }
+    }
+
+    let imageHost = image.split("/")[2];
+    if (imageHost == "browser") {
+      for (let ref of references) {
+        let refHost = ref.split("/")[2];
+        if (!["activity-stream", "browser"].includes(refHost)) {
+          ok(
+            false,
+            "browser file " + image + " referenced outside browser in " + ref
+          );
+        }
       }
     }
   }
@@ -489,9 +523,9 @@ add_task(async function checkAllTheCSS() {
   checkWhitelist(propNameWhitelist);
 
   // Clean up to avoid leaks:
-  iframe.remove();
   doc.head.innerHTML = "";
   doc = null;
+  iframe.remove();
   iframe = null;
   win = null;
   hiddenFrame.destroy();

@@ -131,6 +131,7 @@
                 'cmd/smimetools/smimetools.gyp:cmsutil',
                 'cmd/ssltap/ssltap.gyp:ssltap',
                 'cmd/symkeyutil/symkeyutil.gyp:symkeyutil',
+                'cmd/validation/validation.gyp:validation',
                 'nss-tool/nss_tool.gyp:nss',
                 'nss-tool/nss_tool.gyp:hw-support',
               ],
@@ -189,6 +190,7 @@
             'cmd/pp/pp.gyp:pp',
             'cmd/rsaperf/rsaperf.gyp:rsaperf',
             'cmd/rsapoptst/rsapoptst.gyp:rsapoptst',
+            'cmd/sdbthreadtst/sdbthreadtst.gyp:sdbthreadtst',
             'cmd/sdrtest/sdrtest.gyp:sdrtest',
             'cmd/selfserv/selfserv.gyp:selfserv',
             'cmd/shlibsign/mangle/mangle.gyp:mangle',
@@ -208,8 +210,6 @@
             'gtests/cryptohi_gtest/cryptohi_gtest.gyp:cryptohi_gtest',
             'gtests/der_gtest/der_gtest.gyp:der_gtest',
             'gtests/certdb_gtest/certdb_gtest.gyp:certdb_gtest',
-            'gtests/freebl_gtest/freebl_gtest.gyp:prng_gtest',
-            'gtests/freebl_gtest/freebl_gtest.gyp:blake2b_gtest',
             'gtests/freebl_gtest/freebl_gtest.gyp:freebl_gtest',
             'gtests/mozpkix_gtest/mozpkix_gtest.gyp:mozpkix_gtest',
             'gtests/nss_bogo_shim/nss_bogo_shim.gyp:nss_bogo_shim',
@@ -310,6 +310,17 @@
           'type': 'none',
           'dependencies': [
             'fuzz/fuzz.gyp:nssfuzz',
+          ],
+        },
+      ],
+    }],
+    [ 'mozilla_central==1', {
+      'targets': [
+        {
+          'target_name': 'test_nssckbi',
+          'type': 'none',
+          'dependencies': [
+            'lib/ckfw/builtins/testlib/builtins-testlib.gyp:nssckbi-testlib',
           ],
         },
       ],

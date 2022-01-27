@@ -3,37 +3,6 @@
 
 "use strict";
 
-const BAD_CERT_PAGE = "https://expired.example.com/";
-
-async function setupCaptivePortalTab() {
-  let captivePortalStatePropagated = TestUtils.topicObserved(
-    "ipc:network:captive-portal-set-state"
-  );
-  Services.obs.notifyObservers(null, "captive-portal-login");
-  info(
-    "Waiting for captive portal state to be propagated to the content process."
-  );
-  await captivePortalStatePropagated;
-
-  // Open a page with a cert error.
-  let browser;
-  let certErrorLoaded;
-  let errorTab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    () => {
-      let tab = BrowserTestUtils.addTab(gBrowser, BAD_CERT_PAGE);
-      gBrowser.selectedTab = tab;
-      browser = gBrowser.selectedBrowser;
-      certErrorLoaded = BrowserTestUtils.waitForErrorPage(browser);
-      return tab;
-    },
-    false
-  );
-  info("Waiting for cert error page to load");
-  await certErrorLoaded;
-  return errorTab;
-}
-
 add_task(async function setup() {
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -49,7 +18,18 @@ add_task(async function checkCaptivePortalCertErrorUI() {
     "Checking that the alternate cert error UI is shown when we are behind a captive portal"
   );
 
-  let tab = await setupCaptivePortalTab();
+  // Open a second window in the background. Later, we'll check that
+  // when we click the button to open the captive portal tab, the tab
+  // only opens in the active window and not in the background one.
+  let secondWindow = await openWindowAndWaitForFocus();
+  await SimpleTest.promiseFocus(window);
+
+  await portalDetected();
+
+  // Check that we didn't open anything in the background window.
+  ensureNoPortalTab(secondWindow);
+
+  let tab = await openCaptivePortalErrorTab();
   let browser = tab.linkedBrowser;
   let portalTabPromise = BrowserTestUtils.waitForNewTab(
     gBrowser,
@@ -64,11 +44,11 @@ add_task(async function checkCaptivePortalCertErrorUI() {
       "Captive portal error page UI is visible"
     );
 
-    is(
-      loginButton.getAttribute("autofocus"),
-      "true",
-      "openPortalLoginPageButton has autofocus"
-    );
+    if (!Services.focus.focusedElement == loginButton) {
+      await ContentTaskUtils.waitForEvent(loginButton, "focus");
+    }
+
+    Assert.ok(true, "openPortalLoginPageButton has focus");
     info("Clicking the Open Login Page button");
     await EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
   });
@@ -79,6 +59,9 @@ add_task(async function checkCaptivePortalCertErrorUI() {
     portalTab,
     "Login page should be open in a new foreground tab."
   );
+
+  // Check that we didn't open anything in the background window.
+  ensureNoPortalTab(secondWindow);
 
   // Make sure clicking the "Open Login Page" button again focuses the existing portal tab.
   await BrowserTestUtils.switchTab(gBrowser, tab);
@@ -96,6 +79,9 @@ add_task(async function checkCaptivePortalCertErrorUI() {
   info("Opening captive portal login page");
   let portalTab2 = await portalTabPromise;
   is(portalTab2, portalTab, "The existing portal tab should be focused.");
+
+  // Check that we didn't open anything in the background window.
+  ensureNoPortalTab(secondWindow);
 
   let portalTabClosing = BrowserTestUtils.waitForTabClosing(portalTab);
   let errorTabReloaded = BrowserTestUtils.waitForErrorPage(browser);
@@ -116,13 +102,15 @@ add_task(async function checkCaptivePortalCertErrorUI() {
   });
 
   await BrowserTestUtils.removeTab(tab);
+  await BrowserTestUtils.closeWindow(secondWindow);
 });
 
 add_task(async function testCaptivePortalAdvancedPanel() {
   info(
     "Checking that the advanced section of the about:certerror UI is shown when we are behind a captive portal."
   );
-  let tab = await setupCaptivePortalTab();
+  await portalDetected();
+  let tab = await openCaptivePortalErrorTab();
   let browser = tab.linkedBrowser;
 
   await SpecialPowers.spawn(browser, [BAD_CERT_PAGE], async expectedURL => {
@@ -170,6 +158,11 @@ add_task(async function testCaptivePortalAdvancedPanel() {
   let certOverrideService = Cc[
     "@mozilla.org/security/certoverride;1"
   ].getService(Ci.nsICertOverrideService);
-  certOverrideService.clearValidityOverride("expired.example.com", -1);
+  certOverrideService.clearValidityOverride("expired.example.com", -1, {});
+
+  let errorTabReloaded = BrowserTestUtils.waitForErrorPage(browser);
+  Services.obs.notifyObservers(null, "captive-portal-login-success");
+  await errorTabReloaded;
+
   await BrowserTestUtils.removeTab(tab);
 });

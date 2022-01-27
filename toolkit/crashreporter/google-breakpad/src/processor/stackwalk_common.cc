@@ -782,6 +782,36 @@ static void PrintModulesMachineReadable(const CodeModules *modules) {
   }
 }
 
+// PrintUnloadedModulesMachineReadable outputs a list of loaded modules,
+// one per line, in the following machine-readable pipe-delimited
+// text format:
+// UnloadedModule|{Module Filename}|{Base Address}|{Max Address}|{Main}
+static void PrintUnloadedModulesMachineReadable(const CodeModules* modules) {
+  if (!modules)
+    return;
+
+  uint64_t main_address = 0;
+  const CodeModule* main_module = modules->GetMainModule();
+  if (main_module) {
+    main_address = main_module->base_address();
+  }
+
+  unsigned int module_count = modules->module_count();
+  for (unsigned int module_sequence = 0;
+       module_sequence < module_count;
+       ++module_sequence) {
+    const CodeModule* module = modules->GetModuleAtSequence(module_sequence);
+    uint64_t base_address = module->base_address();
+    printf("UnloadedModule%c%s%c0x%08" PRIx64 "%c0x%08" PRIx64 "%c%d\n",
+           kOutputSeparator,
+           StripSeparator(PathnameStripper::File(module->code_file())).c_str(),
+           kOutputSeparator, base_address,
+           kOutputSeparator, base_address + module->size() - 1,
+           kOutputSeparator,
+           main_module != NULL && base_address == main_address ? 1 : 0);
+  }
+}
+
 }  // namespace
 
 void PrintProcessState(const ProcessState& process_state,
@@ -842,15 +872,27 @@ void PrintProcessState(const ProcessState& process_state,
     printf("Process uptime: not available\n");
   }
 
+  if (!process_state.mac_crash_info().empty()) {
+    printf("\n");
+    printf("Application-specific information:\n");
+    printf("%s", process_state.mac_crash_info().c_str());
+  }
+
   // If the thread that requested the dump is known, print it first.
   int requesting_thread = process_state.requesting_thread();
   if (requesting_thread != -1) {
-    printf("\n");
-    printf("Thread %d (%s)\n",
-          requesting_thread,
-          process_state.crashed() ? "crashed" :
-                                    "requested dump, did not crash");
-    PrintStack(process_state.threads()->at(requesting_thread), cpu,
+    const CallStack* requesting_thread_callstack =
+      process_state.threads()->at(requesting_thread);
+    printf("\n"
+           "Thread %d tid %u (%s)",
+           requesting_thread,
+           requesting_thread_callstack->tid(),
+           process_state.crashed() ? "crashed" :
+                                     "requested dump, did not crash");
+    if (!requesting_thread_callstack->name().empty()) {
+      printf(" - %s", requesting_thread_callstack->name().c_str());
+    }
+    PrintStack(requesting_thread_callstack, cpu,
                output_stack_contents,
                process_state.thread_memory_regions()->at(requesting_thread),
                process_state.modules(), resolver);
@@ -861,9 +903,14 @@ void PrintProcessState(const ProcessState& process_state,
   for (int thread_index = 0; thread_index < thread_count; ++thread_index) {
     if (thread_index != requesting_thread) {
       // Don't print the crash thread again, it was already printed.
+      const CallStack* callstack = process_state.threads()->at(thread_index);
+      printf("\n"
+             "Thread %d tid %u", thread_index, callstack->tid());
+      if (!callstack->name().empty()) {
+        printf(" - %s", callstack->name().c_str());
+      }
       printf("\n");
-      printf("Thread %d\n", thread_index);
-      PrintStack(process_state.threads()->at(thread_index), cpu,
+      PrintStack(callstack, cpu,
                  output_stack_contents,
                  process_state.thread_memory_regions()->at(thread_index),
                  process_state.modules(), resolver);
@@ -925,7 +972,46 @@ void PrintProcessStateMachineReadable(const ProcessState& process_state) {
     printf("\n");
   }
 
+  const crash_info_record_t* crash_info_records =
+    process_state.mac_crash_info_records();
+  size_t num_records =
+    process_state.mac_crash_info_records_count();
+  for (size_t i = 0; i < num_records; ++i) {
+    char thread_str[32];
+    if (crash_info_records[i].thread) {
+      snprintf(thread_str, sizeof(thread_str), "0x%llx",
+               crash_info_records[i].thread);
+    } else {
+      strncpy(thread_str, "0", sizeof(thread_str));
+    }
+    char dialog_mode_str[32];
+    if (crash_info_records[i].dialog_mode) {
+      snprintf(dialog_mode_str, sizeof(dialog_mode_str), "0x%x",
+               crash_info_records[i].dialog_mode);
+    } else {
+      strncpy(dialog_mode_str, "0", sizeof(dialog_mode_str));
+    }
+    char abort_cause_str[32];
+    if (crash_info_records[i].abort_cause) {
+      snprintf(abort_cause_str, sizeof(abort_cause_str), "%lld",
+               crash_info_records[i].abort_cause);
+    } else {
+      strncpy(abort_cause_str, "0", sizeof(abort_cause_str));
+    }
+    printf("MacCrashInfo%c%s%c%lu%c%s%c%s%c%s%c%s%c%s%c%s%c%s\n",
+           kOutputSeparator, crash_info_records[i].module_path.c_str(),
+           kOutputSeparator, crash_info_records[i].version,
+           kOutputSeparator, crash_info_records[i].message.c_str(),
+           kOutputSeparator, crash_info_records[i].signature_string.c_str(),
+           kOutputSeparator, crash_info_records[i].backtrace.c_str(),
+           kOutputSeparator, crash_info_records[i].message2.c_str(),
+           kOutputSeparator, thread_str,
+           kOutputSeparator, dialog_mode_str,
+           kOutputSeparator, abort_cause_str);
+  }
+
   PrintModulesMachineReadable(process_state.modules());
+  PrintUnloadedModulesMachineReadable(process_state.unloaded_modules());
 
   // blank line to indicate start of threads
   printf("\n");

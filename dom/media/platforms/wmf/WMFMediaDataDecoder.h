@@ -7,6 +7,8 @@
 #if !defined(WMFMediaDataDecoder_h_)
 #  define WMFMediaDataDecoder_h_
 
+#  include <set>
+
 #  include "MFTDecoder.h"
 #  include "PlatformDecoderModule.h"
 #  include "WMF.h"
@@ -64,6 +66,10 @@ class MFTManager {
     }
   }
 
+  virtual bool HasSeekThreshold() const {
+    return mSeekTargetThreshold.isSome();
+  }
+
   virtual MediaDataDecoder::ConversionRequired NeedsConversion() const {
     return MediaDataDecoder::ConversionRequired::kNeedNone;
   }
@@ -86,7 +92,7 @@ class WMFMediaDataDecoder
     : public MediaDataDecoder,
       public DecoderDoctorLifeLogger<WMFMediaDataDecoder> {
  public:
-  WMFMediaDataDecoder(MFTManager* aOutputSource, TaskQueue* aTaskQueue);
+  explicit WMFMediaDataDecoder(MFTManager* aOutputSource);
   ~WMFMediaDataDecoder();
 
   RefPtr<MediaDataDecoder::InitPromise> Init() override;
@@ -131,7 +137,11 @@ class WMFMediaDataDecoder
   // all available output.
   RefPtr<DecodePromise> ProcessDrain();
 
-  RefPtr<ShutdownPromise> ProcessShutdown();
+  // Checks if `aOutput` should be discarded (guarded against) because its a
+  // potentially invalid output from the decoder. This is done because the
+  // Windows decoder appears to produce invalid outputs under certain
+  // conditions.
+  bool ShouldGuardAgaintIncorrectFirstSample(MediaData* aOutput) const;
 
   const RefPtr<TaskQueue> mTaskQueue;
 
@@ -142,7 +152,11 @@ class WMFMediaDataDecoder
   int64_t mLastStreamOffset;
   Maybe<media::TimeUnit> mLastTime;
   media::TimeUnit mLastDuration;
+  // Before we get the first sample, this records the times of all samples we
+  // send to the decoder which is used to validate if the first sample is valid.
+  std::set<int64_t> mInputTimesSet;
   int64_t mSamplesCount = 0;
+  int64_t mOutputsCount = 0;
 
   bool mIsShutDown = false;
 
@@ -152,10 +166,6 @@ class WMFMediaDataDecoder
     DRAINING,
   };
   DrainStatus mDrainStatus = DrainStatus::DRAINED;
-
-  // For telemetry
-  bool mHasSuccessfulOutput = false;
-  bool mRecordedError = false;
 };
 
 }  // namespace mozilla

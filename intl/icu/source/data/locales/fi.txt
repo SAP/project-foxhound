@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 fi{
     AuxExemplarCharacters{
         "[á à ă â ã ą ā ć č ċ ç ď ð đ é è ê ě ë ė ę ē ğ ǧ ģ ǥ ȟ ħ í î ï İ į ī ı ǩ ķ ĺ"
@@ -190,6 +191,7 @@ fi{
                 }
             }
             symbols{
+                approximatelySign{"~"}
                 decimal{","}
                 exponential{"E"}
                 group{" "}
@@ -205,6 +207,12 @@ fi{
             }
         }
         minimalPairs{
+            case{
+                elative{"{0} päivästä"}
+                illative{"{0} päivään"}
+                nominative{"{0} päivä"}
+                partitive{"{0} päivää"}
+            }
             ordinal{
                 other{"Käänny {0}. risteyksestä oikealle."}
             }
@@ -216,7 +224,6 @@ fi{
         minimumGroupingDigits{"1"}
         native{"latn"}
     }
-    Version{"37"}
     calendar{
         buddhist{
             DateTimePatterns{
@@ -233,6 +240,16 @@ fi{
                 "{1} 'klo' {0}",
                 "{1} 'klo' {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "Hmmsszzzz",
+                "Hmmssz",
+                "Hmmss",
+                "Hmm",
+                "GyMMMMccccd",
+                "GyMMMMd",
+                "GyMd",
+                "GGGGGyMd",
             }
             availableFormats{
                 Ed{"E d."}
@@ -280,6 +297,16 @@ fi{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "Hmmsszzzz",
+                "Hmmssz",
+                "Hmmss",
+                "Hmm",
+                "yMccccd",
+                "yMd",
+                "yMd",
+                "yMd",
             }
             availableFormats{
                 H{"H"}
@@ -452,6 +479,16 @@ fi{
                 "{1} 'klo' {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "Hmmsszzzz",
+                "Hmmssz",
+                "Hmmss",
+                "Hmm",
+                "GyMMMMccccd",
+                "GyMMMMd",
+                "GyMd",
+                "GGGGGyMd",
+            }
             availableFormats{
                 Bh{"h B"}
                 Bhm{"h.mm B"}
@@ -468,6 +505,7 @@ fi{
                 GyMMM{"LLL y G"}
                 GyMMMEd{"E d. MMM y G"}
                 GyMMMd{"d. MMM y G"}
+                GyMd{"d.M.y G"}
                 H{"H"}
                 Hm{"H.mm"}
                 Hms{"H.mm.ss"}
@@ -684,6 +722,16 @@ fi{
                 "{1} 'klo' {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "Hmmsszzzz",
+                "Hmmssz",
+                "Hmmss",
+                "Hmm",
+                "yMMMMccccd",
+                "yMMMMd",
+                "yMd",
+                "yMd",
+            }
             appendItems{
                 Timezone{"{0} {1}"}
             }
@@ -705,6 +753,7 @@ fi{
                 GyMMMMEd{"E d. MMMM y G"}
                 GyMMMMd{"d. MMMM y G"}
                 GyMMMd{"d. MMM y G"}
+                GyMd{"M.d.y G"}
                 H{"H"}
                 Hm{"H.mm"}
                 Hms{"H.mm.ss"}
@@ -1445,6 +1494,16 @@ fi{
                 "{1} 'klo' {0}",
                 "{1} 'klo' {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "Hmmsszzzz",
+                "Hmmssz",
+                "Hmmss",
+                "Hmm",
+                "GyMMMMccccd",
+                "GyMMMMd",
+                "GyMd",
+                "GGGGGyMd",
             }
         }
         persian{

@@ -4,13 +4,15 @@
 // the color of the tab line are applied properly.
 
 add_task(async function test_support_tab_line() {
-  const TAB_LINE_COLOR = "#9400ff";
+  let newWin = await BrowserTestUtils.openNewBrowserWindow();
+
+  const TAB_LINE_COLOR = "#ff0000";
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       theme: {
         colors: {
           frame: ACCENT_COLOR,
-          tab_background_text: TEXT_COLOR,
+          tab_background_text: "#000",
           tab_line: TAB_LINE_COLOR,
         },
       },
@@ -20,13 +22,21 @@ add_task(async function test_support_tab_line() {
   await extension.startup();
 
   info("Checking selected tab line color");
-  let selectedTab = document.querySelector(".tabbrowser-tab[selected]");
-  let line = selectedTab.querySelector(".tab-line");
-  Assert.equal(
-    window.getComputedStyle(line).backgroundColor,
-    `rgb(${hexToRGB(TAB_LINE_COLOR).join(", ")})`,
-    "Tab line should have theme color"
+  let selectedTab = newWin.document.querySelector(".tabbrowser-tab[selected]");
+  let tab = selectedTab.querySelector(".tab-background");
+  let element = tab;
+  // The computed style for the "border" property returns an empty string because
+  // the browser computes it as shorthand for border-right, border-left, .etc. Which
+  // is why we are referencing border-right here.
+  let property = "border-right-color";
+  let computedValue = newWin.getComputedStyle(element)[property];
+  let expectedColor = `rgb(${hexToRGB(TAB_LINE_COLOR).join(", ")})`;
+
+  Assert.ok(
+    computedValue.includes(expectedColor),
+    `Tab line should be displayed in the box shadow of the tab: ${computedValue}`
   );
 
   await extension.unload();
+  await BrowserTestUtils.closeWindow(newWin);
 });

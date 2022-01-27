@@ -5,6 +5,19 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   FormHistory: "resource://gre/modules/FormHistory.jsm",
 });
 
+add_task(async function setup() {
+  await SearchTestUtils.installSearchExtension();
+
+  let engine = Services.search.getEngineByName("Example");
+  let originalEngine = await Services.search.getDefault();
+  await Services.search.setDefault(engine);
+  await Services.search.moveEngine(engine, 0);
+
+  registerCleanupFunction(async function() {
+    await Services.search.setDefault(originalEngine);
+  });
+});
+
 add_task(async function test_remove_history() {
   const TEST_URL = "http://remove.me/from_urlbar/";
   await PlacesTestUtils.addVisits(TEST_URL);
@@ -14,9 +27,9 @@ add_task(async function test_remove_history() {
   });
 
   let promiseVisitRemoved = PlacesTestUtils.waitForNotification(
-    "onDeleteURI",
-    uri => uri.spec == TEST_URL,
-    "history"
+    "page-removed",
+    events => events[0].url === TEST_URL,
+    "places"
   );
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -32,7 +45,13 @@ add_task(async function test_remove_history() {
   EventUtils.synthesizeKey("KEY_ArrowDown");
   Assert.equal(UrlbarTestUtils.getSelectedRowIndex(window), 1);
   EventUtils.synthesizeKey("KEY_Delete", { shiftKey: true });
-  await promiseVisitRemoved;
+
+  const removeEvents = await promiseVisitRemoved;
+  Assert.ok(
+    removeEvents[0].isRemovedFromStore,
+    "isRemovedFromStore should be true"
+  );
+
   await TestUtils.waitForCondition(
     () => UrlbarTestUtils.getResultCount(window) == expectedResultCount,
     "Waiting for the result to disappear"
@@ -57,14 +76,6 @@ add_task(async function test_remove_form_history() {
       ["browser.urlbar.maxHistoricalSearchSuggestions", 1],
     ],
   });
-
-  await Services.search.addEngineWithDetails("test", {
-    method: "GET",
-    template: "http://example.com/?q={searchTerms}",
-  });
-  let engine = Services.search.getEngineByName("test");
-  let originalEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
 
   let formHistoryValue = "foobar";
   await UrlbarTestUtils.formHistory.add([formHistoryValue]);
@@ -133,8 +144,6 @@ add_task(async function test_remove_form_history() {
   );
 
   await SpecialPowers.popPrefEnv();
-  await Services.search.setDefault(originalEngine);
-  await Services.search.removeEngine(engine);
 });
 
 // We shouldn't be able to remove a bookmark item.
@@ -170,4 +179,47 @@ add_task(async function test_remove_bookmark_doesnt() {
     await PlacesUtils.bookmarks.fetch({ url: TEST_URL }),
     "Should still have the URL bookmarked."
   );
+});
+
+add_task(async function test_searchMode_removeRestyledHistory() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.suggest.searches", true],
+      ["browser.urlbar.maxHistoricalSearchSuggestions", 1],
+    ],
+  });
+
+  let query = "ciao";
+  let url = `https://example.com/?q=${query}bar`;
+  await PlacesTestUtils.addVisits(url);
+
+  await BrowserTestUtils.withNewTab("about:robots", async function(browser) {
+    await UrlbarTestUtils.promiseAutocompleteResultPopup({
+      window,
+      value: query,
+    });
+    await UrlbarTestUtils.enterSearchMode(window);
+
+    let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
+    Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.SEARCH);
+    Assert.equal(result.source, UrlbarUtils.RESULT_SOURCE.HISTORY);
+
+    EventUtils.synthesizeKey("KEY_ArrowDown");
+    Assert.equal(UrlbarTestUtils.getSelectedRowIndex(window), 1);
+    EventUtils.synthesizeKey("KEY_Delete", { shiftKey: true });
+    await TestUtils.waitForCondition(
+      async () => !(await PlacesTestUtils.isPageInDB(url)),
+      "Wait for url to be removed from history"
+    );
+    Assert.equal(
+      UrlbarTestUtils.getResultCount(window),
+      1,
+      "Urlbar result should be removed"
+    );
+
+    await UrlbarTestUtils.exitSearchMode(window, { clickClose: true });
+    await UrlbarTestUtils.promisePopupClose(window);
+  });
+  await PlacesUtils.history.clear();
+  await SpecialPowers.popPrefEnv();
 });

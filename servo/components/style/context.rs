@@ -117,21 +117,6 @@ impl Default for StyleSystemOptions {
     }
 }
 
-impl StyleSystemOptions {
-    #[cfg(feature = "servo")]
-    /// On Gecko's nightly build?
-    pub fn is_nightly(&self) -> bool {
-        false
-    }
-
-    #[cfg(feature = "gecko")]
-    /// On Gecko's nightly build?
-    #[inline]
-    pub fn is_nightly(&self) -> bool {
-        structs::GECKO_IS_NIGHTLY
-    }
-}
-
 /// A shared style context.
 ///
 /// There's exactly one of these during a given restyle traversal, and it's
@@ -583,7 +568,7 @@ impl<E: TElement> SelectorFlagsMap<E> {
     /// Applies the flags. Must be called on the main thread.
     fn apply_flags(&mut self) {
         debug_assert_eq!(thread_state::get(), ThreadState::LAYOUT);
-        self.cache.evict_all();
+        self.cache.clear();
         for (el, flags) in self.map.drain() {
             unsafe {
                 el.set_selector_flags(flags);

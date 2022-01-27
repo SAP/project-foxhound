@@ -7,8 +7,8 @@
 #ifndef COMPATIBILITY_MANAGER_H
 #define COMPATIBILITY_MANAGER_H
 
+#include <windows.h>
 #include "mozilla/Maybe.h"
-#include "nsString.h"
 #include <stdint.h>
 
 namespace mozilla {
@@ -41,10 +41,11 @@ class Compatibility {
   static bool IsDolphin() { return !!(sConsumers & DOLPHIN); }
 
   /**
-   * @return ID of a11y manifest resource to be passed to
-   * mscom::ActivationContext
+   * Return true if JAWS, ZoomText or ZoomText Fusion 2021 or later is being
+   * used. These products share common code for interacting with Firefox and
+   * all require window emulation to be enabled.
    */
-  static uint16_t GetActCtxResourceId();
+  static bool IsVisperoShared() { return !!(sConsumers & VISPEROSHARED); }
 
   /**
    * Return a string describing sConsumers suitable for about:support.
@@ -99,9 +100,10 @@ class Compatibility {
     KAZAGURU = 1 << 8,
     YOUDAO = 1 << 9,
     UNKNOWN = 1 << 10,
-    UIAUTOMATION = 1 << 11
+    UIAUTOMATION = 1 << 11,
+    VISPEROSHARED = 1 << 12
   };
-#define CONSUMERS_ENUM_LEN 12
+#define CONSUMERS_ENUM_LEN 13
 
  private:
   static uint32_t sConsumers;

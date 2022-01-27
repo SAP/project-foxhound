@@ -27,17 +27,19 @@ class SourceSurfaceMappedData final : public DataSourceSurface {
   uint8_t* GetData() final { return mMap.GetData(); }
   int32_t Stride() final { return mMap.GetStride(); }
 
-  SurfaceType GetType() const final { return SurfaceType::DATA; }
+  SurfaceType GetType() const final { return SurfaceType::DATA_MAPPED; }
   IntSize GetSize() const final { return mSize; }
   SurfaceFormat GetFormat() const final { return mFormat; }
 
   void SizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
                            SizeOfInfo& aInfo) const override {
-    aInfo.AddType(SurfaceType::DATA);
+    aInfo.AddType(SurfaceType::DATA_MAPPED);
     mMap.GetSurface()->SizeOfExcludingThis(aMallocSizeOf, aInfo);
   }
 
-  void GuaranteePersistance() final {}
+  const DataSourceSurface* GetScopedSurface() const {
+    return mMap.GetSurface();
+  }
 
  private:
   ScopedMap mMap;
@@ -53,16 +55,12 @@ class SourceSurfaceRawData : public DataSourceSurface {
       : mRawData(0),
         mStride(0),
         mFormat(SurfaceFormat::UNKNOWN),
-        mOwnData(false),
         mDeallocator(nullptr),
         mClosure(nullptr) {}
 
   virtual ~SourceSurfaceRawData() {
     if (mDeallocator) {
       mDeallocator(mClosure);
-    } else if (mOwnData) {
-      // The buffer is created from GuaranteePersistance().
-      delete[] mRawData;
     }
   }
 
@@ -75,8 +73,6 @@ class SourceSurfaceRawData : public DataSourceSurface {
 
   void SizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
                            SizeOfInfo& aInfo) const override;
-
-  virtual void GuaranteePersistance() override;
 
  private:
   friend class Factory;
@@ -94,7 +90,6 @@ class SourceSurfaceRawData : public DataSourceSurface {
   SurfaceFormat mFormat;
   IntSize mSize;
 
-  bool mOwnData;
   Factory::SourceSurfaceDeallocator mDeallocator;
   void* mClosure;
 };

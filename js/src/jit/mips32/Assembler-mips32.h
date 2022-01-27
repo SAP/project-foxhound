@@ -7,6 +7,8 @@
 #ifndef jit_mips32_Assembler_mips32_h
 #define jit_mips32_Assembler_mips32_h
 
+#include <iterator>
+
 #include "jit/mips-shared/Assembler-mips-shared.h"
 
 #include "jit/mips32/Architecture-mips32.h"
@@ -18,8 +20,7 @@ static constexpr Register CallTempReg4 = t4;
 static constexpr Register CallTempReg5 = t5;
 
 static constexpr Register CallTempNonArgRegs[] = {t0, t1, t2, t3, t4};
-static const uint32_t NumCallTempNonArgRegs =
-    mozilla::ArrayLength(CallTempNonArgRegs);
+static const uint32_t NumCallTempNonArgRegs = std::size(CallTempNonArgRegs);
 
 class ABIArgGenerator {
   unsigned usedArgSlots_;
@@ -43,6 +44,8 @@ class ABIArgGenerator {
 
     return usedArgSlots_ * sizeof(intptr_t);
   }
+
+  void increaseStackOffset(uint32_t bytes) { MOZ_CRASH("NYI"); }
 };
 
 // These registers may be volatile or nonvolatile.
@@ -154,8 +157,8 @@ static constexpr uint32_t SimdMemoryAlignment = 8;
 static constexpr uint32_t WasmStackAlignment = SimdMemoryAlignment;
 static const uint32_t WasmTrapInstructionLength = 4;
 
-// The offsets are dynamically asserted during
-// code generation in the prologue/epilogue.
+// See comments in wasm::GenerateFunctionPrologue.  The difference between these
+// is the size of the largest callable prologue on the platform.
 static constexpr uint32_t WasmCheckedCallEntryOffset = 0u;
 static constexpr uint32_t WasmCheckedTailEntryOffset = 16u;
 
@@ -250,12 +253,6 @@ static inline bool GetTempRegForIntArg(uint32_t usedIntArgs,
   }
   *out = CallTempNonArgRegs[usedIntArgs];
   return true;
-}
-
-static inline uint32_t GetArgStackDisp(uint32_t usedArgSlots) {
-  MOZ_ASSERT(usedArgSlots >= NumIntArgRegs);
-  // Even register arguments have place reserved on stack.
-  return usedArgSlots * sizeof(intptr_t);
 }
 
 }  // namespace jit

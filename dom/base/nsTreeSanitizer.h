@@ -5,16 +5,32 @@
 #ifndef nsTreeSanitizer_h_
 #define nsTreeSanitizer_h_
 
+#include "nsAtom.h"
+#include "nsHashKeys.h"
+#include "nsHashtablesFwd.h"
 #include "nsIPrincipal.h"
-#include "mozilla/dom/Element.h"
+#include "nsTArray.h"
+#include "nsTHashSet.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/dom/SanitizerBinding.h"
 
 class nsIContent;
+class nsINode;
+
+namespace mozilla {
+class DeclarationBlock;
+}
+
+namespace mozilla::dom {
+class DocumentFragment;
+class Element;
+}  // namespace mozilla::dom
 
 /**
  * See the documentation of nsIParserUtils::sanitize for documentation
  * about the default behavior and the configuration options of this sanitizer.
  */
-class MOZ_STACK_CLASS nsTreeSanitizer {
+class nsTreeSanitizer {
  public:
   /**
    * The constructor.
@@ -40,6 +56,12 @@ class MOZ_STACK_CLASS nsTreeSanitizer {
    * The root element must be <html>.
    */
   void Sanitize(mozilla::dom::Document* aDocument);
+
+  /**
+   * Provides additional options for usage from the Web Sanitizer API
+   * which allows modifying the allow-list from above
+   */
+  void WithWebSanitizerOptions(const mozilla::dom::SanitizerConfig& aOptions);
 
  private:
   /**
@@ -90,16 +112,24 @@ class MOZ_STACK_CLASS nsTreeSanitizer {
   /**
    * We have various tables of static atoms for elements and attributes.
    */
-  class AtomsTable : public nsTHashtable<nsPtrHashKey<const nsStaticAtom>> {
+  class AtomsTable : public nsTHashSet<const nsStaticAtom*> {
    public:
     explicit AtomsTable(uint32_t aLength)
-        : nsTHashtable<nsPtrHashKey<const nsStaticAtom>>(aLength) {}
+        : nsTHashSet<const nsStaticAtom*>(aLength) {}
 
     bool Contains(nsAtom* aAtom) {
       // Because this table only contains static atoms, if aAtom isn't
       // static we can immediately fail.
       return aAtom->IsStatic() && GetEntry(aAtom->AsStatic());
     }
+  };
+  // Use this table for user-defined lists
+  class DynamicAtomsTable : public nsTHashSet<RefPtr<nsAtom>> {
+   public:
+    explicit DynamicAtomsTable(uint32_t aLength)
+        : nsTHashSet<RefPtr<nsAtom>>(aLength) {}
+
+    bool Contains(nsAtom* aAtom) { return GetEntry(aAtom); }
   };
 
   void SanitizeChildren(nsINode* aRoot);
@@ -200,6 +230,12 @@ class MOZ_STACK_CLASS nsTreeSanitizer {
   void RemoveAllAttributes(mozilla::dom::Element* aElement);
 
   /**
+   * Removes all attributes from the descendants of an element but not from
+   * the element itself.
+   */
+  void RemoveAllAttributesFromDescendants(mozilla::dom::Element* aElement);
+
+  /**
    * Log a Console Service message to indicate we removed something.
    * If you pass an element and/or attribute, their information will
    * be appended to the message.
@@ -253,6 +289,25 @@ class MOZ_STACK_CLASS nsTreeSanitizer {
    * Reusable null principal for URL checks.
    */
   static nsIPrincipal* sNullPrincipal;
+
+  // Short-hand to determine whether this is a customized Sanitizer.
+  bool mIsCustomized = false;
+
+  // An allow-list of elements to keep.
+  mozilla::UniquePtr<DynamicAtomsTable> mAllowedElements;
+
+  // A deny-list of elements to block.
+  mozilla::UniquePtr<DynamicAtomsTable> mBlockedElements;
+
+  // An allow-list of attributes to keep.
+  mozilla::UniquePtr<
+      nsTHashMap<RefPtr<nsAtom>, mozilla::UniquePtr<DynamicAtomsTable>>>
+      mAllowedAttributes;
+
+  // A deny-list of attributes to drop.
+  mozilla::UniquePtr<
+      nsTHashMap<RefPtr<nsAtom>, mozilla::UniquePtr<DynamicAtomsTable>>>
+      mDroppedAttributes;
 };
 
 #endif  // nsTreeSanitizer_h_

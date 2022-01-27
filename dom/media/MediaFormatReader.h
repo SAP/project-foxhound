@@ -7,21 +7,21 @@
 #if !defined(MediaFormatReader_h_)
 #  define MediaFormatReader_h_
 
+#  include "FrameStatistics.h"
+#  include "MediaDataDemuxer.h"
+#  include "MediaEventSource.h"
+#  include "MediaMetadataManager.h"
+#  include "MediaPromiseDefs.h"
+#  include "PlatformDecoderModule.h"
+#  include "SeekTarget.h"
 #  include "mozilla/Atomics.h"
 #  include "mozilla/Maybe.h"
 #  include "mozilla/Mutex.h"
 #  include "mozilla/StateMirroring.h"
 #  include "mozilla/StaticPrefs_media.h"
 #  include "mozilla/TaskQueue.h"
+#  include "mozilla/ThreadSafeWeakPtr.h"
 #  include "mozilla/dom/MediaDebugInfoBinding.h"
-
-#  include "FrameStatistics.h"
-#  include "MediaEventSource.h"
-#  include "MediaDataDemuxer.h"
-#  include "MediaMetadataManager.h"
-#  include "MediaPromiseDefs.h"
-#  include "PDMFactory.h"
-#  include "SeekTarget.h"
 
 namespace mozilla {
 
@@ -70,13 +70,16 @@ struct MOZ_STACK_CLASS MediaFormatReaderInit {
 DDLoggedTypeDeclName(MediaFormatReader);
 
 class MediaFormatReader final
-    : public DecoderDoctorLifeLogger<MediaFormatReader> {
+    : public SupportsThreadSafeWeakPtr<MediaFormatReader>,
+      public DecoderDoctorLifeLogger<MediaFormatReader> {
   static const bool IsExclusive = true;
   typedef TrackInfo::TrackType TrackType;
   typedef MozPromise<bool, MediaResult, IsExclusive> NotifyDataArrivedPromise;
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaFormatReader)
 
  public:
+  MOZ_DECLARE_THREADSAFEWEAKREFERENCE_TYPENAME(MediaFormatReader)
+  MOZ_DECLARE_REFCOUNTED_TYPENAME(MediaFormatReader)
+
   using TrackSet = EnumSet<TrackInfo::TrackType>;
   using MetadataPromise = MozPromise<MetadataHolder, MediaResult, IsExclusive>;
 
@@ -95,6 +98,7 @@ class MediaFormatReader final
       MozPromise<MediaData::Type, WaitForDataRejectValue, IsExclusive>;
 
   MediaFormatReader(MediaFormatReaderInit& aInit, MediaDataDemuxer* aDemuxer);
+  virtual ~MediaFormatReader();
 
   // Initializes the reader, returns NS_OK on success, or NS_ERROR_FAILURE
   // on failure.
@@ -105,7 +109,8 @@ class MediaFormatReader final
 
   // Requests one video sample from the reader.
   RefPtr<VideoDataPromise> RequestVideoData(
-      const media::TimeUnit& aTimeThreshold);
+      const media::TimeUnit& aTimeThreshold,
+      bool aRequestNextVideoKeyFrame = false);
 
   // Requests one audio sample from the reader.
   //
@@ -236,8 +241,6 @@ class MediaFormatReader final
   }
 
  private:
-  ~MediaFormatReader();
-
   bool HasVideo() const { return mVideo.mTrackDemuxer; }
   bool HasAudio() const { return mAudio.mTrackDemuxer; }
 
@@ -285,6 +288,9 @@ class MediaFormatReader final
   // Perform an internal seek to aTime. If aDropTarget is true then
   // the first sample past the target will be dropped.
   void InternalSeek(TrackType aTrack, const InternalSeekTarget& aTarget);
+  // Return the end time of the internal seek target if it exists. Otherwise,
+  // return infinity.
+  media::TimeUnit GetInternalSeekTargetEndTime() const;
 
   // Drain the current decoder.
   void DrainDecoder(TrackType aTrack);
@@ -303,7 +309,16 @@ class MediaFormatReader final
   void Reset(TrackType aTrack);
   void DropDecodedSamples(TrackType aTrack);
 
-  bool ShouldSkip(media::TimeUnit aTimeThreshold);
+  // Return a target timeunit which the reader should skip to, this would be
+  // either the timethreshold we pass, or the time of the next keyframe. Return
+  // nothing if we don't need to skip.
+  // @param aTimeThreshold
+  // The time that we expect the time of next video frame should be or go beyond
+  // @param aRequestNextVideoKeyFrame
+  // If true and the next keyframe's time is larger than aTimeThreshold, skip to
+  // the next keyframe time instead of aTimeThreshold.
+  Maybe<media::TimeUnit> ShouldSkip(media::TimeUnit aTimeThreshold,
+                                    bool aRequestNextVideoKeyFrame);
 
   void SetVideoDecodeThreshold();
 
@@ -313,9 +328,6 @@ class MediaFormatReader final
   // storage of the decoder benchmark.
   // This is called only on TaskQueue.
   void NotifyDecoderBenchmarkStore();
-
-  RefPtr<PDMFactory> mPlatform;
-  RefPtr<PDMFactory> mEncryptedPlatform;
 
   enum class DrainState {
     None,
@@ -574,6 +586,9 @@ class MediaFormatReader final
     // Use NullDecoderModule or not.
     bool mIsNullDecode;
     bool mHardwareDecodingDisabled;
+    // Whether we have reported hardware decoding support for video. Used only
+    // on reader's task queue,
+    bool mHasReportedVideoHardwareSupportTelemtry = false;
 
     class {
      public:

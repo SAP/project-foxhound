@@ -19,8 +19,6 @@
 <!ENTITY ldb.visualDebugging.accesskey "V">
 <!ENTITY ldb.visualEventDebugging.label "Visual Event Debugging">
 <!ENTITY ldb.visualEventDebugging.accesskey "E">
-<!ENTITY ldb.paintFlashing.label "Paint Flashing">
-<!ENTITY ldb.paintFlashing.accesskey "F">
 <!ENTITY ldb.paintDumping.label "Paint Dumping">
 <!ENTITY ldb.paintDumping.accesskey "P">
 <!ENTITY ldb.invalidateDumping.label "Invalidate Dumping">
@@ -39,16 +37,18 @@
 <!ENTITY ldb.DumpMenu.label "Dump">
 <!ENTITY ldb.DumpMenu.accesskey "D">
 
-<!ENTITY ldb.dumpWebShells.label "Web Shells">
-<!ENTITY ldb.dumpWebShells.accesskey "W">
 <!ENTITY ldb.dumpContent.label "Content">
 <!ENTITY ldb.dumpContent.accesskey "C">
 <!ENTITY ldb.dumpFrames.label "Frames (app units)">
 <!ENTITY ldb.dumpFrames.accesskey "F">
 <!ENTITY ldb.dumpFramesInCSSPixels.label "Frames (CSS pixels)">
 <!ENTITY ldb.dumpFramesInCSSPixels.accesskey "P">
+<!ENTITY ldb.dumpTextRuns.label "Text Runs">
+<!ENTITY ldb.dumpTextRuns.accesskey "T">
 <!ENTITY ldb.dumpViews.label "Views and Widgets">
 <!ENTITY ldb.dumpViews.accesskey "V">
+<!ENTITY ldb.dumpCounterManager.label "CSS Counters">
+<!ENTITY ldb.dumpCounterManager.accesskey "N">
 <!ENTITY ldb.dumpStyleSheets.label "Style Sheets">
 <!ENTITY ldb.dumpStyleSheets.accesskey "S">
 <!ENTITY ldb.dumpMatchedRules.label "Matched CSS Rules">

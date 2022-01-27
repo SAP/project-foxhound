@@ -10,10 +10,9 @@
 
 #include "ChildIterator.h"
 #include "ErrorReporter.h"
-#include "GeckoProfiler.h"
-#include "gfxFontFamilyList.h"
 #include "gfxFontFeatures.h"
 #include "gfxTextRun.h"
+#include "imgLoader.h"
 #include "nsAnimationManager.h"
 #include "nsAttrValueInlines.h"
 #include "nsCSSFrameConstructor.h"
@@ -22,6 +21,7 @@
 #include "nsContentUtils.h"
 #include "nsDOMTokenList.h"
 #include "nsDeviceContext.h"
+#include "nsLayoutUtils.h"
 #include "nsIContentInlines.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "nsILoadContext.h"
@@ -32,7 +32,6 @@
 #include "nsFontMetrics.h"
 #include "nsHTMLStyleSheet.h"
 #include "nsMappedAttributes.h"
-#include "nsMediaFeatures.h"
 #include "nsNameSpaceManager.h"
 #include "nsNetUtil.h"
 #include "nsProxyRelease.h"
@@ -57,6 +56,7 @@
 #include "mozilla/StaticPresData.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/SizeOfState.h"
 #include "mozilla/StyleAnimationValue.h"
@@ -88,31 +88,26 @@ using namespace mozilla::dom;
 bool ServoTraversalStatistics::sActive = false;
 ServoTraversalStatistics ServoTraversalStatistics::sSingleton;
 
-static RWLock* sServoFFILock = nullptr;
+static StaticAutoPtr<RWLock> sServoFFILock;
 
-static const nsFont* ThreadSafeGetDefaultFontHelper(
-    const Document& aDocument, nsAtom* aLanguage,
-    StyleGenericFontFamily aGenericId) {
+static const LangGroupFontPrefs* ThreadSafeGetLangGroupFontPrefs(
+    const Document& aDocument, nsAtom* aLanguage) {
   bool needsCache = false;
-  const nsFont* retval;
-
-  auto GetDefaultFont = [&](bool* aNeedsToCache) {
-    auto* prefs = aDocument.GetFontPrefsForLang(aLanguage, aNeedsToCache);
-    return prefs ? prefs->GetDefaultFont(aGenericId) : nullptr;
-  };
-
   {
     AutoReadLock guard(*sServoFFILock);
-    retval = GetDefaultFont(&needsCache);
+    if (auto* prefs = aDocument.GetFontPrefsForLang(aLanguage, &needsCache)) {
+      return prefs;
+    }
   }
-  if (!needsCache) {
-    return retval;
-  }
-  {
-    AutoWriteLock guard(*sServoFFILock);
-    retval = GetDefaultFont(nullptr);
-  }
-  return retval;
+  MOZ_ASSERT(needsCache);
+  AutoWriteLock guard(*sServoFFILock);
+  return aDocument.GetFontPrefsForLang(aLanguage);
+}
+
+static const nsFont& ThreadSafeGetDefaultVariableFont(const Document& aDocument,
+                                                      nsAtom* aLanguage) {
+  return ThreadSafeGetLangGroupFontPrefs(aDocument, aLanguage)
+      ->mDefaultVariableFont;
 }
 
 /*
@@ -128,10 +123,6 @@ bool Gecko_IsSignificantChild(const nsINode* aNode,
 
 const nsINode* Gecko_GetLastChild(const nsINode* aNode) {
   return aNode->GetLastChild();
-}
-
-const nsINode* Gecko_GetPreviousSibling(const nsINode* aNode) {
-  return aNode->GetPreviousSibling();
 }
 
 const nsINode* Gecko_GetFlattenedTreeParentNode(const nsINode* aNode) {
@@ -415,8 +406,7 @@ StyleSheet* Gecko_StyleSheet_Clone(const StyleSheet* aSheet,
   MOZ_ASSERT(aSheet->GetParentSheet(), "Should only be used for @import");
   MOZ_ASSERT(aNewParentSheet, "Wat");
 
-  RefPtr<StyleSheet> newSheet =
-      aSheet->Clone(nullptr, nullptr, nullptr, nullptr);
+  RefPtr<StyleSheet> newSheet = aSheet->Clone(nullptr, nullptr);
 
   // NOTE(emilio): This code runs in the StylesheetInner constructor, which
   // means that the inner pointer of `aNewParentSheet` still points to the old
@@ -692,13 +682,42 @@ bool Gecko_IsDocumentBody(const Element* aElement) {
   return doc && doc->GetBodyElement() == aElement;
 }
 
-nscolor Gecko_GetLookAndFeelSystemColor(int32_t aId, const Document* aDoc) {
-  bool useStandinsForNativeColors = !nsContentUtils::IsChromeDoc(aDoc);
-  nscolor result;
-  LookAndFeel::ColorID colorId = static_cast<LookAndFeel::ColorID>(aId);
+nscolor Gecko_ComputeSystemColor(StyleSystemColor aColor, const Document* aDoc,
+                                 const StyleColorScheme* aStyle) {
+  auto colorScheme = LookAndFeel::ColorSchemeForStyle(*aDoc, aStyle->bits);
+
+  const auto& colors = PreferenceSheet::PrefsFor(*aDoc).ColorsFor(colorScheme);
+  switch (aColor) {
+    case StyleSystemColor::Canvastext:
+      return colors.mDefault;
+    case StyleSystemColor::Canvas:
+      return colors.mDefaultBackground;
+    case StyleSystemColor::Linktext:
+      return colors.mLink;
+    case StyleSystemColor::Activetext:
+      return colors.mActiveLink;
+    case StyleSystemColor::Visitedtext:
+      return colors.mVisitedLink;
+    default:
+      break;
+  }
+
+  auto useStandins = LookAndFeel::ShouldUseStandins(*aDoc, aColor);
+
   AutoWriteLock guard(*sServoFFILock);
-  LookAndFeel::GetColor(colorId, useStandinsForNativeColors, &result);
-  return result;
+  return LookAndFeel::Color(aColor, colorScheme, useStandins);
+}
+
+int32_t Gecko_GetLookAndFeelInt(int32_t aId) {
+  auto intId = static_cast<LookAndFeel::IntID>(aId);
+  AutoWriteLock guard(*sServoFFILock);
+  return LookAndFeel::GetInt(intId);
+}
+
+float Gecko_GetLookAndFeelFloat(int32_t aId) {
+  auto id = static_cast<LookAndFeel::FloatID>(aId);
+  AutoWriteLock guard(*sServoFFILock);
+  return LookAndFeel::GetFloat(id);
 }
 
 bool Gecko_MatchLang(const Element* aElement, nsAtom* aOverrideLang,
@@ -752,10 +771,6 @@ nsAtom* Gecko_GetXMLLangValue(const Element* aElement) {
   return atom.forget().take();
 }
 
-Document::DocumentTheme Gecko_GetDocumentLWTheme(const Document* aDocument) {
-  return aDocument->ThreadSafeGetDocumentLWTheme();
-}
-
 const PreferenceSheet::Prefs* Gecko_GetPrefSheetPrefs(const Document* aDoc) {
   return &PreferenceSheet::PrefsFor(*aDoc);
 }
@@ -804,10 +819,10 @@ static bool DoMatch(Implementor* aElement, nsAtom* aNS, nsAtom* aName,
   if (MOZ_LIKELY(aNS)) {
     int32_t ns = aNS == nsGkAtoms::_empty
                      ? kNameSpaceID_None
-                     : nsContentUtils::NameSpaceManager()->GetNameSpaceID(
+                     : nsNameSpaceManager::GetInstance()->GetNameSpaceID(
                            aNS, aElement->IsInChromeDocument());
 
-    MOZ_ASSERT(ns == nsContentUtils::NameSpaceManager()->GetNameSpaceID(
+    MOZ_ASSERT(ns == nsNameSpaceManager::GetInstance()->GetNameSpaceID(
                          aNS, aElement->IsInChromeDocument()));
     NS_ENSURE_TRUE(ns != kNameSpaceID_Unknown, false);
     const nsAttrValue* value = aElement->GetParsedAttr(aName, ns);
@@ -955,68 +970,28 @@ void Gecko_AddRefAtom(nsAtom* aAtom) { NS_ADDREF(aAtom); }
 
 void Gecko_ReleaseAtom(nsAtom* aAtom) { NS_RELEASE(aAtom); }
 
-void Gecko_nsTArray_FontFamilyName_AppendNamed(
-    nsTArray<FontFamilyName>* aNames, nsAtom* aName,
-    StyleFontFamilyNameSyntax aSyntax) {
-  aNames->AppendElement(FontFamilyName(aName, aSyntax));
-}
-
-void Gecko_nsTArray_FontFamilyName_AppendGeneric(
-    nsTArray<FontFamilyName>* aNames, StyleGenericFontFamily aType) {
-  aNames->AppendElement(FontFamilyName(aType));
-}
-
-SharedFontList* Gecko_SharedFontList_Create() {
-  RefPtr<SharedFontList> fontlist = new SharedFontList();
-  return fontlist.forget().take();
-}
-
-MOZ_DEFINE_MALLOC_SIZE_OF(GeckoSharedFontListMallocSizeOf)
-
-size_t Gecko_SharedFontList_SizeOfIncludingThisIfUnshared(
-    SharedFontList* aFontlist) {
-  MOZ_ASSERT(NS_IsMainThread());
-  return aFontlist->SizeOfIncludingThisIfUnshared(
-      GeckoSharedFontListMallocSizeOf);
-}
-
-size_t Gecko_SharedFontList_SizeOfIncludingThis(SharedFontList* aFontlist) {
-  MOZ_ASSERT(NS_IsMainThread());
-  return aFontlist->SizeOfIncludingThis(GeckoSharedFontListMallocSizeOf);
-}
-
-NS_IMPL_THREADSAFE_FFI_REFCOUNTING(SharedFontList, SharedFontList);
-
-void Gecko_CopyFontFamilyFrom(nsFont* dst, const nsFont* src) {
-  dst->fontlist = src->fontlist;
-}
-
-void Gecko_nsFont_InitSystem(nsFont* aDest, int32_t aFontId,
+void Gecko_nsFont_InitSystem(nsFont* aDest, StyleSystemFont aFontId,
                              const nsStyleFont* aFont,
                              const Document* aDocument) {
-  const nsFont* defaultVariableFont = ThreadSafeGetDefaultFontHelper(
-      *aDocument, aFont->mLanguage, StyleGenericFontFamily::None);
+  const nsFont& defaultVariableFont =
+      ThreadSafeGetDefaultVariableFont(*aDocument, aFont->mLanguage);
 
   // We have passed uninitialized memory to this function,
   // initialize it. We can't simply return an nsFont because then
   // we need to know its size beforehand. Servo cannot initialize nsFont
   // itself, so this will do.
-  new (aDest) nsFont(*defaultVariableFont);
-
-  LookAndFeel::FontID fontID = static_cast<LookAndFeel::FontID>(aFontId);
+  new (aDest) nsFont(defaultVariableFont);
 
   AutoWriteLock guard(*sServoFFILock);
-  nsLayoutUtils::ComputeSystemFont(aDest, fontID, defaultVariableFont);
+  nsLayoutUtils::ComputeSystemFont(aDest, aFontId, defaultVariableFont,
+                                   aDocument);
 }
 
 void Gecko_nsFont_Destroy(nsFont* aDest) { aDest->~nsFont(); }
 
-StyleGenericFontFamily Gecko_nsStyleFont_ComputeDefaultFontType(
-    const Document* aDoc, StyleGenericFontFamily aGenericId,
-    nsAtom* aLanguage) {
-  const nsFont* defaultFont =
-      ThreadSafeGetDefaultFontHelper(*aDoc, aLanguage, aGenericId);
-  return defaultFont->fontlist.GetDefaultFontType();
+StyleGenericFontFamily Gecko_nsStyleFont_ComputeFallbackFontTypeForLanguage(
+    const Document* aDoc, nsAtom* aLanguage) {
+  return ThreadSafeGetLangGroupFontPrefs(*aDoc, aLanguage)->GetDefaultGeneric();
 }
 
 gfxFontFeatureValueSet* Gecko_ConstructFontFeatureValueSet() {
@@ -1256,7 +1231,12 @@ void Gecko_GetComputedURLSpec(const StyleComputedUrl* aURL, nsCString* aOut) {
 
 void Gecko_GetComputedImageURLSpec(const StyleComputedUrl* aURL,
                                    nsCString* aOut) {
-  // Image URIs don't serialize local refs as local.
+  if (aURL->IsLocalRef() &&
+      StaticPrefs::layout_css_computed_style_dont_resolve_image_local_refs()) {
+    aOut->Assign(aURL->SpecifiedSerialization());
+    return;
+  }
+
   if (nsIURI* uri = aURL->GetURI()) {
     nsresult rv = uri->GetSpec(*aOut);
     if (NS_SUCCEEDED(rv)) {
@@ -1265,6 +1245,13 @@ void Gecko_GetComputedImageURLSpec(const StyleComputedUrl* aURL,
   }
 
   aOut->AssignLiteral("about:invalid");
+}
+
+bool Gecko_IsSupportedImageMimeType(const uint8_t* aMimeType,
+                                    const uint32_t aLen) {
+  nsDependentCSubstring mime(reinterpret_cast<const char*>(aMimeType), aLen);
+  return imgLoader::SupportImageWithMimeType(
+      mime, AcceptedMimeTypes::IMAGES_AND_DOCUMENTS);
 }
 
 void Gecko_nsIURI_Debug(nsIURI* aURI, nsCString* aOut) {
@@ -1338,15 +1325,6 @@ void Gecko_nsStyleFont_CopyLangFrom(nsStyleFont* aFont,
   aFont->mLanguage = aSource->mLanguage;
 }
 
-void Gecko_nsStyleFont_PrioritizeUserFonts(
-    nsStyleFont* aFont, StyleGenericFontFamily aDefaultGeneric) {
-  MOZ_ASSERT(!StaticPrefs::browser_display_use_document_fonts());
-  MOZ_ASSERT(aDefaultGeneric != StyleGenericFontFamily::None);
-  if (!aFont->mFont.fontlist.PrioritizeFirstGeneric()) {
-    aFont->mFont.fontlist.PrependGeneric(aDefaultGeneric);
-  }
-}
-
 Length Gecko_nsStyleFont_ComputeMinSize(const nsStyleFont* aFont,
                                         const Document* aDocument) {
   // Don't change font-size:0, since that would un-hide hidden text,
@@ -1391,7 +1369,8 @@ StyleDefaultFontSizes Gecko_GetBaseSize(nsAtom* aLanguage) {
   prefs.Initialize(langGroupAtom);
   return {prefs.mDefaultVariableFont.size,  prefs.mDefaultSerifFont.size,
           prefs.mDefaultSansSerifFont.size, prefs.mDefaultMonospaceFont.size,
-          prefs.mDefaultCursiveFont.size,   prefs.mDefaultFantasyFont.size};
+          prefs.mDefaultCursiveFont.size,   prefs.mDefaultFantasyFont.size,
+          prefs.mDefaultSystemUiFont.size};
 }
 
 static StaticRefPtr<UACacheReporter> gUACacheReporter;
@@ -1399,8 +1378,8 @@ static StaticRefPtr<UACacheReporter> gUACacheReporter;
 namespace mozilla {
 
 void InitializeServo() {
-  URLExtraData::InitDummy();
-  Servo_Initialize(URLExtraData::Dummy());
+  URLExtraData::Init();
+  Servo_Initialize(URLExtraData::Dummy(), URLExtraData::DummyChrome());
 
   gUACacheReporter = new UACacheReporter();
   RegisterWeakMemoryReporter(gUACacheReporter);
@@ -1414,8 +1393,10 @@ void ShutdownServo() {
   UnregisterWeakMemoryReporter(gUACacheReporter);
   gUACacheReporter = nullptr;
 
-  delete sServoFFILock;
+  sServoFFILock = nullptr;
   Servo_Shutdown();
+
+  URLExtraData::Shutdown();
 }
 
 void AssertIsMainThreadOrServoFontMetricsLocked() {
@@ -1475,8 +1456,7 @@ void Gecko_StyleSheet_FinishAsyncParse(
                  counters = std::move(useCounters)]() mutable {
         MOZ_ASSERT(NS_IsMainThread());
         SheetLoadData* data = d->get();
-        data->mUseCounters = std::move(counters);
-        data->mSheet->FinishAsyncParse(contents.forget());
+        data->mSheet->FinishAsyncParse(contents.forget(), std::move(counters));
       }));
 }
 
@@ -1581,26 +1561,6 @@ void Gecko_AddPropertyToSet(nsCSSPropertyIDSet* aPropertySet,
   void Gecko_Destroy_nsStyle##name(nsStyle##name* ptr) {               \
     ptr->~nsStyle##name();                                             \
   }
-
-void Gecko_RegisterProfilerThread(const char* name) {
-  PROFILER_REGISTER_THREAD(name);
-}
-
-void Gecko_UnregisterProfilerThread() { PROFILER_UNREGISTER_THREAD(); }
-
-#ifdef MOZ_GECKO_PROFILER
-void Gecko_Construct_AutoProfilerLabel(AutoProfilerLabel* aAutoLabel,
-                                       JS::ProfilingCategoryPair aCatPair) {
-  new (aAutoLabel) AutoProfilerLabel(
-      "", nullptr, aCatPair,
-      uint32_t(
-          js::ProfilingStackFrame::Flags::LABEL_DETERMINED_BY_CATEGORY_PAIR));
-}
-
-void Gecko_Destroy_AutoProfilerLabel(AutoProfilerLabel* aAutoLabel) {
-  aAutoLabel->~AutoProfilerLabel();
-}
-#endif
 
 bool Gecko_DocumentRule_UseForPresentation(
     const Document* aDocument, const nsACString* aPattern,
@@ -1769,4 +1729,79 @@ nsAtom** Gecko_Element_ExportedParts(const nsAttrValue* aValue,
   static_assert(sizeof(RefPtr<nsAtom>) == sizeof(nsAtom*));
   static_assert(alignof(RefPtr<nsAtom>) == alignof(nsAtom*));
   return reinterpret_cast<nsAtom**>(parts->Elements());
+}
+
+bool StyleSingleFontFamily::IsNamedFamily(const nsAString& aFamilyName) const {
+  if (!IsFamilyName()) {
+    return false;
+  }
+  nsDependentAtomString name(AsFamilyName().name.AsAtom());
+  return name.Equals(aFamilyName, nsCaseInsensitiveStringComparator);
+}
+
+StyleSingleFontFamily StyleSingleFontFamily::Parse(
+    const nsACString& aFamilyOrGenericName) {
+  // should only be passed a single font - not entirely correct, a family
+  // *could* have a comma in it but in practice never does so
+  // for debug purposes this is fine
+  NS_ASSERTION(aFamilyOrGenericName.FindChar(',') == -1,
+               "Convert method should only be passed a single family name");
+
+  auto genericType = Servo_GenericFontFamily_Parse(&aFamilyOrGenericName);
+  if (genericType != StyleGenericFontFamily::None) {
+    return Generic(genericType);
+  }
+  return FamilyName({StyleAtom(NS_Atomize(aFamilyOrGenericName)),
+                     StyleFontFamilyNameSyntax::Identifiers});
+}
+
+void StyleSingleFontFamily::AppendToString(nsACString& aName,
+                                           bool aQuote) const {
+  if (IsFamilyName()) {
+    const auto& name = AsFamilyName();
+    bool quote = aQuote && name.syntax == StyleFontFamilyNameSyntax::Quoted;
+    if (quote) {
+      aName.Append('"');
+    }
+    aName.Append(nsAtomCString(name.name.AsAtom()));
+    if (quote) {
+      aName.Append('"');
+    }
+    return;
+  }
+
+  switch (AsGeneric()) {
+    case StyleGenericFontFamily::None:
+    case StyleGenericFontFamily::MozEmoji:
+      MOZ_FALLTHROUGH_ASSERT("Should never appear in a font-family name!");
+    case StyleGenericFontFamily::Serif:
+      return aName.AppendLiteral("serif");
+    case StyleGenericFontFamily::SansSerif:
+      return aName.AppendLiteral("sans-serif");
+    case StyleGenericFontFamily::Monospace:
+      return aName.AppendLiteral("monospace");
+    case StyleGenericFontFamily::Cursive:
+      return aName.AppendLiteral("cursive");
+    case StyleGenericFontFamily::Fantasy:
+      return aName.AppendLiteral("fantasy");
+    case StyleGenericFontFamily::SystemUi:
+      return aName.AppendLiteral("system-ui");
+  }
+  MOZ_ASSERT_UNREACHABLE("Unknown generic font-family!");
+  return aName.AppendLiteral("serif");
+}
+
+StyleFontFamilyList StyleFontFamilyList::WithNames(
+    nsTArray<StyleSingleFontFamily>&& aNames) {
+  StyleFontFamilyList list;
+  Servo_FontFamilyList_WithNames(&aNames, &list);
+  return list;
+}
+
+StyleFontFamilyList StyleFontFamilyList::WithOneUnquotedFamily(
+    const nsACString& aName) {
+  AutoTArray<StyleSingleFontFamily, 1> names;
+  names.AppendElement(StyleSingleFontFamily::FamilyName(
+      {StyleAtom(NS_Atomize(aName)), StyleFontFamilyNameSyntax::Identifiers}));
+  return WithNames(std::move(names));
 }

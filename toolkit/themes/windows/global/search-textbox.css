@@ -14,8 +14,8 @@
   margin: 2px 4px; /* matches <input> global.css margin */
   padding: 2px 2px 3px;
   padding-inline-start: 4px;
-  background-color: -moz-Field;
-  color: -moz-FieldText;
+  background-color: Field;
+  color: FieldText;
 }
 
 html|input {
@@ -66,11 +66,7 @@ html|input {
   cursor: pointer;
 }
 
-.textbox-search-clear {
-  list-style-image: url(chrome://global/skin/icons/searchfield-cancel.svg);
-}
-
-.textbox-search-clear:not([disabled]) {
+html|*.textbox-search-clear:not([disabled]) {
   cursor: default;
 }
 

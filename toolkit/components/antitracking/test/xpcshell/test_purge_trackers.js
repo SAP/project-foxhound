@@ -41,6 +41,43 @@ async function setupTest(aCookieBehavior) {
 }
 
 /**
+ * Test that purging doesn't happen when it shouldn't happen.
+ */
+add_task(async function testNotPurging() {
+  await UrlClassifierTestUtils.addTestTrackers();
+  setupTest(Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN);
+  SiteDataTestUtils.addToCookies({ origin: TRACKING_PAGE });
+
+  Services.prefs.setIntPref(
+    "network.cookie.cookieBehavior",
+    Ci.nsICookieService.BEHAVIOR_ACCEPT
+  );
+  await PurgeTrackerService.purgeTrackingCookieJars();
+  ok(SiteDataTestUtils.hasCookies(TRACKING_PAGE), "cookie remains.");
+  Services.prefs.setIntPref(
+    "network.cookie.cookieBehavior",
+    Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN
+  );
+
+  Services.prefs.setBoolPref("privacy.purge_trackers.enabled", false);
+  await PurgeTrackerService.purgeTrackingCookieJars();
+  ok(SiteDataTestUtils.hasCookies(TRACKING_PAGE), "cookie remains.");
+  Services.prefs.setBoolPref("privacy.purge_trackers.enabled", true);
+
+  Services.prefs.setBoolPref("privacy.sanitize.sanitizeOnShutdown", true);
+  Services.prefs.setBoolPref("privacy.clearOnShutdown.history", true);
+  await PurgeTrackerService.purgeTrackingCookieJars();
+  ok(SiteDataTestUtils.hasCookies(TRACKING_PAGE), "cookie remains.");
+  Services.prefs.clearUserPref("privacy.sanitize.sanitizeOnShutdown");
+  Services.prefs.clearUserPref("privacy.clearOnShutdown.history");
+
+  await PurgeTrackerService.purgeTrackingCookieJars();
+  ok(!SiteDataTestUtils.hasCookies(TRACKING_PAGE), "cookie cleared.");
+
+  UrlClassifierTestUtils.cleanupTestTrackers();
+});
+
+/**
  * Test that cookies indexedDB and localStorage are purged if the cookie is found
  * on the tracking list and does not have an Interaction Permission.
  */
@@ -53,7 +90,7 @@ async function testIndexedDBAndLocalStorage() {
     Services.perms.ALLOW_ACTION
   );
 
-  SiteDataTestUtils.addToCookies(BENIGN_PAGE);
+  SiteDataTestUtils.addToCookies({ origin: BENIGN_PAGE });
   for (let url of [
     TRACKING_PAGE,
     TRACKING_PAGE2,
@@ -62,7 +99,7 @@ async function testIndexedDBAndLocalStorage() {
     FOREIGN_PAGE3,
   ]) {
     SiteDataTestUtils.addToLocalStorage(url);
-    SiteDataTestUtils.addToCookies(url);
+    SiteDataTestUtils.addToCookies({ origin: url });
     await SiteDataTestUtils.addToIndexedDB(url);
   }
 
@@ -156,11 +193,11 @@ async function testBaseDomain() {
     );
 
     for (let origin of associatedOrigins) {
-      SiteDataTestUtils.addToCookies(origin);
+      SiteDataTestUtils.addToCookies({ origin });
     }
 
     // Add another tracker to verify we're actually purging.
-    SiteDataTestUtils.addToCookies(TRACKING_PAGE);
+    SiteDataTestUtils.addToCookies({ origin: TRACKING_PAGE });
 
     await PurgeTrackerService.purgeTrackingCookieJars();
 
@@ -187,7 +224,7 @@ async function testBaseDomain() {
  * Test that trackers are not cleared if they are associated
  * with an entry on the entity list that has user interaction.
  */
-async function testUserInteraction() {
+async function testUserInteraction(ownerPage) {
   Services.prefs.setBoolPref(
     "privacy.purge_trackers.consider_entity_list",
     true
@@ -201,26 +238,27 @@ async function testUserInteraction() {
   );
   await UrlClassifierTestUtils.addTestTrackers();
 
-  // These are hard coded test values on the entity list.
-  const OWNER_PAGE = "https://itisatrap.org";
+  // example.org and itisatrap.org are hard coded test values on the entity list.
   const RESOURCE_PAGE = "https://example.org";
 
   PermissionTestUtils.add(
-    OWNER_PAGE,
+    ownerPage,
     "storageAccessAPI",
     Services.perms.ALLOW_ACTION
   );
 
-  SiteDataTestUtils.addToCookies(RESOURCE_PAGE);
+  SiteDataTestUtils.addToCookies({ origin: RESOURCE_PAGE });
 
   // Add another tracker to verify we're actually purging.
-  SiteDataTestUtils.addToCookies("https://another-tracking.example.net");
+  SiteDataTestUtils.addToCookies({
+    origin: "https://another-tracking.example.net",
+  });
 
   await PurgeTrackerService.purgeTrackingCookieJars();
 
   ok(
     SiteDataTestUtils.hasCookies(RESOURCE_PAGE),
-    `${RESOURCE_PAGE} should have retained its cookies when permission is set for ${OWNER_PAGE}.`
+    `${RESOURCE_PAGE} should have retained its cookies when permission is set for ${ownerPage}.`
   );
 
   ok(
@@ -237,10 +275,10 @@ async function testUserInteraction() {
 
   ok(
     !SiteDataTestUtils.hasCookies(RESOURCE_PAGE),
-    `${RESOURCE_PAGE} should not have retained its cookies when permission is set for ${OWNER_PAGE} and the entity list pref is off.`
+    `${RESOURCE_PAGE} should not have retained its cookies when permission is set for ${ownerPage} and the entity list pref is off.`
   );
 
-  PermissionTestUtils.remove(OWNER_PAGE, "storageAccessAPI");
+  PermissionTestUtils.remove(ownerPage, "storageAccessAPI");
   await SiteDataTestUtils.clear();
 
   Services.prefs.clearUserPref("privacy.purge_trackers.consider_entity_list");
@@ -394,7 +432,7 @@ async function testExpiredInteractionPermission() {
     FOREIGN_PAGE3,
   ]) {
     SiteDataTestUtils.addToLocalStorage(url);
-    SiteDataTestUtils.addToCookies(url);
+    SiteDataTestUtils.addToCookies({ origin: url });
     await SiteDataTestUtils.addToIndexedDB(url);
   }
 
@@ -472,7 +510,11 @@ add_task(async function() {
     await setupTest(cookieBehavior);
     await testIndexedDBAndLocalStorage();
     await testBaseDomain();
-    await testUserInteraction();
+    // example.org and itisatrap.org are hard coded test values on the entity list.
+    await testUserInteraction("https://itisatrap.org");
+    await testUserInteraction(
+      "https://itisatrap.org^firstPartyDomain=example.net"
+    );
     await testQuotaStorage();
     await testExpiredInteractionPermission();
   }

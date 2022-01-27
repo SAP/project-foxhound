@@ -7,7 +7,7 @@
 #ifndef DOM_SVG_SVGFETILEELEMENT_H_
 #define DOM_SVG_SVGFETILEELEMENT_H_
 
-#include "SVGFilters.h"
+#include "mozilla/dom/SVGFilters.h"
 
 nsresult NS_NewSVGFETileElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -44,6 +44,8 @@ class SVGFETileElement : public SVGFETileElementBase {
   virtual void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) override;
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+
+  virtual nsresult BindToTree(BindContext& aCtx, nsINode& aParent) override;
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedString> In1();

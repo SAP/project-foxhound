@@ -10,6 +10,9 @@
 #include "nsIClassifiedChannel.h"
 #include "nsContentUtils.h"
 #include "nsNetUtil.h"
+#include "mozilla/StaticPtr.h"
+#include "nsIWebProgressListener.h"
+#include "nsIChannel.h"
 
 namespace mozilla {
 namespace net {
@@ -40,7 +43,7 @@ StaticRefPtr<UrlClassifierFeatureSocialTrackingAnnotation>
 
 UrlClassifierFeatureSocialTrackingAnnotation::
     UrlClassifierFeatureSocialTrackingAnnotation()
-    : UrlClassifierFeatureBase(
+    : UrlClassifierFeatureAntiTrackingBase(
           nsLiteralCString(SOCIALTRACKING_ANNOTATION_FEATURE_NAME),
           nsLiteralCString(URLCLASSIFIER_SOCIALTRACKING_ANNOTATION_BLOCKLIST),
           nsLiteralCString(URLCLASSIFIER_SOCIALTRACKING_ANNOTATION_ENTITYLIST),

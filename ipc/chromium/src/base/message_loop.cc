@@ -15,6 +15,7 @@
 #include "base/thread_local.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/ProfilerRunnable.h"
 #include "nsThreadUtils.h"
 
 #if defined(OS_MACOSX)
@@ -32,12 +33,8 @@
 #  include "base/message_pump_android.h"
 #endif
 #include "nsISerialEventTarget.h"
-#ifdef MOZ_TASK_TRACER
-#  include "GeckoTaskTracer.h"
-#  include "TracedTaskCommon.h"
-#endif
 
-#include "MessagePump.h"
+#include "mozilla/ipc/MessagePump.h"
 #include "nsThreadUtils.h"
 
 using base::Time;
@@ -396,17 +393,7 @@ void MessageLoop::PostTask_Helper(already_AddRefed<nsIRunnable> task,
   // Tasks should only be queued before or during the Run loop, not after.
   MOZ_ASSERT(!shutting_down_);
 
-#ifdef MOZ_TASK_TRACER
-  nsCOMPtr<nsIRunnable> tracedTask = task;
-  if (mozilla::tasktracer::IsStartLogging()) {
-    tracedTask = mozilla::tasktracer::CreateTracedRunnable(tracedTask.forget());
-    (static_cast<mozilla::tasktracer::TracedRunnable*>(tracedTask.get()))
-        ->DispatchTask();
-  }
-  PendingTask pending_task(tracedTask.forget(), true);
-#else
   PendingTask pending_task(std::move(task), true);
-#endif
 
   if (delay_ms > 0) {
     pending_task.delayed_run_time =
@@ -461,9 +448,12 @@ void MessageLoop::RunTask(already_AddRefed<nsIRunnable> aTask) {
 
   nsCOMPtr<nsIRunnable> task = aTask;
 
-  mozilla::LogRunnable::Run log(task.get());
-  task->Run();
-  task = nullptr;
+  {
+    mozilla::LogRunnable::Run log(task.get());
+    AUTO_PROFILE_FOLLOWING_RUNNABLE(task);
+    task->Run();
+    task = nullptr;
+  }
 
   nestable_tasks_allowed_ = true;
 }

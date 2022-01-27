@@ -7,6 +7,7 @@
 const Services = require("Services");
 
 const l10n = require("devtools/client/webconsole/utils/l10n");
+const { safeAsyncMethod } = require("devtools/shared/async-utils");
 
 const PREF_CONNECTION_TIMEOUT = "devtools.debugger.remote-timeout";
 // Web Console connection proxy
@@ -22,26 +23,21 @@ class WebConsoleConnectionProxy {
    *        A WebConsoleUI instance that owns this connection proxy.
    * @param {RemoteTarget} target
    *        The target that the console will connect to.
-   * @param {Boolean} needContentProcessMessagesListener
-   *        Set to true to specifically add a ContentProcessMessages listener. This is
-   *        needed for non-fission Browser Console for example.
    */
-  constructor(
-    webConsoleUI,
-    target,
-    needContentProcessMessagesListener = false
-  ) {
+  constructor(webConsoleUI, target) {
     this.webConsoleUI = webConsoleUI;
     this.target = target;
-    this.needContentProcessMessagesListener = needContentProcessMessagesListener;
     this._connecter = null;
 
-    this._onTabNavigated = this._onTabNavigated.bind(this);
-    this._onTabWillNavigate = this._onTabWillNavigate.bind(this);
     this._onLastPrivateContextExited = this._onLastPrivateContextExited.bind(
       this
     );
-    this._clearLogpointMessages = this._clearLogpointMessages.bind(this);
+
+    // Swallow async errors to _asyncConnect if the target was destroyed in the
+    // meantime.
+    this._asyncConnect = safeAsyncMethod(this._asyncConnect.bind(this), () =>
+      this.target.isDestroyed()
+    );
   }
 
   /**
@@ -56,34 +52,11 @@ class WebConsoleConnectionProxy {
       return this._connecter;
     }
 
-    if (!this.target.client) {
+    if (this.target.isDestroyed()) {
       return Promise.reject("target was destroyed");
     }
 
-    this.target.on("will-navigate", this._onTabWillNavigate);
-    this.target.on("navigate", this._onTabNavigated);
-
-    const connection = (async () => {
-      this.client = this.target.client;
-      this.webConsoleFront = await this.target.getFront("console");
-
-      await this._attachConsole();
-
-      // There is no way to view response bodies from the Browser Console, so do
-      // not waste the memory.
-      const saveBodies =
-        !this.webConsoleUI.isBrowserConsole &&
-        Services.prefs.getBoolPref(
-          "devtools.netmonitor.saveRequestAndResponseBodies"
-        );
-      await this.webConsoleUI.setSaveRequestAndResponseBodies(saveBodies);
-
-      this._addWebConsoleFrontEventListeners();
-
-      if (this.webConsoleFront && !this.webConsoleFront.hasNativeConsoleAPI) {
-        await this.webConsoleUI.logWarningAboutReplacedAPI();
-      }
-    })();
+    const connection = this._asyncConnect();
 
     let timeoutId;
     const connectionTimeout = new Promise((_, reject) => {
@@ -106,25 +79,54 @@ class WebConsoleConnectionProxy {
     return this._connecter;
   }
 
+  async _asyncConnect() {
+    this.webConsoleFront = await this.target.getFront("console");
+
+    // Once we support only server watcher for NETWORK_EVENT,
+    // we will be able to drop this in favor of code from WebConsoleUI._attachTargets.
+    // We have to wait for the fully enabling of NETWORK_EVENT watchers, especially on the Browser Toolbox.
+    const { targetCommand, resourceCommand } = this.webConsoleUI.hud.commands;
+    const hasNetworkResourceCommandSupport = resourceCommand.hasResourceCommandSupport(
+      resourceCommand.TYPES.NETWORK_EVENT
+    );
+    const supportsWatcherRequest = targetCommand.hasTargetWatcherSupport();
+    if (!hasNetworkResourceCommandSupport || !supportsWatcherRequest) {
+      // There is no way to view response bodies from the Browser Console, so do
+      // not waste the memory.
+      const saveBodies =
+        !this.webConsoleUI.isBrowserConsole &&
+        Services.prefs.getBoolPref(
+          "devtools.netmonitor.saveRequestAndResponseBodies"
+        );
+      await this.setSaveRequestAndResponseBodies(saveBodies);
+    }
+
+    this._addWebConsoleFrontEventListeners();
+  }
+
   getConnectionPromise() {
     return this._connecter;
   }
 
   /**
-   * Attach to the Web Console actor.
-   * @private
-   * @returns Promise
+   * Setter for saving of network request and response bodies.
+   *
+   * @param boolean value
+   *        The new value you want to set.
    */
-  _attachConsole() {
-    if (!this.webConsoleFront || !this.needContentProcessMessagesListener) {
+  async setSaveRequestAndResponseBodies(value) {
+    if (!this.webConsoleFront) {
+      // Don't continue if the webconsole disconnected.
       return null;
     }
 
-    // Enable the forwarding of console messages to the parent process
-    // when we open the Browser Console or Toolbox without fission support. If Fission
-    // is enabled, we don't use the ContentProcessMessages listener, but attach to the
-    // content processes directly.
-    return this.webConsoleFront.startListeners(["ContentProcessMessages"]);
+    const newValue = !!value;
+    const toSet = {
+      "NetworkMonitor.saveRequestAndResponseBodies": newValue,
+    };
+
+    // Make sure the web console client connection is established first.
+    return this.webConsoleFront.setPreferences(toSet);
   }
 
   /**
@@ -141,10 +143,6 @@ class WebConsoleConnectionProxy {
       "lastPrivateContextExited",
       this._onLastPrivateContextExited
     );
-    this.webConsoleFront.on(
-      "clearLogpointMessages",
-      this._clearLogpointMessages
-    );
   }
 
   /**
@@ -157,17 +155,6 @@ class WebConsoleConnectionProxy {
       "lastPrivateContextExited",
       this._onLastPrivateContextExited
     );
-    this.webConsoleFront.off(
-      "clearLogpointMessages",
-      this._clearLogpointMessages
-    );
-  }
-
-  _clearLogpointMessages(logpointId) {
-    // Some message might try to update while we are closing the toolbox.
-    if (this.webConsoleUI?.wrapper) {
-      this.webConsoleUI.wrapper.dispatchClearLogpointMessages(logpointId);
-    }
   }
 
   /**
@@ -187,51 +174,18 @@ class WebConsoleConnectionProxy {
   }
 
   /**
-   * The "navigate" event handlers. We redirect any message to the UI for displaying.
-   *
-   * @private
-   * @param object packet
-   *        The message received from the server.
-   */
-  _onTabNavigated(packet) {
-    // Some message might try to update while we are closing the toolbox.
-    if (!this.webConsoleUI) {
-      return;
-    }
-    this.webConsoleUI.handleTabNavigated(packet);
-  }
-
-  /**
-   * The "will-navigate" event handlers. We redirect any message to the UI for displaying.
-   *
-   * @private
-   * @param object packet
-   *        The message received from the server.
-   */
-  _onTabWillNavigate(packet) {
-    // Some message might try to update while we are closing the toolbox.
-    if (!this.webConsoleUI) {
-      return;
-    }
-    this.webConsoleUI.handleTabWillNavigate(packet);
-  }
-
-  /**
    * Disconnect the Web Console from the remote server.
    *
    * @return object
    *         A promise object that is resolved when disconnect completes.
    */
   disconnect() {
-    if (!this.client) {
+    if (!this.webConsoleFront) {
       return;
     }
 
     this._removeWebConsoleFrontEventListeners();
-    this.target.off("will-navigate", this._onTabWillNavigate);
-    this.target.off("navigate", this._onTabNavigated);
 
-    this.client = null;
     this.webConsoleFront = null;
   }
 }

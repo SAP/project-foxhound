@@ -4,9 +4,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// TODO: Bug 680289, implement gamepad haptics for Android.
+// TODO: Bug 1523355, implement gamepad lighindicator and touch for
+// Android.
+
 #include "mozilla/java/AndroidGamepadManagerNatives.h"
 #include "mozilla/java/GeckoAppShellWrappers.h"
+#include "mozilla/dom/GamepadHandle.h"
 #include "nsThreadUtils.h"
+
+using mozilla::dom::GamepadHandle;
 
 namespace mozilla {
 namespace dom {
@@ -16,40 +23,49 @@ class AndroidGamepadManager final
   AndroidGamepadManager() = delete;
 
  public:
-  static void OnGamepadChange(int32_t aID, bool aAdded) {
+  static jni::ByteArray::LocalRef NativeAddGamepad() {
+    RefPtr<GamepadPlatformService> service =
+        GamepadPlatformService::GetParentService();
+    MOZ_RELEASE_ASSERT(service);
+
+    const GamepadHandle gamepadHandle = service->AddGamepad(
+        "android", GamepadMappingType::Standard, GamepadHand::_empty,
+        kStandardGamepadButtons, kStandardGamepadAxes, 0, 0, 0);
+
+    return mozilla::jni::ByteArray::New(
+        reinterpret_cast<const int8_t*>(&gamepadHandle), sizeof(gamepadHandle));
+  }
+
+  static void NativeRemoveGamepad(jni::ByteArray::Param aGamepadHandleBytes) {
+    GamepadHandle handle = JNIByteArrayToGamepadHandle(aGamepadHandleBytes);
+
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
     if (!service) {
       return;
     }
 
-    if (aAdded) {
-      const int svc_id = service->AddGamepad(
-          "android", GamepadMappingType::Standard, GamepadHand::_empty,
-          kStandardGamepadButtons, kStandardGamepadAxes, 0, 0,
-          0);  // TODO: Bug 680289, implement gamepad haptics for Android.
-      // TODO: Bug 1523355, implement gamepad lighindicator and touch for
-      // Android.
-      java::AndroidGamepadManager::OnGamepadAdded(aID, svc_id);
-
-    } else {
-      service->RemoveGamepad(aID);
-    }
+    service->RemoveGamepad(handle);
   }
 
-  static void OnButtonChange(int32_t aID, int32_t aButton, bool aPressed,
-                             float aValue) {
+  static void OnButtonChange(jni::ByteArray::Param aGamepadHandleBytes,
+                             int32_t aButton, bool aPressed, float aValue) {
+    GamepadHandle handle = JNIByteArrayToGamepadHandle(aGamepadHandleBytes);
+
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
     if (!service) {
       return;
     }
 
-    service->NewButtonEvent(aID, aButton, aPressed, aValue);
+    service->NewButtonEvent(handle, aButton, aPressed, aValue);
   }
 
-  static void OnAxisChange(int32_t aID, jni::BooleanArray::Param aValid,
+  static void OnAxisChange(jni::ByteArray::Param aGamepadHandleBytes,
+                           jni::BooleanArray::Param aValid,
                            jni::FloatArray::Param aValues) {
+    GamepadHandle handle = JNIByteArrayToGamepadHandle(aGamepadHandleBytes);
+
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
     if (!service) {
@@ -62,9 +78,21 @@ class AndroidGamepadManager final
 
     for (size_t i = 0; i < values.Length(); i++) {
       if (valid[i]) {
-        service->NewAxisMoveEvent(aID, i, values[i]);
+        service->NewAxisMoveEvent(handle, i, values[i]);
       }
     }
+  }
+
+ private:
+  static GamepadHandle JNIByteArrayToGamepadHandle(
+      jni::ByteArray::Param aGamepadHandleBytes) {
+    MOZ_ASSERT(aGamepadHandleBytes->Length() == sizeof(GamepadHandle));
+
+    GamepadHandle gamepadHandle;
+    aGamepadHandleBytes->CopyTo(reinterpret_cast<int8_t*>(&gamepadHandle),
+                                sizeof(gamepadHandle));
+
+    return gamepadHandle;
   }
 };
 
@@ -79,9 +107,10 @@ void StopGamepadMonitoring() {
       java::GeckoAppShell::GetApplicationContext());
 }
 
-void SetGamepadLightIndicatorColor(uint32_t aControllerIdx,
-                                   uint32_t aLightColorIndex, uint8_t aRed,
-                                   uint8_t aGreen, uint8_t aBlue) {
+void SetGamepadLightIndicatorColor(const Tainted<GamepadHandle>& aGamepadHandle,
+                                   const Tainted<uint32_t>& aLightColorIndex,
+                                   const uint8_t& aRed, const uint8_t& aGreen,
+                                   const uint8_t& aBlue) {
   NS_WARNING("Android doesn't support gamepad light indicator.");
 }
 

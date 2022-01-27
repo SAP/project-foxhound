@@ -13,10 +13,16 @@ const SHAPE_SELECTORS = ["#polygon-transform", "#circle", "#ellipse", "#inset"];
 add_task(async function() {
   const env = await openInspectorForURL(TEST_URL);
   const helper = await getHighlighterHelperFor(HIGHLIGHTER_TYPE)(env);
-  const { testActor, inspector } = env;
+  const { highlighterTestFront, inspector } = env;
   const view = selectRuleView(inspector);
   const highlighters = view.highlighters;
-  const config = { inspector, view, highlighters, testActor, helper };
+  const config = {
+    inspector,
+    view,
+    highlighters,
+    highlighterTestFront,
+    helper,
+  };
 
   await testScale(config);
 });
@@ -34,7 +40,7 @@ async function teardown(config) {
 }
 
 async function testScale(config) {
-  const { testActor, helper, highlighters } = config;
+  const { helper, highlighters } = config;
   const options = { transformMode: true };
   const property = "clip-path";
 
@@ -55,7 +61,7 @@ async function testScale(config) {
       await mouse.down(x, y, selector);
       await mouse.move(x + dx, y + dy, selector);
       await mouse.up(x + dx, y + dy, selector);
-      await testActor.reflow();
+      await reflowContentPage();
       nw[0] += dx;
       nw[1] += dy;
     }
@@ -70,7 +76,7 @@ async function testScale(config) {
     await mouse.down(nw[0], nw[1], selector);
     await mouse.move(nw[0] + dx, nw[1] + dy, selector);
     await mouse.up(nw[0] + dx, nw[1] + dy, selector);
-    await testActor.reflow();
+    await reflowContentPage();
     await onShapeChangeApplied;
 
     const nwBB = await getBoundingBoxInPx({ selector, ...config });
@@ -86,7 +92,7 @@ async function testScale(config) {
     await mouse.down(nwBB.ne[0], nwBB.ne[1], selector);
     await mouse.move(nwBB.ne[0] - dx, nwBB.ne[1] + dy, selector);
     await mouse.up(nwBB.ne[0] - dx, nwBB.ne[1] + dy, selector);
-    await testActor.reflow();
+    await reflowContentPage();
     await onShapeChangeApplied;
 
     const neBB = await getBoundingBoxInPx({ selector, ...config });
@@ -106,7 +112,7 @@ async function testScale(config) {
     await mouse.down(neBB.sw[0], neBB.sw[1], selector);
     await mouse.move(neBB.sw[0] + dx, neBB.sw[1] - dy, selector);
     await mouse.up(neBB.sw[0] + dx, neBB.sw[1] - dy, selector);
-    await testActor.reflow();
+    await reflowContentPage();
     await onShapeChangeApplied;
 
     const swBB = await getBoundingBoxInPx({ selector, ...config });
@@ -126,7 +132,7 @@ async function testScale(config) {
     await mouse.down(swBB.se[0], swBB.se[1], selector);
     await mouse.move(swBB.se[0] - dx, swBB.se[1] - dy, selector);
     await mouse.up(swBB.se[0] - dx, swBB.se[1] - dy, selector);
-    await testActor.reflow();
+    await reflowContentPage();
     await onShapeChangeApplied;
 
     const seBB = await getBoundingBoxInPx({ selector, ...config });
@@ -144,20 +150,23 @@ async function testScale(config) {
 }
 
 async function getBoundingBoxInPx(config) {
-  const { testActor, selector, inspector, highlighters } = config;
-  const quads = await testActor.getAllAdjustedQuads(selector);
+  const { highlighterTestFront, selector, inspector } = config;
+  const quads = await getAllAdjustedQuadsForContentPageElement(selector);
   const { width, height } = quads.content[0].bounds;
   const highlightedNode = await getNodeFront(selector, inspector);
+  const highlighterFront = inspector.inspectorFront.getKnownHighlighter(
+    HIGHLIGHTER_TYPE
+  );
   const computedStyle = await highlightedNode.inspectorFront.pageStyle.getComputed(
     highlightedNode
   );
   const paddingTop = parseFloat(computedStyle["padding-top"].value);
   const paddingLeft = parseFloat(computedStyle["padding-left"].value);
   // path is always of form "Mx y Lx y Lx y Lx y Z", where x/y are numbers
-  const path = await testActor.getHighlighterNodeAttribute(
+  const path = await highlighterTestFront.getHighlighterNodeAttribute(
     "shapes-bounding-box",
     "d",
-    highlighters.highlighters[HIGHLIGHTER_TYPE]
+    highlighterFront
   );
   const coords = path
     .replace(/[MLZ]/g, "")

@@ -8,6 +8,7 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/dom/HTMLTrackElement.h"
@@ -30,8 +31,7 @@ mozilla::LazyLogModule gTextTrackLog("WebVTT");
   MOZ_LOG(gTextTrackLog, LogLevel::Verbose, \
           ("TextTrackManager=%p, " msg, this, ##__VA_ARGS__))
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_ISUPPORTS(TextTrackManager::ShutdownObserverProxy, nsIObserver);
 
@@ -875,5 +875,4 @@ void TextTrackManager::MaybeRunTimeMarchesOn() {
   TimeMarchesOn();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -51,6 +51,12 @@ class nsProfileLock
   nsresult Unlock(bool aFatalSignal = false);
 
   /**
+   * Checks, if the given file has a name that matches potential lock file
+   * names. It does not check, if it actually is the currently active lock.
+   */
+  static bool IsMaybeLockFile(nsIFile* aFile);
+
+  /**
    * Clean up any left over files in the directory.
    */
   nsresult Cleanup();
@@ -83,7 +89,8 @@ class nsProfileLock
   );
   static PRCList mPidLockList;
 
-  nsresult LockWithFcntl(nsIFile* aLockFile);
+  nsresult LockWithFcntl(nsIFile* aLockFile,
+                         nsIProfileUnlocker** aUnlocker = nullptr);
 
   /**
    * @param aHaveFcntlLock if true, we've already acquired an fcntl lock so this

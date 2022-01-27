@@ -8,9 +8,7 @@
 
 #include "mozilla/ServoBindings.h"
 
-using namespace mozilla::dom;
-
-namespace mozilla {
+namespace mozilla::dom {
 
 CSSNamespaceRule::~CSSNamespaceRule() = default;
 
@@ -25,6 +23,10 @@ void CSSNamespaceRule::List(FILE* out, int32_t aIndent) const {
 }
 #endif
 
+StyleCssRuleType CSSNamespaceRule::Type() const {
+  return StyleCssRuleType::Namespace;
+}
+
 nsAtom* CSSNamespaceRule::GetPrefix() const {
   return Servo_NamespaceRule_GetPrefix(mRawRule);
 }
@@ -34,12 +36,16 @@ void CSSNamespaceRule::GetURLSpec(nsString& aURLSpec) const {
   atom->ToString(aURLSpec);
 }
 
-void CSSNamespaceRule::GetCssText(nsAString& aCssText) const {
+void CSSNamespaceRule::GetCssText(nsACString& aCssText) const {
   Servo_NamespaceRule_GetCssText(mRawRule, &aCssText);
+}
+
+void CSSNamespaceRule::SetRawAfterClone(RefPtr<RawServoNamespaceRule> aRaw) {
+  mRawRule = std::move(aRaw);
 }
 
 size_t CSSNamespaceRule::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
   return aMallocSizeOf(this);
 }
 
-}  // namespace mozilla
+}  // namespace mozilla::dom

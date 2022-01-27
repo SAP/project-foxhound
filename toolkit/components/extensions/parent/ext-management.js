@@ -16,20 +16,17 @@ ChromeUtils.defineModuleGetter(
   "AddonManager",
   "resource://gre/modules/AddonManager.jsm"
 );
+
+// We can't use Services.prompt here at the moment, as tests need to mock
+// the prompt service. We could use sinon, but that didn't seem to work
+// with Android builds.
+// eslint-disable-next-line mozilla/use-services
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "promptService",
   "@mozilla.org/embedcomp/prompt-service;1",
   "nsIPromptService"
 );
-
-XPCOMUtils.defineLazyGetter(this, "GlobalManager", () => {
-  const { GlobalManager } = ChromeUtils.import(
-    "resource://gre/modules/Extension.jsm",
-    null
-  );
-  return GlobalManager;
-});
 
 var { ExtensionError } = ExtensionUtils;
 
@@ -121,7 +118,7 @@ class AddonListener extends ExtensionCommon.EventEmitter {
   }
 
   getExtensionInfo(addon) {
-    let ext = addon.isWebExtension && GlobalManager.extensionMap.get(addon.id);
+    let ext = WebExtensionPolicy.getByID(addon.id)?.extension;
     return getExtensionInfoForAddon(ext, addon);
   }
 
@@ -189,7 +186,7 @@ this.management = class extends ExtensionAPI {
             throw new ExtensionError("get not allowed for this addon");
           }
           // If the extension is enabled get it and use it for more data.
-          let ext = GlobalManager.extensionMap.get(addon.id);
+          let ext = WebExtensionPolicy.getByID(addon.id)?.extension;
           return getExtensionInfoForAddon(ext, addon);
         },
 
@@ -197,7 +194,7 @@ this.management = class extends ExtensionAPI {
           let addons = await AddonManager.getAddonsByTypes(allowedTypes);
           return addons.filter(checkAllowedAddon).map(addon => {
             // If the extension is enabled get it and use it for more data.
-            let ext = GlobalManager.extensionMap.get(addon.id);
+            let ext = WebExtensionPolicy.getByID(addon.id)?.extension;
             return getExtensionInfoForAddon(ext, addon);
           });
         },
@@ -245,9 +242,8 @@ this.management = class extends ExtensionAPI {
             }
             let title = _("uninstall.confirmation.title", extension.name);
             let buttonFlags =
-              promptService.BUTTON_POS_0 *
-                promptService.BUTTON_TITLE_IS_STRING +
-              promptService.BUTTON_POS_1 * promptService.BUTTON_TITLE_IS_STRING;
+              Ci.nsIPrompt.BUTTON_POS_0 * Ci.nsIPrompt.BUTTON_TITLE_IS_STRING +
+              Ci.nsIPrompt.BUTTON_POS_1 * Ci.nsIPrompt.BUTTON_TITLE_IS_STRING;
             let button0Title = _("uninstall.confirmation.button-0.label");
             let button1Title = _("uninstall.confirmation.button-1.label");
             let response = promptService.confirmEx(

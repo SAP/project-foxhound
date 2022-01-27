@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsDNSServiceDiscovery.h"
+#include "MainThreadUtils.h"
 #include "MDNSResponderOperator.h"
 #include "nsICancelable.h"
 #include "nsXULAppAPI.h"
@@ -136,7 +137,7 @@ nsDNSServiceDiscovery::StartDiscovery(const nsACString& aServiceType,
     return rv;
   }
 
-  mDiscoveryMap.Put(aListener, std::move(browserOp));
+  mDiscoveryMap.InsertOrUpdate(aListener, std::move(browserOp));
 
   req.forget(aRetVal);
 
@@ -180,7 +181,7 @@ nsDNSServiceDiscovery::RegisterService(nsIDNSServiceInfo* aServiceInfo,
     return rv;
   }
 
-  mRegisterMap.Put(aListener, std::move(registerOp));
+  mRegisterMap.InsertOrUpdate(aListener, std::move(registerOp));
 
   req.forget(aRetVal);
 

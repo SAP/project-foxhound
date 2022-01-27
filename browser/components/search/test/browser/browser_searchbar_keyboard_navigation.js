@@ -1,10 +1,6 @@
 // Tests that keyboard navigation in the search panel works as designed.
 
-const { SearchTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SearchTestUtils.jsm"
-);
 const searchPopup = document.getElementById("PopupSearchAutoComplete");
-const oneOffsContainer = searchPopup.searchOneOffsContainer;
 
 const kValues = ["foo1", "foo2", "foo3"];
 const kUserValue = "foo";
@@ -12,7 +8,9 @@ const kUserValue = "foo";
 function getOpenSearchItems() {
   let os = [];
 
-  let addEngineList = oneOffsContainer.querySelector(".search-add-engines");
+  let addEngineList = searchPopup.searchOneOffsContainer.querySelector(
+    ".search-add-engines"
+  );
   for (
     let item = addEngineList.firstElementChild;
     item;
@@ -49,15 +47,15 @@ async function checkHeader(engine) {
   );
 }
 
-add_task(async function init() {
+add_task(async function setup() {
   searchbar = await gCUITestUtils.addSearchBar();
-  registerCleanupFunction(() => {
-    gCUITestUtils.removeSearchBar();
-  });
   textbox = searchbar.textbox;
 
-  await promiseNewEngine("testEngine.xml");
-
+  let defaultEngine = await Services.search.getDefault();
+  let engine = await SearchTestUtils.promiseNewSearchEngine(
+    getRootDirectory(gTestPath) + "testEngine.xml"
+  );
+  await Services.search.setDefault(engine);
   // First cleanup the form history in case other tests left things there.
   await new Promise((resolve, reject) => {
     info("cleanup the search history");
@@ -79,6 +77,11 @@ add_task(async function init() {
   });
 
   textbox.value = kUserValue;
+
+  registerCleanupFunction(async () => {
+    await Services.search.setDefault(defaultEngine);
+    gCUITestUtils.removeSearchBar();
+  });
 });
 
 add_task(async function test_arrows() {
@@ -578,8 +581,10 @@ add_task(async function test_open_search() {
   searchbar.focus();
   await promise;
 
-  let engines = getOpenSearchItems();
-  is(engines.length, 2, "the opensearch.html page exposes 2 engines");
+  let engines = searchPopup.querySelectorAll(
+    ".searchbar-engine-one-off-add-engine"
+  );
+  is(engines.length, 3, "the opensearch.html page exposes 3 engines");
 
   // Check that there's initially no selection.
   is(searchPopup.selectedIndex, -1, "no suggestion should be selected");
@@ -602,16 +607,17 @@ add_task(async function test_open_search() {
       "the engine #" + i + " should be selected"
     );
     ok(
-      selectedButton.classList.contains("addengine-item"),
-      "the button is themed as an engine item"
+      selectedButton.classList.contains("searchbar-engine-one-off-add-engine"),
+      "the button is themed as an add engine"
     );
   }
 
   // Pressing up again should select the last one-off button.
   EventUtils.synthesizeKey("KEY_ArrowUp");
+  const allOneOffs = getOneOffs();
   is(
     textbox.selectedButton,
-    getOneOffs().pop(),
+    allOneOffs[allOneOffs.length - engines.length - 1],
     "the last one-off button should be selected"
   );
 

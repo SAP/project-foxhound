@@ -31,9 +31,9 @@ class XMLHttpRequestStringBuffer final {
 
   uint32_t UnsafeLength() const { return mData.Length(); }
 
-  mozilla::BulkWriteHandle<char16_t> UnsafeBulkWrite(uint32_t aCapacity,
-                                                     nsresult& aRv) {
-    return mData.BulkWrite(aCapacity, UnsafeLength(), false, aRv);
+  mozilla::Result<mozilla::BulkWriteHandle<char16_t>, nsresult> UnsafeBulkWrite(
+      uint32_t aCapacity) {
+    return mData.BulkWrite(aCapacity, UnsafeLength(), false);
   }
 
   void Append(const nsAString& aString) {
@@ -49,7 +49,7 @@ class XMLHttpRequestStringBuffer final {
     mData.Taint().concat(aTaint, aIndex);
   }
 
-  MOZ_MUST_USE bool GetAsString(nsAString& aString) {
+  [[nodiscard]] bool GetAsString(nsAString& aString) {
     MutexAutoLock lock(mMutex);
     return aString.Assign(mData, mozilla::fallible);
   }
@@ -58,7 +58,7 @@ class XMLHttpRequestStringBuffer final {
     return mData.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
   }
 
-  MOZ_MUST_USE bool GetAsString(DOMString& aString, uint32_t aLength) {
+  [[nodiscard]] bool GetAsString(DOMString& aString, uint32_t aLength) {
     MutexAutoLock lock(mMutex);
     MOZ_ASSERT(aLength <= mData.Length());
 
@@ -175,13 +175,15 @@ XMLHttpRequestStringWriterHelper::XMLHttpRequestStringWriterHelper(
     XMLHttpRequestString& aString)
     : mBuffer(aString.mBuffer), mLock(aString.mBuffer->mMutex) {}
 
+XMLHttpRequestStringWriterHelper::~XMLHttpRequestStringWriterHelper() = default;
+
 uint32_t XMLHttpRequestStringWriterHelper::Length() const {
   return mBuffer->UnsafeLength();
 }
 
-mozilla::BulkWriteHandle<char16_t> XMLHttpRequestStringWriterHelper::BulkWrite(
-    uint32_t aCapacity, nsresult& aRv) {
-  return mBuffer->UnsafeBulkWrite(aCapacity, aRv);
+mozilla::Result<mozilla::BulkWriteHandle<char16_t>, nsresult>
+XMLHttpRequestStringWriterHelper::BulkWrite(uint32_t aCapacity) {
+  return mBuffer->UnsafeBulkWrite(aCapacity);
 }
 
 void
@@ -197,6 +199,9 @@ XMLHttpRequestStringSnapshotReaderHelper::
     XMLHttpRequestStringSnapshotReaderHelper(
         XMLHttpRequestStringSnapshot& aSnapshot)
     : mBuffer(aSnapshot.mBuffer), mLock(aSnapshot.mBuffer->mMutex) {}
+
+XMLHttpRequestStringSnapshotReaderHelper::
+    ~XMLHttpRequestStringSnapshotReaderHelper() = default;
 
 const char16_t* XMLHttpRequestStringSnapshotReaderHelper::Buffer() const {
   return mBuffer->UnsafeData().BeginReading();

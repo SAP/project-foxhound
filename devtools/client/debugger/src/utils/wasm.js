@@ -2,20 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-/* @flow */
+/*       */
 
-import { BinaryReader } from "wasmparser/dist/WasmParser";
-import { WasmDisassembler, NameSectionReader } from "wasmparser/dist/WasmDis";
+import { BinaryReader } from "wasmparser/dist/cjs/WasmParser";
+import {
+  WasmDisassembler,
+  NameSectionReader,
+} from "wasmparser/dist/cjs/WasmDis";
 
-import type { SourceId, WasmSourceContent } from "../types";
-type WasmState = {
-  lines: Array<number>,
-  offsets: Array<number>,
-};
+var wasmStates = Object.create(null);
 
-var wasmStates: { [string]: WasmState } = (Object.create(null): any);
-
-function maybeWasmSectionNameResolver(data: Uint8Array) {
+function maybeWasmSectionNameResolver(data) {
   try {
     const parser = new BinaryReader();
     parser.setData(data.buffer, 0, data.length);
@@ -32,19 +29,28 @@ function maybeWasmSectionNameResolver(data: Uint8Array) {
  * @memberof utils/wasm
  * @static
  */
-export function getWasmText(sourceId: SourceId, data: Uint8Array) {
+export function getWasmText(sourceId, data) {
   const nameResolver = maybeWasmSectionNameResolver(data);
   const parser = new BinaryReader();
+  let result;
   parser.setData(data.buffer, 0, data.length);
   const dis = new WasmDisassembler();
   if (nameResolver) {
     dis.nameResolver = nameResolver;
   }
   dis.addOffsets = true;
-  const done = dis.disassembleChunk(parser);
-  let result = dis.getResult();
-  if (result.lines.length === 0) {
-    result = { lines: ["No luck with wast conversion"], offsets: [0], done };
+  try {
+    const done = dis.disassembleChunk(parser);
+    result = dis.getResult();
+    if (result.lines.length === 0) {
+      result = { lines: ["No luck with wast conversion"], offsets: [0], done };
+    }
+  } catch (e) {
+    result = {
+      lines: [`Error occured during wast conversion : ${e.message}`],
+      offsets: [0],
+      done: null,
+    };
   }
 
   const { offsets } = result;
@@ -62,7 +68,7 @@ export function getWasmText(sourceId: SourceId, data: Uint8Array) {
  * @memberof utils/wasm
  * @static
  */
-export function getWasmLineNumberFormatter(sourceId: SourceId) {
+export function getWasmLineNumberFormatter(sourceId) {
   const codeOf0 = 48,
     codeOfA = 65;
   const buffer = [
@@ -76,7 +82,7 @@ export function getWasmLineNumberFormatter(sourceId: SourceId) {
     codeOf0,
   ];
   let last0 = 7;
-  return function(number: number) {
+  return function(number) {
     const offset = lineToWasmOffset(sourceId, number - 1);
     if (offset == undefined) {
       return "";
@@ -98,7 +104,7 @@ export function getWasmLineNumberFormatter(sourceId: SourceId) {
  * @memberof utils/wasm
  * @static
  */
-export function isWasm(sourceId: SourceId) {
+export function isWasm(sourceId) {
   return sourceId in wasmStates;
 }
 
@@ -106,7 +112,7 @@ export function isWasm(sourceId: SourceId) {
  * @memberof utils/wasm
  * @static
  */
-export function lineToWasmOffset(sourceId: SourceId, number: number): ?number {
+export function lineToWasmOffset(sourceId, number) {
   const wasmState = wasmStates[sourceId];
   if (!wasmState) {
     return undefined;
@@ -122,7 +128,7 @@ export function lineToWasmOffset(sourceId: SourceId, number: number): ?number {
  * @memberof utils/wasm
  * @static
  */
-export function wasmOffsetToLine(sourceId: SourceId, offset: number): ?number {
+export function wasmOffsetToLine(sourceId, offset) {
   const wasmState = wasmStates[sourceId];
   if (!wasmState) {
     return undefined;
@@ -135,14 +141,11 @@ export function wasmOffsetToLine(sourceId: SourceId, offset: number): ?number {
  * @static
  */
 export function clearWasmStates() {
-  wasmStates = (Object.create(null): any);
+  wasmStates = Object.create(null);
 }
 
-const wasmLines: WeakMap<WasmSourceContent, string[]> = new WeakMap();
-export function renderWasmText(
-  sourceId: SourceId,
-  content: WasmSourceContent
-): string[] {
+const wasmLines = new WeakMap();
+export function renderWasmText(sourceId, content) {
   if (wasmLines.has(content)) {
     return wasmLines.get(content) || [];
   }

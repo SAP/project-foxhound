@@ -13,13 +13,13 @@ include PURLClassifierInfo;
 
 include "mozilla/net/NeckoMessageUtils.h";
 
-using nsIHttpChannel::FlashPluginState from "mozilla/net/NeckoMessageUtils.h";
+using nsIHttpChannel::FlashPluginState from "nsIHttpChannel.h";
 
 namespace mozilla {
 namespace net {
 
 //-------------------------------------------------------------------
-async refcounted protocol PHttpBackgroundChannel
+[RefCounted] async protocol PHttpBackgroundChannel
 {
   manager PBackground;
 
@@ -27,7 +27,8 @@ child:
   async OnStartRequest(nsHttpResponseHead  responseHead,
                        bool                useResponseHead,
                        nsHttpHeaderArray   requestHeaders,
-                       HttpChannelOnStartRequestArgs args);
+                       HttpChannelOnStartRequestArgs args,
+                       HttpChannelAltDataStream altData);
 
   // Combines a single OnDataAvailable and its associated OnProgress &
   // OnStatus calls into one IPDL message
@@ -35,7 +36,7 @@ child:
                            nsresult  transportStatus,
                            uint64_t  offset,
                            uint32_t  count,
-                           nsCString data,
+                           nsDependentCSubstring data,
                            bool dataFromSocketProcess);
 
 
@@ -43,7 +44,10 @@ child:
                       ResourceTimingStructArgs timing,
                       TimeStamp lastActiveTabOptimization,
                       nsHttpHeaderArray responseTrailers,
-                      ConsoleReportCollected[] consoleReport);
+                      ConsoleReportCollected[] consoleReport,
+                      bool fromSocketProcess);
+
+  async OnConsoleReport(ConsoleReportCollected[] consoleReport);
 
   async OnProgress(int64_t progress, int64_t progressMax);
 
@@ -53,13 +57,6 @@ child:
   // disconnected our listeners, since we might not have on the last
   // OnStopRequest.
   async OnAfterLastPart(nsresult aStatus);
-
-  // Parent has been suspended for diversion; no more events to be enqueued.
-  async FlushedForDiversion();
-
-  // Child should resume processing the ChannelEventQueue, i.e. diverting any
-  // OnDataAvailable and OnStopRequest messages in the queue back to the parent.
-  async DivertMessages();
 
   // Tell the child that the resource being loaded has been classified.
   async NotifyClassificationFlags(uint32_t aClassificationFlags, bool aIsThirdParty);

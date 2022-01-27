@@ -22,7 +22,9 @@ async function cleanup(engine, server) {
   await engine.wipeClient();
   Svc.Prefs.resetBranch("");
   Service.recordManager.clearCache();
-  await promiseStopServer(server);
+  if (server) {
+    await promiseStopServer(server);
+  }
 }
 
 add_task(async function setup() {

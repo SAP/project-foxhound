@@ -11,6 +11,7 @@
 #include "MediaTrackListener.h"
 #include "MediaTrackConstraints.h"
 #include "mozilla/dom/File.h"
+#include "mozilla/MediaManager.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
@@ -97,8 +98,11 @@ uint32_t MediaEngineDefaultVideoSource::GetBestFitnessDistance(
   AssertIsOnOwningThread();
 
   uint64_t distance = 0;
+
 #ifdef MOZ_WEBRTC
-  for (const auto* cs : aConstraintSets) {
+  // distance is read from first entry only
+  if (aConstraintSets.Length() >= 1) {
+    const auto* cs = aConstraintSets.ElementAt(0);
     Maybe<nsString> facingMode = Nothing();
     distance +=
         MediaConstraintsHelper::FitnessDistance(facingMode, cs->mFacingMode);
@@ -112,10 +116,9 @@ uint32_t MediaEngineDefaultVideoSource::GetBestFitnessDistance(
         cs->mHeight.mMin > VIDEO_HEIGHT_MAX) {
       distance += UINT32_MAX;
     }
-
-    break;  // distance is read from first entry only
   }
 #endif
+
   return uint32_t(std::min(distance, uint64_t(UINT32_MAX)));
 }
 
@@ -220,13 +223,14 @@ static void ReleaseFrame(layers::PlanarYCbCrData& aData) {
 }
 
 void MediaEngineDefaultVideoSource::SetTrack(
-    const RefPtr<SourceMediaTrack>& aTrack, const PrincipalHandle& aPrincipal) {
+    const RefPtr<MediaTrack>& aTrack, const PrincipalHandle& aPrincipal) {
   AssertIsOnOwningThread();
 
   MOZ_ASSERT(mState == kAllocated);
   MOZ_ASSERT(!mTrack);
+  MOZ_ASSERT(aTrack->AsSourceTrack());
 
-  mTrack = aTrack;
+  mTrack = aTrack->AsSourceTrack();
   mPrincipalHandle = aPrincipal;
 }
 
@@ -242,7 +246,7 @@ nsresult MediaEngineDefaultVideoSource::Start() {
   }
 
   if (!mImageContainer) {
-    mImageContainer = layers::LayerManager::CreateImageContainer(
+    mImageContainer = MakeAndAddRef<layers::ImageContainer>(
         layers::ImageContainer::ASYNCHRONOUS);
   }
 
@@ -358,8 +362,8 @@ class AudioSourcePullListener : public MediaTrackListener {
                           uint32_t aFrequency)
       : mTrack(std::move(aTrack)),
         mPrincipalHandle(aPrincipalHandle),
-        mSineGenerator(
-            MakeUnique<SineWaveGenerator>(mTrack->mSampleRate, aFrequency)) {
+        mSineGenerator(MakeUnique<SineWaveGenerator<int16_t>>(
+            mTrack->mSampleRate, aFrequency)) {
     MOZ_COUNT_CTOR(AudioSourcePullListener);
   }
 
@@ -370,7 +374,7 @@ class AudioSourcePullListener : public MediaTrackListener {
 
   const RefPtr<SourceMediaTrack> mTrack;
   const PrincipalHandle mPrincipalHandle;
-  const UniquePtr<SineWaveGenerator> mSineGenerator;
+  const UniquePtr<SineWaveGenerator<int16_t>> mSineGenerator;
 };
 
 /**
@@ -430,18 +434,23 @@ nsresult MediaEngineDefaultAudioSource::Deallocate() {
 }
 
 void MediaEngineDefaultAudioSource::SetTrack(
-    const RefPtr<SourceMediaTrack>& aTrack, const PrincipalHandle& aPrincipal) {
+    const RefPtr<MediaTrack>& aTrack, const PrincipalHandle& aPrincipal) {
   AssertIsOnOwningThread();
 
   MOZ_ASSERT(mState == kAllocated);
   MOZ_ASSERT(!mTrack);
+  MOZ_ASSERT(aTrack->AsSourceTrack());
 
-  mTrack = aTrack;
+  mTrack = aTrack->AsSourceTrack();
   mPrincipalHandle = aPrincipal;
 }
 
 nsresult MediaEngineDefaultAudioSource::Start() {
   AssertIsOnOwningThread();
+
+  if (mState == kStarted) {
+    return NS_OK;
+  }
 
   MOZ_ASSERT(mState == kAllocated || mState == kStopped);
   MOZ_ASSERT(mTrack, "SetTrack() must happen before Start()");
@@ -494,7 +503,8 @@ nsresult MediaEngineDefaultAudioSource::Reconfigure(
 void AudioSourcePullListener::NotifyPull(MediaTrackGraph* aGraph,
                                          TrackTime aEndOfAppendedData,
                                          TrackTime aDesiredTime) {
-  TRACE_COMMENT("SourceMediaTrack %p", mTrack.get());
+  TRACE_COMMENT("SourceMediaTrack::NotifyPull", "SourceMediaTrack %p",
+                mTrack.get());
   AudioSegment segment;
   TrackTicks delta = aDesiredTime - aEndOfAppendedData;
   CheckedInt<size_t> bufferSize(sizeof(int16_t));
@@ -509,9 +519,13 @@ void AudioSourcePullListener::NotifyPull(MediaTrackGraph* aGraph,
 }
 
 void MediaEngineDefault::EnumerateDevices(
-    uint64_t aWindowId, MediaSourceEnum aMediaSource, MediaSinkEnum aMediaSink,
+    MediaSourceEnum aMediaSource, MediaSinkEnum aMediaSink,
     nsTArray<RefPtr<MediaDevice>>* aDevices) {
   AssertIsOnOwningThread();
+
+  if (aMediaSink == MediaSinkEnum::Speaker) {
+    NS_WARNING("No default implementation for MediaSinkEnum::Speaker");
+  }
 
   switch (aMediaSource) {
     case MediaSourceEnum::Camera: {
@@ -534,10 +548,6 @@ void MediaEngineDefault::EnumerateDevices(
     default:
       MOZ_ASSERT_UNREACHABLE("Unsupported source type");
       return;
-  }
-
-  if (aMediaSink == MediaSinkEnum::Speaker) {
-    NS_WARNING("No default implementation for MediaSinkEnum::Speaker");
   }
 }
 

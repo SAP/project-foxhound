@@ -10,8 +10,7 @@
 #include "AudioNodeTrack.h"
 #include "AudioContext.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(AudioParam)
 
@@ -32,8 +31,9 @@ NS_IMPL_CYCLE_COLLECTING_NATIVE_RELEASE(AudioParam)
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(AudioParam, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(AudioParam, Release)
 
-AudioParam::AudioParam(AudioNode* aNode, uint32_t aIndex, const char16_t* aName,
-                       float aDefaultValue, float aMinValue, float aMaxValue)
+AudioParam::AudioParam(AudioNode* aNode, uint32_t aIndex,
+                       const nsAString& aName, float aDefaultValue,
+                       float aMinValue, float aMaxValue)
     : AudioParamTimeline(aDefaultValue),
       mNode(aNode),
       mName(aName),
@@ -171,5 +171,4 @@ float AudioParamTimeline::AudioNodeInputValue(size_t aCounter) const {
   return audioNodeInputValue;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

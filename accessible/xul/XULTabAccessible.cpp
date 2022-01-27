@@ -29,7 +29,7 @@ XULTabAccessible::XULTabAccessible(nsIContent* aContent, DocAccessible* aDoc)
     : HyperTextAccessibleWrap(aContent, aDoc) {}
 
 ////////////////////////////////////////////////////////////////////////////////
-// XULTabAccessible: Accessible
+// XULTabAccessible: LocalAccessible
 
 uint8_t XULTabAccessible::ActionCount() const { return 1; }
 
@@ -50,7 +50,7 @@ bool XULTabAccessible::DoAction(uint8_t index) const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// XULTabAccessible: Accessible
+// XULTabAccessible: LocalAccessible
 
 role XULTabAccessible::NativeRole() const { return roles::PAGETAB; }
 
@@ -65,19 +65,21 @@ uint64_t XULTabAccessible::NativeState() const {
       Elm()->AsXULSelectControlItem();
   if (tab) {
     bool selected = false;
-    if (NS_SUCCEEDED(tab->GetSelected(&selected)) && selected)
+    if (NS_SUCCEEDED(tab->GetSelected(&selected)) && selected) {
       state |= states::SELECTED;
+    }
 
     if (mContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::pinned,
-                                           nsGkAtoms::_true, eCaseMatters))
+                                           nsGkAtoms::_true, eCaseMatters)) {
       state |= states::PINNED;
+    }
   }
 
   return state;
 }
 
 uint64_t XULTabAccessible::NativeInteractiveState() const {
-  uint64_t state = Accessible::NativeInteractiveState();
+  uint64_t state = LocalAccessible::NativeInteractiveState();
   return (state & states::UNAVAILABLE) ? state : state | states::SELECTABLE;
 }
 
@@ -87,7 +89,7 @@ Relation XULTabAccessible::RelationByType(RelationType aType) const {
 
   // Expose 'LABEL_FOR' relation on tab accessible for tabpanel accessible.
   ErrorResult rv;
-  nsIContent* parent = mContent->AsElement()->Closest(u"tabs"_ns, rv);
+  nsIContent* parent = mContent->AsElement()->Closest("tabs"_ns, rv);
   if (!parent) return rel;
 
   nsCOMPtr<nsIDOMXULRelatedElement> tabsElm =
@@ -148,7 +150,7 @@ void XULTabsAccessible::ApplyARIAState(uint64_t* aState) const {
 //  aria-selected by the a11y engine and we still want to be able to set the
 // primary selected item according to XUL.
 
-void XULTabsAccessible::SelectedItems(nsTArray<Accessible*>* aItems) {
+void XULTabsAccessible::SelectedItems(nsTArray<LocalAccessible*>* aItems) {
   if (nsAccUtils::IsARIAMultiSelectable(this)) {
     AccessibleWrap::SelectedItems(aItems);
   } else {
@@ -156,7 +158,7 @@ void XULTabsAccessible::SelectedItems(nsTArray<Accessible*>* aItems) {
   }
 }
 
-Accessible* XULTabsAccessible::GetSelectedItem(uint32_t aIndex) {
+LocalAccessible* XULTabsAccessible::GetSelectedItem(uint32_t aIndex) {
   if (nsAccUtils::IsARIAMultiSelectable(this)) {
     return AccessibleWrap::GetSelectedItem(aIndex);
   }

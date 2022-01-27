@@ -11,86 +11,73 @@
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CycleCollectedJSContext.h"  // for MicroTaskRunnable
-#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/CustomElementRegistryBinding.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
-#include "mozilla/dom/WebComponentsBinding.h"
+#include "mozilla/dom/ElementInternals.h"
+#include "mozilla/dom/HTMLFormElement.h"
+#include "mozilla/RefPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsGenericHTMLElement.h"
 #include "nsWrapperCache.h"
-#include "nsContentUtils.h"
+#include "nsTHashSet.h"
 
 namespace mozilla {
+class ErrorResult;
+
 namespace dom {
 
 struct CustomElementData;
 struct ElementDefinitionOptions;
 class CallbackFunction;
+class CustomElementCallback;
 class CustomElementReaction;
 class DocGroup;
 class Promise;
 
-struct LifecycleCallbackArgs {
-  nsString name;
-  nsString oldValue;
-  nsString newValue;
-  nsString namespaceURI;
-
-  size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const;
+enum class ElementCallbackType {
+  eConnected,
+  eDisconnected,
+  eAdopted,
+  eAttributeChanged,
+  eFormAssociated,
+  eFormReset,
+  eFormDisabled,
+  eGetCustomInterface
 };
 
-struct LifecycleAdoptedCallbackArgs {
+struct LifecycleCallbackArgs {
+  // Used by the attribute changed callback.
+  nsString mName;
+  nsString mOldValue;
+  nsString mNewValue;
+  nsString mNamespaceURI;
+
+  // Used by the adopted callback.
   RefPtr<Document> mOldDocument;
   RefPtr<Document> mNewDocument;
-};
 
-class CustomElementCallback {
- public:
-  CustomElementCallback(Element* aThisObject,
-                        Document::ElementCallbackType aCallbackType,
-                        CallbackFunction* aCallback);
-  void Traverse(nsCycleCollectionTraversalCallback& aCb) const;
-  size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
-  void Call();
-  void SetArgs(LifecycleCallbackArgs& aArgs) {
-    MOZ_ASSERT(mType == Document::eAttributeChanged,
-               "Arguments are only used by attribute changed callback.");
-    mArgs = aArgs;
-  }
+  // Used by the form associated callback.
+  RefPtr<HTMLFormElement> mForm;
 
-  void SetAdoptedCallbackArgs(
-      LifecycleAdoptedCallbackArgs& aAdoptedCallbackArgs) {
-    MOZ_ASSERT(mType == Document::eAdopted,
-               "Arguments are only used by adopted callback.");
-    mAdoptedCallbackArgs = aAdoptedCallbackArgs;
-  }
+  // Used by the form disabled callback.
+  bool mDisabled;
 
- private:
-  // The this value to use for invocation of the callback.
-  RefPtr<Element> mThisObject;
-  RefPtr<CallbackFunction> mCallback;
-  // The type of callback (eCreated, eAttached, etc.)
-  Document::ElementCallbackType mType;
-  // Arguments to be passed to the callback,
-  // used by the attribute changed callback.
-  LifecycleCallbackArgs mArgs;
-  LifecycleAdoptedCallbackArgs mAdoptedCallbackArgs;
+  size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const;
 };
 
 // Each custom element has an associated callback queue and an element is
 // being created flag.
 struct CustomElementData {
-  NS_INLINE_DECL_REFCOUNTING(CustomElementData)
-
   // https://dom.spec.whatwg.org/#concept-element-custom-element-state
   // CustomElementData is only created on the element which is a custom element
   // or an upgrade candidate, so the state of an element without
   // CustomElementData is "uncustomized".
-  enum class State { eUndefined, eFailed, eCustom };
+  enum class State { eUndefined, eFailed, eCustom, ePrecustomized };
 
   explicit CustomElementData(nsAtom* aType);
   CustomElementData(nsAtom* aType, State aState);
+  ~CustomElementData() = default;
 
   // Custom element state as described in the custom element spec.
   State mState;
@@ -108,6 +95,8 @@ struct CustomElementData {
   void AttachedInternals();
   bool HasAttachedInternals() const { return mIsAttachedInternals; }
 
+  bool IsFormAssociated() const;
+
   void Traverse(nsCycleCollectionTraversalCallback& aCb) const;
   void Unlink();
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
@@ -118,13 +107,21 @@ struct CustomElementData {
     return aElement->NodeInfo()->NameAtom() == mType ? nullptr : mType.get();
   }
 
- private:
-  virtual ~CustomElementData() = default;
+  ElementInternals* GetElementInternals() const { return mElementInternals; }
 
+  ElementInternals* GetOrCreateElementInternals(HTMLElement* aTarget) {
+    if (!mElementInternals) {
+      mElementInternals = MakeAndAddRef<ElementInternals>(aTarget);
+    }
+    return mElementInternals;
+  }
+
+ private:
   // Custom element type, for <button is="x-button"> or <x-button>
   // this would be x-button.
   RefPtr<nsAtom> mType;
   RefPtr<CustomElementDefinition> mCustomElementDefinition;
+  RefPtr<ElementInternals> mElementInternals;
   bool mIsAttachedInternals = false;
 };
 
@@ -141,7 +138,8 @@ struct CustomElementDefinition {
                           CustomElementConstructor* aConstructor,
                           nsTArray<RefPtr<nsAtom>>&& aObservedAttributes,
                           UniquePtr<LifecycleCallbacks>&& aCallbacks,
-                          bool aDisableInternals, bool aDisableShadow);
+                          bool aFormAssociated, bool aDisableInternals,
+                          bool aDisableShadow);
 
   // The type (name) for this custom element, for <button is="x-foo"> or <x-foo>
   // this would be x-foo.
@@ -161,6 +159,10 @@ struct CustomElementDefinition {
 
   // The lifecycle callbacks to call for this custom element.
   UniquePtr<LifecycleCallbacks> mCallbacks;
+
+  // If this is true, user agent treats elements associated to this custom
+  // element definition as form-associated custom elements.
+  bool mFormAssociated = false;
 
   // Determine whether to allow to attachInternals() for this custom element.
   bool mDisableInternals = false;
@@ -291,6 +293,13 @@ class CustomElementReactionsStack {
     MOZ_ASSERT_IF(!mRecursionDepth, mReactionsStack.IsEmpty());
   }
 
+  bool IsElementQueuePushedForCurrentRecursionDepth() {
+    MOZ_ASSERT_IF(mIsElementQueuePushedForCurrentRecursionDepth,
+                  !mReactionsStack.IsEmpty() &&
+                      !mReactionsStack.LastElement()->IsEmpty());
+    return mIsElementQueuePushedForCurrentRecursionDepth;
+  }
+
  private:
   ~CustomElementReactionsStack() = default;
   ;
@@ -393,11 +402,10 @@ class CustomElementRegistry final : public nsISupports, public nsWrapperCache {
   CustomElementDefinition* LookupCustomElementDefinition(
       JSContext* aCx, JSObject* aConstructor) const;
 
-  static void EnqueueLifecycleCallback(
-      Document::ElementCallbackType aType, Element* aCustomElement,
-      LifecycleCallbackArgs* aArgs,
-      LifecycleAdoptedCallbackArgs* aAdoptedCallbackArgs,
-      CustomElementDefinition* aDefinition);
+  static void EnqueueLifecycleCallback(ElementCallbackType aType,
+                                       Element* aCustomElement,
+                                       const LifecycleCallbackArgs& aArgs,
+                                       CustomElementDefinition* aDefinition);
 
   /**
    * Upgrade an element.
@@ -453,7 +461,7 @@ class CustomElementRegistry final : public nsISupports, public nsWrapperCache {
       typeName = aElement->NodeInfo()->NameAtom();
     }
 
-    nsTHashtable<nsRefPtrHashKey<nsIWeakReference>>* elements =
+    nsTHashSet<RefPtr<nsIWeakReference>>* elements =
         mElementCreationCallbacksUpgradeCandidatesMap.Get(typeName);
 
     // If there isn't a table, there won't be a definition added by the
@@ -463,7 +471,7 @@ class CustomElementRegistry final : public nsISupports, public nsWrapperCache {
     }
 
     nsWeakPtr elem = do_GetWeakReference(aElement);
-    elements->PutEntry(elem);
+    elements->Insert(elem);
   }
 
   void TraceDefinitions(JSTracer* aTrc);
@@ -475,12 +483,6 @@ class CustomElementRegistry final : public nsISupports, public nsWrapperCache {
                            const nsString& aName,
                            nsTArray<RefPtr<nsAtom>>& aArray, ErrorResult& aRv);
 
-  static UniquePtr<CustomElementCallback> CreateCustomElementCallback(
-      Document::ElementCallbackType aType, Element* aCustomElement,
-      LifecycleCallbackArgs* aArgs,
-      LifecycleAdoptedCallbackArgs* aAdoptedCallbackArgs,
-      CustomElementDefinition* aDefinition);
-
   void UpgradeCandidates(nsAtom* aKey, CustomElementDefinition* aDefinition,
                          ErrorResult& aRv);
 
@@ -490,7 +492,7 @@ class CustomElementRegistry final : public nsISupports, public nsWrapperCache {
                             CustomElementCreationCallback>
       ElementCreationCallbackMap;
   typedef nsClassHashtable<nsRefPtrHashKey<nsAtom>,
-                           nsTHashtable<nsRefPtrHashKey<nsIWeakReference>>>
+                           nsTHashSet<RefPtr<nsIWeakReference>>>
       CandidateMap;
   typedef JS::GCHashMap<JS::Heap<JSObject*>, RefPtr<nsAtom>,
                         js::MovableCellHasher<JS::Heap<JSObject*>>,
@@ -531,21 +533,6 @@ class CustomElementRegistry final : public nsISupports, public nsWrapperCache {
   bool mIsCustomDefinitionRunning;
 
  private:
-  class MOZ_RAII AutoSetRunningFlag final {
-   public:
-    explicit AutoSetRunningFlag(CustomElementRegistry* aRegistry)
-        : mRegistry(aRegistry) {
-      MOZ_ASSERT(!mRegistry->mIsCustomDefinitionRunning,
-                 "IsCustomDefinitionRunning flag should be initially false");
-      mRegistry->mIsCustomDefinitionRunning = true;
-    }
-
-    ~AutoSetRunningFlag() { mRegistry->mIsCustomDefinitionRunning = false; }
-
-   private:
-    CustomElementRegistry* mRegistry;
-  };
-
   int32_t InferNamespace(JSContext* aCx, JS::Handle<JSObject*> constructor);
 
  public:

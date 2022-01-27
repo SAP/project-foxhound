@@ -12,6 +12,7 @@ add_task(async function set_simplify_and_reader_pref() {
   // Ensure we have the simplify page preference set
   await SpecialPowers.pushPrefEnv({
     set: [
+      ["print.tab_modal.enabled", false],
       ["print.use_simplify_page", true],
       ["reader.parse-on-load.enabled", true],
     ],
@@ -42,10 +43,7 @@ add_task(async function switch_print_preview_browsers() {
 
   // Enter print preview
   let defaultPPBrowser = PrintPreviewListener.getPrintPreviewBrowser();
-  let defaultPPEntered = BrowserTestUtils.waitForMessage(
-    defaultPPBrowser.messageManager,
-    "Printing:Preview:Entered"
-  );
+  let defaultPPEntered = PrintHelper.waitForOldPrintPreview(defaultPPBrowser);
   document.getElementById("cmd_printPreview").doCommand();
   await defaultPPEntered;
 
@@ -56,9 +54,8 @@ add_task(async function switch_print_preview_browsers() {
 
   // Here we call simplified mode
   let simplifiedPPBrowser = PrintPreviewListener.getSimplifiedPrintPreviewBrowser();
-  let simplifiedPPEntered = BrowserTestUtils.waitForMessage(
-    simplifiedPPBrowser.messageManager,
-    "Printing:Preview:Entered"
+  let simplifiedPPEntered = PrintHelper.waitForOldPrintPreview(
+    simplifiedPPBrowser
   );
   let printPreviewToolbar = document.getElementById("print-preview-toolbar");
 
@@ -95,10 +92,7 @@ add_task(async function switch_print_preview_browsers() {
   );
 
   // Switch back to default print preview content
-  defaultPPEntered = BrowserTestUtils.waitForMessage(
-    defaultPPBrowser.messageManager,
-    "Printing:Preview:Entered"
-  );
+  defaultPPEntered = PrintHelper.waitForOldPrintPreview(defaultPPBrowser);
   printPreviewToolbar.mSimplifyPageCheckbox.click();
   await defaultPPEntered;
 

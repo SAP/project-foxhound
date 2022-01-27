@@ -26,7 +26,7 @@ info: |
 includes: [detachArrayBuffer.js]
 features: [Atomics.waitAsync, ArrayBuffer, Atomics, TypedArray, BigInt]
 ---*/
-assert.sameValue(typeof Atomics.waitAsync, 'function');
+assert.sameValue(typeof Atomics.waitAsync, 'function', 'The value of `typeof Atomics.waitAsync` is "function"');
 const i64a = new BigInt64Array(
   new ArrayBuffer(BigInt64Array.BYTES_PER_ELEMENT * 4)
 );
@@ -40,12 +40,12 @@ const poisoned = {
 try {
   $DETACHBUFFER(i64a.buffer); // Detaching a non-shared ArrayBuffer sets the [[ArrayBufferData]] value to null
 } catch (error) {
-  $ERROR(`An unexpected error occurred when detaching ArrayBuffer: ${error.message}`);
+  throw new Test262Error(`An unexpected error occurred when detaching ArrayBuffer: ${error.message}`);
 }
 
 assert.throws(TypeError, function() {
   Atomics.waitAsync(i64a, poisoned, poisoned, poisoned);
-}, '`Atomics.waitAsync(i64a, poisoned, poisoned, poisoned)` throws TypeError');
+}, '`Atomics.waitAsync(i64a, poisoned, poisoned, poisoned)` throws a TypeError exception');
 
 
 reportCompare(0, 0);

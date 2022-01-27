@@ -1,7 +1,8 @@
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-ChromeUtils.import("resource://normandy/lib/Heartbeat.jsm", this);
+const { Heartbeat } = ChromeUtils.import(
+  "resource://normandy/lib/Heartbeat.jsm"
+);
 
 /**
  * Assert an array is in non-descending order, and that every element is a number
@@ -77,13 +78,26 @@ function assertTelemetrySent(hb, eventNames) {
   });
 }
 
+function getStars(notice) {
+  return notice.buttonContainer.querySelectorAll(".star-x");
+}
+
+add_task(async function setup() {
+  let win = await BrowserTestUtils.openNewBrowserWindow();
+  // Open a new tab to keep the window open.
+  await BrowserTestUtils.openNewForegroundTab(
+    win.gBrowser,
+    "https://example.com"
+  );
+});
+
 // Several of the behaviors of heartbeat prompt are mutually exclusive, so checks are broken up
 // into three batches.
 
 /* Batch #1 - General UI, Stars, and telemetry data */
 add_task(async function() {
   const targetWindow = Services.wm.getMostRecentWindow("navigator:browser");
-  const notificationBox = targetWindow.gHighPriorityNotificationBox;
+  const notificationBox = targetWindow.gNotificationBox;
 
   const preCount = notificationBox.allNotifications.length;
   const hb = new Heartbeat(targetWindow, {
@@ -96,19 +110,15 @@ add_task(async function() {
   });
 
   // Check UI
-  const learnMoreEl = hb.notice.querySelector(".text-link");
+  const learnMoreEl = hb.notice.messageText.querySelector(".text-link");
   Assert.equal(
     notificationBox.allNotifications.length,
     preCount + 1,
     "Correct number of notifications open"
   );
+  Assert.equal(getStars(hb.notice).length, 5, "Correct number of stars");
   Assert.equal(
-    hb.notice.querySelectorAll(".star-x").length,
-    5,
-    "Correct number of stars"
-  );
-  Assert.equal(
-    hb.notice.querySelectorAll(".notification-button").length,
+    hb.notice.buttonContainer.querySelectorAll(".notification-button").length,
     0,
     "Engagement button not shown"
   );
@@ -118,12 +128,17 @@ add_task(async function() {
     "Learn more url correct"
   );
   Assert.equal(learnMoreEl.value, "Learn More", "Learn more label correct");
-  Assert.equal(hb.notice.messageText.textContent, "test", "Message is correct");
+  // There's a space included before the learn more link in proton.
+  Assert.equal(
+    hb.notice.messageText.textContent,
+    "test ",
+    "Message is correct"
+  );
 
   // Check that when clicking the learn more link, a tab opens with the right URL
   let loadedPromise;
   const tabOpenPromise = new Promise(resolve => {
-    gBrowser.tabContainer.addEventListener(
+    targetWindow.gBrowser.tabContainer.addEventListener(
       "TabOpen",
       event => {
         let tab = event.target;
@@ -161,7 +176,7 @@ add_task(async function() {
 // Batch #2 - Engagement buttons
 add_task(async function() {
   const targetWindow = Services.wm.getMostRecentWindow("navigator:browser");
-  const notificationBox = targetWindow.gHighPriorityNotificationBox;
+  const notificationBox = targetWindow.gNotificationBox;
   const hb = new Heartbeat(targetWindow, {
     testing: true,
     flowId: "test",
@@ -171,13 +186,11 @@ add_task(async function() {
     learnMoreMessage: "Learn More",
     learnMoreUrl: "https://example.org/learnMore",
   });
-  const engagementButton = hb.notice.querySelector(".notification-button");
-
-  Assert.equal(
-    hb.notice.querySelectorAll(".star-x").length,
-    0,
-    "Stars not shown"
+  const engagementButton = hb.notice.buttonContainer.querySelector(
+    ".notification-button"
   );
+
+  Assert.equal(getStars(hb.notice).length, 0, "Stars not shown");
   Assert.ok(engagementButton, "Engagement button added");
   Assert.equal(
     engagementButton.label,
@@ -185,10 +198,12 @@ add_task(async function() {
     "Engagement button has correct label"
   );
 
-  const engagementEl = hb.notice.querySelector(".notification-button");
+  const engagementEl = hb.notice.buttonContainer.querySelector(
+    ".notification-button"
+  );
   let loadedPromise;
   const tabOpenPromise = new Promise(resolve => {
-    gBrowser.tabContainer.addEventListener(
+    targetWindow.gBrowser.tabContainer.addEventListener(
       "TabOpen",
       event => {
         let tab = event.target;
@@ -239,4 +254,9 @@ add_task(async function() {
   // triggers sending ping to normandy
   await BrowserTestUtils.closeWindow(targetWindow);
   await telemetrySentPromise;
+});
+
+add_task(async function cleanup() {
+  const win = Services.wm.getMostRecentWindow("navigator:browser");
+  await BrowserTestUtils.closeWindow(win);
 });

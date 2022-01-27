@@ -14,10 +14,13 @@ use crate::properties::{PropertyDeclarationId, SourcePropertyDeclaration};
 use crate::shared_lock::{DeepCloneParams, DeepCloneWithLock, SharedRwLock, SharedRwLockReadGuard};
 use crate::shared_lock::{Locked, ToCssWithGuard};
 use crate::str::CssStringWriter;
+use crate::stylesheets::layer_rule::LayerId;
 use crate::stylesheets::rule_parser::VendorPrefix;
 use crate::stylesheets::{CssRuleType, StylesheetContents};
 use crate::values::{serialize_percentage, KeyframesName};
-use cssparser::{parse_one_rule, DeclarationListParser, DeclarationParser, SourceLocation, Token};
+use cssparser::{
+    parse_one_rule, DeclarationListParser, DeclarationParser, ParserState, SourceLocation, Token,
+};
 use cssparser::{AtRuleParser, CowRcStr, Parser, ParserInput, QualifiedRuleParser, RuleListParser};
 use servo_arc::Arc;
 use std::fmt::{self, Write};
@@ -149,8 +152,8 @@ impl KeyframePercentage {
 
 /// A keyframes selector is a list of percentages or from/to symbols, which are
 /// converted at parse time to percentages.
-#[css(comma)]
 #[derive(Clone, Debug, Eq, PartialEq, ToCss, ToShmem)]
+#[css(comma)]
 pub struct KeyframeSelector(#[css(iterable)] Vec<KeyframePercentage>);
 
 impl KeyframeSelector {
@@ -355,6 +358,8 @@ pub struct KeyframesAnimation {
     pub properties_changed: LonghandIdSet,
     /// Vendor prefix type the @keyframes has.
     pub vendor_prefix: Option<VendorPrefix>,
+    /// The id of the cascade layer the keyframe rule was in.
+    pub layer_id: LayerId,
 }
 
 /// Get all the animated properties in a keyframes animation.
@@ -407,12 +412,14 @@ impl KeyframesAnimation {
     pub fn from_keyframes(
         keyframes: &[Arc<Locked<Keyframe>>],
         vendor_prefix: Option<VendorPrefix>,
+        layer_id: LayerId,
         guard: &SharedRwLockReadGuard,
     ) -> Self {
         let mut result = KeyframesAnimation {
             steps: vec![],
             properties_changed: LonghandIdSet::new(),
             vendor_prefix,
+            layer_id,
         };
 
         if keyframes.is_empty() {
@@ -503,8 +510,7 @@ pub fn parse_keyframe_list(
 }
 
 impl<'a, 'i> AtRuleParser<'i> for KeyframeListParser<'a> {
-    type PreludeNoBlock = ();
-    type PreludeBlock = ();
+    type Prelude = ();
     type AtRule = Arc<Locked<Keyframe>>;
     type Error = StyleParseErrorKind<'i>;
 }
@@ -533,7 +539,7 @@ impl<'a, 'i> QualifiedRuleParser<'i> for KeyframeListParser<'a> {
     fn parse_block<'t>(
         &mut self,
         selector: Self::Prelude,
-        source_location: SourceLocation,
+        start: &ParserState,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self::QualifiedRule, ParseError<'i>> {
         let context = ParserContext::new_with_rule_type(
@@ -566,7 +572,7 @@ impl<'a, 'i> QualifiedRuleParser<'i> for KeyframeListParser<'a> {
         Ok(Arc::new(self.shared_lock.wrap(Keyframe {
             selector,
             block: Arc::new(self.shared_lock.wrap(block)),
-            source_location,
+            source_location: start.source_location(),
         })))
     }
 }
@@ -578,8 +584,7 @@ struct KeyframeDeclarationParser<'a, 'b: 'a> {
 
 /// Default methods reject all at rules.
 impl<'a, 'b, 'i> AtRuleParser<'i> for KeyframeDeclarationParser<'a, 'b> {
-    type PreludeNoBlock = ();
-    type PreludeBlock = ();
+    type Prelude = ();
     type AtRule = ();
     type Error = StyleParseErrorKind<'i>;
 }

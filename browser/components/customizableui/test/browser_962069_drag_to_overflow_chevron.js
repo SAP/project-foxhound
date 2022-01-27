@@ -20,12 +20,12 @@ add_task(async function() {
   );
   ok(CustomizableUI.inDefaultState, "Should start in default state.");
   window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
-  await waitForCondition(() => navbar.hasAttribute("overflowing"));
+  await TestUtils.waitForCondition(() => navbar.hasAttribute("overflowing"));
   ok(navbar.hasAttribute("overflowing"), "Should have an overflowing toolbar.");
 
   let widgetOverflowPanel = document.getElementById("widget-overflow");
   let panelShownPromise = promisePanelElementShown(window, widgetOverflowPanel);
-  let identityBox = document.getElementById("identity-box");
+  let identityBox = document.getElementById("identity-icon-box");
   let overflowChevron = document.getElementById("nav-bar-overflow-button");
 
   // Listen for hiding immediately so we don't miss the event because of the
@@ -71,7 +71,7 @@ add_task(async function() {
 add_task(async function() {
   window.resizeTo(originalWindowWidth, window.outerHeight);
   let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
-  await waitForCondition(() => !navbar.hasAttribute("overflowing"));
+  await TestUtils.waitForCondition(() => !navbar.hasAttribute("overflowing"));
   ok(
     !navbar.hasAttribute("overflowing"),
     "Should not have an overflowing toolbar."

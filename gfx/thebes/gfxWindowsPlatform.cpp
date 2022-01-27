@@ -12,6 +12,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 
+#include "gfxBlur.h"
 #include "gfxImageSurface.h"
 #include "gfxWindowsSurface.h"
 
@@ -19,7 +20,8 @@
 #include "nsUnicodeProperties.h"
 
 #include "mozilla/Preferences.h"
-#include "mozilla/Services.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/Components.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/WindowsVersion.h"
 #include "nsIGfxInfo.h"
@@ -27,7 +29,6 @@
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
 #include "mozilla/Telemetry.h"
-#include "GeckoProfiler.h"
 
 #include "plbase64.h"
 #include "nsIXULRuntime.h"
@@ -42,8 +43,6 @@
 
 #include "mozilla/layers/CanvasChild.h"
 #include "mozilla/layers/CompositorThread.h"
-#include "mozilla/layers/PaintThread.h"
-#include "mozilla/layers/ReadbackManagerD3D11.h"
 
 #include "gfxDWriteFontList.h"
 #include "gfxDWriteFonts.h"
@@ -80,7 +79,9 @@
 #include "DriverCrashGuard.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
+#include "mozilla/gfx/DisplayConfigWindows.h"
 #include "mozilla/layers/DeviceAttachmentsD3D11.h"
+#include "mozilla/WindowsProcessMitigations.h"
 #include "D3D11Checks.h"
 
 using namespace mozilla;
@@ -117,17 +118,6 @@ class GfxD2DVramReporter final : public nsIMemoryReporter {
 };
 
 NS_IMPL_ISUPPORTS(GfxD2DVramReporter, nsIMemoryReporter)
-
-#define GFX_CLEARTYPE_PARAMS "gfx.font_rendering.cleartype_params."
-#define GFX_CLEARTYPE_PARAMS_GAMMA "gfx.font_rendering.cleartype_params.gamma"
-#define GFX_CLEARTYPE_PARAMS_CONTRAST \
-  "gfx.font_rendering.cleartype_params.enhanced_contrast"
-#define GFX_CLEARTYPE_PARAMS_LEVEL \
-  "gfx.font_rendering.cleartype_params.cleartype_level"
-#define GFX_CLEARTYPE_PARAMS_STRUCTURE \
-  "gfx.font_rendering.cleartype_params.pixel_structure"
-#define GFX_CLEARTYPE_PARAMS_MODE \
-  "gfx.font_rendering.cleartype_params.rendering_mode"
 
 class GPUAdapterReporter final : public nsIMemoryReporter {
   // Callers must Release the DXGIAdapter after use or risk mem-leak
@@ -285,14 +275,18 @@ NS_IMPL_ISUPPORTS(D3DSharedTexturesReporter, nsIMemoryReporter)
 gfxWindowsPlatform::gfxWindowsPlatform()
     : mRenderMode(RENDER_GDI),
       mDwmCompositionStatus(DwmCompositionStatus::Unknown) {
-  /*
-   * Initialize COM
-   */
-  CoInitialize(nullptr);
+  // If win32k is locked down then we can't use COM STA and shouldn't need it.
+  // Also, we won't be using any GPU memory in this process.
+  if (!IsWin32kLockedDown()) {
+    /*
+     * Initialize COM
+     */
+    CoInitialize(nullptr);
 
-  RegisterStrongMemoryReporter(new GfxD2DVramReporter());
-  RegisterStrongMemoryReporter(new GPUAdapterReporter());
-  RegisterStrongMemoryReporter(new D3DSharedTexturesReporter());
+    RegisterStrongMemoryReporter(new GfxD2DVramReporter());
+    RegisterStrongMemoryReporter(new GPUAdapterReporter());
+    RegisterStrongMemoryReporter(new D3DSharedTexturesReporter());
+  }
 }
 
 gfxWindowsPlatform::~gfxWindowsPlatform() {
@@ -300,16 +294,92 @@ gfxWindowsPlatform::~gfxWindowsPlatform() {
 
   DeviceManagerDx::Shutdown();
 
-  /*
-   * Uninitialize COM
-   */
-  CoUninitialize();
+  // We don't initialize COM when win32k is locked down.
+  if (!IsWin32kLockedDown()) {
+    /*
+     * Uninitialize COM
+     */
+    CoUninitialize();
+  }
+}
+
+/* static */
+void gfxWindowsPlatform::InitMemoryReportersForGPUProcess() {
+  MOZ_RELEASE_ASSERT(XRE_IsGPUProcess());
+
+  RegisterStrongMemoryReporter(new GfxD2DVramReporter());
+  RegisterStrongMemoryReporter(new GPUAdapterReporter());
+  RegisterStrongMemoryReporter(new D3DSharedTexturesReporter());
+}
+
+/* static */
+nsresult gfxWindowsPlatform::GetGpuTimeSinceProcessStartInMs(
+    uint64_t* aResult) {
+  RefPtr<ID3D11Device> d3d11Device;
+  if (!(d3d11Device = mozilla::gfx::Factory::GetDirect3D11Device())) {
+    // If we don't have a D3DDevice, we likely didn't use any GPU time.
+    *aResult = 0;
+    return NS_OK;
+  }
+
+  nsModuleHandle module(LoadLibrary(L"gdi32.dll"));
+  if (!module) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  PFND3DKMTQS queryD3DKMTStatistics =
+      (PFND3DKMTQS)GetProcAddress(module, "D3DKMTQueryStatistics");
+  if (!queryD3DKMTStatistics) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  RefPtr<IDXGIDevice> dxgiDevice;
+  if (d3d11Device->QueryInterface(__uuidof(IDXGIDevice),
+                                  getter_AddRefs(dxgiDevice)) != S_OK) {
+    return NS_ERROR_FAILURE;
+  }
+
+  IDXGIAdapter* DXGIAdapter;
+  if (dxgiDevice->GetAdapter(&DXGIAdapter) != S_OK) {
+    return NS_ERROR_FAILURE;
+  }
+
+  DXGI_ADAPTER_DESC adapterDesc;
+  DXGIAdapter->GetDesc(&adapterDesc);
+  DXGIAdapter->Release();
+
+  D3DKMTQS queryStatistics;
+  memset(&queryStatistics, 0, sizeof(D3DKMTQS));
+  queryStatistics.Type = D3DKMTQS_ADAPTER;
+  queryStatistics.AdapterLuid = adapterDesc.AdapterLuid;
+  if (!NT_SUCCESS(queryD3DKMTStatistics(&queryStatistics))) {
+    return NS_ERROR_FAILURE;
+  }
+
+  uint64_t result = 0;
+  ULONG nodeCount = queryStatistics.QueryResult.AdapterInfo.NodeCount;
+  for (ULONG i = 0; i < nodeCount; ++i) {
+    memset(&queryStatistics, 0, sizeof(D3DKMTQS));
+    queryStatistics.Type = D3DKMTQS_PROCESS_NODE;
+    queryStatistics.AdapterLuid = adapterDesc.AdapterLuid;
+    queryStatistics.hProcess = GetCurrentProcess();
+    queryStatistics.QueryProcessNode.NodeId = i;
+    if (NT_SUCCESS(queryD3DKMTStatistics(&queryStatistics))) {
+      result += queryStatistics.QueryResult.ProcessNodeInformation.RunningTime
+                    .QuadPart *
+                100 / PR_NSEC_PER_MSEC;
+    }
+  }
+
+  *aResult = result;
+  return NS_OK;
 }
 
 static void UpdateANGLEConfig() {
   if (!gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
     gfxConfig::Disable(Feature::D3D11_HW_ANGLE, FeatureStatus::Disabled,
-                       "D3D11 compositing is disabled");
+                       "D3D11 compositing is disabled",
+                       "FEATURE_FAILURE_HW_ANGLE_D3D11_DISABLED"_ns);
   }
 }
 
@@ -319,6 +389,7 @@ void gfxWindowsPlatform::InitAcceleration() {
   DeviceManagerDx::Init();
 
   InitializeConfig();
+  InitGPUProcessSupport();
   // Ensure devices initialization. SharedSurfaceANGLE and
   // SharedSurfaceD3D11Interop use them. The devices are lazily initialized
   // with WebRender to reduce memory usage.
@@ -368,20 +439,6 @@ void gfxWindowsPlatform::InitAcceleration() {
 
 void gfxWindowsPlatform::InitWebRenderConfig() {
   gfxPlatform::InitWebRenderConfig();
-  if (XRE_IsParentProcess()) {
-    bool prev =
-        Preferences::GetBool("sanity-test.webrender.force-disabled", false);
-    bool current = Preferences::GetBool("gfx.webrender.force-disabled", false);
-    // When "gfx.webrender.force-disabled" pref is changed from false to true,
-    // set "layers.mlgpu.sanity-test-failed" pref to false.
-    // "layers.mlgpu.sanity-test-failed" pref is re-tested by SanityTest.jsm.
-    bool doRetest = !prev && current;
-    if (doRetest) {
-      Preferences::SetBool("layers.mlgpu.sanity-test-failed", false);
-    }
-    // Need to be called after gfxPlatform::InitWebRenderConfig().
-    InitializeAdvancedLayersConfig();
-  }
 
   if (gfxVars::UseWebRender()) {
     UpdateBackendPrefs();
@@ -401,11 +458,10 @@ bool gfxWindowsPlatform::CanUseHardwareVideoDecoding() {
 
 bool gfxWindowsPlatform::InitDWriteSupport() {
   mozilla::ScopedGfxFeatureReporter reporter("DWrite");
-  if (!Factory::EnsureDWriteFactory()) {
+  if (!gfxDWriteFont::InitDWriteSupport()) {
     return false;
   }
 
-  SetupClearTypeParams();
   reporter.SetSuccessful();
   return true;
 }
@@ -431,14 +487,13 @@ bool gfxWindowsPlatform::HandleDeviceReset() {
   gfxAlphaBoxBlur::ShutdownBlurCache();
 
   gfxConfig::Reset(Feature::D3D11_COMPOSITING);
-  gfxConfig::Reset(Feature::ADVANCED_LAYERS);
   gfxConfig::Reset(Feature::D3D11_HW_ANGLE);
   gfxConfig::Reset(Feature::DIRECT2D);
 
   InitializeConfig();
   // XXX Add InitWebRenderConfig() calling.
-  InitializeAdvancedLayersConfig();
   if (mInitializedDevices) {
+    InitGPUProcessSupport();
     InitializeDevices();
   }
   UpdateANGLEConfig();
@@ -469,13 +524,18 @@ void gfxWindowsPlatform::UpdateBackendPrefs() {
   BackendPrefsData data = GetBackendPrefs();
   // Remove DIRECT2D1 preference if D2D1Device does not exist.
   if (!Factory::HasD2D1Device()) {
-    data.mCanvasBitmask &= ~BackendTypeBit(BackendType::DIRECT2D1_1);
     data.mContentBitmask &= ~BackendTypeBit(BackendType::DIRECT2D1_1);
-    if (data.mCanvasDefault == BackendType::DIRECT2D1_1) {
-      data.mCanvasDefault = BackendType::SKIA;
-    }
     if (data.mContentDefault == BackendType::DIRECT2D1_1) {
       data.mContentDefault = BackendType::SKIA;
+    }
+
+    // Don't exclude DIRECT2D1_1 if using remote canvas, because DIRECT2D1_1 and
+    // hence the device will be used in the GPU process.
+    if (!gfxPlatform::UseRemoteCanvas()) {
+      data.mCanvasBitmask &= ~BackendTypeBit(BackendType::DIRECT2D1_1);
+      if (data.mCanvasDefault == BackendType::DIRECT2D1_1) {
+        data.mCanvasDefault = BackendType::SKIA;
+      }
     }
   }
   InitBackendPrefs(std::move(data));
@@ -489,10 +549,6 @@ void gfxWindowsPlatform::UpdateRenderMode() {
   bool didReset = HandleDeviceReset();
 
   UpdateBackendPrefs();
-
-  if (PaintThread::Get()) {
-    PaintThread::Get()->UpdateRenderMode();
-  }
 
   if (didReset) {
     mScreenReferenceDrawTarget = CreateOffscreenContentDrawTarget(
@@ -519,10 +575,6 @@ mozilla::gfx::BackendType gfxWindowsPlatform::GetContentBackendFor(
     mozilla::layers::LayersBackend aLayers) {
   mozilla::gfx::BackendType defaultBackend =
       gfxPlatform::GetDefaultContentBackend();
-  if (aLayers == LayersBackend::LAYERS_D3D11) {
-    return defaultBackend;
-  }
-
   if (aLayers == LayersBackend::LAYERS_WR &&
       gfx::gfxVars::UseWebRenderANGLE()) {
     return defaultBackend;
@@ -555,20 +607,16 @@ mozilla::gfx::BackendType gfxWindowsPlatform::GetPreferredCanvasBackend() {
   return backend;
 }
 
-gfxPlatformFontList* gfxWindowsPlatform::CreatePlatformFontList() {
-  gfxPlatformFontList* pfl;
-
+bool gfxWindowsPlatform::CreatePlatformFontList() {
   // bug 630201 - older pre-RTM versions of Direct2D/DirectWrite cause odd
   // crashers so block them altogether
   if (IsNotWin7PreRTM() && DWriteEnabled()) {
-    pfl = new gfxDWriteFontList();
-    if (NS_SUCCEEDED(pfl->InitFontList())) {
-      return pfl;
+    if (gfxPlatformFontList::Initialize(new gfxDWriteFontList)) {
+      return true;
     }
     // DWrite font initialization failed! Don't know why this would happen,
     // but apparently it can - see bug 594865.
     // So we're going to fall back to GDI fonts & rendering.
-    gfxPlatformFontList::Shutdown();
     DisableD2D(FeatureStatus::Failed, "Failed to initialize fonts",
                "FEATURE_FAILURE_FONT_FAIL"_ns);
   }
@@ -577,14 +625,7 @@ gfxPlatformFontList* gfxWindowsPlatform::CreatePlatformFontList() {
   // permit it, as we're using GDI fonts.
   mHasVariationFontSupport = false;
 
-  pfl = new gfxGDIFontList();
-
-  if (NS_SUCCEEDED(pfl->InitFontList())) {
-    return pfl;
-  }
-
-  gfxPlatformFontList::Shutdown();
-  return nullptr;
+  return gfxPlatformFontList::Initialize(new gfxGDIFontList);
 }
 
 // This function will permanently disable D2D for the session. It's intended to
@@ -663,17 +704,11 @@ static const char kFontUtsaah[] = "Utsaah";
 static const char kFontYuGothic[] = "Yu Gothic";
 
 void gfxWindowsPlatform::GetCommonFallbackFonts(
-    uint32_t aCh, uint32_t aNextCh, Script aRunScript,
+    uint32_t aCh, Script aRunScript, eFontPresentation aPresentation,
     nsTArray<const char*>& aFontList) {
-  EmojiPresentation emoji = GetEmojiPresentation(aCh);
-  if (emoji != EmojiPresentation::TextOnly) {
-    if (aNextCh == kVariationSelector16 ||
-        (aNextCh != kVariationSelector15 &&
-         emoji == EmojiPresentation::EmojiDefault)) {
-      // if char is followed by VS16, try for a color emoji glyph
-      aFontList.AppendElement(kFontSegoeUIEmoji);
-      aFontList.AppendElement(kFontTwemojiMozilla);
-    }
+  if (PrefersColor(aPresentation)) {
+    aFontList.AppendElement(kFontSegoeUIEmoji);
+    aFontList.AppendElement(kFontTwemojiMozilla);
   }
 
   // Arial is used as the default fallback for system fallback
@@ -1079,7 +1114,7 @@ void gfxWindowsPlatform::FontsPrefsChanged(const char* aPref) {
 
   if (aPref &&
       !strncmp(GFX_CLEARTYPE_PARAMS, aPref, strlen(GFX_CLEARTYPE_PARAMS))) {
-    SetupClearTypeParams();
+    gfxDWriteFont::UpdateClearTypeVars();
   } else {
     clearTextFontCaches = false;
   }
@@ -1090,143 +1125,6 @@ void gfxWindowsPlatform::FontsPrefsChanged(const char* aPref) {
       fc->Flush();
     }
   }
-}
-
-#define DISPLAY1_REGISTRY_KEY \
-  HKEY_CURRENT_USER, L"Software\\Microsoft\\Avalon.Graphics\\DISPLAY1"
-
-#define ENHANCED_CONTRAST_VALUE_NAME L"EnhancedContrastLevel"
-
-void gfxWindowsPlatform::SetupClearTypeParams() {
-  if (DWriteEnabled()) {
-    // any missing prefs will default to invalid (-1) and be ignored;
-    // out-of-range values will also be ignored
-    FLOAT gamma = -1.0;
-    FLOAT contrast = -1.0;
-    FLOAT level = -1.0;
-    int geometry = -1;
-    int mode = -1;
-    int32_t value;
-    if (NS_SUCCEEDED(Preferences::GetInt(GFX_CLEARTYPE_PARAMS_GAMMA, &value))) {
-      if (value >= 1000 && value <= 2200) {
-        gamma = FLOAT(value / 1000.0);
-      }
-    }
-
-    if (NS_SUCCEEDED(
-            Preferences::GetInt(GFX_CLEARTYPE_PARAMS_CONTRAST, &value))) {
-      if (value >= 0 && value <= 1000) {
-        contrast = FLOAT(value / 100.0);
-      }
-    }
-
-    if (NS_SUCCEEDED(Preferences::GetInt(GFX_CLEARTYPE_PARAMS_LEVEL, &value))) {
-      if (value >= 0 && value <= 100) {
-        level = FLOAT(value / 100.0);
-      }
-    }
-
-    if (NS_SUCCEEDED(
-            Preferences::GetInt(GFX_CLEARTYPE_PARAMS_STRUCTURE, &value))) {
-      if (value >= 0 && value <= 2) {
-        geometry = value;
-      }
-    }
-
-    if (NS_SUCCEEDED(Preferences::GetInt(GFX_CLEARTYPE_PARAMS_MODE, &value))) {
-      if (value >= 0 && value <= 5) {
-        mode = value;
-      }
-    }
-
-    cairo_dwrite_set_cleartype_params(gamma, contrast, level, geometry, mode);
-
-    switch (mode) {
-      case DWRITE_RENDERING_MODE_ALIASED:
-      case DWRITE_RENDERING_MODE_CLEARTYPE_GDI_CLASSIC:
-        mMeasuringMode = DWRITE_MEASURING_MODE_GDI_CLASSIC;
-        break;
-      case DWRITE_RENDERING_MODE_CLEARTYPE_GDI_NATURAL:
-        mMeasuringMode = DWRITE_MEASURING_MODE_GDI_NATURAL;
-        break;
-      default:
-        mMeasuringMode = DWRITE_MEASURING_MODE_NATURAL;
-        break;
-    }
-
-    RefPtr<IDWriteRenderingParams> defaultRenderingParams;
-    Factory::GetDWriteFactory()->CreateRenderingParams(
-        getter_AddRefs(defaultRenderingParams));
-    // For EnhancedContrast, we override the default if the user has not set it
-    // in the registry (by using the ClearType Tuner).
-    if (contrast < 0.0 || contrast > 10.0) {
-      HKEY hKey;
-      LONG res = RegOpenKeyExW(DISPLAY1_REGISTRY_KEY, 0, KEY_READ, &hKey);
-      if (res == ERROR_SUCCESS) {
-        res = RegQueryValueExW(hKey, ENHANCED_CONTRAST_VALUE_NAME, nullptr,
-                               nullptr, nullptr, nullptr);
-        if (res == ERROR_SUCCESS) {
-          contrast = defaultRenderingParams->GetEnhancedContrast();
-        }
-        RegCloseKey(hKey);
-      }
-
-      if (contrast < 0.0 || contrast > 10.0) {
-        contrast = 1.0;
-      }
-    }
-
-    // For parameters that have not been explicitly set,
-    // we copy values from default params (or our overridden value for contrast)
-    if (gamma < 1.0 || gamma > 2.2) {
-      gamma = defaultRenderingParams->GetGamma();
-    }
-
-    if (level < 0.0 || level > 1.0) {
-      level = defaultRenderingParams->GetClearTypeLevel();
-    }
-
-    DWRITE_PIXEL_GEOMETRY dwriteGeometry =
-        static_cast<DWRITE_PIXEL_GEOMETRY>(geometry);
-    DWRITE_RENDERING_MODE renderMode = static_cast<DWRITE_RENDERING_MODE>(mode);
-
-    if (dwriteGeometry < DWRITE_PIXEL_GEOMETRY_FLAT ||
-        dwriteGeometry > DWRITE_PIXEL_GEOMETRY_BGR) {
-      dwriteGeometry = defaultRenderingParams->GetPixelGeometry();
-    }
-
-    Factory::SetBGRSubpixelOrder(dwriteGeometry == DWRITE_PIXEL_GEOMETRY_BGR);
-
-    if (renderMode < DWRITE_RENDERING_MODE_DEFAULT ||
-        renderMode > DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL_SYMMETRIC) {
-      renderMode = defaultRenderingParams->GetRenderingMode();
-    }
-
-    mRenderingParams[TEXT_RENDERING_NO_CLEARTYPE] = defaultRenderingParams;
-
-    HRESULT hr = Factory::GetDWriteFactory()->CreateCustomRenderingParams(
-        gamma, contrast, level, dwriteGeometry, renderMode,
-        getter_AddRefs(mRenderingParams[TEXT_RENDERING_NORMAL]));
-    if (FAILED(hr) || !mRenderingParams[TEXT_RENDERING_NORMAL]) {
-      mRenderingParams[TEXT_RENDERING_NORMAL] = defaultRenderingParams;
-    }
-
-    hr = Factory::GetDWriteFactory()->CreateCustomRenderingParams(
-        gamma, contrast, level, dwriteGeometry,
-        DWRITE_RENDERING_MODE_CLEARTYPE_GDI_CLASSIC,
-        getter_AddRefs(mRenderingParams[TEXT_RENDERING_GDI_CLASSIC]));
-    if (FAILED(hr) || !mRenderingParams[TEXT_RENDERING_GDI_CLASSIC]) {
-      mRenderingParams[TEXT_RENDERING_GDI_CLASSIC] = defaultRenderingParams;
-    }
-  }
-}
-
-ReadbackManagerD3D11* gfxWindowsPlatform::GetReadbackManager() {
-  if (!mD3D11ReadbackManager) {
-    mD3D11ReadbackManager = new ReadbackManagerD3D11();
-  }
-
-  return mD3D11ReadbackManager;
 }
 
 bool gfxWindowsPlatform::IsOptimus() {
@@ -1259,7 +1157,7 @@ static void InitializeANGLEConfig() {
   if (!gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
     d3d11ANGLE.DisableByDefault(FeatureStatus::Unavailable,
                                 "D3D11 compositing is disabled",
-                                "FEATURE_FAILURE_D3D11_DISABLED"_ns);
+                                "FEATURE_FAILURE_HW_ANGLE_D3D11_DISABLED"_ns);
     return;
   }
 
@@ -1316,7 +1214,7 @@ void gfxWindowsPlatform::InitializeD3D11Config() {
   if (!IsWin8OrLater() &&
       !DeviceManagerDx::Get()->CheckRemotePresentSupport()) {
     nsCOMPtr<nsIGfxInfo> gfxInfo;
-    gfxInfo = services::GetGfxInfo();
+    gfxInfo = components::GfxInfo::Service();
     nsAutoString adaptorId;
     gfxInfo->GetAdapterDeviceID(adaptorId);
     // Blocklist Intel HD Graphics 510/520/530 on Windows 7 without platform
@@ -1339,44 +1237,6 @@ void gfxWindowsPlatform::InitializeD3D11Config() {
       !gfxPlatform::IsGfxInfoStatusOkay(nsIGfxInfo::FEATURE_DIRECT3D_11_LAYERS,
                                         &message, failureId)) {
     d3d11.Disable(FeatureStatus::Blocklisted, message.get(), failureId);
-  }
-}
-
-/* static */
-void gfxWindowsPlatform::InitializeAdvancedLayersConfig() {
-  // Only enable Advanced Layers if D3D11 succeeded.
-  if (!gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
-    return;
-  }
-
-  FeatureState& al = gfxConfig::GetFeature(Feature::ADVANCED_LAYERS);
-  al.SetDefaultFromPref(StaticPrefs::GetPrefName_layers_mlgpu_enabled(),
-                        true /* aIsEnablePref */,
-                        StaticPrefs::GetPrefDefault_layers_mlgpu_enabled());
-
-  // Windows 7 has an extra pref since it uses totally different buffer paths
-  // that haven't been performance tested yet.
-  if (al.IsEnabled() && !IsWin8OrLater()) {
-    if (StaticPrefs::layers_mlgpu_enable_on_windows7_AtStartup()) {
-      al.UserEnable("Enabled for Windows 7 via user-preference");
-    } else {
-      al.Disable(FeatureStatus::Disabled,
-                 "Advanced Layers is disabled on Windows 7 by default",
-                 "FEATURE_FAILURE_DISABLED_ON_WIN7"_ns);
-    }
-  }
-
-  nsCString message, failureId;
-  if (!IsGfxInfoStatusOkay(nsIGfxInfo::FEATURE_ADVANCED_LAYERS, &message,
-                           failureId)) {
-    al.Disable(FeatureStatus::Blocklisted, message.get(), failureId);
-  } else if (gfxVars::UseWebRender()) {
-    al.Disable(FeatureStatus::Blocked,
-               "Blocked from fallback candidate by WebRender usage",
-               "FEATURE_BLOCKED_BY_WEBRENDER_USAGE"_ns);
-  } else if (Preferences::GetBool("layers.mlgpu.sanity-test-failed", false)) {
-    al.Disable(FeatureStatus::Broken, "Failed to render sanity test",
-               "FEATURE_FAILURE_FAILED_TO_RENDER"_ns);
   }
 }
 
@@ -1417,6 +1277,8 @@ void gfxWindowsPlatform::RecordStartupTelemetry() {
 // Supports lazy device initialization on Windows, so that WebRender can avoid
 // initializing GPU state and allocating swap chains for most non-GPU processes.
 void gfxWindowsPlatform::EnsureDevicesInitialized() {
+  MOZ_DIAGNOSTIC_ASSERT(!IsWin32kLockedDown());
+
   if (!mInitializedDevices) {
     mInitializedDevices = true;
     InitializeDevices();
@@ -1434,7 +1296,7 @@ void gfxWindowsPlatform::InitializeDevices() {
     // initialize any DirectX devices. We do leave them enabled in gfxConfig
     // though. If the GPU process fails to create these devices it will send
     // a message back and we'll update their status.
-    if (InitGPUProcessSupport()) {
+    if (gfxConfig::IsEnabled(Feature::GPU_PROCESS)) {
       return;
     }
 
@@ -1591,11 +1453,11 @@ void gfxWindowsPlatform::InitializeD2D() {
   d2d1_1.SetSuccessful();
 }
 
-bool gfxWindowsPlatform::InitGPUProcessSupport() {
+void gfxWindowsPlatform::InitGPUProcessSupport() {
   FeatureState& gpuProc = gfxConfig::GetFeature(Feature::GPU_PROCESS);
 
   if (!gpuProc.IsEnabled()) {
-    return false;
+    return;
   }
 
   nsCString message;
@@ -1603,14 +1465,14 @@ bool gfxWindowsPlatform::InitGPUProcessSupport() {
   if (!gfxPlatform::IsGfxInfoStatusOkay(nsIGfxInfo::FEATURE_GPU_PROCESS,
                                         &message, failureId)) {
     gpuProc.Disable(FeatureStatus::Blocklisted, message.get(), failureId);
-    return false;
+    return;
   }
 
   if (!gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
     // Don't use the GPU process if not using D3D11, unless software
     // compositor is allowed
     if (StaticPrefs::layers_gpu_process_allow_software_AtStartup()) {
-      return gpuProc.IsEnabled();
+      return;
     }
     gpuProc.Disable(FeatureStatus::Unavailable,
                     "Not using GPU Process since D3D11 is unavailable",
@@ -1636,7 +1498,6 @@ bool gfxWindowsPlatform::InitGPUProcessSupport() {
   }
 
   // If we're still enabled at this point, the user set the force-enabled pref.
-  return gpuProc.IsEnabled();
 }
 
 bool gfxWindowsPlatform::DwmCompositionEnabled() {
@@ -1651,16 +1512,15 @@ class D3DVsyncSource final : public VsyncSource {
    public:
     D3DVsyncDisplay()
         : mPrevVsync(TimeStamp::Now()),
-          mVsyncEnabledLock("D3DVsyncEnabledLock"),
           mVsyncEnabled(false),
           mWaitVBlankMonitor(NULL),
-          mIsWindows10OrLater(false) {
+          mIsWindows8OrLater(false) {
       mVsyncThread = new base::Thread("WindowsVsyncThread");
       MOZ_RELEASE_ASSERT(mVsyncThread->Start(),
                          "GFX: Could not start Windows vsync thread");
       SetVsyncRate();
 
-      mIsWindows10OrLater = IsWin10OrLater();
+      mIsWindows8OrLater = IsWin8OrLater();
     }
 
     void SetVsyncRate() {
@@ -1696,7 +1556,6 @@ class D3DVsyncSource final : public VsyncSource {
       MOZ_ASSERT(NS_IsMainThread());
       MOZ_ASSERT(mVsyncThread->IsRunning());
       {  // scope lock
-        MonitorAutoLock lock(mVsyncEnabledLock);
         if (mVsyncEnabled) {
           return;
         }
@@ -1710,7 +1569,6 @@ class D3DVsyncSource final : public VsyncSource {
     virtual void DisableVsync() override {
       MOZ_ASSERT(NS_IsMainThread());
       MOZ_ASSERT(mVsyncThread->IsRunning());
-      MonitorAutoLock lock(mVsyncEnabledLock);
       if (!mVsyncEnabled) {
         return;
       }
@@ -1719,7 +1577,6 @@ class D3DVsyncSource final : public VsyncSource {
 
     virtual bool IsVsyncEnabled() override {
       MOZ_ASSERT(NS_IsMainThread());
-      MonitorAutoLock lock(mVsyncEnabledLock);
       return mVsyncEnabled;
     }
 
@@ -1813,7 +1670,6 @@ class D3DVsyncSource final : public VsyncSource {
 
       for (;;) {
         {  // scope lock
-          MonitorAutoLock lock(mVsyncEnabledLock);
           if (!mVsyncEnabled) return;
         }
 
@@ -1832,7 +1688,7 @@ class D3DVsyncSource final : public VsyncSource {
         }
 
         HRESULT hr = E_FAIL;
-        if (mIsWindows10OrLater &&
+        if (mIsWindows8OrLater &&
             !StaticPrefs::gfx_vsync_force_disable_waitforvblank()) {
           UpdateVBlankOutput();
           if (mWaitVBlankOutput) {
@@ -1921,14 +1777,13 @@ class D3DVsyncSource final : public VsyncSource {
     }
 
     TimeStamp mPrevVsync;
-    Monitor mVsyncEnabledLock;
     base::Thread* mVsyncThread;
     TimeDuration mVsyncRate;
-    bool mVsyncEnabled;
+    Atomic<bool> mVsyncEnabled;
 
     HMONITOR mWaitVBlankMonitor;
     RefPtr<IDXGIOutput> mWaitVBlankOutput;
-    bool mIsWindows10OrLater;
+    bool mIsWindows8OrLater;
   };  // end d3dvsyncdisplay
 
   D3DVsyncSource() { mPrimaryDisplay = new D3DVsyncDisplay(); }
@@ -1951,18 +1806,6 @@ gfxWindowsPlatform::CreateHardwareVsyncSource() {
 
   RefPtr<VsyncSource> d3dVsyncSource = new D3DVsyncSource();
   return d3dVsyncSource.forget();
-}
-
-void gfxWindowsPlatform::GetAcceleratedCompositorBackends(
-    nsTArray<LayersBackend>& aBackends) {
-  if (gfxConfig::IsEnabled(Feature::OPENGL_COMPOSITING) &&
-      StaticPrefs::layers_prefer_opengl_AtStartup()) {
-    aBackends.AppendElement(LayersBackend::LAYERS_OPENGL);
-  }
-
-  if (gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
-    aBackends.AppendElement(LayersBackend::LAYERS_D3D11);
-  }
 }
 
 void gfxWindowsPlatform::ImportGPUDeviceData(
@@ -2040,4 +1883,31 @@ void gfxWindowsPlatform::BuildContentDeviceData(ContentDeviceData* aOut) {
 bool gfxWindowsPlatform::CheckVariationFontSupport() {
   // Variation font support is only available on Fall Creators Update or later.
   return IsWin10FallCreatorsUpdateOrLater();
+}
+
+void gfxWindowsPlatform::GetPlatformDisplayInfo(
+    mozilla::widget::InfoObject& aObj) {
+  HwStretchingSupport stretch;
+  DeviceManagerDx::Get()->CheckHardwareStretchingSupport(stretch);
+
+  nsPrintfCString stretchValue(
+      "both=%u window-only=%u full-screen-only=%u none=%u error=%u",
+      stretch.mBoth, stretch.mWindowOnly, stretch.mFullScreenOnly,
+      stretch.mNone, stretch.mError);
+  aObj.DefineProperty("HardwareStretching", stretchValue.get());
+
+  ScaledResolutionSet scaled;
+  GetScaledResolutions(scaled);
+  if (scaled.IsEmpty()) {
+    return;
+  }
+
+  aObj.DefineProperty("ScaledResolutionCount", scaled.Length());
+  for (size_t i = 0; i < scaled.Length(); ++i) {
+    auto& s = scaled[i];
+    nsPrintfCString name("ScaledResolution%zu", i);
+    nsPrintfCString value("source %dx%d, target %dx%d", s.first.width,
+                          s.first.height, s.second.width, s.second.height);
+    aObj.DefineProperty(name.get(), value.get());
+  }
 }

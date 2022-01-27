@@ -161,16 +161,10 @@ class AtomicOperations {
   // Atomics specification, as follows:
   //
   // 4-byte accesses are always lock free (in the spec).
-  // 1- and 2-byte accesses are always lock free (in SpiderMonkey).
-  //
-  // Lock-freedom for 8 bytes is determined by the platform's isLockfree8().
-  // However, the ES spec stipulates that isLockFree(8) is true only if there
-  // is an integer array that admits atomic operations whose
-  // BYTES_PER_ELEMENT=8; at the moment (August 2017) there are no such
-  // arrays.
+  // 1-, 2-, and 8-byte accesses are always lock free (in SpiderMonkey).
   //
   // There is no lock-freedom for JS for any other values on any platform.
-  static inline bool isLockfreeJS(int32_t n);
+  static constexpr inline bool isLockfreeJS(int32_t n);
 
   // If the return value is true then the templated functions below are
   // supported for int64_t and uint64_t.  If the return value is false then
@@ -302,8 +296,8 @@ class AtomicOperations {
   }
 };
 
-inline bool AtomicOperations::isLockfreeJS(int32_t size) {
-  // Keep this in sync with visitAtomicIsLockFree() in jit/CodeGenerator.cpp.
+constexpr inline bool AtomicOperations::isLockfreeJS(int32_t size) {
+  // Keep this in sync with atomicIsLockFreeJS() in jit/MacroAssembler.cpp.
 
   switch (size) {
     case 1:
@@ -314,11 +308,7 @@ inline bool AtomicOperations::isLockfreeJS(int32_t size) {
       // The spec requires Atomics.isLockFree(4) to return true.
       return true;
     case 8:
-      // The spec requires Atomics.isLockFree(n) to return false unless n is
-      // the BYTES_PER_ELEMENT value of some integer TypedArray that admits
-      // atomic operations.  At this time (August 2017) there is no such array
-      // with n=8.
-      return false;
+      return true;
     default:
       return false;
   }
@@ -392,7 +382,7 @@ inline bool AtomicOperations::isLockfreeJS(int32_t size) {
     defined(__ppc64__) || defined(__PPC64__) || defined(__ppc64le__) || \
     defined(__PPC64LE__) || defined(__alpha__) || defined(__hppa__) ||  \
     defined(__sh__) || defined(__s390__) || defined(__s390x__) ||       \
-    defined(__m68k__) || defined(__riscv)
+    defined(__m68k__) || defined(__riscv) || defined(__wasi__)
 #  include "jit/shared/AtomicOperations-feeling-lucky.h"
 #else
 #  error "No AtomicOperations support provided for this platform"

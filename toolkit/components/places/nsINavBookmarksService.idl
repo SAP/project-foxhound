@@ -22,21 +22,6 @@ interface nsINavBookmarkObserver : nsISupports
   readonly attribute boolean skipTags;
 
   /**
-   * Notifies that a batch transaction has started.
-   * Other notifications will be sent during the batch, but the observer is
-   * guaranteed that onEndUpdateBatch() will be called at its completion.
-   * During a batch the observer should do its best to reduce the work done to
-   * handle notifications, since multiple changes are going to happen in a short
-   * timeframe.
-   */
-  void onBeginUpdateBatch();
-
-  /**
-   * Notifies that a batch transaction has ended.
-   */
-  void onEndUpdateBatch();
-
-  /**
    * Notifies that an item's information has changed.  This will be called
    * whenever any attributes like "title" are changed.
    *
@@ -72,7 +57,6 @@ interface nsINavBookmarkObserver : nsISupports
    *       guid          | The new bookmark guid.
    *       cleartime     | Empty string (all visits to this item were removed).
    *       title         | The new title.
-   *       favicon       | The "moz-anno" URL of the new favicon.
    *       uri           | new URL.
    *       tags          | Empty string (tags for this item changed)
    *       dateAdded     | PRTime (as string) when the item was first added.
@@ -83,7 +67,6 @@ interface nsINavBookmarkObserver : nsISupports
    *       guid          | The old bookmark guid.
    *       cleartime     | Empty string (currently unused).
    *       title         | Empty string (currently unused).
-   *       favicon       | Empty string (currently unused).
    *       uri           | old URL.
    *       tags          | Empty string (currently unused).
    *       dateAdded     | Empty string (currently unused).
@@ -100,84 +83,6 @@ interface nsINavBookmarkObserver : nsISupports
                      in ACString aParentGuid,
                      in AUTF8String aOldValue,
                      in unsigned short aSource);
-
-  /**
-   * Notifies that the item was visited.  Can be invoked only for TYPE_BOOKMARK
-   * items.
-   *
-   * @param aItemId
-   *        The id of the bookmark that was visited.
-   * @param aVisitId
-   *        The id of the visit.
-   * @param aTime
-   *        The time of the visit.
-   * @param aTransitionType
-   *        The transition for the visit.  See nsINavHistoryService::TRANSITION_*
-   *        constants for a list of possible values.
-   * @param aURI
-   *        The nsIURI for this bookmark.
-   * @param aParentId
-   *        The id of the folder containing the item.
-   * @param aGuid
-   *        The unique ID associated with the item.
-   * @param aParentGuid
-   *        The unique ID associated with the item's parent.
-   *
-   * @see onItemChanged with property = "cleartime" for when all visits to an
-   *      item are removed.
-   *
-   * @note The reported time is the time of the visit that was added, which may
-   *       be well in the past since the visit time can be specified.  This
-   *       means that the visit the observer is told about may not be the most
-   *       recent visit for that page.
-   */
-  void onItemVisited(in long long aItemId,
-                     in long long aVisitId,
-                     in PRTime aTime,
-                     in unsigned long aTransitionType,
-                     in nsIURI aURI,
-                     in long long aParentId,
-                     in ACString aGuid,
-                     in ACString aParentGuid);
-
-  /**
-   * Notifies that an item has been moved.
-   *
-   * @param aItemId
-   *        The id of the item that was moved.
-   * @param aOldParentId
-   *        The id of the old parent.
-   * @param aOldIndex
-   *        The old index inside the old parent.
-   * @param aNewParentId
-   *        The id of the new parent.
-   * @param aNewIndex
-   *        The index inside the new parent.
-   * @param aItemType
-   *        The type of the item to be removed (see TYPE_* constants below).
-   * @param aGuid
-   *        The unique ID associated with the item.
-   * @param aOldParentGuid
-   *        The unique ID associated with the old item's parent.
-   * @param aNewParentGuid
-   *        The unique ID associated with the new item's parent.
-   * @param aSource
-   *        A change source constant from nsINavBookmarksService::SOURCE_*,
-   *        passed to the method that notifies the observer.
-   * @param aURI
-   *        The URI for this bookmark.
-   */
-  void onItemMoved(in long long aItemId,
-                   in long long aOldParentId,
-                   in long aOldIndex,
-                   in long long aNewParentId,
-                   in long aNewIndex,
-                   in unsigned short aItemType,
-                   in ACString aGuid,
-                   in ACString aOldParentGuid,
-                   in ACString aNewParentGuid,
-                   in unsigned short aSource,
-                   in AUTF8String aURI);
 };
 
 /**
@@ -358,6 +263,7 @@ interface nsINavBookmarksService : nsISupports
    *
    *  @note  aTitle will be truncated to TITLE_LENGTH_MAX.
    */
+  [can_run_script]
   void setItemTitle(in long long aItemId, in AUTF8String aTitle,
                     [optional] in unsigned short aSource);
 
@@ -389,6 +295,7 @@ interface nsINavBookmarksService : nsISupports
    *       any other method that changes an item property, but we will send
    *       the corresponding itemChanged notification instead.
    */
+  [can_run_script]
   void setItemLastModified(in long long aItemId,
                            in PRTime aLastModified,
                            [optional] in unsigned short aSource);

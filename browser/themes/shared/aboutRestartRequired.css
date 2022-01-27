@@ -4,17 +4,6 @@
 
 @import url("chrome://browser/skin/error-pages.css");
 
-.illustrated #errorPageContainer {
-  min-height: 300px;
-  display: flex;
-  flex-direction: column;
-  background-position: left center;
-}
-
-#errorPageContainer:dir(rtl) {
-  background-position-x: right;
-}
-
 #header {
   background: none;
   padding-inline-start: 0;
@@ -23,17 +12,6 @@
 
 #text-container {
   margin: auto;
-  padding-inline-start: 38%;
-}
-
-#errorPageContainer {
-  min-height: 350px;
-  display: flex;
-  flex-direction: column;
-  background-position: left center;
-  background-repeat: no-repeat;
-  background-size: 38%;
-  background-image: url("chrome://browser/skin/illustrations/error-connection-failure.svg");
 }
 
 #restart {

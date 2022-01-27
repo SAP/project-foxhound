@@ -2,14 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-loader: taskgraph.loader.multi_dep:loader
+loader: gecko_taskgraph.loader.multi_dep:loader
 
 group-by: platform
 
 transforms:
-    - taskgraph.transforms.l10n:transforms
-    - taskgraph.transforms.job:transforms
-    - taskgraph.transforms.task:transforms
+    - gecko_taskgraph.transforms.l10n:transforms
+    - gecko_taskgraph.transforms.job:transforms
+    - gecko_taskgraph.transforms.task:transforms
 
 kind-dependencies:
     - build
@@ -60,11 +60,11 @@ job-template:
                 win.*:
                     - linux64-wine
                     - linux64-liblowercase
+                    - nsis
         fetch:
             by-build-platform:
                 default: []
                 win.*:
-                    - nsis-3.01-win
                     - upx-3.95-win
     tooltool:
         by-build-platform:
@@ -91,10 +91,7 @@ job-template:
                 win64-devedition: win64-devedition-opt
                 win64-aarch64-devedition: win64-aarch64-devedition-opt
     worker-type: b-linux
-    docker-image:
-        by-build-platform:
-            linux.*: {in-tree: debian8-amd64-build}
-            default: {in-tree: debian10-amd64-build}
+    docker-image: {in-tree: debian11-amd64-build}
     treeherder:
         symbol: L10n(B)
         tier: 1

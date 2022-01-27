@@ -9,6 +9,14 @@
 
 const EXPORTED_SYMBOLS = ["LoginTestUtils"];
 
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+
+XPCOMUtils.defineLazyModuleGetters(this, {
+  RemoteSettings: "resource://services-settings/remote-settings.js",
+});
+
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 let { Assert: AssertCls } = ChromeUtils.import(
@@ -19,6 +27,8 @@ let Assert = AssertCls;
 const { TestUtils } = ChromeUtils.import(
   "resource://testing-common/TestUtils.jsm"
 );
+
+const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 const { FileTestUtils } = ChromeUtils.import(
   "resource://testing-common/FileTestUtils.jsm"
@@ -50,7 +60,7 @@ this.LoginTestUtils = {
    * Erases all the data stored by the Login Manager service.
    */
   clearData() {
-    Services.logins.removeAllLogins();
+    Services.logins.removeAllUserFacingLogins();
     for (let origin of Services.logins.getAllDisabledHosts()) {
       Services.logins.setLoginSavingEnabled(origin, true);
     }
@@ -495,7 +505,7 @@ LoginTestUtils.recipes = {
 LoginTestUtils.masterPassword = {
   masterPassword: "omgsecret!",
 
-  _set(enable) {
+  _set(enable, stayLoggedIn) {
     let oldPW, newPW;
     if (enable) {
       oldPW = "";
@@ -504,27 +514,31 @@ LoginTestUtils.masterPassword = {
       oldPW = this.masterPassword;
       newPW = "";
     }
-
-    // Set master password. Note that this logs in the user if no password was
-    // set before. But after logging out the next invocation of pwmgr can
-    // trigger a MP prompt.
-    let pk11db = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
-      Ci.nsIPK11TokenDB
-    );
-    let token = pk11db.getInternalKeyToken();
-    if (token.needsUserInit) {
-      dump("MP initialized to " + newPW + "\n");
-      token.initPassword(newPW);
-    } else {
-      token.checkPassword(oldPW);
-      dump("MP change from " + oldPW + " to " + newPW + "\n");
-      token.changePassword(oldPW, newPW);
-      token.logoutSimple();
+    try {
+      let pk11db = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
+        Ci.nsIPK11TokenDB
+      );
+      let token = pk11db.getInternalKeyToken();
+      if (token.needsUserInit) {
+        dump("MP initialized to " + newPW + "\n");
+        token.initPassword(newPW);
+      } else {
+        token.checkPassword(oldPW);
+        dump("MP change from " + oldPW + " to " + newPW + "\n");
+        token.changePassword(oldPW, newPW);
+        if (!stayLoggedIn) {
+          token.logoutSimple();
+        }
+      }
+    } catch (e) {
+      dump(
+        "Tried to enable an already enabled primary password or disable an already disabled primary password!"
+      );
     }
   },
 
-  enable() {
-    this._set(true);
+  enable(stayLoggedIn = false) {
+    this._set(true, stayLoggedIn);
   },
 
   disable() {
@@ -569,6 +583,9 @@ LoginTestUtils.telemetry = {
     category = "pwmgr",
     method = undefined
   ) {
+    // The test is already unreliable (see bug 1627419 and 1605494) and relied on
+    // the implicit 100ms initial timer of waitForCondition that bug 1596165 removed.
+    await new Promise(resolve => setTimeout(resolve, 100));
     let events = await TestUtils.waitForCondition(() => {
       let events = Services.telemetry.snapshotEvents(
         Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
@@ -596,14 +613,65 @@ LoginTestUtils.file = {
    *
    * @param {string[]} csvLines
    *        The lines that make up the CSV file.
+   * @param {string} extension
+   *        Optional parameter. Either 'csv' or 'tsv'. Default is 'csv'.
    * @returns {window.File} The File to the CSV file that was created.
    */
-  async setupCsvFileWithLines(csvLines) {
-    let tmpFile = FileTestUtils.getTempFile("firefox_logins.csv");
+  async setupCsvFileWithLines(csvLines, extension = "csv") {
+    let tmpFile = FileTestUtils.getTempFile(`firefox_logins.${extension}`);
     await OS.File.writeAtomic(
       tmpFile.path,
       new TextEncoder().encode(csvLines.join("\r\n"))
     );
     return tmpFile;
+  },
+};
+
+LoginTestUtils.remoteSettings = {
+  relatedRealmsCollection: "websites-with-shared-credential-backends",
+  async setupWebsitesWithSharedCredentials(
+    relatedRealms = [["other-example.com", "example.com", "example.co.uk"]]
+  ) {
+    let db = await RemoteSettings(this.relatedRealmsCollection).db;
+    await db.clear();
+    await db.create({
+      id: "some-fake-ID-abc",
+      relatedRealms,
+    });
+    await db.importChanges({}, 1234567);
+  },
+  async cleanWebsitesWithSharedCredentials() {
+    let db = await RemoteSettings(this.relatedRealmsCollection).db;
+    await db.clear();
+    await db.importChanges({}, 1234);
+  },
+  async updateTimestamp() {
+    let db = await RemoteSettings(this.relatedRealmsCollection).db;
+    await db.importChanges({}, 12345678);
+  },
+  improvedPasswordRulesCollection: "password-rules",
+
+  async setupImprovedPasswordRules(
+    origin = "example.com",
+    rules = "minlength: 6; maxlength: 16; required: lower, upper; required: digit; required: [&<>'\"!#$%(),:;=?[^`{|}~]]; max-consecutive: 2;"
+  ) {
+    let db = await RemoteSettings(this.improvedPasswordRulesCollection).db;
+    await db.clear();
+    await db.create({
+      id: "some-fake-ID",
+      Domain: origin,
+      "password-rules": rules,
+    });
+    await db.create({
+      id: "some-fake-ID-2",
+      Domain: origin,
+      "password-rules": rules,
+    });
+    await db.importChanges({}, 1234567);
+  },
+  async cleanImprovedPasswordRules() {
+    let db = await RemoteSettings(this.improvedPasswordRulesCollection).db;
+    await db.clear();
+    await db.importChanges({}, 1234);
   },
 };

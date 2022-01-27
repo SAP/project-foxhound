@@ -14,28 +14,24 @@
 
 #include "jstypes.h"
 
-#include "gc/Allocator.h"             // AllowGC
-#include "gc/Cell.h"                  // gc::TenuredCellWithNonGCPointer
-#include "jit/ExecutableAllocator.h"  // ExecutablePool
-#include "js/TraceKind.h"             // JS::TraceKind
-#include "js/UbiNode.h"               // ubi::{TracerConcrete, Size, CourseType}
+#include "gc/Allocator.h"  // AllowGC
+#include "gc/Cell.h"       // gc::TenuredCellWithNonGCPointer
+#include "js/TraceKind.h"  // JS::TraceKind
+#include "js/UbiNode.h"    // ubi::{TracerConcrete, Size, CourseType}
 
 namespace js {
 namespace jit {
 
+class ExecutablePool;
 class JitCode;
 class MacroAssembler;
+
+enum class CodeKind : uint8_t;
 
 // Header at start of raw code buffer
 struct JitCodeHeader {
   // Link back to corresponding gcthing
   JitCode* jitCode_;
-
-  // !!! NOTE !!!
-  // If we are running on AMD Bobcat, insert a NOP-slide at end of the JitCode
-  // header so we can try to recover when the CPU screws up the branch landing
-  // site. See Bug 1281759.
-  void* nops_;
 
   void init(JitCode* jitCode);
 

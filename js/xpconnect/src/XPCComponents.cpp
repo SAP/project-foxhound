@@ -17,8 +17,12 @@
 #include "nsCycleCollector.h"
 #include "jsfriendapi.h"
 #include "js/Array.h"  // JS::IsArrayObject
+#include "js/CallAndConstruct.h"  // JS::IsCallable, JS_CallFunctionName, JS_CallFunctionValue
 #include "js/CharacterEncoding.h"
 #include "js/ContextOptions.h"
+#include "js/friend/WindowProxy.h"  // js::ToWindowProxyIfWindow
+#include "js/Object.h"              // JS::GetClass, JS::GetCompartment
+#include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_DefinePropertyById, JS_Enumerate, JS_GetProperty, JS_GetPropertyById, JS_HasProperty, JS_SetProperty, JS_SetPropertyById
 #include "js/SavedFrameAPI.h"
 #include "js/StructuredClone.h"
 #include "mozilla/AppShutdown.h"
@@ -82,21 +86,6 @@ static bool JSValIsInterfaceOfType(JSContext* cx, HandleValue v, REFNSIID iid) {
          NS_SUCCEEDED(
              wn->Native()->QueryInterface(iid, getter_AddRefs(iface))) &&
          iface;
-}
-
-char* xpc::CloneAllAccess() { return moz_xstrdup("AllAccess"); }
-
-char* xpc::CheckAccessList(const char16_t* wideName, const char* const list[]) {
-  nsAutoCString asciiName;
-  CopyUTF16toUTF8(nsDependentString(wideName), asciiName);
-
-  for (const char* const* p = list; *p; p++) {
-    if (!strcmp(*p, asciiName.get())) {
-      return CloneAllAccess();
-    }
-  }
-
-  return nullptr;
 }
 
 /***************************************************************************/
@@ -946,9 +935,8 @@ nsresult nsXPCComponents_Exception::CallOrConstruct(
     return ThrowAndFail(NS_ERROR_XPC_BAD_CONVERT_JS, cx, _retval);
   }
 
-  RefPtr<Exception> e =
-      new Exception(nsCString(parser.eMsg), parser.eResult, EmptyCString(),
-                    parser.eStack, parser.eData);
+  RefPtr<Exception> e = new Exception(nsCString(parser.eMsg), parser.eResult,
+                                      ""_ns, parser.eStack, parser.eData);
 
   RootedObject newObj(cx);
   if (NS_FAILED(xpc->WrapNative(cx, obj, e, NS_GET_IID(nsIException),
@@ -1330,6 +1318,12 @@ nsXPCComponents_Utils::CreateServicesCache(JSContext* aCx,
 }
 
 NS_IMETHODIMP
+nsXPCComponents_Utils::PrintStderr(const nsACString& message) {
+  printf_stderr("%s", PromiseFlatUTF8String(message).get());
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsXPCComponents_Utils::ReportError(HandleValue error, HandleValue stack,
                                    JSContext* cx) {
   // This function shall never fail! Silently eat any failure conditions.
@@ -1459,7 +1453,7 @@ nsXPCComponents_Utils::ReportError(HandleValue error, HandleValue stack,
   }
 
   nsresult rv = scripterr->InitWithWindowID(
-      msg, fileName, EmptyString(), lineNo, 0, 0, "XPConnect JavaScript",
+      msg, fileName, u""_ns, lineNo, 0, 0, "XPConnect JavaScript",
       innerWindowID, innerWindowID == 0 ? true : false);
   NS_ENSURE_SUCCESS(rv, NS_OK);
 
@@ -1631,13 +1625,13 @@ nsXPCComponents_Utils::GetWeakReference(HandleValue object, JSContext* cx,
 NS_IMETHODIMP
 nsXPCComponents_Utils::ForceGC(JSContext* aCx) {
   PrepareForFullGC(aCx);
-  NonIncrementalGC(aCx, GC_NORMAL, GCReason::COMPONENT_UTILS);
+  NonIncrementalGC(aCx, GCOptions::Normal, GCReason::COMPONENT_UTILS);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsXPCComponents_Utils::ForceCC(nsICycleCollectorListener* listener) {
-  nsJSContext::CycleCollectNow(listener);
+  nsJSContext::CycleCollectNow(CCReason::API, listener);
   return NS_OK;
 }
 
@@ -1676,7 +1670,7 @@ nsXPCComponents_Utils::ClearMaxCCTime() {
 NS_IMETHODIMP
 nsXPCComponents_Utils::ForceShrinkingGC(JSContext* aCx) {
   PrepareForFullGC(aCx);
-  NonIncrementalGC(aCx, GC_SHRINK, GCReason::COMPONENT_UTILS);
+  NonIncrementalGC(aCx, GCOptions::Shrink, GCReason::COMPONENT_UTILS);
   return NS_OK;
 }
 
@@ -1984,7 +1978,7 @@ nsXPCComponents_Utils::RecomputeWrappers(HandleValue vobj, JSContext* cx) {
   // Determine the compartment of the given object, if any.
   JS::Compartment* c =
       vobj.isObject()
-          ? js::GetObjectCompartment(js::UncheckedUnwrap(&vobj.toObject()))
+          ? JS::GetCompartment(js::UncheckedUnwrap(&vobj.toObject()))
           : nullptr;
 
   // If no compartment was given, recompute all.
@@ -2009,7 +2003,7 @@ nsXPCComponents_Utils::SetWantXrays(HandleValue vscope, JSContext* cx) {
   JSObject* scopeObj = js::UncheckedUnwrap(&vscope.toObject());
   MOZ_RELEASE_ASSERT(!AccessCheck::isChrome(scopeObj),
                      "Don't call setWantXrays on system-principal scopes");
-  JS::Compartment* compartment = js::GetObjectCompartment(scopeObj);
+  JS::Compartment* compartment = JS::GetCompartment(scopeObj);
   CompartmentPrivate::Get(scopeObj)->wantXrays = true;
   bool ok = js::RecomputeWrappers(cx, js::SingleCompartment(compartment),
                                   js::AllCompartments());
@@ -2086,9 +2080,7 @@ NS_IMETHODIMP
 nsXPCComponents_Utils::ExitIfInAutomation() {
   NS_ENSURE_TRUE(xpc::IsInAutomation(), NS_ERROR_FAILURE);
 
-#ifdef MOZ_GECKO_PROFILER
   profiler_shutdown(IsFastShutdown::Yes);
-#endif
 
   mozilla::AppShutdown::DoImmediateExit();
   return NS_OK;
@@ -2195,7 +2187,7 @@ nsXPCComponents_Utils::GetClassName(HandleValue aObj, bool aUnwrap,
   if (aUnwrap) {
     obj = js::UncheckedUnwrap(obj, /* stopAtWindowProxy = */ false);
   }
-  *aRv = NS_xstrdup(js::GetObjectClass(obj)->name);
+  *aRv = NS_xstrdup(JS::GetClass(obj)->name);
   return NS_OK;
 }
 
@@ -2450,9 +2442,29 @@ nsXPCComponents_Utils::CreateSpellChecker(nsIEditorSpellCheck** aSpellChecker) {
 }
 
 NS_IMETHODIMP
-nsXPCComponents_Utils::CreateCommandLine(nsISupports** aCommandLine) {
+nsXPCComponents_Utils::CreateCommandLine(const nsTArray<nsCString>& aArgs,
+                                         nsIFile* aWorkingDir, uint32_t aState,
+                                         nsISupports** aCommandLine) {
+  NS_ENSURE_ARG_MAX(aState, nsICommandLine::STATE_REMOTE_EXPLICIT);
   NS_ENSURE_ARG_POINTER(aCommandLine);
+
   nsCOMPtr<nsISupports> commandLine = new nsCommandLine();
+  nsCOMPtr<nsICommandLineRunner> runner = do_QueryInterface(commandLine);
+
+  nsTArray<const char*> fakeArgv(aArgs.Length() + 2);
+
+  // Prepend a dummy argument for the program name, which will be ignored.
+  fakeArgv.AppendElement(nullptr);
+  for (const nsCString& arg : aArgs) {
+    fakeArgv.AppendElement(arg.get());
+  }
+  // Append a null terminator.
+  fakeArgv.AppendElement(nullptr);
+
+  nsresult rv = runner->Init(fakeArgv.Length() - 1, fakeArgv.Elements(),
+                             aWorkingDir, aState);
+  NS_ENSURE_SUCCESS(rv, rv);
+
   commandLine.forget(aCommandLine);
   return NS_OK;
 }

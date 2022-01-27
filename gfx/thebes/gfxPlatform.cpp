@@ -11,15 +11,16 @@
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/ISurfaceAllocator.h"  // for GfxMemoryImageReporter
 #include "mozilla/layers/CompositorBridgeChild.h"
-#include "mozilla/layers/TiledContentClient.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "mozilla/webrender/webrender_ffi.h"
-#include "mozilla/layers/PaintThread.h"
+#include "mozilla/gfx/BuildConstants.h"
 #include "mozilla/gfx/gfxConfigManager.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/gfx/GraphicsMessages.h"
+#include "mozilla/gfx/CanvasManagerChild.h"
+#include "mozilla/gfx/CanvasManagerParent.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPrefs_accessibility.h"
 #include "mozilla/StaticPrefs_apz.h"
@@ -28,6 +29,7 @@
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPrefs_webgl.h"
+#include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Unused.h"
@@ -35,13 +37,15 @@
 #include "mozilla/Base64.h"
 
 #include "mozilla/Logging.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "nsAppRunner.h"
 #include "nsAppDirectoryServiceDefs.h"
+#include "nsCSSProps.h"
 
 #include "gfxCrashReporterUtils.h"
 #include "gfxPlatform.h"
 
+#include "gfxBlur.h"
 #include "gfxEnv.h"
 #include "gfxTextRun.h"
 #include "gfxUserFontSet.h"
@@ -49,9 +53,6 @@
 #include "GfxDriverInfo.h"
 #include "VRProcessManager.h"
 #include "VRThread.h"
-
-#include "mozilla/SSE.h"
-#include "mozilla/arm.h"
 
 #ifdef XP_WIN
 #  include <process.h>
@@ -61,11 +62,13 @@
 #endif
 
 #include "nsXULAppAPI.h"
+#include "nsIXULAppInfo.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsDirectoryServiceDefs.h"
 
 #if defined(XP_WIN)
 #  include "gfxWindowsPlatform.h"
+#  include "mozilla/widget/WinWindowOcclusionTracker.h"
 #elif defined(XP_MACOSX)
 #  include "gfxPlatformMac.h"
 #  include "gfxQuartzSurface.h"
@@ -81,10 +84,7 @@
 
 #ifdef XP_WIN
 #  include "mozilla/WindowsVersion.h"
-#endif
-
-#ifdef MOZ_WAYLAND
-#  include "mozilla/widget/nsWaylandDisplay.h"
+#  include "WinUtils.h"
 #endif
 
 #include "nsGkAtoms.h"
@@ -119,22 +119,19 @@
 #include "GLContextProvider.h"
 #include "mozilla/gfx/Logging.h"
 
-#ifdef USE_SKIA
-#  ifdef __GNUC__
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wshadow"
-#  endif
-#  include "skia/include/core/SkGraphics.h"
-#  ifdef MOZ_ENABLE_FREETYPE
-#    include "skia/include/ports/SkTypeface_cairo.h"
-#  endif
-#  include "mozilla/gfx/SkMemoryReporter.h"
-#  ifdef __GNUC__
-#    pragma GCC diagnostic pop  // -Wshadow
-#  endif
-static const uint32_t kDefaultGlyphCacheSize = -1;
-
+#ifdef __GNUC__
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wshadow"
 #endif
+#include "skia/include/core/SkGraphics.h"
+#ifdef MOZ_ENABLE_FREETYPE
+#  include "skia/include/ports/SkTypeface_cairo.h"
+#endif
+#include "mozilla/gfx/SkMemoryReporter.h"
+#ifdef __GNUC__
+#  pragma GCC diagnostic pop  // -Wshadow
+#endif
+static const uint32_t kDefaultGlyphCacheSize = -1;
 
 #include "mozilla/Preferences.h"
 #include "mozilla/Assertions.h"
@@ -149,13 +146,16 @@ static const uint32_t kDefaultGlyphCacheSize = -1;
 #include "SoftwareVsyncSource.h"
 #include "nscore.h"  // for NS_FREE_PERMANENT_DATA
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/TouchEvent.h"
 #include "gfxVR.h"
 #include "VRManager.h"
 #include "VRManagerChild.h"
 #include "mozilla/gfx/GPUParent.h"
-#include "mozilla/layers/MemoryReportingMLGPU.h"
 #include "prsystem.h"
+
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/SourceSurfaceCairo.h"
 
 using namespace mozilla;
 using namespace mozilla::layers;
@@ -171,34 +171,17 @@ const ContentDeviceData* gContentDeviceInitData = nullptr;
 
 static Mutex* gGfxPlatformPrefsLock = nullptr;
 
+Atomic<bool, MemoryOrdering::ReleaseAcquire> gfxPlatform::gCMSInitialized;
+CMSMode gfxPlatform::gCMSMode = CMSMode::Off;
+
 // These two may point to the same profile
-static qcms_profile* gCMSOutputProfile = nullptr;
-static qcms_profile* gCMSsRGBProfile = nullptr;
+qcms_profile* gfxPlatform::gCMSOutputProfile = nullptr;
+qcms_profile* gfxPlatform::gCMSsRGBProfile = nullptr;
 
-static bool gCMSRGBTransformFailed = false;
-static qcms_transform* gCMSRGBTransform = nullptr;
-static qcms_transform* gCMSInverseRGBTransform = nullptr;
-static qcms_transform* gCMSRGBATransform = nullptr;
-static qcms_transform* gCMSBGRATransform = nullptr;
-
-static bool gCMSInitialized = false;
-static eCMSMode gCMSMode = eCMSMode_Off;
-
-static void ShutdownCMS();
-
-#include "mozilla/gfx/2D.h"
-#include "mozilla/gfx/SourceSurfaceCairo.h"
-
-/* Class to listen for pref changes so that chrome code can dynamically
-   force sRGB as an output profile. See Bug #452125. */
-class SRGBOverrideObserver final : public nsIObserver,
-                                   public nsSupportsWeakReference {
-  ~SRGBOverrideObserver() = default;
-
- public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIOBSERVER
-};
+qcms_transform* gfxPlatform::gCMSRGBTransform = nullptr;
+qcms_transform* gfxPlatform::gCMSInverseRGBTransform = nullptr;
+qcms_transform* gfxPlatform::gCMSRGBATransform = nullptr;
+qcms_transform* gfxPlatform::gCMSBGRATransform = nullptr;
 
 /// This override of the LogForwarder, initially used for the critical graphics
 /// errors, is sending the log to the crash annotations as well, but only
@@ -410,8 +393,6 @@ void CrashStatsLogForwarder::CrashAction(LogReason aReason) {
   }
 }
 
-NS_IMPL_ISUPPORTS(SRGBOverrideObserver, nsIObserver, nsISupportsWeakReference)
-
 #define GFX_DOWNLOADABLE_FONTS_ENABLED "gfx.downloadable_fonts.enabled"
 
 #define GFX_PREF_FALLBACK_USE_CMAPS \
@@ -429,26 +410,7 @@ NS_IMPL_ISUPPORTS(SRGBOverrideObserver, nsIObserver, nsISupportsWeakReference)
 
 #define BIDI_NUMERAL_PREF "bidi.numeral"
 
-#define GFX_PREF_CMS_FORCE_SRGB "gfx.color_management.force_srgb"
-
 #define FONT_VARIATIONS_PREF "layout.css.font-variations.enabled"
-
-NS_IMETHODIMP
-SRGBOverrideObserver::Observe(nsISupports* aSubject, const char* aTopic,
-                              const char16_t* someData) {
-  NS_ASSERTION(NS_strcmp(someData, (u"" GFX_PREF_CMS_FORCE_SRGB)) == 0,
-               "Restarting CMS on wrong pref!");
-  ShutdownCMS();
-  // Update current cms profile.
-  gfxPlatform::CreateCMSOutputProfile();
-  // FIXME(aosmond): This is also racy for the transforms but the pref is only
-  // used for dev purposes. It can be made a static pref in a followup once the
-  // dependency on it is removed from the gtest suite (see bug 1620600).
-  gfxPlatform::GetCMSRGBTransform();
-  gfxPlatform::GetCMSRGBATransform();
-  gfxPlatform::GetCMSBGRATransform();
-  return NS_OK;
-}
 
 static const char* kObservedPrefs[] = {"gfx.downloadable_fonts.",
                                        "gfx.font_rendering.", BIDI_NUMERAL_PREF,
@@ -478,13 +440,11 @@ gfxPlatform::gfxPlatform()
     : mHasVariationFontSupport(false),
       mAzureCanvasBackendCollector(this, &gfxPlatform::GetAzureBackendInfo),
       mApzSupportCollector(this, &gfxPlatform::GetApzSupportInfo),
-      mTilesInfoCollector(this, &gfxPlatform::GetTilesSupportInfo),
       mFrameStatsCollector(this, &gfxPlatform::GetFrameStats),
       mCMSInfoCollector(this, &gfxPlatform::GetCMSSupportInfo),
       mDisplayInfoCollector(this, &gfxPlatform::GetDisplayInfo),
       mCompositorBackend(layers::LayersBackend::LAYERS_NONE),
-      mScreenDepth(0),
-      mScreenPixels(0) {
+      mScreenDepth(0) {
   mAllowDownloadableFonts = UNINITIALIZED_VALUE;
   mFallbackUsesCmaps = UNINITIALIZED_VALUE;
 
@@ -495,9 +455,6 @@ gfxPlatform::gfxPlatform()
   mBidiNumeralOption = UNINITIALIZED_VALUE;
 
   InitBackendPrefs(GetBackendPrefs());
-
-  mTotalSystemMemory = PR_GetPhysicalMemorySize();
-
   VRManager::ManagerInit();
 }
 
@@ -525,49 +482,60 @@ void gfxPlatform::InitChild(const ContentDeviceData& aData) {
   gContentDeviceInitData = nullptr;
 }
 
-void RecordingPrefChanged(const char* aPrefName, void* aClosure) {
-  if (Preferences::GetBool("gfx.2d.recording", false)) {
-    nsAutoCString fileName;
-    nsAutoString prefFileName;
-    nsresult rv = Preferences::GetString("gfx.2d.recordingfile", prefFileName);
-    if (NS_SUCCEEDED(rv)) {
-      CopyUTF16toUTF8(prefFileName, fileName);
-    } else {
-      nsCOMPtr<nsIFile> tmpFile;
-      if (NS_FAILED(NS_GetSpecialDirectory(NS_OS_TEMP_DIR,
-                                           getter_AddRefs(tmpFile)))) {
-        return;
-      }
-      fileName.AppendPrintf("moz2drec_%i_%i.aer", XRE_GetProcessType(),
-                            getpid());
+#define WR_DEBUG_PREF "gfx.webrender.debug"
 
-      nsresult rv = tmpFile->AppendNative(fileName);
-      if (NS_FAILED(rv)) return;
+static void SwapIntervalPrefChangeCallback(const char* aPrefName, void*) {
+  bool egl = Preferences::GetBool("gfx.swap-interval.egl", false);
+  bool glx = Preferences::GetBool("gfx.swap-interval.glx", false);
+  gfxVars::SetSwapIntervalEGL(egl);
+  gfxVars::SetSwapIntervalGLX(glx);
+}
 
-#ifdef XP_WIN
-      rv = tmpFile->GetPath(prefFileName);
-      CopyUTF16toUTF8(prefFileName, fileName);
-#else
-      rv = tmpFile->GetNativePath(fileName);
-#endif
-      if (NS_FAILED(rv)) return;
-    }
-
-#ifdef XP_WIN
-    gPlatform->mRecorder =
-        Factory::CreateEventRecorderForFile(prefFileName.BeginReading());
-#else
-    gPlatform->mRecorder =
-        Factory::CreateEventRecorderForFile(fileName.BeginReading());
-#endif
-    printf_stderr("Recording to %s\n", fileName.get());
-    Factory::SetGlobalEventRecorder(gPlatform->mRecorder);
-  } else {
-    Factory::SetGlobalEventRecorder(nullptr);
+static void WebRendeProfilerUIPrefChangeCallback(const char* aPrefName, void*) {
+  nsCString uiString;
+  if (NS_SUCCEEDED(Preferences::GetCString("gfx.webrender.debug.profiler-ui",
+                                           uiString))) {
+    gfxVars::SetWebRenderProfilerUI(uiString);
   }
 }
 
-#define WR_DEBUG_PREF "gfx.webrender.debug"
+// List of boolean dynamic parameter for WebRender.
+//
+// The parameters in this list are:
+//  - The pref name.
+//  - The BoolParameter enum variant (see webrender_api/src/lib.rs)
+//  - A default value.
+#define WR_BOOL_PARAMETER_LIST(_)                                     \
+  _("gfx.webrender.batched-texture-uploads",                          \
+    wr::BoolParameter::BatchedUploads, true)                          \
+  _("gfx.webrender.draw-calls-for-texture-copy",                      \
+    wr::BoolParameter::DrawCallsForTextureCopy, true)                 \
+  _("gfx.webrender.pbo-uploads", wr::BoolParameter::PboUploads, true) \
+  _("gfx.webrender.multithreading", wr::BoolParameter::Multithreading, true)
+
+static void WebRenderBoolParameterChangeCallback(const char*, void*) {
+  uint32_t bits = 0;
+
+#define WR_BOOL_PARAMETER(name, key, default_val) \
+  if (Preferences::GetBool(name, default_val)) {  \
+    bits |= 1 << (uint32_t)key;                   \
+  }
+
+  WR_BOOL_PARAMETER_LIST(WR_BOOL_PARAMETER)
+#undef WR_BOOL_PARAMETER
+
+  gfx::gfxVars::SetWebRenderBoolParameters(bits);
+}
+
+static void RegisterWebRenderBoolParamCallback() {
+#define WR_BOOL_PARAMETER(name, _key, _default_val) \
+  Preferences::RegisterCallback(WebRenderBoolParameterChangeCallback, name);
+
+  WR_BOOL_PARAMETER_LIST(WR_BOOL_PARAMETER)
+#undef WR_BOOL_PARAMETER
+
+  WebRenderBoolParameterChangeCallback(nullptr, nullptr);
+}
 
 static void WebRenderDebugPrefChangeCallback(const char* aPrefName, void*) {
   wr::DebugFlags flags{0};
@@ -583,23 +551,16 @@ static void WebRenderDebugPrefChangeCallback(const char* aPrefName, void*) {
   GFX_WEBRENDER_DEBUG(".gpu-sample-queries", wr::DebugFlags::GPU_SAMPLE_QUERIES)
   GFX_WEBRENDER_DEBUG(".disable-batching", wr::DebugFlags::DISABLE_BATCHING)
   GFX_WEBRENDER_DEBUG(".epochs", wr::DebugFlags::EPOCHS)
-  GFX_WEBRENDER_DEBUG(".compact-profiler", wr::DebugFlags::COMPACT_PROFILER)
   GFX_WEBRENDER_DEBUG(".smart-profiler", wr::DebugFlags::SMART_PROFILER)
   GFX_WEBRENDER_DEBUG(".echo-driver-messages",
                       wr::DebugFlags::ECHO_DRIVER_MESSAGES)
-  GFX_WEBRENDER_DEBUG(".new-frame-indicator",
-                      wr::DebugFlags::NEW_FRAME_INDICATOR)
-  GFX_WEBRENDER_DEBUG(".new-scene-indicator",
-                      wr::DebugFlags::NEW_SCENE_INDICATOR)
   GFX_WEBRENDER_DEBUG(".show-overdraw", wr::DebugFlags::SHOW_OVERDRAW)
   GFX_WEBRENDER_DEBUG(".gpu-cache", wr::DebugFlags::GPU_CACHE_DBG)
-  GFX_WEBRENDER_DEBUG(".slow-frame-indicator",
-                      wr::DebugFlags::SLOW_FRAME_INDICATOR)
   GFX_WEBRENDER_DEBUG(".texture-cache.clear-evicted",
                       wr::DebugFlags::TEXTURE_CACHE_DBG_CLEAR_EVICTED)
   GFX_WEBRENDER_DEBUG(".picture-caching", wr::DebugFlags::PICTURE_CACHING_DBG)
-  GFX_WEBRENDER_DEBUG(".tile-cache-logging",
-                      wr::DebugFlags::TILE_CACHE_LOGGING_DBG)
+  GFX_WEBRENDER_DEBUG(".force-picture-invalidation",
+                      wr::DebugFlags::FORCE_PICTURE_INVALIDATION)
   GFX_WEBRENDER_DEBUG(".primitives", wr::DebugFlags::PRIMITIVE_DBG)
   // Bit 18 is for the zoom display, which requires the mouse position and thus
   // currently only works in wrench.
@@ -613,8 +574,9 @@ static void WebRenderDebugPrefChangeCallback(const char* aPrefName, void*) {
                       wr::DebugFlags::DISABLE_GRADIENT_PRIMS)
   GFX_WEBRENDER_DEBUG(".obscure-images", wr::DebugFlags::OBSCURE_IMAGES)
   GFX_WEBRENDER_DEBUG(".glyph-flashing", wr::DebugFlags::GLYPH_FLASHING)
-  GFX_WEBRENDER_DEBUG(".disable-raster-root-scaling",
-                      wr::DebugFlags::DISABLE_RASTER_ROOT_SCALING)
+  GFX_WEBRENDER_DEBUG(".capture-profiler", wr::DebugFlags::PROFILER_CAPTURE)
+  GFX_WEBRENDER_DEBUG(".window-visibility",
+                      wr::DebugFlags::WINDOW_VISIBILITY_DBG)
 #undef GFX_WEBRENDER_DEBUG
 
   gfx::gfxVars::SetWebRenderDebugFlags(flags.bits);
@@ -624,14 +586,6 @@ static void WebRenderQualityPrefChangeCallback(const char* aPref, void*) {
   gfxPlatform::GetPlatform()->UpdateForceSubpixelAAWherePossible();
 }
 
-static void WebRenderMultithreadingPrefChangeCallback(const char* aPrefName,
-                                                      void*) {
-  bool enable = Preferences::GetBool(
-      StaticPrefs::GetPrefName_gfx_webrender_enable_multithreading(), true);
-
-  gfx::gfxVars::SetUseWebRenderMultithreading(enable);
-}
-
 static void WebRenderBatchingPrefChangeCallback(const char* aPrefName, void*) {
   uint32_t count = Preferences::GetUint(
       StaticPrefs::GetPrefName_gfx_webrender_batching_lookback(), 10);
@@ -639,10 +593,25 @@ static void WebRenderBatchingPrefChangeCallback(const char* aPrefName, void*) {
   gfx::gfxVars::SetWebRenderBatchingLookback(count);
 }
 
-#if defined(USE_SKIA)
+static void WebRenderBlobTileSizePrefChangeCallback(const char* aPrefName,
+                                                    void*) {
+  uint32_t tileSize = Preferences::GetUint(
+      StaticPrefs::GetPrefName_gfx_webrender_blob_tile_size(), 256);
+  gfx::gfxVars::SetWebRenderBlobTileSize(tileSize);
+}
+
+static void WebRenderUploadThresholdPrefChangeCallback(const char* aPrefName,
+                                                       void*) {
+  int value = Preferences::GetInt(
+      StaticPrefs::GetPrefName_gfx_webrender_batched_upload_threshold(),
+      512 * 512);
+
+  gfxVars::SetWebRenderBatchedUploadThreshold(value);
+}
+
 static uint32_t GetSkiaGlyphCacheSize() {
   // Only increase font cache size on non-android to save memory.
-#  if !defined(MOZ_WIDGET_ANDROID)
+#if !defined(MOZ_WIDGET_ANDROID)
   // 10mb as the default pref cache size on desktop due to talos perf tweaking.
   // Chromium uses 20mb and skia default uses 2mb.
   // We don't need to change the font cache count since we usually
@@ -655,11 +624,10 @@ static uint32_t GetSkiaGlyphCacheSize() {
   }
 
   return cacheSize;
-#  else
+#else
   return kDefaultGlyphCacheSize;
-#  endif  // MOZ_WIDGET_ANDROID
+#endif  // MOZ_WIDGET_ANDROID
 }
-#endif
 
 class WebRenderMemoryReporter final : public nsIMemoryReporter {
  public:
@@ -770,11 +738,16 @@ WebRenderMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
         helper.Report(aReport.render_tasks, "render-tasks");
         helper.Report(aReport.hit_testers, "hit-testers");
         helper.Report(aReport.fonts, "resource-cache/fonts");
+        helper.Report(aReport.weak_fonts, "resource-cache/weak-fonts");
         helper.Report(aReport.images, "resource-cache/images");
         helper.Report(aReport.rasterized_blobs,
                       "resource-cache/rasterized-blobs");
+        helper.Report(aReport.texture_cache_structures,
+                      "texture-cache/structures");
         helper.Report(aReport.shader_cache, "shader-cache");
         helper.Report(aReport.display_list, "display-list");
+        helper.Report(aReport.swgl, "swgl");
+        helper.Report(aReport.upload_staging_memory, "upload-stagin-memory");
 
         WEBRENDER_FOR_EACH_INTERNER(REPORT_INTERNER);
         WEBRENDER_FOR_EACH_INTERNER(REPORT_DATA_STORE);
@@ -783,9 +756,18 @@ WebRenderMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
         helper.ReportTexture(aReport.gpu_cache_textures, "gpu-cache");
         helper.ReportTexture(aReport.vertex_data_textures, "vertex-data");
         helper.ReportTexture(aReport.render_target_textures, "render-targets");
-        helper.ReportTexture(aReport.texture_cache_textures, "texture-cache");
         helper.ReportTexture(aReport.depth_target_textures, "depth-targets");
+        helper.ReportTexture(aReport.picture_tile_textures, "picture-tiles");
+        helper.ReportTexture(aReport.atlas_textures, "texture-cache/atlas");
+        helper.ReportTexture(aReport.standalone_textures,
+                             "texture-cache/standalone");
+        helper.ReportTexture(aReport.texture_upload_pbos,
+                             "texture-upload-pbos");
         helper.ReportTexture(aReport.swap_chain, "swap-chains");
+        helper.ReportTexture(aReport.render_texture_hosts,
+                             "render-texture-hosts");
+        helper.ReportTexture(aReport.upload_staging_textures,
+                             "upload-staging-textures");
 
         FinishAsyncMemoryReport();
       },
@@ -826,18 +808,6 @@ void gfxPlatform::Init() {
   if (XRE_IsParentProcess()) {
     GPUProcessManager::Initialize();
     RDDProcessManager::Initialize();
-
-    if (Preferences::GetBool("media.wmf.skip-blacklist")) {
-      gfxVars::SetPDMWMFDisableD3D11Dlls(nsCString());
-      gfxVars::SetPDMWMFDisableD3D9Dlls(nsCString());
-    } else {
-      nsAutoCString d3d11;
-      Preferences::GetCString("media.wmf.disable-d3d11-for-dlls", d3d11);
-      gfxVars::SetPDMWMFDisableD3D11Dlls(d3d11);
-      nsAutoCString d3d9;
-      Preferences::GetCString("media.wmf.disable-d3d9-for-dlls", d3d9);
-      gfxVars::SetPDMWMFDisableD3D9Dlls(d3d9);
-    }
 
     nsCOMPtr<nsIFile> file;
     nsresult rv = NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(file));
@@ -900,7 +870,7 @@ void gfxPlatform::Init() {
     // Prefs that don't fit into any of the other sections
     forcedPrefs.AppendPrintf("-T%d%d%d) ",
                              StaticPrefs::gfx_android_rgb16_force_AtStartup(),
-                             0,  // SkiaGL canvas no longer supported
+                             StaticPrefs::gfx_canvas_accelerated(),
                              StaticPrefs::layers_force_shmem_tiles_AtStartup());
     ScopedGfxFeatureReporter::AppNote(forcedPrefs);
   }
@@ -918,7 +888,7 @@ void gfxPlatform::Init() {
    * incase that code crashes. See bug #591561. */
   nsCOMPtr<nsIGfxInfo> gfxInfo;
   /* this currently will only succeed on Windows */
-  gfxInfo = services::GetGfxInfo();
+  gfxInfo = components::GfxInfo::Service();
 
   if (XRE_IsParentProcess()) {
     // Some gfxVars must be initialized prior gPlatform for coherent results.
@@ -943,14 +913,16 @@ void gfxPlatform::Init() {
   gPlatform->InitAcceleration();
   gPlatform->InitWebRenderConfig();
 
+  gPlatform->InitWebGLConfig();
   gPlatform->InitWebGPUConfig();
+  gPlatform->InitWindowOcclusionConfig();
 
   // When using WebRender, we defer initialization of the D3D11 devices until
   // the (rare) cases where they're used. Note that the GPU process where
   // WebRender runs doesn't initialize gfxPlatform and performs explicit
   // initialization of the bits it needs.
   if (!UseWebRender()
-#if defined(XP_WIN) && defined(NIGHTLY_BUILD)
+#if defined(XP_WIN)
       || (UseWebRender() && XRE_IsParentProcess() &&
           !gfxConfig::IsEnabled(Feature::GPU_PROCESS) &&
           StaticPrefs::
@@ -959,7 +931,6 @@ void gfxPlatform::Init() {
   ) {
     gPlatform->EnsureDevicesInitialized();
   }
-  gPlatform->InitOMTPConfig();
 
   if (gfxConfig::IsEnabled(Feature::GPU_PROCESS)) {
     GPUProcessManager* gpu = GPUProcessManager::Get();
@@ -973,29 +944,24 @@ void gfxPlatform::Init() {
   // Set up the vsync source for the parent process.
   ReInitFrameRate();
 
-#ifdef USE_SKIA
+  // Create the sRGB to output display profile transforms. They can be accessed
+  // off the main thread so we want to avoid a race condition.
+  InitializeCMS();
+
   SkGraphics::Init();
-#  ifdef MOZ_ENABLE_FREETYPE
+#ifdef MOZ_ENABLE_FREETYPE
   SkInitCairoFT(gPlatform->FontHintingEnabled());
-#  endif
 #endif
 
   InitLayersIPC();
 
-  gPlatform->ComputeTileSize();
-
   gPlatform->mHasVariationFontSupport = gPlatform->CheckVariationFontSupport();
 
-  nsresult rv;
-  rv = gfxPlatformFontList::Init();
-  if (NS_FAILED(rv)) {
+  // This *create* the platform font list instance, but may not *initialize* it
+  // yet if the gfx.font-list.lazy-init.enabled pref is set. The first *use*
+  // of the list will ensure it is initialized.
+  if (!gPlatform->CreatePlatformFontList()) {
     MOZ_CRASH("Could not initialize gfxPlatformFontList");
-  }
-
-  gPlatform->mScreenReferenceSurface = gPlatform->CreateOffscreenSurface(
-      IntSize(1, 1), SurfaceFormat::A8R8G8B8_UINT32);
-  if (!gPlatform->mScreenReferenceSurface) {
-    MOZ_CRASH("Could not initialize mScreenReferenceSurface");
   }
 
   gPlatform->mScreenReferenceDrawTarget =
@@ -1011,30 +977,13 @@ void gfxPlatform::Init() {
     }
   }
 
-  rv = gfxFontCache::Init();
-  if (NS_FAILED(rv)) {
+  if (NS_FAILED(gfxFontCache::Init())) {
     MOZ_CRASH("Could not initialize gfxFontCache");
   }
-
-  /* Create and register our CMS Override observer. */
-  gPlatform->mSRGBOverrideObserver = new SRGBOverrideObserver();
-  Preferences::AddWeakObserver(gPlatform->mSRGBOverrideObserver,
-                               GFX_PREF_CMS_FORCE_SRGB);
 
   Preferences::RegisterPrefixCallbacks(FontPrefChanged, kObservedPrefs);
 
   GLContext::PlatformStartup();
-
-  Preferences::RegisterCallbackAndCall(RecordingPrefChanged,
-                                       "gfx.2d.recording");
-
-  CreateCMSOutputProfile();
-
-  // Create the sRGB to output display profile transforms. They can be accessed
-  // off the main thread so we want to avoid a race condition.
-  GetCMSRGBTransform();
-  GetCMSRGBATransform();
-  GetCMSBGRATransform();
 
   // Listen to memory pressure event so we can purge DrawTarget caches
   gPlatform->mMemoryPressureObserver =
@@ -1051,17 +1000,12 @@ void gfxPlatform::Init() {
     RegisterStrongAsyncMemoryReporter(new WebRenderMemoryReporter());
   }
 
-#ifdef USE_SKIA
   RegisterStrongMemoryReporter(new SkMemoryReporter());
-#endif
-  mlg::InitializeMemoryReporters();
 
-#ifdef USE_SKIA
   uint32_t skiaCacheSize = GetSkiaGlyphCacheSize();
   if (skiaCacheSize != kDefaultGlyphCacheSize) {
     SkGraphics::SetFontCacheLimit(skiaCacheSize);
   }
-#endif
 
   InitNullMetadata();
   InitOpenGLConfig();
@@ -1090,7 +1034,7 @@ void gfxPlatform::ReportTelemetry() {
   MOZ_RELEASE_ASSERT(XRE_IsParentProcess(),
                      "GFX: Only allowed to be called from parent process.");
 
-  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
   nsTArray<uint32_t> displayWidths;
   nsTArray<uint32_t> displayHeights;
   gfxInfo->GetDisplayWidth(displayWidths);
@@ -1153,7 +1097,7 @@ void gfxPlatform::ReportTelemetry() {
 }
 
 static bool IsFeatureSupported(long aFeature, bool aDefault) {
-  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
   nsCString blockId;
   int32_t status;
   if (!NS_SUCCEEDED(gfxInfo->GetFeatureStatus(aFeature, blockId, &status))) {
@@ -1230,6 +1174,18 @@ bool gfxPlatform::IsHeadless() {
 bool gfxPlatform::UseWebRender() { return gfx::gfxVars::UseWebRender(); }
 
 /* static */
+bool gfxPlatform::UseRemoteCanvas() {
+  return XRE_IsContentProcess() && gfx::gfxVars::RemoteCanvasEnabled();
+}
+
+/* static */
+bool gfxPlatform::IsBackendAccelerated(
+    const mozilla::gfx::BackendType aBackendType) {
+  return aBackendType == BackendType::DIRECT2D ||
+         aBackendType == BackendType::DIRECT2D1_1;
+}
+
+/* static */
 bool gfxPlatform::CanMigrateMacGPUs() {
   int32_t pMigration = StaticPrefs::gfx_compositor_gpu_migration();
 
@@ -1264,17 +1220,9 @@ void gfxPlatform::Shutdown() {
   gfxGraphiteShaper::Shutdown();
   gfxPlatformFontList::Shutdown();
   gfxFontMissingGlyphs::Shutdown();
-  ShutdownTileCache();
 
   // Free the various non-null transforms and loaded profiles
   ShutdownCMS();
-
-  /* Unregister our CMS Override callback. */
-  NS_ASSERTION(gPlatform->mSRGBOverrideObserver,
-               "mSRGBOverrideObserver has alreay gone");
-  Preferences::RemoveObserver(gPlatform->mSRGBOverrideObserver,
-                              GFX_PREF_CMS_FORCE_SRGB);
-  gPlatform->mSRGBOverrideObserver = nullptr;
 
   Preferences::UnregisterPrefixCallbacks(FontPrefChanged, kObservedPrefs);
 
@@ -1332,13 +1280,12 @@ void gfxPlatform::InitLayersIPC() {
   }
   sLayersIPCIsUp = true;
 
-  if (XRE_IsContentProcess()) {
-    if (gfxVars::UseOMTP()) {
-      layers::PaintThread::Start();
-    }
-  }
-
   if (XRE_IsParentProcess()) {
+#if defined(XP_WIN)
+    if (gfxConfig::IsEnabled(gfx::Feature::WINDOW_OCCLUSION)) {
+      widget::WinWindowOcclusionTracker::Ensure();
+    }
+#endif
     if (!gfxConfig::IsEnabled(Feature::GPU_PROCESS) && UseWebRender()) {
       wr::RenderThread::Start();
       image::ImageMemoryReporter::InitForWebRender();
@@ -1355,25 +1302,22 @@ void gfxPlatform::ShutdownLayersIPC() {
   }
   sLayersIPCIsUp = false;
 
-#ifdef MOZ_WAYLAND
-  widget::WaylandDisplayShutdown();
-#endif
-
   if (XRE_IsContentProcess()) {
     gfx::VRManagerChild::ShutDown();
+    gfx::CanvasManagerChild::Shutdown();
     // cf bug 1215265.
     if (StaticPrefs::layers_child_process_shutdown()) {
       layers::CompositorManagerChild::Shutdown();
       layers::ImageBridgeChild::ShutDown();
     }
 
-    if (gfxVars::UseOMTP()) {
-      layers::PaintThread::Shutdown();
-    }
   } else if (XRE_IsParentProcess()) {
     gfx::VRManagerChild::ShutDown();
+    gfx::CanvasManagerChild::Shutdown();
     layers::CompositorManagerChild::Shutdown();
     layers::ImageBridgeChild::ShutDown();
+    // This could be running on either the Compositor or the Renderer thread.
+    gfx::CanvasManagerParent::Shutdown();
     // This has to happen after shutting down the child protocols.
     layers::CompositorThreadHolder::Shutdown();
     image::ImageMemoryReporter::ShutdownForWebRender();
@@ -1384,8 +1328,16 @@ void gfxPlatform::ShutdownLayersIPC() {
 
       Preferences::UnregisterCallback(WebRenderDebugPrefChangeCallback,
                                       WR_DEBUG_PREF);
+      Preferences::UnregisterCallback(WebRendeProfilerUIPrefChangeCallback,
+                                      "gfx.webrender.debug.profiler-ui");
+      Preferences::UnregisterCallback(
+          WebRenderBlobTileSizePrefChangeCallback,
+          nsDependentCString(
+              StaticPrefs::GetPrefName_gfx_webrender_blob_tile_size()));
     }
-
+#if defined(XP_WIN)
+    widget::WinWindowOcclusionTracker::ShutDown();
+#endif
   } else {
     // TODO: There are other kind of processes and we should make sure gfx
     // stuff is either not created there or shut down properly.
@@ -1399,12 +1351,10 @@ void gfxPlatform::WillShutdown() {
   mScreenReferenceSurface = nullptr;
   mScreenReferenceDrawTarget = nullptr;
 
-#ifdef USE_SKIA
   // Always clear out the Skia font cache here, in case it is referencing any
   // SharedFTFaces that would otherwise outlive destruction of the FT_Library
   // that owns them.
   SkGraphics::PurgeFontCache();
-#endif
 
   // The cairo folks think we should only clean up in debug builds,
   // but we're generally in the habit of trying to shut down as
@@ -1414,9 +1364,7 @@ void gfxPlatform::WillShutdown() {
   // because cairo can assert and thus crash on shutdown, don't do this in
   // release builds
 #ifdef NS_FREE_PERMANENT_DATA
-#  if MOZ_TREE_CAIRO
   cairo_debug_reset_static_data();
-#  endif
 #endif
 }
 
@@ -1614,40 +1562,10 @@ already_AddRefed<DataSourceSurface> gfxPlatform::GetWrappedDataSourceSurface(
   return result.forget();
 }
 
-void gfxPlatform::ComputeTileSize() {
-  // The tile size should be picked in the parent processes
-  // and sent to the child processes over IPDL GetTileSize.
-  if (!XRE_IsParentProcess()) {
-    return;
-  }
-
-  int32_t w = StaticPrefs::layers_tile_width_AtStartup();
-  int32_t h = StaticPrefs::layers_tile_height_AtStartup();
-
-  if (StaticPrefs::layers_tiles_adjust_AtStartup()) {
-    gfx::IntSize screenSize = GetScreenSize();
-    if (screenSize.width > 0) {
-      // Choose a size so that there are between 2 and 4 tiles per screen width.
-      // FIXME: we should probably make sure this is within the max texture
-      // size, but I think everything should at least support 1024
-      w = h = clamped(int32_t(RoundUpPow2(screenSize.width)) / 4, 256, 1024);
-    }
-  }
-
-  // Don't allow changing the tile size after we've set it.
-  // Right now the code assumes that the tile size doesn't change.
-  MOZ_ASSERT(gfxVars::TileSize().width == -1 &&
-             gfxVars::TileSize().height == -1);
-
-  gfxVars::SetTileSize(IntSize(w, h));
-}
-
 void gfxPlatform::PopulateScreenInfo() {
   nsCOMPtr<nsIScreenManager> manager =
       do_GetService("@mozilla.org/gfx/screenmanager;1");
   MOZ_ASSERT(manager, "failed to get nsIScreenManager");
-
-  manager->GetTotalScreenPixels(&mScreenPixels);
 
   nsCOMPtr<nsIScreen> screen;
   manager->GetPrimaryScreen(getter_AddRefs(screen));
@@ -1674,12 +1592,10 @@ bool gfxPlatform::SupportsAzureContentForDrawTarget(DrawTarget* aTarget) {
 }
 
 void gfxPlatform::PurgeSkiaFontCache() {
-#ifdef USE_SKIA
   if (gfxPlatform::GetPlatform()->GetDefaultContentBackend() ==
       BackendType::SKIA) {
     SkGraphics::PurgeFontCache();
   }
-#endif
 }
 
 already_AddRefed<DrawTarget> gfxPlatform::CreateDrawTargetForBackend(
@@ -1706,10 +1622,17 @@ already_AddRefed<DrawTarget> gfxPlatform::CreateDrawTargetForBackend(
 already_AddRefed<DrawTarget> gfxPlatform::CreateOffscreenCanvasDrawTarget(
     const IntSize& aSize, SurfaceFormat aFormat) {
   NS_ASSERTION(mPreferredCanvasBackend != BackendType::NONE, "No backend.");
-  RefPtr<DrawTarget> target =
-      CreateDrawTargetForBackend(mPreferredCanvasBackend, aSize, aFormat);
-  if (target || mFallbackCanvasBackend == BackendType::NONE) {
-    return target.forget();
+
+  // If we are using remote canvas we don't want to use acceleration in
+  // canvas DrawTargets we are not remoting, so we always use the fallback
+  // software one.
+  if (!gfxPlatform::UseRemoteCanvas() ||
+      !gfxPlatform::IsBackendAccelerated(mPreferredCanvasBackend)) {
+    RefPtr<DrawTarget> target =
+        CreateDrawTargetForBackend(mPreferredCanvasBackend, aSize, aFormat);
+    if (target || mFallbackCanvasBackend == BackendType::NONE) {
+      return target.forget();
+    }
   }
 
 #ifdef XP_WIN
@@ -1747,11 +1670,7 @@ already_AddRefed<DrawTarget> gfxPlatform::CreateSimilarSoftwareDrawTarget(
   if (Factory::DoesBackendSupportDataDrawtarget(aDT->GetBackendType())) {
     dt = aDT->CreateSimilarDrawTarget(aSize, aFormat);
   } else {
-#ifdef USE_SKIA
     BackendType backendType = BackendType::SKIA;
-#else
-    BackendType backendType = BackendType::CAIRO;
-#endif
     dt = Factory::CreateDrawTarget(backendType, aSize, aFormat);
   }
 
@@ -1766,11 +1685,7 @@ already_AddRefed<DrawTarget> gfxPlatform::CreateDrawTargetForData(
   NS_ASSERTION(backendType != BackendType::NONE, "No backend.");
 
   if (!Factory::DoesBackendSupportDataDrawtarget(backendType)) {
-#ifdef USE_SKIA
     backendType = BackendType::SKIA;
-#else
-    backendType = BackendType::CAIRO;
-#endif
   }
 
   RefPtr<DrawTarget> dt = Factory::CreateDrawTargetForData(
@@ -1796,8 +1711,8 @@ nsresult gfxPlatform::GetFontList(nsAtom* aLangGroup,
   return NS_OK;
 }
 
-nsresult gfxPlatform::UpdateFontList() {
-  gfxPlatformFontList::PlatformFontList()->UpdateFontList();
+nsresult gfxPlatform::UpdateFontList(bool aFullRebuild) {
+  gfxPlatformFontList::PlatformFontList()->UpdateFontList(aFullRebuild);
   return NS_OK;
 }
 
@@ -1813,18 +1728,11 @@ nsAutoCString gfxPlatform::GetDefaultFontName(
   // this one variable:
   nsAutoCString result;
 
-  FamilyAndGeneric fam =
-      gfxPlatformFontList::PlatformFontList()->GetDefaultFontFamily(
-          aLangGroup, aGenericFamily);
-  if (fam.mFamily.mIsShared) {
-    if (fam.mFamily.mShared) {
-      fontlist::FontList* fontList =
-          gfxPlatformFontList::PlatformFontList()->SharedFontList();
-      result = fam.mFamily.mShared->DisplayName().AsString(fontList);
-    }
-  } else if (fam.mFamily.mUnshared) {
-    fam.mFamily.mUnshared->LocalizedName(result);
-  }  // (else, leave 'result' empty)
+  auto* pfl = gfxPlatformFontList::PlatformFontList();
+  FamilyAndGeneric fam = pfl->GetDefaultFontFamily(aLangGroup, aGenericFamily);
+  if (!pfl->GetLocalizedFamilyName(fam.mFamily, result)) {
+    NS_WARNING("missing default font-family name");
+  }
 
   return result;
 }
@@ -1908,19 +1816,23 @@ bool gfxPlatform::IsFontFormatSupported(uint32_t aFormatFlags) {
 }
 
 gfxFontGroup* gfxPlatform::CreateFontGroup(
-    const FontFamilyList& aFontFamilyList, const gfxFontStyle* aStyle,
-    gfxTextPerfMetrics* aTextPerf, FontMatchingStats* aFontMatchingStats,
-    gfxUserFontSet* aUserFontSet, gfxFloat aDevToCssSize) const {
-  return new gfxFontGroup(aFontFamilyList, aStyle, aTextPerf,
-                          aFontMatchingStats, aUserFontSet, aDevToCssSize);
+    nsPresContext* aPresContext, const StyleFontFamilyList& aFontFamilyList,
+    const gfxFontStyle* aStyle, nsAtom* aLanguage, bool aExplicitLanguage,
+    gfxTextPerfMetrics* aTextPerf, gfxUserFontSet* aUserFontSet,
+    gfxFloat aDevToCssSize) const {
+  return new gfxFontGroup(aPresContext, aFontFamilyList, aStyle, aLanguage,
+                          aExplicitLanguage, aTextPerf, aUserFontSet,
+                          aDevToCssSize);
 }
 
-gfxFontEntry* gfxPlatform::LookupLocalFont(const nsACString& aFontName,
+gfxFontEntry* gfxPlatform::LookupLocalFont(nsPresContext* aPresContext,
+                                           const nsACString& aFontName,
                                            WeightRange aWeightForEntry,
                                            StretchRange aStretchForEntry,
                                            SlantStyleRange aStyleForEntry) {
   return gfxPlatformFontList::PlatformFontList()->LookupLocalFont(
-      aFontName, aWeightForEntry, aStretchForEntry, aStyleForEntry);
+      aPresContext, aFontName, aWeightForEntry, aStretchForEntry,
+      aStyleForEntry);
 }
 
 gfxFontEntry* gfxPlatform::MakePlatformFont(const nsACString& aFontName,
@@ -1932,23 +1844,6 @@ gfxFontEntry* gfxPlatform::MakePlatformFont(const nsACString& aFontName,
   return gfxPlatformFontList::PlatformFontList()->MakePlatformFont(
       aFontName, aWeightForEntry, aStretchForEntry, aStyleForEntry, aFontData,
       aLength);
-}
-
-mozilla::layers::DiagnosticTypes gfxPlatform::GetLayerDiagnosticTypes() {
-  mozilla::layers::DiagnosticTypes type = DiagnosticTypes::NO_DIAGNOSTIC;
-  if (StaticPrefs::layers_draw_borders()) {
-    type |= mozilla::layers::DiagnosticTypes::LAYER_BORDERS;
-  }
-  if (StaticPrefs::layers_draw_tile_borders()) {
-    type |= mozilla::layers::DiagnosticTypes::TILE_BORDERS;
-  }
-  if (StaticPrefs::layers_draw_bigimage_borders()) {
-    type |= mozilla::layers::DiagnosticTypes::BIGIMAGE_BORDERS;
-  }
-  if (StaticPrefs::layers_flash_borders()) {
-    type |= mozilla::layers::DiagnosticTypes::FLASH_BORDERS;
-  }
-  return type;
 }
 
 BackendPrefsData gfxPlatform::GetBackendPrefs() const {
@@ -2003,6 +1898,12 @@ void gfxPlatform::InitBackendPrefs(BackendPrefsData&& aPrefsData) {
   mSoftwareBackend = GetContentBackendPref(swBackendBits);
   if (mSoftwareBackend == BackendType::NONE) {
     mSoftwareBackend = BackendType::SKIA;
+  }
+
+  // If we don't have a fallback canvas backend then use the same software
+  // fallback as content.
+  if (mFallbackCanvasBackend == BackendType::NONE) {
+    mFallbackCanvasBackend = mSoftwareBackend;
   }
 
   if (XRE_IsParentProcess()) {
@@ -2064,33 +1965,7 @@ bool gfxPlatform::OffMainThreadCompositingEnabled() {
   return UsesOffMainThreadCompositing();
 }
 
-eCMSMode gfxPlatform::GetCMSMode() {
-  if (!gCMSInitialized) {
-    int32_t mode = StaticPrefs::gfx_color_management_mode();
-    if (mode >= 0 && mode < eCMSMode_AllCount) {
-      gCMSMode = static_cast<eCMSMode>(mode);
-    }
-
-    bool enableV4 = StaticPrefs::gfx_color_management_enablev4();
-    if (enableV4) {
-      qcms_enable_iccv4();
-    }
-#ifdef MOZILLA_MAY_SUPPORT_AVX
-    if (mozilla::supports_avx()) {
-      qcms_enable_avx();
-    }
-#endif
-#ifdef MOZILLA_MAY_SUPPORT_NEON
-    if (mozilla::supports_neon()) {
-      qcms_enable_neon();
-    }
-#endif
-    gCMSInitialized = true;
-  }
-  return gCMSMode;
-}
-
-void gfxPlatform::SetCMSModeOverride(eCMSMode aMode) {
+void gfxPlatform::SetCMSModeOverride(CMSMode aMode) {
   MOZ_ASSERT(gCMSInitialized);
   gCMSMode = aMode;
 }
@@ -2164,121 +2039,100 @@ const mozilla::gfx::ContentDeviceData* gfxPlatform::GetInitContentDeviceData() {
   return gContentDeviceInitData;
 }
 
-void gfxPlatform::CreateCMSOutputProfile() {
+void gfxPlatform::InitializeCMS() {
+  if (gCMSInitialized) {
+    return;
+  }
+
+  if (XRE_IsGPUProcess()) {
+    // Colors in the GPU process should already be managed, so we don't need to
+    // perform color management there.
+    gCMSInitialized = true;
+    return;
+  }
+
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread(),
+                        "CMS should be initialized on the main thread");
+  if (MOZ_UNLIKELY(!NS_IsMainThread())) {
+    return;
+  }
+
+  {
+    int32_t mode = StaticPrefs::gfx_color_management_mode();
+    if (mode >= 0 && mode < int32_t(CMSMode::AllCount)) {
+      gCMSMode = CMSMode(mode);
+    }
+  }
+
+  gCMSsRGBProfile = qcms_profile_sRGB();
+
+  /* Determine if we're using the internal override to force sRGB as
+     an output profile for reftests. See Bug 452125.
+
+     Note that we don't normally (outside of tests) set a default value
+     of this preference, which means nsIPrefBranch::GetBoolPref will
+     typically throw (and leave its out-param untouched).
+   */
+  if (StaticPrefs::gfx_color_management_force_srgb() ||
+      StaticPrefs::gfx_color_management_native_srgb()) {
+    gCMSOutputProfile = gCMSsRGBProfile;
+  }
+
   if (!gCMSOutputProfile) {
-    /* Determine if we're using the internal override to force sRGB as
-       an output profile for reftests. See Bug 452125.
-
-       Note that we don't normally (outside of tests) set a default value
-       of this preference, which means nsIPrefBranch::GetBoolPref will
-       typically throw (and leave its out-param untouched).
-     */
-    if (Preferences::GetBool(GFX_PREF_CMS_FORCE_SRGB, false)) {
-      gCMSOutputProfile = GetCMSsRGBProfile();
-    }
-
-    if (!gCMSOutputProfile) {
-      nsTArray<uint8_t> outputProfileData =
-          gfxPlatform::GetPlatform()->GetPlatformCMSOutputProfileData();
-      if (!outputProfileData.IsEmpty()) {
-        gCMSOutputProfile = qcms_profile_from_memory(
-            outputProfileData.Elements(), outputProfileData.Length());
-      }
-    }
-
-    /* Determine if the profile looks bogus. If so, close the profile
-     * and use sRGB instead. See bug 460629, */
-    if (gCMSOutputProfile && qcms_profile_is_bogus(gCMSOutputProfile)) {
-      NS_ASSERTION(gCMSOutputProfile != GetCMSsRGBProfile(),
-                   "Builtin sRGB profile tagged as bogus!!!");
-      qcms_profile_release(gCMSOutputProfile);
-      gCMSOutputProfile = nullptr;
-    }
-
-    if (!gCMSOutputProfile) {
-      gCMSOutputProfile = GetCMSsRGBProfile();
-    }
-    /* Precache the LUT16 Interpolations for the output profile. See
-       bug 444661 for details. */
-    qcms_profile_precache_output_transform(gCMSOutputProfile);
-  }
-}
-
-qcms_profile* gfxPlatform::GetCMSOutputProfile() { return gCMSOutputProfile; }
-
-qcms_profile* gfxPlatform::GetCMSsRGBProfile() {
-  if (!gCMSsRGBProfile) {
-    /* Create the profile using qcms. */
-    gCMSsRGBProfile = qcms_profile_sRGB();
-  }
-  return gCMSsRGBProfile;
-}
-
-qcms_transform* gfxPlatform::GetCMSRGBTransform() {
-  if (!gCMSRGBTransform && !gCMSRGBTransformFailed) {
-    qcms_profile *inProfile, *outProfile;
-    outProfile = GetCMSOutputProfile();
-    inProfile = GetCMSsRGBProfile();
-
-    if (!inProfile || !outProfile) return nullptr;
-
-    gCMSRGBTransform =
-        qcms_transform_create(inProfile, QCMS_DATA_RGB_8, outProfile,
-                              QCMS_DATA_RGB_8, QCMS_INTENT_PERCEPTUAL);
-    if (!gCMSRGBTransform) {
-      gCMSRGBTransformFailed = true;
+    nsTArray<uint8_t> outputProfileData =
+        gfxPlatform::GetPlatform()->GetPlatformCMSOutputProfileData();
+    if (!outputProfileData.IsEmpty()) {
+      gCMSOutputProfile = qcms_profile_from_memory(outputProfileData.Elements(),
+                                                   outputProfileData.Length());
     }
   }
 
-  return gCMSRGBTransform;
-}
-
-qcms_transform* gfxPlatform::GetCMSInverseRGBTransform() {
-  if (!gCMSInverseRGBTransform) {
-    qcms_profile *inProfile, *outProfile;
-    inProfile = GetCMSOutputProfile();
-    outProfile = GetCMSsRGBProfile();
-
-    if (!inProfile || !outProfile) return nullptr;
-
-    gCMSInverseRGBTransform =
-        qcms_transform_create(inProfile, QCMS_DATA_RGB_8, outProfile,
-                              QCMS_DATA_RGB_8, QCMS_INTENT_PERCEPTUAL);
+  /* Determine if the profile looks bogus. If so, close the profile
+   * and use sRGB instead. See bug 460629, */
+  if (gCMSOutputProfile && qcms_profile_is_bogus(gCMSOutputProfile)) {
+    NS_ASSERTION(gCMSOutputProfile != gCMSsRGBProfile,
+                 "Builtin sRGB profile tagged as bogus!!!");
+    qcms_profile_release(gCMSOutputProfile);
+    gCMSOutputProfile = nullptr;
   }
 
-  return gCMSInverseRGBTransform;
-}
-
-qcms_transform* gfxPlatform::GetCMSRGBATransform() {
-  if (!gCMSRGBATransform) {
-    qcms_profile *inProfile, *outProfile;
-    outProfile = GetCMSOutputProfile();
-    inProfile = GetCMSsRGBProfile();
-
-    if (!inProfile || !outProfile) return nullptr;
-
-    gCMSRGBATransform =
-        qcms_transform_create(inProfile, QCMS_DATA_RGBA_8, outProfile,
-                              QCMS_DATA_RGBA_8, QCMS_INTENT_PERCEPTUAL);
+  if (!gCMSOutputProfile) {
+    gCMSOutputProfile = gCMSsRGBProfile;
   }
 
-  return gCMSRGBATransform;
-}
+  /* Precache the LUT16 Interpolations for the output profile. See
+     bug 444661 for details. */
+  qcms_profile_precache_output_transform(gCMSOutputProfile);
 
-qcms_transform* gfxPlatform::GetCMSBGRATransform() {
-  if (!gCMSBGRATransform) {
-    qcms_profile *inProfile, *outProfile;
-    outProfile = GetCMSOutputProfile();
-    inProfile = GetCMSsRGBProfile();
+  // Create the RGB transform.
+  gCMSRGBTransform =
+      qcms_transform_create(gCMSsRGBProfile, QCMS_DATA_RGB_8, gCMSOutputProfile,
+                            QCMS_DATA_RGB_8, QCMS_INTENT_PERCEPTUAL);
 
-    if (!inProfile || !outProfile) return nullptr;
+  // And the inverse.
+  gCMSInverseRGBTransform =
+      qcms_transform_create(gCMSOutputProfile, QCMS_DATA_RGB_8, gCMSsRGBProfile,
+                            QCMS_DATA_RGB_8, QCMS_INTENT_PERCEPTUAL);
 
-    gCMSBGRATransform =
-        qcms_transform_create(inProfile, QCMS_DATA_BGRA_8, outProfile,
-                              QCMS_DATA_BGRA_8, QCMS_INTENT_PERCEPTUAL);
+  // The RGBA transform.
+  gCMSRGBATransform = qcms_transform_create(gCMSsRGBProfile, QCMS_DATA_RGBA_8,
+                                            gCMSOutputProfile, QCMS_DATA_RGBA_8,
+                                            QCMS_INTENT_PERCEPTUAL);
+
+  // And the BGRA one.
+  gCMSBGRATransform = qcms_transform_create(gCMSsRGBProfile, QCMS_DATA_BGRA_8,
+                                            gCMSOutputProfile, QCMS_DATA_BGRA_8,
+                                            QCMS_INTENT_PERCEPTUAL);
+
+  // FIXME: We only enable iccv4 after we create the platform profile, to
+  // wallpaper over bug 1697787.
+  //
+  // This should happen ideally right after setting gCMSMode.
+  if (StaticPrefs::gfx_color_management_enablev4()) {
+    qcms_enable_iccv4();
   }
 
-  return gCMSBGRATransform;
+  gCMSInitialized = true;
 }
 
 qcms_transform* gfxPlatform::GetCMSOSRGBATransform() {
@@ -2306,7 +2160,7 @@ qcms_data_type gfxPlatform::GetCMSOSRGBAType() {
 }
 
 /* Shuts down various transforms and profiles for CMS. */
-static void ShutdownCMS() {
+void gfxPlatform::ShutdownCMS() {
   if (gCMSRGBTransform) {
     qcms_transform_release(gCMSRGBTransform);
     gCMSRGBTransform = nullptr;
@@ -2327,7 +2181,9 @@ static void ShutdownCMS() {
     qcms_profile_release(gCMSOutputProfile);
 
     // handle the aliased case
-    if (gCMSsRGBProfile == gCMSOutputProfile) gCMSsRGBProfile = nullptr;
+    if (gCMSsRGBProfile == gCMSOutputProfile) {
+      gCMSsRGBProfile = nullptr;
+    }
     gCMSOutputProfile = nullptr;
   }
   if (gCMSsRGBProfile) {
@@ -2336,7 +2192,7 @@ static void ShutdownCMS() {
   }
 
   // Reset the state variables
-  gCMSMode = eCMSMode_Off;
+  gCMSMode = CMSMode::Off;
   gCMSInitialized = false;
 }
 
@@ -2358,20 +2214,22 @@ void gfxPlatform::FlushFontAndWordCaches() {
 }
 
 /* static */
-void gfxPlatform::ForceGlobalReflow() {
+void gfxPlatform::ForceGlobalReflow(NeedsReframe aNeedsReframe,
+                                    BroadcastToChildren aBroadcastToChildren) {
   MOZ_ASSERT(NS_IsMainThread());
-  if (XRE_IsParentProcess()) {
-    // Modify a preference that will trigger reflow everywhere (in all
-    // content processes, as well as the parent).
-    static const char kPrefName[] = "font.internaluseonly.changed";
-    bool fontInternalChange = Preferences::GetBool(kPrefName, false);
-    Preferences::SetBool(kPrefName, !fontInternalChange);
-  } else {
-    // Send a notification that will be observed by PresShells in this
-    // process only.
-    nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
-    if (obs) {
-      obs->NotifyObservers(nullptr, "font-info-updated", nullptr);
+  const bool reframe = aNeedsReframe == NeedsReframe::Yes;
+  // Send a notification that will be observed by PresShells in this process
+  // only.
+  if (nsCOMPtr<nsIObserverService> obs = services::GetObserverService()) {
+    char16_t needsReframe[] = {char16_t(reframe), 0};
+    obs->NotifyObservers(nullptr, "font-info-updated", needsReframe);
+  }
+  if (XRE_IsParentProcess() &&
+      aBroadcastToChildren == BroadcastToChildren::Yes) {
+    // Propagate the change to child processes.
+    for (auto* process :
+         dom::ContentParent::AllProcesses(dom::ContentParent::eLive)) {
+      Unused << process->SendForceGlobalReflow(reframe);
     }
   }
 }
@@ -2491,7 +2349,6 @@ gfxImageFormat gfxPlatform::OptimalFormatForContent(gfxContentType aContent) {
  */
 static mozilla::Atomic<bool> sLayersSupportsHardwareVideoDecoding(false);
 static bool sLayersHardwareVideoDecodingFailed = false;
-static bool sBufferRotationCheckPref = true;
 
 static mozilla::Atomic<bool> sLayersAccelerationPrefsInitialized(false);
 
@@ -2525,7 +2382,7 @@ void gfxPlatform::InitAcceleration() {
   // explicit.
   MOZ_ASSERT(NS_IsMainThread(), "can only initialize prefs on the main thread");
 
-  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
   nsCString discardFailureId;
   int32_t status;
 
@@ -2615,12 +2472,6 @@ void gfxPlatform::InitGPUProcessPrefs() {
                          "FEATURE_FAILURE_SAFE_MODE"_ns);
     return;
   }
-  if (StaticPrefs::gfx_layerscope_enabled()) {
-    gpuProc.ForceDisable(FeatureStatus::Blocked,
-                         "LayerScope does not work in the GPU process",
-                         "FEATURE_FAILURE_LAYERSCOPE"_ns);
-    return;
-  }
 
   InitPlatformGPUProcessPrefs();
 }
@@ -2676,20 +2527,17 @@ bool gfxPlatform::WebRenderEnvvarEnabled() {
   return (env && *env == '1');
 }
 
-/*static*/
-bool gfxPlatform::WebRenderEnvvarDisabled() {
-  const char* env = PR_GetEnv("MOZ_WEBRENDER");
-  return (env && *env == '0');
+/* static */ const char* gfxPlatform::WebRenderResourcePathOverride() {
+  const char* resourcePath = PR_GetEnv("WR_RESOURCE_PATH");
+  if (!resourcePath || resourcePath[0] == '\0') {
+    return nullptr;
+  }
+  return resourcePath;
 }
 
 void gfxPlatform::InitWebRenderConfig() {
   bool prefEnabled = WebRenderPrefEnabled();
   bool envvarEnabled = WebRenderEnvvarEnabled();
-
-  // This would ideally be in the nsCSSProps code
-  // but nsCSSProps is initialized before gfxPlatform
-  // so it has to be done here.
-  gfxVars::AddReceiver(&nsCSSProps::GfxVarReceiver());
 
   // WR? WR+   => means WR was enabled via gfx.webrender.all.qualified on
   //              qualified hardware
@@ -2705,9 +2553,6 @@ void gfxPlatform::InitWebRenderConfig() {
     // later in this function. For other processes we still want to report
     // the state of the feature for crash reports.
     if (gfxVars::UseWebRender()) {
-      // gfxVars doesn't notify receivers when initialized on content processes
-      // we need to explicitly recompute backdrop-filter's enabled state here.
-      nsCSSProps::RecomputeEnabledState("layout.css.backdrop-filter.enabled");
       reporter.SetSuccessful();
     }
     return;
@@ -2718,48 +2563,76 @@ void gfxPlatform::InitWebRenderConfig() {
   manager.Init();
   manager.ConfigureWebRender();
 
-#ifdef XP_WIN
-  if (gfxConfig::IsEnabled(Feature::WEBRENDER_ANGLE)) {
-    gfxVars::SetUseWebRenderANGLE(gfxConfig::IsEnabled(Feature::WEBRENDER));
+  bool hasHardware = gfxConfig::IsEnabled(Feature::WEBRENDER);
+  bool hasSoftware = gfxConfig::IsEnabled(Feature::WEBRENDER_SOFTWARE);
+  bool hasWebRender = hasHardware || hasSoftware;
+
+#ifdef MOZ_WIDGET_GTK
+  // We require a hardware driver to back the GL context unless the user forced
+  // on WebRender.
+  if (!gfxConfig::IsForcedOnByUser(Feature::WEBRENDER) &&
+      StaticPrefs::gfx_webrender_reject_software_driver_AtStartup()) {
+    gfxVars::SetWebRenderRequiresHardwareDriver(true);
   }
 #endif
 
-  if (Preferences::GetBool("gfx.webrender.program-binary-disk", false)) {
-    gfxVars::SetUseWebRenderProgramBinaryDisk(
-        gfxConfig::IsEnabled(Feature::WEBRENDER));
+#ifdef XP_WIN
+  if (gfxConfig::IsEnabled(Feature::WEBRENDER_ANGLE)) {
+    gfxVars::SetUseWebRenderANGLE(hasWebRender);
+  }
+#endif
+
+  if (gfxConfig::IsEnabled(Feature::WEBRENDER_SHADER_CACHE)) {
+    gfxVars::SetUseWebRenderProgramBinaryDisk(hasWebRender);
   }
 
-  if (StaticPrefs::gfx_webrender_use_optimized_shaders_AtStartup()) {
-    gfxVars::SetUseWebRenderOptimizedShaders(
-        gfxConfig::IsEnabled(Feature::WEBRENDER));
-  }
+  gfxVars::SetUseWebRenderOptimizedShaders(
+      gfxConfig::IsEnabled(Feature::WEBRENDER_OPTIMIZED_SHADERS));
 
-  if (Preferences::GetBool("gfx.webrender.software", false)) {
-    gfxVars::SetUseSoftwareWebRender(gfxConfig::IsEnabled(Feature::WEBRENDER));
-  }
+  gfxVars::SetUseSoftwareWebRender(!hasHardware && hasSoftware);
+
+  Preferences::RegisterPrefixCallbackAndCall(SwapIntervalPrefChangeCallback,
+                                             "gfx.swap-interval");
 
   // gfxFeature is not usable in the GPU process, so we use gfxVars to transmit
   // this feature
-  if (gfxConfig::IsEnabled(Feature::WEBRENDER)) {
+  if (hasWebRender) {
     gfxVars::SetUseWebRender(true);
     reporter.SetSuccessful();
 
     Preferences::RegisterPrefixCallbackAndCall(WebRenderDebugPrefChangeCallback,
                                                WR_DEBUG_PREF);
+
+    RegisterWebRenderBoolParamCallback();
+
+    Preferences::RegisterPrefixCallbackAndCall(
+        WebRendeProfilerUIPrefChangeCallback,
+        "gfx.webrender.debug.profiler-ui");
     Preferences::RegisterCallback(
         WebRenderQualityPrefChangeCallback,
         nsDependentCString(
             StaticPrefs::
                 GetPrefName_gfx_webrender_quality_force_subpixel_aa_where_possible()));
-    Preferences::RegisterCallback(
-        WebRenderMultithreadingPrefChangeCallback,
-        nsDependentCString(
-            StaticPrefs::GetPrefName_gfx_webrender_enable_multithreading()));
 
     Preferences::RegisterCallback(
         WebRenderBatchingPrefChangeCallback,
         nsDependentCString(
             StaticPrefs::GetPrefName_gfx_webrender_batching_lookback()));
+
+    Preferences::RegisterCallbackAndCall(
+        WebRenderBlobTileSizePrefChangeCallback,
+        nsDependentCString(
+            StaticPrefs::GetPrefName_gfx_webrender_blob_tile_size()));
+
+    Preferences::RegisterCallbackAndCall(
+        WebRenderUploadThresholdPrefChangeCallback,
+        nsDependentCString(
+            StaticPrefs::GetPrefName_gfx_webrender_batched_upload_threshold()));
+
+    if (WebRenderResourcePathOverride()) {
+      CrashReporter::AnnotateCrashReport(
+          CrashReporter::Annotation::IsWebRenderResourcePathOverridden, true);
+    }
 
     UpdateForceSubpixelAAWherePossible();
   }
@@ -2768,9 +2641,18 @@ void gfxPlatform::InitWebRenderConfig() {
   if (gfxConfig::IsEnabled(Feature::WEBRENDER_DCOMP_PRESENT)) {
     gfxVars::SetUseWebRenderDCompWin(true);
   }
+  if (StaticPrefs::gfx_webrender_software_d3d11_AtStartup()) {
+    gfxVars::SetAllowSoftwareWebRenderD3D11(true);
+  }
+  if (Preferences::GetBool("gfx.webrender.dcomp-video-overlay-win", false)) {
+    if (IsWin10AnniversaryUpdateOrLater() &&
+        gfxConfig::IsEnabled(Feature::WEBRENDER_COMPOSITOR)) {
+      MOZ_ASSERT(gfxConfig::IsEnabled(Feature::WEBRENDER_DCOMP_PRESENT));
+      gfxVars::SetUseWebRenderDCompVideoOverlayWin(true);
+    }
+  }
   if (Preferences::GetBool("gfx.webrender.flip-sequential", false)) {
-    // XXX relax win version to windows 8.
-    if (IsWin10OrLater() && UseWebRender() && gfxVars::UseWebRenderANGLE()) {
+    if (UseWebRender() && gfxVars::UseWebRenderANGLE()) {
       gfxVars::SetUseWebRenderFlipSequentialWin(true);
     }
   }
@@ -2806,6 +2688,59 @@ void gfxPlatform::InitWebRenderConfig() {
   gfxUtils::RemoveShaderCacheFromDiskIfNecessary();
 }
 
+void gfxPlatform::InitWebGLConfig() {
+  // Depends on InitWebRenderConfig() for UseWebRender().
+
+  if (!XRE_IsParentProcess()) return;
+
+  const nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
+
+  const auto IsFeatureOk = [&](const int32_t feature) {
+    nsCString discardFailureId;
+    int32_t status;
+    MOZ_RELEASE_ASSERT(NS_SUCCEEDED(
+        gfxInfo->GetFeatureStatus(feature, discardFailureId, &status)));
+    return (status == nsIGfxInfo::FEATURE_STATUS_OK);
+  };
+
+  gfxVars::SetAllowWebgl2(IsFeatureOk(nsIGfxInfo::FEATURE_WEBGL2));
+  gfxVars::SetWebglAllowWindowsNativeGl(
+      IsFeatureOk(nsIGfxInfo::FEATURE_WEBGL_OPENGL));
+  gfxVars::SetAllowWebglAccelAngle(
+      IsFeatureOk(nsIGfxInfo::FEATURE_WEBGL_ANGLE));
+
+  if (kIsMacOS) {
+    // Avoid crash for Intel HD Graphics 3000 on OSX. (Bug 1413269)
+    nsString vendorID, deviceID;
+    gfxInfo->GetAdapterVendorID(vendorID);
+    gfxInfo->GetAdapterDeviceID(deviceID);
+    if (vendorID.EqualsLiteral("0x8086") &&
+        (deviceID.EqualsLiteral("0x0116") ||
+         deviceID.EqualsLiteral("0x0126"))) {
+      gfxVars::SetWebglAllowCoreProfile(false);
+    }
+  }
+
+  bool allowWebGLOop =
+      IsFeatureOk(nsIGfxInfo::FEATURE_ALLOW_WEBGL_OUT_OF_PROCESS);
+  gfxVars::SetAllowWebglOop(allowWebGLOop);
+
+  bool threadsafeGL = IsFeatureOk(nsIGfxInfo::FEATURE_THREADSAFE_GL);
+  threadsafeGL |= StaticPrefs::webgl_threadsafe_gl_force_enabled_AtStartup();
+  threadsafeGL &= !StaticPrefs::webgl_threadsafe_gl_force_disabled_AtStartup();
+  gfxVars::SetSupportsThreadsafeGL(threadsafeGL);
+
+  if (kIsAndroid) {
+    // Don't enable robust buffer access on Adreno 630 devices.
+    // It causes the linking of some shaders to fail. See bug 1485441.
+    nsAutoString renderer;
+    gfxInfo->GetAdapterDeviceID(renderer);
+    if (renderer.Find("Adreno (TM) 630") != -1) {
+      gfxVars::SetAllowEglRbab(false);
+    }
+  }
+}
+
 void gfxPlatform::InitWebGPUConfig() {
   FeatureState& feature = gfxConfig::GetFeature(Feature::WEBGPU);
   feature.SetDefaultFromPref("dom.webgpu.enabled", true, false);
@@ -2814,64 +2749,67 @@ void gfxPlatform::InitWebGPUConfig() {
                        "WebGPU can only be enabled in nightly",
                        "WEBGPU_DISABLE_NON_NIGHTLY"_ns);
 #endif
+  if (!UseWebRender()) {
+    feature.ForceDisable(FeatureStatus::UnavailableNoWebRender,
+                         "WebGPU can't present without WebRender",
+                         "FEATURE_FAILURE_WEBGPU_NEED_WEBRENDER"_ns);
+  }
 }
 
-void gfxPlatform::InitOMTPConfig() {
-  ScopedGfxFeatureReporter reporter("OMTP");
-
-  FeatureState& omtp = gfxConfig::GetFeature(Feature::OMTP);
-  int32_t paintWorkerCount = PaintThread::CalculatePaintWorkerCount();
-
-  if (!XRE_IsParentProcess()) {
-    // The parent process runs through all the real decision-making code
-    // later in this function. For other processes we still want to report
-    // the state of the feature for crash reports.
-    if (gfxVars::UseOMTP()) {
-      reporter.SetSuccessful(paintWorkerCount);
-    }
+#ifdef XP_WIN
+static void WindowOcclusionPrefChangeCallback(const char* aPref, void*) {
+  const char* env = PR_GetEnv("MOZ_WINDOW_OCCLUSION");
+  if (env) {
+    // env has a higher priority than pref.
     return;
   }
 
-  omtp.SetDefaultFromPref("layers.omtp.enabled", true,
-                          Preferences::GetBool("layers.omtp.enabled", false,
-                                               PrefValueKind::Default));
+  FeatureState& feature = gfxConfig::GetFeature(Feature::WINDOW_OCCLUSION);
+  bool enabled =
+      StaticPrefs::widget_windows_window_occlusion_tracking_enabled();
 
-  if (sizeof(void*) <= sizeof(uint32_t)) {
-    int32_t cpuCores = PR_GetNumberOfProcessors();
-    const uint64_t kMinSystemMemory = 2147483648;  // 2 GB
-    if (cpuCores <= 2) {
-      omtp.ForceDisable(FeatureStatus::Broken,
-                        "OMTP is not supported on 32-bit with <= 2 cores",
-                        "FEATURE_FAILURE_OMTP_32BIT_CORES"_ns);
-    } else if (mTotalSystemMemory < kMinSystemMemory) {
-      omtp.ForceDisable(FeatureStatus::Broken,
-                        "OMTP is not supported on 32-bit with < 2 GB RAM",
-                        "FEATURE_FAILURE_OMTP_32BIT_MEM"_ns);
+  printf_stderr("Dynamically enable window occlusion %d\n", enabled);
+
+  // Update feature before calling WinUtils::EnableWindowOcclusion()
+  if (enabled) {
+    feature.UserEnable("User enabled by pref");
+  } else {
+    feature.UserDisable("User disabled via pref",
+                        "FEATURE_FAILURE_PREF_DISABLED"_ns);
+  }
+  widget::WinUtils::EnableWindowOcclusion(enabled);
+}
+#endif
+
+void gfxPlatform::InitWindowOcclusionConfig() {
+  if (!XRE_IsParentProcess()) {
+    return;
+  }
+#ifdef XP_WIN
+  FeatureState& feature = gfxConfig::GetFeature(Feature::WINDOW_OCCLUSION);
+  feature.SetDefaultFromPref(
+      StaticPrefs::
+          GetPrefName_widget_windows_window_occlusion_tracking_enabled(),
+      true,
+      StaticPrefs::
+          GetPrefDefault_widget_windows_window_occlusion_tracking_enabled());
+
+  const char* env = PR_GetEnv("MOZ_WINDOW_OCCLUSION");
+  if (env) {
+    if (*env == '1') {
+      feature.UserForceEnable("Force enabled by envvar");
+    } else {
+      feature.UserDisable("Force disabled by envvar",
+                          "FEATURE_FAILURE_OCCL_ENV"_ns);
     }
   }
 
-  if (mContentBackend == BackendType::CAIRO) {
-    omtp.ForceDisable(FeatureStatus::Broken,
-                      "OMTP is not supported when using cairo",
-                      "FEATURE_FAILURE_COMP_PREF"_ns);
-  }
-
-#ifdef XP_MACOSX
-  if (!nsCocoaFeatures::OnYosemiteOrLater()) {
-    omtp.ForceDisable(FeatureStatus::Blocked, "OMTP blocked before OSX 10.10",
-                      "FEATURE_FAILURE_OMTP_OSX_MAVERICKS"_ns);
-  }
+  Preferences::RegisterCallback(
+      WindowOcclusionPrefChangeCallback,
+      nsDependentCString(
+          StaticPrefs::
+              GetPrefName_widget_windows_window_occlusion_tracking_enabled()));
 #endif
-
-  if (InSafeMode()) {
-    omtp.ForceDisable(FeatureStatus::Blocked, "OMTP blocked by safe-mode",
-                      "FEATURE_FAILURE_COMP_SAFEMODE"_ns);
-  }
-
-  if (omtp.IsEnabled()) {
-    gfxVars::SetUseOMTP(true);
-    reporter.SetSuccessful(paintWorkerCount);
-  }
 }
 
 bool gfxPlatform::CanUseHardwareVideoDecoding() {
@@ -2888,19 +2826,6 @@ bool gfxPlatform::AccelerateLayersByDefault() {
 #else
   return false;
 #endif
-}
-
-bool gfxPlatform::BufferRotationEnabled() {
-  MutexAutoLock autoLock(*gGfxPlatformPrefsLock);
-
-  return sBufferRotationCheckPref &&
-         StaticPrefs::layers_bufferrotation_enabled_AtStartup();
-}
-
-void gfxPlatform::DisableBufferRotation() {
-  MutexAutoLock autoLock(*gGfxPlatformPrefsLock);
-
-  sBufferRotationCheckPref = false;
 }
 
 /* static */
@@ -2927,39 +2852,6 @@ bool gfxPlatform::UsesOffMainThreadCompositing() {
   }
 
   return result;
-}
-
-bool gfxPlatform::UsesTiling() const {
-  bool usesSkia = GetDefaultContentBackend() == BackendType::SKIA;
-
-  // We can't just test whether the PaintThread is initialized here because
-  // this function is used when initializing the PaintThread. So instead we
-  // check the conditions that enable OMTP with parallel painting.
-  bool usesPOMTP = XRE_IsContentProcess() && gfxVars::UseOMTP() &&
-                   (StaticPrefs::layers_omtp_paint_workers_AtStartup() == -1 ||
-                    StaticPrefs::layers_omtp_paint_workers_AtStartup() > 1);
-
-  return StaticPrefs::layers_enable_tiles_AtStartup() ||
-         (StaticPrefs::layers_enable_tiles_if_skia_pomtp_AtStartup() &&
-          usesSkia && usesPOMTP);
-}
-
-bool gfxPlatform::ContentUsesTiling() const {
-  BackendPrefsData data = GetBackendPrefs();
-  BackendType contentBackend = GetContentBackendPref(data.mContentBitmask);
-  if (contentBackend == BackendType::NONE) {
-    contentBackend = data.mContentDefault;
-  }
-
-  bool contentUsesSkia = contentBackend == BackendType::SKIA;
-  bool contentUsesPOMTP =
-      gfxVars::UseOMTP() &&
-      (StaticPrefs::layers_omtp_paint_workers_AtStartup() == -1 ||
-       StaticPrefs::layers_omtp_paint_workers_AtStartup() > 1);
-
-  return StaticPrefs::layers_enable_tiles_AtStartup() ||
-         (StaticPrefs::layers_enable_tiles_if_skia_pomtp_AtStartup() &&
-          contentUsesSkia && contentUsesPOMTP);
 }
 
 /***
@@ -3023,6 +2915,40 @@ void gfxPlatform::ReInitFrameRate() {
   }
 }
 
+const char* gfxPlatform::GetAzureCanvasBackend() const {
+  BackendType backend{};
+
+  if (gfxConfig::IsEnabled(Feature::GPU_PROCESS)) {
+    // Assume content process' backend prefs.
+    BackendPrefsData data = GetBackendPrefs();
+    backend = GetCanvasBackendPref(data.mCanvasBitmask);
+    if (backend == BackendType::NONE) {
+      backend = data.mCanvasDefault;
+    }
+  } else {
+    backend = mPreferredCanvasBackend;
+  }
+
+  return GetBackendName(backend);
+}
+
+const char* gfxPlatform::GetAzureContentBackend() const {
+  BackendType backend{};
+
+  if (gfxConfig::IsEnabled(Feature::GPU_PROCESS)) {
+    // Assume content process' backend prefs.
+    BackendPrefsData data = GetBackendPrefs();
+    backend = GetContentBackendPref(data.mContentBitmask);
+    if (backend == BackendType::NONE) {
+      backend = data.mContentDefault;
+    }
+  } else {
+    backend = mContentBackend;
+  }
+
+  return GetBackendName(backend);
+}
+
 void gfxPlatform::GetAzureBackendInfo(mozilla::widget::InfoObject& aObj) {
   if (gfxConfig::IsEnabled(Feature::GPU_PROCESS)) {
     aObj.DefineProperty("AzureCanvasBackend (UI Process)",
@@ -3031,26 +2957,13 @@ void gfxPlatform::GetAzureBackendInfo(mozilla::widget::InfoObject& aObj) {
                         GetBackendName(mFallbackCanvasBackend));
     aObj.DefineProperty("AzureContentBackend (UI Process)",
                         GetBackendName(mContentBackend));
-
-    // Assume content process' backend prefs.
-    BackendPrefsData data = GetBackendPrefs();
-    BackendType canvasBackend = GetCanvasBackendPref(data.mCanvasBitmask);
-    if (canvasBackend == BackendType::NONE) {
-      canvasBackend = data.mCanvasDefault;
-    }
-    BackendType contentBackend = GetContentBackendPref(data.mContentBitmask);
-    if (contentBackend == BackendType::NONE) {
-      contentBackend = data.mContentDefault;
-    }
-    aObj.DefineProperty("AzureCanvasBackend", GetBackendName(canvasBackend));
-    aObj.DefineProperty("AzureContentBackend", GetBackendName(contentBackend));
   } else {
-    aObj.DefineProperty("AzureCanvasBackend",
-                        GetBackendName(mPreferredCanvasBackend));
     aObj.DefineProperty("AzureFallbackCanvasBackend",
                         GetBackendName(mFallbackCanvasBackend));
-    aObj.DefineProperty("AzureContentBackend", GetBackendName(mContentBackend));
   }
+
+  aObj.DefineProperty("AzureCanvasBackend", GetAzureCanvasBackend());
+  aObj.DefineProperty("AzureContentBackend", GetAzureContentBackend());
 }
 
 void gfxPlatform::GetApzSupportInfo(mozilla::widget::InfoObject& aObj) {
@@ -3082,16 +2995,6 @@ void gfxPlatform::GetApzSupportInfo(mozilla::widget::InfoObject& aObj) {
   if (SupportsApzZooming()) {
     aObj.DefineProperty("ApzZoomingInput", 1);
   }
-}
-
-void gfxPlatform::GetTilesSupportInfo(mozilla::widget::InfoObject& aObj) {
-  if (!StaticPrefs::layers_enable_tiles_AtStartup()) {
-    return;
-  }
-
-  IntSize tileSize = gfxVars::TileSize();
-  aObj.DefineProperty("TileHeight", tileSize.height);
-  aObj.DefineProperty("TileWidth", tileSize.width);
 }
 
 void gfxPlatform::GetFrameStats(mozilla::widget::InfoObject& aObj) {
@@ -3138,10 +3041,10 @@ void gfxPlatform::GetCMSSupportInfo(mozilla::widget::InfoObject& aObj) {
     return;
   }
 
-  char* encodedProfile = nullptr;
+  nsString encodedProfile;
   nsresult rv =
-      Base64Encode(reinterpret_cast<char*>(outputProfileData.Elements()),
-                   outputProfileData.Length(), &encodedProfile);
+      Base64Encode(reinterpret_cast<const char*>(outputProfileData.Elements()),
+                   outputProfileData.Length(), encodedProfile);
   if (!NS_SUCCEEDED(rv)) {
     nsPrintfCString msg("base64 encode failed 0x%08x",
                         static_cast<uint32_t>(rv));
@@ -3150,11 +3053,10 @@ void gfxPlatform::GetCMSSupportInfo(mozilla::widget::InfoObject& aObj) {
   }
 
   aObj.DefineProperty("CMSOutputProfile", encodedProfile);
-  free(encodedProfile);
 }
 
 void gfxPlatform::GetDisplayInfo(mozilla::widget::InfoObject& aObj) {
-  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
 
   nsTArray<nsString> displayInfo;
   auto rv = gfxInfo->GetDisplayInfo(displayInfo);
@@ -3166,6 +3068,12 @@ void gfxPlatform::GetDisplayInfo(mozilla::widget::InfoObject& aObj) {
       nsPrintfCString name("Display%zu", i);
       aObj.DefineProperty(name.get(), displayInfo[i]);
     }
+  }
+
+  // Platform display info is only currently used for about:support and getting
+  // it might fail in a child process anyway.
+  if (XRE_IsParentProcess()) {
+    GetPlatformDisplayInfo(aObj);
   }
 }
 
@@ -3224,6 +3132,11 @@ bool gfxPlatform::AsyncPanZoomEnabled() {
 #ifdef MOZ_WIDGET_ANDROID
   return true;
 #else
+  // If Fission is enabled, OOP iframes require APZ for hittest.  So, we
+  // need to forcibly enable APZ in that case for avoiding users confused.
+  if (FissionAutostart()) {
+    return true;
+  }
   return StaticPrefs::
       layers_async_pan_zoom_enabled_AtStartup_DoNotUseDirectly();
 #endif
@@ -3232,32 +3145,6 @@ bool gfxPlatform::AsyncPanZoomEnabled() {
 /*static*/
 bool gfxPlatform::PerfWarnings() {
   return StaticPrefs::gfx_perf_warnings_enabled();
-}
-
-void gfxPlatform::GetAcceleratedCompositorBackends(
-    nsTArray<LayersBackend>& aBackends) {
-  if (gfxConfig::IsEnabled(Feature::OPENGL_COMPOSITING)) {
-    aBackends.AppendElement(LayersBackend::LAYERS_OPENGL);
-  } else {
-    static int tell_me_once = 0;
-    if (!tell_me_once) {
-      NS_WARNING("OpenGL-accelerated layers are not supported on this system");
-      tell_me_once = 1;
-    }
-#ifdef MOZ_WIDGET_ANDROID
-    MOZ_CRASH(
-        "OpenGL-accelerated layers are a hard requirement on this platform. "
-        "Cannot continue without support for them");
-#endif
-  }
-}
-
-void gfxPlatform::GetCompositorBackends(
-    bool useAcceleration, nsTArray<mozilla::layers::LayersBackend>& aBackends) {
-  if (useAcceleration) {
-    GetAcceleratedCompositorBackends(aBackends);
-  }
-  aBackends.AppendElement(LayersBackend::LAYERS_BASIC);
 }
 
 void gfxPlatform::NotifyCompositorCreated(LayersBackend aBackend) {
@@ -3277,6 +3164,19 @@ void gfxPlatform::NotifyCompositorCreated(LayersBackend aBackend) {
     Telemetry::ScalarSet(
         Telemetry::ScalarID::GFX_COMPOSITOR,
         NS_ConvertUTF8toUTF16(GetLayersBackendName(mCompositorBackend)));
+
+    nsCString geckoVersion;
+    nsCOMPtr<nsIXULAppInfo> app = do_GetService("@mozilla.org/xre/app-info;1");
+    if (app) {
+      app->GetVersion(geckoVersion);
+    }
+    Telemetry::ScalarSet(Telemetry::ScalarID::GFX_LAST_COMPOSITOR_GECKO_VERSION,
+                         NS_ConvertASCIItoUTF16(geckoVersion));
+
+    Telemetry::ScalarSet(
+        Telemetry::ScalarID::GFX_FEATURE_WEBRENDER,
+        NS_ConvertUTF8toUTF16(gfxConfig::GetFeature(gfx::Feature::WEBRENDER)
+                                  .GetStatusAndFailureIdString()));
   }
 
   // Notify that we created a compositor, so telemetry can update.
@@ -3290,14 +3190,122 @@ void gfxPlatform::NotifyCompositorCreated(LayersBackend aBackend) {
 }
 
 /* static */
-void gfxPlatform::NotifyGPUProcessDisabled() {
+bool gfxPlatform::FallbackFromAcceleration(FeatureStatus aStatus,
+                                           const char* aMessage,
+                                           const nsACString& aFailureId) {
+  // We always want to ensure (Hardware) WebRender is disabled.
   if (gfxConfig::IsEnabled(Feature::WEBRENDER)) {
     gfxConfig::GetFeature(Feature::WEBRENDER)
-        .ForceDisable(FeatureStatus::Unavailable, "GPU Process is disabled",
-                      "FEATURE_FAILURE_GPU_PROCESS_DISABLED"_ns);
-    gfxVars::SetUseWebRender(false);
+        .ForceDisable(aStatus, aMessage, aFailureId);
   }
+
+  // Determine whether or not we are allowed to use Software WebRender in
+  // fallback without the GPU process. Either the pref is false, or the feature
+  // is enabled and we are currently still using it.
+  bool swglFallbackAllowed =
+      !StaticPrefs::
+          gfx_webrender_fallback_software_requires_gpu_process_AtStartup() ||
+      gfxConfig::IsEnabled(Feature::GPU_PROCESS);
+
+#ifdef XP_WIN
+  // Before we disable D3D11 and HW_COMPOSITING, we should check if we can
+  // fallback from WebRender to Software WebRender + D3D11 compositing.
+  if (StaticPrefs::gfx_webrender_fallback_software_d3d11_AtStartup() &&
+      swglFallbackAllowed && gfxVars::AllowSoftwareWebRenderD3D11() &&
+      gfxConfig::IsEnabled(Feature::WEBRENDER_SOFTWARE) &&
+      gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING) &&
+      gfxVars::UseWebRender() && !gfxVars::UseSoftwareWebRender()) {
+    // Fallback to Software WebRender + D3D11 compositing.
+    gfxCriticalNote << "Fallback WR to SW-WR + D3D11";
+    gfxVars::SetUseSoftwareWebRender(true);
+    return true;
+  }
+
+  if (StaticPrefs::gfx_webrender_fallback_software_d3d11_AtStartup() &&
+      swglFallbackAllowed && gfxVars::AllowSoftwareWebRenderD3D11() &&
+      gfxVars::UseSoftwareWebRender()) {
+    // Fallback from Software WebRender + D3D11 to Software WebRender.
+    gfxCriticalNote << "Fallback SW-WR + D3D11 to SW-WR";
+    gfxVars::SetAllowSoftwareWebRenderD3D11(false);
+    return true;
+  }
+
+  // We aren't using Software WebRender + D3D11 compositing, so turn off the
+  // D3D11 and D2D.
+  if (gfxConfig::IsEnabled(Feature::DIRECT2D)) {
+    gfxConfig::GetFeature(Feature::DIRECT2D)
+        .ForceDisable(aStatus, aMessage, aFailureId);
+  }
+  if (gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
+    gfxConfig::GetFeature(Feature::D3D11_COMPOSITING)
+        .ForceDisable(aStatus, aMessage, aFailureId);
+
+    if (StaticPrefs::gfx_webrender_fallback_software_AtStartup() &&
+        swglFallbackAllowed &&
+        gfxConfig::IsEnabled(Feature::WEBRENDER_SOFTWARE) &&
+        !gfxVars::UseWebRender()) {
+      // Fallback from D3D11 to Software WebRender.
+      gfxCriticalNote << "Fallback D3D11 to SW-WR";
+      gfxVars::SetUseWebRender(true);
+      gfxVars::SetUseSoftwareWebRender(true);
+      return true;
+    }
+  }
+#endif
+
+#ifndef MOZ_WIDGET_ANDROID
+  // Non-Android wants to fallback to Software WebRender or Basic. Android wants
+  // to fallback to OpenGL.
+  if (gfxConfig::IsEnabled(Feature::HW_COMPOSITING)) {
+    gfxConfig::GetFeature(Feature::HW_COMPOSITING)
+        .ForceDisable(aStatus, aMessage, aFailureId);
+  }
+#endif
+
+  if (!gfxVars::UseWebRender()) {
+    // We were not using WebRender in the first place, and we have disabled
+    // all forms of accelerated compositing.
+    return false;
+  }
+
+  if (StaticPrefs::gfx_webrender_fallback_software_AtStartup() &&
+      swglFallbackAllowed &&
+      gfxConfig::IsEnabled(Feature::WEBRENDER_SOFTWARE) &&
+      !gfxVars::UseSoftwareWebRender()) {
+    // Fallback from WebRender to Software WebRender.
+    gfxCriticalNote << "Fallback WR to SW-WR";
+    gfxVars::SetUseSoftwareWebRender(true);
+    return true;
+  }
+
+  MOZ_ASSERT(gfxVars::UseWebRender());
+
+  if (!gfxVars::UseSoftwareWebRender()) {
+    // Software WebRender may be disabled due to a startup issue with the
+    // blocklist, despite it being our only fallback option based on the prefs.
+    // If WebRender is unable to be initialized, this means that user would
+    // otherwise get stuck with WebRender. As such, force a switch to Software
+    // WebRender in this case.
+    gfxCriticalNoteOnce << "Fallback WR to SW-WR, forced";
+    gfxVars::SetUseSoftwareWebRender(true);
+    return true;
+  }
+
+  // Continue using Software WebRender (disabled fallback to Basic).
+  gfxCriticalNoteOnce << "Fallback remains SW-WR";
+  return false;
+}
+
+/* static */
+void gfxPlatform::DisableGPUProcess() {
   gfxVars::SetRemoteCanvasEnabled(false);
+
+  if (gfxVars::UseWebRender()) {
+    // We need to initialize the parent process to prepare for WebRender if we
+    // did not end up disabling it, despite losing the GPU process.
+    wr::RenderThread::Start();
+    image::ImageMemoryReporter::InitForWebRender();
+  }
 }
 
 void gfxPlatform::FetchAndImportContentDeviceData() {
@@ -3342,7 +3350,6 @@ void gfxPlatform::ImportGPUDeviceData(
   MOZ_ASSERT(XRE_IsParentProcess());
 
   gfxConfig::ImportChange(Feature::OPENGL_COMPOSITING, aData.oglCompositing());
-  gfxConfig::ImportChange(Feature::ADVANCED_LAYERS, aData.advancedLayers());
 }
 
 bool gfxPlatform::SupportsApzTouchInput() const {
@@ -3411,7 +3418,7 @@ void gfxPlatform::InitOpenGLConfig() {
 
 bool gfxPlatform::IsGfxInfoStatusOkay(int32_t aFeature, nsCString* aOutMessage,
                                       nsCString& aFailureId) {
-  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
   if (!gfxInfo) {
     return true;
   }

@@ -41,11 +41,11 @@ class IMEContentObserver final : public nsStubMutationObserver,
                                  public nsIScrollObserver,
                                  public nsSupportsWeakReference {
  public:
-  typedef widget::IMENotification::SelectionChangeData SelectionChangeData;
-  typedef widget::IMENotification::TextChangeData TextChangeData;
-  typedef widget::IMENotification::TextChangeDataBase TextChangeDataBase;
-  typedef widget::IMENotificationRequests IMENotificationRequests;
-  typedef widget::IMEMessage IMEMessage;
+  using SelectionChangeData = widget::IMENotification::SelectionChangeData;
+  using TextChangeData = widget::IMENotification::TextChangeData;
+  using TextChangeDataBase = widget::IMENotification::TextChangeDataBase;
+  using IMENotificationRequests = widget::IMENotificationRequests;
+  using IMEMessage = widget::IMEMessage;
 
   IMEContentObserver();
 
@@ -67,10 +67,11 @@ class IMEContentObserver final : public nsStubMutationObserver,
    */
   void OnSelectionChange(dom::Selection& aSelection);
 
-  bool OnMouseButtonEvent(nsPresContext* aPresContext,
-                          WidgetMouseEvent* aMouseEvent);
+  MOZ_CAN_RUN_SCRIPT bool OnMouseButtonEvent(nsPresContext* aPresContext,
+                                             WidgetMouseEvent* aMouseEvent);
 
-  nsresult HandleQueryContentEvent(WidgetQueryContentEvent* aEvent);
+  MOZ_CAN_RUN_SCRIPT nsresult
+  HandleQueryContentEvent(WidgetQueryContentEvent* aEvent);
 
   /**
    * Init() initializes the instance, i.e., retrieving necessary objects and
@@ -80,18 +81,12 @@ class IMEContentObserver final : public nsStubMutationObserver,
    *
    * @param aWidget         The widget which can access native IME.
    * @param aPresContext    The PresContext which has aContent.
-   * @param aContent        An editable element or a plugin host element which
-   *                        user may use IME in.
-   *                        Or nullptr if this will observe design mode
-   *                        document.
-   * @param aEditorBase     When aContent is an editable element or nullptr,
-   *                        non-nullptr referring an editor instance which
-   *                        manages aContent.
-   *                        Otherwise, i.e., this will observe a plugin content,
-   *                        should be nullptr.
+   * @param aContent        An editable element or nullptr if this will observe
+   *                        design mode document.
+   * @param aEditorBase     The editor which is associated with aContent.
    */
-  void Init(nsIWidget* aWidget, nsPresContext* aPresContext,
-            nsIContent* aContent, EditorBase* aEditorBase);
+  MOZ_CAN_RUN_SCRIPT void Init(nsIWidget& aWidget, nsPresContext& aPresContext,
+                               nsIContent* aContent, EditorBase& aEditorBase);
 
   /**
    * Destroy() finalizes the instance, i.e., stops observing contents and
@@ -124,12 +119,15 @@ class IMEContentObserver final : public nsStubMutationObserver,
    * @return            Returns true if the instance is managing the content.
    *                    Otherwise, false.
    */
-  bool MaybeReinitialize(nsIWidget* aWidget, nsPresContext* aPresContext,
-                         nsIContent* aContent, EditorBase* aEditorBase);
+  MOZ_CAN_RUN_SCRIPT bool MaybeReinitialize(nsIWidget& aWidget,
+                                            nsPresContext& aPresContext,
+                                            nsIContent* aContent,
+                                            EditorBase& aEditorBase);
 
   bool IsManaging(nsPresContext* aPresContext, nsIContent* aContent) const;
+  bool IsBeingInitializedFor(nsPresContext* aPresContext,
+                             nsIContent* aContent) const;
   bool IsManaging(const TextComposition* aTextComposition) const;
-  bool WasInitializedWithPlugin() const;
   bool WasInitializedWith(const EditorBase& aEditorBase) const {
     return mEditorBase == &aEditorBase;
   }
@@ -169,6 +167,10 @@ class IMEContentObserver final : public nsStubMutationObserver,
   void BeforeEditAction();
   void CancelEditAction();
 
+  nsIContent* GetObservingContent() const {
+    return mIsObserving ? mRootContent.get() : nullptr;
+  }
+
  private:
   ~IMEContentObserver() = default;
 
@@ -179,10 +181,9 @@ class IMEContentObserver final : public nsStubMutationObserver,
     eState_Observing
   };
   State GetState() const;
-  bool InitWithEditor(nsPresContext* aPresContext, nsIContent* aContent,
-                      EditorBase* aEditorBase);
-  bool InitWithPlugin(nsPresContext* aPresContext, nsIContent* aContent);
-  bool IsInitializedWithPlugin() const { return !mEditorBase; }
+  MOZ_CAN_RUN_SCRIPT bool InitWithEditor(nsPresContext& aPresContext,
+                                         nsIContent* aContent,
+                                         EditorBase& aEditorBase);
   void OnIMEReceivedFocus();
   void Clear();
   bool IsObservingContent(nsPresContext* aPresContext,
@@ -289,10 +290,8 @@ class IMEContentObserver final : public nsStubMutationObserver,
   /**
    * UpdateSelectionCache() updates mSelectionData with the latest selection.
    * This should be called only when IsSafeToNotifyIME() returns true.
-   *
-   * Note that this does nothing if WasInitializedWithPlugin() returns true.
    */
-  bool UpdateSelectionCache(bool aRequireFlush = true);
+  MOZ_CAN_RUN_SCRIPT bool UpdateSelectionCache(bool aRequireFlush = true);
 
   nsCOMPtr<nsIWidget> mWidget;
   // mFocusedWidget has the editor observed by the instance.  E.g., if the
@@ -351,13 +350,13 @@ class IMEContentObserver final : public nsStubMutationObserver,
     explicit IMENotificationSender(IMEContentObserver* aIMEContentObserver)
         : AChangeEvent("IMENotificationSender", aIMEContentObserver),
           mIsRunning(false) {}
-    NS_IMETHOD Run() override;
+    MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD Run() override;
 
     void Dispatch(nsIDocShell* aDocShell);
 
    private:
-    void SendFocusSet();
-    void SendSelectionChange();
+    MOZ_CAN_RUN_SCRIPT void SendFocusSet();
+    MOZ_CAN_RUN_SCRIPT void SendSelectionChange();
     void SendTextChange();
     void SendPositionChange();
     void SendCompositionEventHandled();

@@ -19,7 +19,8 @@
  * This header exports two public methods in the mozilla namespace:
  *
  *   template<class SmartPtr>
- *   void ClearOnShutdown(SmartPtr *aPtr, aPhase=ShutdownPhase::ShutdownFinal)
+ *   void ClearOnShutdown(SmartPtr *aPtr,
+ * aPhase=ShutdownPhase::XPCOMShutdownFinal)
  *
  * This function takes a pointer to a smart pointer and nulls the smart pointer
  * on shutdown (and a particular phase of shutdown as needed).  If a phase
@@ -40,7 +41,7 @@
  *
  *   template <typename CallableT>
  *   void RunOnShutdown(CallableT&& aCallable,
- *                      aPhase = ShutdownPhase::ShutdownFinal)
+ *                      aPhase = ShutdownPhase::XPCOMShutdownFinal)
  *
  * This function takes a callable and executes it upon shutdown at the start of
  * the specified phase. If the phase has already occurred when RunOnShutdown()
@@ -102,13 +103,13 @@ typedef LinkedList<ShutdownObserver> ShutdownList;
 extern Array<StaticAutoPtr<ShutdownList>,
              static_cast<size_t>(ShutdownPhase::ShutdownPhase_Length)>
     sShutdownObservers;
-extern ShutdownPhase sCurrentShutdownPhase;
+extern ShutdownPhase sCurrentClearOnShutdownPhase;
 
 }  // namespace ClearOnShutdown_Internal
 
 template <class SmartPtr>
 inline void ClearOnShutdown(
-    SmartPtr* aPtr, ShutdownPhase aPhase = ShutdownPhase::ShutdownFinal) {
+    SmartPtr* aPtr, ShutdownPhase aPhase = ShutdownPhase::XPCOMShutdownFinal) {
   using namespace ClearOnShutdown_Internal;
 
   MOZ_ASSERT(NS_IsMainThread());
@@ -118,8 +119,9 @@ inline void ClearOnShutdown(
 }
 
 template <typename CallableT>
-inline void RunOnShutdown(CallableT&& aCallable,
-                          ShutdownPhase aPhase = ShutdownPhase::ShutdownFinal) {
+inline void RunOnShutdown(
+    CallableT&& aCallable,
+    ShutdownPhase aPhase = ShutdownPhase::XPCOMShutdownFinal) {
   using namespace ClearOnShutdown_Internal;
 
   MOZ_ASSERT(NS_IsMainThread());
@@ -127,6 +129,13 @@ inline void RunOnShutdown(CallableT&& aCallable,
 
   InsertIntoShutdownList(
       new FunctionInvoker(std::forward<CallableT>(aCallable)), aPhase);
+}
+
+inline bool PastShutdownPhase(ShutdownPhase aPhase) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  return size_t(ClearOnShutdown_Internal::sCurrentClearOnShutdownPhase) >=
+         size_t(aPhase);
 }
 
 // Called when XPCOM is shutting down, after all shutdown notifications have

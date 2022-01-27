@@ -6,16 +6,22 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", this);
-ChromeUtils.import("resource://testing-common/ContentTaskUtils.jsm", this);
-ChromeUtils.import("resource://testing-common/MockRegistrar.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryStorage.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-ChromeUtils.import("resource://gre/modules/osfile.jsm", this);
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
+const { TelemetryController } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryController.jsm"
+);
+const { MockRegistrar } = ChromeUtils.import(
+  "resource://testing-common/MockRegistrar.jsm"
+);
+const { TelemetrySend } = ChromeUtils.import(
+  "resource://gre/modules/TelemetrySend.jsm"
+);
+const { TelemetryStorage } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryStorage.jsm"
+);
+const { TelemetryUtils } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryUtils.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(
   this,
@@ -35,7 +41,7 @@ function countPingTypes(pings) {
 
 function setPingLastModified(id, timestamp) {
   const path = OS.Path.join(TelemetryStorage.pingDirectoryPath, id);
-  return OS.File.setDates(path, null, timestamp);
+  return IOUtils.setModificationTime(path, timestamp);
 }
 
 // Mock out the send timer activity.
@@ -83,7 +89,7 @@ var checkPingsSaved = async function(pingIds) {
     const path = OS.Path.join(TelemetryStorage.pingDirectoryPath, id);
     let exists = false;
     try {
-      exists = await OS.File.exists(path);
+      exists = await IOUtils.exists(path);
     } catch (ex) {}
 
     if (!exists) {
@@ -104,7 +110,12 @@ add_task(async function test_setup() {
   do_get_profile(true);
 
   // Addon manager needs a profile directory.
-  loadAddonManager("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
+  await loadAddonManager(
+    "xpcshell@tests.mozilla.org",
+    "XPCShell",
+    "1",
+    "1.9.2"
+  );
   finishAddonManagerStartup();
   fakeIntlReady();
 
@@ -788,13 +799,14 @@ add_task(
 
     TelemetrySend.flushPingSenderBatch();
 
+    // Pings don't have to be sent in the order they're submitted.
     const ping = await PingServer.promiseNextPing();
-    Assert.equal(ping.type, TEST_TYPE);
-    Assert.equal(ping.id, id);
-
     const ping2 = await PingServer.promiseNextPing();
+    Assert.ok(
+      (ping.id == id && ping2.id == id2) || (ping.id == id2 && ping2.id == id)
+    );
+    Assert.equal(ping.type, TEST_TYPE);
     Assert.equal(ping2.type, TEST_TYPE);
-    Assert.equal(ping2.id, id2);
 
     await TelemetryStorage.reset();
     Assert.equal(
@@ -851,6 +863,12 @@ add_task(async function test_persistCurrentPingsOnShutdown() {
 
 add_task(async function test_sendCheckOverride() {
   const TEST_PING_TYPE = "test-sendCheckOverride";
+
+  // Disable "health" ping. It can sneak into the test.
+  Services.prefs.setBoolPref(
+    TelemetryUtils.Preferences.HealthPingEnabled,
+    false
+  );
 
   // Clear any pending pings.
   await TelemetryController.testShutdown();

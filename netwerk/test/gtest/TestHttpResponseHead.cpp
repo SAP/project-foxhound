@@ -8,37 +8,104 @@
 namespace mozilla {
 namespace net {
 
-TEST(TestHttpResponseHead, Bug1636930)
-{
-  // Only create atom table when it's not already created.
-  if (!nsHttp::ResolveAtom("content-type")) {
-    Unused << nsHttp::CreateAtomTable();
+void AssertRoundTrips(const nsHttpResponseHead& aHead) {
+  {
+    // Assert it round-trips via IPC.
+    UniquePtr<IPC::Message> msg(new IPC::Message(MSG_ROUTING_NONE, 0));
+    IPC::ParamTraits<nsHttpResponseHead>::Write(msg.get(), aHead);
+
+    nsHttpResponseHead deserializedHead;
+    PickleIterator iter(*msg);
+    bool res = IPC::ParamTraits<mozilla::net::nsHttpResponseHead>::Read(
+        msg.get(), &iter, &deserializedHead);
+    ASSERT_TRUE(res);
+    ASSERT_EQ(aHead, deserializedHead);
   }
 
-  mozilla::UniquePtr<IPC::Message> msg(new IPC::Message(MSG_ROUTING_NONE, 0));
-  mozilla::net::nsHttpResponseHead origHead;
+  {
+    // Assert it round-trips through copy-ctor.
+    nsHttpResponseHead copied(aHead);
+    ASSERT_EQ(aHead, copied);
+  }
 
-  origHead.ParseStatusLine("HTTP/1.1 200 OK"_ns);
-  Unused << origHead.ParseHeaderLine("content-type: text/plain"_ns);
-  Unused << origHead.ParseHeaderLine("etag: Just testing"_ns);
-  Unused << origHead.ParseHeaderLine("cache-control: max-age=99999"_ns);
-  Unused << origHead.ParseHeaderLine("accept-ranges: bytes"_ns);
-  Unused << origHead.ParseHeaderLine("content-length: 1408"_ns);
-  Unused << origHead.ParseHeaderLine("connection: close"_ns);
-  Unused << origHead.ParseHeaderLine("server: httpd.js"_ns);
-  Unused << origHead.ParseHeaderLine("date: Tue, 12 May 2020 09:24:23 GMT"_ns);
+  {
+    // Assert it round-trips through operator=
+    nsHttpResponseHead copied;
+    copied = aHead;
+    ASSERT_EQ(aHead, copied);
+  }
+}
 
-  IPC::ParamTraits<mozilla::net::nsHttpResponseHead>::Write(msg.get(),
-                                                            origHead);
+TEST(TestHttpResponseHead, Bug1636930)
+{
+  nsHttpResponseHead head;
 
-  mozilla::net::nsHttpResponseHead deserializedHead;
-  PickleIterator iter(*msg);
-  bool res = IPC::ParamTraits<mozilla::net::nsHttpResponseHead>::Read(
-      msg.get(), &iter, &deserializedHead);
-  ASSERT_EQ(res, true);
+  head.ParseStatusLine("HTTP/1.1 200 OK"_ns);
+  Unused << head.ParseHeaderLine("content-type: text/plain"_ns);
+  Unused << head.ParseHeaderLine("etag: Just testing"_ns);
+  Unused << head.ParseHeaderLine("cache-control: max-age=99999"_ns);
+  Unused << head.ParseHeaderLine("accept-ranges: bytes"_ns);
+  Unused << head.ParseHeaderLine("content-length: 1408"_ns);
+  Unused << head.ParseHeaderLine("connection: close"_ns);
+  Unused << head.ParseHeaderLine("server: httpd.js"_ns);
+  Unused << head.ParseHeaderLine("date: Tue, 12 May 2020 09:24:23 GMT"_ns);
 
-  bool equal = (origHead == deserializedHead);
-  ASSERT_EQ(equal, true);
+  AssertRoundTrips(head);
+}
+
+TEST(TestHttpResponseHead, bug1649807)
+{
+  nsHttpResponseHead head;
+
+  head.ParseStatusLine("HTTP/1.1 200 OK"_ns);
+  Unused << head.ParseHeaderLine("content-type: text/plain"_ns);
+  Unused << head.ParseHeaderLine("etag: Just testing"_ns);
+  Unused << head.ParseHeaderLine("cache-control: age=99999"_ns);
+  Unused << head.ParseHeaderLine("accept-ranges: bytes"_ns);
+  Unused << head.ParseHeaderLine("content-length: 1408"_ns);
+  Unused << head.ParseHeaderLine("connection: close"_ns);
+  Unused << head.ParseHeaderLine("server: httpd.js"_ns);
+  Unused << head.ParseHeaderLine("pragma: no-cache"_ns);
+  Unused << head.ParseHeaderLine("date: Tue, 12 May 2020 09:24:23 GMT"_ns);
+
+  ASSERT_FALSE(head.NoCache())
+  << "Cache-Control wins over Pragma: no-cache";
+  AssertRoundTrips(head);
+}
+
+TEST(TestHttpResponseHead, bug1660200)
+{
+  nsHttpResponseHead head;
+
+  head.ParseStatusLine("HTTP/1.1 200 OK"_ns);
+  Unused << head.ParseHeaderLine("content-type: text/plain"_ns);
+  Unused << head.ParseHeaderLine("etag: Just testing"_ns);
+  Unused << head.ParseHeaderLine("cache-control: no-cache"_ns);
+  Unused << head.ParseHeaderLine("accept-ranges: bytes"_ns);
+  Unused << head.ParseHeaderLine("content-length: 1408"_ns);
+  Unused << head.ParseHeaderLine("connection: close"_ns);
+  Unused << head.ParseHeaderLine("server: httpd.js"_ns);
+  Unused << head.ParseHeaderLine("date: Tue, 12 May 2020 09:24:23 GMT"_ns);
+
+  AssertRoundTrips(head);
+}
+
+TEST(TestHttpResponseHead, atoms)
+{
+  // Test that the resolving the content-type atom returns the initial static
+  ASSERT_EQ(nsHttp::Content_Type, nsHttp::ResolveAtom("content-type"_ns));
+  // Check that they're case insensitive
+  ASSERT_EQ(nsHttp::ResolveAtom("Content-Type"_ns),
+            nsHttp::ResolveAtom("content-type"_ns));
+  // This string literal should be the backing of the atom when resolved first
+  auto header1 = "CustomHeaderXXX1"_ns;
+  auto atom1 = nsHttp::ResolveAtom(header1);
+  auto header2 = "customheaderxxx1"_ns;
+  auto atom2 = nsHttp::ResolveAtom(header2);
+  ASSERT_EQ(atom1, atom2);
+  ASSERT_EQ(atom1.get(), atom2.get());
+  // Check that we get the expected pointer back.
+  ASSERT_EQ(atom2.get(), header1.BeginReading());
 }
 
 }  // namespace net

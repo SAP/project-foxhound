@@ -6,27 +6,27 @@
 const { actionCreators: ac, actionTypes: at } = ChromeUtils.import(
   "resource://activity-stream/common/Actions.jsm"
 );
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 const { Prefs } = ChromeUtils.import(
   "resource://activity-stream/lib/ActivityStreamPrefs.jsm"
 );
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm"
-);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  AppConstants: "resource://gre/modules/AppConstants.jsm",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
+  Region: "resource://gre/modules/Region.jsm",
+});
 
 this.PrefsFeed = class PrefsFeed {
   constructor(prefMap) {
     this._prefMap = prefMap;
     this._prefs = new Prefs();
+    this.onExperimentUpdated = this.onExperimentUpdated.bind(this);
+    this.onPocketExperimentUpdated = this.onPocketExperimentUpdated.bind(this);
   }
 
   onPrefChanged(name, value) {
@@ -62,8 +62,43 @@ this.PrefsFeed = class PrefsFeed {
     this._prefMap.set(key, { value });
   }
 
+  /**
+   * Handler for when experiment data updates.
+   */
+  onExperimentUpdated(event, reason) {
+    const value = NimbusFeatures.newtab.getAllVariables() || {};
+    this.store.dispatch(
+      ac.BroadcastToContent({
+        type: at.PREF_CHANGED,
+        data: {
+          name: "featureConfig",
+          value,
+        },
+      })
+    );
+  }
+
+  /**
+   * Handler for Pocket specific experiment data updates.
+   */
+  onPocketExperimentUpdated(event, reason) {
+    const value = NimbusFeatures.pocketNewtab.getAllVariables() || {};
+    this.store.dispatch(
+      ac.BroadcastToContent({
+        type: at.PREF_CHANGED,
+        data: {
+          name: "pocketConfig",
+          value,
+        },
+      })
+    );
+  }
+
   init() {
     this._prefs.observeBranch(this);
+    NimbusFeatures.newtab.onUpdate(this.onExperimentUpdated);
+    NimbusFeatures.pocketNewtab.onUpdate(this.onPocketExperimentUpdated);
+
     this._storage = this.store.dbStorage.getDbTable("sectionPrefs");
 
     // Get the initial value of each activity stream pref
@@ -76,6 +111,16 @@ this.PrefsFeed = class PrefsFeed {
     // computed in main process
     values.isPrivateBrowsingEnabled = PrivateBrowsingUtils.enabled;
     values.platform = AppConstants.platform;
+
+    // Save the geo pref if we have it
+    if (Region.home) {
+      values.region = Region.home;
+      this.geo = values.region;
+    } else if (this.geo !== "") {
+      // Watch for geo changes and use a dummy value for now
+      Services.obs.addObserver(this, Region.REGION_TOPIC);
+      this.geo = "";
+    }
 
     // Get the firefox accounts url for links and to send firstrun metrics to.
     values.fxa_endpoint = Services.prefs.getStringPref(
@@ -90,7 +135,7 @@ this.PrefsFeed = class PrefsFeed {
     );
 
     // Read the pref for search shortcuts top sites experiment from firefox.js and store it
-    // in our interal list of prefs to watch
+    // in our internal list of prefs to watch
     let searchTopSiteExperimentPrefValue = Services.prefs.getBoolPref(
       "browser.newtabpage.activity-stream.improvesearch.topSiteSearchShortcuts"
     );
@@ -101,8 +146,12 @@ this.PrefsFeed = class PrefsFeed {
       value: searchTopSiteExperimentPrefValue,
     });
 
+    values.mayHaveSponsoredTopSites = Services.prefs.getBoolPref(
+      "browser.topsites.useRemoteSetting"
+    );
+
     // Read the pref for search hand-off from firefox.js and store it
-    // in our interal list of prefs to watch
+    // in our internal list of prefs to watch
     let handoffToAwesomebarPrefValue = Services.prefs.getBoolPref(
       "browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar"
     );
@@ -111,20 +160,42 @@ this.PrefsFeed = class PrefsFeed {
       value: handoffToAwesomebarPrefValue,
     });
 
+    // Read the pref for the cached default engine name from firefox.js and
+    // store it in our internal list of prefs to watch
+    let placeholderPrefValue = Services.prefs.getStringPref(
+      "browser.urlbar.placeholderName",
+      ""
+    );
+    values["urlbar.placeholderName"] = placeholderPrefValue;
+    this._prefMap.set("urlbar.placeholderName", {
+      value: placeholderPrefValue,
+    });
+
+    // Add experiment values and default values
+    values.featureConfig = NimbusFeatures.newtab.getAllVariables() || {};
+    values.pocketConfig = NimbusFeatures.pocketNewtab.getAllVariables() || {};
+    this._setBoolPref(values, "logowordmark.alwaysVisible", false);
     this._setBoolPref(values, "feeds.section.topstories", false);
     this._setBoolPref(values, "discoverystream.enabled", false);
+    this._setBoolPref(
+      values,
+      "discoverystream.sponsored-collections.enabled",
+      false
+    );
     this._setBoolPref(values, "discoverystream.isCollectionDismissible", false);
     this._setBoolPref(values, "discoverystream.hardcoded-basic-layout", false);
     this._setBoolPref(values, "discoverystream.recs.personalized", false);
     this._setBoolPref(values, "discoverystream.spocs.personalized", false);
+    this._setBoolPref(values, "discoverystream.personalization.enabled", false);
+    this._setBoolPref(values, "discoverystream.personalization.override");
     this._setStringPref(
       values,
       "discoverystream.personalization.modelKeys",
       ""
     );
-    this._setIntPref(values, "discoverystream.personalization.version", 1);
-    this._setIntPref(values, "discoverystream.personalization.overrideVersion");
     this._setStringPref(values, "discoverystream.spocs-endpoint", "");
+    this._setStringPref(values, "discoverystream.spocs-endpoint-query", "");
+    this._setStringPref(values, "newNewtabExperience.colors", "");
 
     // Set the initial state of all prefs in redux
     this.store.dispatch(
@@ -138,8 +209,17 @@ this.PrefsFeed = class PrefsFeed {
     );
   }
 
+  uninit() {
+    this.removeListeners();
+  }
+
   removeListeners() {
     this._prefs.ignoreBranch(this);
+    NimbusFeatures.newtab.off(this.onExperimentUpdated);
+    NimbusFeatures.newtab.off(this.onPocketExperimentUpdated);
+    if (this.geo === "") {
+      Services.obs.removeObserver(this, Region.REGION_TOPIC);
+    }
   }
 
   async _setIndexedDBPref(id, value) {
@@ -151,13 +231,26 @@ this.PrefsFeed = class PrefsFeed {
     }
   }
 
+  observe(subject, topic, data) {
+    switch (topic) {
+      case Region.REGION_TOPIC:
+        this.store.dispatch(
+          ac.BroadcastToContent({
+            type: at.PREF_CHANGED,
+            data: { name: "region", value: Region.home },
+          })
+        );
+        break;
+    }
+  }
+
   onAction(action) {
     switch (action.type) {
       case at.INIT:
         this.init();
         break;
       case at.UNINIT:
-        this.removeListeners();
+        this.uninit();
         break;
       case at.CLEAR_PREF:
         Services.prefs.clearUserPref(this._prefs._branchStr + action.data.name);

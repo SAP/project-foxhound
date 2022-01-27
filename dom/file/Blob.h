@@ -7,10 +7,6 @@
 #ifndef mozilla_dom_Blob_h
 #define mozilla_dom_Blob_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/BodyConsumer.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
@@ -21,12 +17,20 @@ class nsIGlobalObject;
 class nsIInputStream;
 
 namespace mozilla {
+class ErrorResult;
+
 namespace dom {
 
 struct BlobPropertyBag;
+class BlobImpl;
 class File;
+class GlobalObject;
 class OwningArrayBufferViewOrArrayBufferOrBlobOrUSVString;
 class Promise;
+
+#ifdef MOZ_DOM_STREAMS
+class ReadableStream;
+#endif
 
 #define NS_DOM_BLOB_IID                              \
   {                                                  \
@@ -41,7 +45,7 @@ class Blob : public nsSupportsWeakReference, public nsWrapperCache {
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Blob)
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_DOM_BLOB_IID)
 
-  typedef OwningArrayBufferViewOrArrayBufferOrBlobOrUSVString BlobPart;
+  using BlobPart = OwningArrayBufferViewOrArrayBufferOrBlobOrUSVString;
 
   // This creates a Blob or a File based on the type of BlobImpl.
   static Blob* Create(nsIGlobalObject* aGlobal, BlobImpl* aImpl);
@@ -118,8 +122,14 @@ class Blob : public nsSupportsWeakReference, public nsWrapperCache {
   nsresult GetSendInfo(nsIInputStream** aBody, uint64_t* aContentLength,
                        nsACString& aContentType, nsACString& aCharset) const;
 
+#ifdef MOZ_DOM_STREAMS
+  already_AddRefed<ReadableStream> Stream(ErrorResult& aRv) {
+    MOZ_CRASH("MOZ_DOM_STREAMS: NYI");
+  }
+#else
   void Stream(JSContext* aCx, JS::MutableHandle<JSObject*> aStream,
               ErrorResult& aRv);
+#endif
   already_AddRefed<Promise> Text(ErrorResult& aRv);
   already_AddRefed<Promise> ArrayBuffer(ErrorResult& aRv);
 

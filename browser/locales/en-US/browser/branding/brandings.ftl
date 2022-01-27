@@ -22,3 +22,10 @@
 -pocket-brand-name = Pocket
 -send-brand-name = Firefox Send
 -screenshots-brand-name = Firefox Screenshots
+-mozilla-vpn-brand-name = Mozilla VPN
+-profiler-brand-name = Firefox Profiler
+-translations-brand-name = Firefox Translations
+
+# “Suggest” can be localized, “Firefox” must be treated as a brand
+# and kept in English.
+-firefox-suggest-brand-name = Firefox Suggest

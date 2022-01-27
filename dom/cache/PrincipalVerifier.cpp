@@ -8,19 +8,20 @@
 
 #include "ErrorList.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/QMResult.h"
 #include "mozilla/dom/cache/ManagerId.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/PBackgroundParent.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/BasePrincipal.h"
+#include "CacheCommon.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsIPrincipal.h"
 #include "nsNetUtil.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 using mozilla::ipc::AssertIsOnBackgroundThread;
 using mozilla::ipc::BackgroundParent;
@@ -30,7 +31,7 @@ using mozilla::ipc::PrincipalInfoToPrincipal;
 
 // static
 already_AddRefed<PrincipalVerifier> PrincipalVerifier::CreateAndDispatch(
-    Listener* aListener, PBackgroundParent* aActor,
+    Listener& aListener, PBackgroundParent* aActor,
     const PrincipalInfo& aPrincipalInfo) {
   // We must get the ContentParent actor from the PBackgroundParent.  This
   // only works on the PBackground thread.
@@ -44,20 +45,18 @@ already_AddRefed<PrincipalVerifier> PrincipalVerifier::CreateAndDispatch(
   return verifier.forget();
 }
 
-void PrincipalVerifier::AddListener(Listener* aListener) {
+void PrincipalVerifier::AddListener(Listener& aListener) {
   AssertIsOnBackgroundThread();
-  MOZ_DIAGNOSTIC_ASSERT(aListener);
-  MOZ_ASSERT(!mListenerList.Contains(aListener));
-  mListenerList.AppendElement(aListener);
+  MOZ_ASSERT(!mListenerList.Contains(&aListener));
+  mListenerList.AppendElement(WrapNotNullUnchecked(&aListener));
 }
 
-void PrincipalVerifier::RemoveListener(Listener* aListener) {
+void PrincipalVerifier::RemoveListener(Listener& aListener) {
   AssertIsOnBackgroundThread();
-  MOZ_DIAGNOSTIC_ASSERT(aListener);
-  MOZ_ALWAYS_TRUE(mListenerList.RemoveElement(aListener));
+  MOZ_ALWAYS_TRUE(mListenerList.RemoveElement(&aListener));
 }
 
-PrincipalVerifier::PrincipalVerifier(Listener* aListener,
+PrincipalVerifier::PrincipalVerifier(Listener& aListener,
                                      PBackgroundParent* aActor,
                                      const PrincipalInfo& aPrincipalInfo)
     : Runnable("dom::cache::PrincipalVerifier"),
@@ -67,9 +66,8 @@ PrincipalVerifier::PrincipalVerifier(Listener* aListener,
       mResult(NS_OK) {
   AssertIsOnBackgroundThread();
   MOZ_DIAGNOSTIC_ASSERT(mInitiatingEventTarget);
-  MOZ_DIAGNOSTIC_ASSERT(aListener);
 
-  mListenerList.AppendElement(aListener);
+  AddListener(aListener);
 }
 
 PrincipalVerifier::~PrincipalVerifier() {
@@ -103,16 +101,11 @@ void PrincipalVerifier::VerifyOnMainThread() {
 
   // No matter what happens, we need to release the actor before leaving
   // this method.
-  RefPtr<ContentParent> actor;
-  actor.swap(mActor);
+  RefPtr<ContentParent> actor = std::move(mActor);
 
-  auto principalOrErr = PrincipalInfoToPrincipal(mPrincipalInfo);
-  if (NS_WARN_IF(principalOrErr.isErr())) {
-    DispatchToInitiatingThread(principalOrErr.unwrapErr());
-    return;
-  }
-
-  nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
+  QM_TRY_INSPECT(
+      const auto& principal, PrincipalInfoToPrincipal(mPrincipalInfo), QM_VOID,
+      [this](const nsresult result) { DispatchToInitiatingThread(result); });
 
   // We disallow null principal on the client side, but double-check here.
   if (NS_WARN_IF(principal->GetIsNullPrincipal())) {
@@ -168,7 +161,7 @@ void PrincipalVerifier::VerifyOnMainThread() {
 void PrincipalVerifier::CompleteOnInitiatingThread() {
   AssertIsOnBackgroundThread();
 
-  for (auto* listener : mListenerList.ForwardRange()) {
+  for (const auto& listener : mListenerList.ForwardRange()) {
     listener->OnPrincipalVerified(mResult, mManagerId);
   }
 
@@ -186,14 +179,8 @@ void PrincipalVerifier::DispatchToInitiatingThread(nsresult aRv) {
   // This will result in a new CacheStorage object delaying operations until
   // shutdown completes and the browser goes away.  This is as graceful as
   // we can get here.
-  nsresult rv =
-      mInitiatingEventTarget->Dispatch(this, nsIThread::DISPATCH_NORMAL);
-  if (NS_FAILED(rv)) {
-    NS_WARNING(
-        "Cache unable to complete principal verification due to shutdown.");
-  }
+  QM_WARNONLY_TRY(QM_TO_RESULT(
+      mInitiatingEventTarget->Dispatch(this, nsIThread::DISPATCH_NORMAL)));
 }
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

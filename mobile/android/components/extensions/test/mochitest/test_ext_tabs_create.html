@@ -1,6 +1,7 @@
 <!DOCTYPE HTML>
 <html>
 <head>
+  <meta charset="utf-8">
   <title>Tabs create Test</title>
   <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
@@ -13,10 +14,14 @@
 "use strict";
 
 add_task(async function() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.userContext.enabled", true],
+      ["dom.security.https_first", false],
+    ],
+  });
   const extension = ExtensionTestUtils.loadExtension({
-    useAddonManager: "permanent",
     manifest: {
-      "applications": { "gecko": { "id": "tabs-create@tests.mozilla.org" } },
       "permissions": ["tabs", "cookies"],
 
       "background": {"page": "bg/background.html"},
@@ -61,19 +66,11 @@ add_task(async function() {
             },
             {
               create: {cookieStoreId: null},
-              result: {cookieStoreId: null},
+              result: {cookieStoreId: "firefox-default"},
             },
             {
               create: {cookieStoreId: "firefox-container-1"},
               result: {cookieStoreId: "firefox-container-1"},
-            },
-            {
-              create: {cookieStoreId: "😅"},
-              result: {cookieStoreId: "😅"},
-            },
-            {
-              create: {cookieStoreId: "漢字"},
-              result: {cookieStoreId: "漢字"},
             },
           ];
 
@@ -148,6 +145,7 @@ add_task(async function() {
   await extension.startup();
   await extension.awaitFinish("tabs.create");
   await extension.unload();
+  await SpecialPowers.popPrefEnv();
 });
 </script>
 

@@ -7,9 +7,6 @@
 with Files("**"):
     BUG_COMPONENT = ("Firefox", "General")
 
-with Files("defaultthemes/**"):
-    BUG_COMPONENT = ("Firefox", "Theme")
-
 with Files("docs/**"):
     BUG_COMPONENT = ("Core", "Security")
 
@@ -43,7 +40,7 @@ with Files("test/keyboard/**"):
 with Files("test/outOfProcess/**"):
     BUG_COMPONENT = ("Firefox", "General")
 
-with Files("test/pageActions/**"):
+with Files("test/pageActions*/**"):
     BUG_COMPONENT = ("Firefox", "Toolbars and Customization")
 
 with Files("test/pageinfo/**"):
@@ -79,6 +76,9 @@ with Files("test/siteIdentity/**"):
 with Files("test/sidebar/**"):
     BUG_COMPONENT = ("Firefox", "General")
 
+with Files("test/startup/**"):
+    BUG_COMPONENT = ("Firefox", "General")
+
 with Files("test/static/**"):
     BUG_COMPONENT = ("Firefox", "General")
 
@@ -87,6 +87,12 @@ with Files("test/statuspanel/**"):
 
 with Files("test/sync/**"):
     BUG_COMPONENT = ("Firefox", "Sync")
+
+with Files("test/tabdialogs/**"):
+    BUG_COMPONENT = ("Firefox", "Tabbed Browser")
+
+with Files("test/notificationbox/**"):
+    BUG_COMPONENT = ("Firefox", "Tabbed Browser")
 
 with Files("test/tabPrompts/**"):
     BUG_COMPONENT = ("Firefox", "Tabbed Browser")
@@ -135,9 +141,6 @@ with Files("browser-fullZoom.js"):
 
 with Files("browser-gestureSupport.js"):
     BUG_COMPONENT = ("Core", "Widget: Cocoa")
-
-with Files("browser-media.js"):
-    BUG_COMPONENT = ("Core", "Audio/Video: Playback")
 
 with Files("browser-pageActions.js"):
     BUG_COMPONENT = ("Firefox", "Toolbars and Customization")

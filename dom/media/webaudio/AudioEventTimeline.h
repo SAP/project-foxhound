@@ -18,6 +18,9 @@
 #include "math.h"
 #include "WebAudioUtils.h"
 
+// XXX Avoid including this here by moving function bodies to the cpp file
+#include "js/GCAPI.h"
+
 namespace mozilla {
 
 class AudioNodeTrack;
@@ -115,7 +118,7 @@ class AudioEventTimeline {
         mComputedValue(aDefaultValue),
         mLastComputedValue(aDefaultValue) {}
 
-  bool ValidateEvent(AudioTimelineEvent& aEvent, ErrorResult& aRv) {
+  bool ValidateEvent(const AudioTimelineEvent& aEvent, ErrorResult& aRv) const {
     MOZ_ASSERT(NS_IsMainThread());
 
     auto TimeOf = [](const AudioTimelineEvent& aEvent) -> double {

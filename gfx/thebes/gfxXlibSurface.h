@@ -8,11 +8,11 @@
 
 #include "gfxASurface.h"
 
-#include <X11/extensions/Xrender.h>
 #include <X11/Xlib.h>
 #include "X11UndefineNone.h"
 
 #include "GLXLibrary.h"
+#include "mozilla/gfx/XlibDisplay.h"
 
 #include "nsSize.h"
 
@@ -31,10 +31,8 @@ class gfxXlibSurface final : public gfxASurface {
   // and known width/height.
   gfxXlibSurface(Display* dpy, Drawable drawable, Visual* visual,
                  const mozilla::gfx::IntSize& size);
-
-  // construct a wrapper around the specified drawable with dpy/format,
-  // and known width/height.
-  gfxXlibSurface(::Screen* screen, Drawable drawable, XRenderPictFormat* format,
+  gfxXlibSurface(const std::shared_ptr<mozilla::gfx::XlibDisplay>& dpy,
+                 Drawable drawable, Visual* visual,
                  const mozilla::gfx::IntSize& size);
 
   explicit gfxXlibSurface(cairo_surface_t* csurf);
@@ -46,30 +44,26 @@ class gfxXlibSurface final : public gfxASurface {
   static already_AddRefed<gfxXlibSurface> Create(
       ::Screen* screen, Visual* visual, const mozilla::gfx::IntSize& size,
       Drawable relatedDrawable = X11None);
+  static already_AddRefed<gfxXlibSurface> Create(
+      const std::shared_ptr<mozilla::gfx::XlibDisplay>& display,
+      ::Screen* screen, Visual* visual, const mozilla::gfx::IntSize& size,
+      Drawable relatedDrawable = X11None);
   static cairo_surface_t* CreateCairoSurface(
       ::Screen* screen, Visual* visual, const mozilla::gfx::IntSize& size,
       Drawable relatedDrawable = X11None);
-  static already_AddRefed<gfxXlibSurface> Create(
-      ::Screen* screen, XRenderPictFormat* format,
-      const mozilla::gfx::IntSize& size, Drawable relatedDrawable = X11None);
 
   virtual ~gfxXlibSurface();
 
-  already_AddRefed<gfxASurface> CreateSimilarSurface(
-      gfxContentType aType, const mozilla::gfx::IntSize& aSize) override;
   void Finish() override;
 
   const mozilla::gfx::IntSize GetSize() const override;
 
-  Display* XDisplay() { return mDisplay; }
+  Display* XDisplay() { return *mDisplay; }
   ::Screen* XScreen();
   Drawable XDrawable() { return mDrawable; }
-  XRenderPictFormat* XRenderFormat();
 
   static int DepthOfVisual(const ::Screen* screen, const Visual* visual);
   static Visual* FindVisual(::Screen* screen, gfxImageFormat format);
-  static XRenderPictFormat* FindRenderFormat(Display* dpy,
-                                             gfxImageFormat format);
   static bool GetColormapAndVisual(cairo_surface_t* aXlibSurface,
                                    Colormap* colormap, Visual** visual);
 
@@ -85,11 +79,6 @@ class gfxXlibSurface final : public gfxASurface {
   // Find a visual and colormap pair suitable for rendering to this surface.
   bool GetColormapAndVisual(Colormap* colormap, Visual** visual);
 
-  GLXPixmap GetGLXPixmap();
-  // Binds a GLXPixmap backed by this context's surface.
-  // Primarily for use in sharing surfaces.
-  void BindGLXPixmap(GLXPixmap aPixmap);
-
   // Return true if cairo will take its slow path when this surface is used
   // in a pattern with EXTEND_PAD.  As a workaround for XRender's RepeatPad
   // not being implemented correctly on old X servers, cairo avoids XRender
@@ -98,20 +87,18 @@ class gfxXlibSurface final : public gfxASurface {
   bool IsPadSlow() {
     // The test here matches that for buggy_pad_reflect in
     // _cairo_xlib_device_create.
-    return VendorRelease(mDisplay) >= 60700000 ||
-           VendorRelease(mDisplay) < 10699000;
+    return VendorRelease(mDisplay->get()) >= 60700000 ||
+           VendorRelease(mDisplay->get()) < 10699000;
   }
 
  protected:
   // if TakePixmap() has been called on this
   bool mPixmapTaken;
 
-  Display* mDisplay;
+  std::shared_ptr<mozilla::gfx::XlibDisplay> mDisplay;
   Drawable mDrawable;
 
   const mozilla::gfx::IntSize DoSizeQuery();
-
-  GLXPixmap mGLXPixmap;
 };
 
 #endif /* GFX_XLIBSURFACE_H */

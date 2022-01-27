@@ -14,7 +14,6 @@ interface nsINetAddr;
 namespace mozilla {
 namespace net {
 union NetAddr;
-class TCPFastOpen;
 }
 }
 %}
@@ -22,7 +21,6 @@ native NetAddr(mozilla::net::NetAddr);
 [ptr] native NetAddrPtr(mozilla::net::NetAddr);
 native OriginAttributes(mozilla::OriginAttributes);
 [ref] native const_OriginAttributesRef(const mozilla::OriginAttributes);
-[ptr] native TCPFastOpenPtr(mozilla::net::TCPFastOpen);
 
 /**
  * nsISocketTransport
@@ -34,7 +32,7 @@ native OriginAttributes(mozilla::OriginAttributes);
  * NOTE: This is a free-threaded interface, meaning that the methods on
  * this interface may be called from any thread.
  */
-[scriptable, uuid(79221831-85e2-43a8-8152-05d77d6fde31)]
+[scriptable, builtinclass, uuid(79221831-85e2-43a8-8152-05d77d6fde31)]
 interface nsISocketTransport : nsITransport
 {
     /**
@@ -255,9 +253,9 @@ interface nsISocketTransport : nsITransport
 
     /**
      * If we know that a server speaks only tls <1.3 there is no need to try
-     * to use esni and query dns for esni keys.
+     * to use ech.
      */
-    const unsigned long DONT_TRY_ESNI = (1 << 10);
+    const unsigned long DONT_TRY_ECH = (1 << 10);
 
     /**
      * These two bits encode the TRR mode of the request.
@@ -275,6 +273,18 @@ interface nsISocketTransport : nsITransport
         return static_cast<nsIRequest::TRRMode>((aFlags & TRR_MODE_FLAGS) >> 11);
     }
 %}
+
+    /**
+     * If set, we will use IP hint addresses to connect to the host.
+     */
+    const unsigned long USE_IP_HINT_ADDRESS = (1 << 13);
+
+    /**
+     * This is used for a temporary workaround for a web-compat issue. The flag is
+     * only set on CORS preflight request to allowed sending client certificates
+     * on a connection for an anonymous request.
+     */
+    const long ANONYMOUS_CONNECT_ALLOW_CLIENT_CERT = (1 << 14);
 
     /**
      * An opaque flags for non-standard behavior of the TLS system.
@@ -309,10 +319,6 @@ interface nsISocketTransport : nsITransport
     void setKeepaliveVals(in long keepaliveIdleTime,
                           in long keepaliveRetryInterval);
 
-    [noscript] void setFastOpenCallback(in TCPFastOpenPtr aFastOpen);
-
-    readonly attribute nsresult firstRetryError;
-
     /**
      * If true, this socket transport has found out the prefered family
      * according it's connection flags could not be used to establish
@@ -321,13 +327,37 @@ interface nsISocketTransport : nsITransport
     readonly attribute boolean resetIPFamilyPreference;
 
     /**
-     * This attribute holds information whether esni has been used.
+     * This attribute holds information whether echConfig has been used.
      * The value is set after PR_Connect is called.
      */
-   readonly attribute boolean esniUsed;
+   readonly attribute boolean echConfigUsed;
+
+    /**
+     * Called to set the echConfig to the securityInfo object.
+     */
+    void setEchConfig(in ACString echConfig);
 
     /**
      * IP address resolved using TRR.
      */
     bool resolvedByTRR();
+
+    /**
+     * Indicate whether this socket is created from a private window. If yes,
+     * this socket will be closed when the last private window is closed.
+     */
+    [noscript] void setIsPrivate(in boolean isPrivate);
+
+    /**
+     * If DNS is performed externally, this flag informs the caller that it may
+     * retry connecting with a different DNS configuration (e.g. different IP
+     * family preference). The flag is set only if a network error is encounder,
+     * e.g. NS_ERROR_CONNECTION_REFUSED, NS_ERROR_RESET, etc.
+     */
+    readonly attribute boolean retryDnsIfPossible;
+
+    /**
+     * Return the current status of the socket.
+     */
+    [noscript] readonly attribute nsresult status;
 };

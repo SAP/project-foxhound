@@ -1,4 +1,4 @@
-// |reftest| skip error:RangeError module -- top-level-await is not supported
+// |reftest| error:RangeError module
 // Copyright (C) 2019 Leo Balter. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 

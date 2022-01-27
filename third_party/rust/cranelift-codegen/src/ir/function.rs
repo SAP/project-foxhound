@@ -7,8 +7,9 @@ use crate::binemit::CodeOffset;
 use crate::entity::{PrimaryMap, SecondaryMap};
 use crate::ir;
 use crate::ir::{
-    Block, ExtFuncData, FuncRef, GlobalValue, GlobalValueData, Heap, HeapData, Inst, JumpTable,
-    JumpTableData, Opcode, SigRef, StackSlot, StackSlotData, Table, TableData,
+    instructions::BranchInfo, Block, ExtFuncData, FuncRef, GlobalValue, GlobalValueData, Heap,
+    HeapData, Inst, InstructionData, JumpTable, JumpTableData, Opcode, SigRef, StackSlot,
+    StackSlotData, Table, TableData,
 };
 use crate::ir::{BlockOffsets, InstEncodings, SourceLocs, StackSlots, ValueLocations};
 use crate::ir::{DataFlowGraph, ExternalName, Layout, Signature};
@@ -17,15 +18,63 @@ use crate::isa::{CallConv, EncInfo, Encoding, Legalize, TargetIsa};
 use crate::regalloc::{EntryRegDiversions, RegDiversions};
 use crate::value_label::ValueLabelsRanges;
 use crate::write::write_function;
+#[cfg(feature = "enable-serde")]
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
-/// A function.
+#[cfg(feature = "enable-serde")]
+use serde::de::{Deserializer, Error};
+#[cfg(feature = "enable-serde")]
+use serde::ser::Serializer;
+#[cfg(feature = "enable-serde")]
+use serde::{Deserialize, Serialize};
+
+/// A version marker used to ensure that serialized clif ir is never deserialized with a
+/// different version of Cranelift.
+#[derive(Copy, Clone, Debug)]
+pub struct VersionMarker;
+
+#[cfg(feature = "enable-serde")]
+impl Serialize for VersionMarker {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        crate::VERSION.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "enable-serde")]
+impl<'de> Deserialize<'de> for VersionMarker {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let version = String::deserialize(deserializer)?;
+        if version != crate::VERSION {
+            return Err(D::Error::custom(&format!(
+                "Expected a clif ir function for version {}, found one for version {}",
+                crate::VERSION,
+                version,
+            )));
+        }
+        Ok(VersionMarker)
+    }
+}
+
 ///
 /// Functions can be cloned, but it is not a very fast operation.
 /// The clone will have all the same entity numbers as the original.
 #[derive(Clone)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct Function {
+    /// A version marker used to ensure that serialized clif ir is never deserialized with a
+    /// different version of Cranelift.
+    // Note: This must be the first field to ensure that Serde will deserialize it before
+    // attempting to deserialize other fields that are potentially changed between versions.
+    pub version_marker: VersionMarker,
+
     /// Name of this function. Mostly used by `.clif` files.
     pub name: ExternalName,
 
@@ -94,7 +143,7 @@ pub struct Function {
     /// The instructions that mark the start (inclusive) of an epilogue in the function.
     ///
     /// This is used for some ABIs to generate unwind information.
-    pub epilogues_start: Vec<Inst>,
+    pub epilogues_start: Vec<(Inst, Block)>,
 
     /// An optional global value which represents an expression evaluating to
     /// the stack limit for this function. This `GlobalValue` will be
@@ -108,6 +157,7 @@ impl Function {
     /// Create a function with the given name and signature.
     pub fn with_name_signature(name: ExternalName, sig: Signature) -> Self {
         Self {
+            version_marker: VersionMarker,
             name,
             signature: sig,
             old_signature: None,
@@ -270,10 +320,49 @@ impl Function {
 
     /// Changes the destination of a jump or branch instruction.
     /// Does nothing if called with a non-jump or non-branch instruction.
+    ///
+    /// Note that this method ignores multi-destination branches like `br_table`.
     pub fn change_branch_destination(&mut self, inst: Inst, new_dest: Block) {
         match self.dfg[inst].branch_destination_mut() {
             None => (),
             Some(inst_dest) => *inst_dest = new_dest,
+        }
+    }
+
+    /// Rewrite the branch destination to `new_dest` if the destination matches `old_dest`.
+    /// Does nothing if called with a non-jump or non-branch instruction.
+    ///
+    /// Unlike [change_branch_destination](Function::change_branch_destination), this method rewrite the destinations of
+    /// multi-destination branches like `br_table`.
+    pub fn rewrite_branch_destination(&mut self, inst: Inst, old_dest: Block, new_dest: Block) {
+        match self.dfg.analyze_branch(inst) {
+            BranchInfo::SingleDest(dest, ..) => {
+                if dest == old_dest {
+                    self.change_branch_destination(inst, new_dest);
+                }
+            }
+
+            BranchInfo::Table(table, default_dest) => {
+                self.jump_tables[table].iter_mut().for_each(|entry| {
+                    if *entry == old_dest {
+                        *entry = new_dest;
+                    }
+                });
+
+                if default_dest == Some(old_dest) {
+                    match &mut self.dfg[inst] {
+                        InstructionData::BranchTable { destination, .. } => {
+                            *destination = new_dest;
+                        }
+                        _ => panic!(
+                            "Unexpected instruction {} having default destination",
+                            self.dfg.display_inst(inst, None)
+                        ),
+                    }
+                }
+            }
+
+            BranchInfo::NotABranch => {}
         }
     }
 

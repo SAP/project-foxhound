@@ -24,8 +24,6 @@
 #  endif /* XP_UNIX */
 #endif   /* XP_WIN */
 
-extern const char16_t kIsoLatin1ToUCS2[256];
-
 /// This is a wrapper class around all the C runtime functions.
 
 class nsCRT {
@@ -43,19 +41,40 @@ class nsCRT {
 
   /// Case-insensitive string comparison.
   static int32_t strcasecmp(const char* aStr1, const char* aStr2) {
+    /* Some functions like `PL_strcasecmp` are reimplementations
+     * of the their native POSIX counterparts, which breaks libFuzzer.
+     * For this purpose, we use the natives instead when fuzzing.
+     */
+#if defined(LIBFUZZER) && defined(LINUX)
+    return int32_t(::strcasecmp(aStr1, aStr2));
+#else
     return int32_t(PL_strcasecmp(aStr1, aStr2));
+#endif
   }
 
   /// Case-insensitive string comparison with length
   static int32_t strncasecmp(const char* aStr1, const char* aStr2,
                              uint32_t aMaxLen) {
+#if defined(LIBFUZZER) && defined(LINUX)
+    int32_t result = int32_t(::strncasecmp(aStr1, aStr2, aMaxLen));
+#else
     int32_t result = int32_t(PL_strncasecmp(aStr1, aStr2, aMaxLen));
+#endif
     // Egads. PL_strncasecmp is returning *very* negative numbers.
     // Some folks expect -1,0,1, so let's temper its enthusiasm.
     if (result < 0) {
       result = -1;
     }
     return result;
+  }
+
+  /// Case-insensitive substring search.
+  static char* strcasestr(const char* aStr1, const char* aStr2) {
+#if defined(LIBFUZZER) && defined(LINUX)
+    return const_cast<char*>(::strcasestr(aStr1, aStr2));
+#else
+    return PL_strcasestr(aStr1, aStr2);
+#endif
   }
 
   /**
@@ -88,9 +107,6 @@ class nsCRT {
   static char ToUpper(char aChar) { return NS_ToUpper(aChar); }
   static char ToLower(char aChar) { return NS_ToLower(aChar); }
 
-  static bool IsUpper(char aChar) { return NS_IsUpper(aChar); }
-  static bool IsLower(char aChar) { return NS_IsLower(aChar); }
-
   static bool IsAsciiSpace(char16_t aChar) {
     return NS_IsAsciiWhitespace(aChar);
   }
@@ -99,14 +115,5 @@ class nsCRT {
 inline bool NS_IS_SPACE(char16_t aChar) {
   return ((int(aChar) & 0x7f) == int(aChar)) && isspace(int(aChar));
 }
-
-#define NS_IS_CNTRL(i) ((((unsigned int)(i)) > 0x7f) ? (int)0 : iscntrl(i))
-#define NS_IS_DIGIT(i) ((((unsigned int)(i)) > 0x7f) ? (int)0 : isdigit(i))
-#if defined(XP_WIN)
-#  define NS_IS_ALPHA(VAL) (isascii((int)(VAL)) && isalpha((int)(VAL)))
-#else
-#  define NS_IS_ALPHA(VAL) \
-    ((((unsigned int)(VAL)) > 0x7f) ? (int)0 : isalpha((int)(VAL)))
-#endif
 
 #endif /* nsCRT_h___ */

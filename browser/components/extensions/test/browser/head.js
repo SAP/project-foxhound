@@ -28,7 +28,7 @@
  *          awaitEvent BrowserWindowIterator
  *          navigateTab historyPushState promiseWindowRestored
  *          getIncognitoWindow startIncognitoMonitorExtension
- *          loadTestSubscript
+ *          loadTestSubscript awaitBrowserLoaded backgroundColorSetOnRoot
  */
 
 // There are shutdown issues for which multiple rejections are left uncaught.
@@ -49,6 +49,9 @@ PromiseTestUtils.allowMatchingRejectionsGlobally(
   /Receiving end does not exist/
 );
 
+const { AppUiTestDelegate, AppUiTestInternals } = ChromeUtils.import(
+  "resource://testing-common/AppUiTestDelegate.jsm"
+);
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
@@ -58,18 +61,26 @@ const { CustomizableUI } = ChromeUtils.import(
 const { Preferences } = ChromeUtils.import(
   "resource://gre/modules/Preferences.jsm"
 );
+const { ClientEnvironmentBase } = ChromeUtils.import(
+  "resource://gre/modules/components-utils/ClientEnvironment.jsm"
+);
 
-XPCOMUtils.defineLazyGetter(this, "Management", () => {
-  const { Management } = ChromeUtils.import(
-    "resource://gre/modules/Extension.jsm",
-    null
-  );
-  return Management;
-});
+ChromeUtils.defineModuleGetter(
+  this,
+  "Management",
+  "resource://gre/modules/Extension.jsm"
+);
+
+var {
+  makeWidgetId,
+  promisePopupShown,
+  getPanelForNode,
+  awaitBrowserLoaded,
+} = AppUiTestInternals;
 
 // The extension tests can run a lot slower under ASAN.
 if (AppConstants.ASAN) {
-  SimpleTest.requestLongerTimeout(10);
+  requestLongerTimeout(5);
 }
 
 function loadTestSubscript(filePath) {
@@ -104,11 +115,6 @@ function forceGC() {
   }
 }
 
-function makeWidgetId(id) {
-  id = id.toLowerCase();
-  return id.replace(/[^a-z0-9_-]/g, "_");
-}
-
 var focusWindow = async function focusWindow(win) {
   if (Services.focus.activeWindow == win) {
     return;
@@ -138,12 +144,8 @@ let img =
 var imageBuffer = imageBufferFromDataURI(img);
 
 function getInlineOptionsBrowser(aboutAddonsBrowser) {
-  let { contentWindow } = aboutAddonsBrowser;
-  let htmlBrowser = contentWindow.document.getElementById("html-view-browser");
-  return (
-    htmlBrowser.contentDocument.getElementById("addon-inline-options") ||
-    contentWindow.document.getElementById("addon-options")
-  );
+  let { contentDocument } = aboutAddonsBrowser;
+  return contentDocument.getElementById("addon-inline-options");
 }
 
 function getListStyleImage(button) {
@@ -154,25 +156,8 @@ function getListStyleImage(button) {
   return match && match[1];
 }
 
-async function promiseAnimationFrame(win = window) {
-  await new Promise(resolve => win.requestAnimationFrame(resolve));
-
-  let { tm } = Services;
-  return new Promise(resolve => tm.dispatchToMainThread(resolve));
-}
-
-function promisePopupShown(popup) {
-  return new Promise(resolve => {
-    if (popup.state == "open") {
-      resolve();
-    } else {
-      let onPopupShown = event => {
-        popup.removeEventListener("popupshown", onPopupShown);
-        resolve();
-      };
-      popup.addEventListener("popupshown", onPopupShown);
-    }
-  });
+function promiseAnimationFrame(win = window) {
+  return AppUiTestInternals.promiseAnimationFrame(win);
 }
 
 function promisePopupHidden(popup) {
@@ -269,8 +254,8 @@ async function promiseContentDimensions(browser) {
 
   let dims = await promisePossiblyInaccurateContentDimensions(browser);
   while (
-    browser.clientWidth !== dims.window.innerWidth ||
-    browser.clientHeight !== dims.window.innerHeight
+    browser.clientWidth !== Math.round(dims.window.innerWidth) ||
+    browser.clientHeight !== Math.round(dims.window.innerHeight)
   ) {
     await delay(50);
     dims = await promisePossiblyInaccurateContentDimensions(browser);
@@ -296,10 +281,6 @@ function alterContent(browser, task, arg = null) {
   ]).then(([, dims]) => dims);
 }
 
-function getPanelForNode(node) {
-  return node.closest("panel");
-}
-
 async function focusButtonAndPressKey(key, elem, modifiers) {
   let focused = BrowserTestUtils.waitForEvent(elem, "focus", true);
 
@@ -312,37 +293,8 @@ async function focusButtonAndPressKey(key, elem, modifiers) {
   elem.blur();
 }
 
-var awaitBrowserLoaded = browser =>
-  ContentTask.spawn(browser, null, () => {
-    if (
-      content.document.readyState !== "complete" ||
-      content.document.documentURI === "about:blank"
-    ) {
-      return ContentTaskUtils.waitForEvent(this, "load", true, event => {
-        return content.document.documentURI !== "about:blank";
-      }).then(() => {});
-    }
-  });
-
-var awaitExtensionPanel = async function(
-  extension,
-  win = window,
-  awaitLoad = true
-) {
-  let { originalTarget: browser } = await BrowserTestUtils.waitForEvent(
-    win.document,
-    "WebExtPopupLoaded",
-    true,
-    event => event.detail.extension.id === extension.id
-  );
-
-  await Promise.all([
-    promisePopupShown(getPanelForNode(browser)),
-
-    awaitLoad && awaitBrowserLoaded(browser),
-  ]);
-
-  return browser;
+var awaitExtensionPanel = function(extension, win = window, awaitLoad = true) {
+  return AppUiTestDelegate.awaitExtensionPanel(win, extension.id, awaitLoad);
 };
 
 function getCustomizableUIPanelID() {
@@ -350,9 +302,7 @@ function getCustomizableUIPanelID() {
 }
 
 function getBrowserActionWidget(extension) {
-  return CustomizableUI.getWidget(
-    makeWidgetId(extension.id) + "-browser-action"
-  );
+  return AppUiTestInternals.getBrowserActionWidget(extension.id);
 }
 
 function getBrowserActionPopup(extension, win = window) {
@@ -364,31 +314,12 @@ function getBrowserActionPopup(extension, win = window) {
   return win.PanelUI.overflowPanel;
 }
 
-var showBrowserAction = async function(extension, win = window) {
-  let group = getBrowserActionWidget(extension);
-  let widget = group.forWindow(win);
-  if (!widget.node) {
-    return;
-  }
-
-  if (group.areaType == CustomizableUI.TYPE_TOOLBAR) {
-    ok(!widget.overflowed, "Expect widget not to be overflowed");
-  } else if (group.areaType == CustomizableUI.TYPE_MENU_PANEL) {
-    await win.document.getElementById("nav-bar").overflowable.show();
-  }
+var showBrowserAction = function(extension, win = window) {
+  return AppUiTestInternals.showBrowserAction(win, extension.id);
 };
 
-async function clickBrowserAction(extension, win = window, modifiers) {
-  await promiseAnimationFrame(win);
-  await showBrowserAction(extension, win);
-
-  let widget = getBrowserActionWidget(extension).forWindow(win);
-
-  if (modifiers) {
-    EventUtils.synthesizeMouseAtCenter(widget.node, modifiers, win);
-  } else {
-    widget.node.click();
-  }
+function clickBrowserAction(extension, win = window, modifiers) {
+  return AppUiTestDelegate.clickBrowserAction(win, extension.id, modifiers);
 }
 
 async function triggerBrowserActionWithKeyboard(
@@ -420,12 +351,7 @@ async function triggerBrowserActionWithKeyboard(
 }
 
 function closeBrowserAction(extension, win = window) {
-  let group = getBrowserActionWidget(extension);
-
-  let node = win.document.getElementById(group.viewId);
-  CustomizableUI.hidePanelForNode(node);
-
-  return Promise.resolve();
+  return AppUiTestDelegate.closeBrowserAction(win, extension.id);
 }
 
 function openBrowserActionPanel(extension, win = window, awaitLoad = false) {
@@ -436,14 +362,21 @@ function openBrowserActionPanel(extension, win = window, awaitLoad = false) {
 
 async function toggleBookmarksToolbar(visible = true) {
   let bookmarksToolbar = document.getElementById("PersonalToolbar");
-  let transitionPromise = BrowserTestUtils.waitForEvent(
-    bookmarksToolbar,
-    "transitionend",
-    e => e.propertyName == "max-height"
-  );
+  // Third parameter is 'persist' and true is the default.
+  // Fourth parameter is 'animated' and we want no animation.
+  setToolbarVisibility(bookmarksToolbar, visible, true, false);
+  if (!visible) {
+    return BrowserTestUtils.waitForMutationCondition(
+      bookmarksToolbar,
+      { attributes: true },
+      () => bookmarksToolbar.collapsed
+    );
+  }
 
-  setToolbarVisibility(bookmarksToolbar, visible);
-  await transitionPromise;
+  return BrowserTestUtils.waitForEvent(
+    bookmarksToolbar,
+    "BookmarksToolbarVisibilityUpdated"
+  );
 }
 
 async function openContextMenuInPopup(extension, selector = "body") {
@@ -484,6 +417,14 @@ async function openContextMenuInSidebar(selector = "body") {
     contentAreaContextMenu,
     "popupshown"
   );
+
+  // Wait for the layout to be flushed, otherwise this test may
+  // fail intermittently if synthesizeMouseAtCenter is being called
+  // while the sidebar is still opening and the browser window layout
+  // being recomputed.
+  await SidebarUI.browser.contentWindow.promiseDocumentFlushed(() => {});
+
+  info("Opening context menu in sidebarAction panel");
   await BrowserTestUtils.synthesizeMouseAtCenter(
     selector,
     { type: "mousedown", button: 2 },
@@ -568,7 +509,7 @@ async function openExtensionContextMenu(selector = "#img1") {
     contextMenu,
     "popupshown"
   );
-  EventUtils.synthesizeMouseAtCenter(extensionMenu, {});
+  extensionMenu.openMenu(true);
   await popupShownPromise;
   return extensionMenu;
 }
@@ -582,7 +523,7 @@ async function closeExtensionContextMenu(itemToSelect, modifiers = {}) {
     "popuphidden"
   );
   if (itemToSelect) {
-    EventUtils.synthesizeMouseAtCenter(itemToSelect, modifiers);
+    itemToSelect.closest("menupopup").activateItem(itemToSelect, modifiers);
   } else {
     contentAreaContextMenu.hidePopup();
   }
@@ -637,7 +578,7 @@ async function openChromeContextMenu(menuId, target, win = window) {
 async function openSubmenu(submenuItem, win = window) {
   const submenu = submenuItem.menupopup;
   const shown = BrowserTestUtils.waitForEvent(submenu, "popupshown");
-  EventUtils.synthesizeMouseAtCenter(submenuItem, {}, win);
+  submenuItem.openMenu(true);
   await shown;
   return submenu;
 }
@@ -646,7 +587,7 @@ function closeChromeContextMenu(menuId, itemToSelect, win = window) {
   const menu = win.document.getElementById(menuId);
   const hidden = BrowserTestUtils.waitForEvent(menu, "popuphidden");
   if (itemToSelect) {
-    EventUtils.synthesizeMouseAtCenter(itemToSelect, {}, win);
+    itemToSelect.closest("menupopup").activateItem(itemToSelect);
   } else {
     menu.hidePopup();
   }
@@ -696,38 +637,15 @@ function closeTabContextMenu(itemToSelect, win = window) {
 }
 
 function getPageActionPopup(extension, win = window) {
-  let panelId = makeWidgetId(extension.id) + "-panel";
-  return win.document.getElementById(panelId);
+  return AppUiTestInternals.getPageActionPopup(win, extension.id);
 }
 
-async function getPageActionButton(extension, win = window) {
-  // This would normally be set automatically on navigation, and cleared
-  // when the user types a value into the URL bar, to show and hide page
-  // identity info and icons such as page action buttons.
-  //
-  // Unfortunately, that doesn't happen automatically in browser chrome
-  // tests.
-  win.gURLBar.setPageProxyState("valid");
-
-  // If the current tab is blank and the previously selected tab was an internal
-  // page, the urlbar will now be showing the internal identity box due to the
-  // setPageProxyState call above.  The page action button is hidden in that
-  // case, so make sure we're not showing the internal identity box.
-  gIdentityHandler._identityBox.classList.remove("chromeUI");
-
-  await promiseAnimationFrame(win);
-
-  let pageActionId = BrowserPageActions.urlbarButtonNodeIDForActionID(
-    makeWidgetId(extension.id)
-  );
-
-  return win.document.getElementById(pageActionId);
+function getPageActionButton(extension, win = window) {
+  return AppUiTestInternals.getPageActionButton(win, extension.id);
 }
 
-async function clickPageAction(extension, win = window, modifiers = {}) {
-  let elem = await getPageActionButton(extension, win);
-  EventUtils.synthesizeMouseAtCenter(elem, modifiers, win);
-  return new Promise(SimpleTest.executeSoon);
+function clickPageAction(extension, win = window, modifiers = {}) {
+  return AppUiTestDelegate.clickPageAction(win, extension.id, modifiers);
 }
 
 // Shows the popup for the page action which for lists
@@ -811,14 +729,7 @@ async function triggerPageActionWithKeyboardInPanel(
 }
 
 function closePageAction(extension, win = window) {
-  let node = getPageActionPopup(extension, win);
-  if (node) {
-    return promisePopupShown(node).then(() => {
-      node.hidePopup();
-    });
-  }
-
-  return Promise.resolve();
+  return AppUiTestDelegate.closePageAction(win, extension.id);
 }
 
 function promisePrefChangeObserved(pref) {
@@ -1041,4 +952,20 @@ async function getIncognitoWindow(url = "about:privatebrowsing") {
   let details = await data;
   await windowWatcher.unload();
   return { win, details };
+}
+
+/**
+ * Windows 7 and 8 set the window's background-color on :root instead of
+ * #navigator-toolbox to avoid bug 1695280. When that bug is fixed, this
+ * function and the assertions it gates can be removed.
+ *
+ * @returns {boolean} True if the window's background-color is set on :root
+ *   rather than #navigator-toolbox.
+ **/
+function backgroundColorSetOnRoot() {
+  const os = ClientEnvironmentBase.os;
+  if (!os.isWindows) {
+    return false;
+  }
+  return os.windowsVersion < 10;
 }

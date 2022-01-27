@@ -82,11 +82,13 @@ add_task(async function test_contentscript_context_isolation() {
 
   // Get the content script context and check that it points to the correct window.
   await contentPage.spawn(extension.id, async extensionId => {
-    let { DocumentManager } = ChromeUtils.import(
-      "resource://gre/modules/ExtensionContent.jsm",
-      null
+    const { ExtensionContent } = ChromeUtils.import(
+      "resource://gre/modules/ExtensionContent.jsm"
     );
-    this.context = DocumentManager.getContext(extensionId, this.content);
+    this.context = ExtensionContent.getContextByExtensionId(
+      extensionId,
+      this.content
+    );
 
     Assert.ok(this.context, "Got content script context");
 
@@ -117,33 +119,39 @@ add_task(async function test_contentscript_context_isolation() {
 
   await extension.awaitMessage("content-script-show");
 
-  await contentPage.spawn(null, async () => {
-    Assert.equal(
-      this.context.contentWindow,
-      this.content,
-      "Context's contentWindow property is correct"
-    );
-    Assert.ok(this.context.sandbox, "Context's sandbox exists before unload");
+  async function testWithoutBfcache() {
+    return contentPage.spawn(null, async () => {
+      Assert.equal(
+        this.context.contentWindow,
+        this.content,
+        "Context's contentWindow property is correct"
+      );
+      Assert.ok(this.context.sandbox, "Context's sandbox exists before unload");
 
-    let contextUnloadedPromise = new Promise(resolve => {
-      this.context.callOnClose({ close: resolve });
-    });
-
-    // Now add an "unload" event listener, which should prevent a page from entering the bfcache.
-    await new Promise(resolve => {
-      this.content.addEventListener("unload", () => {
-        Assert.equal(
-          this.context.contentWindow,
-          this.content,
-          "Context's contentWindow property should be non-null at unload"
-        );
-        resolve();
+      let contextUnloadedPromise = new Promise(resolve => {
+        this.context.callOnClose({ close: resolve });
       });
-      this.content.location = "http://example.org/dummy?noscripthere2";
-    });
 
-    await contextUnloadedPromise;
-  });
+      // Now add an "unload" event listener, which should prevent a page from entering the bfcache.
+      await new Promise(resolve => {
+        this.content.addEventListener("unload", () => {
+          Assert.equal(
+            this.context.contentWindow,
+            this.content,
+            "Context's contentWindow property should be non-null at unload"
+          );
+          resolve();
+        });
+        this.content.location = "http://example.org/dummy?noscripthere2";
+      });
+
+      await contextUnloadedPromise;
+    });
+  }
+  await runWithPrefs(
+    [["docshell.shistory.bfcache.allow_unload_listeners", false]],
+    testWithoutBfcache
+  );
 
   await extension.awaitMessage("content-script-unload");
 

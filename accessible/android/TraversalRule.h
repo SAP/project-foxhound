@@ -12,7 +12,7 @@
 namespace mozilla {
 namespace a11y {
 
-class Accessible;
+class LocalAccessible;
 
 /**
  * Class represents a simple traversal rule.
@@ -24,28 +24,28 @@ class TraversalRule final : public PivotRule {
 
   ~TraversalRule() = default;
 
-  virtual uint16_t Match(Accessible* aAccessible) override;
+  virtual uint16_t Match(Accessible* aAcc) override;
 
  private:
-  bool IsSingleLineage(Accessible* aAccessible);
+  bool IsSingleLineage(LocalAccessible* aAccessible);
 
-  bool IsFlatSubtree(const Accessible* aAccessible);
+  bool IsFlatSubtree(const LocalAccessible* aAccessible);
 
-  bool IsListItemBullet(const Accessible* aAccessible);
+  bool IsListItemBullet(const LocalAccessible* aAccessible);
 
-  bool HasName(const Accessible* aAccessible);
+  bool HasName(const LocalAccessible* aAccessible);
 
-  uint16_t DefaultMatch(Accessible* aAccessible);
+  uint16_t DefaultMatch(LocalAccessible* aAccessible);
 
-  uint16_t LinkMatch(Accessible* aAccessible);
+  uint16_t LinkMatch(LocalAccessible* aAccessible);
 
-  uint16_t HeadingMatch(Accessible* aAccessible);
+  uint16_t HeadingMatch(LocalAccessible* aAccessible);
 
-  uint16_t ControlMatch(Accessible* aAccessible);
+  uint16_t ControlMatch(LocalAccessible* aAccessible);
 
-  uint16_t SectionMatch(Accessible* aAccessible);
+  uint16_t SectionMatch(LocalAccessible* aAccessible);
 
-  uint16_t LandmarkMatch(Accessible* aAccessible);
+  uint16_t LandmarkMatch(LocalAccessible* aAccessible);
 
   int32_t mGranularity;
 };

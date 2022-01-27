@@ -9,7 +9,8 @@
 
 enum ResizeObserverBoxOptions {
     "border-box",
-    "content-box"
+    "content-box",
+    "device-pixel-content-box"
 };
 
 dictionary ResizeObserverOptions {
@@ -36,8 +37,14 @@ callback ResizeObserverCallback = void (sequence<ResizeObserverEntry> entries, R
 interface ResizeObserverEntry {
     readonly attribute Element target;
     readonly attribute DOMRectReadOnly contentRect;
-    readonly attribute ResizeObserverSize borderBoxSize;
-    readonly attribute ResizeObserverSize contentBoxSize;
+    // We are using [Pure, Cached, Frozen] sequence until `FrozenArray` is implemented.
+    // See https://bugzilla.mozilla.org/show_bug.cgi?id=1236777 for more details.
+    [Frozen, Cached, Pure]
+    readonly attribute sequence<ResizeObserverSize> borderBoxSize;
+    [Frozen, Cached, Pure]
+    readonly attribute sequence<ResizeObserverSize> contentBoxSize;
+    [Frozen, Cached, Pure]
+    readonly attribute sequence<ResizeObserverSize> devicePixelContentBoxSize;
 };
 
 [Pref="layout.css.resizeobserver.enabled",

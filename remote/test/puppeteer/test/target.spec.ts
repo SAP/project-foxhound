@@ -14,15 +14,16 @@
  * limitations under the License.
  */
 
-import utils from './utils';
+import utils from './utils.js';
 const { waitEvent } = utils;
 import expect from 'expect';
 import {
   getTestState,
   setupTestBrowserHooks,
   setupTestPageAndContextHooks,
-} from './mocha-utils';
-import { Target } from '../src/common/Target';
+  itFailsFirefox,
+} from './mocha-utils'; // eslint-disable-line import/extensions
+import { Target } from '../lib/cjs/puppeteer/common/Target.js';
 
 describe('Target', function () {
   setupTestBrowserHooks();
@@ -47,7 +48,6 @@ describe('Target', function () {
     const allPages = await context.pages();
     expect(allPages.length).toBe(1);
     expect(allPages).toContain(page);
-    expect(allPages[0]).not.toBe(allPages[1]);
   });
   it('should contain browser target', async () => {
     const { browser } = getTestState();
@@ -80,7 +80,7 @@ describe('Target', function () {
           )
           .then((target) => target.page()),
         page.evaluate(
-          (url) => window.open(url),
+          (url: string) => window.open(url),
           server.CROSS_PROCESS_PREFIX + '/empty.html'
         ),
       ]);
@@ -214,7 +214,7 @@ describe('Target', function () {
       // Open a new page. Use window.open to connect to the page later.
       await Promise.all([
         page.evaluate(
-          (url) => window.open(url),
+          (url: string) => window.open(url),
           server.PREFIX + '/one-style.html'
         ),
         server.waitForRequest('/one-style.css'),
@@ -252,18 +252,31 @@ describe('Target', function () {
 
   describe('Browser.waitForTarget', () => {
     it('should wait for a target', async () => {
-      const { browser, server } = getTestState();
+      const { browser, puppeteer, server } = getTestState();
 
       let resolved = false;
       const targetPromise = browser.waitForTarget(
         (target) => target.url() === server.EMPTY_PAGE
       );
-      targetPromise.then(() => (resolved = true));
+      targetPromise
+        .then(() => (resolved = true))
+        .catch((error) => {
+          resolved = true;
+          if (error instanceof puppeteer.errors.TimeoutError) {
+            console.error(error);
+          } else throw error;
+        });
       const page = await browser.newPage();
       expect(resolved).toBe(false);
       await page.goto(server.EMPTY_PAGE);
-      const target = await targetPromise;
-      expect(await target.page()).toBe(page);
+      try {
+        const target = await targetPromise;
+        expect(await target.page()).toBe(page);
+      } catch (error) {
+        if (error instanceof puppeteer.errors.TimeoutError) {
+          console.error(error);
+        } else throw error;
+      }
       await page.close();
     });
     it('should timeout waiting for a non-existent target', async () => {

@@ -4,8 +4,8 @@
 
 "use strict";
 
-/* globals module */
-
+const Services = require("Services");
+const isWindows = Services.appinfo.OS === "WINNT";
 /**
  * This is the registry for all DAMP tests. Tests will be run in the order specified by
  * the DAMP_TESTS array.
@@ -92,6 +92,8 @@ module.exports = [
     path: "accessibility/simple.js",
     description:
       "Measure open/close toolbox on accessibility panel against simple document",
+    // Bug 1660854 - disable on Windows due to frequent failures
+    disabled: isWindows,
   },
   // Run all tests against "complicated" document
   {
@@ -118,12 +120,13 @@ module.exports = [
     description:
       "Measure open/close toolbox on style editor panel against complicated document",
   },
-  {
-    name: "complicated.netmonitor",
-    path: "netmonitor/complicated.js",
-    description:
-      "Measure open/close toolbox on network monitor panel against complicated document",
-  },
+  // Bug 1693975 - disable test due to frequent failures
+  //  {
+  //    name: "complicated.netmonitor",
+  //    path: "netmonitor/complicated.js",
+  //    description:
+  //      "Measure open/close toolbox on network monitor panel against complicated document",
+  //  },
   // Run all tests against a document specific to each tool
   {
     name: "custom.webconsole",
@@ -187,6 +190,11 @@ module.exports = [
     name: "panelsInBackground.reload",
     path: "toolbox/panels-in-background.js",
     description: "Measure page reload time when all panels are in background",
+  },
+  {
+    name: "toolbox.screenshot",
+    path: "toolbox/screenshot.js",
+    description: "Measure the time to take a fullpage screenshot",
   },
   {
     name: "server.protocoljs",

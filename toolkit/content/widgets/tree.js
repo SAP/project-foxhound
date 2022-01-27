@@ -231,11 +231,7 @@
             var column = tree.columns[colindex];
             if (column) {
               var element = column.element;
-              if (element.getAttribute("hidden") == "true") {
-                element.setAttribute("hidden", "false");
-              } else {
-                element.setAttribute("hidden", "true");
-              }
+              element.hidden = !element.hidden;
             }
           }
         }
@@ -385,7 +381,6 @@
     set ordinal(val) {
       this.style.MozBoxOrdinalGroup = val;
       this.setAttribute("ordinal", val);
-      return val;
     }
 
     get ordinal() {
@@ -1040,7 +1035,6 @@
       } else {
         this.removeAttribute("editable");
       }
-      return val;
     }
 
     get editable() {
@@ -1051,7 +1045,6 @@
      */
     set selType(val) {
       this.setAttribute("seltype", val);
-      return val;
     }
 
     get selType() {
@@ -1060,13 +1053,15 @@
 
     set currentIndex(val) {
       if (this.view) {
-        return (this.view.selection.currentIndex = val);
+        this.view.selection.currentIndex = val;
       }
-      return val;
     }
 
     get currentIndex() {
-      return this.view ? this.view.selection.currentIndex : -1;
+      if (this.view && this.view.selection) {
+        return this.view.selection.currentIndex;
+      }
+      return -1;
     }
 
     set keepCurrentInView(val) {
@@ -1075,7 +1070,6 @@
       } else {
         this.removeAttribute("keepcurrentinview");
       }
-      return val;
     }
 
     get keepCurrentInView() {
@@ -1088,7 +1082,6 @@
       } else {
         this.removeAttribute("enableColumnDrag");
       }
-      return val;
     }
 
     get enableColumnDrag() {
@@ -1109,7 +1102,6 @@
       } else {
         this.removeAttribute("disableKeyNavigation");
       }
-      return val;
     }
 
     get disableKeyNavigation() {
@@ -1344,14 +1336,12 @@
 
       // The leftside of the textbox is aligned to the left side of the text
       // in LTR mode, and left side of the cell in RTL mode.
-      var left, widthdiff;
-      if (style.direction == "rtl") {
-        left = cellRect.x;
-        widthdiff = cellRect.x - textRect.x;
-      } else {
-        left = textRect.x;
-        widthdiff = textRect.x - cellRect.x;
-      }
+      let left = style.direction == "rtl" ? cellRect.x : textRect.x;
+      // Note: this won't be quite right in RTL for trees using twisties
+      // or indentation. bug 1708159 tracks fixing the implementation
+      // of getCoordsForCellItem which we called above so it provides
+      // better numbers in those cases.
+      let widthdiff = Math.abs(textRect.x - cellRect.x);
 
       input.style.left = `${left}px`;
       input.style.height = `${textRect.height +

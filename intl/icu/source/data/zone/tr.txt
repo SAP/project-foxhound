@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 tr{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"Abidjan"}
@@ -1939,6 +1939,9 @@ tr{
             ld{"Yekaterinburg Yaz Saati"}
             lg{"Yekaterinburg Saati"}
             ls{"Yekaterinburg Standart Saati"}
+        }
+        "meta:Yukon"{
+            ls{"Yukon Saati"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

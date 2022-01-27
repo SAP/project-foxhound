@@ -33,7 +33,7 @@ HRESULT HNsToFrames(int64_t aHNs, uint32_t aRate, int64_t* aOutFrames);
 HRESULT
 GetDefaultStride(IMFMediaType* aType, uint32_t aWidth, uint32_t* aOutStride);
 
-gfx::YUVColorSpace GetYUVColorSpace(IMFMediaType* aType);
+Maybe<gfx::YUVColorSpace> GetYUVColorSpace(IMFMediaType* aType);
 
 int32_t MFOffsetToInt32(const MFOffset& aOffset);
 
@@ -58,6 +58,9 @@ inline bool IsFlagSet(DWORD flags, DWORD pattern) {
 // Will return %ProgramW6432% value as per:
 // https://msdn.microsoft.com/library/windows/desktop/aa384274.aspx
 nsString GetProgramW6432Path();
+
+const char* MFTMessageTypeToStr(MFT_MESSAGE_TYPE aMsg);
+
 }  // namespace mozilla
 
 #endif

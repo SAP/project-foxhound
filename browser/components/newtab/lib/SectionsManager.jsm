@@ -7,6 +7,9 @@ const { EventEmitter } = ChromeUtils.import(
   "resource://gre/modules/EventEmitter.jsm"
 );
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 const { actionCreators: ac, actionTypes: at } = ChromeUtils.import(
   "resource://activity-stream/common/Actions.jsm"
 );
@@ -14,18 +17,17 @@ const { getDefaultOptions } = ChromeUtils.import(
   "resource://activity-stream/lib/ActivityStreamStorage.jsm"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm"
-);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
+});
 
 /*
  * Generators for built in sections, keyed by the pref name for their feed.
  * Built in sections may depend on options stored as serialised JSON in the pref
  * `${feed_pref_name}.options`.
  */
-const BUILT_IN_SECTIONS = {
+const BUILT_IN_SECTIONS = () => ({
   "feeds.section.topstories": options => ({
     id: "topstories",
     pref: {
@@ -34,7 +36,7 @@ const BUILT_IN_SECTIONS = {
         values: { provider: options.provider_name },
       },
       descString: {
-        id: "home-prefs-recommended-by-description-update",
+        id: "home-prefs-recommended-by-description-new",
         values: { provider: options.provider_name },
       },
       nestedPrefs: options.show_spocs
@@ -43,6 +45,7 @@ const BUILT_IN_SECTIONS = {
               name: "showSponsored",
               titleString: "home-prefs-recommended-by-option-sponsored-stories",
               icon: "icon-info",
+              eventSource: "POCKET_SPOCS",
             },
           ]
         : [],
@@ -66,8 +69,6 @@ const BUILT_IN_SECTIONS = {
         message: { id: "newtab-pocket-learn-more" },
       },
     },
-    privacyNoticeURL:
-      "https://www.mozilla.org/privacy/firefox/#suggest-relevant-content",
     compactCards: false,
     rowsPref: "section.topstories.rows",
     maxRows: 4,
@@ -93,8 +94,12 @@ const BUILT_IN_SECTIONS = {
   "feeds.section.highlights": options => ({
     id: "highlights",
     pref: {
-      titleString: { id: "home-prefs-highlights-header" },
-      descString: { id: "home-prefs-highlights-description" },
+      titleString: {
+        id: "home-prefs-recent-activity-header",
+      },
+      descString: {
+        id: "home-prefs-recent-activity-description",
+      },
       nestedPrefs: [
         {
           name: "section.highlights.includeVisited",
@@ -120,18 +125,20 @@ const BUILT_IN_SECTIONS = {
     },
     shouldHidePref: false,
     eventSource: "HIGHLIGHTS",
-    icon: "highlights",
-    title: { id: "newtab-section-header-highlights" },
+    icon: "chrome://global/skin/icons/highlights.svg",
+    title: {
+      id: "newtab-section-header-recent-activity",
+    },
     compactCards: true,
     rowsPref: "section.highlights.rows",
     maxRows: 4,
     emptyState: {
       message: { id: "newtab-empty-section-highlights" },
-      icon: "highlights",
+      icon: "chrome://global/skin/icons/highlights.svg",
     },
     shouldSendImpressionStats: false,
   }),
-};
+});
 
 const SectionsManager = {
   ACTIONS_TO_PROXY: ["WEBEXT_CLICK", "WEBEXT_DISMISS"],
@@ -181,8 +188,9 @@ const SectionsManager = {
   sections: new Map(),
   async init(prefs = {}, storage) {
     this._storage = storage;
+    const featureConfig = NimbusFeatures.newtab.getAllVariables() || {};
 
-    for (const feedPrefName of Object.keys(BUILT_IN_SECTIONS)) {
+    for (const feedPrefName of Object.keys(BUILT_IN_SECTIONS(featureConfig))) {
       const optionsPrefName = `${feedPrefName}.options`;
       await this.addBuiltInSection(feedPrefName, prefs[optionsPrefName]);
 
@@ -229,6 +237,7 @@ const SectionsManager = {
   async addBuiltInSection(feedPrefName, optionsPrefValue = "{}") {
     let options;
     let storedPrefs;
+    const featureConfig = NimbusFeatures.newtab.getAllVariables() || {};
     try {
       options = JSON.parse(optionsPrefValue);
     } catch (e) {
@@ -241,7 +250,9 @@ const SectionsManager = {
       storedPrefs = {};
       Cu.reportError(`Problem getting stored prefs for ${feedPrefName}`);
     }
-    const defaultSection = BUILT_IN_SECTIONS[feedPrefName](options);
+    const defaultSection = BUILT_IN_SECTIONS(featureConfig)[feedPrefName](
+      options
+    );
     const section = Object.assign({}, defaultSection, {
       pref: Object.assign(
         {},

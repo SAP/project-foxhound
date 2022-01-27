@@ -14,8 +14,8 @@
 
 /**
  * nsCheckboxRadioFrame is used for radio buttons and checkboxes.
- * It also has two static methods (RegUnRegAccessKey and
- * GetScreenHeight) that are used by other form controls.
+ * It also has a static method (GetUsableScreenRect) that is used by
+ * other form controls.
  */
 class nsCheckboxRadioFrame final : public nsAtomicContainerFrame,
                                    public nsIFormControlFrame {
@@ -48,11 +48,13 @@ class nsCheckboxRadioFrame final : public nsAtomicContainerFrame,
   /**
    * Our auto size is just intrinsic width and intrinsic height.
    */
-  virtual mozilla::LogicalSize ComputeAutoSize(
+  mozilla::LogicalSize ComputeAutoSize(
       gfxContext* aRenderingContext, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
+      const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorderPadding,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags) override;
 
   /**
    * Respond to a gui event
@@ -73,9 +75,6 @@ class nsCheckboxRadioFrame final : public nsAtomicContainerFrame,
                       const ReflowInput& aReflowInput,
                       nsReflowStatus& aStatus) override;
 
-  virtual void DestroyFrom(nsIFrame* aDestructRoot,
-                           PostDestroyData& aPostDestroyData) override;
-
   // new behavior
 
   virtual void SetFocus(bool aOn = true, bool aRepaint = false) override;
@@ -84,24 +83,10 @@ class nsCheckboxRadioFrame final : public nsAtomicContainerFrame,
   virtual nsresult SetFormProperty(nsAtom* aName,
                                    const nsAString& aValue) override;
 
-  // AccessKey Helper function
-  static nsresult RegUnRegAccessKey(nsIFrame* aFrame, bool aDoReg);
-
-  /**
-   * Returns the usable screen rect in app units, eg the rect where we can
-   * draw dropdowns.
-   */
-  static nsRect GetUsableScreenRect(nsPresContext* aPresContext);
-
  protected:
   virtual ~nsCheckboxRadioFrame();
 
-  static nscoord DefaultSize() {
-    // XXXmats We have traditionally always returned 9px for GetMin/PrefISize
-    // but we might want to factor in what the theme says, something like:
-    // GetMinimumWidgetSize - GetWidgetPadding - GetWidgetBorder.
-    return nsPresContext::CSSPixelsToAppUnits(9);
-  }
+  nscoord DefaultSize();
 
   /**
    * Get the state of the checked attribute.

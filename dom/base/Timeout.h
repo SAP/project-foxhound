@@ -11,15 +11,10 @@
 #include "mozilla/dom/TimeoutHandler.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/TimeStamp.h"
-#include "nsCOMPtr.h"
 #include "nsGlobalWindowInner.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsTHashMap.h"
 #include "GeckoProfiler.h"
-#include "nsDataHashtable.h"
-
-class nsIEventTarget;
-class nsIPrincipal;
-class nsIEventTarget;
 
 namespace mozilla {
 namespace dom {
@@ -72,7 +67,7 @@ class Timeout final : protected LinkedListElement<RefPtr<Timeout>> {
     const TimeoutIdAndReason mValue;
   };
 
-  class TimeoutSet : public nsDataHashtable<TimeoutHashKey, Timeout*> {
+  class TimeoutSet : public nsTHashMap<TimeoutHashKey, Timeout*> {
    public:
     NS_INLINE_DECL_REFCOUNTING(TimeoutSet);
 
@@ -99,7 +94,7 @@ class Timeout final : protected LinkedListElement<RefPtr<Timeout>> {
     }
     mTimeouts = aTimeouts;
     if (mTimeouts) {
-      mTimeouts->Put(key, this);
+      mTimeouts->InsertOrUpdate(key, this);
     }
   }
 
@@ -120,9 +115,9 @@ class Timeout final : protected LinkedListElement<RefPtr<Timeout>> {
     LinkedListElement<RefPtr<Timeout>>::remove();
   }
 
-#ifdef MOZ_GECKO_PROFILER
-  UniqueProfilerBacktrace TakeProfilerBacktrace() { return std::move(mCause); }
-#endif
+  UniquePtr<ProfileChunkedBuffer> TakeProfilerBacktrace() {
+    return std::move(mCause);
+  }
 
  private:
   // mWhen and mTimeRemaining can't be in a union, sadly, because they
@@ -158,9 +153,7 @@ class Timeout final : protected LinkedListElement<RefPtr<Timeout>> {
   // Interval
   TimeDuration mInterval;
 
-#ifdef MOZ_GECKO_PROFILER
-  UniqueProfilerBacktrace mCause;
-#endif
+  UniquePtr<ProfileChunkedBuffer> mCause;
 
   // Returned as value of setTimeout()
   uint32_t mTimeoutId;

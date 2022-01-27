@@ -12,10 +12,10 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 
+#include "AudioSink.h"
 #include "MediaSink.h"
 
 namespace mozilla {
-class AudioSink;
 class MediaData;
 template <class T>
 class MediaQueue;
@@ -30,7 +30,7 @@ class AudioSinkWrapper : public MediaSink {
   class Creator {
    public:
     virtual ~Creator() = default;
-    virtual AudioSink* Create() = 0;
+    virtual AudioSink* Create(const media::TimeUnit& aStartTime) = 0;
   };
 
   // Wrap around a function object which creates AudioSinks.
@@ -38,7 +38,9 @@ class AudioSinkWrapper : public MediaSink {
   class CreatorImpl : public Creator {
    public:
     explicit CreatorImpl(const Function& aFunc) : mFunction(aFunc) {}
-    AudioSink* Create() override { return mFunction(); }
+    AudioSink* Create(const media::TimeUnit& aStartTime) override {
+      return mFunction(aStartTime);
+    }
 
    private:
     Function mFunction;
@@ -66,6 +68,7 @@ class AudioSinkWrapper : public MediaSink {
   bool HasUnplayedFrames(TrackType aType) const override;
 
   void SetVolume(double aVolume) override;
+  void SetStreamName(const nsAString& aStreamName) override;
   void SetPlaybackRate(double aPlaybackRate) override;
   void SetPreservesPitch(bool aPreservesPitch) override;
   void SetPlaying(bool aPlaying) override;

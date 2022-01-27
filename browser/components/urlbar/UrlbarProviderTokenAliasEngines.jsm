@@ -18,6 +18,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   UrlbarProvider: "resource:///modules/UrlbarUtils.jsm",
   UrlbarResult: "resource:///modules/UrlbarResult.jsm",
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.jsm",
+  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.jsm",
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
 
@@ -47,7 +48,7 @@ class ProviderTokenAliasEngines extends UrlbarProvider {
   }
 
   get PRIORITY() {
-    // Beats UrlbarProviderSearchSuggestions and UnifiedComplete.
+    // Beats UrlbarProviderSearchSuggestions and UrlbarProviderPlaces.
     return 1;
   }
 
@@ -75,6 +76,11 @@ class ProviderTokenAliasEngines extends UrlbarProvider {
       return false;
     }
 
+    // Do not show token alias results in search mode.
+    if (queryContext.searchMode) {
+      return false;
+    }
+
     this._engines = await UrlbarSearchUtils.tokenAliasEngines();
     if (!this._engines.length) {
       return false;
@@ -85,12 +91,11 @@ class ProviderTokenAliasEngines extends UrlbarProvider {
       return false;
     }
 
-    if (queryContext.searchString.trim() == "@") {
+    if (queryContext.trimmedSearchString == "@") {
       return true;
     }
 
-    // If there's no engine associated with the searchString, then we don't want
-    // to block other kinds of results.
+    // If the user is typing a potential engine name, autofill it.
     if (UrlbarPrefs.get("autoFill") && queryContext.allowAutofill) {
       let result = this._getAutofillResult(queryContext);
       if (result) {
@@ -113,8 +118,18 @@ class ProviderTokenAliasEngines extends UrlbarProvider {
       return;
     }
 
-    if (queryContext.searchString.trim() == "@") {
-      for (let { engine, tokenAliases } of this._engines) {
+    if (
+      this._autofillData &&
+      this._autofillData.instance == this.queryInstance
+    ) {
+      addCallback(this, this._autofillData.result);
+    }
+
+    for (let { engine, tokenAliases } of this._engines) {
+      if (
+        tokenAliases[0].startsWith(queryContext.trimmedSearchString) &&
+        engine.name != this._autofillData?.result.payload.engine
+      ) {
         let result = new UrlbarResult(
           UrlbarUtils.RESULT_TYPE.SEARCH,
           UrlbarUtils.RESULT_SOURCE.SEARCH,
@@ -122,19 +137,15 @@ class ProviderTokenAliasEngines extends UrlbarProvider {
             engine: [engine.name, UrlbarUtils.HIGHLIGHT.TYPED],
             keyword: [tokenAliases[0], UrlbarUtils.HIGHLIGHT.TYPED],
             query: ["", UrlbarUtils.HIGHLIGHT.TYPED],
-            icon: engine.iconURI ? engine.iconURI.spec : "",
-            keywordOffer: UrlbarUtils.KEYWORD_OFFER.SHOW,
+            icon: engine.iconURI?.spec,
+            providesSearchMode: true,
           })
         );
         addCallback(this, result);
       }
-    } else if (
-      this._autofillData &&
-      this._autofillData.instance == this.queryInstance
-    ) {
-      addCallback(this, this._autofillData.result);
-      this._autofillData = null;
     }
+
+    this._autofillData = null;
   }
 
   /**
@@ -157,14 +168,30 @@ class ProviderTokenAliasEngines extends UrlbarProvider {
   }
 
   _getAutofillResult(queryContext) {
-    let token = queryContext.tokens[0];
+    let lowerCaseSearchString = queryContext.searchString.toLowerCase();
+
     // The user is typing a specific engine. We should show a heuristic result.
     for (let { engine, tokenAliases } of this._engines) {
       for (let alias of tokenAliases) {
-        if (alias.startsWith(token.lowerCaseValue)) {
-          // We found a specific engine. We will add an autofill result.
+        if (alias.startsWith(lowerCaseSearchString)) {
+          // We found the engine.
+
+          // Stop adding an autofill result once the user has typed the full
+          // alias followed by a space. We enter search mode at that point.
+          if (
+            lowerCaseSearchString.startsWith(alias) &&
+            UrlbarTokenizer.REGEXP_SPACES_START.test(
+              lowerCaseSearchString.substring(alias.length)
+            )
+          ) {
+            return null;
+          }
+
+          // Add an autofill result.  Append a space so the user can hit enter
+          // or the right arrow key and immediately start typing their query.
           let aliasPreservingUserCase =
-            token.value + alias.substr(token.value.length);
+            queryContext.searchString +
+            alias.substr(queryContext.searchString.length);
           let value = aliasPreservingUserCase + " ";
           let result = new UrlbarResult(
             UrlbarUtils.RESULT_TYPE.SEARCH,
@@ -173,17 +200,17 @@ class ProviderTokenAliasEngines extends UrlbarProvider {
               engine: [engine.name, UrlbarUtils.HIGHLIGHT.TYPED],
               keyword: [aliasPreservingUserCase, UrlbarUtils.HIGHLIGHT.TYPED],
               query: ["", UrlbarUtils.HIGHLIGHT.TYPED],
-              icon: engine.iconURI ? engine.iconURI.spec : "",
-              keywordOffer: UrlbarUtils.KEYWORD_OFFER.HIDE,
-              // For test interoperabilty with UrlbarProviderSearchSuggestions.
-              suggestion: undefined,
-              tailPrefix: undefined,
-              tail: undefined,
-              tailOffsetIndex: -1,
-              isSearchHistory: false,
+              icon: engine.iconURI?.spec,
+              providesSearchMode: true,
             })
           );
-          result.heuristic = true;
+
+          // We set suggestedIndex = 0 instead of the heuristic because we
+          // don't want this result to be automatically selected. That way,
+          // users can press Tab to select the result, building on their
+          // muscle memory from tab-to-search.
+          result.suggestedIndex = 0;
+
           result.autofill = {
             value,
             selectionStart: queryContext.searchString.length,

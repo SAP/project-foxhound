@@ -15,9 +15,10 @@ function frameScript() {
   }
 
   let range = selection.getRangeAt(0);
-  let scope = {};
-  ChromeUtils.import("resource://gre/modules/FindContent.jsm", scope);
-  let highlighter = new scope.FindContent(docShell).highlighter;
+  const { FindContent } = ChromeUtils.import(
+    "resource://gre/modules/FindContent.jsm"
+  );
+  let highlighter = new FindContent(docShell).highlighter;
   let r1 = content.parent.frameElement.getBoundingClientRect();
   let f1 = highlighter._getFrameElementOffsets(content.parent);
   let r2 = content.frameElement.getBoundingClientRect();
@@ -380,10 +381,6 @@ add_task(async function testAboutFind() {
 });
 
 add_task(async function testIncognitoFind() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.allowPrivateBrowsingByDefault", false]],
-  });
-
   async function background() {
     await browser.test.assertRejects(
       browser.find.find("banana"),
@@ -407,7 +404,7 @@ add_task(async function testIncognitoFind() {
   let privateWin = await BrowserTestUtils.openNewBrowserWindow({
     private: true,
   });
-  await BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURI(
     privateWin.gBrowser.selectedBrowser,
     "http://example.com"
   );
@@ -427,10 +424,6 @@ add_task(async function testIncognitoFind() {
 });
 
 add_task(async function testIncognitoFindAllowed() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.allowPrivateBrowsingByDefault", false]],
-  });
-
   // We're only testing we can make the calls in a private window,
   // testFind above tests full functionality.
   async function background() {
@@ -446,7 +439,7 @@ add_task(async function testIncognitoFindAllowed() {
   let privateWin = await BrowserTestUtils.openNewBrowserWindow({
     private: true,
   });
-  await BrowserTestUtils.loadURI(privateWin.gBrowser.selectedBrowser, url);
+  BrowserTestUtils.loadURI(privateWin.gBrowser.selectedBrowser, url);
   await BrowserTestUtils.browserLoaded(privateWin.gBrowser.selectedBrowser);
 
   let extension = ExtensionTestUtils.loadExtension({

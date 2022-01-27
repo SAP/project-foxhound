@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GlobalKeyListener.h"
+#include "EventTarget.h"
 
 #include <utility>
 
@@ -26,6 +27,7 @@
 #include "nsFocusManager.h"
 #include "nsGkAtoms.h"
 #include "nsIContent.h"
+#include "nsIContentInlines.h"
 #include "nsIDocShell.h"
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
@@ -34,7 +36,7 @@ namespace mozilla {
 
 using namespace mozilla::layers;
 
-GlobalKeyListener::GlobalKeyListener(EventTarget* aTarget)
+GlobalKeyListener::GlobalKeyListener(dom::EventTarget* aTarget)
     : mTarget(aTarget), mHandler(nullptr) {}
 
 NS_IMPL_ISUPPORTS(GlobalKeyListener, nsIDOMEventListener)
@@ -51,7 +53,7 @@ static void BuildHandlerChain(nsIContent* aContent, KeyEventHandler** aResult) {
       continue;
     }
 
-    Element* keyElement = key->AsElement();
+    dom::Element* keyElement = key->AsElement();
     // Check whether the key element has empty value at key/char attribute.
     // Such element is used by localizers for alternative shortcut key
     // definition on the locale. See bug 426501.
@@ -83,7 +85,7 @@ static void BuildHandlerChain(nsIContent* aContent, KeyEventHandler** aResult) {
   }
 }
 
-void GlobalKeyListener::WalkHandlers(KeyboardEvent* aKeyEvent) {
+void GlobalKeyListener::WalkHandlers(dom::KeyboardEvent* aKeyEvent) {
   if (aKeyEvent->DefaultPrevented()) {
     return;
   }
@@ -114,10 +116,6 @@ void GlobalKeyListener::InstallKeyboardEventListenersTo(
                                                 TrustedEventsAtCapture());
   aEventListenerManager->AddEventListenerByType(this, u"keypress"_ns,
                                                 TrustedEventsAtCapture());
-  aEventListenerManager->AddEventListenerByType(this, u"mozkeydownonplugin"_ns,
-                                                TrustedEventsAtCapture());
-  aEventListenerManager->AddEventListenerByType(this, u"mozkeyuponplugin"_ns,
-                                                TrustedEventsAtCapture());
 
   // For reducing the IPC cost, preventing to dispatch reserved keyboard
   // events into the content process.
@@ -127,10 +125,6 @@ void GlobalKeyListener::InstallKeyboardEventListenersTo(
       this, u"keyup"_ns, TrustedEventsAtSystemGroupCapture());
   aEventListenerManager->AddEventListenerByType(
       this, u"keypress"_ns, TrustedEventsAtSystemGroupCapture());
-  aEventListenerManager->AddEventListenerByType(
-      this, u"mozkeydownonplugin"_ns, TrustedEventsAtSystemGroupCapture());
-  aEventListenerManager->AddEventListenerByType(
-      this, u"mozkeyuponplugin"_ns, TrustedEventsAtSystemGroupCapture());
 
   // Handle keyboard events in bubbling phase of the system event group.
   aEventListenerManager->AddEventListenerByType(
@@ -144,10 +138,6 @@ void GlobalKeyListener::InstallKeyboardEventListenersTo(
   // remote content.
   aEventListenerManager->AddEventListenerByType(
       this, u"mozaccesskeynotfound"_ns, TrustedEventsAtSystemGroupBubble());
-  aEventListenerManager->AddEventListenerByType(
-      this, u"mozkeydownonplugin"_ns, TrustedEventsAtSystemGroupBubble());
-  aEventListenerManager->AddEventListenerByType(
-      this, u"mozkeyuponplugin"_ns, TrustedEventsAtSystemGroupBubble());
 }
 
 void GlobalKeyListener::RemoveKeyboardEventListenersFrom(
@@ -158,10 +148,6 @@ void GlobalKeyListener::RemoveKeyboardEventListenersFrom(
                                                    TrustedEventsAtCapture());
   aEventListenerManager->RemoveEventListenerByType(this, u"keypress"_ns,
                                                    TrustedEventsAtCapture());
-  aEventListenerManager->RemoveEventListenerByType(
-      this, u"mozkeydownonplugin"_ns, TrustedEventsAtCapture());
-  aEventListenerManager->RemoveEventListenerByType(this, u"mozkeyuponplugin"_ns,
-                                                   TrustedEventsAtCapture());
 
   aEventListenerManager->RemoveEventListenerByType(
       this, u"keydown"_ns, TrustedEventsAtSystemGroupCapture());
@@ -169,10 +155,6 @@ void GlobalKeyListener::RemoveKeyboardEventListenersFrom(
       this, u"keyup"_ns, TrustedEventsAtSystemGroupCapture());
   aEventListenerManager->RemoveEventListenerByType(
       this, u"keypress"_ns, TrustedEventsAtSystemGroupCapture());
-  aEventListenerManager->RemoveEventListenerByType(
-      this, u"mozkeydownonplugin"_ns, TrustedEventsAtSystemGroupCapture());
-  aEventListenerManager->RemoveEventListenerByType(
-      this, u"mozkeyuponplugin"_ns, TrustedEventsAtSystemGroupCapture());
 
   aEventListenerManager->RemoveEventListenerByType(
       this, u"keydown"_ns, TrustedEventsAtSystemGroupBubble());
@@ -182,18 +164,14 @@ void GlobalKeyListener::RemoveKeyboardEventListenersFrom(
       this, u"keypress"_ns, TrustedEventsAtSystemGroupBubble());
   aEventListenerManager->RemoveEventListenerByType(
       this, u"mozaccesskeynotfound"_ns, TrustedEventsAtSystemGroupBubble());
-  aEventListenerManager->RemoveEventListenerByType(
-      this, u"mozkeydownonplugin"_ns, TrustedEventsAtSystemGroupBubble());
-  aEventListenerManager->RemoveEventListenerByType(
-      this, u"mozkeyuponplugin"_ns, TrustedEventsAtSystemGroupBubble());
 }
 
 NS_IMETHODIMP
-GlobalKeyListener::HandleEvent(Event* aEvent) {
-  RefPtr<KeyboardEvent> keyEvent = aEvent->AsKeyboardEvent();
+GlobalKeyListener::HandleEvent(dom::Event* aEvent) {
+  RefPtr<dom::KeyboardEvent> keyEvent = aEvent->AsKeyboardEvent();
   NS_ENSURE_TRUE(keyEvent, NS_ERROR_INVALID_ARG);
 
-  if (aEvent->EventPhase() == Event_Binding::CAPTURING_PHASE) {
+  if (aEvent->EventPhase() == dom::Event_Binding::CAPTURING_PHASE) {
     if (aEvent->WidgetEventPtr()->mFlags.mInSystemGroup) {
       HandleEventOnCaptureInSystemEventGroup(keyEvent);
     } else {
@@ -202,34 +180,9 @@ GlobalKeyListener::HandleEvent(Event* aEvent) {
     return NS_OK;
   }
 
-  WidgetKeyboardEvent* widgetKeyboardEvent =
-      aEvent->WidgetEventPtr()->AsKeyboardEvent();
-  if (widgetKeyboardEvent->IsKeyEventOnPlugin()) {
-    // key events on plugin shouldn't execute shortcut key handlers which are
-    // not reserved.
-    if (!widgetKeyboardEvent->IsReservedByChrome()) {
-      return NS_OK;
-    }
-
-    // If the event is untrusted event or was already consumed, do nothing.
-    if (!widgetKeyboardEvent->IsTrusted() ||
-        widgetKeyboardEvent->DefaultPrevented()) {
-      return NS_OK;
-    }
-
-    // XXX Don't check isReserved here because even if the handler in this
-    //     instance isn't reserved but another instance reserves the key
-    //     combination, it will be executed when the event is normal keyboard
-    //     events...
-    bool isReserved = false;
-    if (!HasHandlerForEvent(keyEvent, &isReserved)) {
-      return NS_OK;
-    }
-  }
-
   // If this event was handled by APZ then don't do the default action, and
   // preventDefault to prevent any other listeners from handling the event.
-  if (widgetKeyboardEvent->mFlags.mHandledByAPZ) {
+  if (aEvent->WidgetEventPtr()->mFlags.mHandledByAPZ) {
     aEvent->PreventDefault();
     return NS_OK;
   }
@@ -239,7 +192,7 @@ GlobalKeyListener::HandleEvent(Event* aEvent) {
 }
 
 void GlobalKeyListener::HandleEventOnCaptureInDefaultEventGroup(
-    KeyboardEvent* aEvent) {
+    dom::KeyboardEvent* aEvent) {
   WidgetKeyboardEvent* widgetKeyboardEvent =
       aEvent->WidgetEventPtr()->AsKeyboardEvent();
 
@@ -254,7 +207,7 @@ void GlobalKeyListener::HandleEventOnCaptureInDefaultEventGroup(
 }
 
 void GlobalKeyListener::HandleEventOnCaptureInSystemEventGroup(
-    KeyboardEvent* aEvent) {
+    dom::KeyboardEvent* aEvent) {
   WidgetKeyboardEvent* widgetEvent =
       aEvent->WidgetEventPtr()->AsKeyboardEvent();
 
@@ -291,7 +244,7 @@ void GlobalKeyListener::HandleEventOnCaptureInSystemEventGroup(
 // true, the handler will be executed; otherwise just return an answer telling
 // if a handler for that event was found.
 //
-bool GlobalKeyListener::WalkHandlersInternal(KeyboardEvent* aKeyEvent,
+bool GlobalKeyListener::WalkHandlersInternal(dom::KeyboardEvent* aKeyEvent,
                                              bool aExecute,
                                              bool* aOutReservedForChrome) {
   WidgetKeyboardEvent* nativeKeyboardEvent =
@@ -319,7 +272,7 @@ bool GlobalKeyListener::WalkHandlersInternal(KeyboardEvent* aKeyEvent,
 }
 
 bool GlobalKeyListener::WalkHandlersAndExecute(
-    KeyboardEvent* aKeyEvent, uint32_t aCharCode,
+    dom::KeyboardEvent* aKeyEvent, uint32_t aCharCode,
     const IgnoreModifierState& aIgnoreModifierState, bool aExecute,
     bool* aOutReservedForChrome) {
   if (aOutReservedForChrome) {
@@ -345,17 +298,7 @@ bool GlobalKeyListener::WalkHandlersAndExecute(
     }
 
     if (aExecute) {
-      // If the event is eKeyDownOnPlugin, it should execute either keydown
-      // handler or keypress handler because eKeyDownOnPlugin events are
-      // never followed by keypress events.
-      if (widgetKeyboardEvent->mMessage == eKeyDownOnPlugin) {
-        if (!handler->EventTypeEquals(nsGkAtoms::keydown) &&
-            !handler->EventTypeEquals(nsGkAtoms::keypress)) {
-          continue;
-        }
-        // The other event types should exactly be matched with the handler's
-        // event type.
-      } else if (!handler->EventTypeEquals(eventType)) {
+      if (!handler->EventTypeEquals(eventType)) {
         continue;
       }
     } else {
@@ -417,14 +360,7 @@ bool GlobalKeyListener::WalkHandlersAndExecute(
     // This should only be assigned when aExecute is false.
     MOZ_ASSERT(!aOutReservedForChrome);
 
-    // If it's not reserved and the event is a key event on a plugin,
-    // the handler shouldn't be executed.
-    if (widgetKeyboardEvent->IsKeyEventOnPlugin() &&
-        !IsReservedKey(widgetKeyboardEvent, handler)) {
-      return false;
-    }
-
-    nsCOMPtr<EventTarget> target = GetHandlerTarget(handler);
+    nsCOMPtr<dom::EventTarget> target = GetHandlerTarget(handler);
 
     // XXX Do we execute only one handler even if the handler neither stops
     //     propagation nor prevents default of the event?
@@ -467,7 +403,7 @@ bool GlobalKeyListener::IsReservedKey(WidgetKeyboardEvent* aKeyEvent,
   return nsContentUtils::ShouldBlockReservedKeys(aKeyEvent);
 }
 
-bool GlobalKeyListener::HasHandlerForEvent(KeyboardEvent* aEvent,
+bool GlobalKeyListener::HasHandlerForEvent(dom::KeyboardEvent* aEvent,
                                            bool* aOutReservedForChrome) {
   WidgetKeyboardEvent* widgetKeyboardEvent =
       aEvent->WidgetEventPtr()->AsKeyboardEvent();
@@ -492,9 +428,10 @@ bool GlobalKeyListener::HasHandlerForEvent(KeyboardEvent* aEvent,
 // content, then extra work needs to be done to hook it up to the document (XXX
 // WHY??)
 //
-void XULKeySetGlobalKeyListener::AttachKeyHandler(Element* aElementTarget) {
+void XULKeySetGlobalKeyListener::AttachKeyHandler(
+    dom::Element* aElementTarget) {
   // Only attach if we're really in a document
-  nsCOMPtr<Document> doc = aElementTarget->GetUncomposedDoc();
+  nsCOMPtr<dom::Document> doc = aElementTarget->GetUncomposedDoc();
   if (!doc) {
     return;
   }
@@ -524,9 +461,10 @@ void XULKeySetGlobalKeyListener::AttachKeyHandler(Element* aElementTarget) {
 //
 // Removes a key handler added by AttachKeyHandler.
 //
-void XULKeySetGlobalKeyListener::DetachKeyHandler(Element* aElementTarget) {
+void XULKeySetGlobalKeyListener::DetachKeyHandler(
+    dom::Element* aElementTarget) {
   // Only attach if we're really in a document
-  nsCOMPtr<Document> doc = aElementTarget->GetUncomposedDoc();
+  nsCOMPtr<dom::Document> doc = aElementTarget->GetUncomposedDoc();
   if (!doc) {
     return;
   }
@@ -547,14 +485,14 @@ void XULKeySetGlobalKeyListener::DetachKeyHandler(Element* aElementTarget) {
   aElementTarget->RemoveProperty(nsGkAtoms::listener);
 }
 
-XULKeySetGlobalKeyListener::XULKeySetGlobalKeyListener(Element* aElement,
-                                                       EventTarget* aTarget)
+XULKeySetGlobalKeyListener::XULKeySetGlobalKeyListener(
+    dom::Element* aElement, dom::EventTarget* aTarget)
     : GlobalKeyListener(aTarget) {
   mWeakPtrForElement = do_GetWeakReference(aElement);
 }
 
-Element* XULKeySetGlobalKeyListener::GetElement(bool* aIsDisabled) const {
-  RefPtr<Element> element = do_QueryReferent(mWeakPtrForElement);
+dom::Element* XULKeySetGlobalKeyListener::GetElement(bool* aIsDisabled) const {
+  RefPtr<dom::Element> element = do_QueryReferent(mWeakPtrForElement);
   if (element && aIsDisabled) {
     *aIsDisabled = element->AttrValueIs(kNameSpaceID_None, nsGkAtoms::disabled,
                                         nsGkAtoms::_true, eCaseMatters);
@@ -573,7 +511,7 @@ void XULKeySetGlobalKeyListener::EnsureHandlers() {
     return;
   }
 
-  Element* element = GetElement();
+  dom::Element* element = GetElement();
   if (!element) {
     return;
   }
@@ -583,23 +521,23 @@ void XULKeySetGlobalKeyListener::EnsureHandlers() {
 
 bool XULKeySetGlobalKeyListener::IsDisabled() const {
   bool isDisabled;
-  Element* element = GetElement(&isDisabled);
+  dom::Element* element = GetElement(&isDisabled);
   return element && isDisabled;
 }
 
 bool XULKeySetGlobalKeyListener::GetElementForHandler(
-    KeyEventHandler* aHandler, Element** aElementForHandler) const {
+    KeyEventHandler* aHandler, dom::Element** aElementForHandler) const {
   MOZ_ASSERT(aElementForHandler);
   *aElementForHandler = nullptr;
 
-  RefPtr<Element> keyElement = aHandler->GetHandlerElement();
+  RefPtr<dom::Element> keyElement = aHandler->GetHandlerElement();
   if (!keyElement) {
     // This should only be the case where the <key> element that generated the
     // handler has been destroyed. Not sure why we return true here...
     return true;
   }
 
-  nsCOMPtr<Element> chromeHandlerElement = GetElement();
+  nsCOMPtr<dom::Element> chromeHandlerElement = GetElement();
   if (!chromeHandlerElement) {
     NS_WARNING_ASSERTION(keyElement->IsInUncomposedDoc(), "uncomposed");
     keyElement.swap(*aElementForHandler);
@@ -617,12 +555,12 @@ bool XULKeySetGlobalKeyListener::GetElementForHandler(
   }
 
   // XXX Shouldn't we check this earlier?
-  Document* doc = keyElement->GetUncomposedDoc();
+  dom::Document* doc = keyElement->GetUncomposedDoc();
   if (NS_WARN_IF(!doc)) {
     return false;
   }
 
-  nsCOMPtr<Element> commandElement = doc->GetElementById(command);
+  nsCOMPtr<dom::Element> commandElement = doc->GetElementById(command);
   if (!commandElement) {
     NS_ERROR(
         "A XUL <key> is observing a command that doesn't exist. "
@@ -634,7 +572,8 @@ bool XULKeySetGlobalKeyListener::GetElementForHandler(
   return true;
 }
 
-bool XULKeySetGlobalKeyListener::IsExecutableElement(Element* aElement) const {
+bool XULKeySetGlobalKeyListener::IsExecutableElement(
+    dom::Element* aElement) const {
   if (!aElement) {
     return false;
   }
@@ -649,9 +588,9 @@ bool XULKeySetGlobalKeyListener::IsExecutableElement(Element* aElement) const {
   return !value.IsEmpty();
 }
 
-already_AddRefed<EventTarget> XULKeySetGlobalKeyListener::GetHandlerTarget(
+already_AddRefed<dom::EventTarget> XULKeySetGlobalKeyListener::GetHandlerTarget(
     KeyEventHandler* aHandler) {
-  nsCOMPtr<Element> commandElement;
+  nsCOMPtr<dom::Element> commandElement;
   if (!GetElementForHandler(aHandler, getter_AddRefs(commandElement))) {
     return nullptr;
   }
@@ -661,7 +600,7 @@ already_AddRefed<EventTarget> XULKeySetGlobalKeyListener::GetHandlerTarget(
 
 bool XULKeySetGlobalKeyListener::CanHandle(KeyEventHandler* aHandler,
                                            bool aWillExecute) const {
-  nsCOMPtr<Element> commandElement;
+  nsCOMPtr<dom::Element> commandElement;
   if (!GetElementForHandler(aHandler, getter_AddRefs(commandElement))) {
     return false;
   }
@@ -708,7 +647,7 @@ layers::KeyboardMap RootWindowGlobalKeyListener::CollectKeyboardShortcuts() {
 // content, then extra work needs to be done to hook it up to the document (XXX
 // WHY??)
 //
-void RootWindowGlobalKeyListener::AttachKeyHandler(EventTarget* aTarget) {
+void RootWindowGlobalKeyListener::AttachKeyHandler(dom::EventTarget* aTarget) {
   EventListenerManager* manager = aTarget->GetOrCreateListenerManager();
   if (!manager) {
     return;
@@ -723,7 +662,8 @@ void RootWindowGlobalKeyListener::AttachKeyHandler(EventTarget* aTarget) {
   handler->InstallKeyboardEventListenersTo(manager);
 }
 
-RootWindowGlobalKeyListener::RootWindowGlobalKeyListener(EventTarget* aTarget)
+RootWindowGlobalKeyListener::RootWindowGlobalKeyListener(
+    dom::EventTarget* aTarget)
     : GlobalKeyListener(aTarget) {}
 
 /* static */
@@ -750,8 +690,7 @@ bool RootWindowGlobalKeyListener::IsHTMLEditorFocused() {
     return false;
   }
 
-  Document* doc = htmlEditor->GetDocument();
-  if (doc->HasFlag(NODE_IS_EDITABLE)) {
+  if (htmlEditor->IsInDesignMode()) {
     // Don't need to perform any checks in designMode documents.
     return true;
   }
@@ -763,7 +702,8 @@ bool RootWindowGlobalKeyListener::IsHTMLEditorFocused() {
     // the document's selection.  Even though the document selection is usually
     // collapsed to where the focus is, but the page may modify the selection
     // without our knowledge, in which case this check will do something useful.
-    nsCOMPtr<Element> activeEditingHost = htmlEditor->GetActiveEditingHost();
+    nsCOMPtr<dom::Element> activeEditingHost =
+        htmlEditor->GetActiveEditingHost();
     if (!activeEditingHost) {
       return false;
     }

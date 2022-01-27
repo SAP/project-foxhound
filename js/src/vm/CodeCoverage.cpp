@@ -11,15 +11,10 @@
 
 #include <stdio.h>
 #include <utility>
-#ifdef XP_WIN
-#  include <process.h>
-#  define getpid _getpid
-#else
-#  include <unistd.h>
-#endif
 
 #include "frontend/SourceNotes.h"  // SrcNote, SrcNoteType, SrcNoteIterator
 #include "gc/Zone.h"
+#include "util/GetPidProvider.h"  // getpid()
 #include "util/Text.h"
 #include "vm/BytecodeUtil.h"
 #include "vm/JSScript.h"
@@ -178,7 +173,7 @@ void LCovSource::writeScript(JSScript* script, const char* scriptName) {
         sn = *iter;
         SrcNoteType type = sn->type();
         if (type == SrcNoteType::SetLine) {
-          lineno = SrcNote::SetLine::getLine(sn);
+          lineno = SrcNote::SetLine::getLine(sn, script->lineno());
         } else if (type == SrcNoteType::NewLine) {
           lineno++;
         }
@@ -598,12 +593,7 @@ bool InitScriptCoverage(JSContext* cx, JSScript* script) {
   MOZ_ASSERT(script->hasBytecode(),
              "Only initialize coverage data for fully initialized scripts.");
 
-  // Don't allocate LCovSource if we on helper thread since we will have our
-  // realm migrated. The 'GCRunime::mergeRealms' code will do this
-  // initialization.
-  if (cx->isHelperThreadContext()) {
-    return true;
-  }
+  MOZ_ASSERT(!cx->isHelperThreadContext());
 
   const char* filename = script->filename();
   if (!filename) {

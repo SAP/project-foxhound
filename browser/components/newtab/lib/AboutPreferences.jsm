@@ -4,46 +4,66 @@
 "use strict";
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { actionTypes: at } = ChromeUtils.import(
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { actionTypes: at, actionCreators: ac } = ChromeUtils.import(
   "resource://activity-stream/common/Actions.jsm"
 );
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const PREFERENCES_LOADED_EVENT = "home-pane-loaded";
 
+XPCOMUtils.defineLazyModuleGetters(this, {
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
+});
+
 // These "section" objects are formatted in a way to be similar to the ones from
 // SectionsManager to construct the preferences view.
-const PREFS_BEFORE_SECTIONS = [
+const PREFS_BEFORE_SECTIONS = () => [
   {
     id: "search",
     pref: {
       feed: "showSearch",
       titleString: "home-prefs-search-header",
     },
-    icon: "chrome://browser/skin/search-glass.svg",
+    icon: "chrome://global/skin/icons/search-glass.svg",
   },
   {
     id: "topsites",
     pref: {
       feed: "feeds.topsites",
-      titleString: "home-prefs-topsites-header",
-      descString: "home-prefs-topsites-description",
+      titleString: "home-prefs-shortcuts-header",
+      descString: "home-prefs-shortcuts-description",
+      get nestedPrefs() {
+        return Services.prefs.getBoolPref("browser.topsites.useRemoteSetting")
+          ? [
+              {
+                name: "showSponsoredTopSites",
+                titleString: "home-prefs-shortcuts-by-option-sponsored",
+                eventSource: "SPONSORED_TOP_SITES",
+              },
+            ]
+          : [];
+      },
     },
     icon: "topsites",
     maxRows: 4,
     rowsPref: "topSitesRows",
+    eventSource: "TOP_SITES",
   },
 ];
 
-const PREFS_AFTER_SECTIONS = [
+const PREFS_AFTER_SECTIONS = () => [
   {
     id: "snippets",
     pref: {
       feed: "feeds.snippets",
       titleString: "home-prefs-snippets-header",
-      descString: "home-prefs-snippets-description",
+      descString: "home-prefs-snippets-description-new",
     },
-    icon: "info",
+    icon: "chrome://global/skin/icons/info.svg",
+    eventSource: "SNIPPETS",
   },
 ];
 
@@ -87,6 +107,21 @@ this.AboutPreferences = class AboutPreferences {
     return sectionsCopy;
   }
 
+  setupUserEvent(element, eventSource) {
+    element.addEventListener("command", e => {
+      const { checked } = e.target;
+      if (typeof checked === "boolean") {
+        this.store.dispatch(
+          ac.UserEvent({
+            event: "PREF_CHANGED",
+            source: eventSource,
+            value: { status: checked, menu_source: "ABOUT_PREFERENCES" },
+          })
+        );
+      }
+    });
+  }
+
   observe(window) {
     const discoveryStreamConfig = this.store.getState().DiscoveryStream.config;
     let sections = this.store.getState().Sections;
@@ -95,10 +130,12 @@ this.AboutPreferences = class AboutPreferences {
       sections = this.handleDiscoverySettings(sections);
     }
 
+    const featureConfig = NimbusFeatures.newtab.getAllVariables() || {};
+
     this.renderPreferences(window, [
-      ...PREFS_BEFORE_SECTIONS,
+      ...PREFS_BEFORE_SECTIONS(featureConfig),
       ...sections,
-      ...PREFS_AFTER_SECTIONS,
+      ...PREFS_AFTER_SECTIONS(featureConfig),
     ]);
   }
 
@@ -153,6 +190,7 @@ this.AboutPreferences = class AboutPreferences {
         maxRows,
         rowsPref,
         shouldHidePref,
+        eventSource,
       } = sectionData;
       const { feed: name, titleString = {}, descString, nestedPrefs = [] } =
         prefData || {};
@@ -165,7 +203,7 @@ this.AboutPreferences = class AboutPreferences {
       // Use full icon spec for certain protocols or fall back to packaged icon
       const iconUrl = !icon.search(/^(chrome|moz-extension|resource):/)
         ? icon
-        : `resource://activity-stream/data/content/assets/glyph-${icon}-16.svg`;
+        : `chrome://activity-stream/content/data/content/assets/glyph-${icon}-16.svg`;
 
       // Add the main preference for turning on/off a section
       const sectionVbox = createAppend("vbox", contentsGroup);
@@ -173,6 +211,10 @@ this.AboutPreferences = class AboutPreferences {
       const checkbox = createAppend("checkbox", sectionVbox);
       checkbox.classList.add("section-checkbox");
       checkbox.setAttribute("src", iconUrl);
+      // Setup a user event if we have an event source for this pref.
+      if (eventSource) {
+        this.setupUserEvent(checkbox, eventSource);
+      }
       document.l10n.setAttributes(
         checkbox,
         getString(titleString),
@@ -240,6 +282,10 @@ this.AboutPreferences = class AboutPreferences {
       // Add a checkbox pref for any nested preferences
       nestedPrefs.forEach(nested => {
         const subcheck = createAppend("checkbox", detailVbox);
+        // Setup a user event if we have an event source for this pref.
+        if (nested.eventSource) {
+          this.setupUserEvent(subcheck, nested.eventSource);
+        }
         subcheck.classList.add("indent");
         document.l10n.setAttributes(subcheck, nested.titleString);
         linkPref(subcheck, nested.name, "bool");

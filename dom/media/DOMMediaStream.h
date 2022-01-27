@@ -14,6 +14,7 @@
 #include "MediaTrackConstraints.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/RelativeTimeline.h"
+#include "mozilla/WeakPtr.h"
 
 namespace mozilla {
 
@@ -101,7 +102,6 @@ class DOMMediaStream : public DOMEventTargetHelper,
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(DOMMediaStream, DOMEventTargetHelper)
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_DOMMEDIASTREAM_IID)
 
-  nsPIDOMWindowInner* GetParentObject() const { return mWindow; }
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
 
@@ -222,9 +222,6 @@ class DOMMediaStream : public DOMEventTargetHelper,
   // Dispatches "addtrack" or "removetrack".
   nsresult DispatchTrackEvent(const nsAString& aName,
                               const RefPtr<MediaStreamTrack>& aTrack);
-
-  // We need this to track our parent object.
-  nsCOMPtr<nsPIDOMWindowInner> mWindow;
 
   // MediaStreamTracks contained by this DOMMediaStream.
   nsTArray<RefPtr<MediaStreamTrack>> mTracks;

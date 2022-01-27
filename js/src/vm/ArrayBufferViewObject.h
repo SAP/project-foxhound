@@ -7,7 +7,7 @@
 #ifndef vm_ArrayBufferViewObject_h
 #define vm_ArrayBufferViewObject_h
 
-#include "builtin/TypedObjectConstants.h"
+#include "builtin/TypedArrayConstants.h"
 #include "vm/ArrayBufferObject.h"
 #include "vm/NativeObject.h"
 #include "vm/SharedArrayObject.h"
@@ -32,28 +32,22 @@ class ArrayBufferViewObject : public NativeObject {
 
   // Slot containing length of the view in number of typed elements.
   static constexpr size_t LENGTH_SLOT = 1;
-  static_assert(LENGTH_SLOT == JS_TYPEDARRAYLAYOUT_LENGTH_SLOT,
-                "self-hosted code with burned-in constants must get the "
-                "right length slot");
 
   // Offset of view within underlying (Shared)ArrayBufferObject.
   static constexpr size_t BYTEOFFSET_SLOT = 2;
-  static_assert(BYTEOFFSET_SLOT == JS_TYPEDARRAYLAYOUT_BYTEOFFSET_SLOT,
-                "self-hosted code with burned-in constants must get the "
-                "right byteOffset slot");
 
-  static constexpr size_t RESERVED_SLOTS = 3;
+  // Pointer to raw buffer memory.
+  static constexpr size_t DATA_SLOT = 3;
+
+  static constexpr size_t RESERVED_SLOTS = 4;
 
 #ifdef DEBUG
   static const uint8_t ZeroLengthArrayData = 0x4A;
 #endif
 
-  // The raw pointer to the buffer memory, the "private" value.
-  //
-  // This offset is exposed for performance reasons - so that it
-  // need not be looked up on accesses.
-  static constexpr size_t DATA_SLOT = 3;
-
+  static constexpr int bufferOffset() {
+    return NativeObject::getFixedSlotOffset(BUFFER_SLOT);
+  }
   static constexpr int lengthOffset() {
     return NativeObject::getFixedSlotOffset(LENGTH_SLOT);
   }
@@ -61,20 +55,20 @@ class ArrayBufferViewObject : public NativeObject {
     return NativeObject::getFixedSlotOffset(BYTEOFFSET_SLOT);
   }
   static constexpr int dataOffset() {
-    return NativeObject::getPrivateDataOffset(DATA_SLOT);
+    return NativeObject::getFixedSlotOffset(DATA_SLOT);
   }
 
  private:
   void* dataPointerEither_() const {
     // Note, do not check whether shared or not
     // Keep synced with js::Get<Type>ArrayLengthAndData in jsfriendapi.h!
-    return static_cast<void*>(getPrivate(DATA_SLOT));
+    return maybePtrFromReservedSlot<void>(DATA_SLOT);
   }
 
  public:
-  MOZ_MUST_USE bool init(JSContext* cx, ArrayBufferObjectMaybeShared* buffer,
-                         uint32_t byteOffset, uint32_t length,
-                         uint32_t bytesPerElement);
+  [[nodiscard]] bool init(JSContext* cx, ArrayBufferObjectMaybeShared* buffer,
+                          size_t byteOffset, size_t length,
+                          uint32_t bytesPerElement);
 
   static ArrayBufferObjectMaybeShared* bufferObject(
       JSContext* cx, Handle<ArrayBufferViewObject*> obj);
@@ -89,7 +83,8 @@ class ArrayBufferViewObject : public NativeObject {
     // accessed only from jitted code and from the
     // dataPointerEither_() accessor above; in neither case does the
     // raw pointer escape untagged into C++ code.
-    initPrivate(viewData.unwrap(/*safe - see above*/));
+    void* data = viewData.unwrap(/*safe - see above*/);
+    initReservedSlot(DATA_SLOT, PrivateValue(data));
   }
 
   SharedMem<void*> dataPointerShared() const {
@@ -106,10 +101,8 @@ class ArrayBufferViewObject : public NativeObject {
     return dataPointerEither_();
   }
 
-  static Value bufferValue(const ArrayBufferViewObject* view) {
-    return view->getFixedSlot(BUFFER_SLOT);
-  }
-  bool hasBuffer() const { return bufferValue(this).isObject(); }
+  Value bufferValue() const { return getFixedSlot(BUFFER_SLOT); }
+  bool hasBuffer() const { return bufferValue().isObject(); }
 
   ArrayBufferObject* bufferUnshared() const {
     MOZ_ASSERT(!isSharedMemory());
@@ -128,7 +121,7 @@ class ArrayBufferViewObject : public NativeObject {
     return &obj->as<SharedArrayBufferObject>();
   }
   ArrayBufferObjectMaybeShared* bufferEither() const {
-    JSObject* obj = bufferValue(this).toObjectOrNull();
+    JSObject* obj = bufferValue().toObjectOrNull();
     if (!obj) {
       return nullptr;
     }
@@ -151,6 +144,15 @@ class ArrayBufferViewObject : public NativeObject {
     }
 
     return buffer->isDetached();
+  }
+
+  size_t byteOffset() const {
+    return size_t(getFixedSlot(BYTEOFFSET_SLOT).toPrivate());
+  }
+
+  Value byteOffsetValue() const {
+    size_t offset = byteOffset();
+    return NumberValue(offset);
   }
 
   static void trace(JSTracer* trc, JSObject* obj);

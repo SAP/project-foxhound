@@ -7,23 +7,29 @@
 #define mozilla_a11y_ImageAccessible_h__
 
 #include "BaseAccessibles.h"
+#include "imgINotificationObserver.h"
 
 namespace mozilla {
 namespace a11y {
 
-/* Accessible for supporting images
+/* LocalAccessible for supporting images
  * supports:
  * - gets name, role
  * - support basic state
  */
-class ImageAccessible : public LinkableAccessible {
+class ImageAccessible : public LinkableAccessible,
+                        public imgINotificationObserver {
  public:
   ImageAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
-  // Accessible
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_IMGINOTIFICATIONOBSERVER
+
+  // LocalAccessible
+  virtual void Shutdown() override;
   virtual a11y::role NativeRole() const override;
   virtual uint64_t NativeState() const override;
-  virtual already_AddRefed<nsIPersistentProperties> NativeAttributes() override;
+  virtual already_AddRefed<AccAttributes> NativeAttributes() override;
 
   // ActionAccessible
   virtual uint8_t ActionCount() const override;
@@ -37,7 +43,7 @@ class ImageAccessible : public LinkableAccessible {
  protected:
   virtual ~ImageAccessible();
 
-  // Accessible
+  // LocalAccessible
   virtual ENameValueFlag NativeName(nsString& aName) const override;
 
  private:
@@ -66,12 +72,14 @@ class ImageAccessible : public LinkableAccessible {
    * @returns  true if index is valid for longdesc action.
    */
   inline bool IsLongDescIndex(uint8_t aIndex) const;
+
+  uint32_t mImageRequestStatus;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// Accessible downcasting method
+// LocalAccessible downcasting method
 
-inline ImageAccessible* Accessible::AsImage() {
+inline ImageAccessible* LocalAccessible::AsImage() {
   return IsImage() ? static_cast<ImageAccessible*>(this) : nullptr;
 }
 

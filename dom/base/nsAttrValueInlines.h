@@ -13,13 +13,14 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ServoUtils.h"
+#include "mozilla/dom/DOMString.h"
 
 namespace mozilla {
 class ShadowParts;
 }
 
 struct MiscContainer final {
-  typedef nsAttrValue::ValueType ValueType;
+  using ValueType = nsAttrValue::ValueType;
 
   ValueType mType;
   // mStringBits points to either nsAtom* or nsStringBuffer* and is used when

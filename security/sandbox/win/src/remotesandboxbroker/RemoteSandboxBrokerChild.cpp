@@ -5,6 +5,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "RemoteSandboxBrokerChild.h"
+#include "chrome/common/ipc_channel.h"
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "nsDebugImpl.h"
 #include "mozilla/ipc/CrashReporterClient.h"
@@ -21,9 +22,8 @@ RemoteSandboxBrokerChild::RemoteSandboxBrokerChild() {
 RemoteSandboxBrokerChild::~RemoteSandboxBrokerChild() {}
 
 bool RemoteSandboxBrokerChild::Init(base::ProcessId aParentPid,
-                                    MessageLoop* aIOLoop,
-                                    UniquePtr<IPC::Channel> aChannel) {
-  if (NS_WARN_IF(!Open(std::move(aChannel), aParentPid, aIOLoop))) {
+                                    mozilla::ipc::ScopedPort aPort) {
+  if (NS_WARN_IF(!Open(std::move(aPort), aParentPid))) {
     return false;
   }
   CrashReporterClient::InitSingleton(this);

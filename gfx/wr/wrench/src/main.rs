@@ -8,6 +8,8 @@ extern crate clap;
 extern crate log;
 #[macro_use]
 extern crate serde;
+#[macro_use]
+extern crate tracy_rs;
 
 mod angle;
 mod blob;
@@ -18,6 +20,8 @@ mod png;
 mod premultiply;
 mod rawtest;
 mod reftest;
+mod test_invalidation;
+mod test_shaders;
 mod wrench;
 mod yaml_frame_reader;
 mod yaml_helper;
@@ -44,6 +48,7 @@ use std::slice;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use webrender::DebugFlags;
 use webrender::api::*;
+use webrender::render_api::*;
 use webrender::api::units::*;
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::VirtualKeyCode;
@@ -285,7 +290,7 @@ impl WindowWrapper {
     #[cfg(feature = "software")]
     fn update_software(&self, dim: DeviceIntSize) {
         if let Some(swgl) = self.software_gl() {
-            swgl.init_default_framebuffer(dim.width, dim.height, 0, std::ptr::null_mut());
+            swgl.init_default_framebuffer(0, 0, dim.width, dim.height, 0, std::ptr::null_mut());
         }
     }
 
@@ -301,20 +306,19 @@ impl WindowWrapper {
 }
 
 #[cfg(feature = "software")]
-fn make_software_context() -> Option<swgl::Context> {
+fn make_software_context() -> swgl::Context {
     let ctx = swgl::Context::create();
     ctx.make_current();
-    Some(ctx)
+    ctx
 }
 
 #[cfg(not(feature = "software"))]
-fn make_software_context() -> Option<swgl::Context> {
-    None
+fn make_software_context() -> swgl::Context {
+    panic!("software feature not enabled")
 }
 
 fn make_window(
     size: DeviceIntSize,
-    dp_ratio: Option<f32>,
     vsync: bool,
     events_loop: &Option<winit::EventsLoop>,
     angle: bool,
@@ -322,7 +326,7 @@ fn make_window(
     software: bool,
 ) -> WindowWrapper {
     let sw_ctx = if software {
-        make_software_context()
+        Some(make_software_context())
     } else {
         None
     };
@@ -338,27 +342,27 @@ fn make_window(
                 .with_dimensions(LogicalSize::new(size.width as f64, size.height as f64));
 
             if angle {
-                let (_window, _context) = angle::Context::with_window(
+                angle::Context::with_window(
                     window_builder, context_builder, events_loop
-                ).unwrap();
+                ).map(|(_window, _context)| {
+                    unsafe {
+                        _context
+                            .make_current()
+                            .expect("unable to make context current!");
+                    }
 
-                unsafe {
-                    _context
-                        .make_current()
-                        .expect("unable to make context current!");
-                }
+                    let gl = match _context.get_api() {
+                        glutin::Api::OpenGl => unsafe {
+                            gl::GlFns::load_with(|symbol| _context.get_proc_address(symbol) as *const _)
+                        },
+                        glutin::Api::OpenGlEs => unsafe {
+                            gl::GlesFns::load_with(|symbol| _context.get_proc_address(symbol) as *const _)
+                        },
+                        glutin::Api::WebGl => unimplemented!(),
+                    };
 
-                let gl = match _context.get_api() {
-                    glutin::Api::OpenGl => unsafe {
-                        gl::GlFns::load_with(|symbol| _context.get_proc_address(symbol) as *const _)
-                    },
-                    glutin::Api::OpenGlEs => unsafe {
-                        gl::GlesFns::load_with(|symbol| _context.get_proc_address(symbol) as *const _)
-                    },
-                    glutin::Api::WebGl => unimplemented!(),
-                };
-
-                WindowWrapper::Angle(_window, _context, gl, sw_ctx)
+                    WindowWrapper::Angle(_window, _context, gl, sw_ctx)
+                }).unwrap()
             } else {
                 let windowed_context = context_builder
                     .build_windowed(window_builder, events_loop)
@@ -419,11 +423,9 @@ fn make_window(
     let gl_version = gl.get_string(gl::VERSION);
     let gl_renderer = gl.get_string(gl::RENDERER);
 
-    let dp_ratio = dp_ratio.unwrap_or(wrapper.hidpi_factor());
     println!("OpenGL version {}, {}", gl_version, gl_renderer);
     println!(
-        "hidpi factor: {} (native {})",
-        dp_ratio,
+        "hidpi factor: {}",
         wrapper.hidpi_factor()
     );
 
@@ -432,7 +434,9 @@ fn make_window(
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum NotifierEvent {
-    WakeUp,
+    WakeUp {
+        composite_needed: bool,
+    },
     ShutDown,
 }
 
@@ -448,8 +452,14 @@ impl RenderNotifier for Notifier {
         })
     }
 
-    fn wake_up(&self) {
-        self.tx.send(NotifierEvent::WakeUp).unwrap();
+    fn wake_up(
+        &self,
+        composite_needed: bool,
+    ) {
+        let msg = NotifierEvent::WakeUp {
+            composite_needed,
+        };
+        self.tx.send(msg).unwrap();
     }
 
     fn shut_down(&self) {
@@ -459,11 +469,11 @@ impl RenderNotifier for Notifier {
     fn new_frame_ready(&self,
                        _: DocumentId,
                        _scrolled: bool,
-                       _composite_needed: bool,
+                       composite_needed: bool,
                        _render_time: Option<u64>) {
         // TODO(gw): Refactor wrench so that it can take advantage of cases
         //           where no composite is required when appropriate.
-        self.wake_up();
+        self.wake_up(composite_needed);
     }
 }
 
@@ -553,7 +563,6 @@ fn main() {
 
     // handle some global arguments
     let res_path = args.value_of("shaders").map(|s| PathBuf::from(s));
-    let dp_ratio = args.value_of("dp_ratio").map(|v| v.parse::<f32>().unwrap());
     let size = args.value_of("size")
         .map(|s| if s == "720p" {
             DeviceIntSize::new(1280, 720)
@@ -570,7 +579,6 @@ fn main() {
             DeviceIntSize::new(w, h)
         })
         .unwrap_or(DeviceIntSize::new(1920, 1080));
-    let zoom_factor = args.value_of("zoom").map(|z| z.parse::<f32>().unwrap());
     let chase_primitive = match args.value_of("chase") {
         Some(s) => {
             match s.find(',') {
@@ -579,7 +587,7 @@ fn main() {
                         .split(',')
                         .map(|s| s.parse::<f32>().unwrap())
                         .collect::<Vec<_>>();
-                    let rect = LayoutRect::new(
+                    let rect = LayoutRect::from_origin_and_size(
                         LayoutPoint::new(items[0], items[1]),
                         LayoutSize::new(items[2], items[3]),
                     );
@@ -624,17 +632,15 @@ fn main() {
 
     let mut window = make_window(
         size,
-        dp_ratio,
         args.is_present("vsync"),
         &events_loop,
         args.is_present("angle"),
         gl_request,
         software,
     );
-    let dp_ratio = dp_ratio.unwrap_or(window.hidpi_factor());
     let dim = window.get_inner_size();
 
-    let needs_frame_notifier = ["perf", "reftest", "png", "rawtest"]
+    let needs_frame_notifier = ["perf", "reftest", "png", "rawtest", "test_invalidation"]
         .iter()
         .any(|s| args.subcommand_matches(s).is_some());
     let (notifier, rx) = if needs_frame_notifier {
@@ -649,21 +655,23 @@ fn main() {
         events_loop.as_mut().map(|el| el.create_proxy()),
         res_path,
         !args.is_present("use_unoptimized_shaders"),
-        dp_ratio,
         dim,
         args.is_present("rebuild"),
         args.is_present("no_subpixel_aa"),
-        args.is_present("no_picture_caching"),
         args.is_present("verbose"),
         args.is_present("no_scissor"),
         args.is_present("no_batch"),
         args.is_present("precache"),
         args.is_present("slow_subpixel"),
-        zoom_factor.unwrap_or(1.0),
         chase_primitive,
         dump_shader_source,
         notifier,
     );
+
+    if let Some(ui_str) = args.value_of("profiler_ui") {
+        wrench.renderer.set_profiler_ui(&ui_str);
+    }
+
     window.update(&mut wrench);
 
     if let Some(window_title) = wrench.take_title() {
@@ -690,7 +698,7 @@ fn main() {
             Some("gpu-cache") => png::ReadSurface::GpuCache,
             _ => panic!("Unknown surface argument value")
         };
-        let output_path = subargs.value_of("OUTPUT").map(|s| PathBuf::from(s));
+        let output_path = subargs.value_of("OUTPUT").map(PathBuf::from);
         let reader = YamlFrameReader::new_from_args(subargs);
         png::png(&mut wrench, surface, &mut window, reader, rx.unwrap(), output_path);
     } else if let Some(subargs) = args.subcommand_matches("reftest") {
@@ -733,16 +741,34 @@ fn main() {
         }
         harness.run(base_manifest, &filename, as_csv);
         return;
+    } else if let Some(_) = args.subcommand_matches("test_invalidation") {
+        let harness = test_invalidation::TestHarness::new(
+            &mut wrench,
+            &mut window,
+            rx.unwrap(),
+        );
+
+        harness.run();
     } else if let Some(subargs) = args.subcommand_matches("compare_perf") {
         let first_filename = subargs.value_of("first_filename").unwrap();
         let second_filename = subargs.value_of("second_filename").unwrap();
         perf::compare(first_filename, second_filename);
         return;
+    } else if let Some(_) = args.subcommand_matches("test_init") {
+        // Wrench::new() unwraps the Renderer initialization, so if
+        // we reach this point then we have initialized successfully.
+        println!("Initialization successful");
+    } else if let Some(_) = args.subcommand_matches("test_shaders") {
+        test_shaders::test_shaders();
     } else {
         panic!("Should never have gotten here! {:?}", args);
     };
 
     wrench.renderer.deinit();
+
+    // On android force-exit the process otherwise it stays running forever.
+    #[cfg(target_os = "android")]
+    process::exit(0);
 }
 
 fn render<'a>(
@@ -800,7 +826,7 @@ fn render<'a>(
 
     // Default the profile overlay on for android.
     if cfg!(target_os = "android") {
-        debug_flags.toggle(DebugFlags::PROFILER_DBG | DebugFlags::COMPACT_PROFILER);
+        debug_flags.toggle(DebugFlags::PROFILER_DBG);
         wrench.api.send_debug_cmd(DebugCommand::SetFlags(debug_flags));
     }
 
@@ -825,8 +851,8 @@ fn render<'a>(
                         cursor_position = WorldPoint::new(x as f32, y as f32);
                         wrench.renderer.set_cursor_position(
                             DeviceIntPoint::new(
-                                (cursor_position.x * wrench.device_pixel_ratio).round() as i32,
-                                (cursor_position.y * wrench.device_pixel_ratio).round() as i32,
+                                cursor_position.x.round() as i32,
+                                cursor_position.y.round() as i32,
                             ),
                         );
                         do_render = true;
@@ -841,11 +867,6 @@ fn render<'a>(
                     } => match vk {
                         VirtualKeyCode::Escape => {
                             return winit::ControlFlow::Break;
-                        }
-                        VirtualKeyCode::A => {
-                            debug_flags.toggle(DebugFlags::DISABLE_PICTURE_CACHING);
-                            wrench.api.send_debug_cmd(DebugCommand::SetFlags(debug_flags));
-                            do_render = true;
                         }
                         VirtualKeyCode::B => {
                             debug_flags.toggle(DebugFlags::INVALIDATION_DBG);
@@ -864,11 +885,6 @@ fn render<'a>(
                         }
                         VirtualKeyCode::I => {
                             debug_flags.toggle(DebugFlags::TEXTURE_CACHE_DBG);
-                            wrench.api.send_debug_cmd(DebugCommand::SetFlags(debug_flags));
-                            do_render = true;
-                        }
-                        VirtualKeyCode::S => {
-                            debug_flags.toggle(DebugFlags::COMPACT_PROFILER);
                             wrench.api.send_debug_cmd(DebugCommand::SetFlags(debug_flags));
                             do_render = true;
                         }
@@ -898,10 +914,6 @@ fn render<'a>(
 
                             do_frame = true;
                         }
-                        VirtualKeyCode::R => {
-                            wrench.set_page_zoom(ZoomFactor::new(1.0));
-                            do_frame = true;
-                        }
                         VirtualKeyCode::M => {
                             wrench.api.notify_memory_pressure();
                             do_render = true;
@@ -926,39 +938,10 @@ fn render<'a>(
                             let path = PathBuf::from("../captures/wrench");
                             wrench.api.save_capture(path, CaptureBits::all());
                         }
-                        VirtualKeyCode::Up | VirtualKeyCode::Down => {
-                            let mut txn = Transaction::new();
-
-                            let offset = match vk {
-                                winit::VirtualKeyCode::Up => LayoutVector2D::new(0.0, 10.0),
-                                winit::VirtualKeyCode::Down => LayoutVector2D::new(0.0, -10.0),
-                                _ => unreachable!("Should not see non directional keys here.")
-                            };
-
-                            txn.scroll(ScrollLocation::Delta(offset), cursor_position);
-                            txn.generate_frame();
-                            wrench.api.send_transaction(wrench.document_id, txn);
-
-                            do_frame = true;
-                        }
-                        VirtualKeyCode::Add => {
-                            let current_zoom = wrench.get_page_zoom();
-                            let new_zoom_factor = ZoomFactor::new(current_zoom.get() + 0.1);
-                            wrench.set_page_zoom(new_zoom_factor);
-                            do_frame = true;
-                        }
-                        VirtualKeyCode::Subtract => {
-                            let current_zoom = wrench.get_page_zoom();
-                            let new_zoom_factor = ZoomFactor::new((current_zoom.get() - 0.1).max(0.1));
-                            wrench.set_page_zoom(new_zoom_factor);
-                            do_frame = true;
-                        }
                         VirtualKeyCode::X => {
                             let results = wrench.api.hit_test(
                                 wrench.document_id,
-                                None,
                                 cursor_position,
-                                HitTestFlags::FIND_ALL
                             );
 
                             println!("Hit test results:");

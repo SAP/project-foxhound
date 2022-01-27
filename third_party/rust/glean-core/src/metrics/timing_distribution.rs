@@ -22,9 +22,9 @@ const BUCKETS_PER_MAGNITUDE: f64 = 8.0;
 // It is automatically adjusted based on the `time_unit` parameter
 // so that:
 //
-// - `nanosecond`: 10 minutes
-// - `microsecond`: ~6.94 days
-// - `millisecond`: ~19 years
+// - `nanosecond` - 10 minutes
+// - `microsecond` - ~6.94 days
+// - `millisecond` - ~19 years
 const MAX_SAMPLE_TIME: u64 = 1000 * 1000 * 1000 * 60 * 10;
 
 /// Identifier for a running timer.
@@ -47,8 +47,9 @@ impl Timings {
     }
 
     /// Start a new timer and set it to the `start_time`.
+    /// Multiple timers can run simultaneously.
     ///
-    /// Returns a new `TimerId` identifying the timer.
+    /// Returns a new [`TimerId`] identifying the timer.
     fn set_start(&mut self, start_time: u64) -> TimerId {
         let id = self.next_id;
         self.next_id += 1;
@@ -122,8 +123,12 @@ impl MetricType for TimingDistributionMetric {
     }
 }
 
+// IMPORTANT:
+//
+// When changing this implementation, make sure all the operations are
+// also declared in the related trait in `../traits/`.
 impl TimingDistributionMetric {
-    /// Create a new timing distribution metric.
+    /// Creates a new timing distribution metric.
     pub fn new(meta: CommonMetricData, time_unit: TimeUnit) -> Self {
         Self {
             meta,
@@ -132,30 +137,33 @@ impl TimingDistributionMetric {
         }
     }
 
-    /// Start tracking time for the provided metric.
+    /// Starts tracking time for the provided metric.
     ///
-    /// This records an error if it’s already tracking time (i.e. start was already
-    /// called with no corresponding [stop]): in that case the original
-    /// start time will be preserved.
+    /// This records an error if it’s already tracking time (i.e.
+    /// [`set_start`](TimingDistributionMetric::set_start) was already called with no
+    /// corresponding [`set_stop_and_accumulate`](TimingDistributionMetric::set_stop_and_accumulate)): in
+    /// that case the original start time will be preserved.
     ///
-    /// ## Arguments
+    /// # Arguments
     ///
     /// * `start_time` - Timestamp in nanoseconds.
     ///
-    /// ## Return value
+    /// # Returns
     ///
-    /// Returns a unique `TimerId` for the new timer.
+    /// A unique [`TimerId`] for the new timer.
     pub fn set_start(&mut self, start_time: u64) -> TimerId {
         self.timings.set_start(start_time)
     }
 
-    /// Stop tracking time for the provided metric and associated timer id.
-    /// Add a count to the corresponding bucket in the timing distribution.
-    /// This will record an error if no `start` was called.
+    /// Stops tracking time for the provided metric and associated timer id.
     ///
-    /// ## Arguments
+    /// Adds a count to the corresponding bucket in the timing distribution.
+    /// This will record an error if no
+    /// [`set_start`](TimingDistributionMetric::set_start) was called.
     ///
-    /// * `id` - The `TimerId` to associate with this timing. This allows
+    /// # Arguments
+    ///
+    /// * `id` - The [`TimerId`] to associate with this timing. This allows
     ///   for concurrent timing of events associated with different ids to the
     ///   same timespan metric.
     /// * `stop_time` - Timestamp in nanoseconds.
@@ -206,12 +214,13 @@ impl TimingDistributionMetric {
             });
     }
 
-    /// Abort a previous `set_start` call. No error is recorded if no `set_start`
-    /// was called.
+    /// Aborts a previous [`set_start`](TimingDistributionMetric::set_start)
+    /// call. No error is recorded if no
+    /// [`set_start`](TimingDistributionMetric.set_start) was called.
     ///
-    /// ## Arguments
+    /// # Arguments
     ///
-    /// * `id` - The `TimerId` to associate with this timing. This allows
+    /// * `id` - The [`TimerId`] to associate with this timing. This allows
     ///   for concurrent timing of events associated with different ids to the
     ///   same timing distribution metric.
     pub fn cancel(&mut self, id: TimerId) {
@@ -225,22 +234,25 @@ impl TimingDistributionMetric {
     /// will take care of filtering and reporting errors for any provided negative
     /// sample.
     ///
-    /// Please note that this assumes that the provided samples are already in the
-    /// "unit" declared by the instance of the implementing metric type (e.g. if the
-    /// implementing class is a [TimingDistributionMetricType] and the instance this
-    /// method was called on is using [TimeUnit.Second], then `samples` are assumed
-    /// to be in that unit).
+    /// Please note that this assumes that the provided samples are already in
+    /// the "unit" declared by the instance of the metric type (e.g. if the
+    /// instance this method was called on is using [`TimeUnit::Second`], then
+    /// `samples` are assumed to be in that unit).
     ///
-    /// ## Arguments
+    /// # Arguments
     ///
     /// * `samples` - The vector holding the samples to be recorded by the metric.
     ///
     /// ## Notes
     ///
-    /// Discards any negative value in `samples` and report an `ErrorType::InvalidValue`
-    /// for each of them. Reports an `ErrorType::InvalidOverflow` error for samples that
+    /// Discards any negative value in `samples` and report an [`ErrorType::InvalidValue`]
+    /// for each of them. Reports an [`ErrorType::InvalidOverflow`] error for samples that
     /// are longer than `MAX_SAMPLE_TIME`.
     pub fn accumulate_samples_signed(&mut self, glean: &Glean, samples: Vec<i64>) {
+        if !self.should_record(glean) {
+            return;
+        }
+
         let mut num_negative_samples = 0;
         let mut num_too_long_samples = 0;
         let max_sample_time = self.time_unit.as_nanos(MAX_SAMPLE_TIME);
@@ -272,6 +284,7 @@ impl TimingDistributionMetric {
                     hist.accumulate(sample);
                 }
             }
+
             Metric::TimingDistribution(hist)
         });
 
@@ -301,16 +314,74 @@ impl TimingDistributionMetric {
         }
     }
 
+    /// Accumulates the provided samples in the metric.
+    ///
+    /// # Arguments
+    ///
+    /// * `samples` - A list of samples recorded by the metric.
+    ///               Samples must be in nanoseconds.
+    /// ## Notes
+    ///
+    /// Reports an [`ErrorType::InvalidOverflow`] error for samples that
+    /// are longer than `MAX_SAMPLE_TIME`.
+    pub fn accumulate_raw_samples_nanos(&mut self, glean: &Glean, samples: &[u64]) {
+        if !self.should_record(glean) {
+            return;
+        }
+
+        let mut num_too_long_samples = 0;
+        let min_sample_time = self.time_unit.as_nanos(1);
+        let max_sample_time = self.time_unit.as_nanos(MAX_SAMPLE_TIME);
+
+        glean.storage().record_with(glean, &self.meta, |old_value| {
+            let mut hist = match old_value {
+                Some(Metric::TimingDistribution(hist)) => hist,
+                _ => Histogram::functional(LOG_BASE, BUCKETS_PER_MAGNITUDE),
+            };
+
+            for &sample in samples.iter() {
+                let mut sample = sample;
+
+                if sample < min_sample_time {
+                    sample = min_sample_time;
+                } else if sample > max_sample_time {
+                    num_too_long_samples += 1;
+                    sample = max_sample_time;
+                }
+
+                // `sample` is in nanoseconds.
+                hist.accumulate(sample);
+            }
+
+            Metric::TimingDistribution(hist)
+        });
+
+        if num_too_long_samples > 0 {
+            let msg = format!(
+                "{} samples are longer than the maximum of {}",
+                num_too_long_samples, max_sample_time
+            );
+            record_error(
+                glean,
+                &self.meta,
+                ErrorType::InvalidOverflow,
+                msg,
+                num_too_long_samples,
+            );
+        }
+    }
+
     /// **Test-only API (exported for FFI purposes).**
     ///
-    /// Get the currently stored value as an integer.
+    /// Gets the currently stored value as an integer.
     ///
     /// This doesn't clear the stored value.
     pub fn test_get_value(&self, glean: &Glean, storage_name: &str) -> Option<DistributionData> {
-        match StorageManager.snapshot_metric(
+        match StorageManager.snapshot_metric_for_test(
             glean.storage(),
             storage_name,
             &self.meta.identifier(glean),
+            self.meta.lifetime,
         ) {
             Some(Metric::TimingDistribution(hist)) => Some(snapshot(&hist)),
             _ => None,
@@ -319,7 +390,7 @@ impl TimingDistributionMetric {
 
     /// **Test-only API (exported for FFI purposes).**
     ///
-    /// Get the currently-stored histogram as a JSON String of the serialized value.
+    /// Gets the currently-stored histogram as a JSON String of the serialized value.
     ///
     /// This doesn't clear the stored value.
     pub fn test_get_value_as_json_string(

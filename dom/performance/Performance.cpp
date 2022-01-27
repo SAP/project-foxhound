@@ -31,21 +31,16 @@
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
 
-#ifdef MOZ_GECKO_PROFILER
-#  include "ProfilerMarkerPayload.h"
-#endif
-
 #define PERFLOG(msg, ...) printf_stderr(msg, ##__VA_ARGS__)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Performance)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(Performance, DOMEventTargetHelper,
                                    mUserEntries, mResourceEntries,
-                                   mSecondaryResourceEntries);
+                                   mSecondaryResourceEntries, mObservers);
 
 NS_IMPL_ADDREF_INHERITED(Performance, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(Performance, DOMEventTargetHelper)
@@ -72,8 +67,9 @@ already_AddRefed<Performance> Performance::CreateForWorker(
   return performance.forget();
 }
 
-Performance::Performance(bool aSystemPrincipal)
-    : mResourceTimingBufferSize(kDefaultResourceTimingBufferSize),
+Performance::Performance(nsIGlobalObject* aGlobal, bool aSystemPrincipal)
+    : DOMEventTargetHelper(aGlobal),
+      mResourceTimingBufferSize(kDefaultResourceTimingBufferSize),
       mPendingNotificationObserversTask(false),
       mPendingResourceTimingBufferFullEvent(false),
       mSystemPrincipal(aSystemPrincipal) {
@@ -91,6 +87,19 @@ Performance::Performance(nsPIDOMWindowInner* aWindow, bool aSystemPrincipal)
 
 Performance::~Performance() = default;
 
+DOMHighResTimeStamp Performance::TimeStampToDOMHighResForRendering(
+    TimeStamp aTimeStamp) const {
+  DOMHighResTimeStamp stamp = GetDOMTiming()->TimeStampToDOMHighRes(aTimeStamp);
+  if (!IsSystemPrincipal()) {
+    // 0 is an inappropriate mixin for this this area; however CSS Animations
+    // needs to have it's Time Reduction Logic refactored, so it's currently
+    // only clamping for RFP mode. RFP mode gives a much lower time precision,
+    // so we accept the security leak here for now.
+    return nsRFPService::ReduceTimePrecisionAsMSecsRFPOnly(stamp, 0);
+  }
+  return stamp;
+}
+
 DOMHighResTimeStamp Performance::Now() {
   DOMHighResTimeStamp rawTime = NowUnclamped();
 
@@ -106,7 +115,7 @@ DOMHighResTimeStamp Performance::Now() {
 }
 
 DOMHighResTimeStamp Performance::NowUnclamped() const {
-  TimeDuration duration = TimeStamp::NowUnfuzzed() - CreationTimeStamp();
+  TimeDuration duration = TimeStamp::Now() - CreationTimeStamp();
   return duration.ToMilliseconds();
 }
 
@@ -156,8 +165,9 @@ void Performance::GetEntriesByType(
   aRetval.Clear();
 
   if (aEntryType.EqualsLiteral("mark") || aEntryType.EqualsLiteral("measure")) {
+    RefPtr<nsAtom> entryType = NS_Atomize(aEntryType);
     for (PerformanceEntry* entry : mUserEntries) {
-      if (entry->GetEntryType().Equals(aEntryType)) {
+      if (entry->GetEntryType() == entryType) {
         aRetval.AppendElement(entry);
       }
     }
@@ -174,38 +184,139 @@ void Performance::GetEntriesByName(
     return;
   }
 
+  RefPtr<nsAtom> name = NS_Atomize(aName);
+  RefPtr<nsAtom> entryType =
+      aEntryType.WasPassed() ? NS_Atomize(aEntryType.Value()) : nullptr;
+
+  if (entryType) {
+    if (entryType == nsGkAtoms::mark || entryType == nsGkAtoms::measure) {
+      for (PerformanceEntry* entry : mUserEntries) {
+        if (entry->GetName() == name && entry->GetEntryType() == entryType) {
+          aRetval.AppendElement(entry);
+        }
+      }
+      return;
+    }
+    if (entryType == nsGkAtoms::resource) {
+      for (PerformanceEntry* entry : mResourceEntries) {
+        MOZ_ASSERT(entry->GetEntryType() == entryType);
+        if (entry->GetName() == name) {
+          aRetval.AppendElement(entry);
+        }
+      }
+      return;
+    }
+    // Invalid entryType
+    return;
+  }
+
+  nsTArray<PerformanceEntry*> qualifiedResourceEntries;
+  nsTArray<PerformanceEntry*> qualifiedUserEntries;
   // ::Measure expects that results from this function are already
   // passed through ReduceTimePrecision. mResourceEntries and mUserEntries
   // are, so the invariant holds.
   for (PerformanceEntry* entry : mResourceEntries) {
-    if (entry->GetName().Equals(aName) &&
-        (!aEntryType.WasPassed() ||
-         entry->GetEntryType().Equals(aEntryType.Value()))) {
-      aRetval.AppendElement(entry);
+    if (entry->GetName() == name) {
+      qualifiedResourceEntries.AppendElement(entry);
     }
   }
 
   for (PerformanceEntry* entry : mUserEntries) {
-    if (entry->GetName().Equals(aName) &&
-        (!aEntryType.WasPassed() ||
-         entry->GetEntryType().Equals(aEntryType.Value()))) {
-      aRetval.AppendElement(entry);
+    if (entry->GetName() == name) {
+      qualifiedUserEntries.AppendElement(entry);
     }
   }
 
-  aRetval.Sort(PerformanceEntryComparator());
+  size_t resourceEntriesIdx = 0, userEntriesIdx = 0;
+  aRetval.SetCapacity(qualifiedResourceEntries.Length() +
+                      qualifiedUserEntries.Length());
+
+  PerformanceEntryComparator comparator;
+
+  while (resourceEntriesIdx < qualifiedResourceEntries.Length() &&
+         userEntriesIdx < qualifiedUserEntries.Length()) {
+    if (comparator.LessThan(qualifiedResourceEntries[resourceEntriesIdx],
+                            qualifiedUserEntries[userEntriesIdx])) {
+      aRetval.AppendElement(qualifiedResourceEntries[resourceEntriesIdx]);
+      ++resourceEntriesIdx;
+    } else {
+      aRetval.AppendElement(qualifiedUserEntries[userEntriesIdx]);
+      ++userEntriesIdx;
+    }
+  }
+
+  while (resourceEntriesIdx < qualifiedResourceEntries.Length()) {
+    aRetval.AppendElement(qualifiedResourceEntries[resourceEntriesIdx]);
+    ++resourceEntriesIdx;
+  }
+
+  while (userEntriesIdx < qualifiedUserEntries.Length()) {
+    aRetval.AppendElement(qualifiedUserEntries[userEntriesIdx]);
+    ++userEntriesIdx;
+  }
+}
+
+void Performance::GetEntriesByTypeForObserver(
+    const nsAString& aEntryType, nsTArray<RefPtr<PerformanceEntry>>& aRetval) {
+  GetEntriesByType(aEntryType, aRetval);
 }
 
 void Performance::ClearUserEntries(const Optional<nsAString>& aEntryName,
                                    const nsAString& aEntryType) {
-  mUserEntries.RemoveElementsBy([&aEntryName, &aEntryType](const auto& entry) {
-    return (!aEntryName.WasPassed() ||
-            entry->GetName().Equals(aEntryName.Value())) &&
-           (aEntryType.IsEmpty() || entry->GetEntryType().Equals(aEntryType));
+  MOZ_ASSERT(!aEntryType.IsEmpty());
+  RefPtr<nsAtom> name =
+      aEntryName.WasPassed() ? NS_Atomize(aEntryName.Value()) : nullptr;
+  RefPtr<nsAtom> entryType = NS_Atomize(aEntryType);
+  mUserEntries.RemoveElementsBy([name, entryType](const auto& entry) {
+    return (!name || entry->GetName() == name) &&
+           (entry->GetEntryType() == entryType);
   });
 }
 
 void Performance::ClearResourceTimings() { mResourceEntries.Clear(); }
+
+struct UserTimingMarker {
+  static constexpr Span<const char> MarkerTypeName() {
+    return MakeStringSpan("UserTiming");
+  }
+  static void StreamJSONMarkerData(
+      baseprofiler::SpliceableJSONWriter& aWriter,
+      const ProfilerString16View& aName, bool aIsMeasure,
+      const Maybe<ProfilerString16View>& aStartMark,
+      const Maybe<ProfilerString16View>& aEndMark) {
+    aWriter.StringProperty("name", NS_ConvertUTF16toUTF8(aName));
+    if (aIsMeasure) {
+      aWriter.StringProperty("entryType", "measure");
+    } else {
+      aWriter.StringProperty("entryType", "mark");
+    }
+
+    if (aStartMark.isSome()) {
+      aWriter.StringProperty("startMark", NS_ConvertUTF16toUTF8(*aStartMark));
+    } else {
+      aWriter.NullProperty("startMark");
+    }
+    if (aEndMark.isSome()) {
+      aWriter.StringProperty("endMark", NS_ConvertUTF16toUTF8(*aEndMark));
+    } else {
+      aWriter.NullProperty("endMark");
+    }
+  }
+  static MarkerSchema MarkerTypeDisplay() {
+    using MS = MarkerSchema;
+    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
+    schema.SetAllLabels("{marker.data.name}");
+    schema.AddStaticLabelValue("Marker", "UserTiming");
+    schema.AddKeyLabelFormat("entryType", "Entry Type", MS::Format::String);
+    schema.AddKeyLabelFormat("name", "Name", MS::Format::String);
+    schema.AddKeyLabelFormat("startMark", "Start Mark", MS::Format::String);
+    schema.AddKeyLabelFormat("endMark", "End Mark", MS::Format::String);
+    schema.AddStaticLabelValue("Description",
+                               "UserTimingMeasure is created using the DOM API "
+                               "performance.measure().");
+    return schema;
+  }
+};
 
 void Performance::Mark(const nsAString& aName, ErrorResult& aRv) {
   // We add nothing when 'privacy.resistFingerprinting' is on.
@@ -222,16 +333,15 @@ void Performance::Mark(const nsAString& aName, ErrorResult& aRv) {
       new PerformanceMark(GetParentObject(), aName, Now());
   InsertUserEntry(performanceMark);
 
-#ifdef MOZ_GECKO_PROFILER
-  if (profiler_can_accept_markers()) {
+  if (profiler_thread_is_being_profiled_for_markers()) {
     Maybe<uint64_t> innerWindowId;
     if (GetOwner()) {
       innerWindowId = Some(GetOwner()->WindowID());
     }
-    PROFILER_ADD_MARKER_WITH_PAYLOAD("UserTiming", DOM, UserTimingMarkerPayload,
-                                     (aName, TimeStamp::Now(), innerWindowId));
+    profiler_add_marker("UserTiming", geckoprofiler::category::DOM,
+                        MarkerInnerWindowId(innerWindowId), UserTimingMarker{},
+                        aName, /* aIsMeasure */ false, Nothing{}, Nothing{});
   }
-#endif
 }
 
 void Performance::ClearMarks(const Optional<nsAString>& aName) {
@@ -301,8 +411,7 @@ void Performance::Measure(const nsAString& aName,
       new PerformanceMeasure(GetParentObject(), aName, startTime, endTime);
   InsertUserEntry(performanceMeasure);
 
-#ifdef MOZ_GECKO_PROFILER
-  if (profiler_can_accept_markers()) {
+  if (profiler_thread_is_being_profiled_for_markers()) {
     TimeStamp startTimeStamp =
         CreationTimeStamp() + TimeDuration::FromMilliseconds(startTime);
     TimeStamp endTimeStamp =
@@ -323,11 +432,12 @@ void Performance::Measure(const nsAString& aName,
     if (GetOwner()) {
       innerWindowId = Some(GetOwner()->WindowID());
     }
-    PROFILER_ADD_MARKER_WITH_PAYLOAD("UserTiming", DOM, UserTimingMarkerPayload,
-                                     (aName, startMark, endMark, startTimeStamp,
-                                      endTimeStamp, innerWindowId));
+    profiler_add_marker("UserTiming", geckoprofiler::category::DOM,
+                        {MarkerTiming::Interval(startTimeStamp, endTimeStamp),
+                         MarkerInnerWindowId(innerWindowId)},
+                        UserTimingMarker{}, aName, /* aIsMeasure */ true,
+                        startMark, endMark);
   }
-#endif
 }
 
 void Performance::ClearMeasures(const Optional<nsAString>& aName) {
@@ -336,11 +446,12 @@ void Performance::ClearMeasures(const Optional<nsAString>& aName) {
 
 void Performance::LogEntry(PerformanceEntry* aEntry,
                            const nsACString& aOwner) const {
-  PERFLOG(
-      "Performance Entry: %s|%s|%s|%f|%f|%" PRIu64 "\n", aOwner.BeginReading(),
-      NS_ConvertUTF16toUTF8(aEntry->GetEntryType()).get(),
-      NS_ConvertUTF16toUTF8(aEntry->GetName()).get(), aEntry->StartTime(),
-      aEntry->Duration(), static_cast<uint64_t>(PR_Now() / PR_USEC_PER_MSEC));
+  PERFLOG("Performance Entry: %s|%s|%s|%f|%f|%" PRIu64 "\n",
+          aOwner.BeginReading(),
+          NS_ConvertUTF16toUTF8(aEntry->GetEntryType()->GetUTF16String()).get(),
+          NS_ConvertUTF16toUTF8(aEntry->GetName()->GetUTF16String()).get(),
+          aEntry->StartTime(), aEntry->Duration(),
+          static_cast<uint64_t>(PR_Now() / PR_USEC_PER_MSEC));
 }
 
 void Performance::TimingNotification(PerformanceEntry* aEntry,
@@ -349,12 +460,12 @@ void Performance::TimingNotification(PerformanceEntry* aEntry,
   PerformanceEntryEventInit init;
   init.mBubbles = false;
   init.mCancelable = false;
-  init.mName = aEntry->GetName();
-  init.mEntryType = aEntry->GetEntryType();
+  aEntry->GetName(init.mName);
+  aEntry->GetEntryType(init.mEntryType);
   init.mStartTime = aEntry->StartTime();
   init.mDuration = aEntry->Duration();
   init.mEpoch = aEpoch;
-  init.mOrigin = NS_ConvertUTF8toUTF16(aOwner.BeginReading());
+  CopyUTF8toUTF16(aOwner, init.mOrigin);
 
   RefPtr<PerformanceEntryEvent> perfEntryEvent =
       PerformanceEntryEvent::Constructor(this, u"performanceentry"_ns, init);
@@ -593,25 +704,23 @@ void Performance::RunNotificationObserversTask() {
 }
 
 void Performance::QueueEntry(PerformanceEntry* aEntry) {
-  if (mObservers.IsEmpty()) {
-    return;
-  }
-
   nsTObserverArray<PerformanceObserver*> interestedObservers;
-  auto [begin, end] = mObservers.NonObservingRange();
-  std::copy_if(begin, end, MakeBackInserter(interestedObservers),
-               [aEntry](PerformanceObserver* observer) {
-                 return observer->ObservesTypeOfEntry(aEntry);
-               });
-
-  if (interestedObservers.IsEmpty()) {
-    return;
+  if (!mObservers.IsEmpty()) {
+    const auto [begin, end] = mObservers.NonObservingRange();
+    std::copy_if(begin, end, MakeBackInserter(interestedObservers),
+                 [aEntry](PerformanceObserver* observer) {
+                   return observer->ObservesTypeOfEntry(aEntry);
+                 });
   }
 
   NS_OBSERVER_ARRAY_NOTIFY_XPCOM_OBSERVERS(interestedObservers, QueueEntry,
                                            (aEntry));
 
-  QueueNotificationObserversTask();
+  aEntry->BufferEntryIfNeeded();
+
+  if (!interestedObservers.IsEmpty()) {
+    QueueNotificationObserversTask();
+  }
 }
 
 void Performance::MemoryPressure() { mUserEntries.Clear(); }
@@ -634,5 +743,4 @@ size_t Performance::SizeOfResourceEntries(
   return resourceEntries;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -44,14 +44,7 @@ add_task(async function origin() {
 add_task(async function tokenAlias() {
   // We have built-in engine aliases that may conflict with the one we choose
   // here in terms of autofill, so be careful and choose a weird alias.
-  await Services.search.addEngineWithDetails("Test", {
-    alias: "@__example",
-    template: "http://example.com/?search={searchTerms}",
-  });
-  registerCleanupFunction(async function() {
-    let engine = Services.search.getEngineByName("Test");
-    await Services.search.removeEngine(engine);
-  });
+  await SearchTestUtils.installSearchExtension({ keyword: "@__example" });
 
   // Do an initial search that triggers autofill so that the placeholder has an
   // initial value.
@@ -177,18 +170,14 @@ add_task(async function noMatch2() {
 
 add_task(async function clear_placeholder_for_keyword_or_alias() {
   info("Clear the autofill placeholder if a keyword is typed");
-  await PlacesTestUtils.addVisits("http://example.com/");
+  await PlacesTestUtils.addVisits("https://example.com/");
   await PlacesUtils.keywords.insert({
     keyword: "ex",
-    url: "http://somekeyword.com/",
+    url: "https://somekeyword.com/",
   });
-  let engine = await Services.search.addEngineWithDetails("AutofillTest", {
-    alias: "exam",
-    template: "http://example.com/?search={searchTerms}",
-  });
+  await SearchTestUtils.installSearchExtension({ keyword: "exam" });
   registerCleanupFunction(async function() {
     await PlacesUtils.keywords.remove("ex");
-    await Services.search.removeEngine(engine);
   });
 
   // Do an initial search that triggers autofill so that the placeholder has an
@@ -211,8 +200,97 @@ add_task(async function clear_placeholder_for_keyword_or_alias() {
   await searchAndCheck("ex", "example.com/", "ex");
   await searchAndCheck("EXA", "EXAmple.com/", "EXAmple.com/");
   // Matches the alias.
-  await searchAndCheck("eXaM", "eXaMple.com/", "eXaM");
+
+  await searchAndCheck("eXaM", "eXaMple.com/", "eXaMple.com/");
   await searchAndCheck("examp", "example.com/", "example.com/");
+
+  await cleanUp();
+});
+
+add_task(async function clear_placeholder_for_uri_fragment() {
+  info(
+    "Clear the autofill placeholder if the value has uri fragment that does not match with placeholder"
+  );
+  await PlacesTestUtils.addVisits("https://example.com/#TEST");
+
+  const testData = [
+    {
+      input: "https://example.com/#T",
+      autofilled: "https://example.com/#TEST",
+      invalidInput: "https://example.com/#t",
+    },
+    {
+      input: "example.com/#T",
+      autofilled: "example.com/#TEST",
+      invalidInput: "example.com/#t",
+    },
+    {
+      input: "example.com/#T",
+      autofilled: "example.com/#TEST",
+      invalidInput: "example.com/",
+    },
+  ];
+
+  for (const { input, autofilled, invalidInput } of testData) {
+    // Do an initial search that triggers autofill so that the placeholder has an
+    // initial value.
+    await UrlbarTestUtils.promiseAutocompleteResultPopup({
+      window,
+      value: input,
+      fireInputEvent: true,
+    });
+
+    // Autofilled by placeholder.
+    await searchAndCheck(input, autofilled);
+
+    // Not autofilled and clear the placeholder because the URI fragment does
+    // not match.
+    await searchAndCheck(invalidInput, invalidInput);
+
+    // Not autofilled since placeholder is already cleared.
+    await searchAndCheck(input, input);
+  }
+
+  await cleanUp();
+});
+
+add_task(async function clear_placeholder_for_deep_path() {
+  info("Check if not autofill if the value expresses parent directory");
+  await PlacesTestUtils.addVisits("http://example.com/shallow/deep/file");
+
+  const testData = [
+    {
+      input: "example.com/s",
+      autofilled: "example.com/shallow/",
+      invalidInput: "example.com/",
+    },
+    {
+      input: "example.com/shallow/d",
+      autofilled: "example.com/shallow/deep/",
+      invalidInput: "example.com/shallow/",
+    },
+    {
+      input: "example.com/shallow/deep/f",
+      autofilled: "example.com/shallow/deep/file",
+      invalidInput: "example.com/shallow/deep/",
+    },
+  ];
+
+  for (const { input, autofilled, invalidInput } of testData) {
+    // Do an initial search that triggers autofill so that the placeholder has an
+    // initial value.
+    await UrlbarTestUtils.promiseAutocompleteResultPopup({
+      window,
+      value: input,
+      fireInputEvent: true,
+    });
+
+    // Should be autofilled.
+    await searchAndCheck(input, autofilled);
+
+    // Should not be autofilled.
+    await searchAndCheck(invalidInput, invalidInput);
+  }
 
   await cleanUp();
 });
@@ -248,9 +326,7 @@ async function searchAndCheck(
 }
 
 async function cleanUp() {
-  await UrlbarTestUtils.promisePopupClose(window, () => {
-    EventUtils.synthesizeKey("KEY_Escape");
-  });
+  await UrlbarTestUtils.promisePopupClose(window, () => gURLBar.blur());
   await PlacesUtils.bookmarks.eraseEverything();
   await PlacesUtils.history.clear();
 }

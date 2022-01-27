@@ -16,6 +16,7 @@
       ],
       'dependencies': [
         '<(DEPTH)/exports.gyp:nss_exports',
+        '<(DEPTH)/cpputil/cpputil.gyp:cpputil',
         '<(DEPTH)/lib/util/util.gyp:nssutil3',
         '<(DEPTH)/gtests/google_test/google_test.gyp:gtest',
       ],
@@ -37,6 +38,7 @@
           'dependencies': [
             '<(DEPTH)/lib/nss/nss.gyp:nss3',
             '<(DEPTH)/lib/ssl/ssl.gyp:ssl3',
+            '<(DEPTH)/lib/sqlite/sqlite.gyp:sqlite3',
           ],
         }],
       ],

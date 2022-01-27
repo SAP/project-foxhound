@@ -28,6 +28,11 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
+  "AppConstants",
+  "resource://gre/modules/AppConstants.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "Extension",
   "resource://gre/modules/Extension.jsm"
 );
@@ -59,13 +64,6 @@ const { ExtensionCommon } = ChromeUtils.import(
 );
 const { ExtensionUtils } = ChromeUtils.import(
   "resource://gre/modules/ExtensionUtils.jsm"
-);
-
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "uuidGen",
-  "@mozilla.org/uuid-generator;1",
-  "nsIUUIDGenerator"
 );
 
 const { flushJarCache } = ExtensionUtils;
@@ -132,6 +130,10 @@ class MockExtension {
 
   testMessage(...args) {
     return this._extension.testMessage(...args);
+  }
+
+  get tabManager() {
+    return this._extension.tabManager;
   }
 
   on(...args) {
@@ -273,8 +275,17 @@ ExtensionTestCommon = class ExtensionTestCommon {
     provide(manifest, ["manifest_version"], 2);
     provide(manifest, ["version"], "1.0");
 
+    // Make it easier to test same manifest in both MV2 and MV3 configurations.
+    if (manifest.manifest_version === 2 && manifest.host_permissions) {
+      manifest.permissions = [].concat(
+        manifest.permissions || [],
+        manifest.host_permissions
+      );
+      delete manifest.host_permissions;
+    }
+
     if (data.background) {
-      let bgScript = uuidGen.generateUUID().number + ".js";
+      let bgScript = Services.uuid.generateUUID().number + ".js";
 
       provide(manifest, ["background", "scripts"], [bgScript], true);
       files[bgScript] = data.background;
@@ -420,7 +431,7 @@ ExtensionTestCommon = class ExtensionTestCommon {
     provide(
       data,
       ["manifest", "applications", "gecko", "id"],
-      uuidGen.generateUUID().number
+      Services.uuid.generateUUID().number
     );
   }
 
@@ -432,6 +443,31 @@ ExtensionTestCommon = class ExtensionTestCommon {
    * @returns {Extension}
    */
   static generate(data) {
+    if (data.useAddonManager === "android-only") {
+      // Some extension APIs are partially implemented in Java, and the
+      // interface between the JS and Java side (GeckoViewWebExtension)
+      // expects extensions to be registered with the AddonManager.
+      // This is at least necessary for tests that use the following APIs:
+      //   - browserAction/pageAction.
+      //   - tabs.create, tabs.update, tabs.remove (uses GeckoViewTabBridge).
+      //   - downloads API
+      //   - browsingData API (via ExtensionBrowsingData.jsm).
+      //
+      // In xpcshell tests, the AddonManager is optional, so the AddonManager
+      // cannot unconditionally be enabled.
+      // In mochitests, tests are run in an actual browser, so the AddonManager
+      // is always enabled and hence useAddonManager is always set by default.
+      if (AppConstants.platform === "android") {
+        data.useAddonManager = "permanent";
+        // MockExtension requires data.manifest.applications.gecko.id to be set.
+        // The AddonManager requires an ID in the manifest for unsigned XPIs.
+        this.setExtensionID(data);
+      } else {
+        // On non-Android, default to not using the AddonManager.
+        data.useAddonManager = null;
+      }
+    }
+
     let file = this.generateXPI(data);
 
     flushJarCache(file.path);
@@ -459,7 +495,7 @@ ExtensionTestCommon = class ExtensionTestCommon {
       }
     }
     if (!id) {
-      id = uuidGen.generateUUID().number;
+      id = Services.uuid.generateUUID().number;
     }
 
     let signedState = AddonManager.SIGNEDSTATE_SIGNED;
@@ -470,14 +506,17 @@ ExtensionTestCommon = class ExtensionTestCommon {
       signedState = AddonManager.SIGNEDSTATE_SYSTEM;
     }
 
-    return new Extension({
-      id,
-      resourceURI: jarURI,
-      cleanupFile: file,
-      signedState,
-      incognitoOverride: data.incognitoOverride,
-      temporarilyInstalled: !!data.temporarilyInstalled,
-      TEST_NO_ADDON_MANAGER: true,
-    });
+    return new Extension(
+      {
+        id,
+        resourceURI: jarURI,
+        cleanupFile: file,
+        signedState,
+        incognitoOverride: data.incognitoOverride,
+        temporarilyInstalled: !!data.temporarilyInstalled,
+        TEST_NO_ADDON_MANAGER: true,
+      },
+      data.startupReason
+    );
   }
 };

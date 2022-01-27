@@ -9,8 +9,10 @@
 #include <stdio.h>
 
 #include "js/AllocPolicy.h"
+#include "js/GlobalObject.h"
 #include "js/Initialization.h"
 #include "js/RootingAPI.h"
+#include "js/Stack.h"
 #include "vm/JSContext.h"
 
 #ifdef LIBFUZZER
@@ -62,6 +64,7 @@ static bool jsfuzz_init(JSContext** cx, JS::PersistentRootedObject* global) {
 
 static void jsfuzz_uninit(JSContext* cx) {
   if (cx) {
+    JS::LeaveRealm(cx, nullptr);
     JS_DestroyContext(cx);
     cx = nullptr;
   }
@@ -106,7 +109,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef LIBFUZZER
   fuzzer::FuzzerDriver(&argc, &argv, testingFunc);
-#elif __AFL_COMPILER
+#elif AFLFUZZ
   testingFunc(nullptr, 0);
 #endif
 

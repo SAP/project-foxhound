@@ -55,11 +55,13 @@ add_task(async function test_contentscript_context() {
 
   // Get the content script context and check that it points to the correct window.
   await contentPage.spawn(extension.id, async extensionId => {
-    let { DocumentManager } = ChromeUtils.import(
-      "resource://gre/modules/ExtensionContent.jsm",
-      null
+    const { ExtensionContent } = ChromeUtils.import(
+      "resource://gre/modules/ExtensionContent.jsm"
     );
-    this.context = DocumentManager.getContext(extensionId, this.content);
+    this.context = ExtensionContent.getContextByExtensionId(
+      extensionId,
+      this.content
+    );
 
     Assert.ok(this.context, "Got content script context");
 
@@ -102,7 +104,7 @@ add_task(async function test_contentscript_context() {
   await extension.unload();
 });
 
-async function contentscript_context_incognito_not_allowed_test() {
+add_task(async function test_contentscript_context_incognito_not_allowed() {
   async function background() {
     await browser.contentScripts.register({
       js: [{ file: "registered_script.js" }],
@@ -135,6 +137,11 @@ async function contentscript_context_incognito_not_allowed_test() {
     },
   });
 
+  // Bug 1715801: Re-enable pbm portion on GeckoView
+  if (AppConstants.platform == "android") {
+    Services.prefs.setBoolPref("dom.security.https_first_pbm", false);
+  }
+
   await extension.startup();
   await extension.awaitMessage("background-ready");
 
@@ -144,11 +151,13 @@ async function contentscript_context_incognito_not_allowed_test() {
   );
 
   await contentPage.spawn(extension.id, async extensionId => {
-    let { DocumentManager } = ChromeUtils.import(
-      "resource://gre/modules/ExtensionContent.jsm",
-      null
+    const { ExtensionContent } = ChromeUtils.import(
+      "resource://gre/modules/ExtensionContent.jsm"
     );
-    let context = DocumentManager.getContext(extensionId, this.content);
+    let context = ExtensionContent.getContextByExtensionId(
+      extensionId,
+      this.content
+    );
     Assert.equal(
       context,
       null,
@@ -158,13 +167,11 @@ async function contentscript_context_incognito_not_allowed_test() {
 
   await contentPage.close();
   await extension.unload();
-}
 
-add_task(async function test_contentscript_context_incognito_not_allowed() {
-  return runWithPrefs(
-    [["extensions.allowPrivateBrowsingByDefault", false]],
-    contentscript_context_incognito_not_allowed_test
-  );
+  // Bug 1715801: Re-enable pbm portion on GeckoView
+  if (AppConstants.platform == "android") {
+    Services.prefs.clearUserPref("dom.security.https_first_pbm");
+  }
 });
 
 add_task(async function test_contentscript_context_unload_while_in_bfcache() {
@@ -177,12 +184,14 @@ add_task(async function test_contentscript_context_unload_while_in_bfcache() {
 
   // Get the content script context and check that it points to the correct window.
   await contentPage.spawn(extension.id, async extensionId => {
-    let { DocumentManager } = ChromeUtils.import(
-      "resource://gre/modules/ExtensionContent.jsm",
-      null
+    const { ExtensionContent } = ChromeUtils.import(
+      "resource://gre/modules/ExtensionContent.jsm"
     );
     // Save context so we can verify that contentWindow is nulled after unload.
-    this.context = DocumentManager.getContext(extensionId, this.content);
+    this.context = ExtensionContent.getContextByExtensionId(
+      extensionId,
+      this.content
+    );
 
     Assert.equal(
       this.context.contentWindow,
@@ -309,11 +318,13 @@ add_task(async function test_contentscript_context_valid_during_execution() {
     let context;
     let checkContextIsValid = description => {
       if (!context) {
-        let { DocumentManager } = ChromeUtils.import(
-          "resource://gre/modules/ExtensionContent.jsm",
-          null
+        const { ExtensionContent } = ChromeUtils.import(
+          "resource://gre/modules/ExtensionContent.jsm"
         );
-        context = DocumentManager.getContext(extensionId, this.content);
+        context = ExtensionContent.getContextByExtensionId(
+          extensionId,
+          this.content
+        );
       }
       Assert.equal(
         context.contentWindow,

@@ -80,14 +80,14 @@ enum hb_ot_layout_glyph_props_flags_t
   HB_OT_LAYOUT_GLYPH_PROPS_LIGATURE	= 0x04u,
   HB_OT_LAYOUT_GLYPH_PROPS_MARK		= 0x08u,
 
-  HB_OT_LAYOUT_GLYPH_PROPS_CLASS_MASK   = HB_OT_LAYOUT_GLYPH_PROPS_BASE_GLYPH |
-					  HB_OT_LAYOUT_GLYPH_PROPS_LIGATURE |
-					  HB_OT_LAYOUT_GLYPH_PROPS_MARK,
-
   /* The following are used internally; not derived from GDEF. */
   HB_OT_LAYOUT_GLYPH_PROPS_SUBSTITUTED	= 0x10u,
   HB_OT_LAYOUT_GLYPH_PROPS_LIGATED	= 0x20u,
   HB_OT_LAYOUT_GLYPH_PROPS_MULTIPLIED	= 0x40u,
+
+  HB_OT_LAYOUT_GLYPH_PROPS_PRESERVE     = HB_OT_LAYOUT_GLYPH_PROPS_SUBSTITUTED |
+					  HB_OT_LAYOUT_GLYPH_PROPS_LIGATED |
+					  HB_OT_LAYOUT_GLYPH_PROPS_MULTIPLIED
 };
 HB_MARK_AS_FLAG_T (hb_ot_layout_glyph_props_flags_t);
 
@@ -187,7 +187,7 @@ _hb_clear_syllables (const hb_ot_shape_plan_t *plan HB_UNUSED,
  * - General_Category: 5 bits.
  * - A bit each for:
  *   * Is it Default_Ignorable(); we have a modified Default_Ignorable().
- *   * Whether it's one of the three Mongolian Free Variation Selectors,
+ *   * Whether it's one of the four Mongolian Free Variation Selectors,
  *     CGJ, or other characters that are hidden but should not be ignored
  *     like most other Default_Ignorable()s do during matching.
  *   * Whether it's a grapheme continuation.
@@ -202,7 +202,7 @@ _hb_clear_syllables (const hb_ot_shape_plan_t *plan HB_UNUSED,
 enum hb_unicode_props_flags_t {
   UPROPS_MASK_GEN_CAT	= 0x001Fu,
   UPROPS_MASK_IGNORABLE	= 0x0020u,
-  UPROPS_MASK_HIDDEN	= 0x0040u, /* MONGOLIAN FREE VARIATION SELECTOR 1..3, or TAG characters */
+  UPROPS_MASK_HIDDEN	= 0x0040u, /* MONGOLIAN FREE VARIATION SELECTOR 1..4, or TAG characters */
   UPROPS_MASK_CONTINUATION=0x0080u,
 
   /* If GEN_CAT=FORMAT, top byte masks: */
@@ -236,7 +236,7 @@ _hb_glyph_info_set_unicode_props (hb_glyph_info_t *info, hb_buffer_t *buffer)
        * FVSes are GC=Mn, we have use a separate bit to remember them.
        * Fixes:
        * https://github.com/harfbuzz/harfbuzz/issues/234 */
-      else if (unlikely (hb_in_range<hb_codepoint_t> (u, 0x180Bu, 0x180Du))) props |= UPROPS_MASK_HIDDEN;
+      else if (unlikely (hb_in_ranges<hb_codepoint_t> (u, 0x180Bu, 0x180Du, 0x180Fu, 0x180Fu))) props |= UPROPS_MASK_HIDDEN;
       /* TAG characters need similar treatment. Fixes:
        * https://github.com/harfbuzz/harfbuzz/issues/463 */
       else if (unlikely (hb_in_range<hb_codepoint_t> (u, 0xE0020u, 0xE007Fu))) props |= UPROPS_MASK_HIDDEN;
@@ -314,20 +314,20 @@ _hb_glyph_info_get_unicode_space_fallback_type (const hb_glyph_info_t *info)
 	 hb_unicode_funcs_t::NOT_SPACE;
 }
 
-static inline bool _hb_glyph_info_ligated (const hb_glyph_info_t *info);
+static inline bool _hb_glyph_info_substituted (const hb_glyph_info_t *info);
 
 static inline bool
 _hb_glyph_info_is_default_ignorable (const hb_glyph_info_t *info)
 {
   return (info->unicode_props() & UPROPS_MASK_IGNORABLE) &&
-	 !_hb_glyph_info_ligated (info);
+	 !_hb_glyph_info_substituted (info);
 }
 static inline bool
 _hb_glyph_info_is_default_ignorable_and_not_hidden (const hb_glyph_info_t *info)
 {
   return ((info->unicode_props() & (UPROPS_MASK_IGNORABLE|UPROPS_MASK_HIDDEN))
 	  == UPROPS_MASK_IGNORABLE) &&
-	 !_hb_glyph_info_ligated (info);
+	 !_hb_glyph_info_substituted (info);
 }
 static inline void
 _hb_glyph_info_unhide (hb_glyph_info_t *info)

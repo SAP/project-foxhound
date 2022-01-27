@@ -22,13 +22,14 @@
 #include "mozilla/Unused.h"
 #include "mozilla/gfx/Filters.h"
 #include "mozilla/gfx/Helpers.h"
+#include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/PatternHelpers.h"
 #include "mozilla/ISVGDisplayableFrame.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/SVGFilterInstance.h"
 #include "mozilla/SVGUtils.h"
+#include "mozilla/dom/Document.h"
 #include "CSSFilterInstance.h"
-#include "SVGFilterPaintCallback.h"
 #include "SVGIntegrationUtils.h"
 
 using namespace mozilla::dom;
@@ -59,18 +60,16 @@ static UniquePtr<UserSpaceMetrics> UserSpaceMetricsForFrame(nsIFrame* aFrame) {
   return MakeUnique<NonSVGFrameUserSpaceMetrics>(aFrame);
 }
 
-void FilterInstance::PaintFilteredFrame(nsIFrame* aFilteredFrame,
-                                        gfxContext* aCtx,
-                                        SVGFilterPaintCallback* aPaintCallback,
-                                        const nsRegion* aDirtyArea,
-                                        imgDrawingParams& aImgParams,
-                                        float aOpacity) {
+void FilterInstance::PaintFilteredFrame(
+    nsIFrame* aFilteredFrame, gfxContext* aCtx,
+    const SVGFilterPaintCallback& aPaintCallback, const nsRegion* aDirtyArea,
+    imgDrawingParams& aImgParams, float aOpacity) {
   auto filterChain = aFilteredFrame->StyleEffects()->mFilters.AsSpan();
   UniquePtr<UserSpaceMetrics> metrics =
       UserSpaceMetricsForFrame(aFilteredFrame);
 
   gfxContextMatrixAutoSaveRestore autoSR(aCtx);
-  gfxSize scaleFactors = aCtx->CurrentMatrixDouble().ScaleFactors(true);
+  gfxSize scaleFactors = aCtx->CurrentMatrixDouble().ScaleFactors();
   if (scaleFactors.IsEmpty()) {
     return;
   }
@@ -121,7 +120,23 @@ static mozilla::wr::ComponentTransferFuncType FuncTypeToWr(uint8_t aFuncType) {
 bool FilterInstance::BuildWebRenderFilters(nsIFrame* aFilteredFrame,
                                            Span<const StyleFilter> aFilters,
                                            WrFiltersHolder& aWrFilters,
-                                           Maybe<nsRect>& aPostFilterClip) {
+                                           Maybe<nsRect>& aPostFilterClip,
+                                           bool& aInitialized) {
+  bool status = BuildWebRenderFiltersImpl(aFilteredFrame, aFilters, aWrFilters,
+                                          aPostFilterClip, aInitialized);
+  if (!status) {
+    aFilteredFrame->PresContext()->Document()->SetUseCounter(
+        eUseCounter_custom_WrFilterFallback);
+  }
+
+  return status;
+}
+
+bool FilterInstance::BuildWebRenderFiltersImpl(nsIFrame* aFilteredFrame,
+                                               Span<const StyleFilter> aFilters,
+                                               WrFiltersHolder& aWrFilters,
+                                               Maybe<nsRect>& aPostFilterClip,
+                                               bool& aInitialized) {
   aWrFilters.filters.Clear();
   aWrFilters.filter_datas.Clear();
   aWrFilters.values.Clear();
@@ -144,7 +159,8 @@ bool FilterInstance::BuildWebRenderFilters(nsIFrame* aFilteredFrame,
                           nullptr);
 
   if (!instance.IsInitialized()) {
-    return false;
+    aInitialized = false;
+    return true;
   }
 
   // If there are too many filters to render, then just pretend that we
@@ -230,13 +246,9 @@ bool FilterInstance::BuildWebRenderFilters(nsIFrame* aFilteredFrame,
       const GaussianBlurAttributes& blur = attr.as<GaussianBlurAttributes>();
 
       const Size& stdDev = blur.mStdDeviation;
-      if (stdDev.width != stdDev.height) {
-        return false;
-      }
-
-      float radius = stdDev.width;
-      if (radius != 0.0) {
-        aWrFilters.filters.AppendElement(wr::FilterOp::Blur(radius));
+      if (stdDev.width != 0.0 || stdDev.height != 0.0) {
+        aWrFilters.filters.AppendElement(
+            wr::FilterOp::Blur(stdDev.width, stdDev.height));
       } else {
         filterIsNoop = true;
       }
@@ -440,7 +452,7 @@ nsRect FilterInstance::GetPostFilterBounds(nsIFrame* aFilteredFrame,
 FilterInstance::FilterInstance(
     nsIFrame* aTargetFrame, nsIContent* aTargetContent,
     const UserSpaceMetrics& aMetrics, Span<const StyleFilter> aFilterChain,
-    bool aFilterInputIsTainted, SVGFilterPaintCallback* aPaintCallback,
+    bool aFilterInputIsTainted, const SVGFilterPaintCallback& aPaintCallback,
     const gfxMatrix& aPaintTransform, const nsRegion* aPostFilterDirtyRegion,
     const nsRegion* aPreFilterDirtyRegion,
     const nsRect* aPreFilterInkOverflowRectOverride,
@@ -513,7 +525,7 @@ bool FilterInstance::ComputeTargetBBoxInFilterSpace() {
 
 bool FilterInstance::ComputeUserSpaceToFilterSpaceScale() {
   if (mTargetFrame) {
-    mUserSpaceToFilterSpaceScale = mPaintTransform.ScaleFactors(true);
+    mUserSpaceToFilterSpaceScale = mPaintTransform.ScaleFactors();
     if (mUserSpaceToFilterSpaceScale.width <= 0.0f ||
         mUserSpaceToFilterSpaceScale.height <= 0.0f) {
       // Nothing should be rendered.
@@ -727,8 +739,17 @@ void FilterInstance::BuildSourceImage(DrawTarget* aDest,
   ctx->SetMatrixDouble(devPxToCssPxTM * mPaintTransform *
                        gfxMatrix::Translation(-neededRect.TopLeft()));
 
-  mPaintCallback->Paint(*ctx, mTargetFrame, mPaintTransform, &dirty,
-                        aImgParams);
+  auto imageFlags = aImgParams.imageFlags;
+  if (mTargetFrame->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
+    // We're coming from a mask or pattern instance. Patterns
+    // are painted into a separate surface and it seems we can't
+    // handle the differently sized surface that might be returned
+    // with FLAG_HIGH_QUALITY_SCALING
+    imageFlags &= ~imgIContainer::FLAG_HIGH_QUALITY_SCALING;
+  }
+  imgDrawingParams imgParams(imageFlags);
+  mPaintCallback(*ctx, mTargetFrame, mPaintTransform, &dirty, imgParams);
+  aImgParams.result = imgParams.result;
 
   mSourceGraphic.mSourceSurface = offscreenDT->Snapshot();
   mSourceGraphic.mSurfaceRect = neededRect;

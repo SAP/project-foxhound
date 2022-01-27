@@ -1,8 +1,13 @@
-//! Streams
+//! Asynchronous streams.
 //!
-//! This module contains a number of functions for working with `Stream`s,
-//! including the [`StreamExt`] trait and the [`TryStreamExt`] trait which add
-//! methods to `Stream` types
+//! This module contains:
+//!
+//! - The [`Stream`] trait, for objects that can asynchronously produce a
+//!   sequence of values.
+//! - The [`StreamExt`] and [`TryStreamExt`] trait, which provides adapters for
+//!   chaining and composing streams.
+//! - Top-level stream constructors like [`iter`](iter()) which creates a
+//!   stream from an iterator.
 
 #[cfg(feature = "alloc")]
 pub use futures_core::stream::{BoxStream, LocalBoxStream};
@@ -13,9 +18,9 @@ pub use futures_core::stream::{FusedStream, Stream, TryStream};
 #[allow(clippy::module_inception)]
 mod stream;
 pub use self::stream::{
-    Chain, Collect, Concat, Enumerate, Filter, FilterMap, Flatten, Fold, ForEach, Fuse, Inspect,
-    Map, Next, Peek, Peekable, Scan, SelectNextSome, Skip, SkipWhile, StreamExt, StreamFuture, Take,
-    TakeWhile, Then, Zip,
+    Chain, Collect, Concat, Cycle, Enumerate, Filter, FilterMap, FlatMap, Flatten, Fold, ForEach,
+    Fuse, Inspect, Map, Next, NextIf, NextIfEq, Peek, Peekable, Scan, SelectNextSome, Skip,
+    SkipWhile, StreamExt, StreamFuture, Take, TakeUntil, TakeWhile, Then, Unzip, Zip,
 };
 
 #[cfg(feature = "std")]
@@ -24,15 +29,20 @@ pub use self::stream::CatchUnwind;
 #[cfg(feature = "alloc")]
 pub use self::stream::Chunks;
 
+#[cfg(feature = "alloc")]
+pub use self::stream::ReadyChunks;
+
 #[cfg(feature = "sink")]
+#[cfg_attr(docsrs, doc(cfg(feature = "sink")))]
 pub use self::stream::Forward;
 
-#[cfg_attr(feature = "cfg-target-has-atomic", cfg(target_has_atomic = "ptr"))]
+#[cfg(not(futures_no_atomic_cas))]
 #[cfg(feature = "alloc")]
 pub use self::stream::{BufferUnordered, Buffered, ForEachConcurrent};
 
-#[cfg_attr(feature = "cfg-target-has-atomic", cfg(target_has_atomic = "ptr"))]
+#[cfg(not(futures_no_atomic_cas))]
 #[cfg(feature = "sink")]
+#[cfg_attr(docsrs, doc(cfg(feature = "sink")))]
 #[cfg(feature = "alloc")]
 pub use self::stream::{ReuniteError, SplitSink, SplitStream};
 
@@ -40,16 +50,17 @@ mod try_stream;
 pub use self::try_stream::{
     try_unfold, AndThen, ErrInto, InspectErr, InspectOk, IntoStream, MapErr, MapOk, OrElse,
     TryCollect, TryConcat, TryFilter, TryFilterMap, TryFlatten, TryFold, TryForEach, TryNext,
-    TrySkipWhile, TryStreamExt, TryUnfold,
+    TrySkipWhile, TryStreamExt, TryTakeWhile, TryUnfold,
 };
 
 #[cfg(feature = "io")]
+#[cfg_attr(docsrs, doc(cfg(feature = "io")))]
 #[cfg(feature = "std")]
 pub use self::try_stream::IntoAsyncRead;
 
-#[cfg_attr(feature = "cfg-target-has-atomic", cfg(target_has_atomic = "ptr"))]
+#[cfg(not(futures_no_atomic_cas))]
 #[cfg(feature = "alloc")]
-pub use self::try_stream::{TryBufferUnordered, TryForEachConcurrent};
+pub use self::try_stream::{TryBufferUnordered, TryBuffered, TryForEachConcurrent};
 
 // Primitive streams
 
@@ -58,6 +69,9 @@ pub use self::iter::{iter, Iter};
 
 mod repeat;
 pub use self::repeat::{repeat, Repeat};
+
+mod repeat_with;
+pub use self::repeat_with::{repeat_with, RepeatWith};
 
 mod empty;
 pub use self::empty::{empty, Empty};
@@ -90,7 +104,23 @@ cfg_target_has_atomic! {
     pub use self::futures_unordered::FuturesUnordered;
 
     #[cfg(feature = "alloc")]
-    mod select_all;
+    pub mod select_all;
     #[cfg(feature = "alloc")]
     pub use self::select_all::{select_all, SelectAll};
+
+    #[cfg(feature = "alloc")]
+    mod abortable;
+    #[cfg(feature = "alloc")]
+    pub use crate::abortable::{Abortable, AbortHandle, AbortRegistration, Aborted};
+    #[cfg(feature = "alloc")]
+    pub use abortable::abortable;
+}
+
+// Just a helper function to ensure the streams we're returning all have the
+// right implementations.
+pub(crate) fn assert_stream<T, S>(stream: S) -> S
+where
+    S: Stream<Item = T>,
+{
+    stream
 }

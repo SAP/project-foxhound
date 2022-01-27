@@ -3,7 +3,7 @@
 
 "use strict";
 
-const TEST_URI = `data:text/html,
+const TEST_URI = `data:text/html,<!DOCTYPE html>
 <main>
   <ul>
     <li>First</li>
@@ -57,4 +57,12 @@ add_task(async function() {
     ".result"
   );
   ok(message, "`$$('div')` returns an empty array");
+
+  message = await executeAndWaitForMessage(
+    hud,
+    "$$(':foo')",
+    "':foo' is not a valid selector",
+    ".error"
+  );
+  ok(message, "`$$(':foo')` returns an error message");
 });

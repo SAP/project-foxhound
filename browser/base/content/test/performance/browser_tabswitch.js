@@ -8,7 +8,7 @@
  * Instead of adding reflows to the list, you should be modifying your code to
  * avoid the reflow.
  *
- * See https://developer.mozilla.org/en-US/Firefox/Performance_best_practices_for_Firefox_fe_engineers
+ * See  https://firefox-source-docs.mozilla.org/performance/bestpractices.html
  * for tips on how to do that.
  */
 const EXPECTED_REFLOWS = [
@@ -23,8 +23,20 @@ const EXPECTED_REFLOWS = [
  * tabs that are both fully visible.
  */
 add_task(async function() {
+  // TODO (bug 1702653): Disable tab shadows for tests since the shadow
+  // can extend outside of the boundingClientRect. The tabRect will need
+  // to grow to include the shadow size.
+  gBrowser.tabContainer.setAttribute("noshadowfortests", "true");
+
   await ensureNoPreloadedBrowser();
   await disableFxaBadge();
+
+  // The test starts on about:blank and opens an about:blank
+  // tab which triggers opening the toolbar since
+  // ensureNoPreloadedBrowser sets AboutNewTab.newTabURL to about:blank.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.toolbars.bookmarks.visibility", "never"]],
+  });
 
   // At the time of writing, there are no reflows on simple tab switching.
   // Mochitest will fail if we have no assertions, so we add one here
@@ -42,6 +54,11 @@ add_task(async function() {
 
   let tabStripRect = gBrowser.tabContainer.arrowScrollbox.getBoundingClientRect();
   let firstTabRect = origTab.getBoundingClientRect();
+  let tabPaddingStart = parseFloat(
+    getComputedStyle(gBrowser.selectedTab).paddingInlineStart
+  );
+  let minTabWidth = firstTabRect.width - 2 * tabPaddingStart;
+  let maxTabWidth = firstTabRect.width;
   let inRange = (val, min, max) => min <= val && val <= max;
 
   await withPerfObserver(
@@ -68,8 +85,8 @@ add_task(async function() {
                   // width of 2 tabs.
                   inRange(
                     r.w,
-                    (origTab.clientWidth - 1) * 2, // -1 for the border on Win7
-                    origTab.clientWidth * 2
+                    minTabWidth - 1, // -1 for the border on Win7
+                    maxTabWidth * 2
                   )
                 )
               )

@@ -13,7 +13,6 @@ use crate::ssl::{PRFileDesc, SSLSecretCallback, SSLSecretDirection};
 use neqo_common::qdebug;
 use std::os::raw::c_void;
 use std::pin::Pin;
-use std::ptr::NonNull;
 
 experimental_api!(SSL_SecretCallback(
     fd: *mut PRFileDesc,
@@ -77,17 +76,13 @@ impl Secrets {
         secret: *mut PK11SymKey,
         arg: *mut c_void,
     ) {
-        let secrets_ptr = arg as *mut Self;
-        let secrets = secrets_ptr.as_mut().unwrap();
+        let secrets = arg.cast::<Self>().as_mut().unwrap();
         secrets.put_raw(epoch, dir, secret);
     }
 
     fn put_raw(&mut self, epoch: Epoch, dir: SSLSecretDirection::Type, key_ptr: *mut PK11SymKey) {
         let key_ptr = unsafe { PK11_ReferenceSymKey(key_ptr) };
-        let key = match NonNull::new(key_ptr) {
-            None => panic!("NSS shouldn't be passing out NULL secrets"),
-            Some(p) => SymKey::new(p),
-        };
+        let key = SymKey::from_ptr(key_ptr).expect("NSS shouldn't be passing out NULL secrets");
         self.put(SecretDirection::from(dir), epoch, key);
     }
 

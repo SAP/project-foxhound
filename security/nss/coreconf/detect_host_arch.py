@@ -15,8 +15,12 @@ def main():
         host_arch = 'x64'
     elif fnmatch.fnmatch(host_arch, 'i?86') or host_arch == 'i86pc':
         host_arch = 'ia32'
+    elif host_arch == 'arm64':
+        pass
     elif host_arch.startswith('arm'):
         host_arch = 'arm'
+    elif host_arch.startswith('mips64'):
+        host_arch = 'mips64'
     elif host_arch.startswith('mips'):
         host_arch = 'mips'
     print(host_arch)

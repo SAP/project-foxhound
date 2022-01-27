@@ -26,6 +26,10 @@
 namespace js {
 namespace wasm {
 
+using jit::FloatRegister;
+using jit::Register;
+using jit::Register64;
+
 // ValType and location for a single result: either in a register or on the
 // stack.
 
@@ -56,6 +60,7 @@ class ABIResult {
       case ValType::F64:
         MOZ_ASSERT(loc_ == Location::Fpr);
         break;
+      case ValType::Rtt:
       case ValType::Ref:
         MOZ_ASSERT(loc_ == Location::Gpr);
         break;
@@ -81,7 +86,7 @@ class ABIResult {
   static constexpr size_t StackSizeOfPtr = sizeof(intptr_t);
   static constexpr size_t StackSizeOfInt32 = StackSizeOfPtr;
   static constexpr size_t StackSizeOfInt64 = sizeof(int64_t);
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS32)
+#if defined(JS_CODEGEN_ARM)
   static constexpr size_t StackSizeOfFloat = sizeof(float);
 #else
   static constexpr size_t StackSizeOfFloat = sizeof(double);
@@ -242,6 +247,10 @@ class ABIResultIter {
   }
 };
 
+extern bool GenerateIndirectStub(jit::MacroAssembler& masm,
+                                 uint8_t* calleeCheckedEntry, TlsData* tlsPtr,
+                                 Offsets* offsets);
+
 extern bool GenerateBuiltinThunk(jit::MacroAssembler& masm,
                                  jit::ABIFunctionType abiType,
                                  ExitReason exitReason, void* funcPtr,
@@ -256,13 +265,15 @@ extern bool GenerateStubs(const ModuleEnvironment& env,
                           const FuncExportVector& exports, CompiledCode* code);
 
 extern bool GenerateEntryStubs(jit::MacroAssembler& masm,
-                               size_t funcExportIndex,
-                               const FuncExport& funcExport,
+                               size_t funcExportIndex, const FuncExport& fe,
                                const Maybe<jit::ImmPtr>& callee, bool isAsmJS,
                                CodeRangeVector* codeRanges);
 
 extern void GenerateTrapExitMachineState(jit::MachineState* machine,
                                          size_t* numWords);
+
+extern bool GenerateProvisionalLazyJitEntryStub(jit::MacroAssembler& masm,
+                                                Offsets* offsets);
 
 // A value that is written into the trap exit frame, which is useful for
 // cross-checking during garbage collection.

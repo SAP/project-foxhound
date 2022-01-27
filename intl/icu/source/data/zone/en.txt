@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 en{
-    Version{"37"}
     zoneStrings{
         "Africa:Sao_Tome"{
             ec{"São Tomé"}
@@ -720,6 +720,9 @@ en{
             ld{"Yekaterinburg Summer Time"}
             lg{"Yekaterinburg Time"}
             ls{"Yekaterinburg Standard Time"}
+        }
+        "meta:Yukon"{
+            ls{"Yukon Time"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

@@ -13,6 +13,7 @@
 #define js_Class_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/Maybe.h"
 
 #include "jstypes.h"
 
@@ -33,11 +34,11 @@ struct JSFunctionSpec;
 
 namespace js {
 
-class Shape;
+class PropertyResult;
 
-// This is equal to JSFunction::class_.  Use it in places where you don't want
-// to #include jsfun.h.
-extern JS_FRIEND_DATA const JSClass* const FunctionClassPtr;
+// These are equal to js::FunctionClass / js::ExtendedFunctionClass.
+extern JS_PUBLIC_DATA const JSClass* const FunctionClassPtr;
+extern JS_PUBLIC_DATA const JSClass* const FunctionExtendedClassPtr;
 
 }  // namespace js
 
@@ -75,15 +76,15 @@ namespace JS {
  *
  * Users don't have to call `result.report()`; another possible ending is:
  *
- *     argv.rval().setBoolean(result.reallyOk());
+ *     argv.rval().setBoolean(result.ok());
  *     return true;
  */
 class ObjectOpResult {
  private:
   /**
-   * code_ is either one of the special codes OkCode or Uninitialized, or
-   * an error code. For now the error codes are private to the JS engine;
-   * they're defined in js/src/js.msg.
+   * code_ is either one of the special codes OkCode or Uninitialized, or an
+   * error code. For now the error codes are JS friend API and are defined in
+   * js/public/friend/ErrorNumbers.msg.
    *
    * code_ is uintptr_t (rather than uint32_t) for the convenience of the
    * JITs, which would otherwise have to deal with either padding or stack
@@ -94,24 +95,15 @@ class ObjectOpResult {
  public:
   enum SpecialCodes : uintptr_t { OkCode = 0, Uninitialized = uintptr_t(-1) };
 
-  static const uintptr_t SoftFailBit = uintptr_t(1)
-                                       << (sizeof(uintptr_t) * 8 - 1);
-
   ObjectOpResult() : code_(Uninitialized) {}
 
-  /* Return true if succeed() or failSoft() was called. */
-  bool ok() const {
-    MOZ_ASSERT(code_ != Uninitialized);
-    return code_ == OkCode || (code_ & SoftFailBit);
-  }
-
-  explicit operator bool() const { return ok(); }
-
   /* Return true if succeed() was called. */
-  bool reallyOk() const {
+  bool ok() const {
     MOZ_ASSERT(code_ != Uninitialized);
     return code_ == OkCode;
   }
+
+  explicit operator bool() const { return ok(); }
 
   /* Set this ObjectOpResult to true and return true. */
   bool succeed() {
@@ -133,23 +125,7 @@ class ObjectOpResult {
    */
   bool fail(uint32_t msg) {
     MOZ_ASSERT(msg != OkCode);
-    MOZ_ASSERT((msg & SoftFailBit) == 0);
     code_ = msg;
-    return true;
-  }
-
-  /*
-   * DEPRECATED: This is a non-standard compatibility hack.
-   *
-   * Set this ObjectOpResult to true, but remembers an error code.
-   * This is used for situations where we really want to fail,
-   * but can't for legacy reasons.
-   *
-   * Always returns true, as a convenience.
-   */
-  bool failSoft(uint32_t msg) {
-    // The msg code is currently never extracted again.
-    code_ = msg | SoftFailBit;
     return true;
   }
 
@@ -161,6 +137,7 @@ class ObjectOpResult {
   JS_PUBLIC_API bool failCantSetInterposed();
   JS_PUBLIC_API bool failCantDefineWindowElement();
   JS_PUBLIC_API bool failCantDeleteWindowElement();
+  JS_PUBLIC_API bool failCantDefineWindowNamedProperty();
   JS_PUBLIC_API bool failCantDeleteWindowNamedProperty();
   JS_PUBLIC_API bool failCantPreventExtensions();
   JS_PUBLIC_API bool failCantSetProto();
@@ -229,117 +206,13 @@ class ObjectOpResult {
   }
 };
 
-class PropertyResult {
-  union {
-    js::Shape* shape_;
-    uintptr_t bits_;
-  };
-
-  static const uintptr_t NotFound = 0;
-  static const uintptr_t NonNativeProperty = 1;
-  static const uintptr_t DenseOrTypedArrayElement = 1;
-
- public:
-  PropertyResult() : bits_(NotFound) {}
-
-  explicit PropertyResult(js::Shape* propertyShape) : shape_(propertyShape) {
-    MOZ_ASSERT(!isFound() || isNativeProperty());
-  }
-
-  explicit operator bool() const { return isFound(); }
-
-  bool isFound() const { return bits_ != NotFound; }
-
-  bool isNonNativeProperty() const { return bits_ == NonNativeProperty; }
-
-  bool isDenseOrTypedArrayElement() const {
-    return bits_ == DenseOrTypedArrayElement;
-  }
-
-  bool isNativeProperty() const { return isFound() && !isNonNativeProperty(); }
-
-  js::Shape* maybeShape() const {
-    MOZ_ASSERT(!isNonNativeProperty());
-    return isFound() ? shape_ : nullptr;
-  }
-
-  js::Shape* shape() const {
-    MOZ_ASSERT(isNativeProperty());
-    return shape_;
-  }
-
-  void setNotFound() { bits_ = NotFound; }
-
-  void setNativeProperty(js::Shape* propertyShape) {
-    shape_ = propertyShape;
-    MOZ_ASSERT(isNativeProperty());
-  }
-
-  void setNonNativeProperty() { bits_ = NonNativeProperty; }
-
-  void setDenseOrTypedArrayElement() { bits_ = DenseOrTypedArrayElement; }
-
-  void trace(JSTracer* trc);
-};
-
 }  // namespace JS
 
-namespace js {
-
-template <class Wrapper>
-class WrappedPtrOperations<JS::PropertyResult, Wrapper> {
-  const JS::PropertyResult& value() const {
-    return static_cast<const Wrapper*>(this)->get();
-  }
-
- public:
-  bool isFound() const { return value().isFound(); }
-  explicit operator bool() const { return bool(value()); }
-  js::Shape* maybeShape() const { return value().maybeShape(); }
-  js::Shape* shape() const { return value().shape(); }
-  bool isNativeProperty() const { return value().isNativeProperty(); }
-  bool isNonNativeProperty() const { return value().isNonNativeProperty(); }
-  bool isDenseOrTypedArrayElement() const {
-    return value().isDenseOrTypedArrayElement();
-  }
-  js::Shape* asTaggedShape() const { return value().asTaggedShape(); }
-};
-
-template <class Wrapper>
-class MutableWrappedPtrOperations<JS::PropertyResult, Wrapper>
-    : public WrappedPtrOperations<JS::PropertyResult, Wrapper> {
-  JS::PropertyResult& value() { return static_cast<Wrapper*>(this)->get(); }
-
- public:
-  void setNotFound() { value().setNotFound(); }
-  void setNativeProperty(js::Shape* shape) { value().setNativeProperty(shape); }
-  void setNonNativeProperty() { value().setNonNativeProperty(); }
-  void setDenseOrTypedArrayElement() { value().setDenseOrTypedArrayElement(); }
-};
-
-}  // namespace js
-
 // JSClass operation signatures.
-
-/**
- * Get a property named by id in obj.  Note the jsid id type -- id may
- * be a string (Unicode property identifier) or an int (element index).  The
- * *vp out parameter, on success, is the new property value after the action.
- */
-typedef bool (*JSGetterOp)(JSContext* cx, JS::HandleObject obj, JS::HandleId id,
-                           JS::MutableHandleValue vp);
 
 /** Add a property named by id to obj. */
 typedef bool (*JSAddPropertyOp)(JSContext* cx, JS::HandleObject obj,
                                 JS::HandleId id, JS::HandleValue v);
-
-/**
- * Set a property named by id in obj, treating the assignment as strict
- * mode code if strict is true. Note the jsid id type -- id may be a string
- * (Unicode property identifier) or an int (element index).
- */
-typedef bool (*JSSetterOp)(JSContext* cx, JS::HandleObject obj, JS::HandleId id,
-                           JS::HandleValue v, JS::ObjectOpResult& result);
 
 /**
  * Delete a property named by id in obj.
@@ -455,7 +328,7 @@ namespace js {
 
 typedef bool (*LookupPropertyOp)(JSContext* cx, JS::HandleObject obj,
                                  JS::HandleId id, JS::MutableHandleObject objp,
-                                 JS::MutableHandle<JS::PropertyResult> propp);
+                                 PropertyResult* propp);
 typedef bool (*DefinePropertyOp)(JSContext* cx, JS::HandleObject obj,
                                  JS::HandleId id,
                                  JS::Handle<JS::PropertyDescriptor> desc,
@@ -471,11 +344,11 @@ typedef bool (*SetPropertyOp)(JSContext* cx, JS::HandleObject obj,
                               JS::ObjectOpResult& result);
 typedef bool (*GetOwnPropertyOp)(
     JSContext* cx, JS::HandleObject obj, JS::HandleId id,
-    JS::MutableHandle<JS::PropertyDescriptor> desc);
+    JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc);
 typedef bool (*DeletePropertyOp)(JSContext* cx, JS::HandleObject obj,
                                  JS::HandleId id, JS::ObjectOpResult& result);
 
-class JS_FRIEND_API ElementAdder {
+class JS_PUBLIC_API ElementAdder {
  public:
   enum GetBehavior {
     // Check if the element exists before performing the Get and preserve
@@ -620,8 +493,7 @@ static constexpr const js::ObjectOps* JS_NULL_OBJECT_OPS = nullptr;
 
 // Classes, objects, and properties.
 
-// Objects have private slot.
-static const uint32_t JSCLASS_HAS_PRIVATE = 1 << 0;
+// (1 << 0 is unused)
 
 // Class's initialization code will call `SetNewObjectMetadata` itself.
 static const uint32_t JSCLASS_DELAY_METADATA_BUILDER = 1 << 1;
@@ -630,8 +502,8 @@ static const uint32_t JSCLASS_DELAY_METADATA_BUILDER = 1 << 1;
 // disposal mechanism.
 static const uint32_t JSCLASS_IS_WRAPPED_NATIVE = 1 << 2;
 
-// Private is `nsISupports*`.
-static const uint32_t JSCLASS_PRIVATE_IS_NSISUPPORTS = 1 << 3;
+// First reserved slot is `PrivateValue(nsISupports*)` or `UndefinedValue`.
+static constexpr uint32_t JSCLASS_SLOT0_IS_NSISUPPORTS = 1 << 3;
 
 // Objects are DOM.
 static const uint32_t JSCLASS_IS_DOMJSCLASS = 1 << 4;
@@ -706,7 +578,7 @@ static const uint32_t JSCLASS_FOREGROUND_FINALIZE =
 // compiled JavaScript reporting function. See JS_ReportTaintSink.
 static const uint32_t JSCLASS_GLOBAL_APPLICATION_SLOTS = 5 + 1;
 static const uint32_t JSCLASS_GLOBAL_SLOT_COUNT =
-    JSCLASS_GLOBAL_APPLICATION_SLOTS + JSProto_LIMIT * 2 + 28;
+    JSCLASS_GLOBAL_APPLICATION_SLOTS + 1;
 
 static constexpr uint32_t JSCLASS_GLOBAL_FLAGS_WITH_SLOTS(uint32_t n) {
   return JSCLASS_IS_GLOBAL |
@@ -804,22 +676,32 @@ struct alignas(js::gc::JSClassAlignBytes) JSClass {
    */
   static const uint32_t NON_NATIVE = JSCLASS_INTERNAL_FLAG2;
 
-  bool isNative() const { return !(flags & NON_NATIVE); }
-
-  bool hasPrivate() const { return !!(flags & JSCLASS_HAS_PRIVATE); }
+  // A JSObject created from a JSClass extends from one of:
+  //  - js::NativeObject
+  //  - js::ProxyObject
+  //
+  // While it is possible to introduce new families of objects, it is strongly
+  // discouraged. The JITs would be entirely unable to optimize them and testing
+  // coverage is low. The existing NativeObject and ProxyObject are extremely
+  // flexible and are able to represent the entire Gecko embedding requirements.
+  //
+  // NOTE: Internal to SpiderMonkey, there is an experimental js::TypedObject
+  //       object family for future WASM features.
+  bool isNativeObject() const { return !(flags & NON_NATIVE); }
+  bool isProxyObject() const { return flags & JSCLASS_IS_PROXY; }
 
   bool emulatesUndefined() const { return flags & JSCLASS_EMULATES_UNDEFINED; }
 
-  bool isJSFunction() const { return this == js::FunctionClassPtr; }
+  bool isJSFunction() const {
+    return this == js::FunctionClassPtr || this == js::FunctionExtendedClassPtr;
+  }
 
   bool nonProxyCallable() const {
-    MOZ_ASSERT(!isProxy());
+    MOZ_ASSERT(!isProxyObject());
     return isJSFunction() || getCall();
   }
 
   bool isGlobal() const { return flags & JSCLASS_IS_GLOBAL; }
-
-  bool isProxy() const { return flags & JSCLASS_IS_PROXY; }
 
   bool isDOMClass() const { return flags & JSCLASS_IS_DOMJSCLASS; }
 
@@ -828,6 +710,8 @@ struct alignas(js::gc::JSClassAlignBytes) JSClass {
   }
 
   bool isWrappedNative() const { return flags & JSCLASS_IS_WRAPPED_NATIVE; }
+
+  bool slot0IsISupports() const { return flags & JSCLASS_SLOT0_IS_NSISUPPORTS; }
 
   static size_t offsetOfFlags() { return offsetof(JSClass, flags); }
 
@@ -944,7 +828,7 @@ enum class ESClass {
 bool Unbox(JSContext* cx, JS::HandleObject obj, JS::MutableHandleValue vp);
 
 #ifdef DEBUG
-JS_FRIEND_API bool HasObjectMovedOp(JSObject* obj);
+JS_PUBLIC_API bool HasObjectMovedOp(JSObject* obj);
 #endif
 
 } /* namespace js */

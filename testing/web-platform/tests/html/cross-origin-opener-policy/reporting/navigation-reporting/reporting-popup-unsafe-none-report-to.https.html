@@ -4,9 +4,10 @@
 <script src=/resources/testharnessreport.js></script>
 <script src="/common/get-host-info.sub.js"></script>
 <script src="/common/utils.js"></script>
-<script src="../../resources/common.js"></script>
-<script src="../resources/dispatcher.js"></script>
-<script src="../resources/reporting-common.js"></script>
+<script src="/common/dispatcher/dispatcher.js"></script>
+<script src="/html/cross-origin-opener-policy/resources/common.js"></script>
+<script
+  src="/html/cross-origin-opener-policy/reporting/resources/reporting-common.js?pipe=sub&report_id=1f79b0d5-c2a2-4e0b-8e8c-651af2321964&report_only_id=c50700c8-db1e-4224-b06f-4c6a95a5f4be"></script>
 
 <script>
 
@@ -29,10 +30,9 @@ let tests = [
         "report": {
           "body": {
             "disposition": "enforce",
-            "document-uri": `${location.href}`,
-            "effective-policy": "unsafe-none",
-            "navigation-uri": /uuid=EXECUTOR_UUID$/, // next document URL
-            "violation-type": "navigation-from-document"
+            "effectivePolicy": "unsafe-none",
+            "nextResponseURL": /uuid=EXECUTOR_UUID$/, // next document URL
+            "type": "navigation-from-response"
           },
           "url": `${location.href}`,
           "type": "coop"
@@ -43,10 +43,10 @@ let tests = [
         "report": {
           "body": {
             "disposition": "enforce",
-            "document-uri": /uuid=EXECUTOR_UUID$/,
-            "effective-policy": "same-origin",
-            "navigation-uri": `${location.href}`, // previous document url
-            "violation-type": "navigation-to-document"
+            "effectivePolicy": "same-origin",
+            "previousResponseURL": `${location.href}`, // previous document url
+            "referrer": `${location.href}`, // referrer
+            "type": "navigation-to-response"
           },
           "url": /uuid=EXECUTOR_UUID$/,
           "type": "coop"
@@ -71,10 +71,9 @@ let tests = [
         "report": {
           "body": {
             "disposition": "enforce",
-            "document-uri": `${location.href}`,
-            "effective-policy": "unsafe-none",
-            "navigation-uri": /uuid=EXECUTOR_UUID$/, // next document URL
-            "violation-type": "navigation-from-document"
+            "effectivePolicy": "unsafe-none",
+            "nextResponseURL": /uuid=EXECUTOR_UUID$/, // next document URL
+            "type": "navigation-from-response"
           },
           "url": `${location.href}`,
           "type": "coop"
@@ -96,10 +95,9 @@ let tests = [
         "report": {
           "body": {
             "disposition": "enforce",
-            "document-uri": `${location.href}`,
-            "effective-policy": "unsafe-none",
-            "navigation-uri": /uuid=EXECUTOR_UUID$/, // initial navigation url
-            "violation-type": "navigation-from-document"
+            "effectivePolicy": "unsafe-none",
+            "nextResponseURL": /uuid=EXECUTOR_UUID$/, // next document URL
+            "type": "navigation-from-response"
           },
           "url": `${location.href}`,
           "type": "coop"
@@ -110,10 +108,10 @@ let tests = [
         "report": {
           "body": {
             "disposition": "enforce",
-            "document-uri": /uuid=EXECUTOR_UUID$/,
-            "effective-policy": "same-origin",
-            "navigation-uri": `${location.href}`, // referrer
-            "violation-type": "navigation-to-document"
+            "effectivePolicy": "same-origin",
+            "previousResponseURL": ``,
+            "referrer": `${location.origin}/`, // referrer
+            "type": "navigation-to-response"
           },
           "url": /uuid=EXECUTOR_UUID$/,
           "type": "coop"

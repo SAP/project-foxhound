@@ -10,12 +10,15 @@
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/ChromeUtilsBinding.h"
-#include "mozilla/ErrorResult.h"
+#include "mozilla/dom/Exceptions.h"
+#include "mozilla/dom/Record.h"
 #include "nsDOMNavigationTiming.h"  // for DOMHighResTimeStamp
 #include "nsIDOMProcessChild.h"
 #include "nsIDOMProcessParent.h"
 
 namespace mozilla {
+
+class ErrorResult;
 
 namespace devtools {
 class HeapSnapshot;
@@ -82,7 +85,7 @@ class ChromeUtils {
                             const nsAString& aMessage);
 
   static void AddProfilerMarker(GlobalObject& aGlobal, const nsACString& aName,
-                                const Optional<DOMHighResTimeStamp>& aStartTime,
+                                const ProfilerMarkerOptionsOrDouble& aOptions,
                                 const Optional<nsACString>& text);
 
   static void OriginAttributesToSuffix(
@@ -95,6 +98,10 @@ class ChromeUtils {
 
   static void CreateOriginAttributesFromOrigin(
       dom::GlobalObject& aGlobal, const nsAString& aOrigin,
+      dom::OriginAttributesDictionary& aAttrs, ErrorResult& aRv);
+
+  static void CreateOriginAttributesFromOriginSuffix(
+      dom::GlobalObject& aGlobal, const nsAString& aSuffix,
       dom::OriginAttributesDictionary& aAttrs, ErrorResult& aRv);
 
   static void FillNonDefaultOriginAttributes(
@@ -116,6 +123,16 @@ class ChromeUtils {
            aA.mUserContextId == aB.mUserContextId &&
            aA.mPrivateBrowsingId == aB.mPrivateBrowsingId;
   }
+
+  static void GetBaseDomainFromPartitionKey(dom::GlobalObject& aGlobal,
+                                            const nsAString& aPartitionKey,
+                                            nsAString& aBaseDomain,
+                                            ErrorResult& aRv);
+
+  static void GetPartitionKeyFromURL(dom::GlobalObject& aGlobal,
+                                     const nsAString& aURL,
+                                     nsAString& aPartitionKey,
+                                     ErrorResult& aRv);
 
   // Implemented in js/xpconnect/loader/ChromeScriptLoader.cpp
   static already_AddRefed<Promise> CompileScript(
@@ -148,6 +165,14 @@ class ChromeUtils {
                                   ErrorResult& aRv);
 
   static void ClearRecentJSDevError(GlobalObject& aGlobal);
+
+  static void ClearStyleSheetCacheByPrincipal(GlobalObject&,
+                                              nsIPrincipal* aForPrincipal);
+
+  static void ClearStyleSheetCacheByBaseDomain(GlobalObject& aGlobal,
+                                               const nsACString& aBaseDomain);
+
+  static void ClearStyleSheetCache(GlobalObject& aGlobal);
 
   static already_AddRefed<Promise> RequestPerformanceMetrics(
       GlobalObject& aGlobal, ErrorResult& aRv);
@@ -188,8 +213,6 @@ class ChromeUtils {
 
   static PopupBlockerState GetPopupControlState(GlobalObject& aGlobal);
 
-  static bool IsPopupTokenUnused(GlobalObject& aGlobal);
-
   static double LastExternalProtocolIframeAllowed(GlobalObject& aGlobal);
 
   static void ResetLastExternalProtocolIframeAllowed(GlobalObject& aGlobal);
@@ -216,22 +239,18 @@ class ChromeUtils {
   static void PrivateNoteIntentionalCrash(const GlobalObject& aGlobal,
                                           ErrorResult& aError);
 
-  static void GenerateMediaControlKey(const GlobalObject& aGlobal,
-                                      MediaControlKey aKey);
-
   static nsIDOMProcessChild* GetDomProcessChild(const GlobalObject&);
 
   static void GetAllDOMProcesses(
       GlobalObject& aGlobal, nsTArray<RefPtr<nsIDOMProcessParent>>& aParents,
       ErrorResult& aRv);
 
-  // This function would only be used for testing.
-  static void GetCurrentActiveMediaMetadata(const GlobalObject& aGlobal,
-                                            MediaMetadataInit& aMetadata);
+  static void ConsumeInteractionData(
+      GlobalObject& aGlobal, Record<nsString, InteractionData>& aInteractions,
+      ErrorResult& aRv);
 
-  // This function would only be used for testing.
-  static MediaSessionPlaybackTestState GetCurrentMediaSessionPlaybackState(
-      GlobalObject& aGlobal);
+  static already_AddRefed<Promise> CollectScrollingData(GlobalObject& aGlobal,
+                                                        ErrorResult& aRv);
 };
 
 }  // namespace dom

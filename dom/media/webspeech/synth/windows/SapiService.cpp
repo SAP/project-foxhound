@@ -7,13 +7,14 @@
 #include "nsISupports.h"
 #include "SapiService.h"
 #include "nsServiceManagerUtils.h"
-#include "GeckoProfiler.h"
 #include "nsEscape.h"
+#include "nsXULAppAPI.h"
 
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/nsSynthVoiceRegistry.h"
 #include "mozilla/dom/nsSpeechTask.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ProfilerLabels.h"
 #include "mozilla/StaticPrefs_media.h"
 
 namespace mozilla {
@@ -31,7 +32,7 @@ class SapiCallback final : public nsISpeechTaskCallback {
         mSpeakTextLen(aSpeakTextLen),
         mCurrentIndex(0),
         mStreamNum(0) {
-    mStartingTime = GetTickCount();
+    mStartingTime = TimeStamp::Now();
   }
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -47,6 +48,11 @@ class SapiCallback final : public nsISpeechTaskCallback {
  private:
   ~SapiCallback() {}
 
+  float GetTimeDurationFromStart() const {
+    TimeDuration duration = TimeStamp::Now() - mStartingTime;
+    return duration.ToSeconds();
+  }
+
   // This pointer is used to dispatch events
   nsCOMPtr<nsISpeechTask> mTask;
   RefPtr<ISpVoice> mSapiClient;
@@ -55,7 +61,7 @@ class SapiCallback final : public nsISpeechTaskCallback {
   uint32_t mSpeakTextLen;
 
   // Used for calculating the time taken to speak the utterance
-  double mStartingTime;
+  TimeStamp mStartingTime;
   uint32_t mCurrentIndex;
 
   ULONG mStreamNum;
@@ -81,7 +87,7 @@ SapiCallback::OnPause() {
     // from chrome process yet.
     return NS_ERROR_FAILURE;
   }
-  mTask->DispatchPause(GetTickCount() - mStartingTime, mCurrentIndex);
+  mTask->DispatchPause(GetTimeDurationFromStart(), mCurrentIndex);
   return NS_OK;
 }
 
@@ -95,7 +101,7 @@ SapiCallback::OnResume() {
     // from chrome process yet.
     return NS_ERROR_FAILURE;
   }
-  mTask->DispatchResume(GetTickCount() - mStartingTime, mCurrentIndex);
+  mTask->DispatchResume(GetTimeDurationFromStart(), mCurrentIndex);
   return NS_OK;
 }
 
@@ -126,23 +132,23 @@ void SapiCallback::OnSpeechEvent(const SPEVENT& speechEvent) {
       if (mSpeakTextLen) {
         mCurrentIndex = mSpeakTextLen;
       }
-      mTask->DispatchEnd(GetTickCount() - mStartingTime, mCurrentIndex);
+      mTask->DispatchEnd(GetTimeDurationFromStart(), mCurrentIndex);
       mTask = nullptr;
       break;
     case SPEI_TTS_BOOKMARK:
       mCurrentIndex = static_cast<ULONG>(speechEvent.lParam) - mTextOffset;
-      mTask->DispatchBoundary(u"mark"_ns, GetTickCount() - mStartingTime,
+      mTask->DispatchBoundary(u"mark"_ns, GetTimeDurationFromStart(),
                               mCurrentIndex, 0, 0);
       break;
     case SPEI_WORD_BOUNDARY:
       mCurrentIndex = static_cast<ULONG>(speechEvent.lParam) - mTextOffset;
-      mTask->DispatchBoundary(u"word"_ns, GetTickCount() - mStartingTime,
+      mTask->DispatchBoundary(u"word"_ns, GetTimeDurationFromStart(),
                               mCurrentIndex,
                               static_cast<ULONG>(speechEvent.wParam), 1);
       break;
     case SPEI_SENTENCE_BOUNDARY:
       mCurrentIndex = static_cast<ULONG>(speechEvent.lParam) - mTextOffset;
-      mTask->DispatchBoundary(u"sentence"_ns, GetTickCount() - mStartingTime,
+      mTask->DispatchBoundary(u"sentence"_ns, GetTimeDurationFromStart(),
                               mCurrentIndex,
                               static_cast<ULONG>(speechEvent.wParam), 1);
       break;
@@ -304,7 +310,7 @@ bool SapiService::RegisterVoices() {
       continue;
     }
 
-    mVoices.Put(uri, std::move(voiceToken));
+    mVoices.InsertOrUpdate(uri, std::move(voiceToken));
   }
 
   registry->NotifyVoicesChanged();

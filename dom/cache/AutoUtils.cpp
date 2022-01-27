@@ -17,7 +17,7 @@
 #include "mozilla/dom/cache/TypeUtils.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/ipc/PBackgroundParent.h"
-#include "nsCRT.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "nsHttp.h"
 
 using mozilla::Maybe;
@@ -46,9 +46,7 @@ void CleanupChild(Maybe<CacheReadStream>& aMaybeReadStream,
 
 }  // namespace
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 // --------------------------------------------
 
@@ -221,11 +219,8 @@ bool MatchInPutList(const InternalRequest& aRequest,
     // Assume the vary headers match until we find a conflict
     bool varyHeadersMatch = true;
 
-    char* rawBuffer = varyHeaders.BeginWriting();
-    char* token = nsCRT::strtok(rawBuffer, NS_HTTP_HEADER_SEPS, &rawBuffer);
-    for (; token;
-         token = nsCRT::strtok(rawBuffer, NS_HTTP_HEADER_SEPS, &rawBuffer)) {
-      nsDependentCString header(token);
+    for (const nsACString& header :
+         nsCCharSeparatedTokenizer(varyHeaders, NS_HTTP_HEADER_SEP).ToRange()) {
       MOZ_DIAGNOSTIC_ASSERT(!header.EqualsLiteral("*"),
                             "We should have already caught this in "
                             "TypeUtils::ToPCacheResponseWithoutBody()");
@@ -362,7 +357,8 @@ AutoParentOpResult::~AutoParentOpResult() {
       if (action == Forget || result.actorParent() == nullptr) {
         break;
       }
-      Unused << PCacheParent::Send__delete__(result.actorParent());
+
+      QM_WARNONLY_TRY(OkIf(PCacheParent::Send__delete__(result.actorParent())));
       break;
     }
     default:
@@ -371,7 +367,8 @@ AutoParentOpResult::~AutoParentOpResult() {
   }
 
   if (action == Delete && mStreamControl) {
-    Unused << PCacheStreamControlParent::Send__delete__(mStreamControl);
+    QM_WARNONLY_TRY(
+        OkIf(PCacheStreamControlParent::Send__delete__(mStreamControl)));
   }
 
   mStreamCleanupList.Clear();
@@ -511,6 +508,4 @@ void AutoParentOpResult::SerializeReadStream(const nsID& aId,
   MOZ_DIAGNOSTIC_ASSERT(!rv.Failed());
 }
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

@@ -59,6 +59,7 @@ name##_8bpc(void); \
 name##_16bpc(void)
 
 void checkasm_check_msac(void);
+void checkasm_check_refmvs(void);
 decl_check_bitfns(void checkasm_check_cdef);
 decl_check_bitfns(void checkasm_check_filmgrain);
 decl_check_bitfns(void checkasm_check_ipred);
@@ -86,8 +87,6 @@ int float_near_abs_eps_array(const float *a, const float *b, float eps,
 int float_near_abs_eps_array_ulp(const float *a, const float *b, float eps,
                                  unsigned max_ulp, int len);
 
-static void *func_ref, *func_new;
-
 #define BENCH_RUNS (1 << 12) /* Trade-off between accuracy and speed */
 
 /* Decide whether or not the specified function needs to be tested */
@@ -99,6 +98,7 @@ static void *func_ref, *func_new;
  * is optional. */
 #define declare_func(ret, ...)\
     declare_new(ret, __VA_ARGS__)\
+    void *func_ref, *func_new;\
     typedef ret func_type(__VA_ARGS__);\
     checkasm_save_context()
 
@@ -116,7 +116,7 @@ static void *func_ref, *func_new;
 
 #if HAVE_ASM
 #if ARCH_X86
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && !defined(__clang__)
 #include <intrin.h>
 #define readtime() (_mm_lfence(), __rdtsc())
 #else
@@ -127,6 +127,9 @@ static inline uint64_t readtime(void) {
 }
 #define readtime readtime
 #endif
+#elif (ARCH_AARCH64 || ARCH_ARM) && defined(__APPLE__)
+#include <mach/mach_time.h>
+#define readtime() mach_absolute_time()
 #elif ARCH_AARCH64
 #ifdef _MSC_VER
 #include <windows.h>
@@ -281,8 +284,8 @@ void checkasm_stack_clobber(uint64_t clobber, ...);
 #define bench_new(...)\
     do {\
         if (checkasm_bench_func()) {\
-            checkasm_set_signal_handler_state(1);\
             func_type *tfunc = func_new;\
+            checkasm_set_signal_handler_state(1);\
             uint64_t tsum = 0;\
             int tcount = 0;\
             for (int ti = 0; ti < BENCH_RUNS; ti++) {\
@@ -299,31 +302,48 @@ void checkasm_stack_clobber(uint64_t clobber, ...);
             }\
             checkasm_set_signal_handler_state(0);\
             checkasm_update_bench(tcount, tsum);\
+        } else {\
+            call_new(__VA_ARGS__);\
         }\
     } while (0)
 #else
 #define bench_new(...) do {} while (0)
 #endif
 
+
+#define PIXEL_RECT(name, w, h) \
+    ALIGN_STK_64(pixel, name##_buf, ((h)+32)*((w)+64) + 64,); \
+    ptrdiff_t name##_stride = sizeof(pixel)*((w)+64); \
+    (void)name##_stride; \
+    pixel *name = name##_buf + ((w)+64)*16 + 64
+
+#define CLEAR_PIXEL_RECT(name) \
+    memset(name##_buf, 0x99, sizeof(name##_buf)) \
+
 #define DECL_CHECKASM_CHECK_FUNC(type) \
 int checkasm_check_##type(const char *const file, const int line, \
                           const type *const buf1, const ptrdiff_t stride1, \
                           const type *const buf2, const ptrdiff_t stride2, \
-                          const int w, const int h, const char *const name)
+                          const int w, const int h, const char *const name, \
+                          const int align_w, const int align_h, \
+                          const int padding)
 
-DECL_CHECKASM_CHECK_FUNC(uint8_t);
-DECL_CHECKASM_CHECK_FUNC(uint16_t);
+DECL_CHECKASM_CHECK_FUNC(int8_t);
 DECL_CHECKASM_CHECK_FUNC(int16_t);
 DECL_CHECKASM_CHECK_FUNC(int32_t);
+DECL_CHECKASM_CHECK_FUNC(uint8_t);
+DECL_CHECKASM_CHECK_FUNC(uint16_t);
+DECL_CHECKASM_CHECK_FUNC(uint32_t);
 
+#define CONCAT(a,b) a ## b
 
-#define PASTE(a,b) a ## b
-#define CONCAT(a,b) PASTE(a,b)
-
-#define checkasm_check(prefix, ...) CONCAT(checkasm_check_, prefix)(__FILE__, __LINE__, __VA_ARGS__)
+#define checkasm_check2(prefix, ...) CONCAT(checkasm_check_, prefix)(__FILE__, __LINE__, __VA_ARGS__)
+#define checkasm_check(prefix, ...) checkasm_check2(prefix, __VA_ARGS__, 0, 0, 0)
 
 #ifdef BITDEPTH
 #define checkasm_check_pixel(...) checkasm_check(PIXEL_TYPE, __VA_ARGS__)
+#define checkasm_check_pixel_padded(...) checkasm_check2(PIXEL_TYPE, __VA_ARGS__, 1, 1, 8)
+#define checkasm_check_pixel_padded_align(...) checkasm_check2(PIXEL_TYPE, __VA_ARGS__, 8)
 #define checkasm_check_coef(...)  checkasm_check(COEF_TYPE,  __VA_ARGS__)
 #endif
 

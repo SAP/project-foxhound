@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 pa{
     AuxExemplarCharacters{"[\u200C\u200D ਃ \u0A02 \u0A01 {ਲ\u0A3C}]"}
     Ellipsis{
@@ -246,6 +247,14 @@ pa{
             }
         }
         minimalPairs{
+            case{
+                nominative{"ਅਧਿਆਪਕ ਨੇ {0} ਪੜ੍ਹਾਇਆ"}
+                oblique{"ਅਧਿਆਪਕ ਨੇ {0} ਤੱਕ ਪੜ੍ਹਾਇਆ"}
+            }
+            gender{
+                feminine{"ਇਹ ਕਿੰਨੀ {0} ਦਾ ਹੈ"}
+                masculine{"ਇਹ ਕਿੰਨੇ {0} ਦਾ ਹੈ"}
+            }
             ordinal{
                 other{"ਸਜੇ ਪਾਸੇ {0} ਮੋੜ ਲਵੋ"}
             }
@@ -257,7 +266,6 @@ pa{
         minimumGroupingDigits{"1"}
         native{"guru"}
     }
-    Version{"37"}
     calendar{
         buddhist{
             DateTimePatterns{
@@ -543,6 +551,16 @@ pa{
                 "{1}, {0}",
                 "{1}, {0}",
             }
+            DateTimeSkeletons{
+                "ahmmsszzzz",
+                "ahmmssz",
+                "ahmmss",
+                "ahmm",
+                "GyMMMMEEEEdd",
+                "GyMMMMd",
+                "GyMMMd",
+                "GGGGGyMMdd",
+            }
             availableFormats{
                 Bh{"h B"}
                 Bhm{"h:mm B"}
@@ -559,6 +577,7 @@ pa{
                 GyMMM{"MMM y G"}
                 GyMMMEd{"E, d MMM y G"}
                 GyMMMd{"d MMM,y G"}
+                GyMd{"d/M/GGGGG y"}
                 H{"HH"}
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
@@ -712,6 +731,16 @@ pa{
                 "{1}, {0}",
                 "{1}, {0}",
             }
+            DateTimeSkeletons{
+                "ahmmsszzzz",
+                "ahmmssz",
+                "ahmmss",
+                "ahmm",
+                "yMMMMEEEEd",
+                "yMMMMd",
+                "yMMMd",
+                "yyMd",
+            }
             appendItems{
                 Timezone{"{0} {1}"}
             }
@@ -731,6 +760,7 @@ pa{
                 GyMMM{"MMM, G y"}
                 GyMMMEd{"E d MMM, G y"}
                 GyMMMd{"d MMM y"}
+                GyMd{"d/M/GGGGG y"}
                 H{"HH"}
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
@@ -908,7 +938,7 @@ pa{
                     "ਸੰਨ",
                 }
                 abbreviated%variant{
-                    "ਈ. ਪੂ. ਸੰ.",
+                    "ਈ. ਪੂ.",
                     "ਈ. ਸੰ.",
                 }
                 narrow{
@@ -916,7 +946,7 @@ pa{
                     "ਸੰਨ",
                 }
                 narrow%variant{
-                    "ਈ.ਪੂ.ਸੰ.",
+                    "ਈ. ਪੂ.",
                     "ਈ.ਸੰ.",
                 }
                 wide{
@@ -2536,7 +2566,7 @@ pa{
     listPattern{
         or{
             2{"{0} ਜਾਂ {1}"}
-            end{"{0}, or {1}"}
+            end{"{0} ਜਾਂ {1}"}
             middle{"{0}, {1}"}
             start{"{0}, {1}"}
         }

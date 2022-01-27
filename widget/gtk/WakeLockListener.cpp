@@ -12,8 +12,9 @@
 #  include <dbus/dbus.h>
 #  include <dbus/dbus-glib-lowlevel.h>
 
+#  include "WidgetUtilsGtk.h"
+
 #  if defined(MOZ_X11)
-#    include "gfxPlatformGtk.h"
 #    include "prlink.h"
 #    include <gdk/gdk.h>
 #    include <gdk/gdkx.h>
@@ -28,6 +29,10 @@
 #  define FREEDESKTOP_SCREENSAVER_TARGET "org.freedesktop.ScreenSaver"
 #  define FREEDESKTOP_SCREENSAVER_OBJECT "/ScreenSaver"
 #  define FREEDESKTOP_SCREENSAVER_INTERFACE "org.freedesktop.ScreenSaver"
+
+#  define FREEDESKTOP_POWER_TARGET "org.freedesktop.PowerManagement"
+#  define FREEDESKTOP_POWER_OBJECT "/org/freedesktop/PowerManagement/Inhibit"
+#  define FREEDESKTOP_POWER_INTERFACE "org.freedesktop.PowerManagement.Inhibit"
 
 #  define SESSION_MANAGER_TARGET "org.gnome.SessionManager"
 #  define SESSION_MANAGER_OBJECT "/org/gnome/SessionManager"
@@ -46,8 +51,9 @@ StaticRefPtr<WakeLockListener> WakeLockListener::sSingleton;
     MOZ_LOG(gLinuxWakeLockLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
 static mozilla::LazyLogModule gLinuxWakeLockLog("LinuxWakeLock");
 
-enum DesktopEnvironment {
-  FreeDesktop,
+enum WakeLockDesktopEnvironment {
+  FreeDesktopScreensaver,
+  FreeDesktopPower,
   GNOME,
 #  if defined(MOZ_X11)
   XScreenSaver,
@@ -67,7 +73,7 @@ class WakeLockTopic {
 #  endif
         mTopic(NS_ConvertUTF16toUTF8(aTopic)),
         mConnection(aConnection),
-        mDesktopEnvironment(FreeDesktop),
+        mDesktopEnvironment(FreeDesktopScreensaver),
         mInhibitRequest(0),
         mShouldInhibit(false),
         mWaitingForReply(false) {
@@ -80,7 +86,8 @@ class WakeLockTopic {
   bool SendInhibit();
   bool SendUninhibit();
 
-  bool SendFreeDesktopInhibitMessage();
+  bool SendFreeDesktopPowerInhibitMessage();
+  bool SendFreeDesktopScreensaverInhibitMessage();
   bool SendGNOMEInhibitMessage();
   bool SendMessage(DBusMessage* aMessage);
 
@@ -103,7 +110,7 @@ class WakeLockTopic {
   nsCString mTopic;
   RefPtr<DBusConnection> mConnection;
 
-  DesktopEnvironment mDesktopEnvironment;
+  WakeLockDesktopEnvironment mDesktopEnvironment;
 
   uint32_t mInhibitRequest;
 
@@ -125,7 +132,25 @@ bool WakeLockTopic::SendMessage(DBusMessage* aMessage) {
   return true;
 }
 
-bool WakeLockTopic::SendFreeDesktopInhibitMessage() {
+bool WakeLockTopic::SendFreeDesktopPowerInhibitMessage() {
+  RefPtr<DBusMessage> message =
+      already_AddRefed<DBusMessage>(dbus_message_new_method_call(
+          FREEDESKTOP_POWER_TARGET, FREEDESKTOP_POWER_OBJECT,
+          FREEDESKTOP_POWER_INTERFACE, "Inhibit"));
+
+  if (!message) {
+    return false;
+  }
+
+  const char* app = g_get_prgname();
+  const char* topic = mTopic.get();
+  dbus_message_append_args(message, DBUS_TYPE_STRING, &app, DBUS_TYPE_STRING,
+                           &topic, DBUS_TYPE_INVALID);
+
+  return SendMessage(message);
+}
+
+bool WakeLockTopic::SendFreeDesktopScreensaverInhibitMessage() {
   RefPtr<DBusMessage> message =
       already_AddRefed<DBusMessage>(dbus_message_new_method_call(
           FREEDESKTOP_SCREENSAVER_TARGET, FREEDESKTOP_SCREENSAVER_OBJECT,
@@ -197,7 +222,7 @@ bool WakeLockTopic::CheckXScreenSaverSupport() {
   }
 
   GdkDisplay* gDisplay = gdk_display_get_default();
-  if (!gDisplay || !GDK_IS_X11_DISPLAY(gDisplay)) {
+  if (!GdkIsX11Display(gDisplay)) {
     return false;
   }
   Display* display = GDK_DISPLAY_XDISPLAY(gDisplay);
@@ -222,7 +247,7 @@ bool WakeLockTopic::InhibitXScreenSaver(bool inhibit) {
     return false;
   }
   GdkDisplay* gDisplay = gdk_display_get_default();
-  if (!gDisplay || !GDK_IS_X11_DISPLAY(gDisplay)) {
+  if (!GdkIsX11Display(gDisplay)) {
     return false;
   }
   Display* display = GDK_DISPLAY_XDISPLAY(gDisplay);
@@ -236,12 +261,12 @@ bool WakeLockTopic::InhibitXScreenSaver(bool inhibit) {
 
 /* static */
 bool WakeLockTopic::CheckWaylandIdleInhibitSupport() {
-  nsWaylandDisplay* waylandDisplay = WaylandDisplayGet();
+  RefPtr<nsWaylandDisplay> waylandDisplay = WaylandDisplayGet();
   return waylandDisplay && waylandDisplay->GetIdleInhibitManager() != nullptr;
 }
 
 bool WakeLockTopic::InhibitWaylandIdle() {
-  nsWaylandDisplay* waylandDisplay = WaylandDisplayGet();
+  RefPtr<nsWaylandDisplay> waylandDisplay = WaylandDisplayGet();
   if (!waylandDisplay) {
     return false;
   }
@@ -278,8 +303,11 @@ bool WakeLockTopic::SendInhibit() {
   bool sendOk = false;
 
   switch (mDesktopEnvironment) {
-    case FreeDesktop:
-      sendOk = SendFreeDesktopInhibitMessage();
+    case FreeDesktopScreensaver:
+      sendOk = SendFreeDesktopScreensaverInhibitMessage();
+      break;
+    case FreeDesktopPower:
+      sendOk = SendFreeDesktopPowerInhibitMessage();
       break;
     case GNOME:
       sendOk = SendGNOMEInhibitMessage();
@@ -306,10 +334,14 @@ bool WakeLockTopic::SendInhibit() {
 bool WakeLockTopic::SendUninhibit() {
   RefPtr<DBusMessage> message;
 
-  if (mDesktopEnvironment == FreeDesktop) {
+  if (mDesktopEnvironment == FreeDesktopScreensaver) {
     message = already_AddRefed<DBusMessage>(dbus_message_new_method_call(
         FREEDESKTOP_SCREENSAVER_TARGET, FREEDESKTOP_SCREENSAVER_OBJECT,
         FREEDESKTOP_SCREENSAVER_INTERFACE, "UnInhibit"));
+  } else if (mDesktopEnvironment == FreeDesktopPower) {
+    message = already_AddRefed<DBusMessage>(dbus_message_new_method_call(
+        FREEDESKTOP_POWER_TARGET, FREEDESKTOP_POWER_OBJECT,
+        FREEDESKTOP_POWER_INTERFACE, "UnInhibit"));
   } else if (mDesktopEnvironment == GNOME) {
     message = already_AddRefed<DBusMessage>(dbus_message_new_method_call(
         SESSION_MANAGER_TARGET, SESSION_MANAGER_OBJECT,
@@ -380,14 +412,18 @@ nsresult WakeLockTopic::UninhibitScreensaver() {
 void WakeLockTopic::InhibitFailed() {
   mWaitingForReply = false;
 
-  if (mDesktopEnvironment == FreeDesktop) {
+  if (mDesktopEnvironment == FreeDesktopScreensaver) {
     mDesktopEnvironment = GNOME;
+  } else if (mDesktopEnvironment == GNOME) {
+    mDesktopEnvironment = FreeDesktopPower;
 #  if defined(MOZ_X11)
-  } else if (mDesktopEnvironment == GNOME && CheckXScreenSaverSupport()) {
+  } else if (mDesktopEnvironment == FreeDesktopPower &&
+             CheckXScreenSaverSupport()) {
     mDesktopEnvironment = XScreenSaver;
 #  endif
 #  if defined(MOZ_WAYLAND)
-  } else if (mDesktopEnvironment == GNOME && CheckWaylandIdleInhibitSupport()) {
+  } else if (mDesktopEnvironment == FreeDesktopPower &&
+             CheckWaylandIdleInhibitSupport()) {
     mDesktopEnvironment = WaylandIdleInhibit;
 #  endif
   } else {
@@ -482,11 +518,8 @@ nsresult WakeLockListener::Callback(const nsAString& topic,
       !topic.Equals(u"video-playing"_ns))
     return NS_OK;
 
-  WakeLockTopic* topicLock = mTopics.Get(topic);
-  if (!topicLock) {
-    topicLock = new WakeLockTopic(topic, mConnection);
-    mTopics.Put(topic, topicLock);
-  }
+  WakeLockTopic* const topicLock =
+      mTopics.GetOrInsertNew(topic, topic, mConnection);
 
   // Treat "locked-background" the same as "unlocked" on desktop linux.
   bool shouldLock = state.EqualsLiteral("locked-foreground");

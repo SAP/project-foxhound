@@ -40,7 +40,6 @@ add_task(async function run_test() {
   ].createInstance(Ci.nsITransportSecurityInfo);
   let header = "max-age=50000";
   SSService.processHeader(
-    Ci.nsISiteSecurityService.HEADER_HSTS,
     Services.io.newURI("http://example.com"),
     header,
     secInfo,
@@ -65,8 +64,12 @@ add_task(async function run_test() {
   Services.prefs.setBoolPref(Sanitizer.PREF_SANITIZE_ON_SHUTDOWN, true);
 
   // Simulate shutdown.
-  Services.obs.notifyObservers(null, "profile-change-teardown");
-  Services.obs.notifyObservers(null, "profile-before-change");
+  Services.startup.advanceShutdownPhase(
+    Services.startup.SHUTDOWN_PHASE_APPSHUTDOWNTEARDOWN
+  );
+  Services.startup.advanceShutdownPhase(
+    Services.startup.SHUTDOWN_PHASE_APPSHUTDOWN
+  );
 
   equal(getStateFileContents(), "", "state file should be empty");
 });

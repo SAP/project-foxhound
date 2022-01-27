@@ -21,18 +21,19 @@ add_task(async function() {
   reload(dbg, "ember/quickstart/dist/");
 
   info("2. Wait for sources to appear and then reload");
-  await waitForDispatch(dbg, "ADD_SOURCES");
+  await waitForDispatch(dbg.store, "ADD_SOURCES");
   reload(dbg, "ember/quickstart/dist/");
 
   info("3. Wait for sources to appear and then reload mid source-maps");
-  await waitForDispatch(dbg, "ADD_SOURCES");
+  await waitForDispatch(dbg.store, "ADD_SOURCES");
   reload(dbg, "ember/quickstart/dist/");
 
   info(
     "4. wait for the debugger to pause and show that we're in the correct location"
   );
   await waitForPaused(dbg);
-  assertPausedLocation(dbg, "ember-application/index.js", 4);
+  const source = findSource(dbg, "ember-application/index.js");
+  assertPausedAtSourceAndLine(dbg, source.id, 4);
 });
 
 async function waitForBreakpoint(dbg, location) {

@@ -9,11 +9,6 @@ const { AboutProtectionsParent } = ChromeUtils.import(
 );
 const ABOUT_LOGINS_URL = "about:logins";
 
-let mockMonitorData = {
-  numBreaches: 2,
-  numBreachesResolved: 0,
-};
-
 add_task(async function testNoLoginsLockwiseCardUI() {
   let tab = await BrowserTestUtils.openNewForegroundTab({
     url: "about:protections",
@@ -33,13 +28,6 @@ add_task(async function testNoLoginsLockwiseCardUI() {
       return ContentTaskUtils.is_visible(lockwiseCard);
     }, "Lockwise card for user with no logins is visible.");
 
-    const lockwiseTitle = content.document.querySelector("#lockwise-title");
-    is(
-      lockwiseTitle.textContent,
-      "Never forget a password again",
-      "Correct lockwise title is shown"
-    );
-
     const lockwiseHowItWorks = content.document.querySelector(
       "#lockwise-how-it-works"
     );
@@ -48,14 +36,14 @@ add_task(async function testNoLoginsLockwiseCardUI() {
       "How it works link is hidden"
     );
 
-    const lockwiseHeaderString = content.document.querySelector(
+    const lockwiseHeaderContent = content.document.querySelector(
       "#lockwise-header-content span"
-    ).textContent;
-    ok(
-      lockwiseHeaderString.includes(
-        "Firefox Lockwise securely stores your passwords in your browser"
-      ),
-      "Correct lockwise header string is shown"
+    );
+    await content.document.l10n.translateElements([lockwiseHeaderContent]);
+    is(
+      lockwiseHeaderContent.dataset.l10nId,
+      "passwords-header-content",
+      "lockwiseHeaderContent contents should match l10n-id attribute set on the element"
     );
 
     const lockwiseScannedWrapper = content.document.querySelector(
@@ -64,14 +52,6 @@ add_task(async function testNoLoginsLockwiseCardUI() {
     ok(
       ContentTaskUtils.is_hidden(lockwiseScannedWrapper),
       "Lockwise scanned wrapper is hidden"
-    );
-
-    const lockwiseBodyContent = content.document.querySelector(
-      "#lockwise-body-content .no-logins"
-    );
-    ok(
-      ContentTaskUtils.is_visible(lockwiseBodyContent),
-      "Lockwise app content is visible"
     );
 
     const managePasswordsButton = content.document.querySelector(
@@ -123,10 +103,15 @@ add_task(async function testLockwiseCardUIWithLogins() {
     }, "Lockwise card for user with logins is visible");
 
     const lockwiseTitle = content.document.querySelector("#lockwise-title");
+    await content.document.l10n.translateElements([lockwiseTitle]);
+    await ContentTaskUtils.waitForCondition(
+      () => lockwiseTitle.textContent == "Manage your passwords",
+      "Waiting for Fluent to provide the title translation"
+    );
     is(
       lockwiseTitle.textContent,
-      "Password Management",
-      "Correct lockwise title is shown"
+      "Manage your passwords",
+      "Correct passwords title is shown"
     );
 
     const lockwiseHowItWorks = content.document.querySelector(
@@ -137,14 +122,14 @@ add_task(async function testLockwiseCardUIWithLogins() {
       "How it works link is visible"
     );
 
-    const lockwiseHeaderString = content.document.querySelector(
+    const lockwiseHeaderContent = content.document.querySelector(
       "#lockwise-header-content span"
-    ).textContent;
-    ok(
-      lockwiseHeaderString.includes(
-        "Securely store and sync your passwords to all your devices"
-      ),
-      "Correct lockwise header string is shown"
+    );
+    await content.document.l10n.translateElements([lockwiseHeaderContent]);
+    is(
+      lockwiseHeaderContent.dataset.l10nId,
+      "lockwise-header-content-logged-in",
+      "lockwiseHeaderContent contents should match l10n-id attribute set on the element"
     );
 
     const lockwiseScannedWrapper = content.document.querySelector(
@@ -162,14 +147,6 @@ add_task(async function testLockwiseCardUIWithLogins() {
       lockwiseScannedText,
       "1 password stored securely.",
       "Correct lockwise scanned text is shown"
-    );
-
-    const lockwiseBodyContent = content.document.querySelector(
-      "#lockwise-body-content .no-logins"
-    );
-    ok(
-      ContentTaskUtils.is_hidden(lockwiseBodyContent),
-      "Lockwise app content is hidden"
     );
 
     const savePasswordsButton = content.document.querySelector(
@@ -231,8 +208,9 @@ add_task(async function testLockwiseCardUIWithBreachedLogins() {
   Services.logins.addLogin(TEST_LOGIN1);
 
   info("Mock monitor data with a breached login to test the Lockwise UI");
-  mockMonitorData.potentiallyBreachedLogins = 1;
-  AboutProtectionsParent.setTestOverride(mockGetMonitorData(mockMonitorData));
+  AboutProtectionsParent.setTestOverride(
+    mockGetLoginDataWithSyncedDevices(false, 1)
+  );
   await reloadTab(tab);
 
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
@@ -254,8 +232,9 @@ add_task(async function testLockwiseCardUIWithBreachedLogins() {
   info(
     "Mock monitor data with more than one breached logins to test the Lockwise UI"
   );
-  mockMonitorData.potentiallyBreachedLogins = 2;
-  AboutProtectionsParent.setTestOverride(mockGetMonitorData(mockMonitorData));
+  AboutProtectionsParent.setTestOverride(
+    mockGetLoginDataWithSyncedDevices(false, 2)
+  );
   await reloadTab(tab);
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const lockwiseScannedText = content.document.querySelector(

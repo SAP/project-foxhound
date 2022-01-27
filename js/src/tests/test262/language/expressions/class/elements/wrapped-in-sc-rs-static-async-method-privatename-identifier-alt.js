@@ -1,4 +1,4 @@
-// |reftest| skip async -- class-static-methods-private is not supported
+// |reftest| async
 // This file was procedurally generated from the following sources:
 // - src/class-elements/rs-static-async-method-privatename-identifier-alt.case
 // - src/class-elements/productions/cls-expr-wrapped-in-sc.template

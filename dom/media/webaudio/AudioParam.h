@@ -23,7 +23,7 @@ class AudioParam final : public nsWrapperCache, public AudioParamTimeline {
   virtual ~AudioParam();
 
  public:
-  AudioParam(AudioNode* aNode, uint32_t aIndex, const char16_t* aName,
+  AudioParam(AudioNode* aNode, uint32_t aIndex, const nsAString& aName,
              float aDefaultValue,
              float aMinValue = std::numeric_limits<float>::lowest(),
              float aMaxValue = std::numeric_limits<float>::max());
@@ -59,14 +59,23 @@ class AudioParam final : public nsWrapperCache, public AudioParamTimeline {
     return this;
   }
 
-  void SetValue(float aValue) {
+  // Intended for use in AudioNode creation, when the setter should not throw.
+  void SetInitialValue(float aValue) {
+    MOZ_ASSERT(HasSimpleValue(), "Existing events unexpected");
     AudioTimelineEvent event(AudioTimelineEvent::SetValue, 0.0f, aValue);
 
-    ErrorResult rv;
-    if (!ValidateEvent(event, rv)) {
-      MOZ_ASSERT(false,
-                 "This should not happen, "
-                 "setting the value should always work");
+    DebugOnly<ErrorResult> rv;
+    MOZ_ASSERT(ValidateEvent(event, rv), "This event should be valid");
+
+    AudioParamTimeline::SetValue(aValue);
+
+    SendEventToEngine(event);
+  }
+
+  void SetValue(float aValue, ErrorResult& aRv) {
+    AudioTimelineEvent event(AudioTimelineEvent::SetValue, 0.0f, aValue);
+
+    if (!ValidateEvent(event, aRv)) {
       return;
     }
 
@@ -224,7 +233,7 @@ class AudioParam final : public nsWrapperCache, public AudioParamTimeline {
   // For every InputNode, there is a corresponding entry in mOutputParams of the
   // InputNode's mInputNode.
   nsTArray<AudioNode::InputNode> mInputNodes;
-  const char16_t* mName;
+  const nsString mName;
   // The input port used to connect the AudioParam's track to its node's track
   RefPtr<MediaInputPort> mNodeTrackPort;
   const uint32_t mIndex;

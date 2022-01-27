@@ -827,6 +827,25 @@ function getAbsoluteScrollOffsetsForNode(node) {
 }
 exports.getAbsoluteScrollOffsetsForNode = getAbsoluteScrollOffsetsForNode;
 
+function isIframe(node) {
+  return ChromeUtils.getClassName(node) == "HTMLIFrameElement";
+}
+
+/**
+ * Check if the provided node is representing a remote <browser> element.
+ *
+ * @param  {DOMNode} node
+ * @return {Boolean}
+ */
+function isRemoteBrowserElement(node) {
+  return (
+    ChromeUtils.getClassName(node) == "XULFrameElement" &&
+    !node.childNodes.length &&
+    node.getAttribute("remote") == "true"
+  );
+}
+exports.isRemoteBrowserElement = isRemoteBrowserElement;
+
 /**
  * Check if the provided node is representing a remote frame.
  *
@@ -839,14 +858,26 @@ exports.getAbsoluteScrollOffsetsForNode = getAbsoluteScrollOffsetsForNode;
  * @return {Boolean}
  */
 function isRemoteFrame(node) {
-  if (ChromeUtils.getClassName(node) == "HTMLIFrameElement") {
+  if (isIframe(node)) {
     return node.frameLoader?.isRemoteFrame;
   }
 
-  if (ChromeUtils.getClassName(node) == "XULFrameElement") {
-    return !node.childNodes.length && node.getAttribute("remote") == "true";
+  if (isRemoteBrowserElement(node)) {
+    return true;
   }
 
   return false;
 }
 exports.isRemoteFrame = isRemoteFrame;
+
+/**
+ * Check if the provided node is representing a frame that has its own dedicated child target.
+ *
+ * @param {BrowsingContextTargetActor} targetActor
+ * @param {DOMNode} node
+ * @returns {Boolean}
+ */
+function isFrameWithChildTarget(targetActor, node) {
+  return isRemoteFrame(node) || (isIframe(node) && targetActor.ignoreSubFrames);
+}
+exports.isFrameWithChildTarget = isFrameWithChildTarget;

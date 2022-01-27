@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8"/>
 <title>presentational hints</title>
-<link rel="help" href="https://mathml-refresh.github.io/mathml-core/#attributes-common-to-html-and-mathml-elements">
-<link rel="help" href="https://mathml-refresh.github.io/mathml-core/#css-styling">
-<link rel="help" href="https://mathml-refresh.github.io/mathml-core/#double-struck-mappings">
-<link rel="help" href="https://mathml-refresh.github.io/mathml-core/#legacy-mathml-style-attributes">
-<link rel="help" href="https://mathml-refresh.github.io/mathml-core/#new-text-transform-values">
-<link rel="help" href="https://mathml-refresh.github.io/mathml-core/#the-displaystyle-and-scriptlevel-attributes">
-<link rel="help" href="https://mathml-refresh.github.io/mathml-core/#the-mathvariant-attribute">
+<link rel="help" href="https://w3c.github.io/mathml-core/#attributes-common-to-html-and-mathml-elements">
+<link rel="help" href="https://w3c.github.io/mathml-core/#css-styling">
+<link rel="help" href="https://w3c.github.io/mathml-core/#double-struck-mappings">
+<link rel="help" href="https://w3c.github.io/mathml-core/#legacy-mathml-style-attributes">
+<link rel="help" href="https://w3c.github.io/mathml-core/#new-text-transform-values">
+<link rel="help" href="https://w3c.github.io/mathml-core/#the-displaystyle-and-scriptlevel-attributes">
+<link rel="help" href="https://w3c.github.io/mathml-core/#the-mathvariant-attribute">
 <link rel="match" href="presentational-hints-001-ref.html"/>
 <link rel="stylesheet" href="/fonts/ahem.css">
 <meta name="assert" content="Verify that local author style wins over presentation hints attributes">
@@ -56,7 +56,7 @@
     </math>
   </p>
   <p>displaystyle:
-    <math displaystyle="true" style="math-style: inline">
+    <math displaystyle="true" style="math-style: compact">
       <munder>
         <mo movablelimits="true">X</mo>
         <mo>X</mo>
@@ -65,7 +65,7 @@
   </p>
   <p>scriptlevel:
     <math>
-      <mtext scriptlevel="1" style="font-size: scriptlevel(0);">X</mtext>
+      <mtext scriptlevel="1" style="math-depth: 0;">X</mtext>
     </math>
   </p>
 </body>

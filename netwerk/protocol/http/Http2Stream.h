@@ -14,6 +14,8 @@
 #include "nsAHttpTransaction.h"
 #include "nsISupportsPriority.h"
 #include "SimpleBuffer.h"
+#include "nsISupportsImpl.h"
+#include "nsIURI.h"
 
 class nsIInputStream;
 class nsIOutputStream;
@@ -35,6 +37,7 @@ class Http2Stream : public nsAHttpSegmentReader,
  public:
   NS_DECL_NSAHTTPSEGMENTREADER
   NS_DECL_NSAHTTPSEGMENTWRITER
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(Http2Stream, override)
 
   enum stateType {
     IDLE,
@@ -159,9 +162,7 @@ class Http2Stream : public nsAHttpSegmentReader,
   // This is a no-op on pull streams. Pushed streams override this.
   virtual void SetPushComplete(){};
 
-  virtual ~Http2Stream();
-
-  Http2Session* Session() { return mSession; }
+  already_AddRefed<Http2Session> Session();
 
   [[nodiscard]] static nsresult MakeOriginURL(const nsACString& origin,
                                               nsCOMPtr<nsIURI>& url);
@@ -172,15 +173,16 @@ class Http2Stream : public nsAHttpSegmentReader,
 
   // Mirrors nsAHttpTransaction
   bool Do0RTT();
-  nsresult Finish0RTT(bool aRestart, bool aAlpnIgnored);
+  nsresult Finish0RTT(bool aRestart, bool aAlpnChanged);
 
   nsresult GetOriginAttributes(mozilla::OriginAttributes* oa);
 
-  virtual void TopLevelOuterContentWindowIdChanged(uint64_t windowId);
-  void TopLevelOuterContentWindowIdChangedInternal(
-      uint64_t windowId);  // For use by pushed streams only
+  virtual void TopBrowsingContextIdChanged(uint64_t id);
+  void TopBrowsingContextIdChangedInternal(
+      uint64_t id);  // For use by pushed streams only
 
  protected:
+  virtual ~Http2Stream();
   static void CreatePushHashKey(
       const nsCString& scheme, const nsCString& hostHeader,
       const mozilla::OriginAttributes& originAttributes, uint64_t serial,
@@ -198,12 +200,12 @@ class Http2Stream : public nsAHttpSegmentReader,
   uint32_t mStreamID;
 
   // The session that this stream is a subset of
-  Http2Session* mSession;
+  nsWeakPtr mSession;
 
   // These are temporary state variables to hold the argument to
   // Read/WriteSegments so it can be accessed by On(read/write)segment
   // further up the stack.
-  nsAHttpSegmentReader* mSegmentReader;
+  RefPtr<nsAHttpSegmentReader> mSegmentReader;
   nsAHttpSegmentWriter* mSegmentWriter;
 
   nsCString mOrigin;
@@ -241,9 +243,9 @@ class Http2Stream : public nsAHttpSegmentReader,
   // The underlying socket transport object is needed to propogate some events
   nsISocketTransport* mSocketTransport;
 
-  uint8_t mPriorityWeight;       // h2 weight
-  uint32_t mPriorityDependency;  // h2 stream id this one depends on
-  uint64_t mCurrentForegroundTabOuterContentWindowId;
+  uint8_t mPriorityWeight = 0;       // h2 weight
+  uint32_t mPriorityDependency = 0;  // h2 stream id this one depends on
+  uint64_t mCurrentTopBrowsingContextId;
   uint64_t mTransactionTabId;
 
  private:
@@ -324,7 +326,7 @@ class Http2Stream : public nsAHttpSegmentReader,
   // close by setting this to the max value.
   int64_t mRequestBodyLenRemaining;
 
-  uint32_t mPriority;  // geckoish weight
+  uint32_t mPriority = 0;  // geckoish weight
 
   // mClientReceiveWindow, mServerReceiveWindow, and mLocalUnacked are for flow
   // control. *window are signed because the race conditions in asynchronous

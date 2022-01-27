@@ -6,7 +6,7 @@ use criterion::Criterion;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
-use wasmparser::{DataKind, ElementKind, Parser, Payload, Validator};
+use wasmparser::{DataKind, ElementKind, Parser, Payload, Validator, WasmFeatures};
 
 /// A benchmark input.
 pub struct BenchmarkInput {
@@ -104,11 +104,6 @@ fn read_all_wasm(wasm: &[u8]) -> Result<()> {
                     }
                 }
             }
-            ModuleSection(s) => {
-                for item in s {
-                    item?;
-                }
-            }
             FunctionSection(s) => {
                 for item in s {
                     item?;
@@ -120,6 +115,11 @@ fn read_all_wasm(wasm: &[u8]) -> Result<()> {
                 }
             }
             MemorySection(s) => {
+                for item in s {
+                    item?;
+                }
+            }
+            EventSection(s) => {
                 for item in s {
                     item?;
                 }
@@ -174,8 +174,8 @@ fn read_all_wasm(wasm: &[u8]) -> Result<()> {
             | UnknownSection { .. }
             | CustomSection { .. }
             | CodeSectionStart { .. }
-            | ModuleCodeSectionStart { .. }
-            | ModuleCodeSectionEntry { .. }
+            | ModuleSectionStart { .. }
+            | ModuleSectionEntry { .. }
             | End => {}
         }
     }
@@ -206,13 +206,19 @@ fn it_works_benchmark(c: &mut Criterion) {
 fn validate_benchmark(c: &mut Criterion) {
     fn validator() -> Validator {
         let mut ret = Validator::new();
-        ret.wasm_reference_types(true)
-            .wasm_multi_value(true)
-            .wasm_simd(true)
-            .wasm_module_linking(true)
-            .wasm_bulk_memory(true)
-            .wasm_threads(true)
-            .wasm_tail_call(true);
+        ret.wasm_features(WasmFeatures {
+            reference_types: true,
+            multi_value: true,
+            simd: true,
+            exceptions: true,
+            module_linking: true,
+            bulk_memory: true,
+            threads: true,
+            tail_call: true,
+            multi_memory: true,
+            memory64: true,
+            deterministic_only: false,
+        });
         return ret;
     }
     let mut inputs = collect_benchmark_inputs();

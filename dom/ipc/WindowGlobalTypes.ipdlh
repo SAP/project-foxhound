@@ -4,13 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+include "mozilla/dom/PermissionMessageUtils.h";
 include "mozilla/ipc/TransportSecurityInfoUtils.h";
+include "mozilla/ipc/URIUtils.h";
 
 include NeckoChannelParams;
 include DOMTypes;
 
 using mozilla::dom::WindowContextInitializer from "mozilla/dom/WindowContext.h";
-using refcounted class nsITransportSecurityInfo from "nsITransportSecurityInfo.h";
+[RefCounted] using class nsITransportSecurityInfo from "nsITransportSecurityInfo.h";
 
 namespace mozilla {
 namespace dom {
@@ -22,9 +24,10 @@ struct WindowGlobalInit
 
   // Private fields only shared with the parent process.
   nsIPrincipal principal;
-  nsIPrincipal contentBlockingAllowListPrincipal;
+  nsIPrincipal storagePrincipal;
   nsIURI documentURI;
 
+  bool isInitialDocument;
   bool blockAllMixedContent;
   bool upgradeInsecureRequests;
   uint32_t sandboxFlags;

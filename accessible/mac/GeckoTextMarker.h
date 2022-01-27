@@ -9,98 +9,116 @@
 #ifndef _GeckoTextMarker_H_
 #define _GeckoTextMarker_H_
 
-typedef CFTypeRef AXTextMarkerRef;
-typedef CFTypeRef AXTextMarkerRangeRef;
+#include <ApplicationServices/ApplicationServices.h>
+#include <Foundation/Foundation.h>
+
+#include "HyperTextAccessibleWrap.h"
+#include "PlatformExtTypes.h"
+#include "SDKDeclarations.h"
 
 namespace mozilla {
 namespace a11y {
 
-class AccessibleOrProxy;
+class Accessible;
 class GeckoTextMarkerRange;
 
 class GeckoTextMarker final {
  public:
-  GeckoTextMarker(const AccessibleOrProxy& aContainer, int32_t aOffset)
+  GeckoTextMarker(Accessible* aContainer, int32_t aOffset)
       : mContainer(aContainer), mOffset(aOffset) {}
 
   GeckoTextMarker(const GeckoTextMarker& aPoint)
       : mContainer(aPoint.mContainer), mOffset(aPoint.mOffset) {}
 
-  GeckoTextMarker(AccessibleOrProxy aDoc, AXTextMarkerRef aTextMarker);
+  GeckoTextMarker(Accessible* aDoc, AXTextMarkerRef aTextMarker);
 
   GeckoTextMarker() : mContainer(nullptr), mOffset(0) {}
 
-  id CreateAXTextMarker();
+  static GeckoTextMarker MarkerFromIndex(Accessible* aRoot, int32_t aIndex);
 
-  // Mutate marker so that its offset references an actual character
-  // and not an embedded link. Or, if the offset is at the end of the
-  // container, mutate the marker to the end offset of an ancestor
-  // container that has following non-link text.
-  void NormalizeNext();
+  AXTextMarkerRef CreateAXTextMarker();
 
-  // Mutate the marker so that its offset is preceded by a non-link
-  // offset, If the marker's offset is at the begining of a container,
-  // mutate the marker to point to the top-most link offset in an ancestor.
-  void NormalizePrevious();
+  bool Next();
 
-  // Return true if offset is at the end of the container.
-  bool AtEnd() { return static_cast<uint32_t>(mOffset) >= CharacterCount(mContainer); }
+  bool Previous();
 
-  // Return a word range for the given offset.
-  GeckoTextMarkerRange WordRange();
+  // Return a range with the given type relative to this marker.
+  GeckoTextMarkerRange Range(EWhichRange aRangeType);
 
-  bool IsValid() const { return !mContainer.IsNull(); };
+  Accessible* Leaf();
+
+  bool IsValid() const { return !!mContainer; };
 
   bool operator<(const GeckoTextMarker& aPoint) const;
 
-  AccessibleOrProxy mContainer;
+  bool operator==(const GeckoTextMarker& aPoint) const {
+    return mContainer == aPoint.mContainer && mOffset == aPoint.mOffset;
+  }
+
+  Accessible* mContainer;
   int32_t mOffset;
 
- private:
-  uint32_t CharacterCount(const AccessibleOrProxy& aContainer);
+  HyperTextAccessibleWrap* ContainerAsHyperTextWrap() const {
+    return (mContainer && mContainer->IsLocal())
+               ? static_cast<HyperTextAccessibleWrap*>(
+                     mContainer->AsLocal()->AsHyperText())
+               : nullptr;
+  }
 
+ private:
   bool IsEditableRoot();
 };
 
 class GeckoTextMarkerRange final {
  public:
-  GeckoTextMarkerRange(const GeckoTextMarker& aStart, const GeckoTextMarker& aEnd)
+  GeckoTextMarkerRange(const GeckoTextMarker& aStart,
+                       const GeckoTextMarker& aEnd)
       : mStart(aStart), mEnd(aEnd) {}
 
-  GeckoTextMarkerRange(AccessibleOrProxy aDoc, AXTextMarkerRangeRef aTextMarkerRange);
+  GeckoTextMarkerRange() {}
 
-  id CreateAXTextMarkerRange();
+  GeckoTextMarkerRange(Accessible* aDoc, AXTextMarkerRangeRef aTextMarkerRange);
 
-  bool IsValid() const { return !mStart.mContainer.IsNull() && !mEnd.mContainer.IsNull(); };
+  explicit GeckoTextMarkerRange(Accessible* aAccessible);
+
+  AXTextMarkerRangeRef CreateAXTextMarkerRange();
+
+  bool IsValid() const { return !!mStart.mContainer && !!mEnd.mContainer; };
 
   /**
    * Return text enclosed by the range.
    */
   NSString* Text() const;
 
-  GeckoTextMarker mStart;
-  GeckoTextMarker mEnd;
-
- private:
-  int32_t StartOffset(const AccessibleOrProxy& aChild) const;
-
-  int32_t EndOffset(const AccessibleOrProxy& aChild) const;
-
-  int32_t LinkCount(const AccessibleOrProxy& aContainer) const;
-
-  AccessibleOrProxy LinkAt(const AccessibleOrProxy& aContainer, uint32_t aIndex) const;
-
-  void AppendTextTo(const AccessibleOrProxy& aContainer, nsAString& aText, uint32_t aStartOffset,
-                    uint32_t aEndOffset) const;
+  /**
+   * Return the attributed text enclosed by the range.
+   */
+  NSAttributedString* AttributedText() const;
 
   /**
-   * Text() method helper.
-   * @param  aText            [in,out] calculated text
-   * @param  aCurrent         [in] currently traversed node
-   * @param  aStartIntlOffset [in] start offset if current node is a text node
-   * @return                   true if calculation is not finished yet
+   * Return length of characters enclosed by the range.
    */
-  bool TextInternal(nsAString& aText, AccessibleOrProxy aCurrent, int32_t aStartIntlOffset) const;
+  int32_t Length() const;
+
+  /**
+   * Return screen bounds of range.
+   */
+  NSValue* Bounds() const;
+
+  /**
+   * Set the current range as the DOM selection.
+   */
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void Select() const;
+
+  /**
+   * Crops the range if it overlaps the given accessible element boundaries.
+   * Return true if successfully cropped. false if the range does not intersect
+   * with the container.
+   */
+  bool Crop(Accessible* aContainer);
+
+  GeckoTextMarker mStart;
+  GeckoTextMarker mEnd;
 };
 
 }  // namespace a11y

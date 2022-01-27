@@ -7,7 +7,6 @@
 #ifndef DOM_SVG_SVGFECONVOLVEMATRIXELEMENT_H_
 #define DOM_SVG_SVGFECONVOLVEMATRIXELEMENT_H_
 
-#include "DOMSVGAnimatedNumberList.h"
 #include "SVGAnimatedBoolean.h"
 #include "SVGAnimatedEnumeration.h"
 #include "SVGAnimatedInteger.h"
@@ -15,7 +14,7 @@
 #include "SVGAnimatedNumber.h"
 #include "SVGAnimatedNumberList.h"
 #include "SVGAnimatedString.h"
-#include "SVGFilters.h"
+#include "mozilla/dom/SVGFilters.h"
 
 nsresult NS_NewSVGFEConvolveMatrixElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -53,6 +52,8 @@ class SVGFEConvolveMatrixElement : public SVGFEConvolveMatrixElementBase {
   virtual void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) override;
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+
+  virtual nsresult BindToTree(BindContext& aCtx, nsINode& aParent) override;
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedString> In1();

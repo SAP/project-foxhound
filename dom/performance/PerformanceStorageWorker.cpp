@@ -5,12 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PerformanceStorageWorker.h"
+#include "Performance.h"
+#include "PerformanceResourceTiming.h"
+#include "PerformanceTiming.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerPrivate.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class PerformanceProxyData {
  public:
@@ -19,9 +21,11 @@ class PerformanceProxyData {
                        const nsAString& aEntryName)
       : mData(std::move(aData)),
         mInitiatorType(aInitiatorType),
-        mEntryName(aEntryName) {}
+        mEntryName(aEntryName) {
+    MOZ_RELEASE_ASSERT(mData);
+  }
 
-  UniquePtr<PerformanceTimingData> mData;
+  UniquePtr<PerformanceTimingData> mData;  // always non-null
   nsString mInitiatorType;
   nsString mEntryName;
 };
@@ -123,7 +127,7 @@ void PerformanceStorageWorker::ShutdownOnWorker() {
     return;
   }
 
-  MOZ_ASSERT(IsCurrentThreadRunningWorker());
+  MOZ_ASSERT(!NS_IsMainThread());
 
   mWorkerRef = nullptr;
 }
@@ -162,5 +166,4 @@ void PerformanceStorageWorker::AddEntryOnWorker(
   performance->InsertResourceEntry(performanceEntry);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

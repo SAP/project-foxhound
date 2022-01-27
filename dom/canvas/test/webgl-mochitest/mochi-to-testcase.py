@@ -5,9 +5,10 @@ import re
 
 assert len(sys.argv) == 2
 MOCHI_PATH = pathlib.Path(sys.argv[1])
-assert MOCHI_PATH.suffix == '.html'
+assert MOCHI_PATH.suffix == ".html"
 
-TEST_PATH = MOCHI_PATH.with_suffix('.solo.html')
+TEST_PATH = MOCHI_PATH.with_suffix(".solo.html")
+
 
 def read_local_file(include):
     inc_path = MOCHI_PATH.parent
@@ -16,10 +17,10 @@ def read_local_file(include):
     try:
         return file_path.read_bytes()
     except IOError:
-        return b''
+        return b""
 
 
-SIMPLETEST_REPLACEMENT = b'''
+SIMPLETEST_REPLACEMENT = b"""
 
 <script>
 // SimpleTest.js replacement
@@ -42,57 +43,73 @@ function todo(val, text) {
 }
 
 function addLoadEvent(func) {
-  window.addEventListener('load', func, false);
+  window.addEventListener('load', func);
 }
 
 SimpleTest = {
-  waitForExplicitFinish: function() {},
-  finish: function() {},
-  requestFlakyTimeout: function() {},
+  waitForExplicitFinish: () => {},
+  finish: () => {},
+  requestFlakyTimeout: () => {},
 };
 
 SpecialPowers = {
-  pushPrefEnv: function(env, func) {
-    console.log('SpecialPowers.pushPrefEnv: ' + JSON.stringify(env));
-    setTimeout(func, 0);
+  pushPrefEnv: async (env, callback = null) => {
+    console.log(`SpecialPowers.pushPrefEnv(${JSON.stringify(env)})`);
+    await new Promise(res => {
+        setTimeout(res, 0);
+    });
+    if (callback) {
+        await callback();
+    }
+  },
+  popPrefEnv: async (callback = null) => {
+    console.log('SpecialPowers.popPrefEnv()');
+    await new Promise(res => {
+        setTimeout(res, 0);
+    });
+    if (callback) {
+        await callback();
+    }
   },
 };
 </script>
 <div id='mochi-to-testcase-output'></div>
 
-'''
+"""
 
-INCLUDE_PATTERN = re.compile(b'<script\\s*src=[\'"](.*)\\.js[\'"]>\\s*</script>')
-CSS_PATTERN = re.compile(b'<link\\s*rel=[\'"]stylesheet[\'"]\\s*href=[\'"]([^=>]*)[\'"]>')
+INCLUDE_PATTERN = re.compile(b"<script\\s*src=['\"](.*)\\.js['\"]>\\s*</script>")
+CSS_PATTERN = re.compile(
+    b"<link\\s*rel=['\"]stylesheet['\"]\\s*href=['\"]([^=>]*)['\"]>"
+)
 
-with open(TEST_PATH, 'wb') as fout:
-    with open(MOCHI_PATH, 'rb') as fin:
+with open(TEST_PATH, "wb") as fout:
+    with open(MOCHI_PATH, "rb") as fin:
         for line in fin:
             skip_line = False
             for css in CSS_PATTERN.findall(line):
                 skip_line = True
-                print('Ignoring stylesheet: ' + css.decode())
+                print("Ignoring stylesheet: " + css.decode())
 
             for inc in INCLUDE_PATTERN.findall(line):
                 skip_line = True
-                if inc == b'/MochiKit/MochiKit':
+                if inc == b"/MochiKit/MochiKit":
                     continue
 
-                if inc == b'/tests/SimpleTest/SimpleTest':
-                    print('Injecting SimpleTest replacement')
-                    fout.write(SIMPLETEST_REPLACEMENT);
+                if inc == b"/tests/SimpleTest/SimpleTest":
+                    print("Injecting SimpleTest replacement")
+                    fout.write(SIMPLETEST_REPLACEMENT)
                     continue
 
-                inc_js = inc.decode() + '.js'
+                inc_js = inc.decode() + ".js"
                 inc_data = read_local_file(inc_js)
                 if not inc_data:
-                    print('Warning: Unknown JS file ignored: ' + inc_js)
+                    print("Warning: Unknown JS file ignored: " + inc_js)
                     continue
 
-                print('Injecting include: ' + inc_js)
-                fout.write(b'\n<script>\n// Imported from: ' + inc_js.encode() + b'\n');
-                fout.write(inc_data);
-                fout.write(b'\n</script>\n');
+                print("Injecting include: " + inc_js)
+                fout.write(b"\n<script>\n// Imported from: " + inc_js.encode() + b"\n")
+                fout.write(inc_data)
+                fout.write(b"\n</script>\n")
                 continue
 
             if skip_line:
@@ -100,4 +117,3 @@ with open(TEST_PATH, 'wb') as fout:
 
             fout.write(line)
             continue
-

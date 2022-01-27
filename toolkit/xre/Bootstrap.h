@@ -12,15 +12,24 @@
 #ifndef mozilla_Bootstrap_h
 #define mozilla_Bootstrap_h
 
+#include "mozilla/Maybe.h"
+#include "mozilla/ResultVariant.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/Variant.h"
 #include "nscore.h"
 #include "nsXULAppAPI.h"
 
 #ifdef MOZ_WIDGET_ANDROID
 #  include "jni.h"
 
+namespace mozilla {
+struct StaticXREAppData;
+}
+
 extern "C" NS_EXPORT void GeckoStart(JNIEnv* aEnv, char** argv, int argc,
-                                     const mozilla::StaticXREAppData& aAppData);
+                                     const mozilla::StaticXREAppData& aAppData,
+                                     bool xpcshell, const char* outFilePath);
 #endif
 
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
@@ -30,6 +39,8 @@ class BrokerServices;
 #endif
 
 namespace mozilla {
+
+struct StaticXREAppData;
 
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
 namespace sandboxing {
@@ -110,7 +121,8 @@ class Bootstrap {
 
 #ifdef MOZ_WIDGET_ANDROID
   virtual void GeckoStart(JNIEnv* aEnv, char** argv, int argc,
-                          const StaticXREAppData& aAppData) = 0;
+                          const StaticXREAppData& aAppData, bool xpcshell,
+                          const char* outFilePath) = 0;
 
   virtual void XRE_SetAndroidChildFds(JNIEnv* aEnv,
                                       const XRE_AndroidChildFds& fds) = 0;
@@ -137,8 +149,18 @@ enum class LibLoadingStrategy {
   ReadAhead,
 };
 
+#if defined(XP_WIN)
+using DLErrorType = unsigned long;  // (DWORD)
+#else
+using DLErrorType = UniqueFreePtr<char>;
+#endif
+
+using BootstrapError = Variant<nsresult, DLErrorType>;
+
+using BootstrapResult = ::mozilla::Result<Bootstrap::UniquePtr, BootstrapError>;
+
 /**
- * Creates and returns the singleton instnace of the bootstrap object.
+ * Creates and returns the singleton instance of the bootstrap object.
  * @param `b` is an outparam. We use a parameter and not a return value
  *        because MSVC doesn't let us return a c++ class from a function with
  *        "C" linkage. On failure this will be null.
@@ -146,14 +168,14 @@ enum class LibLoadingStrategy {
  */
 #ifdef XPCOM_GLUE
 typedef void (*GetBootstrapType)(Bootstrap::UniquePtr&);
-Bootstrap::UniquePtr GetBootstrap(
+BootstrapResult GetBootstrap(
     const char* aXPCOMFile = nullptr,
     LibLoadingStrategy aLibLoadingStrategy = LibLoadingStrategy::NoReadAhead);
 #else
 extern "C" NS_EXPORT void NS_FROZENCALL
 XRE_GetBootstrap(Bootstrap::UniquePtr& b);
 
-inline Bootstrap::UniquePtr GetBootstrap(const char* aXPCOMFile = nullptr) {
+inline BootstrapResult GetBootstrap(const char* aXPCOMFile = nullptr) {
   Bootstrap::UniquePtr bootstrap;
   XRE_GetBootstrap(bootstrap);
   return bootstrap;

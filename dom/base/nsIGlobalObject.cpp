@@ -6,6 +6,7 @@
 
 #include "nsIGlobalObject.h"
 #include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/StorageAccess.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/FunctionBinding.h"
 #include "mozilla/dom/Report.h"
@@ -42,7 +43,7 @@ nsIGlobalObject::nsIGlobalObject()
 
 bool nsIGlobalObject::IsScriptForbidden(JSObject* aCallback,
                                         bool aIsJSImplementedWebIDL) const {
-  if (mIsScriptForbidden) {
+  if (mIsScriptForbidden || mIsDying) {
     return true;
   }
 
@@ -88,10 +89,9 @@ namespace {
 
 class UnlinkHostObjectURIsRunnable final : public mozilla::Runnable {
  public:
-  explicit UnlinkHostObjectURIsRunnable(nsTArray<nsCString>& aURIs)
-      : mozilla::Runnable("UnlinkHostObjectURIsRunnable") {
-    mURIs.SwapElements(aURIs);
-  }
+  explicit UnlinkHostObjectURIsRunnable(nsTArray<nsCString>&& aURIs)
+      : mozilla::Runnable("UnlinkHostObjectURIsRunnable"),
+        mURIs(std::move(aURIs)) {}
 
   NS_IMETHOD Run() override {
     MOZ_ASSERT(NS_IsMainThread());
@@ -106,7 +106,7 @@ class UnlinkHostObjectURIsRunnable final : public mozilla::Runnable {
  private:
   ~UnlinkHostObjectURIsRunnable() = default;
 
-  nsTArray<nsCString> mURIs;
+  const nsTArray<nsCString> mURIs;
 };
 
 }  // namespace
@@ -122,7 +122,7 @@ void nsIGlobalObject::UnlinkObjectsInGlobal() {
       mHostObjectURIs.Clear();
     } else {
       RefPtr<UnlinkHostObjectURIsRunnable> runnable =
-          new UnlinkHostObjectURIsRunnable(mHostObjectURIs);
+          new UnlinkHostObjectURIsRunnable(std::move(mHostObjectURIs));
       MOZ_ASSERT(mHostObjectURIs.IsEmpty());
 
       nsresult rv = NS_DispatchToMainThread(runnable);
@@ -244,6 +244,10 @@ nsIGlobalObject::GetOrCreateServiceWorkerRegistration(
   return nullptr;
 }
 
+mozilla::StorageAccess nsIGlobalObject::GetStorageAccess() {
+  return mozilla::StorageAccess::eDeny;
+}
+
 nsPIDOMWindowInner* nsIGlobalObject::AsInnerWindow() {
   if (MOZ_LIKELY(mIsInnerWindow)) {
     return static_cast<nsPIDOMWindowInner*>(
@@ -343,4 +347,8 @@ void nsIGlobalObject::RemoveReportRecords() {
   for (auto& observer : mReportingObservers) {
     observer->ForgetReports();
   }
+}
+
+bool nsIGlobalObject::ShouldResistFingerprinting() const {
+  return nsContentUtils::ShouldResistFingerprinting();
 }

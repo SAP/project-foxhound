@@ -4,10 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/JSONWriter.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/EndpointForReportChild.h"
 #include "mozilla/dom/Fetch.h"
 #include "mozilla/dom/Navigator.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/ReportBody.h"
 #include "mozilla/dom/ReportDeliver.h"
 #include "mozilla/dom/Request.h"
 #include "mozilla/dom/RequestBinding.h"
@@ -95,10 +98,7 @@ struct StringWriteFunc final : public JSONWriteFunc {
       mBuffer;  // The lifetime of the struct must be bound to the buffer
   explicit StringWriteFunc(nsACString& aBuffer) : mBuffer(aBuffer) {}
 
-  void Write(const char* aStr) override { mBuffer.Append(aStr); }
-  void Write(const char* aStr, size_t aLen) override {
-    mBuffer.Append(aStr, aLen);
-  }
+  void Write(const Span<const char>& aStr) override { mBuffer.Append(aStr); }
 };
 
 class ReportJSONWriter final : public JSONWriter {
@@ -106,7 +106,8 @@ class ReportJSONWriter final : public JSONWriter {
   explicit ReportJSONWriter(nsACString& aOutput)
       : JSONWriter(MakeUnique<StringWriteFunc>(aOutput)) {}
 
-  void JSONProperty(const char* aProperty, const char* aJSON) {
+  void JSONProperty(const Span<const char>& aProperty,
+                    const Span<const char>& aJSON) {
     Separator();
     PropertyNameAndColon(aProperty);
     mWriter->Write(aJSON);
@@ -156,11 +157,12 @@ void SendReports(nsTArray<ReportDeliver::ReportData>& aReports,
     w.StartObjectElement();
     w.IntProperty("age",
                   (TimeStamp::Now() - report.mCreationTime).ToMilliseconds());
-    w.StringProperty("type", NS_ConvertUTF16toUTF8(report.mType).get());
-    w.StringProperty("url", NS_ConvertUTF16toUTF8(report.mURL).get());
-    w.StringProperty("user_agent",
-                     NS_ConvertUTF16toUTF8(report.mUserAgent).get());
-    w.JSONProperty("body", report.mReportBodyJSON.get());
+    w.StringProperty("type", NS_ConvertUTF16toUTF8(report.mType));
+    w.StringProperty("url", NS_ConvertUTF16toUTF8(report.mURL));
+    w.StringProperty("user_agent", NS_ConvertUTF16toUTF8(report.mUserAgent));
+    w.JSONProperty(MakeStringSpan("body"),
+                   Span<const char>(report.mReportBodyJSON.Data(),
+                                    report.mReportBodyJSON.Length()));
     w.EndObject();
   }
   w.EndArray();
@@ -219,8 +221,9 @@ void SendReports(nsTArray<ReportDeliver::ReportData>& aReports,
   RequestOrUSVString fetchInput;
   fetchInput.SetAsRequest() = request;
 
-  RefPtr<Promise> promise = FetchRequest(
-      globalObject, fetchInput, RequestInit(), CallerType::NonSystem, error);
+  RootedDictionary<RequestInit> requestInit(RootingCx());
+  RefPtr<Promise> promise = FetchRequest(globalObject, fetchInput, requestInit,
+                                         CallerType::NonSystem, error);
   if (error.Failed()) {
     for (auto& report : aReports) {
       ++report.mFailures;
@@ -339,8 +342,7 @@ NS_IMETHODIMP
 ReportDeliver::Notify(nsITimer* aTimer) {
   mTimer = nullptr;
 
-  nsTArray<ReportData> reports;
-  reports.SwapElements(mReportQueue);
+  nsTArray<ReportData> reports = std::move(mReportQueue);
 
   // group reports by endpoint and nsIPrincipal
   std::map<std::pair<nsCString, nsCOMPtr<nsIPrincipal>>, nsTArray<ReportData>>
@@ -366,6 +368,12 @@ ReportDeliver::Notify(nsITimer* aTimer) {
     SendReports(value, url, principal);
   }
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ReportDeliver::GetName(nsACString& aName) {
+  aName.AssignLiteral("ReportDeliver");
   return NS_OK;
 }
 
@@ -398,6 +406,7 @@ NS_INTERFACE_MAP_BEGIN(ReportDeliver)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIObserver)
   NS_INTERFACE_MAP_ENTRY(nsIObserver)
   NS_INTERFACE_MAP_ENTRY(nsITimerCallback)
+  NS_INTERFACE_MAP_ENTRY(nsINamed)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_ADDREF(ReportDeliver)

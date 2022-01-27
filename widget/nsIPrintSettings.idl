@@ -9,26 +9,30 @@
 %{ C++
 #include "nsMargin.h"
 #include "nsTArray.h"
+
+namespace mozilla {
+struct PrintSettingsInitializer;
+}
 %}
 
 /**
  * Native types
  */
+native nsNativeIntMargin(nsIntMargin);
 [ref] native nsNativeIntMarginRef(nsIntMargin);
-[ref] native IntegerArray(nsTArray<int32_t>);
 
 interface nsIPrintSession;
 
 /**
  * Simplified graphics interface for JS rendering.
  */
-[scriptable, uuid(ecc5cbad-57fc-4731-b0bd-09e865bd62ad)]
+[scriptable, builtinclass, uuid(ecc5cbad-57fc-4731-b0bd-09e865bd62ad)]
 interface nsIPrintSettings : nsISupports
 {
   /**
    * PrintSettings to be Saved Navigation Constants
    */
-  const unsigned long kInitSaveOddEvenPages   = 0x00000001;
+  /* Flag 0x00000001 is unused */
   const unsigned long kInitSaveHeaderLeft     = 0x00000002;
   const unsigned long kInitSaveHeaderCenter   = 0x00000004;
   const unsigned long kInitSaveHeaderRight    = 0x00000008;
@@ -41,7 +45,7 @@ interface nsIPrintSettings : nsISupports
   const unsigned long kInitSaveResolution     = 0x00000400;
   const unsigned long kInitSaveDuplex         = 0x00000800;
   /* Flag 0x00001000 is unused */
-  const unsigned long kInitSavePaperData      = 0x00002000;
+  /* Flag 0x00002000 is unused */
   const unsigned long kInitSaveUnwriteableMargins = 0x00004000;
   const unsigned long kInitSaveEdges          = 0x00008000;
 
@@ -61,15 +65,13 @@ interface nsIPrintSettings : nsISupports
 
   const unsigned long kInitSaveAll            = 0xFFFFFFFF;
 
-  /* Print Option Flags for Bit Field*/
-  const long kPrintOddPages     = 0x00000001;
-  const long kPrintEvenPages    = 0x00000002;
-  const long kEnableSelectionRB = 0x00000004;
-
-  /* Print Range Enums */
-  const long kRangeAllPages           = 0;
-  const long kRangeSpecifiedPageRange = 1;
-  const long kRangeSelection          = 2;
+  // These settings should be read from global prefs. Other settings should be
+  // read only from printer-specific prefs.
+  const unsigned long kGlobalSettings =
+      kInitSaveHeaderLeft | kInitSaveHeaderCenter | kInitSaveHeaderRight |
+      kInitSaveFooterLeft | kInitSaveFooterCenter | kInitSaveFooterRight |
+      kInitSaveEdges | kInitSaveReversed | kInitSaveInColor |
+      kInitSaveBGColors | kInitSaveBGImages | kInitSaveShrinkToFit;
 
   /* Justification Enums */
   const long kJustLeft   = 0;
@@ -96,24 +98,62 @@ interface nsIPrintSettings : nsISupports
   const short kOutputFormatPDF    = 2;
 
   /**
-   * Set PrintOptions
+   * Duplex printing options.
+   *
+   * Note that other libraries refer to equivalent duplex settings using
+   * various sets of terminology. This can be confusing and inconsistent both
+   * with other libraries, and with the behavior that these terms intend to describe.
+   *
+   * kDuplexNone is equivalent to Simplex. Thankfully, both of these terms are
+   * consistent with the behavior that they describe, which is to have single-sided
+   * printing per sheet.
+   *
+   * kDuplexFlipOnLongEdge is equivalent to the following platform-specific constants:
+   *   CUPS/macOS: NoTumble
+   *      Windows: DMDUP_VERTICAL
+   *          GTK: GTK_PRINT_DUPLEX_HORIZONTAL
+   *
+   * kDuplexFlipOnShortEdge is equivalent to the following platform-specific constants:
+   *   CUPS/macOS: Tumble
+   *      Windows: DMDUP_HORIZONTAL
+   *          GTK: GTK_PRINT_DUPLEX_VERTICAL
+   *
+   *
+   * Notice that the GTK and Windows constants have opposite meanings for
+   * VERTICAL and HORIZONTAL.
+   *
+   * To make matters more confusing, these platform-specific terms describe different
+   * behavior (from the user's perspective) depending on whether the sheet is in
+   * portrait vs. landscape orientation.
+   *
+   * For example, the generic term "tumble" describes behavior where a sheet flips over
+   * a binding on the top edge (like a calendar). This requires that the back side of
+   * the sheet is printed upside down with respect to the front side of the sheet,
+   * so that its content appears upright to the reader when they tumble-flip the
+   * sheet over the top-edge binding.
+   *
+   * However, the CUPS/macOS Tumble setting only inverts the back side of the
+   * sheet in portrait orientation. When you switch to landscape orientation, the
+   * Tumble setting behaves like a book-like sheet flip, where the front and back
+   * sides of the sheet are both printed upright with respect to each other.
+   *
+   * This is why it is more consistent and more clear to think of these terms
+   * with regard to sheets being bound on the long edge or the short edge.
+   *
+   * kDuplexFlipOnLongEdge  + Portrait  =     book-like flip (front/back same direction)
+   * kDuplexFlipOnLongEdge  + Landscape = calendar-like flip (front/back inverted)
+   *
+   * kDuplexFlipOnShortEdge + Portrait  = calendar-like flip (front/back inverted)
+   * kDuplexFlipOnShortEdge + Landscape =     book-like flip (front/back same direction)
+   *
+   * The long-edge and short-edge terminology unfortunately breaks down when printing
+   * with square sheet dimensions. Thankfully this edge case (hah) is quite uncommon,
+   * since most standard printing paper dimensions are not square. Such a paper size
+   * would even break the uniformly used portrait and landscape terminology.
    */
-  void SetPrintOptions(in int32_t aType, in boolean aTurnOnOff);
-
-  /**
-   * Get PrintOptions
-   */
-  boolean GetPrintOptions(in int32_t aType);
-
-  /**
-   * Get PrintOptions Bit field
-   */
-  int32_t GetPrintOptionsBits();
-
-  /**
-   * Set PrintOptions Bit field
-   */
-  void SetPrintOptionsBits(in int32_t bits);
+  const short kDuplexNone = 0;
+  const short kDuplexFlipOnLongEdge = 1;
+  const short kDuplexFlipOnShortEdge = 2;
 
   /**
    * Get the page size in twips, considering the
@@ -122,27 +162,67 @@ interface nsIPrintSettings : nsISupports
   void GetEffectivePageSize(out double aWidth, out double aHeight);
 
   /**
+   * Get the printed sheet size in twips, considering both the user-specified
+   * orientation (portrait or landscape) *as well as* the fact that we might be
+   * inverting the orientation to account for 2 or 6 pages-per-sheet.
+   *
+   * This API will usually behave the same (& return the same thing) as
+   * GetEffectivePageSize, *except for* when we are printing with 2 or 6
+   * pages-per-sheet, in which case the return values (aWidth & aHeight) will
+   * be swapped with respect to what GetEffectivePageSize would return.
+   *
+   * Callers should use this method rather than GetEffectivePageSize when they
+   * really do want the size of the sheet of paper to be printed, rather than
+   * the possibly-"virtualized"-via-pages-per-sheet page size.
+   */
+  [noscript, notxpcom, nostdcall] void GetEffectiveSheetSize(out double aWidth,
+                                                             out double aHeight);
+
+  /**
+   * Get the orientation of a printed sheet. This is usually the same as the
+   * 'orientation' attribute (which is the orientation of individual pages),
+   * except when we're printing with 2 or 6 pages-per-sheet, in which case
+   * it'll be the opposite value.
+   *
+   * Note that this value is not independently settable. Its value is fully
+   * determined by the 'orientation' and 'numPagesPerSheet' attributes.
+   */
+  [noscript, notxpcom, nostdcall] long GetSheetOrientation();
+
+  /**
+   * Convenience getter, which returns true IFF the sheet orientation and the
+   * page orientation are orthogonal. (In other words, returns true IFF we
+   * are printing with 2 or 6 pages-per-sheet.)
+   */
+  [noscript, notxpcom, nostdcall] bool HasOrthogonalSheetsAndPages();
+
+  /**
    * Makes a new copy
    */
-    nsIPrintSettings clone();
+  nsIPrintSettings clone();
 
   /**
    * Assigns the internal values from the "in" arg to the current object
    */
-    void assign(in nsIPrintSettings aPS);
+  void assign(in nsIPrintSettings aPS);
+
+  /**
+   * Returns true if the settings will result in an equivalent preview and
+   * therefore print. The printer name is ignored and it allows for a small
+   * delta in sizes to allow for rounding differences.
+   */
+  bool equivalentTo(in nsIPrintSettings aPrintSettings);
 
   /**
    * Data Members
    */
   [noscript] attribute nsIPrintSession printSession; /* We hold a weak reference */
 
-  attribute long    startPageRange;
-  attribute long    endPageRange;
-
   /**
    * The edge measurements define the positioning of the headers
-   * and footers on the page. They're measured as an offset from
-   * the "unwriteable margin" (described below).
+   * and footers on the page. They're treated as an offset from the edges of
+   * the page, but are forced to be at least the "unwriteable margin"
+   * (described below).
    */
   attribute double  edgeTop;     /*  these are in inches */
   attribute double  edgeLeft;
@@ -151,7 +231,8 @@ interface nsIPrintSettings : nsISupports
 
   /**
    * The margins define the positioning of the content on the page.
-   * They're treated as an offset from the "unwriteable margin"
+   * and footers on the page. They're treated as an offset from the edges of
+   * the page, but are forced to be at least the "unwriteable margin"
    * (described below).
    */
   attribute double  marginTop;     /*  these are in inches */
@@ -159,8 +240,7 @@ interface nsIPrintSettings : nsISupports
   attribute double  marginBottom;
   attribute double  marginRight;
   /**
-   * The unwriteable margin defines the printable region of the paper, creating
-   * an invisible border from which the edge and margin attributes are measured.
+   * The unwriteable margin defines the printable region of the paper.
    */
   attribute double  unwriteableMarginTop;     /*  these are in inches */
   attribute double  unwriteableMarginLeft;
@@ -168,10 +248,21 @@ interface nsIPrintSettings : nsISupports
   attribute double  unwriteableMarginRight;
 
   attribute double  scaling;      /* values 0.0 - 1.0 */
-  attribute boolean printBGColors; /* Print Background Colors */
-  attribute boolean printBGImages; /* Print Background Images */
+  [infallible] attribute boolean printBGColors; /* Print Background Colors */
+  [infallible] attribute boolean printBGImages; /* Print Background Images */
 
-  attribute short   printRange;
+  /** Whether @page rule margins should be honored or not. */
+  [infallible] attribute boolean honorPageRuleMargins;
+
+  /** Whether to draw guidelines showing the margin settings */
+  [infallible] attribute boolean showMarginGuides;
+
+  /** Whether whether the "print selection" radio button should be enabled
+   *  in the UI (i.e. whether there is an active selection) */
+  [infallible] attribute boolean isPrintSelectionRBEnabled;
+
+  /** Whether to only print the selected nodes */
+  [infallible] attribute boolean printSelectionOnly;
 
   attribute AString title;
   attribute AString docURL;
@@ -187,21 +278,27 @@ interface nsIPrintSettings : nsISupports
   attribute boolean isCancelled;         /* indicates whether the print job has been cancelled */
   readonly attribute boolean saveOnCancel;        /* indicates whether the print settings should be saved after a cancel */
   attribute boolean printSilent;         /* print without putting up the dialog */
-  attribute boolean shrinkToFit;         /* shrinks content to fit on page      */
+  [infallible] attribute boolean shrinkToFit; /* shrinks content to fit on page */
   attribute boolean showPrintProgress;   /* indicates whether the progress dialog should be shown */
-  attribute boolean showMarginGuides;    /* whether to draw guidelines showing the margin settings */
 
   /* Additional XP Related */
-  attribute AString paperName;     /* name of paper */
-  attribute short   paperData;     /* native data value */
+  attribute AString paperId;       /* identifier of paper (not display name) */
   attribute double  paperWidth;    /* width of the paper in inches or mm */
   attribute double  paperHeight;   /* height of the paper in inches or mm */
   attribute short   paperSizeUnit; /* paper is in inches or mm */
 
   attribute boolean printReversed;
-  attribute boolean printInColor;  /* a false means grayscale */
+  [infallible] attribute boolean printInColor;  /* a false means grayscale */
   attribute long    orientation;   /*  see orientation consts */
   attribute long    numCopies;
+
+  /**
+   * For numPagesPerSheet, we support these values: 1, 2, 4, 6, 9, 16.
+   *
+   * Unsupported values will be treated internally as 1 page per sheet, and
+   * will trigger assertion failures in debug builds.
+   */
+  attribute long    numPagesPerSheet;
 
   attribute AString printerName;   /* name of destination printer */
 
@@ -236,9 +333,8 @@ interface nsIPrintSettings : nsISupports
   /* C++ Helper Functions */
   [noscript] void SetMarginInTwips(in nsNativeIntMarginRef aMargin);
   [noscript] void SetEdgeInTwips(in nsNativeIntMarginRef aEdge);
-  /* Purposely made this an "in" arg */
-  [noscript] void GetMarginInTwips(in nsNativeIntMarginRef aMargin);
-  [noscript] void GetEdgeInTwips(in nsNativeIntMarginRef aEdge);
+  [noscript, notxpcom, nostdcall] nsNativeIntMargin GetMarginInTwips();
+  [noscript, notxpcom, nostdcall] nsNativeIntMargin GetEdgeInTwips();
 
   /**
    * We call this function so that anything that requires a run of the event loop
@@ -260,7 +356,7 @@ interface nsIPrintSettings : nsISupports
    * that margin.
    */
   [noscript] void SetUnwriteableMarginInTwips(in nsNativeIntMarginRef aEdge);
-  [noscript] void GetUnwriteableMarginInTwips(in nsNativeIntMarginRef aEdge);
+  [noscript, notxpcom, nostdcall] nsNativeIntMargin GetUnwriteableMarginInTwips();
 
   /**
    * Get more accurate print ranges from the superior interval
@@ -269,7 +365,20 @@ interface nsIPrintSettings : nsISupports
    * ranges (start, end), must not overlap and must be in the
    * (startPageRange, endPageRange) scope.
    *
-   * If there are no print ranges the aPages array is cleared.
+   * If there are no print ranges the aPages array is empty.
    */
-  [noscript] void GetPageRanges(in IntegerArray aPages);
+  attribute Array<long> pageRanges;
+
+%{C++
+  /**
+   * Get a PrintSettingsInitializer populated with the relevant current settings.
+   */
+  virtual mozilla::PrintSettingsInitializer GetSettingsInitializer() = 0;
+
+  static bool IsPageSkipped(int32_t aPageNum, const nsTArray<int32_t>& aRanges);
+%}
 };
+
+%{ C++
+already_AddRefed<nsIPrintSettings> CreatePlatformPrintSettings(const mozilla::PrintSettingsInitializer&);
+%}

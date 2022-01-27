@@ -12,27 +12,20 @@ use serde_json::json;
 use glean_core::metrics::*;
 use glean_core::storage::StorageManager;
 use glean_core::{test_get_num_recorded_errors, ErrorType};
-use glean_core::{CommonMetricData, Glean, Lifetime};
+use glean_core::{CommonMetricData, Lifetime};
 
 // Tests ported from glean-ac
 
 #[test]
 fn serializer_should_correctly_serialize_timing_distribution() {
-    let (_t, tmpname) = tempdir();
+    let (mut tempdir, _) = tempdir();
 
     let duration = 60;
     let time_unit = TimeUnit::Nanosecond;
 
-    let cfg = glean_core::Configuration {
-        data_path: tmpname,
-        application_id: GLOBAL_APPLICATION_ID.into(),
-        upload_enabled: true,
-        max_events: None,
-        delay_ping_lifetime_io: false,
-    };
-
     {
-        let glean = Glean::new(cfg.clone()).unwrap();
+        let (glean, dir) = new_glean(Some(tempdir));
+        tempdir = dir;
 
         let mut metric = TimingDistributionMetric::new(
             CommonMetricData {
@@ -59,7 +52,7 @@ fn serializer_should_correctly_serialize_timing_distribution() {
     // Make a new Glean instance here, which should force reloading of the data from disk
     // so we can ensure it persisted, because it has User lifetime
     {
-        let glean = Glean::new(cfg).unwrap();
+        let (glean, _) = new_glean(Some(tempdir));
         let snapshot = StorageManager
             .snapshot_as_json(glean.storage(), "store1", true)
             .unwrap();
@@ -339,5 +332,105 @@ fn stopping_non_existing_id_records_an_error() {
             ErrorType::InvalidState,
             Some("store1")
         )
+    );
+}
+
+#[test]
+fn the_accumulate_raw_samples_api_correctly_stores_timing_values() {
+    let (glean, _t) = new_glean(None);
+
+    let mut metric = TimingDistributionMetric::new(
+        CommonMetricData {
+            name: "distribution".into(),
+            category: "telemetry".into(),
+            send_in_pings: vec!["store1".into()],
+            disabled: false,
+            lifetime: Lifetime::Ping,
+            ..Default::default()
+        },
+        TimeUnit::Second,
+    );
+
+    let seconds_to_nanos = 1000 * 1000 * 1000;
+    metric.accumulate_raw_samples_nanos(
+        &glean,
+        &[seconds_to_nanos, 2 * seconds_to_nanos, 3 * seconds_to_nanos].to_vec(),
+    );
+
+    let snapshot = metric
+        .test_get_value(&glean, "store1")
+        .expect("Value should be stored");
+
+    // Check that we got the right sum and number of samples.
+    assert_eq!(snapshot.sum, 6 * seconds_to_nanos);
+
+    // We should get a sample in 3 buckets.
+    // These numbers are a bit magic, but they correspond to
+    // `hist.sample_to_bucket_minimum(i * seconds_to_nanos)` for `i = 1..=3`.
+    assert_eq!(1, snapshot.values[&984_625_593]);
+    assert_eq!(1, snapshot.values[&1_969_251_187]);
+    assert_eq!(1, snapshot.values[&2_784_941_737]);
+
+    // No errors should be reported.
+    assert!(test_get_num_recorded_errors(
+        &glean,
+        metric.meta(),
+        ErrorType::InvalidValue,
+        Some("store1")
+    )
+    .is_err());
+}
+
+#[test]
+fn raw_samples_api_error_cases() {
+    let (glean, _t) = new_glean(None);
+
+    let mut metric = TimingDistributionMetric::new(
+        CommonMetricData {
+            name: "distribution".into(),
+            category: "telemetry".into(),
+            send_in_pings: vec!["store1".into()],
+            disabled: false,
+            lifetime: Lifetime::Ping,
+            ..Default::default()
+        },
+        TimeUnit::Nanosecond,
+    );
+
+    // 10minutes in nanoseconds
+    let max_sample_time = 1000 * 1000 * 1000 * 60 * 10;
+
+    metric.accumulate_raw_samples_nanos(
+        &glean,
+        &[
+            0,                   /* rounded up to 1 */
+            1,                   /* valid */
+            max_sample_time + 1, /* larger then the maximum, will record an error and the maximum */
+        ],
+    );
+
+    let snapshot = metric
+        .test_get_value(&glean, "store1")
+        .expect("Value should be stored");
+
+    // Check that we got the right sum and number of samples.
+    assert_eq!(snapshot.sum, 2 + max_sample_time);
+
+    // We should get a sample in 3 buckets.
+    // These numbers are a bit magic, but they correspond to
+    // `hist.sample_to_bucket_minimum(i * seconds_to_nanos)` for `i = {1, max_sample_time}`.
+    assert_eq!(2, snapshot.values[&1]);
+    assert_eq!(1, snapshot.values[&599_512_966_122]);
+
+    // No errors should be reported.
+    assert_eq!(
+        1,
+        test_get_num_recorded_errors(
+            &glean,
+            metric.meta(),
+            ErrorType::InvalidOverflow,
+            Some("store1")
+        )
+        .unwrap()
     );
 }

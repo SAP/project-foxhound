@@ -11,12 +11,17 @@
 #include "CacheObserver.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/NotNull.h"
 #include "nsString.h"
 
 class nsICacheEntryMetaDataVisitor;
 
 namespace mozilla {
 namespace net {
+
+namespace CacheFileUtils {
+class CacheFileLock;
+};
 
 // Flags stored in CacheFileMetadataHeader.mFlags
 
@@ -134,8 +139,10 @@ class CacheFileMetadata final : public CacheFileIOListener,
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
 
-  CacheFileMetadata(CacheFileHandle* aHandle, const nsACString& aKey);
-  CacheFileMetadata(bool aMemoryOnly, bool aPinned, const nsACString& aKey);
+  CacheFileMetadata(CacheFileHandle* aHandle, const nsACString& aKey,
+                    NotNull<CacheFileUtils::CacheFileLock*> aLock);
+  CacheFileMetadata(bool aMemoryOnly, bool aPinned, const nsACString& aKey,
+                    NotNull<CacheFileUtils::CacheFileLock*> aLock);
   CacheFileMetadata();
 
   void SetHandle(CacheFileHandle* aHandle);
@@ -212,16 +219,16 @@ class CacheFileMetadata final : public CacheFileIOListener,
 
   RefPtr<CacheFileHandle> mHandle;
   nsCString mKey;
-  CacheHash::Hash16_t* mHashArray;
-  uint32_t mHashArraySize;
-  uint32_t mHashCount;
-  int64_t mOffset;
-  char* mBuf;  // used for parsing, then points
-               // to elements
-  uint32_t mBufSize;
-  char* mWriteBuf;
-  CacheFileMetadataHeader mMetaHdr;
-  uint32_t mElementsSize;
+  CacheHash::Hash16_t* mHashArray{nullptr};
+  uint32_t mHashArraySize{0};
+  uint32_t mHashCount{0};
+  int64_t mOffset{0};
+  // used for parsing, then points to elements
+  char* mBuf{nullptr};
+  uint32_t mBufSize{0};
+  char* mWriteBuf{nullptr};
+  CacheFileMetadataHeader mMetaHdr{0};
+  uint32_t mElementsSize{0};
   bool mIsDirty : 1;
   bool mAnonymous : 1;
   bool mAllocExactSize : 1;
@@ -229,6 +236,7 @@ class CacheFileMetadata final : public CacheFileIOListener,
   mozilla::OriginAttributes mOriginAttributes;
   mozilla::TimeStamp mReadStart;
   nsCOMPtr<CacheFileMetadataListener> mListener;
+  RefPtr<CacheFileUtils::CacheFileLock> mLock;
 };
 
 }  // namespace net

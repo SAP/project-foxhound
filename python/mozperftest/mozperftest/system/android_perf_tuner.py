@@ -39,7 +39,8 @@ class PerformanceTuner:
     def _set_value_and_check_exitcode(self, file_name, value):
         self.log.info("setting {} to {}".format(file_name, value))
         if self.device.shell_bool(
-            " ".join(["echo", str(value), ">", str(file_name)]), timeout=self.timeout,
+            " ".join(["echo", str(value), ">", str(file_name)]),
+            timeout=self.timeout,
         ):
             self.log.info("successfully set {} to {}".format(file_name, value))
         else:
@@ -73,32 +74,6 @@ class PerformanceTuner:
                 self.log.info(" ".join(["successfully terminated:", service]))
             else:
                 self.log.warning(" ".join(["failed to terminate:", service]))
-
-    def disable_animations(self):
-        self.log.info("disabling animations")
-        commands = {
-            "animator_duration_scale": 0.0,
-            "transition_animation_scale": 0.0,
-            "window_animation_scale": 0.0,
-        }
-
-        for key, value in commands.items():
-            command = " ".join(["settings", "put", "global", key, str(value)])
-            self.log.info("setting {} to {}".format(key, value))
-            self.device.shell_bool(command, timeout=self.timeout)
-
-    def restore_animations(self):
-        # animation settings are not restored to default by reboot
-        self.log.info("restoring animations")
-        commands = {
-            "animator_duration_scale": 1.0,
-            "transition_animation_scale": 1.0,
-            "window_animation_scale": 1.0,
-        }
-
-        for key, value in commands.items():
-            command = " ".join(["settings", "put", "global", key, str(value)])
-            self.device.shell_bool(command, timeout=self.timeout)
 
     def set_virtual_memory_parameters(self):
         self.log.info("setting virtual memory parameters")

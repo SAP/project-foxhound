@@ -33,9 +33,15 @@ const PENDING_CRASH_REPORT_DAYS = 28;
 const DAY = 24 * 60 * 60 * 1000; // milliseconds
 const DAYS_TO_SUPPRESS = 30;
 const MAX_UNSEEN_CRASHED_CHILD_IDS = 20;
+const MAX_UNSEEN_CRASHED_SUBFRAME_IDS = 10;
 
 // Time after which we will begin scanning for unsubmitted crash reports
 const CHECK_FOR_UNSUBMITTED_CRASH_REPORTS_DELAY_MS = 60 * 10000; // 10 minutes
+
+const TABCRASHED_ICON_URI = "chrome://browser/skin/tab-crashed.svg";
+
+const SUBFRAMECRASH_LEARNMORE_URI =
+  "https://support.mozilla.org/kb/firefox-crashes-troubleshoot-prevent-and-get-help";
 
 /**
  * BrowserWeakMap is exactly like a WeakMap, but expects <xul:browser>
@@ -72,7 +78,10 @@ var TabCrashHandler = {
   _crashedTabCount: 0,
   childMap: new Map(),
   browserMap: new BrowserWeakMap(),
+  notificationsMap: new Map(),
   unseenCrashedChildIDs: [],
+  pendingSubFrameCrashes: new Map(),
+  pendingSubFrameCrashesIDs: [],
   crashedBrowserQueues: new Map(),
   restartRequiredBrowsers: new WeakSet(),
   testBuildIDMismatch: false,
@@ -106,12 +115,29 @@ var TabCrashHandler = {
         let childID = aSubject.get("childID");
         let dumpID = aSubject.get("dumpID");
 
+        // Get and remove the subframe crash info first.
+        let subframeCrashItem = this.getAndRemoveSubframeCrash(childID);
+
         if (!dumpID) {
           Services.telemetry
             .getHistogramById("FX_CONTENT_CRASH_DUMP_UNAVAILABLE")
             .add(1);
         } else if (AppConstants.MOZ_CRASHREPORTER) {
           this.childMap.set(childID, dumpID);
+
+          // If this is a subframe crash, show the crash notification. Only
+          // show subframe notifications when there is a minidump available.
+          if (subframeCrashItem) {
+            let browsers =
+              ChromeUtils.nondeterministicGetWeakMapKeys(subframeCrashItem) ||
+              [];
+            for (let browserItem of browsers) {
+              let browser = subframeCrashItem.get(browserItem);
+              if (browser.isConnected && !browser.ownerGlobal.closed) {
+                this.showSubFrameNotification(browser, childID, dumpID);
+              }
+            }
+          }
         }
 
         if (!this.flushCrashedBrowserQueue(childID)) {
@@ -279,6 +305,169 @@ var TabCrashHandler = {
   },
 
   /**
+   * Called when a subframe crashes. If the dump is available, shows a subframe
+   * crashed notification, otherwise waits for one to be available.
+   *
+   * @param browser (<xul:browser>)
+   *        The browser containing the frame that just crashed.
+   * @param childId
+   *        The id of the process that just crashed.
+   */
+  async onSubFrameCrash(browser, childID) {
+    if (!AppConstants.MOZ_CRASHREPORTER) {
+      return;
+    }
+
+    // If a crash dump is available, use it. Otherwise, add the child id to the pending
+    // subframe crashes list, and wait for the crash "ipc:content-shutdown" notification
+    // to get the minidump. If it never arrives, don't show the notification.
+    let dumpID = this.childMap.get(childID);
+    if (dumpID) {
+      this.showSubFrameNotification(browser, childID, dumpID);
+    } else {
+      let item = this.pendingSubFrameCrashes.get(childID);
+      if (!item) {
+        item = new BrowserWeakMap();
+        this.pendingSubFrameCrashes.set(childID, item);
+
+        // Add the childID to an array that only has room for MAX_UNSEEN_CRASHED_SUBFRAME_IDS
+        // items. If there is no more room, pop the oldest off and remove it. This technique
+        // is used instead of a timeout.
+        if (
+          this.pendingSubFrameCrashesIDs.length >=
+          MAX_UNSEEN_CRASHED_SUBFRAME_IDS
+        ) {
+          let idToDelete = this.pendingSubFrameCrashesIDs.shift();
+          this.pendingSubFrameCrashes.delete(idToDelete);
+        }
+        this.pendingSubFrameCrashesIDs.push(childID);
+      }
+      item.set(browser, browser);
+    }
+  },
+
+  /**
+   * Given a childID, retrieve the subframe crash info for it
+   * from the pendingSubFrameCrashes map. The data is removed
+   * from the map and returned.
+   *
+   * @param childID number
+   *        childID of the content that crashed.
+   * @returns subframe crash info added by previous call to onSubFrameCrash.
+   */
+  getAndRemoveSubframeCrash(childID) {
+    let item = this.pendingSubFrameCrashes.get(childID);
+    if (item) {
+      this.pendingSubFrameCrashes.delete(childID);
+      let idx = this.pendingSubFrameCrashesIDs.indexOf(childID);
+      if (idx >= 0) {
+        this.pendingSubFrameCrashesIDs.splice(idx, 1);
+      }
+    }
+
+    return item;
+  },
+
+  /**
+   * Called to indicate that a subframe within a browser has crashed. A notification
+   * bar will be shown.
+   *
+   * @param browser (<xul:browser>)
+   *        The browser containing the frame that just crashed.
+   * @param childId
+   *        The id of the process that just crashed.
+   * @param dumpID
+   *        Minidump id of the crash.
+   */
+  showSubFrameNotification(browser, childID, dumpID) {
+    let gBrowser = browser.getTabBrowser();
+    let notificationBox = gBrowser.getNotificationBox(browser);
+
+    const value = "subframe-crashed";
+    let notification = notificationBox.getNotificationWithValue(value);
+    if (notification) {
+      // Don't show multiple notifications for a browser.
+      return;
+    }
+
+    let closeAllNotifications = () => {
+      // Close all other notifications on other tabs that might
+      // be open for the same crashed process.
+      let existingItem = this.notificationsMap.get(childID);
+      if (existingItem) {
+        for (let notif of existingItem.slice()) {
+          notif.close();
+        }
+      }
+    };
+
+    let doc = browser.ownerDocument;
+    let messageFragment = doc.createDocumentFragment();
+    let message = doc.createElement("span");
+    message.setAttribute("data-l10n-id", "crashed-subframe-message");
+    messageFragment.appendChild(message);
+
+    let buttons = [
+      {
+        "l10n-id": "crashed-subframe-learnmore-link",
+        popup: null,
+        link: SUBFRAMECRASH_LEARNMORE_URI,
+      },
+      {
+        "l10n-id": "crashed-subframe-submit",
+        popup: null,
+        callback: async () => {
+          if (dumpID) {
+            UnsubmittedCrashHandler.submitReports([dumpID]);
+          }
+          closeAllNotifications();
+        },
+      },
+    ];
+
+    notification = notificationBox.appendNotification(
+      value,
+      {
+        label: messageFragment,
+        image: TABCRASHED_ICON_URI,
+        priority: notificationBox.PRIORITY_INFO_MEDIUM,
+        telemetry: "notificationbar.crash_subframe_ui",
+        telemetryFilter: ["shown"],
+        eventCallback: eventName => {
+          if (eventName == "disconnected") {
+            let existingItem = this.notificationsMap.get(childID);
+            if (existingItem) {
+              let idx = existingItem.indexOf(notification);
+              if (idx >= 0) {
+                existingItem.splice(idx, 1);
+              }
+
+              if (!existingItem.length) {
+                this.notificationsMap.delete(childID);
+              }
+            }
+          } else if (eventName == "dismissed") {
+            if (dumpID) {
+              CrashSubmit.ignore(dumpID);
+              this.childMap.delete(childID);
+            }
+
+            closeAllNotifications();
+          }
+        },
+      },
+      buttons
+    );
+
+    let existingItem = this.notificationsMap.get(childID);
+    if (existingItem) {
+      existingItem.push(notification);
+    } else {
+      this.notificationsMap.set(childID, [notification]);
+    }
+  },
+
+  /**
    * This method is exposed for SessionStore to call if the user selects
    * a tab which will restore on demand. It's possible that the tab
    * is in this state because it recently crashed. If that's the case, then
@@ -382,11 +571,6 @@ var TabCrashHandler = {
    *        URL (String)
    *          The URL that the user was on in the crashed tab
    *          before the crash occurred.
-   *        emailMe (bool):
-   *          Whether or not to include the user's email address
-   *          in the crash report.
-   *        email (String):
-   *          The email address of the user.
    *        comments (String):
    *          Any additional comments from the user.
    *
@@ -423,11 +607,10 @@ var TabCrashHandler = {
       return;
     }
 
-    let { includeURL, comments, email, emailMe, URL } = message.data;
+    let { includeURL, comments, URL } = message.data;
 
     let extraExtraKeyVals = {
       Comments: comments,
-      Email: email,
       URL,
     };
 
@@ -454,12 +637,6 @@ var TabCrashHandler = {
 
     this.prefs.setBoolPref("sendReport", true);
     this.prefs.setBoolPref("includeURL", includeURL);
-    this.prefs.setBoolPref("emailMe", emailMe);
-    if (emailMe) {
-      this.prefs.setCharPref("email", email);
-    } else {
-      this.prefs.setCharPref("email", "");
-    }
 
     this.childMap.set(childID, null); // Avoid resubmission.
     this.removeSubmitCheckboxesForSameCrash(childID);
@@ -511,6 +688,15 @@ var TabCrashHandler = {
       this.unseenCrashedChildIDs.splice(index, 1);
     }
 
+    // Add telemetry for each time the user has been shown a tab crash page. The
+    // tab crashed page should only appear in foreground tabs, but verify this.
+    if (browser.getTabBrowser().selectedBrowser == browser) {
+      Services.telemetry.scalarAdd(
+        "dom.contentprocess.crash_tab_ui_presented",
+        1
+      );
+    }
+
     let dumpID = this.getDumpID(browser);
     if (!dumpID) {
       return {
@@ -519,29 +705,15 @@ var TabCrashHandler = {
     }
 
     let requestAutoSubmit = !UnsubmittedCrashHandler.autoSubmit;
-    let requestEmail = this.prefs.getBoolPref("requestEmail");
     let sendReport = this.prefs.getBoolPref("sendReport");
     let includeURL = this.prefs.getBoolPref("includeURL");
-    let emailMe = this.prefs.getBoolPref("emailMe");
 
     let data = {
       hasReport: true,
       sendReport,
       includeURL,
-      emailMe,
       requestAutoSubmit,
-      requestEmail,
     };
-
-    if (emailMe) {
-      data.email = this.prefs.getCharPref("email");
-    }
-
-    // Make sure to only count once even if there are multiple windows
-    // that will all show about:tabcrashed.
-    if (this._crashedTabCount == 1) {
-      Services.telemetry.getHistogramById("FX_CONTENT_CRASH_PRESENTED").add(1);
-    }
 
     return data;
   },
@@ -937,13 +1109,20 @@ var UnsubmittedCrashHandler = {
       }
     };
 
+    Services.telemetry.scalarAdd(
+      "dom.contentprocess.unsubmitted_ui_presented",
+      1
+    );
+
     return chromeWin.gNotificationBox.appendNotification(
-      message,
       notificationID,
-      "chrome://browser/skin/tab-crashed.svg",
-      chromeWin.gNotificationBox.PRIORITY_INFO_HIGH,
-      buttons,
-      eventCallback
+      {
+        label: message,
+        image: TABCRASHED_ICON_URI,
+        priority: chromeWin.gNotificationBox.PRIORITY_INFO_HIGH,
+        eventCallback,
+      },
+      buttons
     );
   },
 

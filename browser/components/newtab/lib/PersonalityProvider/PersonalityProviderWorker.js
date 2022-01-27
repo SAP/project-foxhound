@@ -9,7 +9,6 @@
 // Order of these are important.
 importScripts(
   "resource://gre/modules/workers/require.js",
-  "resource://gre/modules/osfile.jsm",
   "resource://activity-stream/lib/PersonalityProvider/Tokenize.jsm",
   "resource://activity-stream/lib/PersonalityProvider/NaiveBayesTextTagger.jsm",
   "resource://activity-stream/lib/PersonalityProvider/NmfTextTagger.jsm",
@@ -35,3 +34,6 @@ worker.close = function() {
 };
 
 self.addEventListener("message", msg => worker.handleMessage(msg));
+self.addEventListener("unhandledrejection", function(error) {
+  throw error.reason;
+});

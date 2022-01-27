@@ -4,9 +4,6 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
 const { Preferences } = ChromeUtils.import(
   "resource://gre/modules/Preferences.jsm"
 );
@@ -39,10 +36,6 @@ const NOTIFICATION_TIME = 3000;
 const HEARTBEAT_CSS_URI = Services.io.newURI(
   "resource://normandy/skin/shared/Heartbeat.css"
 );
-const HEARTBEAT_CSS_URI_OSX = Services.io.newURI(
-  "resource://normandy/skin/osx/Heartbeat.css"
-);
-
 const log = LogManager.getLogger("heartbeat");
 const windowsWithInjectedCss = new WeakSet();
 let anyWindowsWithInjectedCss = false;
@@ -54,9 +47,6 @@ CleanupManager.addCleanupHandler(() => {
       if (windowsWithInjectedCss.has(window)) {
         const utils = window.windowUtils;
         utils.removeSheet(HEARTBEAT_CSS_URI, window.AGENT_SHEET);
-        if (AppConstants.platform === "macosx") {
-          utils.removeSheet(HEARTBEAT_CSS_URI_OSX, window.AGENT_SHEET);
-        }
         windowsWithInjectedCss.delete(window);
       }
     }
@@ -137,15 +127,12 @@ var Heartbeat = class {
     this.eventEmitter = new EventEmitter();
     this.options = options;
     this.surveyResults = {};
-    this.buttons = null;
+    this.buttons = [];
 
     if (!windowsWithInjectedCss.has(chromeWindow)) {
       windowsWithInjectedCss.add(chromeWindow);
       const utils = chromeWindow.windowUtils;
       utils.loadSheet(HEARTBEAT_CSS_URI, chromeWindow.AGENT_SHEET);
-      if (AppConstants.platform === "macosx") {
-        utils.loadSheet(HEARTBEAT_CSS_URI_OSX, chromeWindow.AGENT_SHEET);
-      }
       anyWindowsWithInjectedCss = true;
     }
 
@@ -153,51 +140,60 @@ var Heartbeat = class {
     this.handleWindowClosed = this.handleWindowClosed.bind(this);
     this.close = this.close.bind(this);
 
-    if (this.options.engagementButtonLabel) {
-      this.buttons = [
-        {
-          label: this.options.engagementButtonLabel,
-          callback: () => {
-            // Let the consumer know user engaged.
-            this.maybeNotifyHeartbeat("Engaged");
-
-            this.userEngaged({
-              type: "button",
-              flowId: this.options.flowId,
-            });
-
-            // Return true so that the notification bar doesn't close itself since
-            // we have a thank you message to show.
-            return true;
-          },
+    // Add Learn More Link
+    if (this.options.learnMoreMessage && this.options.learnMoreUrl) {
+      this.buttons.push({
+        link: this.options.learnMoreUrl.toString(),
+        label: this.options.learnMoreMessage,
+        callback: () => {
+          this.maybeNotifyHeartbeat("LearnMore");
+          return true;
         },
-      ];
+      });
     }
 
-    this.notificationBox = this.chromeWindow.gHighPriorityNotificationBox;
-    this.notice = this.notificationBox.appendNotification(
-      this.options.message,
-      "heartbeat-" + this.options.flowId,
-      "resource://normandy/skin/shared/heartbeat-icon.svg",
-      this.notificationBox.PRIORITY_INFO_HIGH,
-      this.buttons,
-      eventType => {
-        if (eventType !== "removed") {
-          return;
-        }
-        this.maybeNotifyHeartbeat("NotificationClosed");
-      }
-    );
+    if (this.options.engagementButtonLabel) {
+      this.buttons.push({
+        label: this.options.engagementButtonLabel,
+        callback: () => {
+          // Let the consumer know user engaged.
+          this.maybeNotifyHeartbeat("Engaged");
 
-    // Holds the rating UI
-    const frag = this.chromeWindow.document.createDocumentFragment();
+          this.userEngaged({
+            type: "button",
+            flowId: this.options.flowId,
+          });
+
+          // Return true so that the notification bar doesn't close itself since
+          // we have a thank you message to show.
+          return true;
+        },
+      });
+    }
+
+    this.notificationBox = this.chromeWindow.gNotificationBox;
+    this.notice = this.notificationBox.appendNotification(
+      "heartbeat-" + this.options.flowId,
+      {
+        label: this.options.message,
+        image: "resource://normandy/skin/shared/heartbeat-icon.svg",
+        priority: this.notificationBox.PRIORITY_SYSTEM,
+        eventCallback: eventType => {
+          if (eventType !== "removed") {
+            return;
+          }
+          this.maybeNotifyHeartbeat("NotificationClosed");
+        },
+      },
+      this.buttons
+    );
+    this.notice.classList.add("heartbeat");
+    this.notice.messageText.classList.add("heartbeat");
 
     // Build the heartbeat stars
     if (!this.options.engagementButtonLabel) {
       const numStars = this.options.engagementButtonLabel ? 0 : 5;
-      this.ratingContainer = this.chromeWindow.document.createXULElement(
-        "hbox"
-      );
+      this.ratingContainer = this.chromeWindow.document.createElement("span");
       this.ratingContainer.id = "star-rating-container";
 
       for (let i = 0; i < numStars; i++) {
@@ -226,38 +222,17 @@ var Heartbeat = class {
         this.ratingContainer.appendChild(ratingElement);
       }
 
-      frag.appendChild(this.ratingContainer);
+      if (Services.prefs.getBoolPref("browser.proton.enabled")) {
+        // This will append if there aren't any .text-link elements.
+        this.notice.buttonContainer.append(this.ratingContainer);
+      } else {
+        this.notice.messageText.flex = 0;
+        this.notice.messageDetails.insertBefore(
+          this.ratingContainer,
+          this.notice.spacer
+        );
+      }
     }
-
-    this.notice.messageDetails.style.overflow = "hidden";
-    this.notice.messageImage.classList.add("heartbeat", "pulse-onshow");
-    this.notice.messageText.classList.add("heartbeat");
-
-    // Make sure the stars are not pushed to the right by the spacer.
-    this.rightSpacer = this.chromeWindow.document.createXULElement("spacer");
-    this.rightSpacer.flex = 20;
-    frag.appendChild(this.rightSpacer);
-
-    // collapse the space before the stars
-    this.notice.messageText.flex = 0;
-    this.notice.spacer.flex = 0;
-
-    // Add Learn More Link
-    if (this.options.learnMoreMessage && this.options.learnMoreUrl) {
-      this.learnMore = this.chromeWindow.document.createXULElement("label", {
-        is: "text-link",
-      });
-      this.learnMore.href = this.options.learnMoreUrl.toString();
-      this.learnMore.setAttribute("value", this.options.learnMoreMessage);
-      this.learnMore.addEventListener("click", () =>
-        this.maybeNotifyHeartbeat("LearnMore")
-      );
-      frag.appendChild(this.learnMore);
-    }
-
-    // Append the fragment and apply the styling
-    this.notice.messageDetails.appendChild(frag);
-    this.notice.classList.add("heartbeat");
 
     // Let the consumer know the notification was shown.
     this.maybeNotifyHeartbeat("NotificationOffered");
@@ -371,9 +346,7 @@ var Heartbeat = class {
     if (this.ratingContainer) {
       this.ratingContainer.remove();
     }
-    this.rightSpacer.remove();
-    this.learnMore.remove();
-    for (let button of this.notice.querySelectorAll("button")) {
+    for (let button of this.notice.buttonContainer.querySelectorAll("button")) {
       button.remove();
     }
 
@@ -434,8 +407,6 @@ var Heartbeat = class {
     this.notificationBox = null;
     this.notice = null;
     this.ratingContainer = null;
-    this.rightSpacer = null;
-    this.learnMore = null;
     this.eventEmitter = null;
     // Ensure we don't re-enter and release the CleanupManager's reference to us:
     CleanupManager.removeCleanupHandler(this.close);

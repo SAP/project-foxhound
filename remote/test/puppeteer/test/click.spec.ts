@@ -20,8 +20,8 @@ import {
   setupTestPageAndContextHooks,
   setupTestBrowserHooks,
   itFailsFirefox,
-} from './mocha-utils';
-import utils from './utils';
+} from './mocha-utils'; // eslint-disable-line import/extensions
+import utils from './utils.js';
 
 describe('Page.click', function () {
   setupTestBrowserHooks();
@@ -74,10 +74,9 @@ describe('Page.click', function () {
     const { page } = getTestState();
 
     const newPage = await page.browser().newPage();
-    await Promise.all([
-      newPage.close(),
-      newPage.mouse.click(1, 2),
-    ]).catch(() => {});
+    await Promise.all([newPage.close(), newPage.mouse.click(1, 2)]).catch(
+      () => {}
+    );
   });
   it('should click the button after navigation ', async () => {
     const { page, server } = getTestState();
@@ -239,6 +238,7 @@ describe('Page.click', function () {
       )
     ).toBe('clicked');
   });
+  // See https://github.com/puppeteer/puppeteer/issues/7175
   it('should double click the button', async () => {
     const { page, server } = getTestState();
 
@@ -328,7 +328,8 @@ describe('Page.click', function () {
     await frame.click('button');
     expect(await frame.evaluate(() => globalThis.result)).toBe('Clicked');
   });
-  it('should click the button with deviceScaleFactor set',
+  it(
+    'should click the button with deviceScaleFactor set',
     async () => {
       const { page, server } = getTestState();
 

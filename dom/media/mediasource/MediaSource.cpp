@@ -88,6 +88,41 @@ static bool IsVP9Forced(DecoderDoctorDiagnostics* aDiagnostics) {
 
 namespace dom {
 
+static void RecordTypeForTelemetry(const nsAString& aType,
+                                   nsPIDOMWindowInner* aWindow) {
+  Maybe<MediaContainerType> containerType = MakeMediaContainerType(aType);
+  if (!containerType) {
+    return;
+  }
+
+  const MediaMIMEType& mimeType = containerType->Type();
+  if (mimeType == MEDIAMIMETYPE(VIDEO_WEBM)) {
+    AccumulateCategorical(
+        mozilla::Telemetry::LABELS_MSE_SOURCE_BUFFER_TYPE::VideoWebm);
+  } else if (mimeType == MEDIAMIMETYPE(AUDIO_WEBM)) {
+    AccumulateCategorical(
+        mozilla::Telemetry::LABELS_MSE_SOURCE_BUFFER_TYPE::AudioWebm);
+  } else if (mimeType == MEDIAMIMETYPE(VIDEO_MP4)) {
+    AccumulateCategorical(
+        mozilla::Telemetry::LABELS_MSE_SOURCE_BUFFER_TYPE::VideoMp4);
+  } else if (mimeType == MEDIAMIMETYPE(AUDIO_MP4)) {
+    AccumulateCategorical(
+        mozilla::Telemetry::LABELS_MSE_SOURCE_BUFFER_TYPE::AudioMp4);
+  } else if (mimeType == MEDIAMIMETYPE(VIDEO_MPEG_TS)) {
+    AccumulateCategorical(
+        mozilla::Telemetry::LABELS_MSE_SOURCE_BUFFER_TYPE::VideoMp2t);
+  } else if (mimeType == MEDIAMIMETYPE(AUDIO_MPEG_TS)) {
+    AccumulateCategorical(
+        mozilla::Telemetry::LABELS_MSE_SOURCE_BUFFER_TYPE::AudioMp2t);
+  } else if (mimeType == MEDIAMIMETYPE(AUDIO_MP3)) {
+    AccumulateCategorical(
+        mozilla::Telemetry::LABELS_MSE_SOURCE_BUFFER_TYPE::AudioMpeg);
+  } else if (mimeType == MEDIAMIMETYPE(AUDIO_AAC)) {
+    AccumulateCategorical(
+        mozilla::Telemetry::LABELS_MSE_SOURCE_BUFFER_TYPE::AudioAac);
+  }
+}
+
 /* static */
 void MediaSource::IsTypeSupported(const nsAString& aType,
                                   DecoderDoctorDiagnostics* aDiagnostics,
@@ -213,18 +248,21 @@ double MediaSource::Duration() {
 
 void MediaSource::SetDuration(double aDuration, ErrorResult& aRv) {
   MOZ_ASSERT(NS_IsMainThread());
-  MSE_API("SetDuration(aDuration=%f, ErrorResult)", aDuration);
   if (aDuration < 0 || IsNaN(aDuration)) {
     nsPrintfCString error("Invalid duration value %f", aDuration);
+    MSE_API("SetDuration(aDuration=%f, invalid value)", aDuration);
     aRv.ThrowTypeError(error);
     return;
   }
   if (mReadyState != MediaSourceReadyState::Open ||
       mSourceBuffers->AnyUpdating()) {
+    MSE_API("SetDuration(aDuration=%f, invalid state)", aDuration);
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }
   DurationChange(aDuration, aRv);
+  MSE_API("SetDuration(aDuration=%f, errorCode=%d)", aDuration,
+          aRv.ErrorCodeAsInt());
 }
 
 void MediaSource::SetDuration(double aDuration) {
@@ -238,6 +276,7 @@ already_AddRefed<SourceBuffer> MediaSource::AddSourceBuffer(
   MOZ_ASSERT(NS_IsMainThread());
   DecoderDoctorDiagnostics diagnostics;
   IsTypeSupported(aType, &diagnostics, aRv);
+  RecordTypeForTelemetry(aType, GetOwner());
   bool supported = !aRv.Failed();
   diagnostics.StoreFormatDiagnostics(
       GetOwner() ? GetOwner()->GetExtantDoc() : nullptr, aType, supported,
@@ -261,10 +300,6 @@ already_AddRefed<SourceBuffer> MediaSource::AddSourceBuffer(
     return nullptr;
   }
   RefPtr<SourceBuffer> sourceBuffer = new SourceBuffer(this, *containerType);
-  if (!sourceBuffer) {
-    aRv.Throw(NS_ERROR_FAILURE);  // XXX need a better error here
-    return nullptr;
-  }
   mSourceBuffers->Append(sourceBuffer);
   DDLINKCHILD("sourcebuffer[]", sourceBuffer.get());
   MSE_DEBUG("sourceBuffer=%p", sourceBuffer.get());
@@ -395,6 +430,7 @@ bool MediaSource::IsTypeSupported(const GlobalObject& aOwner,
   bool supported = !rv.Failed();
   nsCOMPtr<nsPIDOMWindowInner> window =
       do_QueryInterface(aOwner.GetAsSupports());
+  RecordTypeForTelemetry(aType, window);
   diagnostics.StoreFormatDiagnostics(window ? window->GetExtantDoc() : nullptr,
                                      aType, supported, __func__);
   MOZ_LOG(GetMediaSourceAPILog(), mozilla::LogLevel::Debug,

@@ -22,7 +22,6 @@
 #include "mozilla/dom/Element.h"
 #include "nsIFrame.h"
 #include "Layers.h"
-#include "FrameLayerBuilder.h"
 #include "nsCSSProps.h"
 #include "nsCSSPseudoElements.h"
 #include "nsDisplayList.h"
@@ -455,6 +454,10 @@ bool nsTransitionManager::ConsiderInitiatingTransition(
       GetTransitionKeyframes(aProperty, std::move(startValue),
                              std::move(endValue)),
       &aNewStyle);
+
+  if (NS_WARN_IF(MOZ_UNLIKELY(!keyframeEffect->IsValidTransition()))) {
+    return false;
+  }
 
   RefPtr<CSSTransition> animation =
       new CSSTransition(mPresContext->Document()->GetScopeObject());

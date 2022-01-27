@@ -85,6 +85,11 @@ function testInXOriginFrame() {
   }
 }
 
+function testInDifferentProcess() {
+  // Check if the test running in an iframe that is loaded in a different process.
+  return SpecialPowers.Cu.isRemoteProxy($("testframe").contentWindow);
+}
+
 /**
  * TestRunner: A test runner for SimpleTest
  * TODO:
@@ -115,6 +120,7 @@ TestRunner.slowestTestTime = 0;
 TestRunner.slowestTestURL = "";
 TestRunner.interactiveDebugger = false;
 TestRunner.cleanupCrashes = false;
+TestRunner.timeoutAspass = false;
 
 TestRunner._expectingProcessCrash = false;
 TestRunner._structuredFormatter = new StructuredFormatter();
@@ -132,17 +138,58 @@ TestRunner._timeoutFactor = 1;
 TestRunner.jscovDirPrefix = "";
 var coverageCollector = {};
 
+function record(succeeded, expectedFail, msg) {
+  let successInfo;
+  let failureInfo;
+  if (expectedFail) {
+    successInfo = {
+      status: "PASS",
+      expected: "FAIL",
+      message: "TEST-UNEXPECTED-PASS",
+    };
+    failureInfo = {
+      status: "FAIL",
+      expected: "FAIL",
+      message: "TEST-KNOWN-FAIL",
+    };
+  } else {
+    successInfo = {
+      status: "PASS",
+      expected: "PASS",
+      message: "TEST-PASS",
+    };
+    failureInfo = {
+      status: "FAIL",
+      expected: "PASS",
+      message: "TEST-UNEXPECTED-FAIL",
+    };
+  }
+
+  let result = succeeded ? successInfo : failureInfo;
+
+  TestRunner.structuredLogger.testStatus(
+    TestRunner.currentTestURL,
+    msg,
+    result.status,
+    result.expected,
+    "",
+    ""
+  );
+}
+
 TestRunner._checkForHangs = function() {
   function reportError(win, msg) {
-    if ("SimpleTest" in win) {
-      win.SimpleTest.ok(false, msg);
+    if (testInXOriginFrame() || "SimpleTest" in win) {
+      record(false, TestRunner.timeoutAsPass, msg);
     } else if ("W3CTest" in win) {
       win.W3CTest.logFailure(msg);
     }
   }
 
   async function killTest(win) {
-    if ("SimpleTest" in win) {
+    if (testInXOriginFrame()) {
+      win.postMessage("SimpleTest:timeout", "*");
+    } else if ("SimpleTest" in win) {
       await win.SimpleTest.timeout();
       win.SimpleTest.finish();
     } else if ("W3CTest" in win) {
@@ -153,9 +200,10 @@ TestRunner._checkForHangs = function() {
   if (TestRunner._currentTest < TestRunner._urls.length) {
     var runtime = new Date().valueOf() - TestRunner._currentTestStartTime;
     if (runtime >= TestRunner.timeout * TestRunner._timeoutFactor) {
+      let testIframe = $("testframe");
       var frameWindow =
-        $("testframe").contentWindow.wrappedJSObject ||
-        $("testframe").contentWindow;
+        (!testInXOriginFrame() && testIframe.contentWindow.wrappedJSObject) ||
+        testIframe.contentWindow;
       // TODO : Do this in a way that reports that the test ended with a status "TIMEOUT"
       reportError(frameWindow, "Test timed out.");
 
@@ -285,7 +333,7 @@ TestRunner._dumpMessage = function(message) {
   }
 };
 
-// From https://dxr.mozilla.org/mozilla-central/source/testing/modules/StructuredLog.jsm
+// From https://searchfox.org/mozilla-central/source/testing/modules/StructuredLog.jsm
 TestRunner.structuredLogger = new StructuredLogger(
   "mochitest",
   TestRunner._dumpMessage
@@ -420,6 +468,22 @@ TestRunner.getParameterInfo = function() {
 };
 
 /**
+ * Print information about which prefs are set.
+ * This is used to help validate that the tests are actually
+ * running in the expected context.
+ */
+TestRunner.dumpPrefContext = function() {
+  let prefs = ["fission.autostart"];
+
+  let message = ["Dumping test context:"];
+  prefs.forEach(function formatPref(pref) {
+    let val = SpecialPowers.getBoolPref(pref);
+    message.push(pref + "=" + val);
+  });
+  TestRunner.structuredLogger.info(message.join("\n  "));
+};
+
+/**
  * TestRunner entry point.
  *
  * The arguments are the URLs of the test to be ran.
@@ -427,6 +491,7 @@ TestRunner.getParameterInfo = function() {
  **/
 TestRunner.runTests = function(/*url...*/) {
   TestRunner.structuredLogger.info("SimpleTest START");
+  TestRunner.dumpPrefContext();
   TestRunner.originalTestURL = $("current-test").innerHTML;
 
   SpecialPowers.registerProcessCrashObservers();
@@ -533,7 +598,7 @@ TestRunner.runNextTest = function() {
       // No |$('testframe').contentWindow|, so manually update: ...
       // ... the log,
       TestRunner.structuredLogger.error(
-        "SimpleTest/TestRunner.js | No checks actually run"
+        "TEST-UNEXPECTED-FAIL | SimpleTest/TestRunner.js | No checks actually run"
       );
       // ... the count,
       $("fail-count").innerHTML = 1;
@@ -710,7 +775,7 @@ TestRunner.testFinished = function(tests) {
 
       SpecialPowers.addProfilerMarker(
         "TestRunner",
-        TestRunner._currentTestStartTimestamp,
+        { category: "Test", startTime: TestRunner._currentTestStartTimestamp },
         TestRunner.currentTestURL
       );
       var runtime = new Date().valueOf() - TestRunner._currentTestStartTime;
@@ -764,7 +829,8 @@ TestRunner.testFinished = function(tests) {
                 testwin.SimpleTest._tests[testwin.SimpleTest.testsLength + i]
                   .name;
               TestRunner.structuredLogger.error(
-                TestRunner.currentTestURL +
+                "TEST-UNEXPECTED-FAIL | " +
+                  TestRunner.currentTestURL +
                   " logged result after SimpleTest.finish(): " +
                   wrongtestname
               );
@@ -786,12 +852,30 @@ TestRunner.testFinished = function(tests) {
   });
 };
 
+/**
+ * This stub is called by XOrigin Tests to report assertion count.
+ **/
+TestRunner._xoriginAssertionCount = 0;
+TestRunner.addAssertionCount = function(count) {
+  if (!testInXOriginFrame()) {
+    TestRunner.error(
+      `addAssertionCount should only be called by a cross origin test`
+    );
+    return;
+  }
+
+  if (testInDifferentProcess()) {
+    TestRunner._xoriginAssertionCount += count;
+  }
+};
+
 TestRunner.testUnloaded = function() {
   // If we're in a debug build, check assertion counts.  This code is
   // similar to the code in Tester_nextTest in browser-test.js used
   // for browser-chrome mochitests.
   if (SpecialPowers.isDebugBuild) {
-    var newAssertionCount = SpecialPowers.assertionCount();
+    var newAssertionCount =
+      SpecialPowers.assertionCount() + TestRunner._xoriginAssertionCount;
     var numAsserts = newAssertionCount - TestRunner._lastAssertionCount;
     TestRunner._lastAssertionCount = newAssertionCount;
 
@@ -945,20 +1029,23 @@ var xOriginDispatchMap = {
   expectAssertions: TestRunner.expectAssertions,
   expectChildProcessCrash: TestRunner.expectChildProcessCrash,
   requestLongerTimeout: TestRunner.requestLongerTimeout,
-  testUnloaded: TestRunner.testUnloaded,
   "structuredLogger.deactivateBuffering":
     TestRunner.structuredLogger.deactivateBuffering,
   "structuredLogger.activateBuffering":
     TestRunner.structuredLogger.activateBuffering,
   "structuredLogger.testStatus": TestRunner.structuredLogger.testStatus,
   "structuredLogger.info": TestRunner.structuredLogger.info,
+  "structuredLogger.warning": TestRunner.structuredLogger.warning,
+  "structuredLogger.error": TestRunner.structuredLogger.error,
   testFinished: TestRunner.testFinished,
+  addAssertionCount: TestRunner.addAssertionCount,
 };
 
 function xOriginTestRunnerHandler(event) {
   if (event.data.harnessType != "SimpleTest") {
     return;
   }
+  // Handles messages from xOriginRunner in SimpleTest.js.
   if (event.data.command in xOriginDispatchMap) {
     xOriginDispatchMap[event.data.command].apply(
       xOriginDispatchMap[event.data.applyOn],

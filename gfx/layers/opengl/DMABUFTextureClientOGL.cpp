@@ -35,6 +35,10 @@ DMABUFTextureData::~DMABUFTextureData() = default;
   }
   RefPtr<DMABufSurface> surf =
       DMABufSurfaceRGBA::CreateDMABufSurface(aSize.width, aSize.height, flags);
+  if (!surf) {
+    NS_WARNING("DMABUFTextureData::Create() failed!");
+    return nullptr;
+  }
   return new DMABUFTextureData(surf, aBackend);
 }
 
@@ -47,14 +51,12 @@ TextureData* DMABUFTextureData::CreateSimilar(
 }
 
 bool DMABUFTextureData::Serialize(SurfaceDescriptor& aOutDescriptor) {
-  mSurface->Serialize(aOutDescriptor);
-  return true;
+  return mSurface->Serialize(aOutDescriptor);
 }
 
 void DMABUFTextureData::FillInfo(TextureData::Info& aInfo) const {
   aInfo.size = gfx::IntSize(mSurface->GetWidth(), mSurface->GetHeight());
   aInfo.format = mSurface->GetFormat();
-  aInfo.hasIntermediateBuffer = false;
   aInfo.hasSynchronization = false;
   aInfo.supportsMoz2D = true;
   aInfo.canExposeMappedData = false;

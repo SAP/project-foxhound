@@ -15,8 +15,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1603712
   SimpleTest.waitForExplicitFinish();
 
   var tlds = [
-    {'tld': 'in', 'encoding': 'windows-1252'},
-    {'tld': 'lk', 'encoding': 'windows-1252'},
+    {'tld': 'in', 'expectedEncoding': 'Shift_JIS', 'file': 'file_in_lk_TLD.html'},
+    {'tld': 'lk', 'expectedEncoding': 'Shift_JIS', 'file': 'file_in_lk_TLD.html'},
+    {'tld': 'co.jp', 'expectedEncoding': 'windows-1251', 'file': 'file_jp_TLD.html'},
   ];
 
   var iframe = null;
@@ -31,14 +32,14 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1603712
 
   function next(event) {
     if (event) {
-      is(event.data, current.encoding, "Got bad encoding for " + current.tld);
+      is(event.data, current.expectedEncoding, "Got bad encoding for " + current.tld);
     }
     current = tlds.shift();
     if (!current) {
       SimpleTest.finish();
       return;
     }
-    iframe.src = "http://example." + current.tld + "/tests/dom/encoding/test/file_in_lk_TLD.html";
+    iframe.src = "http://example." + current.tld + "/tests/dom/encoding/test/" + current.file;
   }
 
   </script>

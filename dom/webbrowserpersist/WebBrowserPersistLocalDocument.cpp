@@ -12,6 +12,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLAnchorElement.h"
 #include "mozilla/dom/HTMLAreaElement.h"
+#include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLLinkElement.h"
 #include "mozilla/dom/HTMLObjectElement.h"
@@ -20,8 +21,10 @@
 #include "mozilla/dom/HTMLTextAreaElement.h"
 #include "mozilla/dom/NodeFilterBinding.h"
 #include "mozilla/dom/ProcessingInstruction.h"
+#include "mozilla/dom/ResponsiveImageSelector.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/TreeWalker.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/Unused.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
@@ -31,6 +34,7 @@
 #include "nsFrameLoader.h"
 #include "nsGlobalWindowOuter.h"
 #include "nsIContent.h"
+#include "nsICookieJarSettings.h"
 #include "nsIDOMWindowUtils.h"
 #include "mozilla/dom/Document.h"
 #include "nsIDocumentEncoder.h"
@@ -73,6 +77,12 @@ WebBrowserPersistLocalDocument::SetPersistFlags(uint32_t aFlags) {
 NS_IMETHODIMP
 WebBrowserPersistLocalDocument::GetPersistFlags(uint32_t* aFlags) {
   *aFlags = mPersistFlags;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+WebBrowserPersistLocalDocument::GetIsClosed(bool* aIsClosed) {
+  *aIsClosed = false;
   return NS_OK;
 }
 
@@ -132,6 +142,14 @@ WebBrowserPersistLocalDocument::GetReferrerInfo(
 }
 
 NS_IMETHODIMP
+WebBrowserPersistLocalDocument::GetCookieJarSettings(
+    nsICookieJarSettings** aCookieJarSettings) {
+  *aCookieJarSettings = mDocument->CookieJarSettings();
+  NS_ADDREF(*aCookieJarSettings);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 WebBrowserPersistLocalDocument::GetContentDisposition(nsAString& aCD) {
   nsCOMPtr<nsPIDOMWindowOuter> window = mDocument->GetWindow();
   if (NS_WARN_IF(!window)) {
@@ -149,22 +167,25 @@ WebBrowserPersistLocalDocument::GetContentDisposition(nsAString& aCD) {
 
 NS_IMETHODIMP
 WebBrowserPersistLocalDocument::GetCacheKey(uint32_t* aKey) {
-  *aKey = 0;
-  nsCOMPtr<nsISHEntry> history = GetHistory();
-  if (history) {
-    history->GetCacheKey(aKey);
+  Maybe<uint32_t> cacheKey;
+
+  if (nsDocShell* docShell = nsDocShell::Cast(mDocument->GetDocShell())) {
+    cacheKey = docShell->GetCacheKeyFromCurrentEntry();
   }
+  *aKey = cacheKey.valueOr(0);
+
   return NS_OK;
 }
 
 NS_IMETHODIMP
 WebBrowserPersistLocalDocument::GetPostData(nsIInputStream** aStream) {
-  nsCOMPtr<nsISHEntry> history = GetHistory();
-  if (!history) {
-    *aStream = nullptr;
-    return NS_OK;
+  nsCOMPtr<nsIInputStream> postData;
+  if (nsDocShell* docShell = nsDocShell::Cast(mDocument->GetDocShell())) {
+    postData = docShell->GetPostDataFromCurrentEntry();
   }
-  return history->GetPostData(aStream);
+
+  postData.forget(aStream);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -250,6 +271,7 @@ class ResourceReader final : public nsIWebBrowserPersistDocumentReceiver {
                            const char* aAttribute,
                            const char* aNamespaceURI = "");
   nsresult OnWalkSubframe(nsINode* aNode);
+  nsresult OnWalkSrcSet(dom::Element* aElement);
 
   ~ResourceReader();
 
@@ -386,6 +408,24 @@ nsresult ResourceReader::OnWalkAttribute(dom::Element* aElement,
   return OnWalkURI(uriSpec, aContentPolicyType);
 }
 
+nsresult ResourceReader::OnWalkSrcSet(dom::Element* aElement) {
+  nsAutoString srcSet;
+  if (!aElement->GetAttr(nsGkAtoms::srcset, srcSet)) {
+    return NS_OK;
+  }
+
+  nsresult rv = NS_OK;
+  auto eachCandidate = [&](dom::ResponsiveImageCandidate&& aCandidate) {
+    if (!aCandidate.IsValid() || NS_FAILED(rv)) {
+      return;
+    }
+    rv = OnWalkURI(NS_ConvertUTF16toUTF8(aCandidate.URLString()),
+                   nsIContentPolicy::TYPE_IMAGE);
+  };
+  dom::ResponsiveImageSelector::ParseSourceSet(srcSet, eachCandidate);
+  return rv;
+}
+
 static nsresult GetXMLStyleSheetLink(dom::ProcessingInstruction* aPI,
                                      nsAString& aHref) {
   nsAutoString data;
@@ -412,9 +452,10 @@ nsresult ResourceReader::OnWalkDOMNode(nsINode* aNode) {
   }
 
   // Test the node to see if it's an image, frame, iframe, css, js
-  if (aNode->IsHTMLElement(nsGkAtoms::img)) {
-    return OnWalkAttribute(aNode->AsElement(), nsIContentPolicy::TYPE_IMAGE,
-                           "src");
+  if (auto* img = dom::HTMLImageElement::FromNode(*aNode)) {
+    MOZ_TRY(OnWalkAttribute(img, nsIContentPolicy::TYPE_IMAGE, "src"));
+    MOZ_TRY(OnWalkSrcSet(img));
+    return NS_OK;
   }
 
   if (aNode->IsSVGElement(nsGkAtoms::img)) {
@@ -428,6 +469,7 @@ nsresult ResourceReader::OnWalkDOMNode(nsINode* aNode) {
   }
 
   if (aNode->IsHTMLElement(nsGkAtoms::source)) {
+    MOZ_TRY(OnWalkSrcSet(aNode->AsElement()));
     return OnWalkAttribute(aNode->AsElement(), nsIContentPolicy::TYPE_MEDIA,
                            "src");
   }
@@ -557,6 +599,8 @@ class PersistNodeFixup final : public nsIDocumentEncoderNodeFixup {
   nsresult FixupXMLStyleSheetLink(dom::ProcessingInstruction* aPI,
                                   const nsAString& aHref);
 
+  nsresult FixupSrcSet(nsINode*);
+
   using IWBP = nsIWebBrowserPersist;
 };
 
@@ -575,12 +619,12 @@ PersistNodeFixup::PersistNodeFixup(WebBrowserPersistLocalDocument* aParent,
     NS_ENSURE_SUCCESS_VOID(rv);
     for (uint32_t i = 0; i < mapSize; ++i) {
       nsAutoCString urlFrom;
-      auto* urlTo = new nsCString();
+      auto urlTo = MakeUnique<nsCString>();
 
       rv = aMap->GetURIMapping(i, urlFrom, *urlTo);
       MOZ_ASSERT(NS_SUCCEEDED(rv));
       if (NS_SUCCEEDED(rv)) {
-        mMap.Put(urlFrom, urlTo);
+        mMap.InsertOrUpdate(urlFrom, std::move(urlTo));
       }
     }
   }
@@ -619,8 +663,34 @@ nsresult PersistNodeFixup::FixupURI(nsAString& aURI) {
     return NS_ERROR_FAILURE;
   }
   if (!replacement->IsEmpty()) {
-    aURI = NS_ConvertUTF8toUTF16(*replacement);
+    CopyUTF8toUTF16(*replacement, aURI);
   }
+  return NS_OK;
+}
+
+nsresult PersistNodeFixup::FixupSrcSet(nsINode* aNode) {
+  dom::Element* element = aNode->AsElement();
+  nsAutoString originalSrcSet;
+  if (!element->GetAttr(nsGkAtoms::srcset, originalSrcSet)) {
+    return NS_OK;
+  }
+  nsAutoString newSrcSet;
+  bool first = true;
+  auto eachCandidate = [&](dom::ResponsiveImageCandidate&& aCandidate) {
+    if (!aCandidate.IsValid()) {
+      return;
+    }
+    if (!first) {
+      newSrcSet.AppendLiteral(", ");
+    }
+    first = false;
+    nsAutoString uri(aCandidate.URLString());
+    FixupURI(uri);
+    newSrcSet.Append(uri);
+    aCandidate.AppendDescriptors(newSrcSet);
+  };
+  dom::ResponsiveImageSelector::ParseSourceSet(originalSrcSet, eachCandidate);
+  element->SetAttr(nsGkAtoms::srcset, newSrcSet, IgnoreErrors());
   return NS_OK;
 }
 
@@ -688,8 +758,7 @@ nsresult PersistNodeFixup::FixupAnchor(nsINode* aNode) {
     nsresult rv = NS_NewURI(getter_AddRefs(newURI), oldCValue,
                             mParent->GetCharacterSet(), relativeURI);
     if (NS_SUCCEEDED(rv) && newURI) {
-      Unused
-          << NS_MutateURI(newURI).SetUserPass(EmptyCString()).Finalize(newURI);
+      Unused << NS_MutateURI(newURI).SetUserPass(""_ns).Finalize(newURI);
       nsAutoCString uriSpec;
       rv = newURI->GetSpec(uriSpec);
       NS_ENSURE_SUCCESS(rv, rv);
@@ -890,17 +959,21 @@ PersistNodeFixup::FixupNode(nsINode* aNodeIn, bool* aSerializeCloneKids,
   }
 
   if (content->IsHTMLElement(nsGkAtoms::img)) {
-    nsresult rv = GetNodeToFixup(aNodeIn, aNodeOut);
-    if (NS_SUCCEEDED(rv) && *aNodeOut) {
-      // Disable image loads
-      nsCOMPtr<nsIImageLoadingContent> imgCon = do_QueryInterface(*aNodeOut);
-      if (imgCon) {
-        imgCon->SetLoadingEnabled(false);
-      }
-      FixupAnchor(*aNodeOut);
-      FixupAttribute(*aNodeOut, "src");
+    MOZ_TRY(GetNodeToFixup(aNodeIn, aNodeOut));
+    if (!*aNodeOut) {
+      return NS_OK;
     }
-    return rv;
+
+    // Disable image loads
+    nsCOMPtr<nsIImageLoadingContent> imgCon = do_QueryInterface(*aNodeOut);
+    if (imgCon) {
+      imgCon->SetLoadingEnabled(false);
+    }
+    // FIXME(emilio): Why fixing up <img href>? Looks bogus
+    FixupAnchor(*aNodeOut);
+    FixupAttribute(*aNodeOut, "src");
+    FixupSrcSet(*aNodeOut);
+    return NS_OK;
   }
 
   if (content->IsAnyOfHTMLElements(nsGkAtoms::audio, nsGkAtoms::video)) {
@@ -915,6 +988,7 @@ PersistNodeFixup::FixupNode(nsINode* aNodeIn, bool* aSerializeCloneKids,
     nsresult rv = GetNodeToFixup(aNodeIn, aNodeOut);
     if (NS_SUCCEEDED(rv) && *aNodeOut) {
       FixupAttribute(*aNodeOut, "src");
+      FixupSrcSet(*aNodeOut);
     }
     return rv;
   }
@@ -1015,16 +1089,16 @@ PersistNodeFixup::FixupNode(nsINode* aNodeIn, bool* aSerializeCloneKids,
           dom::HTMLInputElement::FromNode((*aNodeOut)->AsContent());
       nsCOMPtr<nsIFormControl> formControl = do_QueryInterface(*aNodeOut);
       switch (formControl->ControlType()) {
-        case NS_FORM_INPUT_EMAIL:
-        case NS_FORM_INPUT_SEARCH:
-        case NS_FORM_INPUT_TEXT:
-        case NS_FORM_INPUT_TEL:
-        case NS_FORM_INPUT_URL:
-        case NS_FORM_INPUT_NUMBER:
-        case NS_FORM_INPUT_RANGE:
-        case NS_FORM_INPUT_DATE:
-        case NS_FORM_INPUT_TIME:
-        case NS_FORM_INPUT_COLOR:
+        case FormControlType::InputEmail:
+        case FormControlType::InputSearch:
+        case FormControlType::InputText:
+        case FormControlType::InputTel:
+        case FormControlType::InputUrl:
+        case FormControlType::InputNumber:
+        case FormControlType::InputRange:
+        case FormControlType::InputDate:
+        case FormControlType::InputTime:
+        case FormControlType::InputColor:
           nodeAsInput->GetValue(valueStr, dom::CallerType::System);
           // Avoid superfluous value="" serialization
           if (valueStr.IsEmpty()) {
@@ -1033,11 +1107,10 @@ PersistNodeFixup::FixupNode(nsINode* aNodeIn, bool* aSerializeCloneKids,
             outElt->SetAttribute(valueAttr, valueStr, IgnoreErrors());
           }
           break;
-        case NS_FORM_INPUT_CHECKBOX:
-        case NS_FORM_INPUT_RADIO: {
-          bool checked = nodeAsInput->Checked();
-          outElt->SetDefaultChecked(checked, IgnoreErrors());
-        } break;
+        case FormControlType::InputCheckbox:
+        case FormControlType::InputRadio:
+          outElt->SetDefaultChecked(nodeAsInput->Checked(), IgnoreErrors());
+          break;
         default:
           break;
       }

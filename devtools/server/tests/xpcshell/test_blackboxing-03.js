@@ -1,6 +1,5 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
-/* eslint-disable no-shadow, max-nested-callbacks */
 
 "use strict";
 
@@ -54,6 +53,29 @@ add_task(
       "debuggerStatement",
       "We should stop at the debugger statement again"
     );
+    await threadFront.resume();
+
+    // Test the debugger statement in the black boxed range
+    threadFront.setBreakpoint({ sourceUrl: source.url, line: 4 }, {});
+
+    await blackBox(sourceFront, {
+      start: { line: 1, column: 0 },
+      end: { line: 9, column: 0 },
+    });
+
+    const packet4 = await executeOnNextTickAndWaitForPause(
+      debuggee.runTest,
+      threadFront
+    );
+
+    Assert.equal(
+      packet4.why.type,
+      "breakpoint",
+      "We should pass over the debugger statement."
+    );
+
+    threadFront.removeBreakpoint({ sourceUrl: source.url, line: 4 }, {});
+    await unBlackBox(sourceFront);
     await threadFront.resume();
   })
 );

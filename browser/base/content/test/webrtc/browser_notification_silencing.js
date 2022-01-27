@@ -62,7 +62,7 @@ async function testNotificationSilencing(aBrowser) {
   await promise;
   await observerPromise;
 
-  checkDeviceSelectors(false, false, true, window);
+  checkDeviceSelectors(["screen"], window);
 
   let document = window.document;
 
@@ -85,8 +85,8 @@ async function testNotificationSilencing(aBrowser) {
   // make sure we're not still doing that.
   Assert.ok(!notification.button.disabled, "Allow button is not disabled");
   Assert.ok(
-    !notification.hasAttribute("warninghidden"),
-    "warning message is shown"
+    notification.hasAttribute("warninghidden"),
+    "No warning message is shown"
   );
 
   let observerPromise1 = expectObserverCalled(

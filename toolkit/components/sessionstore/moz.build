@@ -5,30 +5,44 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 EXPORTS.mozilla.dom += [
-    'SessionStoreData.h',
-    'SessionStoreListener.h',
-    'SessionStoreMessageUtils.h',
-    'SessionStoreUtils.h',
+    "SessionStoreChangeListener.h",
+    "SessionStoreData.h",
+    "SessionStoreDataCollector.h",
+    "SessionStoreListener.h",
+    "SessionStoreMessageUtils.h",
+    "SessionStoreRestoreData.h",
+    "SessionStoreUtils.h",
 ]
 
 UNIFIED_SOURCES += [
-    'SessionStoreListener.cpp',
-    'SessionStoreUtils.cpp',
+    "RestoreTabContentObserver.cpp",
+    "SessionStoreChangeListener.cpp",
+    "SessionStoreDataCollector.cpp",
+    "SessionStoreListener.cpp",
+    "SessionStoreRestoreData.cpp",
+    "SessionStoreUtils.cpp",
 ]
 
 EXTRA_JS_MODULES += [
-    'SessionStoreFunctions.jsm',
+    "SessionStoreFunctions.jsm",
 ]
 
-XPIDL_MODULE = 'sessionStore_funcs'
+XPIDL_MODULE = "sessionstore"
 
 XPIDL_SOURCES += [
-    'SessionStoreFunctions.idl',
+    "nsISessionStoreRestoreData.idl",
+    "SessionStoreFunctions.idl",
 ]
 
-include('/ipc/chromium/chromium-config.mozbuild')
+IPDL_SOURCES += [
+    "SessionStoreTypes.ipdlh",
+]
 
-FINAL_LIBRARY = 'xul'
+include("/ipc/chromium/chromium-config.mozbuild")
 
-with Files('**'):
-    BUG_COMPONENT = ('Firefox', 'Session Restore')
+FINAL_LIBRARY = "xul"
+
+with Files("**"):
+    BUG_COMPONENT = ("Firefox", "Session Restore")
+
+REQUIRES_UNIFIED_BUILD = True

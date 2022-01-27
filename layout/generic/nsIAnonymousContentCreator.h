@@ -13,13 +13,12 @@
 #define nsIAnonymousContentCreator_h___
 
 #include "mozilla/AnonymousContentKey.h"
-#include "mozilla/ComputedStyle.h"
 
 #include "nsQueryFrame.h"
 #include "nsTArrayForwardDeclare.h"
+#include "X11UndefineNone.h"
 
 class nsIContent;
-class nsIFrame;
 
 /**
  * Any source for anonymous content can implement this interface to provide it.

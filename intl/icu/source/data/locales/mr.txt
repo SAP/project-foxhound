@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 mr{
     AuxExemplarCharacters{"[\u200C\u200D]"}
     Ellipsis{
@@ -229,6 +230,21 @@ mr{
             }
         }
         minimalPairs{
+            case{
+                ablative{"{0} दिवसापासून त्याचे प्रयत्न चालू होते"}
+                accusative{"दर {0} दिवसाला येऊन तो विचारणा करत होता"}
+                dative{"{0} दिवसांसाठी तो गावाला गेला आहे"}
+                ergative{"{0} दिवसाने काय फरक पडणार?"}
+                genitive{"{0} दिवसांचा कार्यक्रम होता"}
+                locative{"{0} व्या दिवशी तो हजर झाला"}
+                nominative{"{0} दिवस खूप मजेत गेले"}
+                oblique{"{0} दिवस"}
+            }
+            gender{
+                feminine{"कॅलरी {0} ने वाढली"}
+                masculine{"तो {0} तास खूप महत्वाचा होता"}
+                neuter{"ते {0} वर्ष खूप महत्वाचे होते"}
+            }
             ordinal{
                 few{"{0}थे उजवे वळण घ्या."}
                 one{"{0}ले उजवे वळण घ्या."}
@@ -243,7 +259,6 @@ mr{
         minimumGroupingDigits{"1"}
         native{"deva"}
     }
-    Version{"37"}
     calendar{
         buddhist{
             eras{
@@ -498,6 +513,16 @@ mr{
                 "{1}, {0}",
                 "{1}, {0}",
             }
+            DateTimeSkeletons{
+                "ahmmsszzzz",
+                "ahmmssz",
+                "ahmmss",
+                "ahmm",
+                "GyMMMMEEEEd",
+                "GyMMMMd",
+                "GyMMMd",
+                "GGGGGyMd",
+            }
             availableFormats{
                 Bh{"B h"}
                 Bhm{"B h:mm"}
@@ -514,6 +539,7 @@ mr{
                 GyMMM{"MMM y G"}
                 GyMMMEd{"E, d MMM, y G"}
                 GyMMMd{"d MMM, y G"}
+                GyMd{"d/M/y GGGGG"}
                 H{"HH"}
                 Hm{"H-mm"}
                 Hms{"H-mm-ss"}
@@ -641,16 +667,12 @@ mr{
         }
         gregorian{
             AmPmMarkers{
-                "म.पू.",
-                "म.उ.",
-            }
-            AmPmMarkersAbbr{
-                "म.पू.",
-                "म.उ.",
+                "AM",
+                "PM",
             }
             AmPmMarkersNarrow{
-                "स",
-                "सं",
+                "a",
+                "p",
             }
             DateTimePatterns{
                 "h:mm:ss a zzzz",
@@ -666,6 +688,16 @@ mr{
                 "{1} रोजी {0}",
                 "{1}, {0}",
                 "{1}, {0}",
+            }
+            DateTimeSkeletons{
+                "ahmmsszzzz",
+                "ahmmssz",
+                "ahmmss",
+                "ahmm",
+                "yMMMMEEEEd",
+                "yMMMMd",
+                "yMMMd",
+                "yyMd",
             }
             appendItems{
                 Timezone{"{0} {1}"}
@@ -686,6 +718,7 @@ mr{
                 GyMMM{"MMM G y"}
                 GyMMMEd{"E, d MMM, G y"}
                 GyMMMd{"d MMM, G y"}
+                GyMd{"d/M/y GGGGG"}
                 H{"HH"}
                 Hm{"H:mm"}
                 Hms{"H:mm:ss"}
@@ -840,7 +873,7 @@ mr{
                 stand-alone{
                     abbreviated{
                         afternoon1{"दुपार"}
-                        am{"म.पू."}
+                        am{"AM"}
                         evening1{"संध्याकाळ"}
                         evening2{"सायंकाळ"}
                         midnight{"मध्यरात्र"}
@@ -848,11 +881,11 @@ mr{
                         morning2{"सकाळ"}
                         night1{"रात्र"}
                         noon{"मध्यान्ह"}
-                        pm{"म.उ."}
+                        pm{"PM"}
                     }
                     narrow{
                         afternoon1{"दु"}
-                        am{"म.पू."}
+                        am{"AM"}
                         evening1{"सं"}
                         evening2{"सा"}
                         midnight{"म.रा."}
@@ -860,11 +893,11 @@ mr{
                         morning2{"स"}
                         night1{"रात्र"}
                         noon{"म"}
-                        pm{"म.उ."}
+                        pm{"PM"}
                     }
                     wide{
                         afternoon1{"दुपार"}
-                        am{"म.पू."}
+                        am{"AM"}
                         evening1{"संध्याकाळ"}
                         evening2{"सायंकाळ"}
                         midnight{"मध्यरात्र"}
@@ -872,7 +905,7 @@ mr{
                         morning2{"सकाळ"}
                         night1{"रात्र"}
                         noon{"मध्यान्ह"}
-                        pm{"म.उ."}
+                        pm{"PM"}
                     }
                 }
             }
@@ -1712,13 +1745,13 @@ mr{
             dn{"वर्षातील दिवस"}
         }
         dayperiod{
-            dn{"[म.पू./म.उ.]"}
+            dn{"AM/PM"}
         }
         dayperiod-narrow{
-            dn{"[म.पू./म.उ.]"}
+            dn{"AM/PM"}
         }
         dayperiod-short{
-            dn{"[म.पू./म.उ.]"}
+            dn{"AM/PM"}
         }
         era{
             dn{"युग"}
@@ -2474,6 +2507,9 @@ mr{
             end{"{0}, किंवा {1}"}
             middle{"{0}, {1}"}
             start{"{0}, {1}"}
+        }
+        or-short{
+            end{"{0} किंवा {1}"}
         }
         standard{
             2{"{0} आणि {1}"}

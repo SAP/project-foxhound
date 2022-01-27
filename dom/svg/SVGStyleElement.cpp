@@ -7,7 +7,9 @@
 #include "mozilla/dom/SVGStyleElement.h"
 
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/SVGStyleElementBinding.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -136,14 +138,6 @@ void SVGStyleElement::ContentChanged(nsIContent* aContent) {
 
 //----------------------------------------------------------------------
 
-void SVGStyleElement::GetXmlspace(nsAString& aXmlspace) {
-  GetAttr(kNameSpaceID_XML, nsGkAtoms::space, aXmlspace);
-}
-
-void SVGStyleElement::SetXmlspace(const nsAString& aXmlspace, ErrorResult& rv) {
-  rv = SetAttr(kNameSpaceID_XML, nsGkAtoms::space, aXmlspace, true);
-}
-
 void SVGStyleElement::GetMedia(nsAString& aMedia) {
   GetAttr(nsGkAtoms::media, aMedia);
 }
@@ -193,10 +187,10 @@ Maybe<LinkStyle::SheetInfo> SVGStyleElement::GetStyleSheetInfo() {
       AttrValueToCORSMode(GetParsedAttr(nsGkAtoms::crossorigin)),
       title,
       media,
-      /* integrity = */ EmptyString(),
+      /* integrity = */ u""_ns,
       /* nsStyleUtil::CSPAllowsInlineStyle takes care of nonce checking for
          inline styles. Bug 1607011 */
-      /* nonce = */ EmptyString(),
+      /* nonce = */ u""_ns,
       HasAlternateRel::No,
       IsInline::Yes,
       IsExplicitlyEnabled::No,

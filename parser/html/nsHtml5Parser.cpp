@@ -94,10 +94,12 @@ nsHtml5Parser::SetCommand(eParserCommands aParserCommand) {
 }
 
 void nsHtml5Parser::SetDocumentCharset(NotNull<const Encoding*> aEncoding,
-                                       int32_t aCharsetSource) {
+                                       int32_t aCharsetSource,
+                                       bool aForceAutoDetection) {
   MOZ_ASSERT(!mExecutor->HasStarted(), "Document charset set too late.");
   MOZ_ASSERT(GetStreamParser(), "Setting charset on a script-only parser.");
-  GetStreamParser()->SetDocumentCharset(aEncoding, aCharsetSource);
+  GetStreamParser()->SetDocumentCharset(aEncoding, aCharsetSource,
+                                        aForceAutoDetection);
   mExecutor->SetDocumentCharsetAndSource(aEncoding, aCharsetSource);
 }
 
@@ -154,10 +156,7 @@ NS_IMETHODIMP_(bool)
 nsHtml5Parser::IsComplete() { return mExecutor->IsComplete(); }
 
 NS_IMETHODIMP
-nsHtml5Parser::Parse(nsIURI* aURL, nsIRequestObserver* aObserver,
-                     void* aKey,       // legacy; ignored
-                     nsDTDMode aMode)  // legacy; ignored
-{
+nsHtml5Parser::Parse(nsIURI* aURL, void* /* legacy; ignored */) {
   /*
    * Do NOT cause WillBuildModel to be called synchronously from here!
    * The document won't be ready for it until OnStartRequest!
@@ -167,7 +166,6 @@ nsHtml5Parser::Parse(nsIURI* aURL, nsIRequestObserver* aObserver,
   MOZ_ASSERT(GetStreamParser(),
              "Can't call this Parse() variant on script-created parser");
 
-  GetStreamParser()->SetObserver(aObserver);
   GetStreamParser()->SetViewSourceTitle(aURL);  // In case we're viewing source
   mExecutor->SetStreamParser(GetStreamParser());
   mExecutor->SetParser(this);
@@ -460,6 +458,8 @@ nsresult nsHtml5Parser::Parse(const nsAString& aSourceBuffer, void* aKey,
 
 NS_IMETHODIMP
 nsHtml5Parser::Terminate() {
+  // Prevent a second call to DidBuildModel via document.close()
+  mDocumentClosed = true;
   // We should only call DidBuildModel once, so don't do anything if this is
   // the second time that Terminate has been called.
   if (mExecutor->IsComplete()) {

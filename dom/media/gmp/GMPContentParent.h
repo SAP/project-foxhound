@@ -22,18 +22,20 @@ class GMPContentParent final : public PGMPContentParent, public GMPSharedMem {
   friend class PGMPContentParent;
 
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GMPContentParent)
+  // Mark AddRef and Release as `final`, as they overload pure virtual
+  // implementations in PGMPContentParent.
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GMPContentParent, final)
 
   explicit GMPContentParent(GMPParent* aParent = nullptr);
 
-  nsresult GetGMPVideoDecoder(GMPVideoDecoderParent** aGMPVD,
-                              uint32_t aDecryptorId);
+  nsresult GetGMPVideoDecoder(GMPVideoDecoderParent** aGMPVD);
   void VideoDecoderDestroyed(GMPVideoDecoderParent* aDecoder);
 
   nsresult GetGMPVideoEncoder(GMPVideoEncoderParent** aGMPVE);
   void VideoEncoderDestroyed(GMPVideoEncoderParent* aEncoder);
 
-  already_AddRefed<ChromiumCDMParent> GetChromiumCDM();
+  already_AddRefed<ChromiumCDMParent> GetChromiumCDM(
+      const nsCString& aKeySystem);
   void ChromiumCDMDestroyed(ChromiumCDMParent* aCDM);
 
   nsCOMPtr<nsISerialEventTarget> GMPEventTarget();

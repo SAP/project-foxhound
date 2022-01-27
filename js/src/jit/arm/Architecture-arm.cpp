@@ -81,6 +81,8 @@ static uint32_t ParseARMCpuFeatures(const char* features,
     size_t count = end - features;
     if (count == 3 && strncmp(features, "vfp", 3) == 0) {
       flags |= HWCAP_VFP;
+    } else if (count == 5 && strncmp(features, "vfpv2", 5) == 0) {
+      flags |= HWCAP_VFP;  // vfpv2 is the same as vfp
     } else if (count == 4 && strncmp(features, "neon", 4) == 0) {
       flags |= HWCAP_NEON;
     } else if (count == 5 && strncmp(features, "vfpv3", 5) == 0) {
@@ -122,10 +124,26 @@ static uint32_t CanonicalizeARMHwCapFlags(uint32_t flags) {
   // Canonicalize the flags. These rules are also applied to the features
   // supplied for simulation.
 
+  // VFPv3 is a subset of VFPv4, force this if the input string omits it.
+  if (flags & HWCAP_VFPv4) {
+    flags |= HWCAP_VFPv3;
+  }
+
   // The VFPv3 feature is expected when the VFPv3D16 is reported, but add it
   // just in case of a kernel difference in feature reporting.
   if (flags & HWCAP_VFPv3D16) {
     flags |= HWCAP_VFPv3;
+  }
+
+  // VFPv2 is a subset of VFPv3, force this if the input string omits it.  VFPv2
+  // is just an alias for VFP.
+  if (flags & HWCAP_VFPv3) {
+    flags |= HWCAP_VFP;
+  }
+
+  // If we have Neon we have floating point.
+  if (flags & HWCAP_NEON) {
+    flags |= HWCAP_VFP;
   }
 
   // If VFPv3 or Neon is supported then this must be an ARMv7.
@@ -135,7 +153,7 @@ static uint32_t CanonicalizeARMHwCapFlags(uint32_t flags) {
 
   // Some old kernels report VFP and not VFPv3, but if ARMv7 then it must be
   // VFPv3.
-  if (flags & HWCAP_VFP && flags & HWCAP_ARMv7) {
+  if ((flags & HWCAP_VFP) && (flags & HWCAP_ARMv7)) {
     flags |= HWCAP_VFPv3;
   }
 
@@ -152,8 +170,11 @@ static bool forceDoubleCacheFlush = false;
 #endif
 
 // The override flags parsed from the ARMHWCAP environment variable or from the
-// --arm-hwcap js shell argument.
+// --arm-hwcap js shell argument.  They are stable after startup: there is no
+// longer a programmatic way of setting these from JS.
 volatile uint32_t armHwCapFlags = HWCAP_UNINITIALIZED;
+
+bool CPUFlagsHaveBeenComputed() { return armHwCapFlags != HWCAP_UNINITIALIZED; }
 
 bool ParseARMHwCapFlags(const char* armHwCap) {
   uint32_t flags = 0;
@@ -309,6 +330,11 @@ uint32_t GetARMFlags() {
   return armHwCapFlags;
 }
 
+bool HasNEON() {
+  MOZ_ASSERT(armHwCapFlags != HWCAP_UNINITIALIZED);
+  return armHwCapFlags & HWCAP_NEON;
+}
+
 bool HasARMv7() {
   MOZ_ASSERT(armHwCapFlags != HWCAP_UNINITIALIZED);
   return armHwCapFlags & HWCAP_ARMv7;
@@ -451,7 +477,7 @@ uint32_t FloatRegisters::ActualTotalPhys() {
   return 16;
 }
 
-void FlushICache(void* code, size_t size) {
+void FlushICache(void* code, size_t size, bool codeIsThreadLocal) {
 #if defined(JS_SIMULATOR_ARM)
   js::jit::SimulatorProcess::FlushICache(code, size);
 

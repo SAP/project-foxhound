@@ -15,11 +15,14 @@ async function pause(tab, options) {
 
   try {
     let browser = tab.linkedBrowser;
-    let awaitDOMAudioPlaybackStopped = BrowserTestUtils.waitForEvent(
-      browser,
-      "DOMAudioPlaybackStopped",
-      "DOMAudioPlaybackStopped event should get fired after pause"
-    );
+    let awaitDOMAudioPlaybackStopped;
+    if (!browser.audioMuted) {
+      awaitDOMAudioPlaybackStopped = BrowserTestUtils.waitForEvent(
+        browser,
+        "DOMAudioPlaybackStopped",
+        "DOMAudioPlaybackStopped event should get fired after pause"
+      );
+    }
     await SpecialPowers.spawn(browser, [], async function() {
       let audio = content.document.querySelector("audio");
       audio.pause();
@@ -73,8 +76,11 @@ async function show_tab(tab) {
   return tabShown;
 }
 
-async function test_tooltip(icon, expectedTooltip, isActiveTab) {
+async function test_tooltip(icon, expectedTooltip, isActiveTab, tab) {
   let tooltip = document.getElementById("tabbrowser-tab-tooltip");
+
+  let tabContent = tab.querySelector(".tab-content");
+  await hover_icon(tabContent, tooltip);
 
   await hover_icon(icon, tooltip);
   if (isActiveTab) {
@@ -163,18 +169,18 @@ async function test_muting_using_menu(tab, expectMuted) {
     contextMenu,
     "popuphidden"
   );
-  EventUtils.synthesizeMouseAtCenter(toggleMute, {});
+  contextMenu.activateItem(toggleMute);
   await popupHiddenPromise;
   await mutedPromise;
 }
 
 async function test_playing_icon_on_tab(tab, browser, isPinned) {
-  let icon = isPinned ? tab.overlayIcon : tab.soundPlayingIcon;
+  let icon = isPinned ? tab.overlayIcon : tab.overlayIcon;
   let isActiveTab = tab === gBrowser.selectedTab;
 
   await play(tab);
 
-  await test_tooltip(icon, "Mute tab", isActiveTab);
+  await test_tooltip(icon, "Mute tab", isActiveTab, tab);
 
   ok(
     !("muted" in get_tab_state(tab)),
@@ -193,7 +199,7 @@ async function test_playing_icon_on_tab(tab, browser, isPinned) {
     "muteReason property should be persisted"
   );
 
-  await test_tooltip(icon, "Unmute tab", isActiveTab);
+  await test_tooltip(icon, "Unmute tab", isActiveTab, tab);
 
   await test_mute_tab(tab, icon, false);
 
@@ -206,7 +212,7 @@ async function test_playing_icon_on_tab(tab, browser, isPinned) {
     "No muteReason property should be persisted"
   );
 
-  await test_tooltip(icon, "Mute tab", isActiveTab);
+  await test_tooltip(icon, "Mute tab", isActiveTab, tab);
 
   await test_mute_tab(tab, icon, true);
 
@@ -221,7 +227,7 @@ async function test_playing_icon_on_tab(tab, browser, isPinned) {
     "Tab should still be muted but not playing"
   );
 
-  await test_tooltip(icon, "Unmute tab", isActiveTab);
+  await test_tooltip(icon, "Unmute tab", isActiveTab, tab);
 
   await test_mute_tab(tab, icon, false);
 
@@ -251,7 +257,7 @@ async function test_playing_icon_on_hidden_tab(tab) {
   function assertIconShowing() {
     is(
       getComputedStyle(alltabsBadge).backgroundImage,
-      'url("chrome://browser/skin/tabbrowser/badge-audio-playing.svg")',
+      'url("chrome://browser/skin/tabbrowser/tab-audio-playing-small.svg")',
       "The audio playing icon is shown"
     );
     is(
@@ -358,7 +364,7 @@ async function test_swapped_browser_while_playing(oldTab, newBrowser) {
     "Expected the correct soundplaying attribute on the new tab"
   );
 
-  await test_tooltip(newTab.soundPlayingIcon, "Unmute tab", true);
+  await test_tooltip(newTab.overlayIcon, "Unmute tab", true, newTab);
 }
 
 async function test_swapped_browser_while_not_playing(oldTab, newBrowser) {
@@ -431,14 +437,14 @@ async function test_swapped_browser_while_not_playing(oldTab, newBrowser) {
     "Expected the correct soundplaying attribute on the new tab"
   );
 
-  await test_tooltip(newTab.soundPlayingIcon, "Unmute tab", true);
+  await test_tooltip(newTab.overlayIcon, "Unmute tab", true, newTab);
 }
 
 async function test_browser_swapping(tab, browser) {
   // First, test swapping with a playing but muted tab.
   await play(tab);
 
-  await test_mute_tab(tab, tab.soundPlayingIcon, true);
+  await test_mute_tab(tab, tab.overlayIcon, true);
 
   await BrowserTestUtils.withNewTab(
     {

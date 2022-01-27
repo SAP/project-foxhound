@@ -26,6 +26,8 @@ class nsIChannel;
 class nsIReferrerInfo;
 class OriginAttibutes;
 namespace mozilla {
+template <typename, class>
+class UniquePtr;
 namespace dom {
 class DocShellLoadStateInit;
 }  // namespace dom
@@ -102,6 +104,10 @@ class nsDocShellLoadState final {
 
   void SetTriggeringPrincipal(nsIPrincipal* aTriggeringPrincipal);
 
+  uint32_t TriggeringSandboxFlags() const;
+
+  void SetTriggeringSandboxFlags(uint32_t aTriggeringSandboxFlags);
+
   nsIContentSecurityPolicy* Csp() const;
 
   void SetCsp(nsIContentSecurityPolicy* aCsp);
@@ -114,9 +120,20 @@ class nsDocShellLoadState final {
 
   void SetPrincipalIsExplicit(bool aPrincipalIsExplicit);
 
+  // If true, "beforeunload" event listeners were notified by the creater of the
+  // LoadState and given the chance to abort the navigation, and should not be
+  // notified again.
+  bool NotifiedBeforeUnloadListeners() const;
+
+  void SetNotifiedBeforeUnloadListeners(bool aNotifiedBeforeUnloadListeners);
+
   bool ForceAllowDataURI() const;
 
   void SetForceAllowDataURI(bool aForceAllowDataURI);
+
+  bool IsExemptFromHTTPSOnlyMode() const;
+
+  void SetIsExemptFromHTTPSOnlyMode(bool aIsExemptFromHTTPSOnlyMode);
 
   bool OriginalFrameSrc() const;
 
@@ -134,9 +151,18 @@ class nsDocShellLoadState final {
 
   void SetSHEntry(nsISHEntry* aSHEntry);
 
-  const mozilla::dom::SessionHistoryInfo* GetSessionHistoryInfo() const;
+  const mozilla::dom::LoadingSessionHistoryInfo* GetLoadingSessionHistoryInfo()
+      const;
 
-  void SetSessionHistoryInfo(const mozilla::dom::SessionHistoryInfo& aInfo);
+  // Copies aLoadingInfo and stores the copy in this nsDocShellLoadState.
+  void SetLoadingSessionHistoryInfo(
+      const mozilla::dom::LoadingSessionHistoryInfo& aLoadingInfo);
+
+  // Stores aLoadingInfo in this nsDocShellLoadState.
+  void SetLoadingSessionHistoryInfo(
+      mozilla::UniquePtr<mozilla::dom::LoadingSessionHistoryInfo> aLoadingInfo);
+
+  bool LoadIsFromSessionHistory() const;
 
   const nsString& Target() const;
 
@@ -160,7 +186,11 @@ class nsDocShellLoadState final {
     return mSourceBrowsingContext;
   }
 
-  void SetSourceBrowsingContext(BrowsingContext* aSourceBrowsingContext);
+  void SetSourceBrowsingContext(BrowsingContext*);
+
+  void SetAllowFocusMove(bool aAllow) { mAllowFocusMove = aAllow; }
+
+  bool AllowFocusMove() const { return mAllowFocusMove; }
 
   const MaybeDiscarded<BrowsingContext>& TargetBrowsingContext() const {
     return mTargetBrowsingContext;
@@ -191,6 +221,16 @@ class nsDocShellLoadState final {
 
   bool HasLoadFlags(uint32_t aFlag);
 
+  uint32_t InternalLoadFlags() const;
+
+  void SetInternalLoadFlags(uint32_t aFlags);
+
+  void SetInternalLoadFlag(uint32_t aFlag);
+
+  void UnsetInternalLoadFlag(uint32_t aFlag);
+
+  bool HasInternalLoadFlags(uint32_t aFlag);
+
   bool FirstParty() const;
 
   void SetFirstParty(bool aFirstParty);
@@ -206,6 +246,8 @@ class nsDocShellLoadState final {
   const nsString& FileName() const;
 
   void SetFileName(const nsAString& aFileName);
+
+  nsIURI* GetUnstrippedURI() const;
 
   // Give the type of DocShell we're loading into (chrome/content/etc) and
   // origin attributes for the URI we're loading, figure out if we should
@@ -258,6 +300,18 @@ class nsDocShellLoadState final {
 
   bool GetChannelInitialized() const { return mChannelInitialized; }
 
+  void SetIsMetaRefresh(bool aMetaRefresh) { mIsMetaRefresh = aMetaRefresh; }
+
+  bool IsMetaRefresh() const { return mIsMetaRefresh; }
+
+  const mozilla::Maybe<nsCString>& GetRemoteTypeOverride() const {
+    return mRemoteTypeOverride;
+  }
+
+  void SetRemoteTypeOverride(const nsCString& aRemoteTypeOverride) {
+    mRemoteTypeOverride = mozilla::Some(aRemoteTypeOverride);
+  }
+
   // When loading a document through nsDocShell::LoadURI(), a special set of
   // flags needs to be set based on other values in nsDocShellLoadState. This
   // function calculates those flags, before the LoadState is passed to
@@ -271,6 +325,12 @@ class nsDocShellLoadState final {
       mozilla::Maybe<bool> aUriModified, mozilla::Maybe<bool> aIsXFOError);
 
   mozilla::dom::DocShellLoadStateInit Serialize();
+
+  void SetLoadIsFromSessionHistory(int32_t aOffset, bool aLoadingCurrentEntry);
+  void ClearLoadIsFromSessionHistory();
+
+  void MaybeStripTrackerQueryStrings(mozilla::dom::BrowsingContext* aContext,
+                                     nsIURI* aCurrentUnstrippedURI = nullptr);
 
  protected:
   // Destructor can't be defaulted or inlined, as header doesn't have all type
@@ -307,6 +367,11 @@ class nsDocShellLoadState final {
   // SystemPrincipal as the triggeringPrincipal.
   nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
 
+  // The SandboxFlags of the load, that are, the SandboxFlags of the entity
+  // responsible for causing the load to occur. Most likely this are the
+  // SandboxFlags of the document that started the load.
+  uint32_t mTriggeringSandboxFlags;
+
   // The CSP of the load, that is, the CSP of the entity responsible for causing
   // the load to occur. Most likely this is the CSP of the document that started
   // the load. In case the entity starting the load did not use a CSP, then mCsp
@@ -335,6 +400,8 @@ class nsDocShellLoadState final {
   // for a content docshell the load fails.
   bool mPrincipalIsExplicit;
 
+  bool mNotifiedBeforeUnloadListeners;
+
   // Principal we're inheriting. If null, this means the principal should be
   // inherited from the current document. If set to NullPrincipal, the channel
   // will fill in principal information later in the load. See internal comments
@@ -352,6 +419,10 @@ class nsDocShellLoadState final {
   // to a data URI will be allowed.
   bool mForceAllowDataURI;
 
+  // If this attribute is true, then the top-level navigaion
+  // will be exempt from HTTPS-Only-Mode upgrades.
+  bool mIsExemptFromHTTPSOnlyMode;
+
   // If this attribute is true, this load corresponds to a frame
   // element loading its original src (or srcdoc) attribute.
   bool mOriginalFrameSrc;
@@ -368,8 +439,9 @@ class nsDocShellLoadState final {
   // Active Session History entry (if loading from SH)
   nsCOMPtr<nsISHEntry> mSHEntry;
 
-  // Session history info for the load
-  mozilla::UniquePtr<mozilla::dom::SessionHistoryInfo> mSessionHistoryInfo;
+  // Loading session history info for the load
+  mozilla::UniquePtr<mozilla::dom::LoadingSessionHistoryInfo>
+      mLoadingSessionHistoryInfo;
 
   // Target for load, like _content, _blank etc.
   nsString mTarget;
@@ -399,11 +471,17 @@ class nsDocShellLoadState final {
   // Set of Load Flags, taken from nsDocShellLoadTypes.h and nsIWebNavigation
   uint32_t mLoadFlags;
 
+  // Set of internal load flags
+  uint32_t mInternalLoadFlags;
+
   // Is this a First Party Load?
   bool mFirstParty;
 
   // Is this load triggered by a user gesture?
   bool mHasValidUserGestureActivation;
+
+  // Whether this load can steal the focus from the source browsing context.
+  bool mAllowFocusMove;
 
   // A hint as to the content-type of the resulting data. If no hint, IsVoid()
   // should return true.
@@ -445,6 +523,16 @@ class nsDocShellLoadState final {
   // Optional value to indicate that a channel has been
   // pre-initialized in the parent process.
   bool mChannelInitialized;
+
+  // True if the load was triggered by a meta refresh.
+  bool mIsMetaRefresh;
+
+  // The original URI before query stripping happened. If it's present, it shows
+  // the query stripping happened. Otherwise, it will be a nullptr.
+  nsCOMPtr<nsIURI> mUnstrippedURI;
+
+  // If set, the remote type which the load should be completed within.
+  mozilla::Maybe<nsCString> mRemoteTypeOverride;
 };
 
 #endif /* nsDocShellLoadState_h__ */

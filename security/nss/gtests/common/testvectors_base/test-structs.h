@@ -32,6 +32,7 @@ typedef struct AesCmacTestVectorStr {
   std::string tag;
   bool invalid;
 } AesCmacTestVector;
+typedef AesCmacTestVector HmacTestVector;
 
 typedef struct AesGcmKatValueStr {
   uint32_t id;
@@ -66,6 +67,8 @@ typedef struct EcdsaTestVectorStr {
   bool valid;
 } EcdsaTestVector;
 
+typedef EcdsaTestVector DsaTestVector;
+
 typedef struct EcdhTestVectorStr {
   uint32_t id;
   std::vector<uint8_t> private_key;
@@ -74,6 +77,41 @@ typedef struct EcdhTestVectorStr {
   bool invalid_asn;
   bool valid;
 } EcdhTestVector;
+
+typedef struct HkdfTestVectorStr {
+  uint32_t id;
+  std::string ikm;
+  std::string salt;
+  std::string info;
+  std::string okm;
+  uint32_t size;
+  bool valid;
+} HkdfTestVector;
+
+enum class IkeTestType {
+  ikeGxy,         /* CKM_NSS_IKE_PRF_DERIVE case 1 */
+  ikeV1Psk,       /* CKM_NSS_IKE_PRF_DERIVE case 2 */
+  ikeV2Rekey,     /* CKM_NSS_IKE_PRF_DERIVE case 3 */
+  ikeV1,          /* CKM_NSS_IKE1_PRF_DERIVE */
+  ikeV1AppB,      /* CKM_NSS_IKE1_PRF_APP_B_DERIVE base mode */
+  ikeV1AppBQuick, /* CKM_NSS_IKE1_PRF_APP_B_DERIVE quick mode */
+  ikePlus         /* CKM_NSS_IKE_PRF_DERIVE */
+};
+
+typedef struct IkeTestVectorStr {
+  uint32_t id;
+  IkeTestType test_type;
+  std::string ikm;
+  std::string gxykm;
+  std::string prevkm;
+  std::string okm;
+  std::string Ni;
+  std::string Nr;
+  std::string seed_data;
+  uint8_t key_number;
+  uint32_t size;
+  bool valid;
+} IkeTestVector;
 
 typedef struct RsaSignatureTestVectorStr {
   SECOidTag hash_oid;

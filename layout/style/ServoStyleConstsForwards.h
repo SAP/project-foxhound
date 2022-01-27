@@ -30,6 +30,7 @@
 #  include "nsCSSPropertyID.h"
 #  include "nsCompatibility.h"
 #  include "nsIURI.h"
+#  include "mozilla/image/Resolution.h"
 #  include <atomic>
 
 struct RawServoAnimationValueTable;
@@ -102,6 +103,7 @@ enum HalfCorner : uint8_t;
 enum LogicalSide : uint8_t;
 enum class PseudoStyleType : uint8_t;
 enum class OriginFlags : uint8_t;
+enum class UseBoxSizing : uint8_t;
 
 namespace css {
 class Loader;

@@ -9,49 +9,24 @@
 
 #include "mozilla/net/DNSByTypeRecord.h"
 #include "mozilla/Assertions.h"
+#include "nsClassHashtable.h"
 #include "nsIChannel.h"
 #include "nsIHttpPushListener.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIStreamListener.h"
-#include "nsHostResolver.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
+#include "DNSPacket.h"
+#include "TRRSkippedReason.h"
+
+class AHostResolver;
+class nsHostRecord;
 
 namespace mozilla {
 namespace net {
 
-// the values map to RFC1035 type identifiers
-enum TrrType {
-  TRRTYPE_A = 1,
-  TRRTYPE_NS = 2,
-  TRRTYPE_CNAME = 5,
-  TRRTYPE_AAAA = 28,
-  TRRTYPE_TXT = 16,
-  TRRTYPE_HTTPSSVC = 65345,
-};
-
-class DOHaddr : public LinkedListElement<DOHaddr> {
- public:
-  NetAddr mNet;
-  uint32_t mTtl;
-};
-
 class TRRService;
 class TRRServiceChannel;
-extern TRRService* gTRRService;
-
-class DOHresp {
- public:
-  ~DOHresp() {
-    DOHaddr* el;
-    while ((el = mAddresses.popLast())) {
-      delete el;
-    }
-  }
-  nsresult Add(uint32_t TTL, unsigned char* dns, unsigned int index,
-               uint16_t len, bool aLocalAllowed);
-  LinkedList<DOHaddr> mAddresses;
-};
 
 class TRR : public Runnable,
             public nsITimerCallback,
@@ -66,79 +41,55 @@ class TRR : public Runnable,
   NS_DECL_NSISTREAMLISTENER
   NS_DECL_NSITIMERCALLBACK
 
-  // Never accept larger DOH responses than this as that would indicate
-  // something is wrong. Typical ones are much smaller.
-  static const unsigned int kMaxSize = 3200;
-
   // Number of "steps" we follow CNAME chains
   static const unsigned int kCnameChaseMax = 64;
 
   // when firing off a normal A or AAAA query
-  explicit TRR(AHostResolver* aResolver, nsHostRecord* aRec, enum TrrType aType)
-      : mozilla::Runnable("TRR"),
-        mRec(aRec),
-        mHostResolver(aResolver),
-        mType(aType),
-        mOriginSuffix(aRec->originSuffix) {
-    mHost = aRec->host;
-    mPB = aRec->pb;
-    MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess() || XRE_IsSocketProcess(),
-                          "TRR must be in parent or socket process");
-  }
-
+  explicit TRR(AHostResolver* aResolver, nsHostRecord* aRec,
+               enum TrrType aType);
   // when following CNAMEs
   explicit TRR(AHostResolver* aResolver, nsHostRecord* aRec, nsCString& aHost,
-               enum TrrType& aType, unsigned int aLoopCount, bool aPB)
-      : mozilla::Runnable("TRR"),
-        mHost(aHost),
-        mRec(aRec),
-        mHostResolver(aResolver),
-        mType(aType),
-        mPB(aPB),
-        mCnameLoop(aLoopCount),
-        mOriginSuffix(aRec ? aRec->originSuffix : EmptyCString()) {
-    MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess() || XRE_IsSocketProcess(),
-                          "TRR must be in parent or socket process");
-  }
-
+               enum TrrType& aType, unsigned int aLoopCount, bool aPB);
   // used on push
-  explicit TRR(AHostResolver* aResolver, bool aPB)
-      : mozilla::Runnable("TRR"),
-        mHostResolver(aResolver),
-        mType(TRRTYPE_A),
-        mPB(aPB) {
-    MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess() || XRE_IsSocketProcess(),
-                          "TRR must be in parent or socket process");
-  }
-
+  explicit TRR(AHostResolver* aResolver, bool aPB);
   // to verify a domain
   explicit TRR(AHostResolver* aResolver, nsACString& aHost, enum TrrType aType,
-               const nsACString& aOriginSuffix, bool aPB)
-      : mozilla::Runnable("TRR"),
-        mHost(aHost),
-        mRec(nullptr),
-        mHostResolver(aResolver),
-        mType(aType),
-        mPB(aPB),
-        mOriginSuffix(aOriginSuffix) {
-    MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess() || XRE_IsSocketProcess(),
-                          "TRR must be in parent or socket process");
-  }
+               const nsACString& aOriginSuffix, bool aPB,
+               bool aUseFreshConnection);
 
   NS_IMETHOD Run() override;
-  void Cancel();
+  void Cancel(nsresult aStatus);
   enum TrrType Type() { return mType; }
   nsCString mHost;
   RefPtr<nsHostRecord> mRec;
   RefPtr<AHostResolver> mHostResolver;
 
- private:
-  ~TRR() = default;
+  void SetTimeout(uint32_t aTimeoutMs) { mTimeoutMs = aTimeoutMs; }
+
+  nsresult ChannelStatus() { return mChannelStatus; }
+
+  enum RequestPurpose {
+    Resolve,
+    Confirmation,
+    Blocklist,
+  };
+
+  RequestPurpose Purpose() { return mPurpose; }
+  void SetPurpose(RequestPurpose aPurpose) { mPurpose = aPurpose; }
+
+ protected:
+  virtual ~TRR() = default;
+  virtual DNSPacket* GetOrCreateDNSPacket();
+  virtual nsresult CreateQueryURI(nsIURI** aOutURI);
+  virtual const char* ContentType() const { return "application/dns-message"; }
+  virtual DNSResolverType ResolverType() const { return DNSResolverType::TRR; }
+  virtual bool MaybeBlockRequest();
+  virtual void RecordProcessingTime(nsIChannel* aChannel);
+  virtual void ReportStatus(nsresult aStatusCode);
+  virtual void HandleTimeout();
+  virtual void HandleEncodeError(nsresult aStatusCode) {}
+  virtual void HandleDecodeError(nsresult aStatusCode);
   nsresult SendHTTPRequest();
-  nsresult DohEncode(nsCString& aBody, bool aDisableECS);
-  nsresult PassQName(unsigned int& index);
-  nsresult GetQname(nsACString& aQname, unsigned int& aIndex);
-  nsresult DohDecode(nsCString& aHost);
   nsresult ReturnData(nsIChannel* aChannel);
 
   // FailData() must be called to signal that the asynch TRR resolve is
@@ -148,47 +99,55 @@ class TRR : public Runnable,
   // other error codes must be used. This distinction is important for the
   // subsequent logic to separate the error reasons.
   nsresult FailData(nsresult error);
-  nsresult DohDecodeQuery(const nsCString& query, nsCString& host,
-                          enum TrrType& type);
+  static nsresult DohDecodeQuery(const nsCString& query, nsCString& host,
+                                 enum TrrType& type);
   nsresult ReceivePush(nsIHttpChannel* pushed, nsHostRecord* pushedRec);
   nsresult On200Response(nsIChannel* aChannel);
   nsresult FollowCname(nsIChannel* aChannel);
 
   bool UseDefaultServer();
-
-  nsresult CreateChannelHelper(nsIURI* aUri, nsIChannel** aResult);
+  void SaveAdditionalRecords(
+      const nsClassHashtable<nsCStringHashKey, DOHresp>& aRecords);
 
   friend class TRRServiceChannel;
-  static nsresult SetupTRRServiceChannelInternal(nsIHttpChannel* aChannel,
-                                                 bool aUseGet);
+  static nsresult SetupTRRServiceChannelInternal(
+      nsIHttpChannel* aChannel, bool aUseGet, const nsACString& aContentType);
 
-  nsresult ParseSvcParam(unsigned int svcbIndex, uint16_t key,
-                         SvcFieldValue& field, uint16_t length);
+  void StoreIPHintAsDNSRecord(const struct SVCB& aSVCBRecord);
 
   nsCOMPtr<nsIChannel> mChannel;
-  enum TrrType mType;
-  unsigned char mResponse[kMaxSize];
-  unsigned int mBodySize = 0;
+  enum TrrType mType { TRRTYPE_A };
+  UniquePtr<DNSPacket> mPacket;
   bool mFailed = false;
-  bool mPB;
+  bool mPB = false;
   DOHresp mDNS;
+  nsresult mChannelStatus = NS_OK;
+
+  RequestPurpose mPurpose = Resolve;
+  Atomic<bool, Relaxed> mCancelled{false};
+
+  // The request timeout in milliseconds. If 0 we will use the default timeout
+  // we get from the prefs.
+  uint32_t mTimeoutMs = 0;
   nsCOMPtr<nsITimer> mTimeout;
   nsCString mCname;
   uint32_t mCnameLoop = kCnameChaseMax;  // loop detection counter
-  bool mAllowRFC1918 = false;
 
   uint32_t mTTL = UINT32_MAX;
   TypeRecordResultType mResult = mozilla::AsVariant(Nothing());
 
-  nsHostRecord::TRRSkippedReason mTRRSkippedReason = nsHostRecord::TRR_UNSET;
-  void RecordReason(nsHostRecord::TRRSkippedReason reason) {
-    if (mTRRSkippedReason == nsHostRecord::TRR_UNSET) {
+  TRRSkippedReason mTRRSkippedReason = TRRSkippedReason::TRR_UNSET;
+  void RecordReason(TRRSkippedReason reason) {
+    if (mTRRSkippedReason == TRRSkippedReason::TRR_UNSET) {
       mTRRSkippedReason = reason;
     }
   }
 
   // keep a copy of the originSuffix for the cases where mRec == nullptr */
   const nsCString mOriginSuffix;
+
+  // If true, we set LOAD_FRESH_CONNECTION on our channel's load flags.
+  bool mUseFreshConnection = false;
 };
 
 }  // namespace net

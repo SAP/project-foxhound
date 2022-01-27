@@ -12,8 +12,10 @@
 #include "nsIDOMWindowUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BasicEvents.h"
+#include "mozilla/Result.h"
 
 class nsGlobalWindowOuter;
+class nsIDocShell;
 class nsIWidget;
 class nsPresContext;
 class nsView;
@@ -58,7 +60,7 @@ class nsTranslationNodeList final : public nsITranslationNodeList {
 
 class nsDOMWindowUtils final : public nsIDOMWindowUtils,
                                public nsSupportsWeakReference {
-  typedef mozilla::widget::TextEventDispatcher TextEventDispatcher;
+  using TextEventDispatcher = mozilla::widget::TextEventDispatcher;
 
  public:
   explicit nsDOMWindowUtils(nsGlobalWindowOuter* aWindow);
@@ -77,10 +79,10 @@ class nsDOMWindowUtils final : public nsIDOMWindowUtils,
   nsIWidget* GetWidget(nsPoint* aOffset = nullptr);
   nsIWidget* GetWidgetForElement(mozilla::dom::Element* aElement);
 
+  nsIDocShell* GetDocShell();
   mozilla::PresShell* GetPresShell();
   nsPresContext* GetPresContext();
   mozilla::dom::Document* GetDocument();
-  mozilla::layers::LayerTransactionChild* GetLayerTransaction();
   mozilla::layers::WebRenderBridgeChild* GetWebRenderBridge();
   mozilla::layers::CompositorBridgeChild* GetCompositorBridge();
 
@@ -105,6 +107,10 @@ class nsDOMWindowUtils final : public nsIDOMWindowUtils,
   void ReportErrorMessageForWindow(const nsAString& aErrorMessage,
                                    const char* aClassification,
                                    bool aFromChrome);
+
+ private:
+  mozilla::Result<mozilla::ScreenRect, nsresult> ConvertToScreenRect(
+      float aX, float aY, float aWidth, float aHeight);
 };
 
 #endif

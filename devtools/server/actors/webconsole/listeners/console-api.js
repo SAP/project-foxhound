@@ -5,7 +5,6 @@
 "use strict";
 
 const { Cc, Ci } = require("chrome");
-const { isWindowIncluded } = require("devtools/shared/layout/utils");
 const Services = require("Services");
 const ChromeUtils = require("ChromeUtils");
 const {
@@ -29,12 +28,22 @@ const {
  * @param object filteringOptions
  *        Optional - The filteringOptions that this listener should listen to:
  *        - addonId: filter console messages based on the addonId.
+ *        - excludeMessagesBoundToWindow: Set to true to filter out messages that
+ *          are bound to a specific window.
+ *        - matchExactWindow: Set to true to match the messages on a specific window (when
+ *          `window` is defined) and not on the whole window tree.
  */
 class ConsoleAPIListener {
-  constructor(window, handler, { addonId } = {}) {
+  constructor(
+    window,
+    handler,
+    { addonId, excludeMessagesBoundToWindow, matchExactWindow } = {}
+  ) {
     this.window = window;
     this.handler = handler;
     this.addonId = addonId;
+    this.excludeMessagesBoundToWindow = excludeMessagesBoundToWindow;
+    this.matchExactWindow = matchExactWindow;
   }
 
   QueryInterface = ChromeUtils.generateQI([Ci.nsIObserver]);
@@ -117,13 +126,37 @@ class ConsoleAPIListener {
       }
     }
 
-    if (this.window && !workerType) {
-      const msgWindow = Services.wm.getCurrentInnerWindowWithId(
+    // innerID can be of different type:
+    // - a number if the message is bound to a specific window
+    // - a worker type ([Shared|Service]Worker) if the message comes from a worker
+    // - a JSM filename
+    // if we want to filter on a specific window, ignore all non-worker messages that
+    // don't have a proper window id (for now, we receive the worker messages from the
+    // main process so we still want to get them, although their innerID isn't a number).
+    if (!workerType && typeof message.innerID !== "number" && this.window) {
+      return false;
+    }
+
+    if (typeof message.innerID == "number") {
+      if (
+        this.excludeMessagesBoundToWindow &&
+        // If innerID is 0, the message isn't actually bound to a window.
         message.innerID
-      );
-      if (!msgWindow || !isWindowIncluded(this.window, msgWindow)) {
-        // Not the same window!
+      ) {
         return false;
+      }
+
+      if (this.window) {
+        const matchesWindow = this.matchExactWindow
+          ? WebConsoleUtils.getInnerWindowId(this.window) === message.innerID
+          : WebConsoleUtils.getInnerWindowIDsForFrames(this.window).includes(
+              message.innerID
+            );
+
+        if (!matchesWindow) {
+          // Not the same window!
+          return false;
+        }
       }
     }
 
@@ -171,7 +204,10 @@ class ConsoleAPIListener {
     if (!this.window) {
       messages = ConsoleAPIStorage.getEvents();
     } else {
-      const ids = WebConsoleUtils.getInnerWindowIDsForFrames(this.window);
+      const ids = this.matchExactWindow
+        ? [WebConsoleUtils.getInnerWindowId(this.window)]
+        : WebConsoleUtils.getInnerWindowIDsForFrames(this.window);
+
       ids.forEach(id => {
         messages = messages.concat(ConsoleAPIStorage.getEvents(id));
       });

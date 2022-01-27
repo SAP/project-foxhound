@@ -34,7 +34,6 @@
 #include <string.h>
 
 #include "common/intops.h"
-#include "common/mem.h"
 #include "common/validate.h"
 
 #include "src/internal.h"
@@ -45,7 +44,7 @@
 #include "src/thread_task.h"
 
 int dav1d_default_picture_alloc(Dav1dPicture *const p, void *const cookie) {
-    assert(cookie == NULL);
+    assert(sizeof(Dav1dMemPoolBuffer) <= DAV1D_PICTURE_ALIGNMENT);
     const int hbd = p->p.bpc > 8;
     const int aligned_w = (p->p.w + 127) & ~127;
     const int aligned_h = (p->p.h + 127) & ~127;
@@ -67,27 +66,24 @@ int dav1d_default_picture_alloc(Dav1dPicture *const p, void *const cookie) {
     p->stride[1] = uv_stride;
     const size_t y_sz = y_stride * aligned_h;
     const size_t uv_sz = uv_stride * (aligned_h >> ss_ver);
-    const size_t pic_size = y_sz + 2 * uv_sz + DAV1D_PICTURE_ALIGNMENT;
-    uint8_t *const data = dav1d_alloc_aligned(pic_size, DAV1D_PICTURE_ALIGNMENT);
-    if (!data) return DAV1D_ERR(ENOMEM);
+    const size_t pic_size = y_sz + 2 * uv_sz;
 
+    Dav1dMemPoolBuffer *const buf = dav1d_mem_pool_pop(cookie, pic_size +
+                                                       DAV1D_PICTURE_ALIGNMENT -
+                                                       sizeof(Dav1dMemPoolBuffer));
+    if (!buf) return DAV1D_ERR(ENOMEM);
+    p->allocator_data = buf;
+
+    uint8_t *const data = buf->data;
     p->data[0] = data;
     p->data[1] = has_chroma ? data + y_sz : NULL;
     p->data[2] = has_chroma ? data + y_sz + uv_sz : NULL;
-
-#ifndef NDEBUG /* safety check */
-    p->allocator_data = data;
-#endif
 
     return 0;
 }
 
 void dav1d_default_picture_release(Dav1dPicture *const p, void *const cookie) {
-    assert(cookie == NULL);
-#ifndef NDEBUG /* safety check */
-    assert(p->allocator_data == p->data[0]);
-#endif
-    dav1d_free_aligned(p->data[0]);
+    dav1d_mem_pool_push(cookie, p->allocator_data);
 }
 
 struct pic_ctx_context {
@@ -180,7 +176,7 @@ int dav1d_thread_picture_alloc(Dav1dContext *const c, Dav1dFrameContext *const f
                                const int bpc)
 {
     Dav1dThreadPicture *const p = &f->sr_cur;
-    p->t = c->n_fc > 1 ? &f->frame_thread.td : NULL;
+    const int have_frame_mt = c->n_fc > 1;
 
     const int res =
         picture_alloc_with_edges(c, &p->p, f->frame_hdr->width[1], f->frame_hdr->height,
@@ -190,7 +186,7 @@ int dav1d_thread_picture_alloc(Dav1dContext *const c, Dav1dFrameContext *const f
                                  c->mastering_display, c->mastering_display_ref,
                                  c->itut_t35, c->itut_t35_ref,
                                  bpc, &f->tile[0].data.m, &c->allocator,
-                                 p->t != NULL ? sizeof(atomic_int) * 2 : 0,
+                                 have_frame_mt ? sizeof(atomic_int) * 2 : 0,
                                  (void **) &p->progress);
     if (res) return res;
 
@@ -198,8 +194,11 @@ int dav1d_thread_picture_alloc(Dav1dContext *const c, Dav1dFrameContext *const f
     dav1d_ref_dec(&c->itut_t35_ref);
     c->itut_t35 = NULL;
 
+    p->flags = c->frame_flags;
+    c->frame_flags = 0;
+
     p->visible = f->frame_hdr->show_frame;
-    if (p->t) {
+    if (have_frame_mt) {
         atomic_init(&p->progress[0], 0);
         atomic_init(&p->progress[1], 0);
     }
@@ -255,9 +254,9 @@ void dav1d_thread_picture_ref(Dav1dThreadPicture *const dst,
                               const Dav1dThreadPicture *const src)
 {
     dav1d_picture_ref(&dst->p, &src->p);
-    dst->t = src->t;
     dst->visible = src->visible;
     dst->progress = src->progress;
+    dst->flags = src->flags;
 }
 
 void dav1d_picture_unref_internal(Dav1dPicture *const p) {
@@ -279,50 +278,18 @@ void dav1d_picture_unref_internal(Dav1dPicture *const p) {
 void dav1d_thread_picture_unref(Dav1dThreadPicture *const p) {
     dav1d_picture_unref_internal(&p->p);
 
-    p->t = NULL;
     p->progress = NULL;
 }
 
-int dav1d_thread_picture_wait(const Dav1dThreadPicture *const p,
-                              int y_unclipped, const enum PlaneType plane_type)
-{
-    assert(plane_type != PLANE_TYPE_ALL);
-
-    if (!p->t)
+enum Dav1dEventFlags dav1d_picture_get_event_flags(const Dav1dThreadPicture *const p) {
+    if (!p->flags)
         return 0;
 
-    // convert to luma units; include plane delay from loopfilters; clip
-    const int ss_ver = p->p.p.layout == DAV1D_PIXEL_LAYOUT_I420;
-    y_unclipped *= 1 << (plane_type & ss_ver); // we rely here on PLANE_TYPE_UV being 1
-    y_unclipped += (plane_type != PLANE_TYPE_BLOCK) * 8; // delay imposed by loopfilter
-    const unsigned y = iclip(y_unclipped, 1, p->p.p.h);
-    atomic_uint *const progress = &p->progress[plane_type != PLANE_TYPE_BLOCK];
-    unsigned state;
+    enum Dav1dEventFlags flags = 0;
+    if (p->flags & PICTURE_FLAG_NEW_SEQUENCE)
+       flags |= DAV1D_EVENT_FLAG_NEW_SEQUENCE;
+    if (p->flags & PICTURE_FLAG_NEW_OP_PARAMS_INFO)
+       flags |= DAV1D_EVENT_FLAG_NEW_OP_PARAMS_INFO;
 
-    if ((state = atomic_load_explicit(progress, memory_order_acquire)) >= y)
-        return state == FRAME_ERROR;
-
-    pthread_mutex_lock(&p->t->lock);
-    while ((state = atomic_load_explicit(progress, memory_order_relaxed)) < y)
-        pthread_cond_wait(&p->t->cond, &p->t->lock);
-    pthread_mutex_unlock(&p->t->lock);
-    return state == FRAME_ERROR;
-}
-
-void dav1d_thread_picture_signal(const Dav1dThreadPicture *const p,
-                                 const int y, // in pixel units
-                                 const enum PlaneType plane_type)
-{
-    assert(plane_type != PLANE_TYPE_UV);
-
-    if (!p->t)
-        return;
-
-    pthread_mutex_lock(&p->t->lock);
-    if (plane_type != PLANE_TYPE_Y)
-        atomic_store(&p->progress[0], y);
-    if (plane_type != PLANE_TYPE_BLOCK)
-        atomic_store(&p->progress[1], y);
-    pthread_cond_broadcast(&p->t->cond);
-    pthread_mutex_unlock(&p->t->lock);
+    return flags;
 }

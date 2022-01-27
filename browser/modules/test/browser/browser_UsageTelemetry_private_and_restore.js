@@ -4,6 +4,9 @@ const { E10SUtils } = ChromeUtils.import(
 );
 const triggeringPrincipal_base64 = E10SUtils.SERIALIZED_SYSTEMPRINCIPAL;
 
+// Glean's here on `window`, but eslint doesn't know that. bug 1715542.
+/* global Glean:false */
+
 const MAX_CONCURRENT_TABS = "browser.engagement.max_concurrent_tab_count";
 const TAB_EVENT_COUNT = "browser.engagement.tab_open_event_count";
 const MAX_CONCURRENT_WINDOWS = "browser.engagement.max_concurrent_window_count";
@@ -11,6 +14,8 @@ const WINDOW_OPEN_COUNT = "browser.engagement.window_open_event_count";
 const TOTAL_URI_COUNT = "browser.engagement.total_uri_count";
 const UNFILTERED_URI_COUNT = "browser.engagement.unfiltered_uri_count";
 const UNIQUE_DOMAINS_COUNT = "browser.engagement.unique_domains_count";
+const TOTAL_URI_COUNT_NORMAL_AND_PRIVATE_MODE =
+  "browser.engagement.total_uri_count_normal_and_private_mode";
 
 function promiseBrowserStateRestored() {
   return new Promise(resolve => {
@@ -27,12 +32,14 @@ function promiseBrowserStateRestored() {
 add_task(async function test_privateMode() {
   // Let's reset the counts.
   Services.telemetry.clearScalars();
+  let FOG = Cc["@mozilla.org/toolkit/glean;1"].createInstance(Ci.nsIFOG);
+  FOG.testResetFOG();
 
   // Open a private window and load a website in it.
   let privateWin = await BrowserTestUtils.openNewBrowserWindow({
     private: true,
   });
-  await BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURI(
     privateWin.gBrowser.selectedBrowser,
     "http://example.com/"
   );
@@ -72,6 +79,16 @@ add_task(async function test_privateMode() {
     scalars[MAX_CONCURRENT_WINDOWS],
     2,
     "The maximum window count must match the expected value."
+  );
+  is(
+    scalars[TOTAL_URI_COUNT_NORMAL_AND_PRIVATE_MODE],
+    1,
+    "We should include URIs in private mode as part of the actual total URI count."
+  );
+  is(
+    Glean.browserEngagement.uriCount.testGetValue(),
+    1,
+    "We should record the URI count in Glean as well."
   );
 
   // Clean up.

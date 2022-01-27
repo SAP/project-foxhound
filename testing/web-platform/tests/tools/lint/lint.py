@@ -1,11 +1,9 @@
-from __future__ import print_function, unicode_literals
-
 import abc
 import argparse
 import ast
-import io
 import json
 import logging
+import multiprocessing
 import os
 import re
 import subprocess
@@ -13,23 +11,23 @@ import sys
 import tempfile
 
 from collections import defaultdict
+from urllib.parse import urlsplit, urljoin
 
 from . import fnmatch
 from . import rules
 from .. import localpaths
+from ..ci.tc.github_checks_output import get_gh_checks_outputter, GitHubChecksOutputter
 from ..gitignore.gitignore import PathFilter
 from ..wpt import testfiles
 from ..manifest.vcs import walk
 
 from ..manifest.sourcefile import SourceFile, js_meta_re, python_meta_re, space_chars, get_any_variants
-from six import binary_type, ensure_binary, ensure_text, iteritems, itervalues, with_metaclass
-from six.moves import range
-from six.moves.urllib.parse import urlsplit, urljoin
 
 MYPY = False
 if MYPY:
     # MYPY is set to True when run under Mypy.
     from typing import Any
+    from typing import Callable
     from typing import Dict
     from typing import IO
     from typing import Iterable
@@ -40,6 +38,7 @@ if MYPY:
     from typing import Text
     from typing import Tuple
     from typing import Type
+    from typing import TypeVar
 
     # The Ignorelist is a two level dictionary. The top level is indexed by
     # error names (e.g. 'TRAILING WHITESPACE'). Each of those then has a map of
@@ -47,6 +46,9 @@ if MYPY:
     # exception. The line numbers are optional; if missing the entire file
     # ignores the error.
     Ignorelist = Dict[Text, Dict[Text, Set[Optional[int]]]]
+
+    # Define an arbitrary typevar
+    T = TypeVar("T")
 
     try:
         from xml.etree import cElementTree as ElementTree
@@ -99,7 +101,7 @@ you could add the following line to the lint.ignore file.
 def all_filesystem_paths(repo_root, subdir=None):
     # type: (Text, Optional[Text]) -> Iterable[Text]
     path_filter = PathFilter(repo_root.encode("utf8"),
-                             extras=[ensure_binary(".git/")])
+                             extras=[b".git/"])
     if subdir:
         expanded_path = subdir.encode("utf8")
         subdir_str = expanded_path
@@ -111,7 +113,7 @@ def all_filesystem_paths(repo_root, subdir=None):
             if subdir:
                 path = os.path.join(subdir_str, path)
             assert not os.path.isabs(path), path
-            yield ensure_text(path)
+            yield path.decode("utf8")
 
 
 def _all_files_equal(paths):
@@ -198,11 +200,27 @@ def check_gitignore_file(repo_root, path):
     return [rules.GitIgnoreFile.error(path)]
 
 
+def check_mojom_js(repo_root, path):
+    # type: (Text, Text) -> List[rules.Error]
+    if path.endswith(".mojom.js"):
+        return [rules.MojomJSFile.error(path)]
+    return []
+
+
 def check_ahem_copy(repo_root, path):
     # type: (Text, Text) -> List[rules.Error]
     lpath = path.lower()
     if "ahem" in lpath and lpath.endswith(".ttf"):
         return [rules.AhemCopy.error(path)]
+    return []
+
+
+def check_tentative_directories(repo_root, path):
+    # type: (Text, Text) -> List[rules.Error]
+    path_parts = path.split(os.path.sep)
+    for directory in path_parts[:-1]:
+        if "tentative" in directory and directory != "tentative":
+            return [rules.TentativeDirectoryName.error(path)]
     return []
 
 
@@ -290,7 +308,7 @@ def check_css_globally_unique(repo_root, paths):
 
     errors = []
 
-    for name, colliding in iteritems(test_files):
+    for name, colliding in test_files.items():
         if len(colliding) > 1:
             if not _all_files_equal([os.path.join(repo_root, x) for x in colliding]):
                 # Only compute by_spec if there are prima-facie collisions because of cost
@@ -307,7 +325,7 @@ def check_css_globally_unique(repo_root, paths):
                             continue
                         by_spec[spec].add(path)
 
-                for spec, spec_paths in iteritems(by_spec):
+                for spec, spec_paths in by_spec.items():
                     if not _all_files_equal([os.path.join(repo_root, x) for x in spec_paths]):
                         for x in spec_paths:
                             context1 = (name, spec, ", ".join(sorted(spec_paths)))
@@ -316,7 +334,7 @@ def check_css_globally_unique(repo_root, paths):
 
     for rule_class, d in [(rules.CSSCollidingRefName, ref_files),
                           (rules.CSSCollidingSupportName, support_files)]:
-        for name, colliding in iteritems(d):
+        for name, colliding in d.items():
             if len(colliding) > 1:
                 if not _all_files_equal([os.path.join(repo_root, x) for x in colliding]):
                     context2 = (name, ", ".join(sorted(colliding)))
@@ -349,7 +367,7 @@ def check_unique_testharness_basenames(repo_root, paths):
     file_dict = defaultdict(list)
     for path in paths:
         source_file = SourceFile(repo_root, path, "/")
-        if source_file.type != "testharness":
+        if "testharness" not in source_file.possible_types:
             continue
         file_name, file_extension = os.path.splitext(path)
         file_dict[file_name].append(file_extension)
@@ -359,6 +377,20 @@ def check_unique_testharness_basenames(repo_root, paths):
         context = (', '.join(v),)
         for extension in v:
             errors.append(rules.DuplicateBasenamePath.error(k + extension, context))
+    return errors
+
+
+def check_unique_case_insensitive_paths(repo_root, paths):
+    # type: (Text, List[Text]) -> List[rules.Error]
+    seen = {}  # type: Dict[Text, Text]
+    errors = []
+    for path in paths:
+        lower_path = path.lower()
+        if lower_path in seen:
+            context = (seen[lower_path],)
+            errors.append(rules.DuplicatePathCaseInsensitive.error(path, context))
+        else:
+            seen[lower_path] = path
     return errors
 
 
@@ -416,7 +448,7 @@ def filter_ignorelist_errors(data, errors):
         # which explains how to fix it correctly and shouldn't be skipped.
         if error_type in data and error_type != "IGNORED PATH":
             wl_files = data[error_type]
-            for file_match, allowed_lines in iteritems(wl_files):
+            for file_match, allowed_lines in wl_files.items():
                 if None in allowed_lines or line in allowed_lines:
                     if fnmatch.fnmatchcase(normpath, file_match):
                         skipped[i] = True
@@ -472,6 +504,7 @@ def check_parsed(repo_root, path, f):
         if (source_file.type != "support" and
             not source_file.name_is_reference and
             not source_file.name_is_tentative and
+            not source_file.name_is_crashtest and
             not source_file.spec_links):
             return [rules.MissingLink.error(path)]
 
@@ -620,9 +653,19 @@ def check_parsed(repo_root, path, f):
         if incorrect_path("testdriver-vendor.js", src):
             errors.append(rules.TestdriverVendorPath.error(path))
 
+        script_path = None
+        try:
+            script_path = urlsplit(urljoin(source_file.url, src)).path
+        except ValueError:
+            # This happens if the contents of src isn't something that looks like a URL to Python
+            pass
+        if (script_path == "/common/reftest-wait.js" and
+            "reftest-wait" not in source_file.root.attrib.get("class", "").split()):
+            errors.append(rules.MissingReftestWait.error(path))
+
     return errors
 
-class ASTCheck(with_metaclass(abc.ABCMeta)):
+class ASTCheck(metaclass=abc.ABCMeta):
     @abc.abstractproperty
     def rule(self):
         # type: () -> Type[rules.Rule]
@@ -651,8 +694,7 @@ ast_checkers = [item() for item in [OpenModeCheck]]
 
 def check_python_ast(repo_root, path, f):
     # type: (Text, Text, IO[bytes]) -> List[rules.Error]
-    # *.quic.py are Python 3 only and cannot be parsed by Python 2.
-    if not path.endswith(".py") or path.endswith(".quic.py"):
+    if not path.endswith(".py"):
         return []
 
     try:
@@ -695,7 +737,7 @@ def check_script_metadata(repo_root, path, f):
     done = False
     errors = []
     for idx, line in enumerate(f):
-        assert isinstance(line, binary_type), line
+        assert isinstance(line, bytes), line
 
         m = meta_re.match(line)
         if m:
@@ -775,8 +817,8 @@ def check_all_paths(repo_root, paths):
     return errors
 
 
-def check_file_contents(repo_root, path, f):
-    # type: (Text, Text, IO[bytes]) -> List[rules.Error]
+def check_file_contents(repo_root, path, f=None):
+    # type: (Text, Text, Optional[IO[bytes]]) -> List[rules.Error]
     """
     Runs lints that check the file contents.
 
@@ -785,47 +827,74 @@ def check_file_contents(repo_root, path, f):
     :param f: a file-like object with the file contents
     :returns: a list of errors found in ``f``
     """
+    if f is None:
+        f = open(os.path.join(repo_root, path), 'rb')
+    with f:
+        errors = []
+        for file_fn in file_lints:
+            errors.extend(file_fn(repo_root, path, f))
+            f.seek(0)
+        return errors
 
-    errors = []
-    for file_fn in file_lints:
-        errors.extend(file_fn(repo_root, path, f))
-        f.seek(0)
-    return errors
+
+def check_file_contents_apply(args):
+    # type: (Tuple[Text, Text]) -> List[rules.Error]
+    return check_file_contents(*args)
 
 
-def output_errors_text(errors):
-    # type: (List[rules.Error]) -> None
-    assert logger is not None
+def output_errors_text(log, errors):
+    # type: (Callable[[Any], None], List[rules.Error]) -> None
     for error_type, description, path, line_number in errors:
         pos_string = path
         if line_number:
             pos_string += ":%s" % line_number
-        logger.error("%s: %s (%s)" % (pos_string, description, error_type))
+        log("%s: %s (%s)" % (pos_string, description, error_type))
 
 
-def output_errors_markdown(errors):
-    # type: (List[rules.Error]) -> None
+def output_errors_markdown(log, errors):
+    # type: (Callable[[Any], None], List[rules.Error]) -> None
     if not errors:
         return
-    assert logger is not None
     heading = """Got lint errors:
 
 | Error Type | Position | Message |
 |------------|----------|---------|"""
     for line in heading.split("\n"):
-        logger.error(line)
+        log(line)
     for error_type, description, path, line_number in errors:
         pos_string = path
         if line_number:
             pos_string += ":%s" % line_number
-        logger.error("%s | %s | %s |" % (error_type, pos_string, description))
+        log("%s | %s | %s |" % (error_type, pos_string, description))
 
 
-def output_errors_json(errors):
-    # type: (List[rules.Error]) -> None
+def output_errors_json(log, errors):
+    # type: (Callable[[Any], None], List[rules.Error]) -> None
     for error_type, error, path, line_number in errors:
+        # We use 'print' rather than the log function to ensure that the output
+        # is valid JSON (e.g. with no logger preamble).
         print(json.dumps({"path": path, "lineno": line_number,
                           "rule": error_type, "message": error}))
+
+
+def output_errors_github_checks(outputter, errors, first_reported):
+    # type: (GitHubChecksOutputter, List[rules.Error], bool) -> None
+    """Output errors to the GitHub Checks output markdown format.
+
+    :param outputter: the GitHub Checks outputter
+    :param errors: a list of error tuples (error type, message, path, line number)
+    :param first_reported: True if these are the first reported errors
+    """
+    if first_reported:
+        outputter.output(
+            "\nChanges in this PR contain lint errors, listed below. These "
+            "errors must either be fixed or added to the list of ignored "
+            "errors; see [the documentation]("
+            "https://web-platform-tests.org/writing-tests/lint-tool.html). "
+            "For help, please tag `@web-platform-tests/wpt-core-team` in a "
+            "comment.\n")
+        outputter.output("```")
+    output_errors_text(outputter.output, errors)
 
 
 def output_error_count(error_count):
@@ -885,19 +954,24 @@ def create_parser():
                         help="Output machine-readable JSON format")
     parser.add_argument("--markdown", action="store_true",
                         help="Output markdown")
-    parser.add_argument("--repo-root", type=ensure_text,
+    parser.add_argument("--repo-root", type=str,
                         help="The WPT directory. Use this "
                         "option if the lint script exists outside the repository")
-    parser.add_argument("--ignore-glob", type=ensure_text, action="append",
-                        help="Additional file glob to ignore (repeat to add more)")
+    parser.add_argument("--ignore-glob", type=str, action="append",
+                        help="Additional file glob to ignore (repeat to add more). "
+                        "Globs are matched against paths relative to REPO_ROOT "
+                        "using fnmatch, except that path separators are normalized.")
     parser.add_argument("--all", action="store_true", help="If no paths are passed, try to lint the whole "
                         "working directory, not just files that changed")
+    parser.add_argument("--github-checks-text-file", type=str,
+                        help="Path to GitHub checks output file for Taskcluster runs")
+    parser.add_argument("-j", "--jobs", type=int, default=0,
+                        help="Level to parallelism to use (defaults to 0, which detects the number of CPUs)")
     return parser
 
 
-def main(**kwargs_str):
+def main(**kwargs):
     # type: (**Any) -> int
-    kwargs = {ensure_text(key): value for key, value in iteritems(kwargs_str)}
 
     assert logger is not None
     if kwargs.get("json") and kwargs.get("markdown"):
@@ -917,15 +991,26 @@ def main(**kwargs_str):
 
     ignore_glob = kwargs.get("ignore_glob", [])
 
-    return lint(repo_root, paths, output_format, ignore_glob)
+    github_checks_outputter = get_gh_checks_outputter(kwargs["github_checks_text_file"])
+
+    jobs = kwargs.get("jobs", 0)
+
+    return lint(repo_root, paths, output_format, ignore_glob, github_checks_outputter, jobs)
 
 
-def lint(repo_root, paths, output_format, ignore_glob=None):
-    # type: (Text, List[Text], Text, Optional[List[Text]]) -> int
+# best experimental guess at a decent cut-off for using the parallel path
+MIN_FILES_FOR_PARALLEL = 80
+
+
+def lint(repo_root, paths, output_format, ignore_glob=None, github_checks_outputter=None, jobs=0):
+    # type: (Text, List[Text], Text, Optional[List[Text]], Optional[GitHubChecksOutputter], int) -> int
     error_count = defaultdict(int)  # type: Dict[Text, int]
     last = None
 
-    with io.open(os.path.join(repo_root, "lint.ignore"), "r") as f:
+    if jobs == 0:
+        jobs = multiprocessing.cpu_count()
+
+    with open(os.path.join(repo_root, "lint.ignore"), "r") as f:
         ignorelist, skipped_files = parse_ignorelist(f)
 
     if ignore_glob:
@@ -946,36 +1031,62 @@ def lint(repo_root, paths, output_format, ignore_glob=None):
         """
 
         errors = filter_ignorelist_errors(ignorelist, errors)
-
         if not errors:
             return None
 
-        output_errors(errors)
+        assert logger is not None
+        output_errors(logger.error, errors)
+
+        if github_checks_outputter:
+            first_output = len(error_count) == 0
+            output_errors_github_checks(github_checks_outputter, errors, first_output)
+
         for error_type, error, path, line in errors:
             error_count[error_type] += 1
 
         return (errors[-1][0], path)
 
-    for path in paths[:]:
+    to_check_content = []
+    skip = set()
+
+    for path in paths:
         abs_path = os.path.join(repo_root, path)
         if not os.path.exists(abs_path):
-            paths.remove(path)
+            skip.add(path)
             continue
 
         if any(fnmatch.fnmatch(path, file_match) for file_match in skipped_files):
-            paths.remove(path)
+            skip.add(path)
             continue
 
         errors = check_path(repo_root, path)
         last = process_errors(errors) or last
 
         if not os.path.isdir(abs_path):
-            with io.open(abs_path, 'rb') as test_file:
-                errors = check_file_contents(repo_root, path, test_file)
-                last = process_errors(errors) or last
+            to_check_content.append((repo_root, path))
 
-    errors = check_all_paths(repo_root, paths)
-    last = process_errors(errors) or last
+    paths = [p for p in paths if p not in skip]
+
+    if jobs > 1 and len(to_check_content) >= MIN_FILES_FOR_PARALLEL:
+        pool = multiprocessing.Pool(jobs)
+        # submit this job first, as it's the longest running
+        all_paths_result = pool.apply_async(check_all_paths, (repo_root, paths))
+        # each item tends to be quick, so pass things in large chunks to avoid too much IPC overhead
+        errors_it = pool.imap_unordered(check_file_contents_apply, to_check_content, chunksize=40)
+        pool.close()
+        for errors in errors_it:
+            last = process_errors(errors) or last
+
+        errors = all_paths_result.get()
+        pool.join()
+        last = process_errors(errors) or last
+    else:
+        for item in to_check_content:
+            errors = check_file_contents(*item)
+            last = process_errors(errors) or last
+
+        errors = check_all_paths(repo_root, paths)
+        last = process_errors(errors) or last
 
     if output_format in ("normal", "markdown"):
         output_error_count(error_count)
@@ -984,11 +1095,17 @@ def lint(repo_root, paths, output_format, ignore_glob=None):
             assert logger is not None
             for line in (ERROR_MSG % (last[0], last[1], last[0], last[1])).split("\n"):
                 logger.info(line)
-    return sum(itervalues(error_count))
+
+    if error_count and github_checks_outputter:
+        github_checks_outputter.output("```")
+
+    return sum(error_count.values())
+
 
 path_lints = [check_file_type, check_path_length, check_worker_collision, check_ahem_copy,
-              check_gitignore_file]
-all_paths_lints = [check_css_globally_unique, check_unique_testharness_basenames]
+              check_mojom_js, check_tentative_directories, check_gitignore_file]
+all_paths_lints = [check_css_globally_unique, check_unique_testharness_basenames,
+                   check_unique_case_insensitive_paths]
 file_lints = [check_regexp_line, check_parsed, check_python_ast, check_script_metadata,
               check_ahem_system_font]
 

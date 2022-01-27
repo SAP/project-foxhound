@@ -13,11 +13,9 @@ let ORIGINAL_LONG_STRING_LENGTH, ORIGINAL_LONG_STRING_INITIAL_LENGTH;
 add_task(async function() {
   const tab = await addTab(URL_ROOT + "network_requests_iframe.html");
 
-  const target = await getTargetForTab(tab);
-  const { client } = target;
-  const webConsoleFront = await target.getFront("console");
-
-  await webConsoleFront.startListeners(["NetworkActivity"]);
+  const commands = await CommandsFactory.forTab(tab);
+  await commands.targetCommand.startListening();
+  const target = commands.targetCommand.targetFront;
 
   // Override the default long string settings to lower values.
   // This is done from the parent process's DevToolsServer as the LongString
@@ -31,36 +29,26 @@ add_task(async function() {
   DevToolsServer.LONG_STRING_INITIAL_LENGTH = LONG_STRING_INITIAL_LENGTH;
 
   info("test network POST request");
-
-  const onNetworkEvent = webConsoleFront.once("serverNetworkEvent");
-  const updates = [];
-  let netActor = null;
-  const onAllNetworkEventUpdateReceived = new Promise(resolve => {
-    const onNetworkEventUpdate = packet => {
-      updates.push(packet.updateType);
-      assertNetworkEventUpdate(netActor, packet);
-
-      if (
-        updates.includes("responseContent") &&
-        updates.includes("eventTimings")
-      ) {
-        client.off("networkEventUpdate", onNetworkEventUpdate);
-        resolve();
-      }
-    };
-    client.on("networkEventUpdate", onNetworkEventUpdate);
+  const networkResource = await new Promise(resolve => {
+    commands.resourceCommand
+      .watchResources([commands.resourceCommand.TYPES.NETWORK_EVENT], {
+        onAvailable: () => {},
+        onUpdated: resourceUpdate => {
+          resolve(resourceUpdate[0].resource);
+        },
+      })
+      .then(() => {
+        // Spawn the network request after we started watching
+        SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
+          content.wrappedJSObject.testXhrPost();
+        });
+      });
   });
 
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
-    content.wrappedJSObject.testXhrPost();
-  });
+  const netActor = networkResource.actor;
+  ok(netActor, "We have a netActor:" + netActor);
 
-  info("Waiting for networkEvent");
-  const netEvent = await onNetworkEvent;
-  netActor = assertNetworkEvent(client, webConsoleFront, netEvent);
-
-  info("Waiting for all networkEventUpdate");
-  await onAllNetworkEventUpdateReceived;
+  const webConsoleFront = await target.getFront("console");
   const requestHeaders = await webConsoleFront.getRequestHeaders(netActor);
   assertRequestHeaders(requestHeaders);
   const requestCookies = await webConsoleFront.getRequestCookies(netActor);
@@ -76,91 +64,11 @@ add_task(async function() {
   const eventTimings = await webConsoleFront.getEventTimings(netActor);
   assertEventTimings(eventTimings);
 
-  await target.destroy();
+  await commands.destroy();
 
   DevToolsServer.LONG_STRING_LENGTH = ORIGINAL_LONG_STRING_LENGTH;
   DevToolsServer.LONG_STRING_INITIAL_LENGTH = ORIGINAL_LONG_STRING_INITIAL_LENGTH;
 });
-
-function assertNetworkEvent(client, webConsoleFront, packet) {
-  info("checking the network event packet");
-
-  const netActor = packet.eventActor;
-
-  checkObject(netActor, {
-    actor: /[a-z]/,
-    startedDateTime: /^\d+\-\d+\-\d+T.+$/,
-    url: /data\.json/,
-    method: "POST",
-  });
-
-  return netActor.actor;
-}
-
-function assertNetworkEventUpdate(netActor, packet) {
-  info("received networkEventUpdate " + packet.updateType);
-  is(packet.from, netActor, "networkEventUpdate actor");
-
-  let expectedPacket = null;
-
-  switch (packet.updateType) {
-    case "requestHeaders":
-    case "responseHeaders":
-      ok(packet.headers > 0, "headers > 0");
-      ok(packet.headersSize > 0, "headersSize > 0");
-      break;
-    case "requestCookies":
-      expectedPacket = {
-        cookies: 3,
-      };
-      break;
-    case "requestPostData":
-      ok(packet.dataSize > 0, "dataSize > 0");
-      ok(!packet.discardRequestBody, "discardRequestBody");
-      break;
-    case "responseStart":
-      expectedPacket = {
-        response: {
-          httpVersion: /^HTTP\/\d\.\d$/,
-          status: "200",
-          statusText: "OK",
-          headersSize: /^\d+$/,
-          discardResponseBody: false,
-        },
-      };
-      break;
-    case "securityInfo":
-      expectedPacket = {
-        state: "insecure",
-      };
-      break;
-    case "responseCookies":
-      expectedPacket = {
-        cookies: 0,
-      };
-      break;
-    case "responseContent":
-      expectedPacket = {
-        mimeType: "application/json",
-        contentSize: /^\d+$/,
-        discardResponseBody: false,
-      };
-      break;
-    case "eventTimings":
-      expectedPacket = {
-        totalTime: /^\d+$/,
-      };
-      break;
-    default:
-      ok(false, "unknown network event update type: " + packet.updateType);
-      return;
-  }
-
-  if (expectedPacket) {
-    info("checking the packet content");
-    checkObject(packet, expectedPacket);
-  }
-}
 
 function assertRequestHeaders(response) {
   info("checking request headers");

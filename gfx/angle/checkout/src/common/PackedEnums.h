@@ -58,11 +58,11 @@ class EnumIterator final
     UnderlyingType mValue;
 };
 
-template <typename E>
+template <typename E, size_t MaxSize = EnumSize<E>()>
 struct AllEnums
 {
     EnumIterator<E> begin() const { return {static_cast<E>(0)}; }
-    EnumIterator<E> end() const { return {E::InvalidEnum}; }
+    EnumIterator<E> end() const { return {static_cast<E>(MaxSize)}; }
 };
 
 // PackedEnumMap<E, T> is like an std::array<T, E::EnumCount> but is indexed with enum values. It
@@ -83,10 +83,14 @@ class PackedEnumMap
         // We use a for loop instead of range-for to work around a limitation in MSVC.
         for (const InitPair *it = init.begin(); it != init.end(); ++it)
         {
+#if (__cplusplus < 201703L)
             // This horrible const_cast pattern is necessary to work around a constexpr limitation.
             // See https://stackoverflow.com/q/34199774/ . Note that it should be fixed with C++17.
             const_cast<T &>(const_cast<const Storage &>(
                 mPrivateData)[static_cast<UnderlyingType>(it->first)]) = it->second;
+#else
+            mPrivateData[static_cast<UnderlyingType>(it->first)] = it->second;
+#endif
         }
     }
 
@@ -107,7 +111,7 @@ class PackedEnumMap
 
     // No explicit construct/copy/destroy for aggregate type
     void fill(const T &u) { mPrivateData.fill(u); }
-    void swap(PackedEnumMap<E, T> &a) noexcept { mPrivateData.swap(a.mPrivateData); }
+    void swap(PackedEnumMap<E, T, MaxSize> &a) noexcept { mPrivateData.swap(a.mPrivateData); }
 
     // iterators:
     iterator begin() noexcept { return mPrivateData.begin(); }
@@ -149,6 +153,19 @@ class PackedEnumMap
     T *data() noexcept { return mPrivateData.data(); }
     const T *data() const noexcept { return mPrivateData.data(); }
 
+    bool operator==(const PackedEnumMap &rhs) const { return mPrivateData == rhs.mPrivateData; }
+    bool operator!=(const PackedEnumMap &rhs) const { return mPrivateData != rhs.mPrivateData; }
+
+    template <typename SubT = T>
+    typename std::enable_if<std::is_integral<SubT>::value>::type operator+=(
+        const PackedEnumMap<E, SubT, MaxSize> &rhs)
+    {
+        for (E e : AllEnums<E, MaxSize>())
+        {
+            at(e) += rhs[e];
+        }
+    }
+
   private:
     Storage mPrivateData;
 };
@@ -180,15 +197,8 @@ struct AllCubeFaceTextureTargets
     angle::EnumIterator<TextureTarget> end() const { return kAfterCubeMapTextureTargetMax; }
 };
 
-constexpr ShaderType kGLES2ShaderTypeMin = ShaderType::Vertex;
-constexpr ShaderType kGLES2ShaderTypeMax = ShaderType::Fragment;
-constexpr ShaderType kAfterGLES2ShaderTypeMax =
-    static_cast<ShaderType>(static_cast<uint8_t>(kGLES2ShaderTypeMax) + 1);
-struct AllGLES2ShaderTypes
-{
-    angle::EnumIterator<ShaderType> begin() const { return kGLES2ShaderTypeMin; }
-    angle::EnumIterator<ShaderType> end() const { return kAfterGLES2ShaderTypeMax; }
-};
+constexpr std::array<ShaderType, 2> kAllGLES2ShaderTypes = {ShaderType::Vertex,
+                                                            ShaderType::Fragment};
 
 constexpr ShaderType kShaderTypeMin = ShaderType::Vertex;
 constexpr ShaderType kShaderTypeMax = ShaderType::Compute;
@@ -203,7 +213,8 @@ struct AllShaderTypes
 constexpr size_t kGraphicsShaderCount = static_cast<size_t>(ShaderType::EnumCount) - 1u;
 // Arrange the shader types in the order of rendering pipeline
 constexpr std::array<ShaderType, kGraphicsShaderCount> kAllGraphicsShaderTypes = {
-    ShaderType::Vertex, ShaderType::Geometry, ShaderType::Fragment};
+    ShaderType::Vertex, ShaderType::TessControl, ShaderType::TessEvaluation, ShaderType::Geometry,
+    ShaderType::Fragment};
 
 using ShaderBitSet = angle::PackedEnumBitSet<ShaderType, uint8_t>;
 static_assert(sizeof(ShaderBitSet) == sizeof(uint8_t), "Unexpected size");
@@ -211,9 +222,15 @@ static_assert(sizeof(ShaderBitSet) == sizeof(uint8_t), "Unexpected size");
 template <typename T>
 using ShaderMap = angle::PackedEnumMap<ShaderType, T>;
 
+const char *ShaderTypeToString(ShaderType shaderType);
+
 TextureType SamplerTypeToTextureType(GLenum samplerType);
+TextureType ImageTypeToTextureType(GLenum imageType);
 
 bool IsMultisampled(gl::TextureType type);
+bool IsArrayTextureType(gl::TextureType type);
+
+bool IsStaticBufferUsage(BufferUsage useage);
 
 enum class PrimitiveMode : uint8_t
 {
@@ -231,9 +248,10 @@ enum class PrimitiveMode : uint8_t
     LineStripAdjacency     = 0xB,
     TrianglesAdjacency     = 0xC,
     TriangleStripAdjacency = 0xD,
+    Patches                = 0xE,
 
-    InvalidEnum = 0xE,
-    EnumCount   = 0xE,
+    InvalidEnum = 0xF,
+    EnumCount   = 0xF,
 };
 
 template <>
@@ -315,6 +333,129 @@ ANGLE_VALIDATE_PACKED_ENUM(DrawElementsType, UnsignedInt, GL_UNSIGNED_INT);
 
 std::ostream &operator<<(std::ostream &os, DrawElementsType value);
 
+enum class BlendEquationType
+{
+    Add             = 0,  // GLenum == 0x8006
+    Min             = 1,  // GLenum == 0x8007
+    Max             = 2,  // GLenum == 0x8008
+    Unused          = 3,
+    Subtract        = 4,  // GLenum == 0x800A
+    ReverseSubtract = 5,  // GLenum == 0x800B
+    InvalidEnum     = 6,
+    EnumCount       = 6
+};
+
+template <>
+constexpr BlendEquationType FromGLenum<BlendEquationType>(GLenum from)
+{
+    const GLenum scaled = (from - GL_FUNC_ADD);
+    return (scaled == static_cast<GLenum>(BlendEquationType::Unused) ||
+            scaled >= static_cast<GLenum>(BlendEquationType::EnumCount))
+               ? BlendEquationType::InvalidEnum
+               : static_cast<BlendEquationType>(scaled);
+}
+
+constexpr GLenum ToGLenum(BlendEquationType from)
+{
+    return static_cast<GLenum>(from) + GL_FUNC_ADD;
+}
+
+ANGLE_VALIDATE_PACKED_ENUM(BlendEquationType, Add, GL_FUNC_ADD);
+ANGLE_VALIDATE_PACKED_ENUM(BlendEquationType, Min, GL_MIN);
+ANGLE_VALIDATE_PACKED_ENUM(BlendEquationType, Max, GL_MAX);
+ANGLE_VALIDATE_PACKED_ENUM(BlendEquationType, Subtract, GL_FUNC_SUBTRACT);
+ANGLE_VALIDATE_PACKED_ENUM(BlendEquationType, ReverseSubtract, GL_FUNC_REVERSE_SUBTRACT);
+
+std::ostream &operator<<(std::ostream &os, BlendEquationType value);
+
+enum class BlendFactorType
+{
+    Zero = 0,  // GLenum == 0
+    One  = 1,  // GLenum == 1
+
+    MinSrcDstType    = 2,
+    SrcColor         = 2,   // GLenum == 0x0300
+    OneMinusSrcColor = 3,   // GLenum == 0x0301
+    SrcAlpha         = 4,   // GLenum == 0x0302
+    OneMinusSrcAlpha = 5,   // GLenum == 0x0303
+    DstAlpha         = 6,   // GLenum == 0x0304
+    OneMinusDstAlpha = 7,   // GLenum == 0x0305
+    DstColor         = 8,   // GLenum == 0x0306
+    OneMinusDstColor = 9,   // GLenum == 0x0307
+    SrcAlphaSaturate = 10,  // GLenum == 0x0308
+    MaxSrcDstType    = 10,
+
+    MinConstantType       = 11,
+    ConstantColor         = 11,  // GLenum == 0x8001
+    OneMinusConstantColor = 12,  // GLenum == 0x8002
+    ConstantAlpha         = 13,  // GLenum == 0x8003
+    OneMinusConstantAlpha = 14,  // GLenum == 0x8004
+    MaxConstantType       = 14,
+
+    // GL_EXT_blend_func_extended
+
+    Src1Alpha = 15,  // GLenum == 0x8589
+
+    Src1Color         = 16,  // GLenum == 0x88F9
+    OneMinusSrc1Color = 17,  // GLenum == 0x88FA
+    OneMinusSrc1Alpha = 18,  // GLenum == 0x88FB
+
+    InvalidEnum = 19,
+    EnumCount   = 19
+};
+
+template <>
+constexpr BlendFactorType FromGLenum<BlendFactorType>(GLenum from)
+{
+    if (from <= 1)
+        return static_cast<BlendFactorType>(from);
+    if (from >= GL_SRC_COLOR && from <= GL_SRC_ALPHA_SATURATE)
+        return static_cast<BlendFactorType>(from - GL_SRC_COLOR + 2);
+    if (from >= GL_CONSTANT_COLOR && from <= GL_ONE_MINUS_CONSTANT_ALPHA)
+        return static_cast<BlendFactorType>(from - GL_CONSTANT_COLOR + 11);
+    if (from == GL_SRC1_ALPHA_EXT)
+        return BlendFactorType::Src1Alpha;
+    if (from >= GL_SRC1_COLOR_EXT && from <= GL_ONE_MINUS_SRC1_ALPHA_EXT)
+        return static_cast<BlendFactorType>(from - GL_SRC1_COLOR_EXT + 16);
+    return BlendFactorType::InvalidEnum;
+}
+
+constexpr GLenum ToGLenum(BlendFactorType from)
+{
+    const GLenum value = static_cast<GLenum>(from);
+    if (value <= 1)
+        return value;
+    if (from >= BlendFactorType::MinSrcDstType && from <= BlendFactorType::MaxSrcDstType)
+        return value - 2 + GL_SRC_COLOR;
+    if (from >= BlendFactorType::MinConstantType && from <= BlendFactorType::MaxConstantType)
+        return value - 11 + GL_CONSTANT_COLOR;
+    if (from == BlendFactorType::Src1Alpha)
+        return GL_SRC1_ALPHA_EXT;
+    return value - 16 + GL_SRC1_COLOR_EXT;
+}
+
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, Zero, GL_ZERO);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, One, GL_ONE);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, SrcColor, GL_SRC_COLOR);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, OneMinusSrcColor, GL_ONE_MINUS_SRC_COLOR);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, SrcAlpha, GL_SRC_ALPHA);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, OneMinusSrcAlpha, GL_ONE_MINUS_SRC_ALPHA);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, DstAlpha, GL_DST_ALPHA);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, OneMinusDstAlpha, GL_ONE_MINUS_DST_ALPHA);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, DstColor, GL_DST_COLOR);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, OneMinusDstColor, GL_ONE_MINUS_DST_COLOR);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, SrcAlphaSaturate, GL_SRC_ALPHA_SATURATE);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, ConstantColor, GL_CONSTANT_COLOR);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, OneMinusConstantColor, GL_ONE_MINUS_CONSTANT_COLOR);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, ConstantAlpha, GL_CONSTANT_ALPHA);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, OneMinusConstantAlpha, GL_ONE_MINUS_CONSTANT_ALPHA);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, Src1Alpha, GL_SRC1_ALPHA_EXT);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, Src1Color, GL_SRC1_COLOR_EXT);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, OneMinusSrc1Color, GL_ONE_MINUS_SRC1_COLOR_EXT);
+ANGLE_VALIDATE_PACKED_ENUM(BlendFactorType, OneMinusSrc1Alpha, GL_ONE_MINUS_SRC1_ALPHA_EXT);
+
+std::ostream &operator<<(std::ostream &os, BlendFactorType value);
+
 enum class VertexAttribType
 {
     Byte               = 0,   // GLenum == 0x1400
@@ -332,9 +473,12 @@ enum class VertexAttribType
     Fixed              = 12,  // GLenum == 0x140C
     MaxBasicType       = 12,
     UnsignedInt2101010 = 13,  // GLenum == 0x8368
-    Int2101010         = 14,  // GLenum == 0x8D9F
-    InvalidEnum        = 15,
-    EnumCount          = 15,
+    HalfFloatOES       = 14,  // GLenum == 0x8D61
+    Int2101010         = 15,  // GLenum == 0x8D9F
+    UnsignedInt1010102 = 16,  // GLenum == 0x8DF6
+    Int1010102         = 17,  // GLenum == 0x8DF7
+    InvalidEnum        = 18,
+    EnumCount          = 18,
 };
 
 template <>
@@ -345,8 +489,14 @@ constexpr VertexAttribType FromGLenum<VertexAttribType>(GLenum from)
         return static_cast<VertexAttribType>(packed);
     if (from == GL_UNSIGNED_INT_2_10_10_10_REV)
         return VertexAttribType::UnsignedInt2101010;
+    if (from == GL_HALF_FLOAT_OES)
+        return VertexAttribType::HalfFloatOES;
     if (from == GL_INT_2_10_10_10_REV)
         return VertexAttribType::Int2101010;
+    if (from == GL_UNSIGNED_INT_10_10_10_2_OES)
+        return VertexAttribType::UnsignedInt1010102;
+    if (from == GL_INT_10_10_10_2_OES)
+        return VertexAttribType::Int1010102;
     return VertexAttribType::InvalidEnum;
 }
 
@@ -355,8 +505,14 @@ constexpr GLenum ToGLenum(VertexAttribType from)
     // This could be optimized using a constexpr table.
     if (from == VertexAttribType::Int2101010)
         return GL_INT_2_10_10_10_REV;
+    if (from == VertexAttribType::HalfFloatOES)
+        return GL_HALF_FLOAT_OES;
     if (from == VertexAttribType::UnsignedInt2101010)
         return GL_UNSIGNED_INT_2_10_10_10_REV;
+    if (from == VertexAttribType::UnsignedInt1010102)
+        return GL_UNSIGNED_INT_10_10_10_2_OES;
+    if (from == VertexAttribType::Int1010102)
+        return GL_INT_10_10_10_2_OES;
     return static_cast<GLenum>(from) + GL_BYTE;
 }
 
@@ -370,9 +526,261 @@ ANGLE_VALIDATE_PACKED_ENUM(VertexAttribType, Float, GL_FLOAT);
 ANGLE_VALIDATE_PACKED_ENUM(VertexAttribType, HalfFloat, GL_HALF_FLOAT);
 ANGLE_VALIDATE_PACKED_ENUM(VertexAttribType, Fixed, GL_FIXED);
 ANGLE_VALIDATE_PACKED_ENUM(VertexAttribType, Int2101010, GL_INT_2_10_10_10_REV);
+ANGLE_VALIDATE_PACKED_ENUM(VertexAttribType, HalfFloatOES, GL_HALF_FLOAT_OES);
 ANGLE_VALIDATE_PACKED_ENUM(VertexAttribType, UnsignedInt2101010, GL_UNSIGNED_INT_2_10_10_10_REV);
+ANGLE_VALIDATE_PACKED_ENUM(VertexAttribType, Int1010102, GL_INT_10_10_10_2_OES);
+ANGLE_VALIDATE_PACKED_ENUM(VertexAttribType, UnsignedInt1010102, GL_UNSIGNED_INT_10_10_10_2_OES);
 
 std::ostream &operator<<(std::ostream &os, VertexAttribType value);
+
+enum class TessEvaluationType
+{
+    Triangles             = 0,
+    Quads                 = 1,
+    Isolines              = 2,
+    EqualSpacing          = 3,
+    FractionalEvenSpacing = 4,
+    FractionalOddSpacing  = 5,
+    Cw                    = 6,
+    Ccw                   = 7,
+    PointMode             = 8,
+    InvalidEnum           = 9,
+    EnumCount             = 9
+};
+
+template <>
+constexpr TessEvaluationType FromGLenum<TessEvaluationType>(GLenum from)
+{
+    if (from == GL_TRIANGLES)
+        return TessEvaluationType::Triangles;
+    if (from == GL_QUADS)
+        return TessEvaluationType::Quads;
+    if (from == GL_ISOLINES)
+        return TessEvaluationType::Isolines;
+    if (from == GL_EQUAL)
+        return TessEvaluationType::EqualSpacing;
+    if (from == GL_FRACTIONAL_EVEN)
+        return TessEvaluationType::FractionalEvenSpacing;
+    if (from == GL_FRACTIONAL_ODD)
+        return TessEvaluationType::FractionalOddSpacing;
+    if (from == GL_CW)
+        return TessEvaluationType::Cw;
+    if (from == GL_CCW)
+        return TessEvaluationType::Ccw;
+    if (from == GL_TESS_GEN_POINT_MODE)
+        return TessEvaluationType::PointMode;
+    return TessEvaluationType::InvalidEnum;
+}
+
+constexpr GLenum ToGLenum(TessEvaluationType from)
+{
+    switch (from)
+    {
+        case TessEvaluationType::Triangles:
+            return GL_TRIANGLES;
+        case TessEvaluationType::Quads:
+            return GL_QUADS;
+        case TessEvaluationType::Isolines:
+            return GL_ISOLINES;
+        case TessEvaluationType::EqualSpacing:
+            return GL_EQUAL;
+        case TessEvaluationType::FractionalEvenSpacing:
+            return GL_FRACTIONAL_EVEN;
+        case TessEvaluationType::FractionalOddSpacing:
+            return GL_FRACTIONAL_ODD;
+        case TessEvaluationType::Cw:
+            return GL_CW;
+        case TessEvaluationType::Ccw:
+            return GL_CCW;
+        case TessEvaluationType::PointMode:
+            return GL_TESS_GEN_POINT_MODE;
+        default:
+            return GL_INVALID_ENUM;
+    }
+}
+
+ANGLE_VALIDATE_PACKED_ENUM(TessEvaluationType, Triangles, GL_TRIANGLES);
+ANGLE_VALIDATE_PACKED_ENUM(TessEvaluationType, Quads, GL_QUADS);
+ANGLE_VALIDATE_PACKED_ENUM(TessEvaluationType, Isolines, GL_ISOLINES);
+ANGLE_VALIDATE_PACKED_ENUM(TessEvaluationType, EqualSpacing, GL_EQUAL);
+ANGLE_VALIDATE_PACKED_ENUM(TessEvaluationType, FractionalEvenSpacing, GL_FRACTIONAL_EVEN);
+ANGLE_VALIDATE_PACKED_ENUM(TessEvaluationType, FractionalOddSpacing, GL_FRACTIONAL_ODD);
+ANGLE_VALIDATE_PACKED_ENUM(TessEvaluationType, Cw, GL_CW);
+ANGLE_VALIDATE_PACKED_ENUM(TessEvaluationType, Ccw, GL_CCW);
+ANGLE_VALIDATE_PACKED_ENUM(TessEvaluationType, PointMode, GL_TESS_GEN_POINT_MODE);
+
+std::ostream &operator<<(std::ostream &os, TessEvaluationType value);
+
+// Typesafe object handles.
+
+template <typename T>
+struct ResourceTypeToID;
+
+template <typename T>
+struct IsResourceIDType;
+
+// Clang Format doesn't like the following X macro.
+// clang-format off
+#define ANGLE_ID_TYPES_OP(X) \
+    X(Buffer)                \
+    X(FenceNV)               \
+    X(Framebuffer)           \
+    X(MemoryObject)          \
+    X(Path)                  \
+    X(ProgramPipeline)       \
+    X(Query)                 \
+    X(Renderbuffer)          \
+    X(Sampler)               \
+    X(Semaphore)             \
+    X(Texture)               \
+    X(TransformFeedback)     \
+    X(VertexArray)
+// clang-format on
+
+#define ANGLE_DEFINE_ID_TYPE(Type)          \
+    class Type;                             \
+    struct Type##ID                         \
+    {                                       \
+        GLuint value;                       \
+    };                                      \
+    template <>                             \
+    struct ResourceTypeToID<Type>           \
+    {                                       \
+        using IDType = Type##ID;            \
+    };                                      \
+    template <>                             \
+    struct IsResourceIDType<Type##ID>       \
+    {                                       \
+        static constexpr bool value = true; \
+    };
+
+ANGLE_ID_TYPES_OP(ANGLE_DEFINE_ID_TYPE)
+
+#undef ANGLE_DEFINE_ID_TYPE
+#undef ANGLE_ID_TYPES_OP
+
+// Shaders and programs are a bit special as they share IDs.
+struct ShaderProgramID
+{
+    GLuint value;
+};
+
+template <>
+struct IsResourceIDType<ShaderProgramID>
+{
+    constexpr static bool value = true;
+};
+
+class Shader;
+template <>
+struct ResourceTypeToID<Shader>
+{
+    using IDType = ShaderProgramID;
+};
+
+class Program;
+template <>
+struct ResourceTypeToID<Program>
+{
+    using IDType = ShaderProgramID;
+};
+
+template <typename T>
+struct ResourceTypeToID
+{
+    using IDType = void;
+};
+
+template <typename T>
+struct IsResourceIDType
+{
+    static constexpr bool value = false;
+};
+
+template <typename T>
+bool ValueEquals(T lhs, T rhs)
+{
+    return lhs.value == rhs.value;
+}
+
+// Util funcs for resourceIDs
+template <typename T>
+typename std::enable_if<IsResourceIDType<T>::value, bool>::type operator==(const T &lhs,
+                                                                           const T &rhs)
+{
+    return lhs.value == rhs.value;
+}
+
+template <typename T>
+typename std::enable_if<IsResourceIDType<T>::value, bool>::type operator!=(const T &lhs,
+                                                                           const T &rhs)
+{
+    return lhs.value != rhs.value;
+}
+
+template <typename T>
+typename std::enable_if<IsResourceIDType<T>::value, bool>::type operator<(const T &lhs,
+                                                                          const T &rhs)
+{
+    return lhs.value < rhs.value;
+}
+
+// Used to unbox typed values.
+template <typename ResourceIDType>
+GLuint GetIDValue(ResourceIDType id);
+
+template <>
+inline GLuint GetIDValue(GLuint id)
+{
+    return id;
+}
+
+template <typename ResourceIDType>
+inline GLuint GetIDValue(ResourceIDType id)
+{
+    return id.value;
+}
+
+// First case: handling packed enums.
+template <typename EnumT, typename FromT>
+typename std::enable_if<std::is_enum<EnumT>::value, EnumT>::type PackParam(FromT from)
+{
+    return FromGLenum<EnumT>(from);
+}
+
+// Second case: handling non-pointer resource ids.
+template <typename EnumT, typename FromT>
+typename std::enable_if<!std::is_pointer<FromT>::value && !std::is_enum<EnumT>::value, EnumT>::type
+PackParam(FromT from)
+{
+    return {from};
+}
+
+// Third case: handling pointer resource ids.
+template <typename EnumT, typename FromT>
+typename std::enable_if<std::is_pointer<FromT>::value && !std::is_enum<EnumT>::value, EnumT>::type
+PackParam(FromT from)
+{
+    static_assert(sizeof(typename std::remove_pointer<EnumT>::type) ==
+                      sizeof(typename std::remove_pointer<FromT>::type),
+                  "Types have different sizes");
+    static_assert(
+        std::is_same<
+            decltype(std::remove_pointer<EnumT>::type::value),
+            typename std::remove_const<typename std::remove_pointer<FromT>::type>::type>::value,
+        "Data types are different");
+    return reinterpret_cast<EnumT>(from);
+}
+
+struct UniformLocation
+{
+    int value;
+};
+
+struct UniformBlockIndex
+{
+    uint32_t value;
+};
 }  // namespace gl
 
 namespace egl

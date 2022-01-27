@@ -10,18 +10,23 @@
 #include "EnterpriseRoots.h"
 #include "ExtendedValidation.h"
 #include "NSSCertDBTrustDomain.h"
+#include "SSLTokensCache.h"
 #include "ScopedNSSTypes.h"
 #include "SharedSSLState.h"
 #include "cert.h"
+#include "cert_storage/src/cert_storage.h"
 #include "certdb.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/AppShutdown.h"
+#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Casting.h"
-#include "mozilla/net/SocketProcessParent.h"
-#include "mozilla/Preferences.h"
+#include "mozilla/EndianUtils.h"
 #include "mozilla/PodOperations.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/PublicSSL.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
@@ -30,6 +35,8 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Unused.h"
 #include "mozilla/Vector.h"
+#include "mozilla/net/SocketProcessParent.h"
+#include "mozpkix/pkixnss.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsCRT.h"
 #include "nsClientAuthRemember.h"
@@ -38,11 +45,12 @@
 #include "nsICertOverrideService.h"
 #include "nsIFile.h"
 #include "nsILocalFileWin.h"
-#include "nsIObserverService.h"
 #include "nsIOService.h"
+#include "nsIObserverService.h"
 #include "nsIPrompt.h"
 #include "nsIProperties.h"
 #include "nsISerialEventTarget.h"
+#include "nsISiteSecurityService.h"
 #include "nsITimer.h"
 #include "nsITokenPasswordDialogs.h"
 #include "nsIWindowWatcher.h"
@@ -59,19 +67,12 @@
 #include "nss.h"
 #include "p12plcy.h"
 #include "pk11pub.h"
-#include "mozpkix/pkixnss.h"
+#include "prmem.h"
 #include "secerr.h"
 #include "secmod.h"
 #include "ssl.h"
 #include "sslerr.h"
 #include "sslproto.h"
-#include "SSLTokensCache.h"
-#include "prmem.h"
-#include "GeckoProfiler.h"
-
-#ifdef MOZ_NEW_CERT_STORAGE
-#  include "cert_storage/src/cert_storage.h"
-#endif
 
 #if defined(XP_LINUX) && !defined(ANDROID)
 #  include <linux/magic.h>
@@ -167,7 +168,7 @@ static const uint32_t OCSP_TIMEOUT_MILLISECONDS_SOFT_MAX = 5000;
 static const uint32_t OCSP_TIMEOUT_MILLISECONDS_HARD_DEFAULT = 10000;
 static const uint32_t OCSP_TIMEOUT_MILLISECONDS_HARD_MAX = 20000;
 
-static void GetRevocationBehaviorFromPrefs(
+void nsNSSComponent::GetRevocationBehaviorFromPrefs(
     /*out*/ CertVerifier::OcspDownloadConfig* odc,
     /*out*/ CertVerifier::OcspStrictConfig* osc,
     /*out*/ uint32_t* certShortLifetimeInDays,
@@ -218,7 +219,7 @@ static void GetRevocationBehaviorFromPrefs(
       std::min(hardTimeoutMillis, OCSP_TIMEOUT_MILLISECONDS_HARD_MAX);
   hardTimeout = TimeDuration::FromMilliseconds(hardTimeoutMillis);
 
-  nsNSSComponent::ClearSSLExternalAndInternalSessionCacheNative();
+  ClearSSLExternalAndInternalSessionCache();
 }
 
 nsNSSComponent::nsNSSComponent()
@@ -1023,7 +1024,7 @@ nsresult LoadLoadableCertsTask::LoadLoadableRoots() {
 // Table of pref names and SSL cipher ID
 typedef struct {
   const char* pref;
-  long id;
+  int32_t id;
   bool enabledByDefault;
 } CipherPref;
 
@@ -1074,12 +1075,13 @@ static const CipherPref sCipherPrefs[] = {
      true},  // deprecated (RSA key exchange)
     {"security.ssl3.rsa_aes_256_sha", TLS_RSA_WITH_AES_256_CBC_SHA,
      true},  // deprecated (RSA key exchange)
-    {"security.ssl3.rsa_des_ede3_sha", TLS_RSA_WITH_3DES_EDE_CBC_SHA,
-     true},  // deprecated (RSA key exchange, 3DES)
+};
 
-    // All the rest are disabled
-
-    {nullptr, 0}  // end marker
+// These ciphersuites can only be enabled if deprecated versions of TLS are
+// also enabled (via the preference "security.tls.version.enable-deprecated").
+static const CipherPref sDeprecatedTLS1CipherPrefs[] = {
+    {"security.ssl3.deprecated.rsa_des_ede3_sha", TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+     true},
 };
 
 // This function will convert from pref values like 1, 2, ...
@@ -1292,16 +1294,6 @@ void SetValidationOptionsCommon() {
   PublicSSLState()->SetSignedCertTimestampsEnabled(sctsEnabled);
   PrivateSSLState()->SetSignedCertTimestampsEnabled(sctsEnabled);
 
-  CertVerifier::PinningMode pinningMode =
-      static_cast<CertVerifier::PinningMode>(
-          Preferences::GetInt("security.cert_pinning.enforcement_level",
-                              CertVerifier::pinningDisabled));
-  if (pinningMode > CertVerifier::pinningEnforceTestMode) {
-    pinningMode = CertVerifier::pinningDisabled;
-  }
-  PublicSSLState()->SetPinningMode(pinningMode);
-  PrivateSSLState()->SetPinningMode(pinningMode);
-
   BRNameMatchingPolicy::Mode nameMatchingMode =
       static_cast<BRNameMatchingPolicy::Mode>(Preferences::GetInt(
           "security.pki.name_matching_mode",
@@ -1366,6 +1358,25 @@ nsresult CipherSuiteChangeObserver::StartObserve() {
   return NS_OK;
 }
 
+// Enables or disabled ciphersuites from deprecated versions of TLS as
+// appropriate. If security.tls.version.enable-deprecated is true, these
+// ciphersuites may be enabled, if the corresponding preference is true.
+// Otherwise, these ciphersuites will be disabled.
+void SetDeprecatedTLS1CipherPrefs() {
+  if (Preferences::GetBool("security.tls.version.enable-deprecated", false)) {
+    for (const auto& deprecatedTLS1CipherPref : sDeprecatedTLS1CipherPrefs) {
+      bool cipherEnabled =
+          Preferences::GetBool(deprecatedTLS1CipherPref.pref,
+                               deprecatedTLS1CipherPref.enabledByDefault);
+      SSL_CipherPrefSetDefault(deprecatedTLS1CipherPref.id, cipherEnabled);
+    }
+  } else {
+    for (const auto& deprecatedTLS1CipherPref : sDeprecatedTLS1CipherPrefs) {
+      SSL_CipherPrefSetDefault(deprecatedTLS1CipherPref.id, false);
+    }
+  }
+}
+
 nsresult CipherSuiteChangeObserver::Observe(nsISupports* /*aSubject*/,
                                             const char* aTopic,
                                             const char16_t* someData) {
@@ -1375,16 +1386,16 @@ nsresult CipherSuiteChangeObserver::Observe(nsISupports* /*aSubject*/,
   if (nsCRT::strcmp(aTopic, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID) == 0) {
     NS_ConvertUTF16toUTF8 prefName(someData);
     // Look through the cipher table and set according to pref setting
-    const CipherPref* const cp = sCipherPrefs;
-    for (size_t i = 0; cp[i].pref; ++i) {
-      if (prefName.Equals(cp[i].pref)) {
+    for (const auto& cipherPref : sCipherPrefs) {
+      if (prefName.Equals(cipherPref.pref)) {
         bool cipherEnabled =
-            Preferences::GetBool(cp[i].pref, cp[i].enabledByDefault);
-        SSL_CipherPrefSetDefault(cp[i].id, cipherEnabled);
-        nsNSSComponent::DoClearSSLExternalAndInternalSessionCache();
+            Preferences::GetBool(cipherPref.pref, cipherPref.enabledByDefault);
+        SSL_CipherPrefSetDefault(cipherPref.id, cipherEnabled);
         break;
       }
     }
+    SetDeprecatedTLS1CipherPrefs();
+    nsNSSComponent::DoClearSSLExternalAndInternalSessionCache();
   } else if (nsCRT::strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
     Preferences::RemoveObserver(this, "security.");
     MOZ_ASSERT(sObserver.get() == this);
@@ -1475,17 +1486,6 @@ void nsNSSComponent::setValidationOptions(
       break;
   }
 
-  DistrustedCAPolicy defaultCAPolicyMode =
-      DistrustedCAPolicy::DistrustSymantecRoots;
-  DistrustedCAPolicy distrustedCAPolicy = static_cast<DistrustedCAPolicy>(
-      Preferences::GetUint("security.pki.distrust_ca_policy",
-                           static_cast<uint32_t>(defaultCAPolicyMode)));
-  // If distrustedCAPolicy sets any bits larger than the maximum mask, fall back
-  // to the default.
-  if (distrustedCAPolicy & ~DistrustedCAPolicyMaxAllowedValueMask) {
-    distrustedCAPolicy = defaultCAPolicyMode;
-  }
-
   CRLiteMode defaultCRLiteMode = CRLiteMode::Disabled;
   CRLiteMode crliteMode = static_cast<CRLiteMode>(Preferences::GetUint(
       "security.pki.crlite_mode", static_cast<uint32_t>(defaultCRLiteMode)));
@@ -1499,6 +1499,16 @@ void nsNSSComponent::setValidationOptions(
       break;
   }
 
+  uint32_t defaultCRLiteCTMergeDelaySeconds =
+      60 * 60 * 28;  // 28 hours in seconds
+  uint64_t maxCRLiteCTMergeDelaySeconds = 60 * 60 * 24 * 365;
+  uint64_t crliteCTMergeDelaySeconds =
+      Preferences::GetUint("security.pki.crlite_ct_merge_delay_seconds",
+                           defaultCRLiteCTMergeDelaySeconds);
+  if (crliteCTMergeDelaySeconds > maxCRLiteCTMergeDelaySeconds) {
+    crliteCTMergeDelaySeconds = maxCRLiteCTMergeDelaySeconds;
+  }
+
   CertVerifier::OcspDownloadConfig odc;
   CertVerifier::OcspStrictConfig osc;
   uint32_t certShortLifetimeInDays;
@@ -1509,10 +1519,9 @@ void nsNSSComponent::setValidationOptions(
                                  softTimeout, hardTimeout, proofOfLock);
 
   mDefaultCertVerifier = new SharedCertVerifier(
-      odc, osc, softTimeout, hardTimeout, certShortLifetimeInDays,
-      PublicSSLState()->PinningMode(), sha1Mode,
+      odc, osc, softTimeout, hardTimeout, certShortLifetimeInDays, sha1Mode,
       PublicSSLState()->NameMatchingMode(), netscapeStepUpPolicy, ctMode,
-      distrustedCAPolicy, crliteMode, mEnterpriseCerts);
+      crliteMode, crliteCTMergeDelaySeconds, mEnterpriseCerts);
 }
 
 void nsNSSComponent::UpdateCertVerifierWithEnterpriseRoots() {
@@ -1528,10 +1537,10 @@ void nsNSSComponent::UpdateCertVerifierWithEnterpriseRoots() {
       oldCertVerifier->mOCSPStrict ? CertVerifier::ocspStrict
                                    : CertVerifier::ocspRelaxed,
       oldCertVerifier->mOCSPTimeoutSoft, oldCertVerifier->mOCSPTimeoutHard,
-      oldCertVerifier->mCertShortLifetimeInDays, oldCertVerifier->mPinningMode,
-      oldCertVerifier->mSHA1Mode, oldCertVerifier->mNameMatchingMode,
+      oldCertVerifier->mCertShortLifetimeInDays, oldCertVerifier->mSHA1Mode,
+      oldCertVerifier->mNameMatchingMode,
       oldCertVerifier->mNetscapeStepUpPolicy, oldCertVerifier->mCTMode,
-      oldCertVerifier->mDistrustedCAPolicy, oldCertVerifier->mCRLiteMode,
+      oldCertVerifier->mCRLiteMode, oldCertVerifier->mCRLiteCTMergeDelaySeconds,
       mEnterpriseCerts);
 }
 
@@ -1661,13 +1670,12 @@ static nsresult GetNSSProfilePath(nsAutoCString& aProfilePath) {
 
 #ifndef ANDROID
 // Given a profile path, attempt to rename the PKCS#11 module DB to
-// "<original name>.fips". In the case of a catastrophic failure (e.g. out of
+// "pkcs11.txt.fips". In the case of a catastrophic failure (e.g. out of
 // memory), returns a failing nsresult. If execution could conceivably proceed,
 // returns NS_OK even if renaming the file didn't work. This simplifies the
 // logic of the calling code.
 // |profilePath| is encoded in UTF-8.
-static nsresult AttemptToRenamePKCS11ModuleDB(
-    const nsACString& profilePath, const nsACString& moduleDBFilename) {
+static nsresult AttemptToRenamePKCS11ModuleDB(const nsACString& profilePath) {
   nsCOMPtr<nsIFile> profileDir = do_CreateInstance("@mozilla.org/file/local;1");
   if (!profileDir) {
     return NS_ERROR_FAILURE;
@@ -1682,6 +1690,7 @@ static nsresult AttemptToRenamePKCS11ModuleDB(
   if (NS_FAILED(rv)) {
     return rv;
   }
+  const char* moduleDBFilename = "pkcs11.txt";
   nsAutoCString destModuleDBFilename(moduleDBFilename);
   destModuleDBFilename.Append(".fips");
   nsCOMPtr<nsIFile> dbFile;
@@ -1689,7 +1698,7 @@ static nsresult AttemptToRenamePKCS11ModuleDB(
   if (NS_FAILED(rv) || !dbFile) {
     return NS_ERROR_FAILURE;
   }
-  rv = dbFile->AppendNative(moduleDBFilename);
+  rv = dbFile->AppendNative(nsAutoCString(moduleDBFilename));
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -1702,7 +1711,7 @@ static nsresult AttemptToRenamePKCS11ModuleDB(
   // This is strange, but not a catastrophic failure.
   if (!exists) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("%s doesn't exist?", PromiseFlatCString(moduleDBFilename).get()));
+            ("%s doesn't exist?", moduleDBFilename));
     return NS_OK;
   }
   nsCOMPtr<nsIFile> destDBFile;
@@ -1733,117 +1742,6 @@ static nsresult AttemptToRenamePKCS11ModuleDB(
   // initializing NSS in no-DB mode.
   Unused << dbFile->MoveToNative(profileDir, destModuleDBFilename);
   return NS_OK;
-}
-
-// The platform now only uses the sqlite-backed databases, so we'll try to
-// rename "pkcs11.txt". However, if we're upgrading from a version that used the
-// old format, we need to try to rename the old "secmod.db" as well (if we were
-// to only rename "pkcs11.txt", initializing NSS will still fail due to the old
-// database being in FIPS mode).
-// |profilePath| is encoded in UTF-8.
-static nsresult AttemptToRenameBothPKCS11ModuleDBVersions(
-    const nsACString& profilePath) {
-  constexpr auto legacyModuleDBFilename = "secmod.db"_ns;
-  constexpr auto sqlModuleDBFilename = "pkcs11.txt"_ns;
-  nsresult rv =
-      AttemptToRenamePKCS11ModuleDB(profilePath, legacyModuleDBFilename);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-  return AttemptToRenamePKCS11ModuleDB(profilePath, sqlModuleDBFilename);
-}
-
-// Helper function to take a path and a file name and create a handle for the
-// file in that location, if it exists. |path| is encoded in UTF-8.
-static nsresult GetFileIfExists(const nsACString& path,
-                                const nsACString& filename,
-                                /* out */ nsIFile** result) {
-  MOZ_ASSERT(result);
-  if (!result) {
-    return NS_ERROR_INVALID_ARG;
-  }
-  *result = nullptr;
-  nsCOMPtr<nsIFile> file = do_CreateInstance("@mozilla.org/file/local;1");
-  if (!file) {
-    return NS_ERROR_FAILURE;
-  }
-#  ifdef XP_WIN
-  // |path| is encoded in UTF-8 because SQLite always takes UTF-8 file paths
-  // regardless of the current system code page.
-  nsresult rv = file->InitWithPath(NS_ConvertUTF8toUTF16(path));
-#  else
-  nsresult rv = file->InitWithNativePath(path);
-#  endif
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-  rv = file->AppendNative(filename);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-  bool exists;
-  rv = file->Exists(&exists);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-  if (exists) {
-    file.forget(result);
-  }
-  return NS_OK;
-}
-
-// When we changed from the old dbm database format to the newer sqlite
-// implementation, the upgrade process left behind the existing files. Suppose a
-// user had not set a password for the old key3.db (which is about 99% of
-// users). After upgrading, both the old database and the new database are
-// unprotected. If the user then sets a password for the new database, the old
-// one will not be protected. In this scenario, we should probably just remove
-// the old database (it would only be relevant if the user downgraded to a
-// version of Firefox before 58, but we have to trade this off against the
-// user's old private keys being unexpectedly unprotected after setting a
-// password).
-// This was never an issue on Android because we always used the new
-// implementation.
-// |profilePath| is encoded in UTF-8.
-static void MaybeCleanUpOldNSSFiles(const nsACString& profilePath) {
-  UniquePK11SlotInfo slot(PK11_GetInternalKeySlot());
-  if (!slot) {
-    return;
-  }
-  // Unfortunately we can't now tell the difference between "there already was a
-  // password when the upgrade happened" and "there was not a password but then
-  // the user added one after upgrading".
-  bool hasPassword =
-      PK11_NeedLogin(slot.get()) && !PK11_NeedUserInit(slot.get());
-  if (!hasPassword) {
-    return;
-  }
-  constexpr auto newKeyDBFilename = "key4.db"_ns;
-  nsCOMPtr<nsIFile> newDBFile;
-  nsresult rv =
-      GetFileIfExists(profilePath, newKeyDBFilename, getter_AddRefs(newDBFile));
-  if (NS_FAILED(rv)) {
-    return;
-  }
-  // If the new key DB file doesn't exist, we don't want to remove the old DB
-  // file. This can happen if the system is configured to use the old DB format
-  // even though we're a version of Firefox that expects to use the new format.
-  if (!newDBFile) {
-    return;
-  }
-  constexpr auto oldKeyDBFilename = "key3.db"_ns;
-  nsCOMPtr<nsIFile> oldDBFile;
-  rv =
-      GetFileIfExists(profilePath, oldKeyDBFilename, getter_AddRefs(oldDBFile));
-  if (NS_FAILED(rv)) {
-    return;
-  }
-  if (!oldDBFile) {
-    return;
-  }
-  // Since this isn't a directory, the `recursive` argument to `Remove` is
-  // irrelevant.
-  Unused << oldDBFile->Remove(false);
 }
 #endif  // ifndef ANDROID
 
@@ -1883,9 +1781,6 @@ static nsresult InitializeNSSWithFallbacks(const nsACString& profilePath,
       profilePath, NSSDBConfig::ReadWrite, safeModeDBConfig);
   if (srv == SECSuccess) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("initialized NSS in r/w mode"));
-#ifndef ANDROID
-    MaybeCleanUpOldNSSFiles(profilePath);
-#endif  // ifndef ANDROID
     return NS_OK;
   }
 #ifndef ANDROID
@@ -1938,7 +1833,7 @@ static nsresult InitializeNSSWithFallbacks(const nsACString& profilePath,
       // If this fails non-catastrophically, we'll attempt to initialize NSS
       // again in r/w then r-o mode (both of which will fail), and then we'll
       // fall back to NSS_NoDB_Init, which is the behavior we want.
-      nsresult rv = AttemptToRenameBothPKCS11ModuleDBVersions(profilePath);
+      nsresult rv = AttemptToRenamePKCS11ModuleDB(profilePath);
       if (NS_FAILED(rv)) {
 #  ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
         // An nsresult is a uint32_t, but at least one of our compilers doesn't
@@ -1975,6 +1870,54 @@ static nsresult InitializeNSSWithFallbacks(const nsACString& profilePath,
   return srv == SECSuccess ? NS_OK : NS_ERROR_FAILURE;
 }
 
+#if defined(NIGHTLY_BUILD) && !defined(ANDROID)
+// dbType is either "cert9.db" or "key4.db"
+void UnmigrateOneCertDB(const nsCOMPtr<nsIFile>& profileDirectory,
+                        const nsACString& dbType) {
+  nsCOMPtr<nsIFile> dbFile;
+  nsresult rv = profileDirectory->Clone(getter_AddRefs(dbFile));
+  if (NS_FAILED(rv)) {
+    return;
+  }
+  rv = dbFile->AppendNative(dbType);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+  bool exists;
+  rv = dbFile->Exists(&exists);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+  // If the unprefixed DB already exists, don't overwrite it.
+  if (exists) {
+    return;
+  }
+  nsCOMPtr<nsIFile> prefixedDBFile;
+  rv = profileDirectory->Clone(getter_AddRefs(prefixedDBFile));
+  if (NS_FAILED(rv)) {
+    return;
+  }
+  nsAutoCString prefixedDBName("gecko-no-share-");
+  prefixedDBName.Append(dbType);
+  rv = prefixedDBFile->AppendNative(prefixedDBName);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+  Unused << prefixedDBFile->MoveToNative(nullptr, dbType);
+}
+
+void UnmigrateFromPrefixedCertDBs() {
+  nsCOMPtr<nsIFile> profileDirectory;
+  nsresult rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
+                                       getter_AddRefs(profileDirectory));
+  if (NS_FAILED(rv)) {
+    return;
+  }
+  UnmigrateOneCertDB(profileDirectory, "cert9.db"_ns);
+  UnmigrateOneCertDB(profileDirectory, "key4.db"_ns);
+}
+#endif  // defined(NIGHTLY_BUILD) && !defined(ANDROID)
+
 nsresult nsNSSComponent::InitializeNSS() {
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("nsNSSComponent::InitializeNSS\n"));
   AUTO_PROFILER_LABEL("nsNSSComponent::InitializeNSS", OTHER);
@@ -1995,6 +1938,12 @@ nsresult nsNSSComponent::InitializeNSS() {
   if (NS_FAILED(rv)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
+
+#if defined(NIGHTLY_BUILD) && !defined(ANDROID)
+  if (!profileStr.IsEmpty()) {
+    UnmigrateFromPrefixedCertDBs();
+  }
+#endif
 
 #if defined(XP_WIN) || (defined(XP_LINUX) && !defined(ANDROID))
   SetNSSDatabaseCacheModeAsAppropriate();
@@ -2034,8 +1983,13 @@ nsresult nsNSSComponent::InitializeNSS() {
     return NS_ERROR_UNEXPECTED;
   }
 
-  nsCOMPtr<nsIClientAuthRememberService> cars =
-      do_GetService(NS_CLIENTAUTHREMEMBERSERVICE_CONTRACTID);
+  nsCOMPtr<nsICertOverrideService> certOverrideService(
+      do_GetService(NS_CERTOVERRIDE_CONTRACTID));
+  nsCOMPtr<nsIClientAuthRememberService> clientAuthRememberService(
+      do_GetService(NS_CLIENTAUTHREMEMBERSERVICE_CONTRACTID));
+  nsCOMPtr<nsISiteSecurityService> siteSecurityService(
+      do_GetService(NS_SSSERVICE_CONTRACTID));
+  nsCOMPtr<nsICertStorage> certStorage(do_GetService(NS_CERT_STORAGE_CID));
 
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("NSS Initialization done\n"));
 
@@ -2049,8 +2003,8 @@ nsresult nsNSSComponent::InitializeNSS() {
                            mTestBuiltInRootHash);
 #endif
     mContentSigningRootHash.Truncate();
-    Preferences::GetString("security.content.signature.root_hash",
-                           mContentSigningRootHash);
+    Preferences::GetCString("security.content.signature.root_hash",
+                            mContentSigningRootHash);
 
     mMitmCanaryIssuer.Truncate();
     Preferences::GetString("security.pki.mitm_canary_issuer",
@@ -2096,26 +2050,6 @@ nsresult nsNSSComponent::InitializeNSS() {
   }
 }
 
-NS_IMETHODIMP
-nsNSSComponent::DispatchTaskToSerialBackgroundQueue(nsIRunnable* task) {
-  if (!NS_IsMainThread()) {
-    nsCOMPtr<nsIRunnable> mainThreadRunnable(NS_NewRunnableFunction(
-        "DispatchTaskToSerialBackgroundQueue::mainThreadRunnable",
-        [self = RefPtr<nsNSSComponent>(this),
-         taskHandle = nsCOMPtr<nsIRunnable>(task)]() -> void {
-          nsresult rv = self->DispatchTaskToSerialBackgroundQueue(taskHandle);
-          Unused << NS_WARN_IF(NS_FAILED(rv));
-        }));
-    return NS_DispatchToMainThread(mainThreadRunnable.forget());
-  }
-
-  if (mBackgroundTaskQueue) {
-    return mBackgroundTaskQueue->Dispatch(task, NS_DISPATCH_EVENT_MAY_BLOCK);
-  }
-
-  return NS_ERROR_NOT_AVAILABLE;
-}
-
 void nsNSSComponent::ShutdownNSS() {
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("nsNSSComponent::ShutdownNSS\n"));
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
@@ -2135,8 +2069,6 @@ void nsNSSComponent::ShutdownNSS() {
     Unused << BlockUntilLoadableCertsLoaded();
   }
 
-  ::mozilla::psm::UnloadUserModules();
-
   PK11_SetPasswordFunc((PK11PasswordFunc) nullptr);
 
   Preferences::RemoveObserver(this, "security.");
@@ -2145,8 +2077,6 @@ void nsNSSComponent::ShutdownNSS() {
     mIntermediatePreloadingHealerTimer->Cancel();
     mIntermediatePreloadingHealerTimer = nullptr;
   }
-
-  mBackgroundTaskQueue = nullptr;
 
   // Release the default CertVerifier. This will cause any held NSS resources
   // to be released.
@@ -2157,7 +2087,6 @@ void nsNSSComponent::ShutdownNSS() {
   // be any XPCOM objects holding NSS resources).
 }
 
-#ifdef MOZ_NEW_CERT_STORAGE
 // The aim of the intermediate preloading healer is to remove intermediates
 // that were previously cached by PSM in the NSS certdb that are now preloaded
 // in cert_storage. When cached by PSM, these certificates will have no
@@ -2305,7 +2234,6 @@ void IntermediatePreloadingHealerCallback(nsITimer*, void*) {
       }));
   Unused << NS_DispatchToMainThread(runnable.forget());
 }
-#endif  // MOZ_NEW_CERT_STORAGE
 
 nsresult nsNSSComponent::Init() {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
@@ -2335,14 +2263,6 @@ nsresult nsNSSComponent::Init() {
     return rv;
   }
 
-  rv = NS_CreateBackgroundTaskQueue("nsNSSComponent::mBackgroundTaskQueue",
-                                    getter_AddRefs(mBackgroundTaskQueue));
-  if (NS_FAILED(rv)) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Error,
-            ("NS_CreateBackgroundTaskQueue failed"));
-    return rv;
-  }
-
   rv = MaybeEnableIntermediatePreloadingHealer();
   if (NS_FAILED(rv)) {
     return rv;
@@ -2352,7 +2272,6 @@ nsresult nsNSSComponent::Init() {
 }
 
 nsresult nsNSSComponent::MaybeEnableIntermediatePreloadingHealer() {
-#ifdef MOZ_NEW_CERT_STORAGE
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
           ("nsNSSComponent::MaybeEnableIntermediatePreloadingHealer"));
   MOZ_ASSERT(NS_IsMainThread());
@@ -2370,6 +2289,16 @@ nsresult nsNSSComponent::MaybeEnableIntermediatePreloadingHealer() {
     return NS_OK;
   }
 
+  if (!mIntermediatePreloadingHealerTaskQueue) {
+    nsresult rv = NS_CreateBackgroundTaskQueue(
+        "IntermediatePreloadingHealer",
+        getter_AddRefs(mIntermediatePreloadingHealerTaskQueue));
+    if (NS_FAILED(rv)) {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Error,
+              ("NS_CreateBackgroundTaskQueue failed"));
+      return rv;
+    }
+  }
   uint32_t timerDelayMS = Preferences::GetUint(
       "security.intermediate_preloading_healer.timer_interval_ms",
       5 * 60 * 1000);
@@ -2377,14 +2306,12 @@ nsresult nsNSSComponent::MaybeEnableIntermediatePreloadingHealer() {
       getter_AddRefs(mIntermediatePreloadingHealerTimer),
       IntermediatePreloadingHealerCallback, nullptr, timerDelayMS,
       nsITimer::TYPE_REPEATING_SLACK_LOW_PRIORITY,
-      "IntermediatePreloadingHealer", mBackgroundTaskQueue);
+      "IntermediatePreloadingHealer", mIntermediatePreloadingHealerTaskQueue);
   if (NS_FAILED(rv)) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Error,
             ("NS_NewTimerWithFuncCallback failed"));
     return rv;
   }
-
-#endif  // MOZ_NEW_CERT_STORAGE
   return NS_OK;
 }
 
@@ -2419,8 +2346,6 @@ nsNSSComponent::Observe(nsISupports* aSubject, const char* aTopic,
                prefName.EqualsLiteral("security.ssl.enable_ocsp_must_staple") ||
                prefName.EqualsLiteral(
                    "security.pki.certificate_transparency.mode") ||
-               prefName.EqualsLiteral(
-                   "security.cert_pinning.enforcement_level") ||
                prefName.EqualsLiteral("security.pki.sha1_enforcement_level") ||
                prefName.EqualsLiteral("security.pki.name_matching_mode") ||
                prefName.EqualsLiteral("security.pki.netscape_step_up_policy") ||
@@ -2428,8 +2353,9 @@ nsNSSComponent::Observe(nsISupports* aSubject, const char* aTopic,
                    "security.OCSP.timeoutMilliseconds.soft") ||
                prefName.EqualsLiteral(
                    "security.OCSP.timeoutMilliseconds.hard") ||
-               prefName.EqualsLiteral("security.pki.distrust_ca_policy") ||
-               prefName.EqualsLiteral("security.pki.crlite_mode")) {
+               prefName.EqualsLiteral("security.pki.crlite_mode") ||
+               prefName.EqualsLiteral(
+                   "security.pki.crlite_ct_merge_delay_seconds")) {
       MutexAutoLock lock(mMutex);
       setValidationOptions(false, lock);
 #ifdef DEBUG
@@ -2442,8 +2368,8 @@ nsNSSComponent::Observe(nsISupports* aSubject, const char* aTopic,
     } else if (prefName.EqualsLiteral("security.content.signature.root_hash")) {
       MutexAutoLock lock(mMutex);
       mContentSigningRootHash.Truncate();
-      Preferences::GetString("security.content.signature.root_hash",
-                             mContentSigningRootHash);
+      Preferences::GetCString("security.content.signature.root_hash",
+                              mContentSigningRootHash);
     } else if (prefName.Equals(kEnterpriseRootModePref) ||
                prefName.Equals(kFamilySafetyModePref)) {
       UnloadEnterpriseRoots();
@@ -2466,7 +2392,7 @@ nsNSSComponent::Observe(nsISupports* aSubject, const char* aTopic,
       clearSessionCache = false;
     }
     if (clearSessionCache) {
-      ClearSSLExternalAndInternalSessionCacheNative();
+      ClearSSLExternalAndInternalSessionCache();
     }
 
     // Preferences that don't affect certificate verification.
@@ -2505,17 +2431,11 @@ nsresult nsNSSComponent::LogoutAuthenticatedPK11() {
   nsCOMPtr<nsICertOverrideService> icos =
       do_GetService("@mozilla.org/security/certoverride;1");
   if (icos) {
-    icos->ClearValidityOverride("all:temporary-certificates"_ns, 0);
+    icos->ClearValidityOverride("all:temporary-certificates"_ns, 0,
+                                OriginAttributes());
   }
 
-  nsCOMPtr<nsIClientAuthRememberService> svc =
-      do_GetService(NS_CLIENTAUTHREMEMBERSERVICE_CONTRACTID);
-
-  if (svc) {
-    nsresult rv = svc->ClearRememberedDecisions();
-
-    Unused << NS_WARN_IF(NS_FAILED(rv));
-  }
+  ClearSSLExternalAndInternalSessionCache();
 
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
   if (os) {
@@ -2573,30 +2493,30 @@ nsNSSComponent::IsCertTestBuiltInRoot(CERTCertificate* cert, bool* result) {
 }
 
 NS_IMETHODIMP
-nsNSSComponent::IsCertContentSigningRoot(CERTCertificate* cert, bool* result) {
+nsNSSComponent::IsCertContentSigningRoot(const nsTArray<uint8_t>& cert,
+                                         bool* result) {
   NS_ENSURE_ARG_POINTER(result);
   *result = false;
-
-  RefPtr<nsNSSCertificate> nsc = nsNSSCertificate::Create(cert);
-  if (!nsc) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("creating nsNSSCertificate failed"));
-    return NS_ERROR_FAILURE;
+  if (cert.Length() > std::numeric_limits<uint32_t>::max()) {
+    return NS_ERROR_INVALID_ARG;
   }
-  nsAutoString certHash;
-  nsresult rv = nsc->GetSha256Fingerprint(certHash);
+  nsTArray<uint8_t> digestArray;
+  nsresult rv = Digest::DigestBuf(SEC_OID_SHA256, cert.Elements(),
+                                  cert.Length(), digestArray);
   if (NS_FAILED(rv)) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("getting cert fingerprint failed"));
     return rv;
+  }
+  SECItem digestItem = {siBuffer, digestArray.Elements(),
+                        static_cast<unsigned int>(digestArray.Length())};
+
+  UniquePORTString fingerprintCString(
+      CERT_Hexify(&digestItem, true /* use colon delimiters */));
+  if (!fingerprintCString) {
+    return NS_ERROR_FAILURE;
   }
 
   MutexAutoLock lock(mMutex);
-
-  if (mContentSigningRootHash.IsEmpty()) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("mContentSigningRootHash is empty"));
-    return NS_ERROR_FAILURE;
-  }
-
-  *result = mContentSigningRootHash.Equals(certHash);
+  *result = mContentSigningRootHash.Equals(fingerprintCString.get());
   return NS_OK;
 }
 
@@ -2625,8 +2545,17 @@ nsNSSComponent::GetDefaultCertVerifier(SharedCertVerifier** result) {
 }
 
 // static
-void nsNSSComponent::ClearSSLExternalAndInternalSessionCacheNative() {
+void nsNSSComponent::DoClearSSLExternalAndInternalSessionCache() {
+  SSL_ClearSessionCache();
+  mozilla::net::SSLTokensCache::Clear();
+}
+
+NS_IMETHODIMP
+nsNSSComponent::ClearSSLExternalAndInternalSessionCache() {
   MOZ_ASSERT(XRE_IsParentProcess());
+  if (!XRE_IsParentProcess()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 
   if (mozilla::net::nsIOService::UseSocketProcess()) {
     if (mozilla::net::gIOService) {
@@ -2637,17 +2566,6 @@ void nsNSSComponent::ClearSSLExternalAndInternalSessionCacheNative() {
     }
   }
   DoClearSSLExternalAndInternalSessionCache();
-}
-
-// static
-void nsNSSComponent::DoClearSSLExternalAndInternalSessionCache() {
-  SSL_ClearSessionCache();
-  mozilla::net::SSLTokensCache::Clear();
-}
-
-NS_IMETHODIMP
-nsNSSComponent::ClearSSLExternalAndInternalSessionCache() {
-  ClearSSLExternalAndInternalSessionCacheNative();
   return NS_OK;
 }
 
@@ -2673,18 +2591,42 @@ already_AddRefed<SharedCertVerifier> GetDefaultCertVerifier() {
   return result.forget();
 }
 
+// Helper for FindClientCertificatesWithPrivateKeys. Copies all
+// CERTCertificates from `from` to `to`.
+static inline void CopyCertificatesTo(UniqueCERTCertList& from,
+                                      UniqueCERTCertList& to) {
+  MOZ_ASSERT(from);
+  MOZ_ASSERT(to);
+  for (CERTCertListNode* n = CERT_LIST_HEAD(from.get());
+       !CERT_LIST_END(n, from.get()); n = CERT_LIST_NEXT(n)) {
+    UniqueCERTCertificate cert(CERT_DupCertificate(n->cert));
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("      provisionally adding '%s'", n->cert->subjectName));
+    if (CERT_AddCertToListTail(to.get(), cert.get()) == SECSuccess) {
+      Unused << cert.release();
+    }
+  }
+}
+
 // Lists all private keys on all modules and returns a list of any corresponding
 // client certificates. Returns null if no such certificates can be found. Also
 // returns null if an error is encountered, because this is called as part of
 // the client auth data callback, and NSS ignores any errors returned by the
 // callback.
 UniqueCERTCertList FindClientCertificatesWithPrivateKeys() {
+  TimeStamp begin(TimeStamp::Now());
+  auto exitTelemetry = MakeScopeExit([&] {
+    Telemetry::AccumulateTimeDelta(Telemetry::CLIENT_CERTIFICATE_SCAN_TIME,
+                                   begin, TimeStamp::Now());
+  });
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
           ("FindClientCertificatesWithPrivateKeys"));
   UniqueCERTCertList certsWithPrivateKeys(CERT_NewCertList());
   if (!certsWithPrivateKeys) {
     return nullptr;
   }
+
+  UniquePK11SlotInfo internalSlot(PK11_GetInternalKeySlot());
 
   AutoSECMODListReadLock secmodLock;
   SECMODModuleList* list = SECMOD_GetDefaultModuleList();
@@ -2695,45 +2637,70 @@ UniqueCERTCertList FindClientCertificatesWithPrivateKeys() {
       PK11SlotInfo* slot = list->module->slots[i];
       MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
               ("    slot '%s'", PK11_GetSlotName(slot)));
-      if (!PK11_IsPresent(slot)) {
-        MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("    (not present)"));
-        continue;
-      }
-      // We may need to log in to be able to find private keys.
-      if (PK11_Authenticate(slot, true, nullptr) != SECSuccess) {
-        MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("    (couldn't authenticate)"));
-        continue;
-      }
-      UniqueSECKEYPrivateKeyList privateKeys(
-          PK11_ListPrivKeysInSlot(slot, nullptr, nullptr));
-      if (!privateKeys) {
-        MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("      (no private keys)"));
-        continue;
-      }
-      for (SECKEYPrivateKeyListNode* node = PRIVKEY_LIST_HEAD(privateKeys);
-           !PRIVKEY_LIST_END(node, privateKeys);
-           node = PRIVKEY_LIST_NEXT(node)) {
-        UniqueCERTCertList certs(PK11_GetCertsMatchingPrivateKey(node->key));
-        if (!certs) {
-          MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-                  ("      PK11_GetCertsMatchingPrivateKey encountered an error "
-                   "- returning"));
-          return nullptr;
-        }
-        if (CERT_LIST_EMPTY(certs)) {
-          MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("      (no certs for key)"));
+      // If this is the internal certificate/key slot, there may be many more
+      // certificates than private keys, so search by private keys.
+      if (internalSlot.get() == slot) {
+        MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+                ("    (looking at internal slot)"));
+        if (PK11_Authenticate(slot, true, nullptr) != SECSuccess) {
+          MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("    (couldn't authenticate)"));
           continue;
         }
-        for (CERTCertListNode* n = CERT_LIST_HEAD(certs);
-             !CERT_LIST_END(n, certs); n = CERT_LIST_NEXT(n)) {
-          UniqueCERTCertificate cert(CERT_DupCertificate(n->cert));
-          MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-                  ("      provisionally adding '%s'", n->cert->subjectName));
-          if (CERT_AddCertToListTail(certsWithPrivateKeys.get(), cert.get()) ==
-              SECSuccess) {
-            Unused << cert.release();
-          }
+        UniqueSECKEYPrivateKeyList privateKeys(
+            PK11_ListPrivKeysInSlot(slot, nullptr, nullptr));
+        if (!privateKeys) {
+          MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("      (no private keys)"));
+          continue;
         }
+        for (SECKEYPrivateKeyListNode* node = PRIVKEY_LIST_HEAD(privateKeys);
+             !PRIVKEY_LIST_END(node, privateKeys);
+             node = PRIVKEY_LIST_NEXT(node)) {
+          UniqueCERTCertList certs(PK11_GetCertsMatchingPrivateKey(node->key));
+          if (!certs) {
+            MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+                    ("      PK11_GetCertsMatchingPrivateKey encountered an "
+                     "error "));
+            continue;
+          }
+          if (CERT_LIST_EMPTY(certs)) {
+            MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("      (no certs for key)"));
+            continue;
+          }
+          CopyCertificatesTo(certs, certsWithPrivateKeys);
+        }
+      } else {
+        // ... otherwise, optimistically assume that searching by certificate
+        // won't take too much time. Since "friendly" slots expose certificates
+        // without needing to be authenticated to, this results in fewer PIN
+        // dialogs shown to the user.
+        MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+                ("    (looking at non-internal slot)"));
+
+        if (!PK11_IsPresent(slot)) {
+          MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("    (not present)"));
+          continue;
+        }
+        // If this isn't a "friendly" slot, authenticate to expose certificates.
+        if (!PK11_IsFriendly(slot) &&
+            PK11_Authenticate(slot, true, nullptr) != SECSuccess) {
+          MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("    (couldn't authenticate)"));
+          continue;
+        }
+        UniqueCERTCertList certsInSlot(PK11_ListCertsInSlot(slot));
+        if (!certsInSlot) {
+          MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+                  ("      (couldn't list certs in slot)"));
+          continue;
+        }
+        // When NSS decodes a certificate, if that certificate has a
+        // corresponding private key (or public key, if the slot it's on hasn't
+        // been logged into), it notes it as a "user cert".
+        if (CERT_FilterCertListForUserCerts(certsInSlot.get()) != SECSuccess) {
+          MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+                  ("      (couldn't filter certs)"));
+          continue;
+        }
+        CopyCertificatesTo(certsInSlot, certsWithPrivateKeys);
       }
     }
     list = list->next;
@@ -2836,18 +2803,28 @@ nsresult setPassword(PK11SlotInfo* slot, nsIInterfaceRequestor* ctx) {
   return NS_OK;
 }
 
-// NSS will call this during PKCS12 export to potentially switch the endianness
-// of the characters of `inBuf` to big (network) endian. Since we already did
-// that in nsPKCS12Blob::stringToBigEndianBytes, we just perform a memcpy here.
-extern "C" {
-PRBool pkcs12StringEndiannessConversion(PRBool, unsigned char* inBuf,
-                                        unsigned int inBufLen,
-                                        unsigned char* outBuf, unsigned int,
-                                        unsigned int* outBufLen, PRBool) {
-  *outBufLen = inBufLen;
-  memcpy(outBuf, inBuf, inBufLen);
-  return true;
-}
+static PRBool ConvertBetweenUCS2andASCII(PRBool toUnicode, unsigned char* inBuf,
+                                         unsigned int inBufLen,
+                                         unsigned char* outBuf,
+                                         unsigned int maxOutBufLen,
+                                         unsigned int* outBufLen,
+                                         PRBool swapBytes) {
+  std::unique_ptr<unsigned char[]> inBufDup(new unsigned char[inBufLen]);
+  if (!inBufDup) {
+    return PR_FALSE;
+  }
+  std::memcpy(inBufDup.get(), inBuf, inBufLen * sizeof(unsigned char));
+
+  // If converting Unicode to ASCII, swap bytes before conversion as neccessary.
+  if (!toUnicode && swapBytes) {
+    if (inBufLen % 2 != 0) {
+      return PR_FALSE;
+    }
+    mozilla::NativeEndian::swapFromLittleEndianInPlace(
+        reinterpret_cast<char16_t*>(inBufDup.get()), inBufLen / 2);
+  }
+  return PORT_UCS2_UTF8Conversion(toUnicode, inBufDup.get(), inBufLen, outBuf,
+                                  maxOutBufLen, outBufLen);
 }
 
 namespace mozilla {
@@ -2868,12 +2845,13 @@ nsresult InitializeCipherSuite() {
   }
 
   // Now only set SSL/TLS ciphers we knew about at compile time
-  const CipherPref* const cp = sCipherPrefs;
-  for (size_t i = 0; cp[i].pref; ++i) {
+  for (const auto& cipherPref : sCipherPrefs) {
     bool cipherEnabled =
-        Preferences::GetBool(cp[i].pref, cp[i].enabledByDefault);
-    SSL_CipherPrefSetDefault(cp[i].id, cipherEnabled);
+        Preferences::GetBool(cipherPref.pref, cipherPref.enabledByDefault);
+    SSL_CipherPrefSetDefault(cipherPref.id, cipherEnabled);
   }
+
+  SetDeprecatedTLS1CipherPrefs();
 
   // Enable ciphers for PKCS#12
   SEC_PKCS12EnableCipher(PKCS12_RC4_40, 1);
@@ -2882,8 +2860,11 @@ nsresult InitializeCipherSuite() {
   SEC_PKCS12EnableCipher(PKCS12_RC2_CBC_128, 1);
   SEC_PKCS12EnableCipher(PKCS12_DES_56, 1);
   SEC_PKCS12EnableCipher(PKCS12_DES_EDE3_168, 1);
+  SEC_PKCS12EnableCipher(PKCS12_AES_CBC_128, 1);
+  SEC_PKCS12EnableCipher(PKCS12_AES_CBC_192, 1);
+  SEC_PKCS12EnableCipher(PKCS12_AES_CBC_256, 1);
   SEC_PKCS12SetPreferredCipher(PKCS12_DES_EDE3_168, 1);
-  PORT_SetUCS2_ASCIIConversionFunction(pkcs12StringEndiannessConversion);
+  PORT_SetUCS2_ASCIIConversionFunction(ConvertBetweenUCS2andASCII);
 
   // PSM enforces a minimum RSA key size of 1024 bits, which is overridable.
   // NSS has its own minimum, which is not overridable (the default is 1023

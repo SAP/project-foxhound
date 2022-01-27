@@ -23,11 +23,10 @@
 #include <string>
 
 #ifdef XP_WIN
-#  include "windows.h"
+#  include <windows.h>
 #endif
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 class PassThroughGMPAdapter : public GMPAdapter {
  public:
   ~PassThroughGMPAdapter() override {
@@ -51,7 +50,7 @@ class PassThroughGMPAdapter : public GMPAdapter {
   }
 
   GMPErr GMPGetAPI(const char* aAPIName, void* aHostAPI, void** aPluginAPI,
-                   uint32_t aDecryptorId) override {
+                   const nsCString& /* aKeySystem */) override {
     if (!mLib) {
       return GMPGenericErr;
     }
@@ -122,8 +121,8 @@ bool GMPLoader::Load(const char* aUTF8LibPath, uint32_t aUTF8LibPathLen,
 }
 
 GMPErr GMPLoader::GetAPI(const char* aAPIName, void* aHostAPI,
-                         void** aPluginAPI, uint32_t aDecryptorId) {
-  return mAdapter->GMPGetAPI(aAPIName, aHostAPI, aPluginAPI, aDecryptorId);
+                         void** aPluginAPI, const nsCString& aKeySystem) {
+  return mAdapter->GMPGetAPI(aAPIName, aHostAPI, aPluginAPI, aKeySystem);
 }
 
 void GMPLoader::Shutdown() {
@@ -187,5 +186,4 @@ GMPLoader::GMPLoader() : mSandboxStarter(MakeSandboxStarter()) {}
 
 bool GMPLoader::CanSandbox() const { return !!mSandboxStarter; }
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp

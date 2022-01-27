@@ -10,8 +10,10 @@
  */
 
 var { Toolbox } = require("devtools/client/framework/toolbox");
-const URL = URL_ROOT + "browser_toolbox_window_title_frame_select_page.html";
-const IFRAME_URL = URL_ROOT + "browser_toolbox_window_title_changes_page.html";
+const URL =
+  URL_ROOT_SSL + "browser_toolbox_window_title_frame_select_page.html";
+const IFRAME_URL =
+  URL_ROOT_SSL + "browser_toolbox_window_title_changes_page.html";
 const { LocalizationHelper } = require("devtools/shared/l10n");
 const L10N = new LocalizationHelper(
   "devtools/client/locales/toolbox.properties"
@@ -21,12 +23,10 @@ add_task(async function() {
   Services.prefs.setBoolPref("devtools.command-button-frames.enabled", true);
 
   await addTab(URL);
-  const target = await TargetFactory.forTab(gBrowser.selectedTab);
-  let toolbox = await gDevTools.showToolbox(
-    target,
-    null,
-    Toolbox.HostType.BOTTOM
-  );
+  const tab = gBrowser.selectedTab;
+  let toolbox = await gDevTools.showToolboxForTab(tab, {
+    hostType: Toolbox.HostType.BOTTOM,
+  });
 
   await toolbox.switchHost(Toolbox.HostType.WINDOW);
   // Wait for title change event *after* switch host, in order to listen
@@ -35,7 +35,7 @@ add_task(async function() {
 
   is(
     getTitle(),
-    `Developer Tools - Page title - ${URL}`,
+    `Developer Tools — Page title — ${URL}`,
     "Devtools title correct after switching to detached window host"
   );
 
@@ -81,9 +81,18 @@ add_task(async function() {
   ok(iframeBtn, "Got iframe document in the list");
 
   // Listen to will-navigate to check if the view is empty
-  const willNavigate = toolbox.target.once("will-navigate");
-
-  const onTitleChanged = waitForTitleChange(toolbox);
+  const { resourceCommand } = toolbox.commands;
+  const {
+    onResource: willNavigate,
+  } = await resourceCommand.waitForNextResource(
+    resourceCommand.TYPES.DOCUMENT_EVENT,
+    {
+      ignoreExistingResources: true,
+      predicate(resource) {
+        return resource.name == "will-navigate";
+      },
+    }
+  );
 
   // Only select the iframe after we are able to select an element from the top
   // level document.
@@ -91,14 +100,18 @@ add_task(async function() {
   info("Select the iframe");
   iframeBtn.click();
 
-  await willNavigate;
+  // will-navigate isn't emitted in the targetCommand-based iframe picker.
+  if (!isEveryFrameTargetEnabled()) {
+    await willNavigate;
+  }
   await onInspectorReloaded;
-  await onTitleChanged;
+  // wait a bit more in case an eventual title update would happen later
+  await wait(1000);
 
   info("Navigation to the iframe is done, the inspector should be back up");
   is(
     getTitle(),
-    `Developer Tools - Page title - ${URL}`,
+    `Developer Tools — Page title — ${URL}`,
     "Devtools title was not updated after changing inspected frame"
   );
 

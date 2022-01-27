@@ -21,7 +21,9 @@ function all() {
 }
 
 function isHtml({ mimeType }) {
-  return mimeType && mimeType.includes("/html");
+  return (
+    mimeType && (mimeType.includes("/html") || mimeType.includes("/xhtml+xml"))
+  );
 }
 
 function isCss({ mimeType }) {
@@ -53,8 +55,14 @@ function isFont({ url, mimeType }) {
   );
 }
 
-function isImage({ mimeType }) {
-  return mimeType && mimeType.includes("image/");
+function isImage({ mimeType, cause }) {
+  // We check cause.type so anything loaded via "img", "imageset", "lazy-img", etc. is in the right category
+  // When mimeType is not set to "image/", we still "detect" the image with cause.type (Bug-1654257)
+  return (
+    mimeType?.includes("image/") ||
+    cause?.type.includes("img") ||
+    cause?.type.includes("image")
+  );
 }
 
 function isMedia({ mimeType }) {

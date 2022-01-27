@@ -36,12 +36,11 @@ hb_draw_funcs_set_cubic_to_func
 hb_draw_funcs_set_line_to_func
 hb_draw_funcs_set_move_to_func
 hb_draw_funcs_set_quadratic_to_func
-hb_style_get_value
 hb_font_get_var_coords_design""".splitlines ()
 	symbols = [x for x in symbols if x not in experimental_symbols]
 symbols = "\n".join (symbols)
 
-result = symbols if os.environ.get('PLAIN_LIST', '') else """EXPORTS
+result = symbols if os.getenv ('PLAIN_LIST', '') else """EXPORTS
 %s
 LIBRARY lib%s-0.dll""" % (symbols, output_file.replace ('src/', '').replace ('.def', ''))
 

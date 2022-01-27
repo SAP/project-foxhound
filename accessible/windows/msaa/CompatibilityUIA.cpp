@@ -6,11 +6,14 @@
 
 #include "Compatibility.h"
 
+#include "mozilla/ScopeExit.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/WindowsVersion.h"
+#include "nspr/prenv.h"
 
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
+#include "nsTHashSet.h"
 #include "nsPrintfCString.h"
 #include "nsReadableUtils.h"
 #include "nsString.h"
@@ -223,8 +226,8 @@ Maybe<bool> Compatibility::OnUIAMessage(WPARAM aWParam, LPARAM aLParam) {
   const DWORD ourPid = ::GetCurrentProcessId();
   Maybe<PVOID> kernelObject;
   static Maybe<USHORT> sectionObjTypeIndex;
-  nsTHashtable<nsUint32HashKey> nonSectionObjTypes;
-  nsDataHashtable<nsVoidPtrHashKey, DWORD> objMap;
+  nsTHashSet<uint32_t> nonSectionObjTypes;
+  nsTHashMap<nsVoidPtrHashKey, DWORD> objMap;
 
   auto handleInfo =
       reinterpret_cast<SYSTEM_HANDLE_INFORMATION_EX*>(handleInfoBuf.get());
@@ -274,7 +277,7 @@ Maybe<bool> Compatibility::OnUIAMessage(WPARAM aWParam, LPARAM aLParam) {
       nsDependentSubstring objTypeName(
           objType->TypeName.Buffer, objType->TypeName.Length / sizeof(wchar_t));
       if (!objTypeName.Equals(u"Section"_ns)) {
-        nonSectionObjTypes.PutEntry(
+        nonSectionObjTypes.Insert(
             static_cast<uint32_t>(curHandle.mObjectTypeIndex));
         continue;
       }
@@ -294,7 +297,7 @@ Maybe<bool> Compatibility::OnUIAMessage(WPARAM aWParam, LPARAM aLParam) {
 
       // An object that is not ours. Since we do not yet know which kernel
       // object we're interested in, we'll save the current object for later.
-      objMap.Put(curHandle.mObject, curHandle.mPid);
+      objMap.InsertOrUpdate(curHandle.mObject, curHandle.mPid);
     } else if (handle == section.get()) {
       // This is the file mapping that we opened above. We save this mObject
       // in order to compare to Section objects opened by other processes.

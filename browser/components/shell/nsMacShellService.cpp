@@ -7,7 +7,9 @@
 #include "nsDirectoryServiceDefs.h"
 #include "nsIImageLoadingContent.h"
 #include "mozilla/dom/Document.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIContent.h"
+#include "nsICookieJarSettings.h"
 #include "nsIObserverService.h"
 #include "nsIWebBrowserPersist.h"
 #include "nsMacShellService.h"
@@ -17,6 +19,7 @@
 #include "nsString.h"
 #include "nsIDocShell.h"
 #include "nsILoadContext.h"
+#include "nsIPrefService.h"
 #include "mozilla/dom/Element.h"
 #include "DesktopBackgroundImage.h"
 
@@ -80,9 +83,6 @@ nsMacShellService::SetDefaultBrowser(bool aClaimAllTypes, bool aForAllUsers) {
   }
 
   if (aClaimAllTypes) {
-    if (::LSSetDefaultHandlerForURLScheme(CFSTR("ftp"), firefoxID) != noErr) {
-      return NS_ERROR_FAILURE;
-    }
     if (::LSSetDefaultRoleHandlerForContentType(kUTTypeHTML, kLSRolesAll,
                                                 firefoxID) != noErr) {
       return NS_ERROR_FAILURE;
@@ -153,8 +153,11 @@ nsMacShellService::SetDesktopBackground(Element* aElement, int32_t aPosition,
 
   auto referrerInfo =
       mozilla::MakeRefPtr<mozilla::dom::ReferrerInfo>(*aElement);
+
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings =
+      aElement->OwnerDoc()->CookieJarSettings();
   return wbp->SaveURI(imageURI, aElement->NodePrincipal(), 0, referrerInfo,
-                      nullptr, nullptr, mBackgroundFile,
+                      cookieJarSettings, nullptr, nullptr, mBackgroundFile,
                       nsIContentPolicy::TYPE_IMAGE, loadContext);
 }
 

@@ -8,6 +8,7 @@
 #define mozilla_layers_APZChild_h
 
 #include "mozilla/layers/PAPZChild.h"
+#include "mozilla/layers/APZTaskRunnable.h"
 
 namespace mozilla {
 namespace layers {
@@ -26,7 +27,7 @@ class APZChild final : public PAPZChild {
   virtual ~APZChild();
 
   mozilla::ipc::IPCResult RecvLayerTransforms(
-      const nsTArray<MatrixMessage>& aTransforms);
+      nsTArray<MatrixMessage>&& aTransforms);
 
   mozilla::ipc::IPCResult RecvRequestContentRepaint(
       const RepaintRequest& aRequest);
@@ -60,7 +61,16 @@ class APZChild final : public PAPZChild {
   mozilla::ipc::IPCResult RecvDestroy();
 
  private:
+  void EnsureAPZTaskRunnable() {
+    if (!mAPZTaskRunnable) {
+      mAPZTaskRunnable = new APZTaskRunnable(mController);
+    }
+  }
+
   RefPtr<GeckoContentController> mController;
+  // A runnable invoked in a nsRefreshDriver's tick to update multiple
+  // RepaintRequests and notify a "apz-repaints-flushed" at the same time.
+  RefPtr<APZTaskRunnable> mAPZTaskRunnable;
 };
 
 }  // namespace layers

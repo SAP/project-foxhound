@@ -7,20 +7,20 @@
 #include "jit/BytecodeAnalysis.h"
 
 #include "jit/JitSpewer.h"
+#include "jit/WarpBuilder.h"
 #include "vm/BytecodeIterator.h"
 #include "vm/BytecodeLocation.h"
 #include "vm/BytecodeUtil.h"
 
 #include "vm/BytecodeIterator-inl.h"
 #include "vm/BytecodeLocation-inl.h"
-#include "vm/BytecodeUtil-inl.h"
 #include "vm/JSScript-inl.h"
 
 using namespace js;
 using namespace js::jit;
 
 BytecodeAnalysis::BytecodeAnalysis(TempAllocator& alloc, JSScript* script)
-    : script_(script), infos_(alloc), hasTryFinally_(false) {}
+    : script_(script), infos_(alloc) {}
 
 bool BytecodeAnalysis::init(TempAllocator& alloc) {
   if (!infos_.growByUninitialized(script_->length())) {
@@ -31,9 +31,9 @@ bool BytecodeAnalysis::init(TempAllocator& alloc) {
   mozilla::PodZero(infos_.begin(), infos_.length());
   infos_[0].init(/*stackDepth=*/0);
 
-  // Because IonBuilder and WarpBuilder can compile try-blocks but don't compile
-  // the catch-body, we need some special machinery to prevent OSR into Ion/Warp
-  // in the following cases:
+  // Because WarpBuilder can compile try-blocks but doesn't compile the
+  // catch-body, we need some special machinery to prevent OSR into Warp code in
+  // the following cases:
   //
   // (1) Loops in catch/finally blocks:
   //
@@ -72,6 +72,8 @@ bool BytecodeAnalysis::init(TempAllocator& alloc) {
 
     JitSpew(JitSpew_BaselineOp, "Analyzing op @ %u (end=%u): %s",
             unsigned(offset), unsigned(script_->length()), CodeName(op));
+
+    checkWarpSupport(op);
 
     // If this bytecode info has not yet been initialized, it's not reachable.
     if (!infos_[offset].initialized) {
@@ -221,6 +223,23 @@ bool BytecodeAnalysis::init(TempAllocator& alloc) {
   return true;
 }
 
+void BytecodeAnalysis::checkWarpSupport(JSOp op) {
+  switch (op) {
+#define DEF_CASE(OP) case JSOp::OP:
+    WARP_UNSUPPORTED_OPCODE_LIST(DEF_CASE)
+#undef DEF_CASE
+    if (script_->canIonCompile()) {
+      JitSpew(JitSpew_IonAbort, "Disabling Warp support for %s:%d:%d due to %s",
+              script_->filename(), script_->lineno(), script_->column(),
+              CodeName(op));
+      script_->disableIon();
+    }
+    break;
+    default:
+      break;
+  }
+}
+
 IonBytecodeInfo js::jit::AnalyzeBytecodeForIon(JSContext* cx,
                                                JSScript* script) {
   IonBytecodeInfo result;
@@ -231,10 +250,10 @@ IonBytecodeInfo js::jit::AnalyzeBytecodeForIon(JSContext* cx,
     result.usesEnvironmentChain = true;
   }
 
-  jsbytecode const* pcEnd = script->codeEnd();
-  for (jsbytecode* pc = script->code(); pc < pcEnd; pc = GetNextPc(pc)) {
-    JSOp op = JSOp(*pc);
-    switch (op) {
+  AllBytecodesIterable iterator(script);
+
+  for (const BytecodeLocation& location : iterator) {
+    switch (location.getOp()) {
       case JSOp::SetArg:
         result.modifiesArguments = true;
         break;
@@ -249,24 +268,12 @@ IonBytecodeInfo js::jit::AnalyzeBytecodeForIon(JSContext* cx,
       case JSOp::SetAliasedVar:
       case JSOp::Lambda:
       case JSOp::LambdaArrow:
-      case JSOp::DefFun:
-      case JSOp::DefVar:
-      case JSOp::DefLet:
-      case JSOp::DefConst:
       case JSOp::PushLexicalEnv:
       case JSOp::PopLexicalEnv:
       case JSOp::ImplicitThis:
       case JSOp::FunWithProto:
+      case JSOp::GlobalOrEvalDeclInstantiation:
         result.usesEnvironmentChain = true;
-        break;
-
-      case JSOp::GetGName:
-      case JSOp::SetGName:
-      case JSOp::StrictSetGName:
-      case JSOp::GImplicitThis:
-        if (script->hasNonSyntacticScope()) {
-          result.usesEnvironmentChain = true;
-        }
         break;
 
       case JSOp::Finally:

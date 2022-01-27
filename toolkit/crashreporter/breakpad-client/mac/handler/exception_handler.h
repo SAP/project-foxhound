@@ -81,8 +81,7 @@ class ExceptionHandler {
   // attempting to write a minidump.  If a FilterCallback returns false, Breakpad
   // will immediately report the exception as unhandled without writing a
   // minidump, allowing another handler the opportunity to handle it.
-  typedef bool (*FilterCallback)(void *context,
-                                 const mozilla::phc::AddrInfo* addr_info);
+  typedef bool (*FilterCallback)(void *context);
 
   // A callback function to run after the minidump has been written.
   // |minidump_id| is a unique id for the dump, so the minidump
@@ -104,7 +103,7 @@ class ExceptionHandler {
   typedef bool (*DirectCallback)( void *context,
                                   int exception_type,
                                   int exception_code,
-                                  int exception_subcode,
+                                  int64_t exception_subcode,
                                   mach_port_t thread_name);
 
   // Creates a new ExceptionHandler instance to handle writing minidumps.
@@ -166,8 +165,8 @@ class ExceptionHandler {
 
   // Write a minidump for an exception that was received by another handler.
   static bool WriteForwardedExceptionMinidump(int exception_type,
-					      int exception_code,
-					      int exception_subcode,
+					      int64_t exception_code,
+					      int64_t exception_subcode,
 					      mach_port_t thread,
 					      mach_port_t task);
 
@@ -203,8 +202,8 @@ class ExceptionHandler {
   // |task_context| can be NULL. If not, it will be used to retrieve the
   // context of the current thread, instead of using |thread_get_state|.
   bool WriteMinidumpWithException(int exception_type,
-                                  int exception_code,
-                                  int exception_subcode,
+                                  int64_t exception_code,
+                                  int64_t exception_subcode,
                                   breakpad_ucontext_t *task_context,
                                   mach_port_t thread_name,
                                   mach_port_t task_name,

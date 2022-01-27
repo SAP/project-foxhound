@@ -7,6 +7,7 @@
 #ifndef MOZILLA_GFX_RENDERCOMPOSITOR_SWGL_H
 #define MOZILLA_GFX_RENDERCOMPOSITOR_SWGL_H
 
+#include "mozilla/gfx/2D.h"
 #include "mozilla/webrender/RenderCompositor.h"
 
 namespace mozilla {
@@ -16,9 +17,9 @@ namespace wr {
 class RenderCompositorSWGL : public RenderCompositor {
  public:
   static UniquePtr<RenderCompositor> Create(
-      RefPtr<widget::CompositorWidget>&& aWidget);
+      const RefPtr<widget::CompositorWidget>& aWidget, nsACString& aError);
 
-  RenderCompositorSWGL(RefPtr<widget::CompositorWidget>&& aWidget,
+  RenderCompositorSWGL(const RefPtr<widget::CompositorWidget>& aWidget,
                        void* aContext);
   virtual ~RenderCompositorSWGL();
 
@@ -30,25 +31,48 @@ class RenderCompositorSWGL : public RenderCompositor {
   void CancelFrame() override;
   RenderedFrameId EndFrame(const nsTArray<DeviceIntRect>& aDirtyRects) final;
 
+  void StartCompositing(wr::ColorF aClearColor,
+                        const wr::DeviceIntRect* aDirtyRects,
+                        size_t aNumDirtyRects,
+                        const wr::DeviceIntRect* aOpaqueRects,
+                        size_t aNumOpaqueRects) override;
+
+  bool UsePartialPresent() override { return true; }
+  bool RequestFullRender() override;
+
   void Pause() override;
   bool Resume() override;
 
+  layers::WebRenderBackend BackendType() const override {
+    return layers::WebRenderBackend::SOFTWARE;
+  }
+  layers::WebRenderCompositor CompositorType() const override {
+    return layers::WebRenderCompositor::SOFTWARE;
+  }
+
+  bool SurfaceOriginIsTopLeft() override { return true; }
+
   LayoutDeviceIntSize GetBufferSize() override;
 
+  bool SupportsExternalBufferTextures() const override { return true; }
+
   // Interface for wr::Compositor
-  CompositorCapabilities GetCompositorCapabilities() override;
+  void GetCompositorCapabilities(CompositorCapabilities* aCaps) override;
 
  private:
   void* mContext = nullptr;
-  RefPtr<DrawTarget> mDT;
-  LayoutDeviceIntRegion mRegion;
-  RefPtr<DataSourceSurface> mSurface;
+  RefPtr<gfx::DrawTarget> mDT;
+  LayoutDeviceIntRegion mDirtyRegion;
+  RefPtr<gfx::DataSourceSurface> mSurface;
   uint8_t* mMappedData = nullptr;
   int32_t mMappedStride = 0;
 
   void ClearMappedBuffer();
 
-  void CommitMappedBuffer(const nsTArray<DeviceIntRect>* aDirtyRects = nullptr);
+  bool AllocateMappedBuffer(const wr::DeviceIntRect* aOpaqueRects,
+                            size_t aNumOpaqueRects);
+
+  void CommitMappedBuffer(bool aDirty = true);
 };
 
 }  // namespace wr

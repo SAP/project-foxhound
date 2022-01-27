@@ -18,6 +18,9 @@ const kAllowedPrefs = new Set([
   "testing.allowed-prefs.some-char-pref",
   "testing.allowed-prefs.some-int-pref",
 
+  "browser.contentblocking.report.hide_vpn_banner",
+  "browser.contentblocking.report.show_mobile_app",
+
   "narrate.rate",
   "narrate.voice",
 
@@ -37,7 +40,7 @@ const kAllowedPrefs = new Set([
   "pdfjs.previousHandler.alwaysAskBeforeHandling",
   "pdfjs.previousHandler.preferredAction",
   "pdfjs.renderer",
-  "pdfjs.renderInteractiveForms",
+  "pdfjs.annotationMode",
   "pdfjs.sidebarViewOnLoad",
   "pdfjs.scrollModeOnLoad",
   "pdfjs.spreadModeOnLoad",
@@ -48,6 +51,7 @@ const kAllowedPrefs = new Set([
   "pdfjs.disableFontFace",
   "pdfjs.disableRange",
   "pdfjs.disableStream",
+  "pdfjs.enableScripting",
 
   "reader.font_size",
   "reader.font_type",
@@ -55,11 +59,8 @@ const kAllowedPrefs = new Set([
   "reader.content_width",
   "reader.line_height",
 
-  "security.ssl.errorReporting.automatic",
   "security.tls.version.enable-deprecated",
   "security.xfocsp.errorReporting.automatic",
-  "browser.contentblocking.report.hide_lockwise_app",
-  "browser.contentblocking.report.show_mobile_app",
 ]);
 
 const kPrefTypeMap = new Map([

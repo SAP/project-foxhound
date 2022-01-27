@@ -11,6 +11,7 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/layers/StackingContextHelper.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 #include "nsPresContext.h"
 #include "nsCSSRendering.h"
@@ -377,15 +378,14 @@ static void AccumulateRoundedRectDifference(
     r.Or(r, nsRect(minLeft, highestAdjustedBottom, maxRight - minLeft,
                    lowestBottom - highestAdjustedBottom));
   }
-  // Then, or with the X delta rects, narrow along the Y axis
+  // Then, or with the X delta rects, wide along the Y axis
   if (rect1.X() != rect2.X()) {
-    r.Or(r, nsRect(minLeft, lowestAdjustedTop, maxAdjustedLeft - minLeft,
-                   highestAdjustedBottom - lowestAdjustedTop));
+    r.Or(r, nsRect(minLeft, highestTop, maxAdjustedLeft - minLeft,
+                   lowestBottom - highestTop));
   }
   if (rect1.XMost() != rect2.XMost()) {
-    r.Or(r, nsRect(minAdjustedRight, lowestAdjustedTop,
-                   maxRight - minAdjustedRight,
-                   highestAdjustedBottom - lowestAdjustedTop));
+    r.Or(r, nsRect(minAdjustedRight, highestTop, maxRight - minAdjustedRight,
+                   lowestBottom - highestTop));
   }
 
   r.And(r, aBounds.Union(aOtherBounds));
@@ -447,7 +447,7 @@ void DisplayItemClip::MoveBy(const nsPoint& aPoint) {
   }
 }
 
-static DisplayItemClip* gNoClip;
+static StaticAutoPtr<DisplayItemClip> gNoClip;
 
 const DisplayItemClip& DisplayItemClip::NoClip() {
   if (!gNoClip) {
@@ -456,10 +456,7 @@ const DisplayItemClip& DisplayItemClip::NoClip() {
   return *gNoClip;
 }
 
-void DisplayItemClip::Shutdown() {
-  delete gNoClip;
-  gNoClip = nullptr;
-}
+void DisplayItemClip::Shutdown() { gNoClip = nullptr; }
 
 nsCString DisplayItemClip::ToString() const {
   nsAutoCString str;

@@ -6,14 +6,13 @@ export TARGET="$1"
 
 # This script is for building sccache
 
+COMPRESS_EXT=zst
 case "$(uname -s)" in
 Linux)
-    COMPRESS_EXT=xz
     PATH="$MOZ_FETCHES_DIR/binutils/bin:$PATH"
     ;;
 MINGW*)
     UPLOAD_DIR=$PWD/public/build
-    COMPRESS_EXT=bz2
 
     . $GECKO_PATH/taskcluster/scripts/misc/vs-setup.sh
     ;;
@@ -33,16 +32,26 @@ COMMON_FEATURES="native-zlib"
 
 case "$(uname -s)" in
 Linux)
-    if [ "$TARGET" == "x86_64-apple-darwin" ]; then
-        export PATH="$MOZ_FETCHES_DIR/llvm-dsymutil/bin:$PATH"
+    export CC="$MOZ_FETCHES_DIR/clang/bin/clang"
+    case "$TARGET" in
+    *-apple-darwin)
+        export PATH="$MOZ_FETCHES_DIR/clang/bin:$PATH"
         export PATH="$MOZ_FETCHES_DIR/cctools/bin:$PATH"
         export RUSTFLAGS="-C linker=$GECKO_PATH/taskcluster/scripts/misc/osx-cross-linker"
-        export CC="$MOZ_FETCHES_DIR/clang/bin/clang"
-        export TARGET_CC="$MOZ_FETCHES_DIR/clang/bin/clang -isysroot $MOZ_FETCHES_DIR/MacOSX10.11.sdk"
+        if test "$TARGET" = "aarch64-apple-darwin"; then
+            export MACOSX_DEPLOYMENT_TARGET=11.0
+        else
+            export MACOSX_DEPLOYMENT_TARGET=10.12
+        fi
+        export TARGET_CC="$MOZ_FETCHES_DIR/clang/bin/clang -isysroot $MOZ_FETCHES_DIR/MacOSX11.0.sdk"
         cargo build --features "all $COMMON_FEATURES" --verbose --release --target $TARGET
-    else
+        ;;
+    *)
+        export CFLAGS_x86_64_unknown_linux_gnu="--sysroot=$MOZ_FETCHES_DIR/sysroot-x86_64-linux-gnu"
+        export RUSTFLAGS="-C linker=$CC -C link-arg=--sysroot=$MOZ_FETCHES_DIR/sysroot-x86_64-linux-gnu"
         cargo build --features "all dist-server openssl/vendored $COMMON_FEATURES" --verbose --release
-    fi
+        ;;
+    esac
 
     ;;
 MINGW*)
@@ -57,7 +66,7 @@ fi
 
 mkdir sccache
 cp $SCCACHE_OUT sccache/
-tar -acf sccache.tar.$COMPRESS_EXT sccache
+tar -c sccache | python3 $GECKO_PATH/taskcluster/scripts/misc/zstdpy > sccache.tar.$COMPRESS_EXT
 mkdir -p $UPLOAD_DIR
 cp sccache.tar.$COMPRESS_EXT $UPLOAD_DIR
 

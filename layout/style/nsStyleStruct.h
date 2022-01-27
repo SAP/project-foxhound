@@ -15,8 +15,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ServoStyleConstsInlines.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/StyleColorInlines.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/UniquePtr.h"
 #include "nsColor.h"
 #include "nsCoord.h"
@@ -26,28 +25,21 @@
 #include "nsStyleConsts.h"
 #include "nsChangeHint.h"
 #include "nsTimingFunction.h"
-#include "nsCOMPtr.h"
 #include "nsTArray.h"
-#include "nsCSSValue.h"
 #include "imgIContainer.h"
 #include "imgRequestProxy.h"
-#include "Orientation.h"
 #include "CounterStyleManager.h"
 #include <cstddef>  // offsetof()
-#include <utility>
 #include "X11UndefineNone.h"
 
 class nsIFrame;
 class nsIURI;
 class nsTextFrame;
-class nsPresContext;
 struct nsStyleDisplay;
 struct nsStyleVisibility;
 namespace mozilla {
 class ComputedStyle;
-namespace dom {
-class ImageTracker;
-}  // namespace dom
+
 }  // namespace mozilla
 
 namespace mozilla {
@@ -108,14 +100,12 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleFont {
   mozilla::Length mFontSizeOffset;
   mozilla::StyleFontSizeKeyword mFontSizeKeyword;
 
-  mozilla::StyleGenericFontFamily mGenericID;
-
-  // MathML scriptlevel support
-  int8_t mScriptLevel;
+  // math-depth support (used for MathML scriptlevel)
+  int8_t mMathDepth;
   // MathML  mathvariant support
   uint8_t mMathVariant;
-  // MathML displaystyle support
-  uint8_t mMathDisplay;
+  // math-style support (used for MathML displaystyle)
+  uint8_t mMathStyle;
 
   // allow different min font-size for certain cases
   uint8_t mMinFontSizeRatio;  // percent * 100
@@ -316,7 +306,7 @@ struct nsStyleImageLayers {
                               nsStyleImageLayers::LayerType aType) const;
 
   nsStyleImageLayers& operator=(const nsStyleImageLayers& aOther);
-  nsStyleImageLayers& operator=(nsStyleImageLayers&& aOther);
+  nsStyleImageLayers& operator=(nsStyleImageLayers&& aOther) = default;
   bool operator==(const nsStyleImageLayers& aOther) const;
 
   static const nsCSSPropertyID kBackgroundLayerTable[];
@@ -350,7 +340,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleBackground {
 
   // Return the background color as nscolor.
   nscolor BackgroundColor(const nsIFrame* aFrame) const;
-  nscolor BackgroundColor(mozilla::ComputedStyle* aStyle) const;
+  nscolor BackgroundColor(const mozilla::ComputedStyle* aStyle) const;
 
   // True if this background is completely transparent.
   bool IsTransparent(const nsIFrame* aFrame) const;
@@ -630,8 +620,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleOutline {
 
   nsChangeHint CalcDifference(const nsStyleOutline& aNewData) const;
 
-  mozilla::StyleBorderRadius mOutlineRadius;
-
   // This is the specified value of outline-width, but with length values
   // computed to absolute.  mActualOutlineWidth stores the outline-width
   // value used by layout.  (We must store mOutlineWidth for the same
@@ -680,11 +668,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleList {
   nsChangeHint CalcDifference(const nsStyleList& aNewData,
                               const nsStyleDisplay& aOldDisplay) const;
 
-  imgRequestProxy* GetListStyleImage() const {
-    return mListStyleImage.IsUrl() ? mListStyleImage.AsUrl().GetImage()
-                                   : nullptr;
-  }
-
   nsRect GetImageRegion() const {
     if (!mImageRegion.IsRect()) {
       return nsRect();
@@ -698,12 +681,24 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleList {
 
   mozilla::CounterStylePtr mCounterStyle;
   mozilla::StyleQuotes mQuotes;
-  mozilla::StyleImageUrlOrNone mListStyleImage;
+  mozilla::StyleImage mListStyleImage;
 
   // the rect to use within an image.
   mozilla::StyleClipRectOrAuto mImageRegion;
-  // true in an <ol reversed> scope.
-  mozilla::StyleMozListReversed mMozListReversed;
+};
+
+struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePage {
+  using StylePageSize = mozilla::StylePageSize;
+  nsStylePage(const nsStylePage& aOther) = default;
+  nsStylePage& operator=(const nsStylePage& aOther) = default;
+  explicit nsStylePage(const mozilla::dom::Document&)
+      : mSize(StylePageSize::Auto()) {}
+
+  static constexpr bool kHasTriggerImageLoads = false;
+  nsChangeHint CalcDifference(const nsStylePage& aNewData) const;
+
+  // page-size property.
+  StylePageSize mSize;
 };
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
@@ -713,7 +708,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
   using StyleRect = mozilla::StyleRect<T>;
   using StyleSize = mozilla::StyleSize;
   using StyleMaxSize = mozilla::StyleMaxSize;
-  using StyleFlexBasis = mozilla::StyleFlexBasis;
   using WritingMode = mozilla::WritingMode;
   using LogicalAxis = mozilla::LogicalAxis;
   using StyleImplicitGridTracks = mozilla::StyleImplicitGridTracks;
@@ -786,7 +780,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
   StyleSize mHeight;
   StyleSize mMinHeight;
   StyleMaxSize mMaxHeight;
-  StyleFlexBasis mFlexBasis;
+  mozilla::StyleFlexBasis mFlexBasis;
   StyleImplicitGridTracks mGridAutoColumns;
   StyleImplicitGridTracks mGridAutoRows;
   mozilla::StyleAspectRatio mAspectRatio;
@@ -819,10 +813,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
   mozilla::NonNegativeLengthPercentageOrNormal mColumnGap;
   mozilla::NonNegativeLengthPercentageOrNormal mRowGap;
 
-  bool OffsetHasPercent(mozilla::Side aSide) const {
-    return mOffset.Get(aSide).HasPercent();
-  }
-
   // Logical-coordinate accessors for width and height properties,
   // given a WritingMode value. The definitions of these methods are
   // found in WritingModes.h (after the WritingMode class is fully
@@ -849,14 +839,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
     if (aCoord.IsLengthPercentage()) {
       return aCoord.AsLengthPercentage().HasPercent();
     }
-
-    if (!aCoord.IsExtremumLength()) {
-      return false;
-    }
-
-    auto keyword = aCoord.AsExtremumLength();
-    return keyword == mozilla::StyleExtremumLength::MozFitContent ||
-           keyword == mozilla::StyleExtremumLength::MozAvailable;
+    return aCoord.IsFitContent() || aCoord.IsMozAvailable();
   }
 
   template <typename SizeOrMaxSize>
@@ -919,14 +902,14 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleText {
   mozilla::StyleRubyPosition mRubyPosition;
   mozilla::StyleTextSizeAdjust mTextSizeAdjust;
   uint8_t mTextCombineUpright;  // NS_STYLE_TEXT_COMBINE_UPRIGHT_*
-  mozilla::StyleControlCharacterVisibility mControlCharacterVisibility;
+  mozilla::StyleMozControlCharacterVisibility mMozControlCharacterVisibility;
   uint8_t mTextEmphasisPosition;  // NS_STYLE_TEXT_EMPHASIS_POSITION_*
   mozilla::StyleTextRendering mTextRendering;
   mozilla::StyleColor mTextEmphasisColor;
   mozilla::StyleColor mWebkitTextFillColor;
   mozilla::StyleColor mWebkitTextStrokeColor;
 
-  mozilla::StyleNonNegativeLengthOrNumber mMozTabSize;
+  mozilla::StyleNonNegativeLengthOrNumber mTabSize;
   mozilla::LengthPercentage mWordSpacing;
   mozilla::StyleLetterSpacing mLetterSpacing;
   mozilla::StyleLineHeight mLineHeight;
@@ -960,6 +943,15 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleText {
            mWhiteSpace == mozilla::StyleWhiteSpace::PreWrap ||
            mWhiteSpace == mozilla::StyleWhiteSpace::BreakSpaces ||
            mWhiteSpace == mozilla::StyleWhiteSpace::PreSpace;
+  }
+
+  bool WhiteSpaceCanHangOrVisuallyCollapse() const {
+    // This was originally expressed in nsTextFrame in terms of:
+    //   mWhiteSpace != StyleWhiteSpace::BreakSpaces &&
+    //       WhiteSpaceCanWrapStyle() &&
+    //       WhiteSpaceIsSignificant()
+    // which simplifies to:
+    return mWhiteSpace == mozilla::StyleWhiteSpace::PreWrap;
   }
 
   bool NewlineIsSignificantStyle() const {
@@ -1174,6 +1166,7 @@ struct StyleAnimation {
   dom::FillMode mFillMode;
   StyleAnimationPlayState mPlayState;
   float mIterationCount;  // mozilla::PositiveInfinity<float>() means infinite
+  StyleAnimationTimeline mTimeline;
 };
 
 }  // namespace mozilla
@@ -1209,6 +1202,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   uint32_t mAnimationFillModeCount;
   uint32_t mAnimationPlayStateCount;
   uint32_t mAnimationIterationCountCount;
+  uint32_t mAnimationTimelineCount;
 
   mozilla::StyleWillChange mWillChange;
   mozilla::StyleDisplay mDisplay;
@@ -1224,7 +1218,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
 
  public:
   mozilla::StyleAppearance mDefaultAppearance;
-  mozilla::StyleButtonAppearance mButtonAppearance;
   mozilla::StylePositionProperty mPosition;
 
   mozilla::StyleFloat mFloat;
@@ -1236,6 +1229,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   mozilla::StyleOverflow mOverflowY;
   mozilla::StyleOverflowClipBox mOverflowClipBoxBlock;
   mozilla::StyleOverflowClipBox mOverflowClipBoxInline;
+  mozilla::StyleScrollbarGutter mScrollbarGutter;
   mozilla::StyleResize mResize;
   mozilla::StyleOrient mOrient;
   mozilla::StyleIsolation mIsolation;
@@ -1334,6 +1328,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   mozilla::StyleAppearance EffectiveAppearance() const {
     switch (mAppearance) {
       case mozilla::StyleAppearance::Auto:
+      case mozilla::StyleAppearance::Button:
       case mozilla::StyleAppearance::Searchfield:
       case mozilla::StyleAppearance::Textarea:
       case mozilla::StyleAppearance::Checkbox:
@@ -1366,14 +1361,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
         // difference between menulist and menulist-button handling, we don't
         // bother.
         return mDefaultAppearance;
-      case mozilla::StyleAppearance::Button:
-        // `appearance: button` should behave like `auto` for a specific list
-        // of widget elements, and we encode that using the internal
-        // -moz-button-appearance property.
-        if (mButtonAppearance == mozilla::StyleButtonAppearance::Disallow) {
-          return mDefaultAppearance;
-        }
-        return mAppearance;
       default:
         return mAppearance;
     }
@@ -1457,11 +1444,25 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
     return IsInnerTableStyle() && mozilla::StyleDisplay::TableCell != mDisplay;
   }
 
+  bool IsXULDisplayStyle() const {
+    // -moz-{inline-}box is XUL, unless we're emulating it with flexbox.
+    if (!mozilla::StaticPrefs::layout_css_emulate_moz_box_with_flex() &&
+        DisplayInside() == mozilla::StyleDisplayInside::MozBox) {
+      return true;
+    }
+
+#ifdef MOZ_XUL
+    return DisplayOutside() == mozilla::StyleDisplayOutside::XUL;
+#else
+    return false;
+#endif
+  }
+
   bool IsFloatingStyle() const { return mozilla::StyleFloat::None != mFloat; }
 
   bool IsPositionedStyle() const {
     return mPosition != mozilla::StylePositionProperty::Static ||
-           (mWillChange.bits & mozilla::StyleWillChangeBits::ABSPOS_CB);
+           (mWillChange.bits & mozilla::StyleWillChangeBits::POSITION);
   }
 
   bool IsAbsolutelyPositionedStyle() const {
@@ -1504,10 +1505,15 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   }
 
   bool IsScrollableOverflow() const {
-    // mOverflowX and mOverflowY always match when one of them is
-    // Visible or MozHiddenUnscrollable.
+    // Visible and Clip can be combined but not with other values,
+    // so checking mOverflowX is enough.
     return mOverflowX != mozilla::StyleOverflow::Visible &&
-           mOverflowX != mozilla::StyleOverflow::MozHiddenUnscrollable;
+           mOverflowX != mozilla::StyleOverflow::Clip;
+  }
+
+  bool OverflowIsVisibleInBothAxis() const {
+    return mOverflowX == mozilla::StyleOverflow::Visible &&
+           mOverflowY == mozilla::StyleOverflow::Visible;
   }
 
   bool IsContainPaint() const {
@@ -1671,7 +1677,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleTableBorder {
   nscoord mBorderSpacingCol;
   nscoord mBorderSpacingRow;
   mozilla::StyleBorderCollapse mBorderCollapse;
-  uint8_t mCaptionSide;
+  mozilla::StyleCaptionSide mCaptionSide;
   mozilla::StyleEmptyCells mEmptyCells;
 };
 
@@ -1697,8 +1703,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleContent {
 
   mozilla::StyleContent mContent;
   mozilla::StyleCounterIncrement mCounterIncrement;
-  mozilla::StyleCounterSetOrReset mCounterReset;
-  mozilla::StyleCounterSetOrReset mCounterSet;
+  mozilla::StyleCounterReset mCounterReset;
+  mozilla::StyleCounterSet mCounterSet;
 };
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
@@ -1709,7 +1715,12 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
 
   nsChangeHint CalcDifference(const nsStyleUIReset& aNewData) const;
 
-  mozilla::StyleUserSelect mUserSelect;  // [reset](selection-style)
+ private:
+  mozilla::StyleUserSelect mUserSelect;  // Use ComputedStyle::UserSelect()
+
+ public:
+  mozilla::StyleUserSelect ComputedUserSelect() const { return mUserSelect; }
+
   mozilla::StyleScrollbarWidth mScrollbarWidth;
   uint8_t mMozForceBrokenImageIcon;  // (0 if not forcing, otherwise forcing)
   mozilla::StyleImeMode mIMEMode;
@@ -1731,18 +1742,44 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUI {
   nsChangeHint CalcDifference(const nsStyleUI& aNewData) const;
 
   mozilla::StyleInert mInert;
-  mozilla::StyleUserInput mUserInput;
-  mozilla::StyleUserModify mUserModify;  // (modify-content)
-  mozilla::StyleUserFocus mUserFocus;    // (auto-select)
-  mozilla::StylePointerEvents mPointerEvents;
 
+ private:
+  mozilla::StyleUserInput mUserInput;
+  mozilla::StyleUserModify mUserModify;
+  mozilla::StyleUserFocus mUserFocus;
+  mozilla::StylePointerEvents mPointerEvents;
   mozilla::StyleCursor mCursor;
 
-  mozilla::StyleColorOrAuto mCaretColor;
-  mozilla::StyleScrollbarColor mScrollbarColor;
+ public:
+  bool IsInert() const { return mInert == mozilla::StyleInert::Inert; }
 
-  inline mozilla::StylePointerEvents GetEffectivePointerEvents(
-      nsIFrame* aFrame) const;
+  mozilla::StyleUserInput UserInput() const {
+    return IsInert() ? mozilla::StyleUserInput::None : mUserInput;
+  }
+
+  mozilla::StyleUserModify UserModify() const {
+    return IsInert() ? mozilla::StyleUserModify::ReadOnly : mUserModify;
+  }
+
+  mozilla::StyleUserFocus UserFocus() const {
+    return IsInert() ? mozilla::StyleUserFocus::None : mUserFocus;
+  }
+
+  // This is likely not the getter you want (you probably want
+  // ComputedStyle::PointerEvents().
+  mozilla::StylePointerEvents ComputedPointerEvents() const {
+    return mPointerEvents;
+  }
+
+  const mozilla::StyleCursor& Cursor() const {
+    static mozilla::StyleCursor sAuto{{}, mozilla::StyleCursorKind::Auto};
+    return IsInert() ? sAuto : mCursor;
+  }
+
+  mozilla::StyleColorOrAuto mAccentColor;
+  mozilla::StyleCaretColor mCaretColor;
+  mozilla::StyleScrollbarColor mScrollbarColor;
+  mozilla::StyleColorScheme mColorScheme;
 
   bool HasCustomScrollbars() const { return !mScrollbarColor.IsAuto(); }
 };
@@ -1913,6 +1950,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleSVGReset {
 
   mozilla::StyleVectorEffect mVectorEffect;
   mozilla::StyleMaskType mMaskType;
+
+  mozilla::StyleDProperty mD;
 };
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleEffects {

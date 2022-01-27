@@ -1,4 +1,6 @@
+/* clang-format off */
 /* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -85,10 +87,21 @@
 - (NSString*)moxLabel;
 
 // override
+- (NSArray*)moxVisibleChildren;
+
+// override
+- (BOOL)moxIgnoreWithParent:(mozAccessible*)parent;
+
+// override
+- (id)moxTitleUIElement;
+
+// override
 - (void)moxPostNotification:(NSString*)notification;
 
 // override
 - (void)expire;
+
+- (BOOL)isOpened;
 
 @end
 
@@ -98,6 +111,9 @@
 - (NSString*)moxLabel;
 
 // override
+- (BOOL)moxIgnoreWithParent:(mozAccessible*)parent;
+
+// override
 - (NSString*)moxMenuItemMarkChar;
 
 // override
@@ -105,5 +121,8 @@
 
 // override
 - (void)handleAccessibleEvent:(uint32_t)eventType;
+
+// override
+- (void)moxPerformPress;
 
 @end

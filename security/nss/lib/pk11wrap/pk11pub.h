@@ -9,6 +9,7 @@
 #include "secdert.h"
 #include "keythi.h"
 #include "certt.h"
+#include "pk11hpke.h"
 #include "pkcs11t.h"
 #include "secmodt.h"
 #include "seccomon.h"
@@ -267,6 +268,8 @@ CK_MECHANISM_TYPE PK11_MapSignKeyType(KeyType keyType);
  **********************************************************************/
 void PK11_FreeSymKey(PK11SymKey *key);
 PK11SymKey *PK11_ReferenceSymKey(PK11SymKey *symKey);
+PK11SymKey *PK11_ImportDataKey(PK11SlotInfo *slot, CK_MECHANISM_TYPE type, PK11Origin origin,
+                               CK_ATTRIBUTE_TYPE operation, SECItem *key, void *wincx);
 PK11SymKey *PK11_ImportSymKey(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
                               PK11Origin origin, CK_ATTRIBUTE_TYPE operation, SECItem *key, void *wincx);
 PK11SymKey *PK11_ImportSymKeyWithFlags(PK11SlotInfo *slot,
@@ -354,6 +357,11 @@ void *PK11_GetSymKeyUserData(PK11SymKey *symKey);
 
 SECStatus PK11_PubWrapSymKey(CK_MECHANISM_TYPE type, SECKEYPublicKey *pubKey,
                              PK11SymKey *symKey, SECItem *wrappedKey);
+SECStatus PK11_PubWrapSymKeyWithMechanism(SECKEYPublicKey *pubKey,
+                                          CK_MECHANISM_TYPE mechType,
+                                          SECItem *param,
+                                          PK11SymKey *symKey,
+                                          SECItem *wrappedKey);
 SECStatus PK11_WrapSymKey(CK_MECHANISM_TYPE type, SECItem *params,
                           PK11SymKey *wrappingKey, PK11SymKey *symKey, SECItem *wrappedKey);
 /* move a key to 'slot' optionally set the key attributes according to either
@@ -448,6 +456,13 @@ PK11SymKey *PK11_UnwrapSymKeyWithFlagsPerm(PK11SymKey *wrappingKey,
  */
 PK11SymKey *PK11_PubUnwrapSymKey(SECKEYPrivateKey *key, SECItem *wrapppedKey,
                                  CK_MECHANISM_TYPE target, CK_ATTRIBUTE_TYPE operation, int keySize);
+PK11SymKey *PK11_PubUnwrapSymKeyWithMechanism(SECKEYPrivateKey *key,
+                                              CK_MECHANISM_TYPE mechType,
+                                              SECItem *param,
+                                              SECItem *wrapppedKey,
+                                              CK_MECHANISM_TYPE target,
+                                              CK_ATTRIBUTE_TYPE operation,
+                                              int keySize);
 PK11SymKey *PK11_PubUnwrapSymKeyWithFlagsPerm(SECKEYPrivateKey *wrappingKey,
                                               SECItem *wrappedKey, CK_MECHANISM_TYPE target,
                                               CK_ATTRIBUTE_TYPE operation, int keySize,
@@ -612,10 +627,20 @@ SECKEYPrivateKeyInfo *PK11_ExportPrivateKeyInfo(
     CERTCertificate *cert, void *wincx);
 SECKEYEncryptedPrivateKeyInfo *PK11_ExportEncryptedPrivKeyInfo(
     PK11SlotInfo *slot, SECOidTag algTag, SECItem *pwitem,
-    SECKEYPrivateKey *pk, int iteration, void *wincx);
+    SECKEYPrivateKey *pk, int iteration, void *pwArg);
 SECKEYEncryptedPrivateKeyInfo *PK11_ExportEncryptedPrivateKeyInfo(
     PK11SlotInfo *slot, SECOidTag algTag, SECItem *pwitem,
-    CERTCertificate *cert, int iteration, void *wincx);
+    CERTCertificate *cert, int iteration, void *pwArg);
+/* V2 refers to PKCS #5 V2 here. If a PKCS #5 v1 or PKCS #12 pbe is passed
+ * for pbeTag, then encTag and hashTag are ignored. If pbe is an encryption
+ * algorithm, then PKCS #5 V2 is used with prfTag for the prf. If prfTag isn't
+ * supplied prf will be SEC_OID_HMAC_SHA1 */
+SECKEYEncryptedPrivateKeyInfo *PK11_ExportEncryptedPrivKeyInfoV2(
+    PK11SlotInfo *slot, SECOidTag pbeTag, SECOidTag encTag, SECOidTag prfTag,
+    SECItem *pwitem, SECKEYPrivateKey *pk, int iteration, void *pwArg);
+SECKEYEncryptedPrivateKeyInfo *PK11_ExportEncryptedPrivateKeyInfoV2(
+    PK11SlotInfo *slot, SECOidTag pbeTag, SECOidTag encTag, SECOidTag prfTag,
+    SECItem *pwitem, CERTCertificate *cert, int iteration, void *pwArg);
 SECKEYPrivateKey *PK11_FindKeyByDERCert(PK11SlotInfo *slot,
                                         CERTCertificate *cert, void *wincx);
 SECKEYPublicKey *PK11_MakeKEAPubKey(unsigned char *data, int length);
@@ -713,6 +738,49 @@ CK_BBOOL PK11_HasAttributeSet(PK11SlotInfo *slot,
                               PRBool haslock /* must be set to PR_FALSE */);
 
 /**********************************************************************
+ *                   Hybrid Public Key Encryption
+ **********************************************************************/
+
+/* Some of the various HPKE arguments would ideally be const, but the
+ * underlying PK11 functions take them as non-const. To avoid lying to
+ * the application with a cast, this idiosyncrasy is exposed. */
+SECStatus PK11_HPKE_ValidateParameters(HpkeKemId kemId, HpkeKdfId kdfId, HpkeAeadId aeadId);
+HpkeContext *PK11_HPKE_NewContext(HpkeKemId kemId, HpkeKdfId kdfId, HpkeAeadId aeadId,
+                                  PK11SymKey *psk, const SECItem *pskId);
+SECStatus PK11_HPKE_Deserialize(const HpkeContext *cx, const PRUint8 *enc,
+                                unsigned int encLen, SECKEYPublicKey **outPubKey);
+void PK11_HPKE_DestroyContext(HpkeContext *cx, PRBool freeit);
+
+/* Serialize an initialized receiver context. This only retains the keys and
+ * associated information necessary to resume Export and Open operations after
+ * import. Serialization is currently supported for receiver contexts only.
+ * This is done for two reasons: 1) it avoids having to move the encryption
+ * sequence number outside of the token (or adding encryption context
+ * serialization support to softoken), and 2) we don't have to worry about IV
+ * reuse due to sequence number cloning.
+ *
+ * |wrapKey| is required when exporting in FIPS mode. If exported with a
+ * wrapping key, that same key must be provided to the import function,
+ * otherwise behavior is undefined.
+ *
+ * Even when exported with key wrap, HPKE expects the nonce to also be kept
+ * secret and that value is not protected by wrapKey. Applications are
+ * responsible for maintaining the confidentiality of the exported information.
+ */
+SECStatus PK11_HPKE_ExportContext(const HpkeContext *cx, PK11SymKey *wrapKey, SECItem **serialized);
+SECStatus PK11_HPKE_ExportSecret(const HpkeContext *cx, const SECItem *info, unsigned int L,
+                                 PK11SymKey **outKey);
+const SECItem *PK11_HPKE_GetEncapPubKey(const HpkeContext *cx);
+HpkeContext *PK11_HPKE_ImportContext(const SECItem *serialized, PK11SymKey *wrapKey);
+SECStatus PK11_HPKE_Open(HpkeContext *cx, const SECItem *aad, const SECItem *ct, SECItem **outPt);
+SECStatus PK11_HPKE_Seal(HpkeContext *cx, const SECItem *aad, const SECItem *pt, SECItem **outCt);
+SECStatus PK11_HPKE_Serialize(const SECKEYPublicKey *pk, PRUint8 *buf, unsigned int *len, unsigned int maxLen);
+SECStatus PK11_HPKE_SetupS(HpkeContext *cx, const SECKEYPublicKey *pkE, SECKEYPrivateKey *skE,
+                           SECKEYPublicKey *pkR, const SECItem *info);
+SECStatus PK11_HPKE_SetupR(HpkeContext *cx, const SECKEYPublicKey *pkR, SECKEYPrivateKey *skR,
+                           const SECItem *enc, const SECItem *info);
+
+/**********************************************************************
  *                   Sign/Verify
  **********************************************************************/
 
@@ -747,7 +815,17 @@ SECStatus PK11_VerifyWithMechanism(SECKEYPublicKey *key,
  **********************************************************************/
 void PK11_DestroyContext(PK11Context *context, PRBool freeit);
 PK11Context *PK11_CreateContextBySymKey(CK_MECHANISM_TYPE type,
-                                        CK_ATTRIBUTE_TYPE operation, PK11SymKey *symKey, SECItem *param);
+                                        CK_ATTRIBUTE_TYPE operation,
+                                        PK11SymKey *symKey,
+                                        const SECItem *param);
+PK11Context *PK11_CreateContextByPubKey(CK_MECHANISM_TYPE type,
+                                        CK_ATTRIBUTE_TYPE operation,
+                                        SECKEYPublicKey *pubKey,
+                                        const SECItem *param, void *pwArg);
+PK11Context *PK11_CreateContextByPrivKey(CK_MECHANISM_TYPE type,
+                                         CK_ATTRIBUTE_TYPE operation,
+                                         SECKEYPrivateKey *privKey,
+                                         const SECItem *param);
 PK11Context *PK11_CreateDigestContext(SECOidTag hashAlg);
 PK11Context *PK11_CloneContext(PK11Context *old);
 SECStatus PK11_DigestBegin(PK11Context *cx);
@@ -943,13 +1021,31 @@ PRBool SECMOD_HasRootCerts(void);
 /**********************************************************************
  * Other Utilities
  **********************************************************************/
-/* 
+/*
  * Get the state of the system FIPS mode -
  *  NSS uses this to force FIPS mode if the system bit is on. This returns
  *  the system state independent of the database state and can be called
  *  before NSS initializes.
  */
 int SECMOD_GetSystemFIPSEnabled(void);
+
+/* FIPS indicator functions. Some operations are physically allowed, but
+ * are against the NSS FIPS security policy. This is because sometimes NSS
+ * functions are used in non-security contexts. You can call these functions
+ * to determine if you are operating inside or outside the the current vendor's
+ * FIPS Security Policy for NSS. NOTE: if the current version of NSS is not
+ * actually FIPS certified, then these functions will always return PR_FALSE */
+
+/* This function tells if if the last single shot operation on the slot
+ * was inside or outside the FIPS security policy */
+PRBool PK11_SlotGetLastFIPSStatus(PK11SlotInfo *slot);
+/* This tells you if the current operation is within the FIPS security policy. If
+ * you have called finalize on the context, it tells you if the last operation
+ * was within the FIPS security policy */
+PRBool PK11_ContextGetFIPSStatus(PK11Context *context);
+/* This tells you if the requested object was created in accordance to the
+ * NSS FIPS security policy. */
+PRBool PK11_ObjectGetFIPSStatus(PK11ObjectType objType, void *objSpec);
 
 SEC_END_PROTOS
 

@@ -8,8 +8,9 @@ license:
         - build/pgo/js-input
         # License not super clear
         - browser/branding/
-        # Trademark
+        # Trademarks
         - browser/components/pocket/content/panels/
+        - browser/components/newtab/data/content/tippytop/images/
         - toolkit/components/pdfjs/content/web/images/
         # We probably want a specific license
         - browser/extensions/webcompat/injections/
@@ -26,8 +27,11 @@ license:
         - gradle.properties
         # might not work with license
         - gradle/wrapper/gradle-wrapper.properties
+        # tests
+        - js/src/devtools/rootAnalysis/t/
         - mobile/android/components/extensions
         - mobile/android/geckoview/src/main/AndroidManifest.xml
+        - mobile/android/geckoview/src/main/AndroidManifest_overlay.jinja
         - mobile/android/geckoview/src/main/res/drawable/ic_generic_file.xml
         - mobile/android/geckoview_example/src/main
         # might not work with license
@@ -48,6 +52,9 @@ license:
         - security/mac/hardenedruntime/production.entitlements.xml
         - servo/components/hashglobe/src/alloc.rs
         - servo/components/hashglobe/src/shim.rs
+        - testing/marionette/harness/marionette_harness/www/
+        # Browsertime can't handle this script when there's a comment at the top
+        - testing/raptor/browsertime/browsertime_benchmark.js
         - toolkit/components/reputationservice/chromium/chrome/common/safe_browsing/csd.pb.cc
         - toolkit/components/reputationservice/chromium/chrome/common/safe_browsing/csd.pb.h
         - toolkit/mozapps/update/updater/crctable.h

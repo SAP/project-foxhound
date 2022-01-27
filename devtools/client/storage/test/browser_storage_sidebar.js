@@ -104,6 +104,10 @@ const testCases = [
 ];
 
 add_task(async function() {
+  // storage-listings.html explicitly mixes secure and insecure frames.
+  // We should not enforce https for tests using this page.
+  await pushPref("dom.security.https_first", false);
+
   await openTabAndSetupStorage(MAIN_DOMAIN + "storage-listings.html");
 
   for (const test of testCases) {
@@ -129,6 +133,4 @@ add_task(async function() {
 
     info("-".repeat(80));
   }
-
-  await finishTests();
 });

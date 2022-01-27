@@ -5,8 +5,15 @@
 
 #include "nsISupports.idl"
 
+%{ C++
+namespace mozilla {
+class OriginAttributes;
+} // mozilla namespace
+%}
+
 [ptr] native RequestHeaderTuples(mozilla::net::RequestHeaderTuples);
 [ref] native MaybeCorsPreflightArgsRef(mozilla::Maybe<mozilla::net::CorsPreflightArgs>);
+[ref] native const_OriginAttributes(const mozilla::OriginAttributes);
 
 interface nsIPrincipal;
 interface nsIURI;
@@ -15,12 +22,6 @@ interface nsIURI;
 interface nsIHttpChannelChild : nsISupports
 {
   [must_use] void addCookiesToRequest();
-
-  // Mark this channel as requiring an interception; this will propagate
-  // to the corresponding parent channel when a redirect occurs.
-  [must_use]
-  void forceIntercepted(in boolean postRedirectChannelShouldIntercept,
-                        in boolean postRedirectChannelShouldUpgrade);
 
   // Headers that the channel client has set via SetRequestHeader.
   [must_use] readonly attribute RequestHeaderTuples clientSetRequestHeaders;
@@ -32,5 +33,6 @@ interface nsIHttpChannelChild : nsISupports
   // This method is called by nsCORSListenerProxy if we need to remove
   // an entry from the CORS preflight cache in the parent process.
   [must_use]
-  void removeCorsPreflightCacheEntry(in nsIURI aURI, in nsIPrincipal aRequestingPrincipal);
+  void removeCorsPreflightCacheEntry(in nsIURI aURI, in nsIPrincipal aRequestingPrincipal,
+                                     in const_OriginAttributes aOriginAttributes);
 };

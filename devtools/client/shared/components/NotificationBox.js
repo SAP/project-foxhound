@@ -4,7 +4,10 @@
 
 "use strict";
 
-const { Component } = require("devtools/client/shared/vendor/react");
+const {
+  Component,
+  createFactory,
+} = require("devtools/client/shared/vendor/react");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const { LocalizationHelper } = require("devtools/shared/l10n");
@@ -13,19 +16,25 @@ const l10n = new LocalizationHelper(
   "devtools/client/locales/components.properties"
 );
 const { div, span, button } = dom;
+loader.lazyGetter(this, "MDNLink", function() {
+  return createFactory(require("devtools/client/shared/components/MdnLink"));
+});
 
 // Priority Levels
 const PriorityLevels = {
   PRIORITY_INFO_LOW: 1,
   PRIORITY_INFO_MEDIUM: 2,
   PRIORITY_INFO_HIGH: 3,
-  PRIORITY_WARNING_LOW: 4,
-  PRIORITY_WARNING_MEDIUM: 5,
-  PRIORITY_WARNING_HIGH: 6,
-  PRIORITY_CRITICAL_LOW: 7,
-  PRIORITY_CRITICAL_MEDIUM: 8,
-  PRIORITY_CRITICAL_HIGH: 9,
-  PRIORITY_CRITICAL_BLOCK: 10,
+  // Type NEW should be used to highlight new features, and should be more
+  // eye-catchy than INFO level notifications.
+  PRIORITY_NEW: 4,
+  PRIORITY_WARNING_LOW: 5,
+  PRIORITY_WARNING_MEDIUM: 6,
+  PRIORITY_WARNING_HIGH: 7,
+  PRIORITY_CRITICAL_LOW: 8,
+  PRIORITY_CRITICAL_MEDIUM: 9,
+  PRIORITY_CRITICAL_HIGH: 10,
+  PRIORITY_CRITICAL_BLOCK: 11,
 };
 
 /**
@@ -48,12 +57,15 @@ class NotificationBox extends Component {
        * List of notifications appended into the box. Each item of the map is an object
        * of the following shape:
        *   - {String} label: Label to appear on the notification.
-       *   - {String} value: Value used to identify the notification.
+       *   - {String} value: Value used to identify the notification. Should be the same
+       *                     as the map key used for this notification.
        *   - {String} image: URL of image to appear on the notification. If "" then an
        *                     appropriate icon for the priority level is used.
        *   - {Number} priority: Notification priority; see Priority Levels.
        *   - {Function} eventCallback: A function to call to notify you of interesting
                                        things that happen with the notification box.
+           - {String} type: One of "info", "warning", or "critical" used to determine
+                            what styling and icon are used for the notification.
        *   - {Array<Object>} buttons: Array of button descriptions to appear on the
        *                              notification. Should be of the following shape:
        *                     - {Function} callback: This function is passed 3 arguments:
@@ -70,6 +82,10 @@ class NotificationBox extends Component {
                              - {String} label: The label to appear on the button.
                              - {String} accesskey: The accesskey attribute set on the
                                                    <button> element.
+                             - {String} mdnUrl: URL to MDN docs. Optional but if set
+                                                turns button into a MDNLink and supersedes
+                                                all other properties. Uses Label as the title
+                                                for the link.
       */
       notifications: PropTypes.instanceOf(Map),
       // Message that should be shown when hovering over the close button
@@ -80,6 +96,8 @@ class NotificationBox extends Component {
       displayBorderTop: PropTypes.bool,
       // Display a bottom border (default to true)
       displayBorderBottom: PropTypes.bool,
+      // Display a close button (default to true)
+      displayCloseButton: PropTypes.bool,
     };
   }
 
@@ -88,6 +106,7 @@ class NotificationBox extends Component {
       closeButtonTooltip: l10n.getStr("notificationBox.closeTooltip"),
       displayBorderTop: false,
       displayBorderBottom: true,
+      displayCloseButton: true,
     };
   }
 
@@ -189,9 +208,16 @@ class NotificationBox extends Component {
 
   /**
    * Render a button. A notification can have a set of custom buttons.
-   * These are used to execute custom callback.
+   * These are used to execute custom callback. Will render a MDNLink
+   * if mdnUrl property is set.
    */
   renderButton(props, notification) {
+    if (props.mdnUrl != null) {
+      return MDNLink({
+        url: props.mdnUrl,
+        title: props.label,
+      });
+    }
     const onClick = event => {
       if (props.callback) {
         const result = props.callback(this, props, event.target);
@@ -240,11 +266,13 @@ class NotificationBox extends Component {
         notification.buttons.map(props =>
           this.renderButton(props, notification)
         ),
-        div({
-          className: "messageCloseButton",
-          title: this.props.closeButtonTooltip,
-          onClick: this.close.bind(this, notification),
-        })
+        this.props.displayCloseButton
+          ? button({
+              className: "messageCloseButton",
+              title: this.props.closeButtonTooltip,
+              onClick: this.close.bind(this, notification),
+            })
+          : null
       )
     );
   }
@@ -306,7 +334,9 @@ function appendNotification(state, props) {
   }
 
   let type = "warning";
-  if (priority >= PriorityLevels.PRIORITY_CRITICAL_LOW) {
+  if (priority == PriorityLevels.PRIORITY_NEW) {
+    type = "new";
+  } else if (priority >= PriorityLevels.PRIORITY_CRITICAL_LOW) {
     type = "critical";
   } else if (priority <= PriorityLevels.PRIORITY_INFO_HIGH) {
     type = "info";

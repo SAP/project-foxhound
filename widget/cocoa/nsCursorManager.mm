@@ -9,9 +9,9 @@
 #include <math.h>
 
 static nsCursorManager* gInstance;
-static CGFloat sCursorScaleFactor = 0.0f;
-static imgIContainer* sCursorImgContainer = nullptr;
-static const nsCursor sCustomCursor = eCursorCount;
+static CGFloat sCurrentCursorScaleFactor = 0.0f;
+static nsIWidget::Cursor sCurrentCursor;
+static constexpr nsCursor kCustomCursor = eCursorCount;
 
 /*! @category nsCursorManager(PrivateMethods)
     Private methods for the cursor manager class.
@@ -49,27 +49,27 @@ static const nsCursor sCustomCursor = eCursorCount;
 @implementation nsCursorManager
 
 + (nsCursorManager*)sharedInstance {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (!gInstance) {
     gInstance = [[nsCursorManager alloc] init];
   }
   return gInstance;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 + (void)dispose {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   [gInstance release];
   gInstance = nil;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK;
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
 + (nsMacCursor*)createCursor:(enum nsCursor)aCursor {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   switch (aCursor) {
     SEL cursorSelector;
@@ -183,42 +183,33 @@ static const nsCursor sCustomCursor = eCursorCount;
       return [nsMacCursor cursorWithCursor:[NSCursor arrowCursor] type:aCursor];
   }
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 - (id)init {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if ((self = [super init])) {
     mCursors = [[NSMutableDictionary alloc] initWithCapacity:25];
   }
   return self;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
-- (nsresult)setCursor:(enum nsCursor)aCursor {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+- (nsresult)setNonCustomCursor:(const nsIWidget::Cursor&)aCursor {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
-  nsCursor oldType = [mCurrentMacCursor type];
-  [self setMacCursor:[self getCursor:aCursor]];
+  [self setMacCursor:[self getCursor:aCursor.mDefaultCursor]];
 
-  // if a custom cursor was previously set, release sCursorImgContainer
-  if (oldType == sCustomCursor) {
-    NS_IF_RELEASE(sCursorImgContainer);
-  }
+  sCurrentCursor = aCursor;
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 - (nsresult)setMacCursor:(nsMacCursor*)aMacCursor {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
-
-  // Some plugins mess with our cursors and set a cursor that even
-  // [NSCursor currentCursor] doesn't know about. In case that happens, just
-  // reset the state.
-  [[NSCursor currentCursor] set];
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   nsCursor oldType = [mCurrentMacCursor type];
   nsCursor newType = [aMacCursor type];
@@ -240,58 +231,63 @@ static const nsCursor sCustomCursor = eCursorCount;
 
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
-- (nsresult)setCursorWithImage:(imgIContainer*)aCursorImage
-                      hotSpotX:(uint32_t)aHotspotX
-                      hotSpotY:(uint32_t)aHotspotY
-                   scaleFactor:(CGFloat)scaleFactor {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+- (nsresult)setCustomCursor:(const nsIWidget::Cursor&)aCursor
+          widgetScaleFactor:(CGFloat)scaleFactor {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
+
   // As the user moves the mouse, this gets called repeatedly with the same aCursorImage
-  if (sCursorImgContainer == aCursorImage && sCursorScaleFactor == scaleFactor &&
-      mCurrentMacCursor) {
-    [self setMacCursor:mCurrentMacCursor];
+  if (sCurrentCursor == aCursor && sCurrentCursorScaleFactor == scaleFactor && mCurrentMacCursor) {
+    // Native dragging can unset our cursor apparently (see bug 1739352).
+    if (MOZ_UNLIKELY(![mCurrentMacCursor isSet])) {
+      [mCurrentMacCursor set];
+    }
     return NS_OK;
   }
 
-  int32_t width = 0, height = 0;
-  aCursorImage->GetWidth(&width);
-  aCursorImage->GetHeight(&height);
+  sCurrentCursor = aCursor;
+  sCurrentCursorScaleFactor = scaleFactor;
+
+  if (!aCursor.IsCustom()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsIntSize size = nsIWidget::CustomCursorSize(aCursor);
   // prevent DoS attacks
-  if (width > 128 || height > 128) {
-    return NS_OK;
+  if (size.width > 128 || size.height > 128) {
+    return NS_ERROR_FAILURE;
   }
 
   NSImage* cursorImage;
   nsresult rv = nsCocoaUtils::CreateNSImageFromImageContainer(
-      aCursorImage, imgIContainer::FRAME_FIRST, &cursorImage, scaleFactor);
+      aCursor.mContainer, imgIContainer::FRAME_FIRST, nullptr, &cursorImage, scaleFactor);
   if (NS_FAILED(rv) || !cursorImage) {
     return NS_ERROR_FAILURE;
   }
 
-  // if the hotspot is nonsensical, make it 0,0
-  aHotspotX = (aHotspotX > (uint32_t)width - 1) ? 0 : aHotspotX;
-  aHotspotY = (aHotspotY > (uint32_t)height - 1) ? 0 : aHotspotY;
+  {
+    NSSize cocoaSize = NSMakeSize(size.width, size.height);
+    [cursorImage setSize:cocoaSize];
+    [[[cursorImage representations] objectAtIndex:0] setSize:cocoaSize];
+  }
 
-  NSPoint hotSpot = ::NSMakePoint(aHotspotX, aHotspotY);
+  // if the hotspot is nonsensical, make it 0,0
+  uint32_t hotspotX = aCursor.mHotspotX > (uint32_t(size.width) - 1) ? 0 : aCursor.mHotspotX;
+  uint32_t hotspotY = aCursor.mHotspotY > (uint32_t(size.height) - 1) ? 0 : aCursor.mHotspotY;
+  NSPoint hotSpot = ::NSMakePoint(hotspotX, hotspotY);
   [self setMacCursor:[nsMacCursor cursorWithCursor:[[NSCursor alloc] initWithImage:cursorImage
                                                                            hotSpot:hotSpot]
-                                              type:sCustomCursor]];
+                                              type:kCustomCursor]];
   [cursorImage release];
-
-  NS_IF_RELEASE(sCursorImgContainer);
-  sCursorImgContainer = aCursorImage;
-  sCursorScaleFactor = scaleFactor;
-  NS_ADDREF(sCursorImgContainer);
-
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 - (nsMacCursor*)getCursor:(enum nsCursor)aCursor {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   nsMacCursor* result = [mCursors objectForKey:[NSNumber numberWithInt:aCursor]];
   if (!result) {
@@ -300,19 +296,19 @@ static const nsCursor sCustomCursor = eCursorCount;
   }
   return result;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 - (void)dealloc {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   [mCurrentMacCursor unset];
   [mCurrentMacCursor release];
   [mCursors release];
-  NS_IF_RELEASE(sCursorImgContainer);
+  sCurrentCursor = {};
   [super dealloc];
 
-  NS_OBJC_END_TRY_ABORT_BLOCK;
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
 @end

@@ -11,6 +11,8 @@ const TEST_DOMAIN_3 = "https://xn--hxajbheg2az3al.xn--jxalpdlp/";
 const TEST_DOMAIN_4 = "http://prefixexample.com/";
 const TEST_DOMAIN_5 = "http://test/";
 const TEST_DOMAIN_6 = "http://mochi.test:8888/";
+const TEST_DOMAIN_7 = "http://example.com/";
+const TEST_DOMAIN_8 = "http://www.example.com/";
 const TEST_3RD_PARTY_DOMAIN = "https://tracking.example.org/";
 const TEST_3RD_PARTY_DOMAIN_HTTP = "http://tracking.example.org/";
 const TEST_3RD_PARTY_DOMAIN_TP = "https://tracking.example.com/";
@@ -32,6 +34,8 @@ const TEST_TOP_PAGE_3 = TEST_DOMAIN_3 + TEST_PATH + "page.html";
 const TEST_TOP_PAGE_4 = TEST_DOMAIN_4 + TEST_PATH + "page.html";
 const TEST_TOP_PAGE_5 = TEST_DOMAIN_5 + TEST_PATH + "page.html";
 const TEST_TOP_PAGE_6 = TEST_DOMAIN_6 + TEST_PATH + "page.html";
+const TEST_TOP_PAGE_7 = TEST_DOMAIN_7 + TEST_PATH + "page.html";
+const TEST_TOP_PAGE_8 = TEST_DOMAIN_8 + TEST_PATH + "page.html";
 const TEST_EMBEDDER_PAGE = TEST_DOMAIN + TEST_PATH + "embedder.html";
 const TEST_POPUP_PAGE = TEST_DOMAIN + TEST_PATH + "popup.html";
 const TEST_IFRAME_PAGE = TEST_DOMAIN + TEST_PATH + "iframe.html";
@@ -97,3 +101,43 @@ Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/toolkit/components/antitracking/test/browser/partitionedstorage_head.js",
   this
 );
+
+function setCookieBehaviorPref(cookieBehavior, runInPrivateWindow) {
+  let cbRegular;
+  let cbPrivate;
+
+  // Set different cookieBehaviors to regular mode and private mode so that we
+  // can make sure these two prefs don't interfere with each other for all
+  // tests.
+  if (runInPrivateWindow) {
+    cbPrivate = cookieBehavior;
+
+    let defaultPrefBranch = Services.prefs.getDefaultBranch("");
+    // In order to test the default private cookieBehavior pref, we need to set
+    // the regular pref to the default value because we don't want the private
+    // pref to mirror the regular pref in this case.
+    //
+    // Note that the private pref will mirror the regular pref if the private
+    // pref is in default value and the regular pref is not in default value.
+    if (
+      cookieBehavior ==
+      defaultPrefBranch.getIntPref("network.cookie.cookieBehavior.pbmode")
+    ) {
+      cbRegular = defaultPrefBranch.getIntPref("network.cookie.cookieBehavior");
+    } else {
+      cbRegular =
+        cookieBehavior == BEHAVIOR_ACCEPT ? BEHAVIOR_REJECT : BEHAVIOR_ACCEPT;
+    }
+  } else {
+    cbRegular = cookieBehavior;
+    cbPrivate =
+      cookieBehavior == BEHAVIOR_ACCEPT ? BEHAVIOR_REJECT : BEHAVIOR_ACCEPT;
+  }
+
+  return SpecialPowers.pushPrefEnv({
+    set: [
+      ["network.cookie.cookieBehavior", cbRegular],
+      ["network.cookie.cookieBehavior.pbmode", cbPrivate],
+    ],
+  });
+}

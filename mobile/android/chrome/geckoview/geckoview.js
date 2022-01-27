@@ -15,9 +15,14 @@ var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 XPCOMUtils.defineLazyModuleGetters(this, {
   E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   EventDispatcher: "resource://gre/modules/Messaging.jsm",
+  GeckoViewActorManager: "resource://gre/modules/GeckoViewActorManager.jsm",
   GeckoViewSettings: "resource://gre/modules/GeckoViewSettings.jsm",
   GeckoViewUtils: "resource://gre/modules/GeckoViewUtils.jsm",
   HistogramStopwatch: "resource://gre/modules/GeckoViewTelemetry.jsm",
+  InitializationTracker: "resource://gre/modules/GeckoViewTelemetry.jsm",
+  SafeBrowsing: "resource://gre/modules/SafeBrowsing.jsm",
+  RemoteSecuritySettings:
+    "resource://gre/modules/psm/RemoteSecuritySettings.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(this, "WindowEventDispatcher", () =>
@@ -73,10 +78,11 @@ var ModuleManager = {
 
     window.document.documentElement.appendChild(aBrowser);
 
-    // TODO: Bug 1635914 remove workaround. In theory this should not be needed
-    // as docShell should be active by default, but this is not currently the
-    // case so we force it here.
-    aBrowser.docShellIsActive = true;
+    // By default all layers are discarded when a browser is set to inactive.
+    // GeckoView by default sets browsers to inactive every time they're not
+    // visible. To avoid flickering when changing tabs, we preserve layers for
+    // all loaded tabs.
+    aBrowser.preserveLayers(true);
 
     WindowEventDispatcher.registerListener(this, [
       "GeckoView:UpdateModuleState",
@@ -89,9 +95,13 @@ var ModuleManager = {
       this
     );
 
+    this._moduleByActorName = new Map();
     this.forEach(module => {
       module.onInit();
       module.loadInitFrameScript();
+      for (const actorName of module.actorNames) {
+        this._moduleByActorName[actorName] = module;
+      }
     });
 
     window.addEventListener("unload", () => {
@@ -131,95 +141,49 @@ var ModuleManager = {
   },
 
   getActor(aActorName) {
-    return this.browser.browsingContext.currentWindowGlobal.getActor(
+    return this.browser.browsingContext.currentWindowGlobal?.getActor(
       aActorName
     );
   },
 
-  remoteTypeFor(aURI, currentType) {
-    return E10SUtils.getRemoteTypeForURI(
-      aURI,
-      GeckoViewSettings.useMultiprocess,
-      /* useRemoteSubframes */ false,
-      currentType,
-      this.browser.currentURI
-    );
-  },
-
-  shouldLoadInThisProcess(aURI) {
-    const currentType = this.browser.remoteType || E10SUtils.NOT_REMOTE;
-    return currentType === this.remoteTypeFor(aURI, currentType);
-  },
-
-  async updateRemoteAndNavigate(aURI, aLoadOptions, aHistoryIndex = -1) {
-    const currentType = this.browser.remoteType || E10SUtils.NOT_REMOTE;
-    const remoteType = this.remoteTypeFor(aURI, currentType);
-
-    debug`updateRemoteAndNavigate: uri=${aURI} currentType=${currentType}
-                             remoteType=${remoteType}`;
-
-    if (
-      remoteType !== E10SUtils.NOT_REMOTE &&
-      !GeckoViewSettings.useMultiprocess
-    ) {
-      warn`Tried to create a remote browser in non-multiprocess mode`;
-      return false;
-    }
-
+  // Ensures that session history has been flushed before changing remoteness
+  async prepareToChangeRemoteness() {
     // Session state like history is maintained at the process level so we need
     // to collect it and restore it in the other process when switching.
     // TODO: This should go away when we migrate the history to the main
     // process Bug 1507287.
-    const { history } = await this.getActor("GeckoViewContent").sendQuery(
-      "CollectSessionState"
-    );
+    const { history } = await this.getActor("GeckoViewContent").collectState();
+
     // Ignore scroll and form data since we're navigating away from this page
     // anyway
-    const sessionState = { history };
+    this.sessionState = { history };
+  },
 
-    // If the navigation is from history we don't need to load the page again
-    // so we ignore loadOptions
-    if (aHistoryIndex >= 0) {
-      // Make sure the historyIndex is valid
-      history.index = aHistoryIndex + 1;
-      history.index = Math.max(
-        1,
-        Math.min(history.index, history.entries.length)
-      );
-    } else {
-      sessionState.loadOptions = aLoadOptions;
-    }
+  willChangeBrowserRemoteness() {
+    debug`WillChangeBrowserRemoteness`;
 
-    // Now we're switching the remoteness (value of "remote" attr).
-    const disabledModules = [];
+    // Now we're switching the remoteness.
+    this.disabledModules = [];
     this.forEach(module => {
-      if (module.enabled) {
+      if (module.enabled && module.disableOnProcessSwitch) {
         module.enabled = false;
-        disabledModules.push(module);
+        this.disabledModules.push(module);
       }
     });
 
     this.forEach(module => {
       module.onDestroyBrowser();
     });
+  },
 
-    const parent = this.browser.parentNode;
-    this.browser.remove();
-    if (remoteType) {
-      this.browser.setAttribute("remote", "true");
-      this.browser.setAttribute("remoteType", remoteType);
-    } else {
-      this.browser.setAttribute("remote", "false");
-      this.browser.removeAttribute("remoteType");
-    }
+  didChangeBrowserRemoteness() {
+    debug`DidChangeBrowserRemoteness`;
 
     this.forEach(module => {
       if (module.impl) {
         module.impl.onInitBrowser();
       }
     });
-
-    parent.appendChild(this.browser);
 
     this.messageManager.addMessageListener(
       "GeckoView:ContentModuleLoaded",
@@ -231,16 +195,22 @@ var ModuleManager = {
       module.loadInitFrameScript();
     });
 
-    disabledModules.forEach(module => {
+    this.disabledModules.forEach(module => {
       module.enabled = true;
     });
+    this.disabledModules = null;
+  },
 
-    this.messageManager.sendAsyncMessage(
-      "GeckoView:RestoreState",
-      sessionState
-    );
+  afterBrowserRemotenessChange(aSwitchId) {
+    const { sessionState } = this;
+    this.sessionState = null;
 
+    sessionState.switchId = aSwitchId;
+
+    this.getActor("GeckoViewContent").restoreState(sessionState);
     this.browser.focus();
+
+    // Load was handled
     return true;
   },
 
@@ -258,11 +228,10 @@ var ModuleManager = {
         module.impl.onSettingsUpdate();
       }
     });
+  },
 
-    this._browser.messageManager.sendAsyncMessage(
-      "GeckoView:UpdateSettings",
-      aSettings
-    );
+  onMessageFromActor(aActorName, aMessage) {
+    this._moduleByActorName[aActorName].receiveMessage(aMessage);
   },
 
   onEvent(aEvent, aData, aCallback) {
@@ -336,6 +305,15 @@ class ModuleInfo {
     this._manager = manager;
     this._name = name;
 
+    // We don't support having more than one main process script, so let's
+    // check that we're not accidentally defining two. We could support this if
+    // needed by making _impl an array for each phase impl.
+    if (onInit?.resource !== undefined && onEnable?.resource !== undefined) {
+      throw new Error(
+        "Only one main process script is allowed for each module."
+      );
+    }
+
     this._impl = null;
     this._contentModuleLoaded = false;
     this._enabled = false;
@@ -346,9 +324,26 @@ class ModuleInfo {
     // onInitBrowser() override. However, load content module after initializing
     // browser, because we don't have a message manager before then.
     this._loadResource(onInit);
+    this._loadActors(onInit);
+    if (this._enabledOnInit) {
+      this._loadActors(onEnable);
+    }
 
     this._onInitPhase = onInit;
     this._onEnablePhase = onEnable;
+
+    const actorNames = [];
+    if (this._onInitPhase?.actors) {
+      actorNames.push(Object.keys(this._onInitPhase.actors));
+    }
+    if (this._onEnablePhase?.actors) {
+      actorNames.push(Object.keys(this._onEnablePhase.actors));
+    }
+    this._actorNames = Object.freeze(actorNames);
+  }
+
+  get actorNames() {
+    return this._actorNames;
   }
 
   onInit() {
@@ -377,10 +372,15 @@ class ModuleInfo {
    * Called before the browser is removed
    */
   onDestroyBrowser() {
-    if (this._impl) {
-      this._impl.onDestroyBrowser();
-    }
     this._contentModuleLoaded = false;
+  }
+
+  _loadActors(aPhase) {
+    if (!aPhase || !aPhase.actors) {
+      return;
+    }
+
+    GeckoViewActorManager.addJSWindowActors(aPhase.actors);
   }
 
   /**
@@ -419,6 +419,13 @@ class ModuleInfo {
     return this._manager;
   }
 
+  get disableOnProcessSwitch() {
+    // Only disable while process switching if it has a frameScript
+    return (
+      !!this._onInitPhase?.frameScript || !!this._onEnablePhase?.frameScript
+    );
+  }
+
   get name() {
     return this._name;
   }
@@ -445,30 +452,38 @@ class ModuleInfo {
     if (aEnabled) {
       this._loadResource(this._onEnablePhase);
       this._loadFrameScript(this._onEnablePhase);
+      this._loadActors(this._onEnablePhase);
       if (this._impl) {
         this._impl.onEnable();
         this._impl.onSettingsUpdate();
       }
     }
 
-    this._updateContentModuleState(/* includeSettings */ aEnabled);
+    this._updateContentModuleState();
+  }
+
+  receiveMessage(aMessage) {
+    if (!this._impl) {
+      throw new Error(`No impl for message: ${aMessage.name}.`);
+    }
+
+    this._impl.receiveMessage(aMessage);
   }
 
   onContentModuleLoaded() {
-    this._updateContentModuleState(/* includeSettings */ true);
+    this._updateContentModuleState();
 
     if (this._impl) {
       this._impl.onContentModuleLoaded();
     }
   }
 
-  _updateContentModuleState(aIncludeSettings) {
+  _updateContentModuleState() {
     this._manager.messageManager.sendAsyncMessage(
       "GeckoView:UpdateModuleState",
       {
         module: this._name,
         enabled: this.enabled,
-        settings: aIncludeSettings ? this._manager.settings : null,
       }
     );
   }
@@ -483,18 +498,10 @@ function createBrowser() {
   browser.setAttribute("type", "content");
   browser.setAttribute("primary", "true");
   browser.setAttribute("flex", "1");
-
-  if (GeckoViewSettings.useMultiprocess) {
-    const pointerEventsEnabled = Services.prefs.getBoolPref(
-      "dom.w3c_pointer_events.multiprocess.android.enabled",
-      false
-    );
-    if (pointerEventsEnabled) {
-      Services.prefs.setBoolPref("dom.w3c_pointer_events.enabled", true);
-    }
-    browser.setAttribute("remote", "true");
-    browser.setAttribute("remoteType", E10SUtils.DEFAULT_REMOTE_TYPE);
-  }
+  browser.setAttribute("maychangeremoteness", "true");
+  browser.setAttribute("remote", "true");
+  browser.setAttribute("remoteType", E10SUtils.DEFAULT_REMOTE_TYPE);
+  browser.setAttribute("messagemanagergroup", "browsers");
 
   return browser;
 }
@@ -512,14 +519,45 @@ function startup() {
       name: "GeckoViewContent",
       onInit: {
         resource: "resource://gre/modules/GeckoViewContent.jsm",
-        frameScript: "chrome://geckoview/content/GeckoViewContentChild.js",
+        actors: {
+          GeckoViewContent: {
+            parent: {
+              moduleURI: "resource:///actors/GeckoViewContentParent.jsm",
+            },
+            child: {
+              moduleURI: "resource:///actors/GeckoViewContentChild.jsm",
+              events: {
+                mozcaretstatechanged: { capture: true, mozSystemGroup: true },
+                pageshow: { mozSystemGroup: true },
+              },
+            },
+            allFrames: true,
+          },
+        },
       },
-    },
-    {
-      name: "GeckoViewMedia",
       onEnable: {
-        resource: "resource://gre/modules/GeckoViewMedia.jsm",
-        frameScript: "chrome://geckoview/content/GeckoViewMediaChild.js",
+        actors: {
+          ContentDelegate: {
+            parent: {
+              moduleURI: "resource:///actors/ContentDelegateParent.jsm",
+            },
+            child: {
+              moduleURI: "resource:///actors/ContentDelegateChild.jsm",
+              events: {
+                DOMContentLoaded: {},
+                DOMMetaViewportFitChanged: {},
+                "MozDOMFullscreen:Entered": {},
+                "MozDOMFullscreen:Exit": {},
+                "MozDOMFullscreen:Exited": {},
+                "MozDOMFullscreen:Request": {},
+                MozFirstContentfulPaint: {},
+                MozPaintStatusReset: {},
+                contextmenu: { capture: true },
+              },
+            },
+            allFrames: true,
+          },
+        },
       },
     },
     {
@@ -538,27 +576,67 @@ function startup() {
       name: "GeckoViewProgress",
       onEnable: {
         resource: "resource://gre/modules/GeckoViewProgress.jsm",
-        frameScript: "chrome://geckoview/content/GeckoViewProgressChild.js",
+        actors: {
+          ProgressDelegate: {
+            parent: {
+              moduleURI: "resource:///actors/ProgressDelegateParent.jsm",
+            },
+            child: {
+              moduleURI: "resource:///actors/ProgressDelegateChild.jsm",
+              events: {
+                MozAfterPaint: { capture: false, mozSystemGroup: true },
+                DOMContentLoaded: { capture: false, mozSystemGroup: true },
+                pageshow: { capture: false, mozSystemGroup: true },
+              },
+            },
+          },
+        },
       },
     },
     {
       name: "GeckoViewScroll",
       onEnable: {
-        frameScript: "chrome://geckoview/content/GeckoViewScrollChild.js",
+        actors: {
+          ScrollDelegate: {
+            child: {
+              moduleURI: "resource:///actors/ScrollDelegateChild.jsm",
+              events: {
+                mozvisualscroll: { mozSystemGroup: true },
+              },
+            },
+          },
+        },
       },
     },
     {
       name: "GeckoViewSelectionAction",
       onEnable: {
-        frameScript:
-          "chrome://geckoview/content/GeckoViewSelectionActionChild.js",
+        actors: {
+          SelectionActionDelegate: {
+            child: {
+              moduleURI: "resource:///actors/SelectionActionDelegateChild.jsm",
+              events: {
+                mozcaretstatechanged: { mozSystemGroup: true },
+                pagehide: { capture: true, mozSystemGroup: true },
+                deactivate: { mozSystemGroup: true },
+              },
+            },
+            allFrames: true,
+          },
+        },
       },
     },
     {
       name: "GeckoViewSettings",
       onInit: {
         resource: "resource://gre/modules/GeckoViewSettings.jsm",
-        frameScript: "chrome://geckoview/content/GeckoViewSettingsChild.js",
+        actors: {
+          GeckoViewSettings: {
+            child: {
+              moduleURI: "resource:///actors/GeckoViewSettingsChild.jsm",
+            },
+          },
+        },
       },
     },
     {
@@ -582,13 +660,88 @@ function startup() {
     {
       name: "GeckoViewAutofill",
       onInit: {
-        frameScript: "chrome://geckoview/content/GeckoViewAutofillChild.js",
+        actors: {
+          GeckoViewAutoFill: {
+            child: {
+              moduleURI: "resource:///actors/GeckoViewAutoFillChild.jsm",
+              events: {
+                DOMFormHasPassword: {
+                  mozSystemGroup: true,
+                  capture: false,
+                },
+                DOMInputPasswordAdded: {
+                  mozSystemGroup: true,
+                  capture: false,
+                },
+                pagehide: {
+                  mozSystemGroup: true,
+                  capture: false,
+                },
+                pageshow: {
+                  mozSystemGroup: true,
+                  capture: false,
+                },
+                focusin: {
+                  mozSystemGroup: true,
+                  capture: false,
+                },
+                focusout: {
+                  mozSystemGroup: true,
+                  capture: false,
+                },
+                "PasswordManager:ShowDoorhanger": {},
+              },
+            },
+            allFrames: true,
+          },
+        },
+      },
+    },
+    {
+      name: "GeckoViewMediaControl",
+      onEnable: {
+        resource: "resource://gre/modules/GeckoViewMediaControl.jsm",
+        frameScript: "chrome://geckoview/content/GeckoViewMediaControlChild.js",
+      },
+    },
+    {
+      name: "GeckoViewAutocomplete",
+      onInit: {
+        actors: {
+          FormAutofill: {
+            parent: {
+              moduleURI: "resource://autofill/FormAutofillParent.jsm",
+            },
+            child: {
+              moduleURI: "resource://autofill/FormAutofillChild.jsm",
+              events: {
+                focusin: {},
+                DOMFormBeforeSubmit: {},
+              },
+            },
+            allFrames: true,
+          },
+        },
       },
     },
   ]);
 
-  // TODO: Bug 1569360 Allows actors to temporarely access ModuleManager until
-  // we migrate everything over to actors.
+  if (!Services.appinfo.sessionHistoryInParent) {
+    browser.prepareToChangeRemoteness = () =>
+      ModuleManager.prepareToChangeRemoteness();
+    browser.afterChangeRemoteness = switchId =>
+      ModuleManager.afterBrowserRemotenessChange(switchId);
+  }
+
+  browser.addEventListener("WillChangeBrowserRemoteness", event =>
+    ModuleManager.willChangeBrowserRemoteness()
+  );
+
+  browser.addEventListener("DidChangeBrowserRemoteness", event =>
+    ModuleManager.didChangeBrowserRemoteness()
+  );
+
+  // Allows actors to access ModuleManager.
   window.moduleManager = ModuleManager;
 
   Services.tm.dispatchToMainThread(() => {
@@ -610,6 +763,24 @@ function startup() {
       Services.obs.notifyObservers(window, "extensions-late-startup");
     });
 
+    InitLater(() => {
+      // TODO bug 1730026: this runs too often. It should run once.
+      RemoteSecuritySettings.init();
+    });
+
+    InitLater(() => {
+      // Initialize safe browsing module. This is required for content
+      // blocking features and manages blocklist downloads and updates.
+      SafeBrowsing.init();
+    });
+
+    InitLater(() => {
+      // It's enough to run this once to set up FOG.
+      // (See also bug 1730026.)
+      const FOG = Cc["@mozilla.org/toolkit/glean;1"].createInstance(Ci.nsIFOG);
+      FOG.registerCustomPings();
+    });
+
     // This should always go last, since the idle tasks (except for the ones with
     // timeouts) should execute in order. Note that this observer notification is
     // not guaranteed to fire, since the window could close before we get here.
@@ -623,9 +794,23 @@ function startup() {
         "browser-idle-startup-tasks-finished"
       )
     );
+
+    InitLater(() => {
+      // This lets Marionette and the Remote Agent (used for our CDP and the
+      // upcoming WebDriver BiDi implementation) start listening (when enabled).
+      // Both GeckoView and these two remote protocols do most of their
+      // initialization in "profile-after-change", and there is no order enforced
+      // between them.  Therefore we defer asking both components to startup
+      // until after all "profile-after-change" handlers (including this one)
+      // have completed.
+      Services.obs.notifyObservers(null, "marionette-startup-requested");
+      Services.obs.notifyObservers(null, "remote-startup-requested");
+    });
   });
 
   // Move focus to the content window at the end of startup,
   // so things like text selection can work properly.
   browser.focus();
+
+  InitializationTracker.onInitialized(performance.now());
 }

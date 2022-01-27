@@ -13,9 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { CDPSession } from './Connection';
-import { Viewport } from './PuppeteerViewport';
-import Protocol from '../protocol';
+import { CDPSession } from './Connection.js';
+import { Viewport } from './PuppeteerViewport.js';
+import { Protocol } from 'devtools-protocol';
 
 export class EmulationManager {
   _client: CDPSession;
@@ -31,9 +31,10 @@ export class EmulationManager {
     const width = viewport.width;
     const height = viewport.height;
     const deviceScaleFactor = viewport.deviceScaleFactor || 1;
-    const screenOrientation: Protocol.Emulation.ScreenOrientation = viewport.isLandscape
-      ? { angle: 90, type: 'landscapePrimary' }
-      : { angle: 0, type: 'portraitPrimary' };
+    const screenOrientation: Protocol.Emulation.ScreenOrientation =
+      viewport.isLandscape
+        ? { angle: 90, type: 'landscapePrimary' }
+        : { angle: 0, type: 'portraitPrimary' };
     const hasTouch = viewport.hasTouch || false;
 
     await Promise.all([

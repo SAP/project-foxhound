@@ -4,9 +4,16 @@ import shutil
 
 import pytest
 
-from mozperftest.tests.support import get_running_env, EXAMPLE_XPCSHELL_TEST, temp_file
+from mozperftest.tests.support import (
+    get_running_env,
+    EXAMPLE_XPCSHELL_TEST,
+    temp_file,
+    MOZINFO,
+)
 from mozperftest.environment import TEST, SYSTEM, METRICS
-from mozperftest.test.xpcshell import XPCShellTestError
+from mozperftest.test.xpcshell import XPCShellTestError, NoPerfMetricsError
+from mozperftest import utils
+from mozperftest.test import xpcshell
 
 
 class XPCShellTests:
@@ -43,13 +50,32 @@ class XPCShellTestsFail(XPCShellTests):
         return False
 
 
+class XPCShellTestsNoPerfMetrics:
+    def __init__(self, log):
+        self.log = log
+
+    def runTests(self, args):
+        self.log.suite_start("suite start")
+        self.log.test_start("test start")
+        self.log.process_output("1234", "line", "command")
+        self.log.log_raw({"action": "something"})
+        self.log.log_raw({"action": "log", "message": "message"})
+
+        self.log.test_end("test end")
+        self.log.suite_end("suite end")
+        return True
+
+
+def running_env(**kw):
+    return get_running_env(flavor="xpcshell", xpcshell_mozinfo=MOZINFO, **kw)
+
+
 @mock.patch("runxpcshelltests.XPCShellTests", new=XPCShellTests)
 def test_xpcshell_metrics(*mocked):
-    mach_cmd, metadata, env = get_running_env(flavor="xpcshell")
+    mach_cmd, metadata, env = running_env(tests=[str(EXAMPLE_XPCSHELL_TEST)])
 
     sys = env.layers[SYSTEM]
     xpcshell = env.layers[TEST]
-    env.set_arg("tests", [str(EXAMPLE_XPCSHELL_TEST)])
 
     try:
         with sys as s, xpcshell as x:
@@ -66,29 +92,51 @@ def test_xpcshell_metrics(*mocked):
     assert results[0]["values"] == [1]
 
 
-@mock.patch("runxpcshelltests.XPCShellTests", new=XPCShellTestsFail)
-def test_xpcshell_metrics_fail(*mocked):
-    mach_cmd, metadata, env = get_running_env(flavor="xpcshell")
+def _test_xpcshell_fail(err, *mocked):
+    mach_cmd, metadata, env = running_env(tests=[str(EXAMPLE_XPCSHELL_TEST)])
     sys = env.layers[SYSTEM]
     xpcshell = env.layers[TEST]
-    env.set_arg("tests", [str(EXAMPLE_XPCSHELL_TEST)])
-
     try:
-        with sys as s, xpcshell as x, pytest.raises(XPCShellTestError):
+        with sys as s, xpcshell as x, pytest.raises(err):
             x(s(metadata))
     finally:
         shutil.rmtree(mach_cmd._mach_context.state_dir)
 
 
+@mock.patch("runxpcshelltests.XPCShellTests", new=XPCShellTestsFail)
+def test_xpcshell_metrics_fail(*mocked):
+    return _test_xpcshell_fail(XPCShellTestError, mocked)
+
+
+@mock.patch("runxpcshelltests.XPCShellTests", new=XPCShellTestsNoPerfMetrics)
+def test_xpcshell_no_perfmetrics(*mocked):
+    return _test_xpcshell_fail(NoPerfMetricsError, *mocked)
+
+
 @mock.patch("runxpcshelltests.XPCShellTests", new=XPCShellTests)
 def test_xpcshell_perfherder(*mocked):
-    mach_cmd, metadata, env = get_running_env(
-        flavor="xpcshell", perfherder=True, xpcshell_cycles=10
+    return _test_xpcshell_perfherder(*mocked)
+
+
+@mock.patch("runxpcshelltests.XPCShellTests", new=XPCShellTests)
+def test_xpcshell_perfherder_on_try(*mocked):
+    old = utils.ON_TRY
+    utils.ON_TRY = xpcshell.ON_TRY = not utils.ON_TRY
+
+    try:
+        return _test_xpcshell_perfherder(*mocked)
+    finally:
+        utils.ON_TRY = old
+        xpcshell.ON_TRY = old
+
+
+def _test_xpcshell_perfherder(*mocked):
+    mach_cmd, metadata, env = running_env(
+        perfherder=True, xpcshell_cycles=10, tests=[str(EXAMPLE_XPCSHELL_TEST)]
     )
 
     sys = env.layers[SYSTEM]
     xpcshell = env.layers[TEST]
-    env.set_arg("tests", [str(EXAMPLE_XPCSHELL_TEST)])
     metrics = env.layers[METRICS]
 
     with temp_file() as output:
@@ -105,7 +153,7 @@ def test_xpcshell_perfherder(*mocked):
 
     # Check some metadata
     assert output["application"]["name"] == "firefox"
-    assert output["framework"]["name"] == "xpcshell"
+    assert output["framework"]["name"] == "mozperftest"
 
     # Check some numbers in our data
     assert len(output["suites"]) == 1

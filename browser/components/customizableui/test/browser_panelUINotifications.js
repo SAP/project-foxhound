@@ -128,15 +128,15 @@ add_task(async function testSecondaryActionWorkflow() {
     );
 
     await gCUITestUtils.openMainMenu();
-    isnot(
+    is(
       PanelUI.menuButton.getAttribute("badge-status"),
       "update-manual",
-      "Badge is hidden on PanelUI button."
+      "Badge is displaying on PanelUI button."
     );
     let menuItem = PanelUI.mainView.querySelector(".panel-banner-item");
     is(
-      menuItem.label,
-      menuItem.getAttribute("label-update-manual"),
+      menuItem.getAttribute("data-l10n-id"),
+      "appmenuitem-banner-update-manual",
       "Showing correct label"
     );
     is(menuItem.hidden, false, "update-manual menu item is showing.");
@@ -190,15 +190,15 @@ add_task(async function testDownloadingBadge() {
     );
 
     await gCUITestUtils.openMainMenu();
-    isnot(
+    is(
       PanelUI.menuButton.getAttribute("badge-status"),
       "update-downloading",
-      "Downloading badge is hidden on PanelUI button."
+      "Downloading badge is displaying on PanelUI button."
     );
     let menuItem = PanelUI.mainView.querySelector(".panel-banner-item");
     is(
-      menuItem.label,
-      menuItem.getAttribute("label-update-downloading"),
+      menuItem.getAttribute("data-l10n-id"),
+      "appmenuitem-banner-update-downloading",
       "Showing correct label (downloading)"
     );
     is(menuItem.hidden, false, "update-downloading menu item is showing.");
@@ -226,6 +226,13 @@ add_task(async function testDownloadingBadge() {
  */
 add_task(async function testInteractionWithBadges() {
   await BrowserTestUtils.withNewTab("about:blank", async function(browser) {
+    // Remove the fxa toolbar button from the navbar to ensure the notification
+    // is displayed on the app menu button.
+    let { CustomizableUI } = ChromeUtils.import(
+      "resource:///modules/CustomizableUI.jsm"
+    );
+    CustomizableUI.removeWidgetFromArea("fxa-toolbar-menu-button");
+
     AppMenuNotifications.showBadgeOnlyNotification("fxa-needs-authentication");
     is(
       PanelUI.menuButton.getAttribute("badge-status"),
@@ -287,15 +294,15 @@ add_task(async function testInteractionWithBadges() {
     );
 
     await gCUITestUtils.openMainMenu();
-    isnot(
+    is(
       PanelUI.menuButton.getAttribute("badge-status"),
       "update-manual",
-      "Badge is hidden on PanelUI button."
+      "Badge is displaying on PanelUI button."
     );
     let menuItem = PanelUI.mainView.querySelector(".panel-banner-item");
     is(
-      menuItem.label,
-      menuItem.getAttribute("label-update-manual"),
+      menuItem.getAttribute("data-l10n-id"),
+      "appmenuitem-banner-update-manual",
       "Showing correct label"
     );
     is(menuItem.hidden, false, "update-manual menu item is showing.");
@@ -538,15 +545,15 @@ add_task(async function testMultipleNonBadges() {
     );
 
     await gCUITestUtils.openMainMenu();
-    isnot(
+    is(
       PanelUI.menuButton.getAttribute("badge-status"),
       "update-restart",
-      "update-restart badge is hidden on PanelUI button."
+      "update-restart badge is displaying on PanelUI button."
     );
     let menuItem = PanelUI.mainView.querySelector(".panel-banner-item");
     is(
-      menuItem.label,
-      menuItem.getAttribute("label-update-restart"),
+      menuItem.getAttribute("data-l10n-id"),
+      "appmenuitem-banner-update-restart",
       "Showing correct label"
     );
     is(menuItem.hidden, false, "update-restart menu item is showing.");
@@ -569,14 +576,14 @@ add_task(async function testMultipleNonBadges() {
     );
 
     await gCUITestUtils.openMainMenu();
-    isnot(
+    is(
       PanelUI.menuButton.getAttribute("badge-status"),
       "update-manual",
-      "update-manual badge is hidden on PanelUI button."
+      "update-manual badge is displaying on PanelUI button."
     );
     is(
-      menuItem.label,
-      menuItem.getAttribute("label-update-manual"),
+      menuItem.getAttribute("data-l10n-id"),
+      "appmenuitem-banner-update-manual",
       "Showing correct label"
     );
     is(menuItem.hidden, false, "update-manual menu item is showing.");

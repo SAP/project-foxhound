@@ -13,13 +13,16 @@ const { DevToolsServer } = require("devtools/server/devtools-server");
 const {
   ActorRegistry,
 } = require("devtools/server/actors/utils/actor-registry");
-const { TabSources } = require("devtools/server/actors/utils/TabSources");
+const {
+  SourcesManager,
+} = require("devtools/server/actors/utils/sources-manager");
 const makeDebugger = require("devtools/server/actors/utils/make-debugger");
 const protocol = require("devtools/shared/protocol");
 const {
-  browsingContextTargetSpec,
-} = require("devtools/shared/specs/targets/browsing-context");
+  windowGlobalTargetSpec,
+} = require("devtools/shared/specs/targets/window-global");
 const { tabDescriptorSpec } = require("devtools/shared/specs/descriptors/tab");
+const Targets = require("devtools/server/actors/targets/index");
 
 var gTestGlobals = new Set();
 DevToolsServer.addTestGlobal = function(global) {
@@ -125,10 +128,7 @@ const TestDescriptorActor = protocol.ActorClassWithSpec(tabDescriptorSpec, {
   form() {
     const form = {
       actor: this.actorID,
-      traits: {
-        getFavicon: true,
-        hasTabInfo: true,
-      },
+      traits: {},
       selected: this.selected,
       title: this._targetActor.title,
       url: this._targetActor.url,
@@ -146,7 +146,7 @@ const TestDescriptorActor = protocol.ActorClassWithSpec(tabDescriptorSpec, {
   },
 });
 
-const TestTargetActor = protocol.ActorClassWithSpec(browsingContextTargetSpec, {
+const TestTargetActor = protocol.ActorClassWithSpec(windowGlobalTargetSpec, {
   initialize: function(conn, global) {
     protocol.Actor.prototype.initialize.call(this, conn);
     this.conn = conn;
@@ -154,7 +154,6 @@ const TestTargetActor = protocol.ActorClassWithSpec(browsingContextTargetSpec, {
     this._global.wrappedJSObject = global;
     this.threadActor = new ThreadActor(this, this._global);
     this.conn.addActor(this.threadActor);
-    this._attached = false;
     this._extraActors = {};
     // This is a hack in order to enable threadActor to be accessed from getFront
     this._extraActors.threadActor = this.threadActor;
@@ -165,6 +164,8 @@ const TestTargetActor = protocol.ActorClassWithSpec(browsingContextTargetSpec, {
     this.dbg = this.makeDebugger();
     this.notifyResourceAvailable = this.notifyResourceAvailable.bind(this);
   },
+
+  targetType: Targets.TYPES.FRAME,
 
   get window() {
     return this._global;
@@ -179,15 +180,19 @@ const TestTargetActor = protocol.ActorClassWithSpec(browsingContextTargetSpec, {
     return this._global.__name;
   },
 
-  get sources() {
-    if (!this._sources) {
-      this._sources = new TabSources(this.threadActor);
+  get sourcesManager() {
+    if (!this._sourcesManager) {
+      this._sourcesManager = new SourcesManager(this.threadActor);
     }
-    return this._sources;
+    return this._sourcesManager;
   },
 
   form: function() {
-    const response = { actor: this.actorID, title: this.title };
+    const response = {
+      actor: this.actorID,
+      title: this.title,
+      threadActor: this.threadActor.actorID,
+    };
 
     // Walk over target-scoped actors and add them to a new LazyPool.
     const actorPool = new LazyPool(this.conn);
@@ -204,22 +209,13 @@ const TestTargetActor = protocol.ActorClassWithSpec(browsingContextTargetSpec, {
     return { ...response, ...actors };
   },
 
-  attach: function(request) {
-    this._attached = true;
-
-    return { threadActor: this.threadActor.actorID };
-  },
-
   detach: function(request) {
-    if (!this._attached) {
-      return { error: "wrongState" };
-    }
-    this.threadActor.exit();
+    this.threadActor.destroy();
     return { type: "detached" };
   },
 
   reload: function(request) {
-    this.sources.reset();
+    this.sourcesManager.reset();
     this.threadActor.clearDebuggees();
     this.threadActor.dbg.addDebuggees();
     return {};

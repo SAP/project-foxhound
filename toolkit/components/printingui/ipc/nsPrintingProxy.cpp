@@ -10,6 +10,7 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/layout/RemotePrintJobChild.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/Unused.h"
 #include "nsIDocShell.h"
 #include "nsIPrintingPromptService.h"
@@ -90,6 +91,12 @@ nsPrintingProxy::ShowPrintDialog(mozIDOMWindowProxy* parent,
   rv = printSettingsSvc->SerializeToPrintData(printSettings, &inSettings);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  nsCOMPtr<nsIPrintSession> session;
+  rv = printSettings->GetPrintSession(getter_AddRefs(session));
+  if (NS_SUCCEEDED(rv) && session) {
+    inSettings.remotePrintJobChild() = session->GetRemotePrintJob();
+  }
+
   // Now, the waiting game. The parent process should be showing
   // the printing dialog soon. In the meantime, we need to spin a
   // nested event loop while we wait for the results of the dialog
@@ -100,7 +107,8 @@ nsPrintingProxy::ShowPrintDialog(mozIDOMWindowProxy* parent,
 
   mozilla::Unused << SendShowPrintDialog(dialog, pBrowser, inSettings);
 
-  SpinEventLoopUntil([&, dialog]() { return dialog->returned(); });
+  SpinEventLoopUntil("printingui:nsPrintingProxy::ShowPrintDialog"_ns,
+                     [&, dialog]() { return dialog->returned(); });
 
   rv = dialog->result();
   NS_ENSURE_SUCCESS(rv, rv);
@@ -218,15 +226,8 @@ bool nsPrintingProxy::DeallocPPrintSettingsDialogChild(
   return true;
 }
 
-PRemotePrintJobChild* nsPrintingProxy::AllocPRemotePrintJobChild() {
+already_AddRefed<PRemotePrintJobChild>
+nsPrintingProxy::AllocPRemotePrintJobChild() {
   RefPtr<RemotePrintJobChild> remotePrintJob = new RemotePrintJobChild();
-  return remotePrintJob.forget().take();
-}
-
-bool nsPrintingProxy::DeallocPRemotePrintJobChild(
-    PRemotePrintJobChild* aDoomed) {
-  RemotePrintJobChild* remotePrintJob =
-      static_cast<RemotePrintJobChild*>(aDoomed);
-  NS_RELEASE(remotePrintJob);
-  return true;
+  return remotePrintJob.forget();
 }

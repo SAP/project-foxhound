@@ -12,6 +12,15 @@
 namespace js {
 namespace jit {
 
+// Used to track trial inlining status for a Baseline IC.
+// See also setTrialInliningState below.
+enum class TrialInliningState : uint8_t {
+  Initial = 0,
+  Candidate,
+  Inlined,
+  Failure,
+};
+
 // ICState stores information about a Baseline or Ion IC.
 class ICState {
  public:
@@ -26,7 +35,10 @@ class ICState {
   enum class Mode : uint8_t { Specialized = 0, Megamorphic, Generic };
 
  private:
-  uint32_t mode_ : 2;
+  uint8_t mode_ : 2;
+
+  // The TrialInliningState for a Baseline IC.
+  uint8_t trialInliningState_ : 2;
 
   // Whether WarpOracle created a snapshot based on stubs attached to this
   // Baseline IC.
@@ -66,6 +78,9 @@ class ICState {
   Mode mode() const { return Mode(mode_); }
   size_t numOptimizedStubs() const { return numOptimizedStubs_; }
   bool hasFailures() const { return (numFailures_ != 0); }
+  bool newStubIsFirstStub() const {
+    return (mode() == Mode::Specialized && numOptimizedStubs() == 0);
+  }
 
   MOZ_ALWAYS_INLINE bool canAttachStub() const {
     // Note: we cannot assert that numOptimizedStubs_ <= MaxOptimizedStubs
@@ -79,7 +94,7 @@ class ICState {
 
   // If this returns true, we transitioned to a new mode and the caller
   // should discard all stubs.
-  MOZ_MUST_USE MOZ_ALWAYS_INLINE bool maybeTransition() {
+  [[nodiscard]] MOZ_ALWAYS_INLINE bool maybeTransition() {
     // Note: we cannot assert that numOptimizedStubs_ <= MaxOptimizedStubs
     // because old-style baseline ICs may attach more stubs than
     // MaxOptimizedStubs allows.
@@ -98,8 +113,15 @@ class ICState {
     transition(Mode::Megamorphic);
     return true;
   }
+
   void reset() {
     setMode(Mode::Specialized);
+#ifdef DEBUG
+    if (JitOptions.forceMegamorphicICs) {
+      setMode(Mode::Megamorphic);
+    }
+#endif
+    trialInliningState_ = uint32_t(TrialInliningState::Initial);
     usedByTranspiler_ = false;
     numOptimizedStubs_ = 0;
     numFailures_ = 0;
@@ -132,6 +154,39 @@ class ICState {
   void clearUsedByTranspiler() { usedByTranspiler_ = false; }
   void setUsedByTranspiler() { usedByTranspiler_ = true; }
   bool usedByTranspiler() const { return usedByTranspiler_; }
+
+  TrialInliningState trialInliningState() const {
+    return TrialInliningState(trialInliningState_);
+  }
+  void setTrialInliningState(TrialInliningState state) {
+#ifdef DEBUG
+    // Moving to the Failure state is always valid. The other states should
+    // happen in this order:
+    //
+    //   Initial -> Candidate -> Inlined
+    //
+    // This ensures we perform trial inlining at most once per IC site.
+    if (state != TrialInliningState::Failure) {
+      switch (trialInliningState()) {
+        case TrialInliningState::Initial:
+          MOZ_ASSERT(state == TrialInliningState::Candidate);
+          break;
+        case TrialInliningState::Candidate:
+          MOZ_ASSERT(state == TrialInliningState::Candidate ||
+                     state == TrialInliningState::Inlined);
+          break;
+        case TrialInliningState::Inlined:
+        case TrialInliningState::Failure:
+          MOZ_CRASH("Inlined and Failure can only change to Failure");
+          break;
+      }
+    }
+#endif
+
+    trialInliningState_ = uint32_t(state);
+    MOZ_ASSERT(trialInliningState() == state,
+               "TrialInliningState must fit in bitfield");
+  }
 };
 
 }  // namespace jit

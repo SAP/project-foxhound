@@ -7,54 +7,51 @@
 #include "ChromeUtils.h"
 
 #include "js/CharacterEncoding.h"
+#include "js/Object.h"              // JS::GetClass
+#include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_DefinePropertyById, JS_Enumerate, JS_GetProperty, JS_GetPropertyById, JS_SetProperty, JS_SetPropertyById
+#include "js/PropertyDescriptor.h"  // JS::PropertyDescriptor, JS_GetOwnPropertyDescriptorById
 #include "js/SavedFrameAPI.h"
 #include "jsfriendapi.h"
 #include "WrapperFactory.h"
 
 #include "mozilla/Base64.h"
-#include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
+#include "mozilla/EventStateManager.h"
 #include "mozilla/IntentionalCrash.h"
 #include "mozilla/PerformanceMetricsCollector.h"
 #include "mozilla/PerfStats.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProcInfo.h"
-#include "mozilla/RDDProcessManager.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/ScrollingMetrics.h"
+#include "mozilla/SharedStyleSheetCache.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/IdleDeadline.h"
 #include "mozilla/dom/InProcessParent.h"
-#include "mozilla/dom/InProcessChild.h"
 #include "mozilla/dom/JSActorService.h"
-#include "mozilla/dom/MediaControlUtils.h"
-#include "mozilla/dom/MediaControlService.h"
-#include "mozilla/dom/MediaMetadata.h"
 #include "mozilla/dom/MediaSessionBinding.h"
+#include "mozilla/dom/PBrowserParent.h"
 #include "mozilla/dom/Performance.h"
+#include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/Record.h"
 #include "mozilla/dom/ReportingHeader.h"
 #include "mozilla/dom/UnionTypes.h"
 #include "mozilla/dom/WindowBinding.h"  // For IdleRequestCallback/Options
+#include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
-#include "mozilla/net/SocketProcessHost.h"
 #include "IOActivityMonitor.h"
-#include "nsIOService.h"
 #include "nsThreadUtils.h"
 #include "mozJSComponentLoader.h"
-#include "GeckoProfiler.h"
-#ifdef MOZ_GECKO_PROFILER
-#  include "ProfilerMarkerPayload.h"
-#endif
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "nsIException.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /* static */
 void ChromeUtils::NondeterministicGetWeakMapKeys(
@@ -194,19 +191,60 @@ void ChromeUtils::ReleaseAssert(GlobalObject& aGlobal, bool aCondition,
 /* static */
 void ChromeUtils::AddProfilerMarker(
     GlobalObject& aGlobal, const nsACString& aName,
-    const Optional<DOMHighResTimeStamp>& aStartTime,
+    const ProfilerMarkerOptionsOrDouble& aOptions,
     const Optional<nsACString>& aText) {
-#ifdef MOZ_GECKO_PROFILER
-  const nsCString& name = PromiseFlatCString(aName);
-
-  if (!aText.WasPassed() && !aStartTime.WasPassed()) {
-    profiler_add_js_marker(name.get());
+  if (!profiler_thread_is_being_profiled_for_markers()) {
     return;
   }
 
-  TimeStamp now = mozilla::TimeStamp::NowUnfuzzed();
-  TimeStamp startTime = now;
-  if (aStartTime.WasPassed()) {
+  MarkerOptions options;
+
+  MarkerCategory category = ::geckoprofiler::category::JS;
+
+  DOMHighResTimeStamp startTime = 0;
+  uint64_t innerWindowId = 0;
+  if (aOptions.IsDouble()) {
+    startTime = aOptions.GetAsDouble();
+  } else {
+    const ProfilerMarkerOptions& opt = aOptions.GetAsProfilerMarkerOptions();
+    startTime = opt.mStartTime;
+    innerWindowId = opt.mInnerWindowId;
+
+    if (opt.mCaptureStack) {
+      // If we will be capturing a stack, change the category of the
+      // ChromeUtils.addProfilerMarker label automatically added by the webidl
+      // binding from DOM to PROFILER so that this function doesn't appear in
+      // the marker stack.
+      JSContext* cx = aGlobal.Context();
+      ProfilingStack* stack = js::GetContextProfilingStackIfEnabled(cx);
+      if (MOZ_LIKELY(stack)) {
+        uint32_t sp = stack->stackPointer;
+        if (MOZ_LIKELY(sp > 0)) {
+          js::ProfilingStackFrame& frame = stack->frames[sp - 1];
+          if (frame.isLabelFrame() && "ChromeUtils"_ns.Equals(frame.label()) &&
+              "addProfilerMarker"_ns.Equals(frame.dynamicString())) {
+            frame.setLabelCategory(JS::ProfilingCategoryPair::PROFILER);
+          }
+        }
+      }
+
+      options.Set(MarkerStack::Capture());
+    }
+#define BEGIN_CATEGORY(name, labelAsString, color) \
+  if (opt.mCategory.Equals(labelAsString)) {       \
+    category = ::geckoprofiler::category::name;    \
+  } else
+#define SUBCATEGORY(supercategory, name, labelAsString)
+#define END_CATEGORY
+    MOZ_PROFILING_CATEGORY_LIST(BEGIN_CATEGORY, SUBCATEGORY, END_CATEGORY)
+#undef BEGIN_CATEGORY
+#undef SUBCATEGORY
+#undef END_CATEGORY
+    {
+      category = ::geckoprofiler::category::OTHER;
+    }
+  }
+  if (startTime) {
     RefPtr<Performance> performance;
 
     if (NS_IsMainThread()) {
@@ -224,22 +262,32 @@ void ChromeUtils::AddProfilerMarker(
     }
 
     if (performance) {
-      startTime = performance->CreationTimeStamp() +
-                  TimeDuration::FromMilliseconds(aStartTime.Value());
+      options.Set(MarkerTiming::IntervalUntilNowFrom(
+          performance->CreationTimeStamp() +
+          TimeDuration::FromMilliseconds(startTime)));
     } else {
-      startTime = TimeStamp::ProcessCreation() +
-                  TimeDuration::FromMilliseconds(aStartTime.Value());
+      options.Set(MarkerTiming::IntervalUntilNowFrom(
+          TimeStamp::ProcessCreation() +
+          TimeDuration::FromMilliseconds(startTime)));
     }
   }
 
-  if (aText.WasPassed()) {
-    profiler_add_text_marker(name.get(), aText.Value(),
-                             JS::ProfilingCategoryPair::JS, startTime, now);
+  if (innerWindowId) {
+    options.Set(MarkerInnerWindowId(innerWindowId));
   } else {
-    profiler_add_marker(name.get(), JS::ProfilingCategoryPair::JS,
-                        TimingMarkerPayload(startTime, now));
+    options.Set(MarkerInnerWindowIdFromJSContext(aGlobal.Context()));
   }
-#endif
+
+  {
+    AUTO_PROFILER_STATS(ChromeUtils_AddProfilerMarker);
+    if (aText.WasPassed()) {
+      profiler_add_marker(aName, category, std::move(options),
+                          ::geckoprofiler::markers::TextMarker{},
+                          aText.Value());
+    } else {
+      profiler_add_marker(aName, category, std::move(options));
+    }
+  }
 }
 
 /* static */
@@ -279,8 +327,7 @@ void ChromeUtils::GetClassName(GlobalObject& aGlobal, JS::HandleObject aObj,
     obj = js::UncheckedUnwrap(obj, /* stopAtWindowProxy = */ false);
   }
 
-  aRetval =
-      NS_ConvertUTF8toUTF16(nsDependentCString(js::GetObjectClass(obj)->name));
+  aRetval = NS_ConvertUTF8toUTF16(nsDependentCString(JS::GetClass(obj)->name));
 }
 
 /* static */
@@ -318,18 +365,18 @@ void ChromeUtils::ShallowClone(GlobalObject& aGlobal, JS::HandleObject aObj,
       return;
     }
 
-    JS::Rooted<JS::PropertyDescriptor> desc(cx);
+    JS::Rooted<Maybe<JS::PropertyDescriptor>> desc(cx);
     JS::RootedId id(cx);
     for (jsid idVal : ids) {
       id = idVal;
       if (!JS_GetOwnPropertyDescriptorById(cx, obj, id, &desc)) {
         continue;
       }
-      if (desc.setter() || desc.getter()) {
+      if (desc.isNothing() || desc->isAccessorDescriptor()) {
         continue;
       }
       valuesIds.infallibleAppend(id);
-      values.infallibleAppend(desc.value());
+      values.infallibleAppend(desc->value());
     }
   }
 
@@ -635,9 +682,8 @@ static bool DefineGetter(JSContext* aCx, JS::Handle<JSObject*> aTarget,
 
   js::SetFunctionNativeReserved(getter, SLOT_URI, uri);
 
-  return JS_DefinePropertyById(
-      aCx, aTarget, id, getter, setter,
-      JSPROP_GETTER | JSPROP_SETTER | JSPROP_ENUMERATE);
+  return JS_DefinePropertyById(aCx, aTarget, id, getter, setter,
+                               JSPROP_ENUMERATE);
 }
 }  // namespace module_getter
 
@@ -685,6 +731,19 @@ void ChromeUtils::CreateOriginAttributesFromOrigin(
 }
 
 /* static */
+void ChromeUtils::CreateOriginAttributesFromOriginSuffix(
+    dom::GlobalObject& aGlobal, const nsAString& aSuffix,
+    dom::OriginAttributesDictionary& aAttrs, ErrorResult& aRv) {
+  OriginAttributes attrs;
+  nsAutoCString suffix;
+  if (!attrs.PopulateFromSuffix(NS_ConvertUTF16toUTF8(aSuffix))) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+  aAttrs = attrs;
+}
+
+/* static */
 void ChromeUtils::FillNonDefaultOriginAttributes(
     dom::GlobalObject& aGlobal, const dom::OriginAttributesDictionary& aAttrs,
     dom::OriginAttributesDictionary& aNewAttrs) {
@@ -703,6 +762,44 @@ bool ChromeUtils::IsOriginAttributesEqual(
     const dom::OriginAttributesDictionary& aA,
     const dom::OriginAttributesDictionary& aB) {
   return aA == aB;
+}
+
+/* static */
+void ChromeUtils::GetBaseDomainFromPartitionKey(dom::GlobalObject& aGlobal,
+                                                const nsAString& aPartitionKey,
+                                                nsAString& aBaseDomain,
+                                                ErrorResult& aRv) {
+  nsString scheme;
+  nsString pkBaseDomain;
+  int32_t port;
+
+  if (!mozilla::OriginAttributes::ParsePartitionKey(aPartitionKey, scheme,
+                                                    pkBaseDomain, port)) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+
+  aBaseDomain = pkBaseDomain;
+}
+
+/* static */
+void ChromeUtils::GetPartitionKeyFromURL(dom::GlobalObject& aGlobal,
+                                         const nsAString& aURL,
+                                         nsAString& aPartitionKey,
+                                         ErrorResult& aRv) {
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), aURL);
+
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aPartitionKey.Truncate();
+    aRv.Throw(rv);
+    return;
+  }
+
+  mozilla::OriginAttributes attrs;
+  attrs.SetPartitionKey(uri);
+
+  aPartitionKey = attrs.mPartitionKey;
 }
 
 #ifdef NIGHTLY_BUILD
@@ -730,6 +827,20 @@ void ChromeUtils::ClearRecentJSDevError(GlobalObject&) {
 }
 #endif  // NIGHTLY_BUILD
 
+void ChromeUtils::ClearStyleSheetCacheByPrincipal(GlobalObject&,
+                                                  nsIPrincipal* aForPrincipal) {
+  SharedStyleSheetCache::Clear(aForPrincipal);
+}
+
+void ChromeUtils::ClearStyleSheetCacheByBaseDomain(
+    GlobalObject&, const nsACString& aBaseDomain) {
+  SharedStyleSheetCache::Clear(nullptr, &aBaseDomain);
+}
+
+void ChromeUtils::ClearStyleSheetCache(GlobalObject&) {
+  SharedStyleSheetCache::Clear();
+}
+
 #define PROCTYPE_TO_WEBIDL_CASE(_procType, _webidl) \
   case mozilla::ProcType::_procType:                \
     return WebIDLProcType::_webidl
@@ -741,6 +852,8 @@ static WebIDLProcType ProcTypeToWebIDL(mozilla::ProcType aType) {
       "In order for this static cast to be okay, "
       "WebIDLProcType must match ProcType exactly");
 
+  // These must match the similar ones in E10SUtils.jsm, RemoteTypes.h,
+  // ProcInfo.h and ChromeUtils.webidl
   switch (aType) {
     PROCTYPE_TO_WEBIDL_CASE(Web, Web);
     PROCTYPE_TO_WEBIDL_CASE(WebIsolated, WebIsolated);
@@ -749,9 +862,9 @@ static WebIDLProcType ProcTypeToWebIDL(mozilla::ProcType aType) {
     PROCTYPE_TO_WEBIDL_CASE(PrivilegedAbout, Privilegedabout);
     PROCTYPE_TO_WEBIDL_CASE(PrivilegedMozilla, Privilegedmozilla);
     PROCTYPE_TO_WEBIDL_CASE(WebCOOPCOEP, WithCoopCoep);
+    PROCTYPE_TO_WEBIDL_CASE(WebServiceWorker, WebServiceWorker);
     PROCTYPE_TO_WEBIDL_CASE(WebLargeAllocation, WebLargeAllocation);
     PROCTYPE_TO_WEBIDL_CASE(Browser, Browser);
-    PROCTYPE_TO_WEBIDL_CASE(Plugin, Plugin);
     PROCTYPE_TO_WEBIDL_CASE(IPDLUnitTest, IpdlUnitTest);
     PROCTYPE_TO_WEBIDL_CASE(GMPlugin, GmpPlugin);
     PROCTYPE_TO_WEBIDL_CASE(GPU, Gpu);
@@ -812,85 +925,28 @@ already_AddRefed<Promise> ChromeUtils::RequestProcInfo(GlobalObject& aGlobal,
   requests.EmplaceBack(
       /* aPid = */ base::GetCurrentProcId(),
       /* aProcessType = */ ProcType::Browser,
-      /* aOrigin = */ ""_ns);
+      /* aOrigin = */ ""_ns,
+      /* aWindowInfo = */ nsTArray<WindowInfo>());
 
+  // First handle non-ContentParent processes.
   mozilla::ipc::GeckoChildProcessHost::GetAll(
-      [&requests,
-       &contentParents](mozilla::ipc::GeckoChildProcessHost* aGeckoProcess) {
+      [&requests](mozilla::ipc::GeckoChildProcessHost* aGeckoProcess) {
         auto handle = aGeckoProcess->GetChildProcessHandle();
         if (!handle) {
           // Something went wrong with this process, it may be dead already,
           // fail gracefully.
           return;
         }
-        nsAutoCString origin;
         base::ProcessId childPid = base::GetProcId(handle);
-        int32_t childId = 0;
         mozilla::ProcType type = mozilla::ProcType::Unknown;
+
         switch (aGeckoProcess->GetProcessType()) {
           case GeckoProcessType::GeckoProcessType_Content: {
-            ContentParent* contentParent = nullptr;
-            // This loop can become slow as we get more processes in
-            // Fission, so might need some refactoring in the future.
-            for (ContentParent* parent : contentParents) {
-              // find the match
-              if (parent->Process() == aGeckoProcess) {
-                contentParent = parent;
-                break;
-              }
-            }
-            if (!contentParent) {
-              // FIXME: When can this happen?
-              return;
-            }
-            // Converting the remoteType into a ProcType.
-            // Ideally, the remoteType should be strongly typed
-            // upstream, this would make the conversion less brittle.
-            nsAutoCString remoteType(contentParent->GetRemoteType());
-            if (StringBeginsWith(remoteType, FISSION_WEB_REMOTE_TYPE)) {
-              // WARNING: Do not change the order, as
-              // `DEFAULT_REMOTE_TYPE` is a prefix of both
-              // 'FISSION_WEB_REMOTE_TYPE' and
-              // `WITH_COOP_COEP_REMOTE_TYPE_PREFIX`.
-              type = mozilla::ProcType::WebIsolated;
-            } else if (StringBeginsWith(remoteType,
-                                        WITH_COOP_COEP_REMOTE_TYPE_PREFIX)) {
-              type = mozilla::ProcType::WebCOOPCOEP;
-            } else if (StringBeginsWith(remoteType, DEFAULT_REMOTE_TYPE)) {
-              type = mozilla::ProcType::Web;
-            } else if (remoteType == FILE_REMOTE_TYPE) {
-              type = mozilla::ProcType::File;
-            } else if (remoteType == EXTENSION_REMOTE_TYPE) {
-              type = mozilla::ProcType::Extension;
-            } else if (remoteType == PRIVILEGEDABOUT_REMOTE_TYPE) {
-              type = mozilla::ProcType::PrivilegedAbout;
-            } else if (remoteType == PRIVILEGEDMOZILLA_REMOTE_TYPE) {
-              type = mozilla::ProcType::PrivilegedMozilla;
-            } else if (remoteType == LARGE_ALLOCATION_REMOTE_TYPE) {
-              type = mozilla::ProcType::WebLargeAllocation;
-            } else if (remoteType == PREALLOC_REMOTE_TYPE) {
-              type = mozilla::ProcType::Preallocated;
-            } else {
-              MOZ_CRASH_UNSAFE_PRINTF("Unknown remoteType '%s'",
-                                      remoteType.get());
-            }
-
-            // By convention, everything after '=' is the origin.
-            nsACString::const_iterator cursor;
-            nsACString::const_iterator end;
-            remoteType.BeginReading(cursor);
-            remoteType.EndReading(end);
-            if (FindCharInReadable('=', cursor, end)) {
-              origin = Substring(++cursor, end);
-            }
-            childId = contentParent->ChildID();
-            break;
+            // These processes are handled separately.
+            return;
           }
           case GeckoProcessType::GeckoProcessType_Default:
             type = mozilla::ProcType::Browser;
-            break;
-          case GeckoProcessType::GeckoProcessType_Plugin:
-            type = mozilla::ProcType::Plugin;
             break;
           case GeckoProcessType::GeckoProcessType_GMPlugin:
             type = mozilla::ProcType::GMPlugin;
@@ -919,18 +975,123 @@ already_AddRefed<Promise> ChromeUtils::RequestProcInfo(GlobalObject& aGlobal,
             // Leave the default Unknown value in |type|.
             break;
         }
-
         requests.EmplaceBack(
             /* aPid = */ childPid,
             /* aProcessType = */ type,
-            /* aOrigin = */ origin,
-            /* aChild = */ childId
+            /* aOrigin = */ ""_ns,
+            /* aWindowInfo = */ nsTArray<WindowInfo>(),  // Without a
+                                                         // ContentProcess, no
+                                                         // DOM windows.
+            /* aChild = */ 0  // Without a ContentProcess, no ChildId.
 #ifdef XP_MACOSX
             ,
             /* aChildTask = */ aGeckoProcess->GetChildTask()
 #endif  // XP_MACOSX
         );
       });
+
+  // Now handle ContentParents.
+  for (const auto* contentParent : contentParents) {
+    if (!contentParent || !contentParent->Process()) {
+      // Presumably, the process is dead or dying.
+      continue;
+    }
+    auto handle = contentParent->Process()->GetChildProcessHandle();
+    if (!handle) {
+      // Presumably, the process is dead or dying.
+      continue;
+    }
+    if (contentParent->Process()->GetProcessType() !=
+        GeckoProcessType::GeckoProcessType_Content) {
+      // We're probably racing against a process changing type.
+      // We'll get it in the next call, skip it for the moment.
+      continue;
+    }
+
+    // Since this code is executed synchronously on the main thread,
+    // processes cannot die while we're in this loop.
+    mozilla::ProcType type = mozilla::ProcType::Unknown;
+
+    // Convert the remoteType into a ProcType.
+    // Ideally, the remoteType should be strongly typed
+    // upstream, this would make the conversion less brittle.
+    const nsAutoCString remoteType(contentParent->GetRemoteType());
+    if (StringBeginsWith(remoteType, FISSION_WEB_REMOTE_TYPE)) {
+      // WARNING: Do not change the order, as
+      // `DEFAULT_REMOTE_TYPE` is a prefix of
+      // `FISSION_WEB_REMOTE_TYPE`.
+      type = mozilla::ProcType::WebIsolated;
+    } else if (StringBeginsWith(remoteType, SERVICEWORKER_REMOTE_TYPE)) {
+      type = mozilla::ProcType::WebServiceWorker;
+    } else if (StringBeginsWith(remoteType,
+                                WITH_COOP_COEP_REMOTE_TYPE_PREFIX)) {
+      type = mozilla::ProcType::WebCOOPCOEP;
+    } else if (remoteType == FILE_REMOTE_TYPE) {
+      type = mozilla::ProcType::File;
+    } else if (remoteType == EXTENSION_REMOTE_TYPE) {
+      type = mozilla::ProcType::Extension;
+    } else if (remoteType == PRIVILEGEDABOUT_REMOTE_TYPE) {
+      type = mozilla::ProcType::PrivilegedAbout;
+    } else if (remoteType == PRIVILEGEDMOZILLA_REMOTE_TYPE) {
+      type = mozilla::ProcType::PrivilegedMozilla;
+    } else if (remoteType == LARGE_ALLOCATION_REMOTE_TYPE) {
+      type = mozilla::ProcType::WebLargeAllocation;
+    } else if (remoteType == PREALLOC_REMOTE_TYPE) {
+      type = mozilla::ProcType::Preallocated;
+    } else if (StringBeginsWith(remoteType, DEFAULT_REMOTE_TYPE)) {
+      type = mozilla::ProcType::Web;
+    } else {
+      MOZ_CRASH_UNSAFE_PRINTF("Unknown remoteType '%s'", remoteType.get());
+    }
+
+    // By convention, everything after '=' is the origin.
+    nsAutoCString origin;
+    nsACString::const_iterator cursor;
+    nsACString::const_iterator end;
+    remoteType.BeginReading(cursor);
+    remoteType.EndReading(end);
+    if (FindCharInReadable('=', cursor, end)) {
+      origin = Substring(++cursor, end);
+    }
+
+    // Attach DOM window information to the process.
+    nsTArray<WindowInfo> windows;
+    for (const auto& browserParentWrapperKey :
+         contentParent->ManagedPBrowserParent()) {
+      for (const auto& windowGlobalParentWrapperKey :
+           browserParentWrapperKey->ManagedPWindowGlobalParent()) {
+        // WindowGlobalParent is the only immediate subclass of
+        // PWindowGlobalParent.
+        auto* windowGlobalParent =
+            static_cast<WindowGlobalParent*>(windowGlobalParentWrapperKey);
+
+        nsString documentTitle;
+        windowGlobalParent->GetDocumentTitle(documentTitle);
+        WindowInfo* window = windows.EmplaceBack(
+            fallible,
+            /* aOuterWindowId = */ windowGlobalParent->OuterWindowId(),
+            /* aDocumentURI = */ windowGlobalParent->GetDocumentURI(),
+            /* aDocumentTitle = */ std::move(documentTitle),
+            /* aIsProcessRoot = */ windowGlobalParent->IsProcessRoot(),
+            /* aIsInProcess = */ windowGlobalParent->IsInProcess());
+        if (!window) {
+          aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+          return nullptr;
+        }
+      }
+    }
+    requests.EmplaceBack(
+        /* aPid = */ base::GetProcId(handle),
+        /* aProcessType = */ type,
+        /* aOrigin = */ origin,
+        /* aWindowInfo = */ std::move(windows),
+        /* aChild = */ contentParent->ChildID()
+#ifdef XP_MACOSX
+            ,
+        /* aChildTask = */ contentParent->Process()->GetChildTask()
+#endif  // XP_MACOSX
+    );
+  }
 
   // Now place background request.
   RefPtr<nsISerialEventTarget> target =
@@ -978,6 +1139,19 @@ already_AddRefed<Promise> ChromeUtils::RequestProcInfo(GlobalObject& aGlobal,
                 childInfo->mChildID = sysProcInfo.childId;
                 childInfo->mOrigin = sysProcInfo.origin;
                 childInfo->mType = ProcTypeToWebIDL(sysProcInfo.type);
+
+                for (const auto& source : sysProcInfo.windows) {
+                  auto* dest = childInfo->mWindows.AppendElement(fallible);
+                  if (!dest) {
+                    domPromise->MaybeReject(NS_ERROR_OUT_OF_MEMORY);
+                    return;
+                  }
+                  dest->mOuterWindowId = source.outerWindowId;
+                  dest->mDocumentURI = source.documentURI;
+                  dest->mDocumentTitle = source.documentTitle;
+                  dest->mIsProcessRoot = source.isProcessRoot;
+                  dest->mIsInProcess = source.isInProcess;
+                }
               }
             }
 
@@ -1200,11 +1374,6 @@ PopupBlockerState ChromeUtils::GetPopupControlState(GlobalObject& aGlobal) {
 }
 
 /* static */
-bool ChromeUtils::IsPopupTokenUnused(GlobalObject& aGlobal) {
-  return PopupBlocker::IsPopupOpeningTokenUnused();
-}
-
-/* static */
 double ChromeUtils::LastExternalProtocolIframeAllowed(GlobalObject& aGlobal) {
   TimeStamp when = PopupBlocker::WhenLastExternalProtocolIframeAllowed();
   if (when.IsNull()) {
@@ -1279,20 +1448,8 @@ void ChromeUtils::PrivateNoteIntentionalCrash(const GlobalObject& aGlobal,
 }
 
 /* static */
-void ChromeUtils::GenerateMediaControlKey(const GlobalObject& aGlobal,
-                                          MediaControlKey aKey) {
-  RefPtr<MediaControlService> service = MediaControlService::GetService();
-  if (service) {
-    service->GenerateTestMediaControlKey(aKey);
-  }
-}
-
-/* static */
 nsIDOMProcessChild* ChromeUtils::GetDomProcessChild(const GlobalObject&) {
-  if (XRE_IsParentProcess()) {
-    return InProcessChild::Singleton();
-  }
-  return ContentChild::GetSingleton();
+  return nsIDOMProcessChild::GetSingleton();
 }
 
 /* static */
@@ -1315,43 +1472,43 @@ void ChromeUtils::GetAllDOMProcesses(
 }
 
 /* static */
-void ChromeUtils::GetCurrentActiveMediaMetadata(const GlobalObject& aGlobal,
-                                                MediaMetadataInit& aMetadata) {
-  if (RefPtr<MediaControlService> service = MediaControlService::GetService()) {
-    MediaMetadataBase metadata = service->GetMainControllerMediaMetadata();
-    aMetadata.mTitle = metadata.mTitle;
-    aMetadata.mArtist = metadata.mArtist;
-    aMetadata.mAlbum = metadata.mAlbum;
-    for (const auto& artwork : metadata.mArtwork) {
-      // If OOM happens resulting in not able to append the element, then we
-      // would get incorrect result and fail on test, so we don't need to throw
-      // an error explicitly.
-      if (MediaImage* image = aMetadata.mArtwork.AppendElement(fallible)) {
-        image->mSrc = artwork.mSrc;
-        image->mSizes = artwork.mSizes;
-        image->mType = artwork.mType;
-      }
-    }
+void ChromeUtils::ConsumeInteractionData(
+    GlobalObject& aGlobal, Record<nsString, InteractionData>& aInteractions,
+    ErrorResult& aRv) {
+  if (!XRE_IsParentProcess()) {
+    aRv.ThrowNotAllowedError(
+        "consumeInteractionData() may only be called in the parent "
+        "process");
+    return;
   }
+  EventStateManager::ConsumeInteractionData(aInteractions);
 }
 
-/* static */
-MediaSessionPlaybackTestState ChromeUtils::GetCurrentMediaSessionPlaybackState(
-    GlobalObject& aGlobal) {
-  static_assert(int(MediaSessionPlaybackState::None) ==
-                    int(MediaSessionPlaybackTestState::Stopped) &&
-                int(MediaSessionPlaybackState::Paused) ==
-                    int(MediaSessionPlaybackTestState::Paused) &&
-                int(MediaSessionPlaybackState::Playing) ==
-                    int(MediaSessionPlaybackTestState::Playing) &&
-                MediaSessionPlaybackStateValues::Count ==
-                    MediaSessionPlaybackTestStateValues::Count);
-  if (RefPtr<MediaControlService> service = MediaControlService::GetService()) {
-    return ConvertToMediaSessionPlaybackTestState(
-        service->GetMainControllerPlaybackState());
+already_AddRefed<Promise> ChromeUtils::CollectScrollingData(
+    GlobalObject& aGlobal, ErrorResult& aRv) {
+  // Creating a JS promise
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
+  MOZ_ASSERT(global);
+
+  RefPtr<Promise> promise = Promise::Create(global, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
   }
-  return MediaSessionPlaybackTestState::Stopped;
+
+  RefPtr<ScrollingMetrics::ScrollingMetricsPromise> extPromise =
+      ScrollingMetrics::CollectScrollingMetrics();
+
+  extPromise->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [promise](const Tuple<uint32_t, uint32_t>& aResult) {
+        InteractionData out = {};
+        out.mInteractionTimeInMilliseconds = Get<0>(aResult);
+        out.mScrollingDistanceInPixels = Get<1>(aResult);
+        promise->MaybeResolve(out);
+      },
+      [promise](bool aValue) { promise->MaybeReject(NS_ERROR_FAILURE); });
+
+  return promise.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

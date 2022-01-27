@@ -12,7 +12,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/Animation.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/Element.h"
 #include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/MutationObserverBinding.h"
 #include "mozilla/dom/Nullable.h"
@@ -29,14 +28,20 @@
 #include "nsTArray.h"
 #include "nsWrapperCache.h"
 
+class nsIPrincipal;
+
 class nsDOMMutationObserver;
 using mozilla::dom::MutationObservingInfo;
+
+namespace mozilla::dom {
+class Element;
+}
 
 class nsDOMMutationRecord final : public nsISupports, public nsWrapperCache {
   virtual ~nsDOMMutationRecord() = default;
 
  public:
-  typedef nsTArray<RefPtr<mozilla::dom::Animation>> AnimationArray;
+  using AnimationArray = nsTArray<RefPtr<mozilla::dom::Animation>>;
 
   nsDOMMutationRecord(nsAtom* aType, nsISupports* aOwner)
       : mType(aType),
@@ -245,33 +250,7 @@ class nsMutationReceiverBase : public nsStubAnimationObserver {
   bool IsObservable(nsIContent* aContent);
 
   bool ObservesAttr(nsINode* aRegisterTarget, mozilla::dom::Element* aElement,
-                    int32_t aNameSpaceID, nsAtom* aAttr) {
-    if (mParent) {
-      return mParent->ObservesAttr(aRegisterTarget, aElement, aNameSpaceID,
-                                   aAttr);
-    }
-    if (!Attributes() || (!Subtree() && aElement != Target()) ||
-        (Subtree() &&
-         aRegisterTarget->SubtreeRoot() != aElement->SubtreeRoot()) ||
-        !IsObservable(aElement)) {
-      return false;
-    }
-    if (AllAttributes()) {
-      return true;
-    }
-
-    if (aNameSpaceID != kNameSpaceID_None) {
-      return false;
-    }
-
-    nsTArray<RefPtr<nsAtom>>& filters = AttributeFilter();
-    for (size_t i = 0; i < filters.Length(); ++i) {
-      if (filters[i] == aAttr) {
-        return true;
-      }
-    }
-    return false;
-  }
+                    int32_t aNameSpaceID, nsAtom* aAttr);
 
   // The target for the MutationObserver.observe() method.
   nsINode* mTarget;
@@ -461,7 +440,7 @@ class nsDOMMutationObserver final : public nsISupports, public nsWrapperCache {
 
   void Observe(nsINode& aTarget,
                const mozilla::dom::MutationObserverInit& aOptions,
-               mozilla::ErrorResult& aRv);
+               nsIPrincipal& aSubjectPrincipal, mozilla::ErrorResult& aRv);
 
   void Disconnect();
 
@@ -836,7 +815,7 @@ class nsAutoAnimationMutationBatch {
   }
 
   Entry* AddEntry(mozilla::dom::Animation* aAnimation, nsINode* aTarget) {
-    EntryArray* entries = sCurrentBatch->mEntryTable.LookupOrAdd(aTarget);
+    EntryArray* entries = sCurrentBatch->mEntryTable.GetOrInsertNew(aTarget);
     if (entries->IsEmpty()) {
       sCurrentBatch->mBatchTargets.AppendElement(aTarget);
     }
@@ -860,7 +839,7 @@ class nsAutoAnimationMutationBatch {
 
   static nsAutoAnimationMutationBatch* sCurrentBatch;
   AutoTArray<nsDOMMutationObserver*, 2> mObservers;
-  typedef nsTArray<Entry> EntryArray;
+  using EntryArray = nsTArray<Entry>;
   nsClassHashtable<nsPtrHashKey<nsINode>, EntryArray> mEntryTable;
   // List of nodes referred to by mEntryTable so we can sort them
   // For a specific pseudo element, we use its parent element as the
@@ -872,5 +851,23 @@ inline nsDOMMutationObserver* nsMutationReceiverBase::Observer() {
   return mParent ? mParent->Observer()
                  : static_cast<nsDOMMutationObserver*>(mObserver);
 }
+
+class MOZ_RAII nsDOMMutationEnterLeave {
+ public:
+  explicit nsDOMMutationEnterLeave(mozilla::dom::Document* aDoc)
+      : mNeeded(aDoc->MayHaveDOMMutationObservers()) {
+    if (mNeeded) {
+      nsDOMMutationObserver::EnterMutationHandling();
+    }
+  }
+  ~nsDOMMutationEnterLeave() {
+    if (mNeeded) {
+      nsDOMMutationObserver::LeaveMutationHandling();
+    }
+  }
+
+ private:
+  const bool mNeeded;
+};
 
 #endif

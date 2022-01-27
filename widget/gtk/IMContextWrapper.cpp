@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Logging.h"
+#include "nsString.h"
 #include "prtime.h"
 
 #include "IMContextWrapper.h"
@@ -12,11 +13,14 @@
 #include "nsWindow.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/Likely.h"
+#include "mozilla/LookAndFeel.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_intl.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/ToString.h"
 #include "WritingModes.h"
 
 namespace mozilla {
@@ -26,21 +30,6 @@ LazyLogModule gGtkIMLog("nsGtkIMModuleWidgets");
 
 static inline const char* ToChar(bool aBool) {
   return aBool ? "true" : "false";
-}
-
-static const char* GetEnabledStateName(uint32_t aState) {
-  switch (aState) {
-    case IMEState::DISABLED:
-      return "DISABLED";
-    case IMEState::ENABLED:
-      return "ENABLED";
-    case IMEState::PASSWORD:
-      return "PASSWORD";
-    case IMEState::PLUGIN:
-      return "PLUG_IN";
-    default:
-      return "UNKNOWN ENABLED STATUS!!";
-  }
 }
 
 static const char* GetEventType(GdkEventKey* aKeyEvent) {
@@ -58,7 +47,7 @@ class GetEventStateName : public nsAutoCString {
  public:
   explicit GetEventStateName(guint aState,
                              IMContextWrapper::IMContextID aIMContextID =
-                                 IMContextWrapper::IMContextID::eUnknown) {
+                                 IMContextWrapper::IMContextID::Unknown) {
     if (aState & GDK_SHIFT_MASK) {
       AppendModifier("shift");
     }
@@ -84,7 +73,7 @@ class GetEventStateName : public nsAutoCString {
       AppendModifier("mod5");
     }
     switch (aIMContextID) {
-      case IMContextWrapper::IMContextID::eIBus:
+      case IMContextWrapper::IMContextID::IBus:
         static const guint IBUS_HANDLED_MASK = 1 << 24;
         static const guint IBUS_IGNORED_MASK = 1 << 25;
         if (aState & IBUS_HANDLED_MASK) {
@@ -94,7 +83,8 @@ class GetEventStateName : public nsAutoCString {
           AppendModifier("IBUS_IGNORED_MASK");
         }
         break;
-      case IMContextWrapper::IMContextID::eFcitx:
+      case IMContextWrapper::IMContextID::Fcitx:
+      case IMContextWrapper::IMContextID::Fcitx5:
         static const guint FcitxKeyState_HandledMask = 1 << 24;
         static const guint FcitxKeyState_IgnoredMask = 1 << 25;
         if (aState & FcitxKeyState_HandledMask) {
@@ -223,8 +213,15 @@ const static bool kUseSimpleContextDefault = false;
  * to refer selection colors of GtkTextView via our widget.
  ******************************************************************************/
 
+static Maybe<nscolor> GetSystemColor(LookAndFeel::ColorID aId) {
+  return LookAndFeel::GetColor(aId, LookAndFeel::ColorScheme::Light,
+                               LookAndFeel::UseStandins::No);
+}
+
 class SelectionStyleProvider final {
  public:
+  static SelectionStyleProvider* GetExistingInstance() { return sInstance; }
+
   static SelectionStyleProvider* GetInstance() {
     if (sHasShutDown) {
       return nullptr;
@@ -266,31 +263,27 @@ class SelectionStyleProvider final {
     // colors can be controlled by a ":selected" CSS rule.
     nsAutoCString style(":selected{");
     // FYI: LookAndFeel always returns selection colors of GtkTextView.
-    nscolor selectionForegroundColor;
-    if (NS_SUCCEEDED(
-            LookAndFeel::GetColor(LookAndFeel::ColorID::TextSelectForeground,
-                                  &selectionForegroundColor))) {
+    if (auto selectionForegroundColor =
+            GetSystemColor(LookAndFeel::ColorID::Highlight)) {
       double alpha =
-          static_cast<double>(NS_GET_A(selectionForegroundColor)) / 0xFF;
+          static_cast<double>(NS_GET_A(*selectionForegroundColor)) / 0xFF;
       style.AppendPrintf("color:rgba(%u,%u,%u,",
-                         NS_GET_R(selectionForegroundColor),
-                         NS_GET_G(selectionForegroundColor),
-                         NS_GET_B(selectionForegroundColor));
+                         NS_GET_R(*selectionForegroundColor),
+                         NS_GET_G(*selectionForegroundColor),
+                         NS_GET_B(*selectionForegroundColor));
       // We can't use AppendPrintf here, because it does locale-specific
       // formatting of floating-point values.
       style.AppendFloat(alpha);
       style.AppendPrintf(");");
     }
-    nscolor selectionBackgroundColor;
-    if (NS_SUCCEEDED(
-            LookAndFeel::GetColor(LookAndFeel::ColorID::TextSelectBackground,
-                                  &selectionBackgroundColor))) {
+    if (auto selectionBackgroundColor =
+            GetSystemColor(LookAndFeel::ColorID::Highlighttext)) {
       double alpha =
-          static_cast<double>(NS_GET_A(selectionBackgroundColor)) / 0xFF;
+          static_cast<double>(NS_GET_A(*selectionBackgroundColor)) / 0xFF;
       style.AppendPrintf("background-color:rgba(%u,%u,%u,",
-                         NS_GET_R(selectionBackgroundColor),
-                         NS_GET_G(selectionBackgroundColor),
-                         NS_GET_B(selectionBackgroundColor));
+                         NS_GET_R(*selectionBackgroundColor),
+                         NS_GET_G(*selectionBackgroundColor),
+                         NS_GET_B(*selectionBackgroundColor));
       style.AppendFloat(alpha);
       style.AppendPrintf(");");
     }
@@ -332,7 +325,7 @@ IMContextWrapper::IMContextWrapper(nsWindow* aOwnerWindow)
       mCompositionStart(UINT32_MAX),
       mProcessingKeyEvent(nullptr),
       mCompositionState(eCompositionState_NotComposing),
-      mIMContextID(IMContextID::eUnknown),
+      mIMContextID(IMContextID::Unknown),
       mIsIMFocused(false),
       mFallbackToKeyEvent(false),
       mKeyboardEventWasDispatched(false),
@@ -407,8 +400,7 @@ nsDependentCSubstring IMContextWrapper::GetIMName() const {
   // If the context is XIM, actual engine must be specified with
   // |XMODIFIERS=@im=foo|.
   const char* xmodifiersChar = PR_GetEnv("XMODIFIERS");
-  if (!xmodifiersChar ||
-      (!im.EqualsLiteral("xim") && !im.EqualsLiteral("wayland"))) {
+  if (!xmodifiersChar || !im.EqualsLiteral("xim")) {
     return im;
   }
 
@@ -469,7 +461,7 @@ void IMContextWrapper::Init() {
                    this);
   nsDependentCSubstring im = GetIMName();
   if (im.EqualsLiteral("ibus")) {
-    mIMContextID = IMContextID::eIBus;
+    mIMContextID = IMContextID::IBus;
     mIsIMInAsyncKeyHandlingMode = !IsIBusInSyncMode();
     // Although ibus has key snooper mode, it's forcibly disabled on Firefox
     // in default settings by its whitelist since we always send key events
@@ -478,7 +470,7 @@ void IMContextWrapper::Init() {
     // support such rare cases for reducing maintenance cost.
     mIsKeySnooped = false;
   } else if (im.EqualsLiteral("fcitx")) {
-    mIMContextID = IMContextID::eFcitx;
+    mIMContextID = IMContextID::Fcitx;
     mIsIMInAsyncKeyHandlingMode = !IsFcitxInSyncMode();
     // Although Fcitx has key snooper mode similar to ibus, it's also
     // disabled on Firefox in default settings by its whitelist.  The
@@ -486,8 +478,12 @@ void IMContextWrapper::Init() {
     // FCITX_NO_SNOOPER_APPS, but we don't need to support such rare cases
     // for reducing maintenance cost.
     mIsKeySnooped = false;
+  } else if (im.EqualsLiteral("fcitx5")) {
+    mIMContextID = IMContextID::Fcitx5;
+    mIsIMInAsyncKeyHandlingMode = true;  // does not have sync mode.
+    mIsKeySnooped = false;               // never use key snooper.
   } else if (im.EqualsLiteral("uim")) {
-    mIMContextID = IMContextID::eUim;
+    mIMContextID = IMContextID::Uim;
     mIsIMInAsyncKeyHandlingMode = false;
     // We cannot know if uim uses key snooper since it's build option of
     // uim.  Therefore, we need to retrieve the consideration from the
@@ -496,15 +492,19 @@ void IMContextWrapper::Init() {
     mIsKeySnooped =
         Preferences::GetBool("intl.ime.hack.uim.using_key_snooper", true);
   } else if (im.EqualsLiteral("scim")) {
-    mIMContextID = IMContextID::eScim;
+    mIMContextID = IMContextID::Scim;
     mIsIMInAsyncKeyHandlingMode = false;
     mIsKeySnooped = false;
   } else if (im.EqualsLiteral("iiim")) {
-    mIMContextID = IMContextID::eIIIMF;
+    mIMContextID = IMContextID::IIIMF;
     mIsIMInAsyncKeyHandlingMode = false;
     mIsKeySnooped = false;
+  } else if (im.EqualsLiteral("wayland")) {
+    mIMContextID = IMContextID::Wayland;
+    mIsIMInAsyncKeyHandlingMode = false;
+    mIsKeySnooped = true;
   } else {
-    mIMContextID = IMContextID::eUnknown;
+    mIMContextID = IMContextID::Unknown;
     mIsIMInAsyncKeyHandlingMode = false;
     mIsKeySnooped = false;
   }
@@ -620,12 +620,6 @@ TextEventDispatcher* IMContextWrapper::GetTextEventDispatcher() {
 
 NS_IMETHODIMP_(IMENotificationRequests)
 IMContextWrapper::GetIMENotificationRequests() {
-  // While a plugin has focus, IMContextWrapper doesn't need any
-  // notifications.
-  if (mInputContext.mIMEState.mEnabled == IMEState::PLUGIN) {
-    return IMENotificationRequests();
-  }
-
   IMENotificationRequests::Notifications notifications =
       IMENotificationRequests::NOTIFY_NOTHING;
   // If it's not enabled, we don't need position change notification.
@@ -696,7 +690,7 @@ void IMContextWrapper::OnDestroyWindow(nsWindow* aWindow) {
 
   mOwnerWindow = nullptr;
   mLastFocusedWindow = nullptr;
-  mInputContext.mIMEState.mEnabled = IMEState::DISABLED;
+  mInputContext.mIMEState.mEnabled = IMEEnabled::Disabled;
   mPostingKeyEvents.Clear();
 
   MOZ_LOG(gGtkIMLog, LogLevel::Debug,
@@ -704,7 +698,7 @@ void IMContextWrapper::OnDestroyWindow(nsWindow* aWindow) {
 }
 
 void IMContextWrapper::PrepareToDestroyContext(GtkIMContext* aContext) {
-  if (mIMContextID == IMContextID::eIIIMF) {
+  if (mIMContextID == IMContextID::IIIMF) {
     // IIIM module registers handlers for the "closed" signal on the
     // display, but the signal handler is not disconnected when the module
     // is unloaded.  To prevent the module from being unloaded, use static
@@ -771,10 +765,11 @@ KeyHandlingState IMContextWrapper::OnKeyEvent(
     bool aKeyboardEventWasDispatched /* = false */) {
   MOZ_ASSERT(aEvent, "aEvent must be non-null");
 
-  if (!mInputContext.mIMEState.MaybeEditable() || MOZ_UNLIKELY(IsDestroyed())) {
+  if (!mInputContext.mIMEState.IsEditable() || MOZ_UNLIKELY(IsDestroyed())) {
     return KeyHandlingState::eNotHandled;
   }
 
+  MOZ_LOG(gGtkIMLog, LogLevel::Info, (">>>>>>>>>>>>>>>>"));
   MOZ_LOG(
       gGtkIMLog, LogLevel::Info,
       ("0x%p OnKeyEvent(aCaller=0x%p, "
@@ -792,8 +787,8 @@ KeyHandlingState IMContextWrapper::OnKeyEvent(
        "mCompositionState=%s, current context=%p, active context=%p, "
        "mIMContextID=%s, mIsIMInAsyncKeyHandlingMode=%s",
        this, ToChar(mMaybeInDeadKeySequence), GetCompositionStateName(),
-       GetCurrentContext(), GetActiveContext(),
-       GetIMContextIDName(mIMContextID), ToChar(mIsIMInAsyncKeyHandlingMode)));
+       GetCurrentContext(), GetActiveContext(), ToString(mIMContextID).c_str(),
+       ToChar(mIsIMInAsyncKeyHandlingMode)));
 
   if (aCaller != mLastFocusedWindow) {
     MOZ_LOG(gGtkIMLog, LogLevel::Error,
@@ -848,7 +843,7 @@ KeyHandlingState IMContextWrapper::OnKeyEvent(
   // an array or a hashtable.
   if (probablyHandledAsynchronously) {
     switch (mIMContextID) {
-      case IMContextID::eIBus: {
+      case IMContextID::IBus: {
         // See src/ibustypes.h
         static const guint IBUS_IGNORED_MASK = 1 << 25;
         // If IBUS_IGNORED_MASK was set to aEvent->state, the event
@@ -911,14 +906,15 @@ KeyHandlingState IMContextWrapper::OnKeyEvent(
         // <input type="password"> or |ime-mode: disabled;|.  However, in
         // some environments, not so actually.  Therefore, we need to check
         // the result of gtk_im_context_filter_keypress() later.
-        if (mInputContext.mIMEState.mEnabled == IMEState::PASSWORD) {
+        if (mInputContext.mIMEState.mEnabled == IMEEnabled::Password) {
           probablyHandledAsynchronously = false;
           maybeHandledAsynchronously = !isHandlingAsyncEvent;
           break;
         }
         break;
       }
-      case IMContextID::eFcitx: {
+      case IMContextID::Fcitx:
+      case IMContextID::Fcitx5: {
         // See src/lib/fcitx-utils/keysym.h
         static const guint FcitxKeyState_IgnoredMask = 1 << 25;
         // If FcitxKeyState_IgnoredMask was set to aEvent->state,
@@ -1087,6 +1083,7 @@ KeyHandlingState IMContextWrapper::OnKeyEvent(
        ToChar(maybeHandledAsynchronously), mPostingKeyEvents.Length(),
        GetCompositionStateName(), ToChar(mMaybeInDeadKeySequence),
        ToChar(mKeyboardEventWasDispatched), ToChar(mKeyboardEventWasConsumed)));
+  MOZ_LOG(gGtkIMLog, LogLevel::Info, ("<<<<<<<<<<<<<<<<\n\n"));
 
   if (filterThisEvent) {
     return KeyHandlingState::eHandled;
@@ -1253,7 +1250,7 @@ void IMContextWrapper::SetInputContext(nsWindow* aCaller,
   MOZ_LOG(gGtkIMLog, LogLevel::Info,
           ("0x%p SetInputContext(aCaller=0x%p, aContext={ mIMEState={ "
            "mEnabled=%s }, mHTMLInputType=%s })",
-           this, aCaller, GetEnabledStateName(aContext->mIMEState.mEnabled),
+           this, aCaller, ToString(aContext->mIMEState.mEnabled).c_str(),
            NS_ConvertUTF16toUTF8(aContext->mHTMLInputType).get()));
 
   if (aCaller != mLastFocusedWindow) {
@@ -1281,12 +1278,10 @@ void IMContextWrapper::SetInputContext(nsWindow* aCaller,
     return;
   }
 
-  bool changingEnabledState =
-      aContext->mIMEState.mEnabled != mInputContext.mIMEState.mEnabled ||
-      aContext->mHTMLInputType != mInputContext.mHTMLInputType;
+  bool changingEnabledState = aContext->IsInputAttributeChanged(mInputContext);
 
   // Release current IME focus if IME is enabled.
-  if (changingEnabledState && mInputContext.mIMEState.MaybeEditable()) {
+  if (changingEnabledState && mInputContext.mIMEState.IsEditable()) {
     EndIMEComposition(mLastFocusedWindow);
     Blur();
   }
@@ -1294,7 +1289,7 @@ void IMContextWrapper::SetInputContext(nsWindow* aCaller,
   mInputContext = *aContext;
 
   if (changingEnabledState) {
-    if (mInputContext.mIMEState.MaybeEditable()) {
+    if (mInputContext.mIMEState.IsEditable()) {
       GtkIMContext* currentContext = GetCurrentContext();
       if (currentContext) {
         GtkInputPurpose purpose = GTK_INPUT_PURPOSE_FREE_FORM;
@@ -1317,7 +1312,7 @@ void IMContextWrapper::SetInputContext(nsWindow* aCaller,
         // I.e., let's ignore tablet devices for now.  When somebody
         // reports actual trouble on tablet devices, we should try to
         // look for a way to solve actual problem.
-        if (mInputContext.mIMEState.mEnabled == IMEState::PASSWORD) {
+        if (mInputContext.mIMEState.mEnabled == IMEEnabled::Password) {
           purpose = GTK_INPUT_PURPOSE_PASSWORD;
         } else if (inputType.EqualsLiteral("email")) {
           purpose = GTK_INPUT_PURPOSE_EMAIL;
@@ -1348,6 +1343,14 @@ void IMContextWrapper::SetInputContext(nsWindow* aCaller,
           hints |= GTK_INPUT_HINT_INHIBIT_OSK;
         }
 
+        if (mInputContext.mAutocapitalize.EqualsLiteral("characters")) {
+          hints |= GTK_INPUT_HINT_UPPERCASE_CHARS;
+        } else if (mInputContext.mAutocapitalize.EqualsLiteral("sentences")) {
+          hints |= GTK_INPUT_HINT_UPPERCASE_SENTENCES;
+        } else if (mInputContext.mAutocapitalize.EqualsLiteral("words")) {
+          hints |= GTK_INPUT_HINT_UPPERCASE_WORDS;
+        }
+
         g_object_set(currentContext, "input-hints", hints, nullptr);
       }
     }
@@ -1372,7 +1375,7 @@ GtkIMContext* IMContextWrapper::GetCurrentContext() const {
   if (IsEnabled()) {
     return mContext;
   }
-  if (mInputContext.mIMEState.mEnabled == IMEState::PASSWORD) {
+  if (mInputContext.mIMEState.mEnabled == IMEEnabled::Password) {
     return mSimpleContext;
   }
   return mDummyContext;
@@ -1387,10 +1390,9 @@ bool IMContextWrapper::IsValidContext(GtkIMContext* aContext) const {
 }
 
 bool IMContextWrapper::IsEnabled() const {
-  return mInputContext.mIMEState.mEnabled == IMEState::ENABLED ||
-         mInputContext.mIMEState.mEnabled == IMEState::PLUGIN ||
+  return mInputContext.mIMEState.mEnabled == IMEEnabled::Enabled ||
          (!sUseSimpleContext &&
-          mInputContext.mIMEState.mEnabled == IMEState::PASSWORD);
+          mInputContext.mIMEState.mEnabled == IMEEnabled::Password);
 }
 
 void IMContextWrapper::Focus() {
@@ -1454,8 +1456,12 @@ void IMContextWrapper::Blur() {
 
 void IMContextWrapper::OnSelectionChange(
     nsWindow* aCaller, const IMENotification& aIMENotification) {
+  const bool isSelectionRangeChanged =
+      mSelection.mOffset != aIMENotification.mSelectionChangeData.mOffset ||
+      mSelection.mString != *aIMENotification.mSelectionChangeData.mString;
   mSelection.Assign(aIMENotification);
-  bool retrievedSurroundingSignalReceived = mRetrieveSurroundingSignalReceived;
+  const bool retrievedSurroundingSignalReceived =
+      mRetrieveSurroundingSignalReceived;
   mRetrieveSurroundingSignalReceived = false;
 
   if (MOZ_UNLIKELY(IsDestroyed())) {
@@ -1469,10 +1475,11 @@ void IMContextWrapper::OnSelectionChange(
           ("0x%p OnSelectionChange(aCaller=0x%p, aIMENotification={ "
            "mSelectionChangeData=%s }), "
            "mCompositionState=%s, mIsDeletingSurrounding=%s, "
-           "mRetrieveSurroundingSignalReceived=%s",
+           "mRetrieveSurroundingSignalReceived=%s, isSelectionRangeChanged=%s",
            this, aCaller, ToString(selectionChangeData).c_str(),
            GetCompositionStateName(), ToChar(mIsDeletingSurrounding),
-           ToChar(retrievedSurroundingSignalReceived)));
+           ToChar(retrievedSurroundingSignalReceived),
+           ToChar(isSelectionRangeChanged)));
 
   if (aCaller != mLastFocusedWindow) {
     MOZ_LOG(gGtkIMLog, LogLevel::Error,
@@ -1531,8 +1538,18 @@ void IMContextWrapper::OnSelectionChange(
   // When the selection change is caused by dispatching composition event,
   // selection set event and/or occurred before starting current composition,
   // we shouldn't notify IME of that and commit existing composition.
+  // Don't do this even if selection is not changed actually.  For example,
+  // fcitx has direct input mode which does not insert composing string, but
+  // inserts commited text for each key sequence (i.e., there is "invisible"
+  // composition string).  In the world after bug 1712269, we don't use a
+  // set of composition events for this kind of IME.  Therefore,
+  // SelectionChangeData.mCausedByComposition is not expected value for here
+  // if this call is caused by a preceding commit.  And if the preceding commit
+  // is triggered by a key type for next word, resetting IME state makes fcitx
+  // discard the pending input for the next word.  Thus, we need to check
+  // whether the selection range is actually changed here.
   if (!selectionChangeData.mCausedByComposition &&
-      !selectionChangeData.mCausedBySelectionEvent &&
+      !selectionChangeData.mCausedBySelectionEvent && isSelectionRangeChanged &&
       !occurredBeforeComposition) {
     // Hack for ibus-pinyin.  ibus-pinyin will synthesize a set of
     // composition which commits with empty string after calling
@@ -1551,10 +1568,9 @@ void IMContextWrapper::OnSelectionChange(
 
 /* static */
 void IMContextWrapper::OnThemeChanged() {
-  if (!SelectionStyleProvider::GetInstance()) {
-    return;
+  if (auto* provider = SelectionStyleProvider::GetExistingInstance()) {
+    provider->OnThemeChanged();
   }
-  SelectionStyleProvider::GetInstance()->OnThemeChanged();
 }
 
 /* static */
@@ -2006,8 +2022,9 @@ bool IMContextWrapper::MaybeDispatchKeyEventAsProcessedByIME(
     }
   } else {
     MOZ_ASSERT(mIsKeySnooped);
-    // Currently, we support key snooper mode of uim only.
-    MOZ_ASSERT(mIMContextID == IMContextID::eUim);
+    // Currently, we support key snooper mode of uim and wayland only.
+    MOZ_ASSERT(mIMContextID == IMContextID::Uim ||
+               mIMContextID == IMContextID::Wayland);
     // uim sends "preedit_start" signal and "preedit_changed" separately
     // at starting composition, "commit" and "preedit_end" separately at
     // committing composition.
@@ -2020,6 +2037,7 @@ bool IMContextWrapper::MaybeDispatchKeyEventAsProcessedByIME(
       case eCompositionStart:
       case eCompositionCommit:
       case eCompositionCommitAsIs:
+      case eContentCommandInsertText:
         dispatchFakeKeyDown = true;
         break;
       // XXX Unfortunately, I don't have a good idea to prevent to
@@ -2319,52 +2337,94 @@ bool IMContextWrapper::DispatchCompositionCommitEvent(
   //       never occurs with remote content.  So, it's okay to fix this
   //       issue later.  (Perhaps, TextEventDisptcher should do it for
   //       all platforms.  E.g., creating WillCommitComposition()?)
-  if (!IsComposing()) {
+  RefPtr<nsWindow> lastFocusedWindow(mLastFocusedWindow);
+  RefPtr<TextEventDispatcher> dispatcher;
+  if (!IsComposing() &&
+      !StaticPrefs::intl_ime_use_composition_events_for_insert_text()) {
     if (!aCommitString || aCommitString->IsEmpty()) {
       MOZ_LOG(gGtkIMLog, LogLevel::Error,
               ("0x%p   DispatchCompositionCommitEvent(), FAILED, "
-               "there is no composition and empty commit string",
+               "did nothing due to inserting empty string without composition",
                this));
       return true;
     }
-    MOZ_LOG(gGtkIMLog, LogLevel::Debug,
-            ("0x%p   DispatchCompositionCommitEvent(), "
-             "the composition wasn't started, force starting...",
-             this));
-    if (!DispatchCompositionStart(aContext)) {
+    if (MOZ_UNLIKELY(!EnsureToCacheSelection())) {
+      MOZ_LOG(gGtkIMLog, LogLevel::Warning,
+              ("0x%p   DispatchCompositionCommitEvent(), Warning, "
+               "Failed to cache selection before dispatching "
+               "eContentCommandInsertText event",
+               this));
+    }
+    if (!MaybeDispatchKeyEventAsProcessedByIME(eContentCommandInsertText)) {
+      MOZ_LOG(gGtkIMLog, LogLevel::Warning,
+              ("0x%p   DispatchCompositionCommitEvent(), Warning, "
+               "MaybeDispatchKeyEventAsProcessedByIME() returned false",
+               this));
       return false;
     }
-  }
-  // If this commit caused by a key press, we need to dispatch eKeyDown or
-  // eKeyUp before dispatching composition events.
-  else if (!MaybeDispatchKeyEventAsProcessedByIME(
-               aCommitString ? eCompositionCommit : eCompositionCommitAsIs)) {
-    MOZ_LOG(gGtkIMLog, LogLevel::Warning,
-            ("0x%p   DispatchCompositionCommitEvent(), Warning, "
-             "MaybeDispatchKeyEventAsProcessedByIME() returned false",
-             this));
-    mCompositionState = eCompositionState_NotComposing;
-    return false;
-  }
+    // Emulate selection until receiving actual selection range.  This is
+    // important for OnSelectionChange.  If selection is not changed by web
+    // apps, i.e., selection range is same as what selection expects, we
+    // shouldn't reset IME because the trigger of causing this commit may be an
+    // input for next composition and we shouldn't cancel it.
+    if (mSelection.IsValid()) {
+      mSelection.CollapseTo(mSelection.mOffset + aCommitString->Length(),
+                            mSelection.mWritingMode);
+      MOZ_LOG(gGtkIMLog, LogLevel::Info,
+              ("0x%p   DispatchCompositionCommitEvent(), "
+               "mSelection={ mOffset=%u, mString=\"%s\", mWritingMode=%s }",
+               this, mSelection.mOffset,
+               NS_ConvertUTF16toUTF8(mSelection.mString).get(),
+               ToString(mSelection.mWritingMode).c_str()));
+    }
+    MOZ_ASSERT(!dispatcher);
+  } else {
+    if (!IsComposing()) {
+      if (!aCommitString || aCommitString->IsEmpty()) {
+        MOZ_LOG(gGtkIMLog, LogLevel::Error,
+                ("0x%p   DispatchCompositionCommitEvent(), FAILED, "
+                 "there is no composition and empty commit string",
+                 this));
+        return true;
+      }
+      MOZ_LOG(gGtkIMLog, LogLevel::Debug,
+              ("0x%p   DispatchCompositionCommitEvent(), "
+               "the composition wasn't started, force starting...",
+               this));
+      if (!DispatchCompositionStart(aContext)) {
+        return false;
+      }
+    }
+    // If this commit caused by a key press, we need to dispatch eKeyDown or
+    // eKeyUp before dispatching composition events.
+    else if (!MaybeDispatchKeyEventAsProcessedByIME(
+                 aCommitString ? eCompositionCommit : eCompositionCommitAsIs)) {
+      MOZ_LOG(gGtkIMLog, LogLevel::Warning,
+              ("0x%p   DispatchCompositionCommitEvent(), Warning, "
+               "MaybeDispatchKeyEventAsProcessedByIME() returned false",
+               this));
+      mCompositionState = eCompositionState_NotComposing;
+      return false;
+    }
 
-  RefPtr<TextEventDispatcher> dispatcher = GetTextEventDispatcher();
-  nsresult rv = dispatcher->BeginNativeInputTransaction();
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    MOZ_LOG(gGtkIMLog, LogLevel::Error,
-            ("0x%p   DispatchCompositionCommitEvent(), FAILED, "
-             "due to BeginNativeInputTransaction() failure",
-             this));
-    return false;
+    dispatcher = GetTextEventDispatcher();
+    MOZ_ASSERT(dispatcher);
+    nsresult rv = dispatcher->BeginNativeInputTransaction();
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      MOZ_LOG(gGtkIMLog, LogLevel::Error,
+              ("0x%p   DispatchCompositionCommitEvent(), FAILED, "
+               "due to BeginNativeInputTransaction() failure",
+               this));
+      return false;
+    }
+
+    // Emulate selection until receiving actual selection range.
+    mSelection.CollapseTo(
+        mCompositionStart + (aCommitString
+                                 ? aCommitString->Length()
+                                 : mDispatchedCompositionString.Length()),
+        mSelection.mWritingMode);
   }
-
-  RefPtr<nsWindow> lastFocusedWindow(mLastFocusedWindow);
-
-  // Emulate selection until receiving actual selection range.
-  mSelection.CollapseTo(
-      mCompositionStart + (aCommitString
-                               ? aCommitString->Length()
-                               : mDispatchedCompositionString.Length()),
-      mSelection.mWritingMode);
 
   mCompositionState = eCompositionState_NotComposing;
   // Reset dead key sequence too because GTK doesn't support dead key chain
@@ -2377,14 +2437,32 @@ bool IMContextWrapper::DispatchCompositionCommitEvent(
   mDispatchedCompositionString.Truncate();
   mSelectedStringRemovedByComposition.Truncate();
 
-  nsEventStatus status;
-  rv = dispatcher->CommitComposition(status, aCommitString);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    MOZ_LOG(gGtkIMLog, LogLevel::Error,
-            ("0x%p   DispatchCompositionChangeEvent(), FAILED, "
-             "due to CommitComposition() failure",
-             this));
-    return false;
+  if (!dispatcher) {
+    MOZ_ASSERT(aCommitString);
+    MOZ_ASSERT(!aCommitString->IsEmpty());
+    nsEventStatus status = nsEventStatus_eIgnore;
+    WidgetContentCommandEvent insertTextEvent(true, eContentCommandInsertText,
+                                              lastFocusedWindow);
+    insertTextEvent.mString.emplace(*aCommitString);
+    lastFocusedWindow->DispatchEvent(&insertTextEvent, status);
+
+    if (!insertTextEvent.mSucceeded) {
+      MOZ_LOG(gGtkIMLog, LogLevel::Error,
+              ("0x%p   DispatchCompositionChangeEvent(), FAILED, inserting "
+               "text failed",
+               this));
+      return false;
+    }
+  } else {
+    nsEventStatus status = nsEventStatus_eIgnore;
+    nsresult rv = dispatcher->CommitComposition(status, aCommitString);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      MOZ_LOG(gGtkIMLog, LogLevel::Error,
+              ("0x%p   DispatchCompositionChangeEvent(), FAILED, "
+               "due to CommitComposition() failure",
+               this));
+      return false;
+    }
   }
 
   if (lastFocusedWindow->IsDestroyed() ||
@@ -2771,25 +2849,27 @@ void IMContextWrapper::SetCursorPosition(GtkIMContext* aContext) {
     return;
   }
 
-  WidgetQueryContentEvent charRect(
+  WidgetQueryContentEvent queryCaretOrTextRectEvent(
       true, useCaret ? eQueryCaretRect : eQueryTextRect, mLastFocusedWindow);
   if (useCaret) {
-    charRect.InitForQueryCaretRect(mSelection.mOffset);
+    queryCaretOrTextRectEvent.InitForQueryCaretRect(mSelection.mOffset);
   } else {
     if (mSelection.mWritingMode.IsVertical()) {
       // For preventing the candidate window to overlap the target
       // clause, we should set fake (typically, very tall) caret rect.
       uint32_t length =
           mCompositionTargetRange.mLength ? mCompositionTargetRange.mLength : 1;
-      charRect.InitForQueryTextRect(mCompositionTargetRange.mOffset, length);
+      queryCaretOrTextRectEvent.InitForQueryTextRect(
+          mCompositionTargetRange.mOffset, length);
     } else {
-      charRect.InitForQueryTextRect(mCompositionTargetRange.mOffset, 1);
+      queryCaretOrTextRectEvent.InitForQueryTextRect(
+          mCompositionTargetRange.mOffset, 1);
     }
   }
-  InitEvent(charRect);
+  InitEvent(queryCaretOrTextRectEvent);
   nsEventStatus status;
-  mLastFocusedWindow->DispatchEvent(&charRect, status);
-  if (!charRect.mSucceeded) {
+  mLastFocusedWindow->DispatchEvent(&queryCaretOrTextRectEvent, status);
+  if (queryCaretOrTextRectEvent.Failed()) {
     MOZ_LOG(gGtkIMLog, LogLevel::Error,
             ("0x%p   SetCursorPosition(), FAILED, %s was failed", this,
              useCaret ? "eQueryCaretRect" : "eQueryTextRect"));
@@ -2806,7 +2886,8 @@ void IMContextWrapper::SetCursorPosition(GtkIMContext* aContext) {
   LayoutDeviceIntPoint owner = mOwnerWindow->WidgetToScreenOffset();
 
   // Compute the caret position in the IM owner window.
-  LayoutDeviceIntRect rect = charRect.mReply.mRect + root - owner;
+  LayoutDeviceIntRect rect =
+      queryCaretOrTextRectEvent.mReply->mRect + root - owner;
   rect.width = 0;
   GdkRectangle area = rootWindow->DevicePixelsToGdkRectRoundOut(rect);
 
@@ -2869,20 +2950,22 @@ nsresult IMContextWrapper::GetCurrentParagraph(nsAString& aText,
                                                 mLastFocusedWindow);
   queryTextContentEvent.InitForQueryTextContent(0, UINT32_MAX);
   mLastFocusedWindow->DispatchEvent(&queryTextContentEvent, status);
-  NS_ENSURE_TRUE(queryTextContentEvent.mSucceeded, NS_ERROR_FAILURE);
+  if (NS_WARN_IF(queryTextContentEvent.Failed())) {
+    return NS_ERROR_FAILURE;
+  }
 
-  nsAutoString textContent(queryTextContentEvent.mReply.mString);
-  if (selOffset + selLength > textContent.Length()) {
+  if (selOffset + selLength > queryTextContentEvent.mReply->DataLength()) {
     MOZ_LOG(gGtkIMLog, LogLevel::Error,
             ("0x%p   GetCurrentParagraph(), FAILED, The selection is "
-             "invalid, textContent.Length()=%u",
-             this, textContent.Length()));
+             "invalid, queryTextContentEvent={ mReply=%s }",
+             this, ToString(queryTextContentEvent.mReply).c_str()));
     return NS_ERROR_FAILURE;
   }
 
   // Remove composing string and restore the selected string because
   // GtkEntry doesn't remove selected string until committing, however,
   // our editor does it.  We should emulate the behavior for IME.
+  nsAutoString textContent(queryTextContentEvent.mReply->DataRef());
   if (EditorHasCompositionString() &&
       mDispatchedCompositionString != mSelectedStringRemovedByComposition) {
     textContent.Replace(mCompositionStart,
@@ -2963,15 +3046,17 @@ nsresult IMContextWrapper::DeleteText(GtkIMContext* aContext, int32_t aOffset,
                                                 mLastFocusedWindow);
   queryTextContentEvent.InitForQueryTextContent(0, UINT32_MAX);
   mLastFocusedWindow->DispatchEvent(&queryTextContentEvent, status);
-  NS_ENSURE_TRUE(queryTextContentEvent.mSucceeded, NS_ERROR_FAILURE);
-  if (queryTextContentEvent.mReply.mString.IsEmpty()) {
+  if (NS_WARN_IF(queryTextContentEvent.Failed())) {
+    return NS_ERROR_FAILURE;
+  }
+  if (queryTextContentEvent.mReply->IsDataEmpty()) {
     MOZ_LOG(gGtkIMLog, LogLevel::Error,
             ("0x%p   DeleteText(), FAILED, there is no contents", this));
     return NS_ERROR_FAILURE;
   }
 
-  NS_ConvertUTF16toUTF8 utf8Str(
-      nsDependentSubstring(queryTextContentEvent.mReply.mString, 0, selOffset));
+  NS_ConvertUTF16toUTF8 utf8Str(nsDependentSubstring(
+      queryTextContentEvent.mReply->DataRef(), 0, selOffset));
   glong offsetInUTF8Characters =
       g_utf8_strlen(utf8Str.get(), utf8Str.Length()) + aOffset;
   if (offsetInUTF8Characters < 0) {
@@ -2983,7 +3068,7 @@ nsresult IMContextWrapper::DeleteText(GtkIMContext* aContext, int32_t aOffset,
   }
 
   AppendUTF16toUTF8(
-      nsDependentSubstring(queryTextContentEvent.mReply.mString, selOffset),
+      nsDependentSubstring(queryTextContentEvent.mReply->DataRef(), selOffset),
       utf8Str);
   glong countOfCharactersInUTF8 =
       g_utf8_strlen(utf8Str.get(), utf8Str.Length());
@@ -3103,11 +3188,11 @@ bool IMContextWrapper::EnsureToCacheSelection(nsAString* aSelectedString) {
   }
 
   nsEventStatus status;
-  WidgetQueryContentEvent selection(true, eQuerySelectedText,
-                                    mLastFocusedWindow);
-  InitEvent(selection);
-  mLastFocusedWindow->DispatchEvent(&selection, status);
-  if (NS_WARN_IF(!selection.mSucceeded)) {
+  WidgetQueryContentEvent querySelectedTextEvent(true, eQuerySelectedText,
+                                                 mLastFocusedWindow);
+  InitEvent(querySelectedTextEvent);
+  mLastFocusedWindow->DispatchEvent(&querySelectedTextEvent, status);
+  if (NS_WARN_IF(querySelectedTextEvent.Failed())) {
     MOZ_LOG(gGtkIMLog, LogLevel::Error,
             ("0x%p EnsureToCacheSelection(), FAILED, due to "
              "failure of query selection event",
@@ -3115,7 +3200,7 @@ bool IMContextWrapper::EnsureToCacheSelection(nsAString* aSelectedString) {
     return false;
   }
 
-  mSelection.Assign(selection);
+  mSelection.Assign(querySelectedTextEvent);
   if (!mSelection.IsValid()) {
     MOZ_LOG(gGtkIMLog, LogLevel::Error,
             ("0x%p EnsureToCacheSelection(), FAILED, due to "
@@ -3125,7 +3210,7 @@ bool IMContextWrapper::EnsureToCacheSelection(nsAString* aSelectedString) {
   }
 
   if (!mSelection.Collapsed() && aSelectedString) {
-    aSelectedString->Assign(selection.mReply.mString);
+    aSelectedString->Assign(querySelectedTextEvent.mReply->DataRef());
   }
 
   MOZ_LOG(gGtkIMLog, LogLevel::Debug,
@@ -3151,10 +3236,11 @@ void IMContextWrapper::Selection::Assign(
 void IMContextWrapper::Selection::Assign(
     const WidgetQueryContentEvent& aEvent) {
   MOZ_ASSERT(aEvent.mMessage == eQuerySelectedText);
-  MOZ_ASSERT(aEvent.mSucceeded);
-  mString = aEvent.mReply.mString;
-  mOffset = aEvent.mReply.mOffset;
-  mWritingMode = aEvent.GetWritingMode();
+  MOZ_ASSERT(aEvent.Succeeded());
+  MOZ_ASSERT(aEvent.mReply->mOffsetAndData.isSome());
+  mString = aEvent.mReply->DataRef();
+  mOffset = aEvent.mReply->StartOffset();
+  mWritingMode = aEvent.mReply->WritingModeRef();
 }
 
 }  // namespace widget

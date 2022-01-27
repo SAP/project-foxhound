@@ -7,18 +7,38 @@
 #define TRRServiceBase_h_
 
 #include "mozilla/Atomics.h"
+#include "mozilla/DataMutex.h"
 #include "nsString.h"
+#include "nsIDNSService.h"
+#include "nsIProtocolProxyService2.h"
+
+class nsICancelable;
+class nsIProxyInfo;
 
 namespace mozilla {
 namespace net {
 
-class TRRServiceBase {
+class nsHttpConnectionInfo;
+
+static const char kRolloutURIPref[] = "doh-rollout.uri";
+static const char kRolloutModePref[] = "doh-rollout.mode";
+
+class TRRServiceBase : public nsIProxyConfigChangedCallback {
  public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+
   TRRServiceBase();
-  uint32_t Mode() { return mMode; }
+  nsIDNSService::ResolverMode Mode() { return mMode; }
+  virtual void GetURI(nsACString& result) = 0;
+  already_AddRefed<nsHttpConnectionInfo> TRRConnectionInfo();
+  // Called to initialize the connection info. Once the connection info is
+  // created first time, mTRRConnectionInfoInited will be set to true.
+  virtual void InitTRRConnectionInfo();
+  bool TRRConnectionInfoInited() const { return mTRRConnectionInfoInited; }
 
  protected:
-  ~TRRServiceBase() = default;
+  virtual ~TRRServiceBase();
+
   virtual bool MaybeSetPrivateURI(const nsACString& aURI) = 0;
   void ProcessURITemplate(nsACString& aURI);
   // Checks the network.trr.uri or the doh-rollout.uri prefs and sets the URI
@@ -33,14 +53,32 @@ class TRRServiceBase {
   void OnTRRModeChange();
   void OnTRRURIChange();
 
+  virtual void ReadEtcHostsFile() {}
+  // Called to create a connection info that will be used by TRRServiceChannel.
+  // Note that when this function is called, mDefaultTRRConnectionInfo will be
+  // set to null to invalidate the connection info.
+  // When the connection info is created, SetDefaultTRRConnectionInfo() is
+  // called to set the result to mDefaultTRRConnectionInfo.
+  // Note that this method does nothing when mTRRConnectionInfoInited is false.
+  // We want to starting updating the connection info after it's create first
+  // time.
+  void AsyncCreateTRRConnectionInfo(const nsACString& aURI);
+  void AsyncCreateTRRConnectionInfoInternal(const nsACString& aURI);
+  virtual void SetDefaultTRRConnectionInfo(nsHttpConnectionInfo* aConnInfo);
+  void RegisterProxyChangeListener();
+  void UnregisterProxyChangeListener();
+
   nsCString mPrivateURI;
   // Pref caches should only be used on the main thread.
-  bool mURIPrefHasUserValue = false;
   nsCString mURIPref;
   nsCString mRolloutURIPref;
+  nsCString mDefaultURIPref;
 
-  Atomic<uint32_t, Relaxed> mMode;
-  Atomic<bool, Relaxed> mURISetByDetection;
+  Atomic<nsIDNSService::ResolverMode, Relaxed> mMode{
+      nsIDNSService::MODE_NATIVEONLY};
+  Atomic<bool, Relaxed> mURISetByDetection{false};
+  Atomic<bool, Relaxed> mTRRConnectionInfoInited{false};
+  DataMutex<RefPtr<nsHttpConnectionInfo>> mDefaultTRRConnectionInfo;
 };
 
 }  // namespace net

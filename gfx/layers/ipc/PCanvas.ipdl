@@ -4,9 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-using mozilla::CrossProcessSemaphoreHandle from "mozilla/ipc/CrossProcessSemaphore.h";
+include "mozilla/layers/LayersMessageUtils.h";
+
+[MoveOnly] using mozilla::CrossProcessSemaphoreHandle from "mozilla/ipc/CrossProcessSemaphore.h";
 using mozilla::layers::TextureType from "mozilla/layers/LayersTypes.h";
-using mozilla::ipc::SharedMemoryBasic::Handle from "mozilla/ipc/SharedMemoryBasic.h";
+[MoveOnly] using mozilla::ipc::SharedMemoryBasic::Handle from "mozilla/ipc/SharedMemoryBasic.h";
 
 namespace mozilla {
 namespace layers {
@@ -14,7 +16,8 @@ namespace layers {
 /**
  * PCanvas is the IPDL for recorded Canvas drawing.
  */
-async refcounted protocol PCanvas {
+[RefCounted, NeedsOtherPid]
+async protocol PCanvas {
 parent:
   /**
    * Initialize a CanvasTranslator for a particular TextureType, which

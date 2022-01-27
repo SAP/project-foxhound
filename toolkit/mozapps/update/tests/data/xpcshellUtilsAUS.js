@@ -44,6 +44,12 @@ ChromeUtils.defineModuleGetter(
   "resource://testing-common/MockRegistrar.jsm"
 );
 
+ChromeUtils.defineModuleGetter(
+  this,
+  "updateAppInfo",
+  "resource://testing-common/AppInfo.jsm"
+);
+
 const Cm = Components.manager;
 
 /* global MOZ_APP_VENDOR, MOZ_APP_BASENAME */
@@ -103,6 +109,8 @@ const ERR_BACKUP_CREATE_7 = "backup_create failed: 7";
 const ERR_LOADSOURCEFILE_FAILED = "LoadSourceFile failed";
 const ERR_PARENT_PID_PERSISTS =
   "The parent process didn't exit! Continuing with update.";
+const ERR_BGTASK_EXCLUSIVE =
+  "failed to exclusively open executable file from background task: ";
 
 const LOG_SVC_SUCCESSFUL_LAUNCH = "Process was started... waiting on result.";
 
@@ -950,6 +958,16 @@ function setupTestCommon(aAppUpdateAutoEnabled = false, aAllowBits = false) {
     grePrefsFile.create(Ci.nsIFile.NORMAL_FILE_TYPE, PERMS_FILE);
   }
 
+  // The name of the update lock needs to be changed to match the path
+  // overridden in adjustGeneralPaths() above. Wait until now to reset
+  // because the GRE dir now exists, which may cause the "install
+  // path" to be normalized differently now that it can be resolved.
+  debugDump("resetting update lock");
+  let syncManager = Cc["@mozilla.org/updates/update-sync-manager;1"].getService(
+    Ci.nsIUpdateSyncManager
+  );
+  syncManager.resetLock();
+
   // Remove the updates directory on Windows and Mac OS X which is located
   // outside of the application directory after the call to adjustGeneralPaths
   // has set it up. Since the test hasn't ran yet and the directory shouldn't
@@ -1264,6 +1282,10 @@ function checkUpdateManager(
   aUpdateErrCode,
   aUpdateCount
 ) {
+  let activeUpdate =
+    aUpdateStatusState == STATE_DOWNLOADING
+      ? gUpdateManager.downloadingUpdate
+      : gUpdateManager.readyUpdate;
   Assert.equal(
     readStatusState(),
     aStatusFileState,
@@ -1271,16 +1293,17 @@ function checkUpdateManager(
   );
   let msgTags = [" after startup ", " after a file reload "];
   for (let i = 0; i < msgTags.length; ++i) {
-    logTestInfo("checking Update Manager updates" + msgTags[i]) +
-      "is performed";
+    logTestInfo(
+      "checking Update Manager updates" + msgTags[i] + "is performed"
+    );
     if (aHasActiveUpdate) {
       Assert.ok(
-        !!gUpdateManager.activeUpdate,
+        !!activeUpdate,
         msgTags[i] + "the active update should be defined"
       );
     } else {
       Assert.ok(
-        !gUpdateManager.activeUpdate,
+        !activeUpdate,
         msgTags[i] + "the active update should not be defined"
       );
     }
@@ -1608,7 +1631,15 @@ function getSpecialFolderDir(aCSIDL) {
   );
 
   let aryPath = ctypes.char16_t.array()(260);
-  SHGetSpecialFolderPath(0, aryPath, aCSIDL, false);
+  let rv = SHGetSpecialFolderPath(0, aryPath, aCSIDL, false);
+  if (!rv) {
+    do_throw(
+      "SHGetSpecialFolderPath failed to retrieve " +
+        aCSIDL +
+        " with Win32 error " +
+        ctypes.winLastError
+    );
+  }
   lib.close();
 
   let path = aryPath.readString(); // Convert the c-string to js-string
@@ -2220,10 +2251,7 @@ function setupActiveUpdate() {
   writeVersionFile(DEFAULT_UPDATE_VERSION);
   writeStatusFile(pendingState);
   reloadUpdateManagerData();
-  Assert.ok(
-    !!gUpdateManager.activeUpdate,
-    "the active update should be defined"
-  );
+  Assert.ok(!!gUpdateManager.readyUpdate, "the ready update should be defined");
 }
 
 /**
@@ -2285,7 +2313,7 @@ async function stageUpdate(
     );
 
     Assert.equal(
-      gUpdateManager.activeUpdate.state,
+      gUpdateManager.readyUpdate.state,
       aStateAfterStage,
       "the update state" + MSG_SHOULD_EQUAL
     );
@@ -4048,7 +4076,7 @@ function waitForUpdateCheck(aSuccess, aExpectedValues = {}) {
     gUpdateChecker.checkForUpdates(
       {
         onProgress: (aRequest, aPosition, aTotalSize) => {},
-        onCheckComplete: (request, updates) => {
+        onCheckComplete: async (request, updates) => {
           Assert.ok(aSuccess, "the update check should succeed");
           if (aExpectedValues.updateCount) {
             Assert.equal(
@@ -4059,7 +4087,7 @@ function waitForUpdateCheck(aSuccess, aExpectedValues = {}) {
           }
           resolve({ request, updates });
         },
-        onError: (request, update) => {
+        onError: async (request, update) => {
           Assert.ok(!aSuccess, "the update check should error");
           if (aExpectedValues.url) {
             Assert.equal(
@@ -4091,16 +4119,16 @@ function waitForUpdateCheck(aSuccess, aExpectedValues = {}) {
  */
 function waitForUpdateDownload(aUpdates, aExpectedStatus) {
   let bestUpdate = gAUS.selectUpdate(aUpdates);
-  let state = gAUS.downloadUpdate(bestUpdate, false);
-  if (state == STATE_NONE || state == STATE_FAILED) {
-    do_throw("nsIApplicationUpdateService:downloadUpdate returned " + state);
+  let success = gAUS.downloadUpdate(bestUpdate, false);
+  if (!success) {
+    do_throw("nsIApplicationUpdateService:downloadUpdate returned " + success);
   }
   return new Promise(resolve =>
     gAUS.addDownloadListener({
       onStartRequest: aRequest => {},
       onProgress: (aRequest, aContext, aProgress, aMaxProgress) => {},
       onStatus: (aRequest, aStatus, aStatusText) => {},
-      onStopRequest: (request, status) => {
+      onStopRequest(request, status) {
         gAUS.removeDownloadListener(this);
         Assert.equal(
           aExpectedStatus,
@@ -4181,15 +4209,7 @@ function stop_httpserver(aCallback) {
  *          The gecko version of the application
  */
 function createAppInfo(aID, aName, aVersion, aPlatformVersion) {
-  const XULAPPINFO_CONTRACTID = "@mozilla.org/xre/app-info;1";
-  const XULAPPINFO_CID = Components.ID(
-    "{c763b610-9d49-455a-bbd2-ede71682a1ac}"
-  );
-  let ifaces = [Ci.nsIXULAppInfo, Ci.nsIPlatformInfo, Ci.nsIXULRuntime];
-  if (AppConstants.platform == "win") {
-    ifaces.push(Ci.nsIWinAppHelper);
-  }
-  const XULAppInfo = {
+  updateAppInfo({
     vendor: APP_INFO_VENDOR,
     name: aName,
     ID: aID,
@@ -4201,26 +4221,7 @@ function createAppInfo(aID, aName, aVersion, aPlatformVersion) {
     logConsoleErrors: true,
     OS: "XPCShell",
     XPCOMABI: "noarch-spidermonkey",
-
-    QueryInterface: ChromeUtils.generateQI(ifaces),
-  };
-
-  const XULAppInfoFactory = {
-    createInstance(aOuter, aIID) {
-      if (aOuter == null) {
-        return XULAppInfo.QueryInterface(aIID);
-      }
-      throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
-    },
-  };
-
-  let registrar = Cm.QueryInterface(Ci.nsIComponentRegistrar);
-  registrar.registerFactory(
-    XULAPPINFO_CID,
-    "XULAppInfo",
-    XULAPPINFO_CONTRACTID,
-    XULAppInfoFactory
-  );
+  });
 }
 
 /**
@@ -4365,6 +4366,7 @@ function adjustGeneralPaths() {
   let ds = Services.dirsvc.QueryInterface(Ci.nsIDirectoryService);
   ds.QueryInterface(Ci.nsIProperties).undefine(NS_GRE_DIR);
   ds.QueryInterface(Ci.nsIProperties).undefine(NS_GRE_BIN_DIR);
+  ds.QueryInterface(Ci.nsIProperties).undefine(XRE_EXECUTABLE_FILE);
   ds.registerProvider(dirProvider);
   registerCleanupFunction(function AGP_cleanup() {
     debugDump("start - unregistering directory provider");
@@ -4421,6 +4423,15 @@ function adjustGeneralPaths() {
 
     ds.unregisterProvider(dirProvider);
     cleanupTestCommon();
+
+    // Now that our provider is unregistered, reset the lock a second time so
+    // that we know the lock we're interested in gets released (xpcshell
+    // doesn't always run a proper XPCOM shutdown sequence, which is where that
+    // would normally be happening).
+    let syncManager = Cc[
+      "@mozilla.org/updates/update-sync-manager;1"
+    ].getService(Ci.nsIUpdateSyncManager);
+    syncManager.resetLock();
 
     debugDump("finish - unregistering directory provider");
   });

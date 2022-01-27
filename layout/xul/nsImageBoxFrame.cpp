@@ -18,6 +18,7 @@
 #include "nsStyleConsts.h"
 #include "nsStyleUtil.h"
 #include "nsCOMPtr.h"
+#include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsBoxLayoutState.h"
 
@@ -37,7 +38,7 @@
 #include "nsIURI.h"
 #include "nsThreadUtils.h"
 #include "nsDisplayList.h"
-#include "ImageLayers.h"
+#include "ImageRegion.h"
 #include "ImageContainer.h"
 #include "nsIContent.h"
 
@@ -47,8 +48,10 @@
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_image.h"
 #include "mozilla/SVGImageContext.h"
 #include "Units.h"
+#include "mozilla/image/WebRenderImageProvider.h"
 #include "mozilla/layers/RenderRootStateManager.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
 #include "mozilla/dom/ImageTracker.h"
@@ -253,7 +256,7 @@ void nsImageBoxFrame::UpdateImage() {
       auto referrerInfo = MakeRefPtr<ReferrerInfo>(*mContent->AsElement());
       nsresult rv = nsContentUtils::LoadImage(
           uri, mContent, doc, triggeringPrincipal, requestContextID,
-          referrerInfo, mListener, mLoadFlags, EmptyString(),
+          referrerInfo, mListener, mLoadFlags, u""_ns,
           getter_AddRefs(mImageRequest), contentPolicyType);
 
       if (NS_SUCCEEDED(rv) && mImageRequest) {
@@ -267,9 +270,11 @@ void nsImageBoxFrame::UpdateImage() {
         doc->ImageTracker()->Add(mImageRequest);
       }
     }
-  } else if (auto* styleRequest = GetRequestFromStyle()) {
-    styleRequest->SyncClone(mListener, mContent->GetComposedDoc(),
-                            getter_AddRefs(mImageRequest));
+  } else if (auto* styleImage = GetImageFromStyle()) {
+    if (auto* styleRequest = styleImage->GetImageRequest()) {
+      styleRequest->SyncClone(mListener, mContent->GetComposedDoc(),
+                              getter_AddRefs(mImageRequest));
+    }
   }
 
   if (!mImageRequest) {
@@ -408,13 +413,9 @@ ImgDrawResult nsImageBoxFrame::CreateWebRenderCommands(
     return result;
   }
 
-  uint32_t containerFlags = imgIContainer::FLAG_ASYNC_NOTIFY;
-  if (aFlags & (nsImageRenderer::FLAG_PAINTING_TO_WINDOW |
-                nsImageRenderer::FLAG_HIGH_QUALITY_SCALING)) {
-    containerFlags |= imgIContainer::FLAG_HIGH_QUALITY_SCALING;
-  }
-  if (aFlags & nsImageRenderer::FLAG_SYNC_DECODE_IMAGES) {
-    containerFlags |= imgIContainer::FLAG_SYNC_DECODE;
+  if (StaticPrefs::image_svg_blob_image() &&
+      imgCon->GetType() == imgIContainer::TYPE_VECTOR) {
+    aFlags |= imgIContainer::FLAG_RECORD_BLOB;
   }
 
   const int32_t appUnitsPerDevPixel = PresContext()->AppUnitsPerDevPixel();
@@ -422,31 +423,27 @@ ImgDrawResult nsImageBoxFrame::CreateWebRenderCommands(
       LayoutDeviceRect::FromAppUnits(dest, appUnitsPerDevPixel);
 
   Maybe<SVGImageContext> svgContext;
+  Maybe<ImageIntRegion> region;
   gfx::IntSize decodeSize =
       nsLayoutUtils::ComputeImageContainerDrawingParameters(
-          imgCon, aItem->Frame(), fillRect, aSc, containerFlags, svgContext);
+          imgCon, aItem->Frame(), fillRect, fillRect, aSc, aFlags, svgContext,
+          region);
 
-  RefPtr<layers::ImageContainer> container;
-  result = imgCon->GetImageContainerAtSize(aManager->LayerManager(), decodeSize,
-                                           svgContext, containerFlags,
-                                           getter_AddRefs(container));
-  if (!container) {
-    NS_WARNING("Failed to get image container");
-    return result;
-  }
+  RefPtr<image::WebRenderImageProvider> provider;
+  result =
+      imgCon->GetImageProvider(aManager->LayerManager(), decodeSize, svgContext,
+                               region, aFlags, getter_AddRefs(provider));
 
-  mozilla::wr::ImageRendering rendering = wr::ToImageRendering(
-      nsLayoutUtils::GetSamplingFilterForFrame(aItem->Frame()));
-  gfx::IntSize size;
-  Maybe<wr::ImageKey> key = aManager->CommandBuilder().CreateImageKey(
-      aItem, container, aBuilder, aResources, rendering, aSc, size, Nothing());
+  Maybe<wr::ImageKey> key = aManager->CommandBuilder().CreateImageProviderKey(
+      aItem, provider, result, aResources);
   if (key.isNothing()) {
     return result;
   }
 
+  auto rendering = wr::ToImageRendering(aItem->Frame()->UsedImageRendering());
   wr::LayoutRect fill = wr::ToLayoutRect(fillRect);
-  aBuilder.PushImage(fill, fill, !BackfaceIsHidden(), rendering, key.value());
 
+  aBuilder.PushImage(fill, fill, !BackfaceIsHidden(), rendering, key.value());
   return result;
 }
 
@@ -507,7 +504,7 @@ void nsDisplayXULImage::Paint(nsDisplayListBuilder* aBuilder,
     flags |= imgIContainer::FLAG_HIGH_QUALITY_SCALING;
 
   ImgDrawResult result = static_cast<nsImageBoxFrame*>(mFrame)->PaintImage(
-      *aCtx, GetPaintRect(), ToReferenceFrame(), flags);
+      *aCtx, GetPaintRect(aBuilder, aCtx), ToReferenceFrame(), flags);
 
   nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
 }
@@ -527,7 +524,8 @@ bool nsDisplayXULImage::CreateWebRenderCommands(
     return true;
   }
 
-  uint32_t flags = imgIContainer::FLAG_SYNC_DECODE_IF_FAST;
+  uint32_t flags = imgIContainer::FLAG_SYNC_DECODE_IF_FAST |
+                   imgIContainer::FLAG_ASYNC_NOTIFY;
   if (aDisplayListBuilder->ShouldSyncDecodeImages()) {
     flags |= imgIContainer::FLAG_SYNC_DECODE;
   }
@@ -563,36 +561,8 @@ void nsDisplayXULImage::ComputeInvalidationRegion(
     aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
   }
 
-  nsDisplayImageContainer::ComputeInvalidationRegion(aBuilder, aGeometry,
-                                                     aInvalidRegion);
-}
-
-bool nsDisplayXULImage::CanOptimizeToImageLayer(
-    LayerManager* aManager, nsDisplayListBuilder* aBuilder) {
-  nsImageBoxFrame* imageFrame = static_cast<nsImageBoxFrame*>(mFrame);
-  if (!imageFrame->CanOptimizeToImageLayer()) {
-    return false;
-  }
-
-  return nsDisplayImageContainer::CanOptimizeToImageLayer(aManager, aBuilder);
-}
-
-already_AddRefed<imgIContainer> nsDisplayXULImage::GetImage() {
-  nsImageBoxFrame* imageFrame = static_cast<nsImageBoxFrame*>(mFrame);
-  if (!imageFrame->mImageRequest) {
-    return nullptr;
-  }
-
-  nsCOMPtr<imgIContainer> imgCon;
-  imageFrame->mImageRequest->GetImage(getter_AddRefs(imgCon));
-
-  return imgCon.forget();
-}
-
-nsRect nsDisplayXULImage::GetDestRect() const {
-  Maybe<nsPoint> anchorPoint;
-  return static_cast<nsImageBoxFrame*>(mFrame)->GetDestRect(ToReferenceFrame(),
-                                                            anchorPoint);
+  nsPaintedDisplayItem::ComputeInvalidationRegion(aBuilder, aGeometry,
+                                                  aInvalidRegion);
 }
 
 bool nsImageBoxFrame::CanOptimizeToImageLayer() {
@@ -603,17 +573,36 @@ bool nsImageBoxFrame::CanOptimizeToImageLayer() {
   return true;
 }
 
-imgRequestProxy* nsImageBoxFrame::GetRequestFromStyle() {
-  const nsStyleDisplay* disp = StyleDisplay();
+const mozilla::StyleImage* nsImageBoxFrame::GetImageFromStyle(
+    const ComputedStyle& aStyle) const {
+  const nsStyleDisplay* disp = aStyle.StyleDisplay();
   if (disp->HasAppearance()) {
     nsPresContext* pc = PresContext();
-    if (pc->Theme()->ThemeSupportsWidget(pc, this,
+    if (pc->Theme()->ThemeSupportsWidget(pc, const_cast<nsImageBoxFrame*>(this),
                                          disp->EffectiveAppearance())) {
       return nullptr;
     }
   }
+  auto& image = aStyle.StyleList()->mListStyleImage;
+  if (!image.IsImageRequestType()) {
+    return nullptr;
+  }
+  return &image;
+}
 
-  return StyleList()->GetListStyleImage();
+ImageResolution nsImageBoxFrame::GetImageResolution() const {
+  if (auto* image = GetImageFromStyle()) {
+    return image->GetResolution();
+  }
+  if (!mImageRequest) {
+    return {};
+  }
+  nsCOMPtr<imgIContainer> image;
+  mImageRequest->GetImage(getter_AddRefs(image));
+  if (!image) {
+    return {};
+  }
+  return image->GetResolution();
 }
 
 /* virtual */
@@ -624,26 +613,18 @@ void nsImageBoxFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {
   const nsStyleList* myList = StyleList();
   mSubRect = myList->GetImageRegion();  // before |mSuppressStyleCheck| test!
 
-  if (mUseSrcAttr || mSuppressStyleCheck)
+  if (mUseSrcAttr || mSuppressStyleCheck) {
     return;  // No more work required, since the image isn't specified by style.
+  }
 
-  // If the image to use changes, we have a new image.
-  nsCOMPtr<nsIURI> oldURI, newURI;
-  if (mImageRequest) {
-    mImageRequest->GetURI(getter_AddRefs(oldURI));
-  }
-  if (auto* newImage = GetRequestFromStyle()) {
-    newImage->GetURI(getter_AddRefs(newURI));
-  }
-  bool equal;
-  if (newURI == oldURI ||  // handles null==null
-      (newURI && oldURI && NS_SUCCEEDED(newURI->Equals(oldURI, &equal)) &&
-       equal)) {
+  auto* oldImage = aOldStyle ? GetImageFromStyle(*aOldStyle) : nullptr;
+  auto* newImage = GetImageFromStyle();
+  if (newImage == oldImage ||
+      (newImage && oldImage && *oldImage == *newImage)) {
     return;
   }
-
   UpdateImage();
-}  // DidSetComputedStyle
+}
 
 void nsImageBoxFrame::GetImageSize() {
   if (mIntrinsicSize.width > 0 && mIntrinsicSize.height > 0) {
@@ -797,12 +778,13 @@ void nsImageBoxFrame::OnSizeAvailable(imgIRequest* aRequest,
 
   aImage->SetAnimationMode(PresContext()->ImageAnimationMode());
 
-  nscoord w, h;
+  int32_t w = 0, h = 0;
   aImage->GetWidth(&w);
   aImage->GetHeight(&h);
 
-  mIntrinsicSize.SizeTo(nsPresContext::CSSPixelsToAppUnits(w),
-                        nsPresContext::CSSPixelsToAppUnits(h));
+  mIntrinsicSize.SizeTo(CSSPixel::ToAppUnits(w), CSSPixel::ToAppUnits(h));
+
+  GetImageResolution().ApplyTo(mIntrinsicSize.width, mIntrinsicSize.height);
 
   if (!HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
@@ -842,8 +824,8 @@ void nsImageBoxFrame::OnFrameUpdate(imgIRequest* aRequest) {
   // Check if WebRender has interacted with this frame. If it has
   // we need to let it know that things have changed.
   const auto type = DisplayItemType::TYPE_XUL_IMAGE;
-  const auto producerId = aRequest->GetProducerId();
-  if (WebRenderUserData::ProcessInvalidateForImage(this, type, producerId)) {
+  const auto providerId = aRequest->GetProviderId();
+  if (WebRenderUserData::ProcessInvalidateForImage(this, type, providerId)) {
     return;
   }
 

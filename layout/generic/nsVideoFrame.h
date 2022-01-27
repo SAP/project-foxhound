@@ -14,7 +14,6 @@
 #include "nsIAnonymousContentCreator.h"
 #include "nsStringFwd.h"
 #include "nsTArrayForwardDeclare.h"
-#include "FrameLayerBuilder.h"
 
 namespace mozilla {
 namespace layers {
@@ -36,7 +35,6 @@ class nsVideoFrame final : public nsContainerFrame,
 
   typedef mozilla::layers::Layer Layer;
   typedef mozilla::layers::LayerManager LayerManager;
-  typedef mozilla::ContainerLayerParameters ContainerLayerParameters;
 
   explicit nsVideoFrame(ComputedStyle*, nsPresContext*);
 
@@ -54,13 +52,16 @@ class nsVideoFrame final : public nsContainerFrame,
       const Maybe<OnNonvisible>& aNonvisibleAction = Nothing()) override;
 
   /* get the size of the video's display */
-  nsSize GetVideoIntrinsicSize(gfxContext* aRenderingContext);
-  mozilla::AspectRatio GetIntrinsicRatio() override;
-  mozilla::LogicalSize ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWritingMode,
+  nsSize GetVideoIntrinsicSize() const;
+  mozilla::IntrinsicSize GetIntrinsicSize() override;
+  mozilla::AspectRatio GetIntrinsicRatio() const override;
+  SizeComputationResult ComputeSize(
+      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
+      const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorderPadding,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags) override;
   nscoord GetMinISize(gfxContext* aRenderingContext) override;
   nscoord GetPrefISize(gfxContext* aRenderingContext) override;
   void DestroyFrom(nsIFrame* aDestructRoot,
@@ -83,33 +84,31 @@ class nsVideoFrame final : public nsContainerFrame,
   void AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
                                 uint32_t aFilters) override;
 
-  mozilla::dom::Element* GetPosterImage() { return mPosterImage; }
+  mozilla::dom::Element* GetPosterImage() const { return mPosterImage; }
 
   // Returns true if we should display the poster. Note that once we show
   // a video frame, the poster will never be displayed again.
-  bool ShouldDisplayPoster();
+  bool ShouldDisplayPoster() const;
 
-  nsIContent* GetCaptionOverlay() { return mCaptionDiv; }
-  nsIContent* GetVideoControls();
+  nsIContent* GetCaptionOverlay() const { return mCaptionDiv; }
+  nsIContent* GetVideoControls() const;
 
 #ifdef DEBUG_FRAME_DUMP
   nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
-  already_AddRefed<Layer> BuildLayer(
-      nsDisplayListBuilder* aBuilder, LayerManager* aManager,
-      nsDisplayItem* aItem,
-      const ContainerLayerParameters& aContainerParameters);
-
  protected:
   // Returns true if we're rendering for a video element. We still create
   // nsVideoFrame to render controls for an audio element.
-  bool HasVideoElement();
+  bool HasVideoElement() const;
 
   // Returns true if there is video data to render. Can return false
   // when we're the frame for an audio element, or we've created a video
   // element for a media which is audio-only.
-  bool HasVideoData();
+  bool HasVideoData() const;
+
+  // Get the poster image's size if there is any.
+  mozilla::Maybe<nsSize> PosterImageSize() const;
 
   // Sets the mPosterImage's src attribute to be the video's poster attribute,
   // if we're the frame for a video element. Only call on frames for video

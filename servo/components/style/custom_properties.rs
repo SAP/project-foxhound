@@ -49,19 +49,19 @@ macro_rules! make_variable {
 }
 
 fn get_safearea_inset_top(device: &Device) -> VariableValue {
-    VariableValue::pixel(device.safe_area_insets().top)
+    VariableValue::pixels(device.safe_area_insets().top)
 }
 
 fn get_safearea_inset_bottom(device: &Device) -> VariableValue {
-    VariableValue::pixel(device.safe_area_insets().bottom)
+    VariableValue::pixels(device.safe_area_insets().bottom)
 }
 
 fn get_safearea_inset_left(device: &Device) -> VariableValue {
-    VariableValue::pixel(device.safe_area_insets().left)
+    VariableValue::pixels(device.safe_area_insets().left)
 }
 
 fn get_safearea_inset_right(device: &Device) -> VariableValue {
-    VariableValue::pixel(device.safe_area_insets().right)
+    VariableValue::pixels(device.safe_area_insets().right)
 }
 
 static ENVIRONMENT_VARIABLES: [EnvironmentVariable; 4] = [
@@ -71,10 +71,61 @@ static ENVIRONMENT_VARIABLES: [EnvironmentVariable; 4] = [
     make_variable!(atom!("safe-area-inset-right"), get_safearea_inset_right),
 ];
 
+macro_rules! lnf_int {
+    ($id:ident) => {
+        unsafe {
+            crate::gecko_bindings::bindings::Gecko_GetLookAndFeelInt(
+                crate::gecko_bindings::bindings::LookAndFeel_IntID::$id as i32,
+            )
+        }
+    };
+}
+
+macro_rules! lnf_int_variable {
+    ($atom:expr, $id:ident, $ctor:ident) => {{
+        fn __eval(_: &Device) -> VariableValue {
+            VariableValue::$ctor(lnf_int!($id))
+        }
+        make_variable!($atom, __eval)
+    }};
+}
+
+static CHROME_ENVIRONMENT_VARIABLES: [EnvironmentVariable; 5] = [
+    lnf_int_variable!(
+        atom!("-moz-gtk-csd-titlebar-radius"),
+        TitlebarRadius,
+        int_pixels
+    ),
+    lnf_int_variable!(atom!("-moz-gtk-csd-menu-radius"), GtkMenuRadius, int_pixels),
+    lnf_int_variable!(
+        atom!("-moz-gtk-csd-close-button-position"),
+        GTKCSDCloseButtonPosition,
+        integer
+    ),
+    lnf_int_variable!(
+        atom!("-moz-gtk-csd-minimize-button-position"),
+        GTKCSDMinimizeButtonPosition,
+        integer
+    ),
+    lnf_int_variable!(
+        atom!("-moz-gtk-csd-maximize-button-position"),
+        GTKCSDMaximizeButtonPosition,
+        integer
+    ),
+];
+
 impl CssEnvironment {
     #[inline]
     fn get(&self, name: &Atom, device: &Device) -> Option<VariableValue> {
-        let var = ENVIRONMENT_VARIABLES.iter().find(|var| var.name == *name)?;
+        if let Some(var) = ENVIRONMENT_VARIABLES.iter().find(|var| var.name == *name) {
+            return Some((var.evaluator)(device));
+        }
+        if !device.is_chrome_document() {
+            return None;
+        }
+        let var = CHROME_ENVIRONMENT_VARIABLES
+            .iter()
+            .find(|var| var.name == *name)?;
         Some((var.evaluator)(device))
     }
 }
@@ -88,7 +139,7 @@ pub type Name = Atom;
 ///
 /// <https://drafts.csswg.org/css-variables/#typedef-custom-property-name>
 pub fn parse_name(s: &str) -> Result<&str, ()> {
-    if s.starts_with("--") {
+    if s.starts_with("--") && s.len() > 2 {
         Ok(&s[2..])
     } else {
         Err(())
@@ -174,11 +225,11 @@ impl VariableValue {
         /// Prevent values from getting terribly big since you can use custom
         /// properties exponentially.
         ///
-        /// This number (1MB) is somewhat arbitrary, but silly enough that no
-        /// sane page would hit it. We could limit by number of total
+        /// This number (2MB) is somewhat arbitrary, but silly enough that no
+        /// reasonable page should hit it. We could limit by number of total
         /// substitutions, but that was very easy to work around in practice
         /// (just choose a larger initial value and boom).
-        const MAX_VALUE_LENGTH_IN_BYTES: usize = 1024 * 1024;
+        const MAX_VALUE_LENGTH_IN_BYTES: usize = 2 * 1024 * 1024;
 
         if self.css.len() + css.len() > MAX_VALUE_LENGTH_IN_BYTES {
             return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
@@ -247,8 +298,11 @@ impl VariableValue {
             .collect::<Vec<_>>()
             .into_boxed_slice();
 
+        let mut css = css.into_owned();
+        css.shrink_to_fit();
+
         Ok(Arc::new(VariableValue {
-            css: css.into_owned(),
+            css,
             first_token_type,
             last_token_type,
             references: custom_property_references,
@@ -256,21 +310,45 @@ impl VariableValue {
         }))
     }
 
-    /// Create VariableValue from css pixel value
-    pub fn pixel(number: f32) -> Self {
+    /// Create VariableValue from an int.
+    fn integer(number: i32) -> Self {
+        Self::from_token(Token::Number {
+            has_sign: false,
+            value: number as f32,
+            int_value: Some(number),
+        })
+    }
+
+    /// Create VariableValue from a float amount of CSS pixels.
+    fn pixels(number: f32) -> Self {
         // FIXME (https://github.com/servo/rust-cssparser/issues/266):
         // No way to get TokenSerializationType::Dimension without creating
         // Token object.
-        let token = Token::Dimension {
+        Self::from_token(Token::Dimension {
             has_sign: false,
             value: number,
             int_value: None,
             unit: CowRcStr::from("px"),
-        };
+        })
+    }
+
+    /// Create VariableValue from an integer amount of CSS pixels.
+    fn int_pixels(number: i32) -> Self {
+        Self::from_token(Token::Dimension {
+            has_sign: false,
+            value: number as f32,
+            int_value: Some(number),
+            unit: CowRcStr::from("px"),
+        })
+    }
+
+    fn from_token(token: Token) -> Self {
         let token_type = token.serialization_type();
+        let mut css = token.to_css_string();
+        css.shrink_to_fit();
 
         VariableValue {
-            css: token.to_css_string(),
+            css,
             first_token_type: token_type,
             last_token_type: token_type,
             references: Default::default(),
@@ -313,11 +391,6 @@ fn parse_declaration_value<'i, 't>(
     missing_closing_characters: &mut String,
 ) -> Result<(TokenSerializationType, TokenSerializationType), ParseError<'i>> {
     input.parse_until_before(Delimiter::Bang | Delimiter::Semicolon, |input| {
-        // Need at least one token
-        let start = input.state();
-        input.next_including_whitespace()?;
-        input.reset(&start);
-
         parse_declaration_value_block(input, references, missing_closing_characters)
     })
 }
@@ -329,6 +402,7 @@ fn parse_declaration_value_block<'i, 't>(
     mut references: Option<&mut VarOrEnvReferences>,
     missing_closing_characters: &mut String,
 ) -> Result<(TokenSerializationType, TokenSerializationType), ParseError<'i>> {
+    input.skip_whitespace();
     let mut token_start = input.position();
     let mut token = match input.next_including_whitespace_and_comments() {
         Ok(token) => token,
@@ -472,10 +546,8 @@ fn parse_fallback<'i, 't>(input: &mut Parser<'i, 't>) -> Result<(), ParseError<'
     // Exclude `!` and `;` at the top level
     // https://drafts.csswg.org/css-syntax/#typedef-declaration-value
     input.parse_until_before(Delimiter::Bang | Delimiter::Semicolon, |input| {
-        // At least one non-comment token.
-        input.next_including_whitespace()?;
         // Skip until the end.
-        while let Ok(_) = input.next_including_whitespace_and_comments() {}
+        while input.next_including_whitespace_and_comments().is_ok() {}
         Ok(())
     })
 }
@@ -577,10 +649,9 @@ impl<'a> CustomPropertiesBuilder<'a> {
                 let value = if !has_references && unparsed_value.references_environment {
                     let result = substitute_references_in_value(unparsed_value, &map, &self.device);
                     match result {
-                        Ok(new_value) => Arc::new(new_value),
+                        Ok(new_value) => new_value,
                         Err(..) => {
-                            // Don't touch the map, this has the same effect as
-                            // making it compute to the inherited one.
+                            map.remove(name);
                             return;
                         },
                     }
@@ -654,9 +725,9 @@ impl<'a> CustomPropertiesBuilder<'a> {
             None => return self.inherited.cloned(),
         };
         if self.may_have_cycles {
-            let inherited = self.inherited.as_ref().map(|m| &***m);
-            substitute_all(&mut map, inherited, self.device);
+            substitute_all(&mut map, self.device);
         }
+        map.shrink_to_fit();
         Some(Arc::new(map))
     }
 }
@@ -665,11 +736,7 @@ impl<'a> CustomPropertiesBuilder<'a> {
 /// (meaning we should use the inherited value).
 ///
 /// It does cycle dependencies removal at the same time as substitution.
-fn substitute_all(
-    custom_properties_map: &mut CustomPropertiesMap,
-    inherited: Option<&CustomPropertiesMap>,
-    device: &Device,
-) {
+fn substitute_all(custom_properties_map: &mut CustomPropertiesMap, device: &Device) {
     // The cycle dependencies removal in this function is a variant
     // of Tarjan's algorithm. It is mostly based on the pseudo-code
     // listed in
@@ -705,10 +772,7 @@ fn substitute_all(
         /// all unfinished strong connected components.
         stack: SmallVec<[usize; 5]>,
         map: &'a mut CustomPropertiesMap,
-        /// The inherited variables. We may need to restore some if we fail
-        /// substitution.
-        inherited: Option<&'a CustomPropertiesMap>,
-        /// to resolve the environment to substitute `env()` variables.
+        /// To resolve the environment to substitute `env()` variables.
         device: &'a Device,
     }
 
@@ -847,19 +911,11 @@ fn substitute_all(
         let result = substitute_references_in_value(&value, &context.map, &context.device);
         match result {
             Ok(computed_value) => {
-                context.map.insert(name, Arc::new(computed_value));
+                context.map.insert(name, computed_value);
             },
             Err(..) => {
-                // This is invalid, reset it to the unset (inherited) value.
-                let inherited = context.inherited.and_then(|m| m.get(&name)).cloned();
-                match inherited {
-                    Some(computed_value) => {
-                        context.map.insert(name, computed_value);
-                    },
-                    None => {
-                        context.map.remove(&name);
-                    },
-                };
+                // This is invalid, reset it to the guaranteed-invalid value.
+                context.map.remove(&name);
             },
         }
 
@@ -877,7 +933,6 @@ fn substitute_all(
             stack: SmallVec::new(),
             var_info: SmallVec::new(),
             map: custom_properties_map,
-            inherited,
             device,
         };
         traverse(name, &mut context);
@@ -889,7 +944,7 @@ fn substitute_references_in_value<'i>(
     value: &'i VariableValue,
     custom_properties: &CustomPropertiesMap,
     device: &Device,
-) -> Result<ComputedValue, ParseError<'i>> {
+) -> Result<Arc<ComputedValue>, ParseError<'i>> {
     debug_assert!(!value.references.is_empty() || value.references_environment);
 
     let mut input = ParserInput::new(&value.css);
@@ -906,7 +961,8 @@ fn substitute_references_in_value<'i>(
     )?;
 
     computed_value.push_from(&input, position, last_token_type)?;
-    Ok(computed_value)
+    computed_value.css.shrink_to_fit();
+    Ok(Arc::new(computed_value))
 }
 
 /// Replace `var()` functions in an arbitrary bit of input.
@@ -989,12 +1045,14 @@ fn substitute_block<'i>(
                         while input.next().is_ok() {}
                     } else {
                         input.expect_comma()?;
+                        input.skip_whitespace();
                         let after_comma = input.state();
                         let first_token_type = input
                             .next_including_whitespace_and_comments()
-                            // parse_var_function() ensures that .unwrap() will not fail.
-                            .unwrap()
-                            .serialization_type();
+                            .ok()
+                            .map_or_else(TokenSerializationType::nothing, |t| {
+                                t.serialization_type()
+                            });
                         input.reset(&after_comma);
                         let mut position = (after_comma.position(), first_token_type);
                         last_token_type = substitute_block(
@@ -1009,7 +1067,7 @@ fn substitute_block<'i>(
                     Ok(())
                 })?;
                 set_position_at_next_iteration = true
-            }
+            },
             Token::Function(_) |
             Token::ParenthesisBlock |
             Token::CurlyBracketBlock |

@@ -10,9 +10,12 @@
 #include "nsAppShell.h"
 #include "nsJSUtils.h"
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject, JS::NewArrayObject
-#include "js/Warnings.h"  // JS::WarnUTF8
+#include "js/PropertyAndElement.h"  // JS_Enumerate, JS_GetElement, JS_GetProperty, JS_GetPropertyById, JS_SetElement, JS_SetUCProperty
+#include "js/String.h"              // JS::StringHasLatin1Chars
+#include "js/Warnings.h"            // JS::WarnUTF8
 #include "xpcpublic.h"
 
+#include "mozilla/fallible.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/java/EventCallbackWrappers.h"
@@ -46,12 +49,15 @@ nsresult BoxString(JSContext* aCx, JS::HandleValue aData,
 
   JS::RootedString str(aCx, aData.toString());
 
-  if (JS_StringHasLatin1Chars(str)) {
+  if (JS::StringHasLatin1Chars(str)) {
     nsAutoJSString autoStr;
     NS_ENSURE_TRUE(CheckJS(aCx, autoStr.init(aCx, str)), NS_ERROR_FAILURE);
 
     // StringParam can automatically convert a nsString to jstring.
-    aOut = jni::StringParam(autoStr, aOut.Env());
+    aOut = jni::StringParam(autoStr, aOut.Env(), fallible);
+    if (!aOut) {
+      return NS_ERROR_FAILURE;
+    }
     return NS_OK;
   }
 
@@ -867,11 +873,7 @@ nsresult EventDispatcher::IterateEvents(JSContext* aCx, JS::HandleValue aEvents,
 
 nsresult EventDispatcher::RegisterEventLocked(
     const nsAString& aEvent, nsIAndroidEventListener* aListener) {
-  ListenersList* list = mListenersMap.Get(aEvent);
-  if (!list) {
-    list = new ListenersList();
-    mListenersMap.Put(aEvent, list);
-  }
+  ListenersList* list = mListenersMap.GetOrInsertNew(aEvent);
 
 #ifdef DEBUG
   for (ssize_t i = 0; i < list->listeners.Count(); i++) {
@@ -952,6 +954,11 @@ void EventDispatcher::Attach(java::EventDispatcher::Param aDispatcher,
   dispatcher->SetAttachedToGecko(java::EventDispatcher::ATTACHED);
 }
 
+void EventDispatcher::Shutdown() {
+  mDispatcher = nullptr;
+  mDOMWindow = nullptr;
+}
+
 void EventDispatcher::Detach() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mDispatcher);
@@ -964,8 +971,7 @@ void EventDispatcher::Detach() {
     dispatcher->SetAttachedToGecko(java::EventDispatcher::DETACHED);
   }
 
-  mDispatcher = nullptr;
-  mDOMWindow = nullptr;
+  Shutdown();
 }
 
 bool EventDispatcher::HasGeckoListener(jni::String::Param aEvent) {

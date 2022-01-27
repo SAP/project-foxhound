@@ -79,27 +79,47 @@ var SiteDataTestUtils = {
   },
 
   /**
-   * Adds a new cookie for the specified origin, with the specified contents.
-   * The cookie will be valid for one day.
-   *
-   * @param {String} origin - the origin of the site to add test data for
-   * @param {String} name [optional] - the cookie name
-   * @param {String} value [optional] - the cookie value
+   * Adds a new cookie for the specified origin or host + path + oa, with the
+   * specified contents. The cookie will be valid for one day.
+   * @param {object} options
+   * @param {String} [options.origin] - Origin of the site to add test data for.
+   * If set, overrides host, path and originAttributes args.
+   * @param {String} [options.host] - Host of the site to add test data for.
+   * @param {String} [options.path] - Path to set cookie for.
+   * @param {Object} [options.originAttributes] - Object of origin attributes to
+   * set cookie for.
+   * @param {String} [options.name] - Cookie name
+   * @param {String} [options.value] - Cookie value
    */
-  addToCookies(origin, name = "foo", value = "bar") {
-    let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
-      origin
-    );
+  addToCookies({
+    origin,
+    host,
+    path = "path",
+    originAttributes = {},
+    name = "foo",
+    value = "bar",
+  }) {
+    if (origin) {
+      let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+        origin
+      );
+      host = principal.host;
+      path = principal.URI.pathQueryRef;
+      originAttributes = Object.keys(originAttributes).length
+        ? originAttributes
+        : principal.originAttributes;
+    }
+
     Services.cookies.add(
-      principal.host,
-      principal.URI.pathQueryRef,
+      host,
+      path,
       name,
       value,
       false,
       false,
       false,
-      Date.now() + 24000 * 60 * 60,
-      principal.originAttributes,
+      Math.floor(Date.now() / 1000) + 24 * 60 * 60,
+      originAttributes,
       Ci.nsICookie.SAMESITE_NONE,
       Ci.nsICookie.SCHEME_UNSET
     );
@@ -109,8 +129,8 @@ var SiteDataTestUtils = {
    * Adds a new localStorage entry for the specified origin, with the specified contents.
    *
    * @param {String} origin - the origin of the site to add test data for
-   * @param {String} key [optional] - the localStorage key
-   * @param {String} value [optional] - the localStorage value
+   * @param {String} [key] - the localStorage key
+   * @param {String} [value] - the localStorage value
    */
   addToLocalStorage(origin, key = "foo", value = "bar") {
     let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
@@ -122,17 +142,19 @@ var SiteDataTestUtils = {
       principal,
       ""
     );
-    storage.setItem("key", "value");
+    storage.setItem(key, value);
   },
 
   /**
    * Checks whether the given origin is storing data in localStorage
    *
    * @param {String} origin - the origin of the site to check
+   * @param {{key: String, value: String}[]} [testEntries] - An array of entries
+   * to test for.
    *
    * @returns {Boolean} whether the origin has localStorage data
    */
-  hasLocalStorage(origin) {
+  hasLocalStorage(origin, testEntries) {
     let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
       origin
     );
@@ -142,7 +164,16 @@ var SiteDataTestUtils = {
       principal,
       ""
     );
-    return !!storage.length;
+    if (!storage.length) {
+      return false;
+    }
+    if (!testEntries) {
+      return true;
+    }
+    return (
+      storage.length >= testEntries.length &&
+      testEntries.every(({ key, value }) => storage.getItem(key) == value)
+    );
   },
 
   /**
@@ -180,22 +211,37 @@ var SiteDataTestUtils = {
     });
   },
 
-  hasCookies(origin) {
+  hasCookies(origin, testEntries) {
     let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
       origin
     );
-    for (let cookie of Services.cookies.cookies) {
-      if (
+
+    let filterFn = cookie => {
+      return (
         ChromeUtils.isOriginAttributesEqual(
           principal.originAttributes,
           cookie.originAttributes
-        ) &&
-        cookie.host.includes(principal.host)
-      ) {
-        return true;
-      }
+        ) && cookie.host.includes(principal.host)
+      );
+    };
+
+    // Return on first cookie found for principal.
+    if (!testEntries) {
+      return Services.cookies.cookies.some(filterFn);
     }
-    return false;
+
+    // Collect all cookies that match the principal
+    let cookies = Services.cookies.cookies.filter(filterFn);
+
+    if (cookies.length < testEntries.length) {
+      return false;
+    }
+
+    // This code isn't very efficient. It should only be used for testing
+    // a small amount of cookies.
+    return testEntries.every(({ key, value }) =>
+      cookies.some(cookie => cookie.name == key && cookie.value == value)
+    );
   },
 
   hasIndexedDB(origin) {
@@ -217,11 +263,9 @@ var SiteDataTestUtils = {
   _getCacheStorage(where, lci) {
     switch (where) {
       case "disk":
-        return Services.cache2.diskCacheStorage(lci, false);
+        return Services.cache2.diskCacheStorage(lci);
       case "memory":
         return Services.cache2.memoryCacheStorage(lci);
-      case "appcache":
-        return Services.cache2.appCacheStorage(lci, null);
       case "pin":
         return Services.cache2.pinningCacheStorage(lci);
     }
@@ -239,11 +283,11 @@ var SiteDataTestUtils = {
       CacheListener.prototype = {
         QueryInterface: ChromeUtils.generateQI(["nsICacheEntryOpenCallback"]),
 
-        onCacheEntryCheck(entry, appCache) {
+        onCacheEntryCheck(entry) {
           return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED;
         },
 
-        onCacheEntryAvailable(entry, isnew, appCache, status) {
+        onCacheEntryAvailable(entry, isnew, status) {
           resolve();
         },
       };

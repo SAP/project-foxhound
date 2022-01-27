@@ -1,4 +1,3 @@
-// |reftest| skip -- class-methods-private is not supported
 // This file was procedurally generated from the following sources:
 // - src/generators/yield-spread-arr-single.case
 // - src/generators/default/class-expr-private-method.template

@@ -3,19 +3,19 @@
 //!
 //! [`ThreadPool`]: struct.ThreadPool.html
 
-use join;
-use registry::{Registry, ThreadSpawn, WorkerThread};
-use spawn;
+use crate::join;
+use crate::registry::{Registry, ThreadSpawn, WorkerThread};
+use crate::scope::{do_in_place_scope, do_in_place_scope_fifo};
+use crate::spawn;
+#[allow(deprecated)]
+use crate::Configuration;
+use crate::{scope, Scope};
+use crate::{scope_fifo, ScopeFifo};
+use crate::{ThreadPoolBuildError, ThreadPoolBuilder};
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
-#[allow(deprecated)]
-use Configuration;
-use {scope, Scope};
-use {scope_fifo, ScopeFifo};
-use {ThreadPoolBuildError, ThreadPoolBuilder};
 
-mod internal;
 mod test;
 
 /// Represents a user created [thread-pool].
@@ -69,27 +69,6 @@ impl ThreadPool {
     {
         let registry = Registry::new(builder)?;
         Ok(ThreadPool { registry })
-    }
-
-    /// Returns a handle to the global thread pool. This is the pool
-    /// that Rayon will use by default when you perform a `join()` or
-    /// `scope()` operation, if no other thread-pool is installed. If
-    /// no global thread-pool has yet been started when this function
-    /// is called, then the global thread-pool will be created (with
-    /// the default configuration). If you wish to configure the
-    /// global thread-pool differently, then you can use [the
-    /// `rayon::initialize()` function][f] to do so.
-    ///
-    /// [f]: fn.initialize.html
-    #[cfg(rayon_unstable)]
-    pub fn global() -> &'static Arc<ThreadPool> {
-        lazy_static! {
-            static ref DEFAULT_THREAD_POOL: Arc<ThreadPool> = Arc::new(ThreadPool {
-                registry: Registry::global()
-            });
-        }
-
-        &DEFAULT_THREAD_POOL
     }
 
     /// Executes `op` within the threadpool. Any attempts to use
@@ -222,7 +201,7 @@ impl ThreadPool {
     /// [scope]: fn.scope.html
     pub fn scope<'scope, OP, R>(&self, op: OP) -> R
     where
-        OP: for<'s> FnOnce(&'s Scope<'scope>) -> R + 'scope + Send,
+        OP: FnOnce(&Scope<'scope>) -> R + Send,
         R: Send,
     {
         self.install(|| scope(op))
@@ -237,10 +216,34 @@ impl ThreadPool {
     /// [scope_fifo]: fn.scope_fifo.html
     pub fn scope_fifo<'scope, OP, R>(&self, op: OP) -> R
     where
-        OP: for<'s> FnOnce(&'s ScopeFifo<'scope>) -> R + 'scope + Send,
+        OP: FnOnce(&ScopeFifo<'scope>) -> R + Send,
         R: Send,
     {
         self.install(|| scope_fifo(op))
+    }
+
+    /// Creates a scope that spawns work into this thread-pool.
+    ///
+    /// See also: [the `in_place_scope()` function][in_place_scope].
+    ///
+    /// [in_place_scope]: fn.in_place_scope.html
+    pub fn in_place_scope<'scope, OP, R>(&self, op: OP) -> R
+    where
+        OP: FnOnce(&Scope<'scope>) -> R,
+    {
+        do_in_place_scope(Some(&self.registry), op)
+    }
+
+    /// Creates a scope that spawns work into this thread-pool in FIFO order.
+    ///
+    /// See also: [the `in_place_scope_fifo()` function][in_place_scope_fifo].
+    ///
+    /// [in_place_scope_fifo]: fn.in_place_scope_fifo.html
+    pub fn in_place_scope_fifo<'scope, OP, R>(&self, op: OP) -> R
+    where
+        OP: FnOnce(&ScopeFifo<'scope>) -> R,
+    {
+        do_in_place_scope_fifo(Some(&self.registry), op)
     }
 
     /// Spawns an asynchronous task in this thread-pool. This task will
@@ -283,7 +286,7 @@ impl Drop for ThreadPool {
 }
 
 impl fmt::Debug for ThreadPool {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("ThreadPool")
             .field("num_threads", &self.current_num_threads())
             .field("id", &self.registry.id())

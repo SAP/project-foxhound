@@ -58,6 +58,9 @@ class nsLoadGroup : public nsILoadGroup,
   nsresult Init();
   nsresult InitWithRequestContextId(const uint64_t& aRequestContextId);
 
+  void SetGroupObserver(nsIRequestObserver* aObserver,
+                        bool aIncludeBackgroundRequests);
+
  protected:
   virtual ~nsLoadGroup();
 
@@ -73,10 +76,10 @@ class nsLoadGroup : public nsILoadGroup,
   nsresult NotifyRemovalObservers(nsIRequest* aRequest, nsresult aStatus);
 
  protected:
-  uint32_t mForegroundCount;
-  uint32_t mLoadFlags;
-  uint32_t mDefaultLoadFlags;
-  int32_t mPriority;
+  uint32_t mForegroundCount{0};
+  uint32_t mLoadFlags{LOAD_NORMAL};
+  uint32_t mDefaultLoadFlags{0};
+  int32_t mPriority{PRIORITY_NORMAL};
 
   nsCOMPtr<nsILoadGroup> mLoadGroup;  // load groups can contain load groups
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
@@ -89,16 +92,17 @@ class nsLoadGroup : public nsILoadGroup,
   nsWeakPtr mObserver;
   nsWeakPtr mParentLoadGroup;
 
-  nsresult mStatus;
-  bool mIsCanceling;
-  bool mDefaultLoadIsTimed;
-  bool mBrowsingContextDiscarded;
-  bool mExternalRequestContext;
+  nsresult mStatus{NS_OK};
+  bool mIsCanceling{false};
+  bool mDefaultLoadIsTimed{false};
+  bool mBrowsingContextDiscarded{false};
+  bool mExternalRequestContext{false};
+  bool mNotifyObserverAboutBackgroundRequests{false};
 
   /* Telemetry */
   mozilla::TimeStamp mDefaultRequestCreationTime;
-  uint32_t mTimedRequests;
-  uint32_t mCachedRequests;
+  uint32_t mTimedRequests{0};
+  uint32_t mCachedRequests{0};
 };
 
 }  // namespace net

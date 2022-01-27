@@ -6,13 +6,14 @@
 
 Program("default-browser-agent")
 
-SPHINX_TREES['default-browser-agent'] = "docs"
+SPHINX_TREES["default-browser-agent"] = "docs"
 
-DIRS += ['rust']
+DIRS += ["rust"]
 
 UNIFIED_SOURCES += [
     "/mfbt/Poison.cpp",
     "/mfbt/Unused.cpp",
+    "Cache.cpp",
     "common.cpp",
     "DefaultBrowser.cpp",
     "EventLog.cpp",
@@ -22,11 +23,13 @@ UNIFIED_SOURCES += [
     "Registry.cpp",
     "RemoteSettings.cpp",
     "ScheduledTask.cpp",
+    "SetDefaultBrowser.cpp",
     "Telemetry.cpp",
 ]
 
 SOURCES += [
     "/browser/components/shell/WindowsDefaultBrowser.cpp",
+    "/browser/components/shell/WindowsUserChoice.cpp",
     "/other-licenses/nsis/Contrib/CityHash/cityhash/city.cpp",
     "/third_party/WinToast/wintoastlib.cpp",
     "/toolkit/mozapps/update/common/readstrings.cpp",
@@ -38,16 +41,21 @@ USE_LIBS += [
 ]
 
 LOCAL_INCLUDES += [
-    '/browser/components/shell/',
-    '/mfbt/',
-    '/other-licenses/nsis/Contrib/CityHash/cityhash',
-    '/third_party/WinToast',
-    '/toolkit/components/jsoncpp/include',
-    '/toolkit/mozapps/update/common',
-    '/xpcom/build',
+    "/browser/components/shell/",
+    "/mfbt/",
+    "/other-licenses/nsis/Contrib/CityHash/cityhash",
+    "/third_party/WinToast",
+    "/toolkit/components/jsoncpp/include",
+    "/toolkit/mozapps/update/common",
+    "/xpcom/build",
 ]
 
 OS_LIBS += [
+    "advapi32",
+    "bcrypt",
+    "comsupp",
+    "crypt32",
+    "kernel32",
     "netapi32",
     "ole32",
     "oleaut32",
@@ -61,15 +69,16 @@ OS_LIBS += [
 ]
 
 DEFINES["NS_NO_XPCOM"] = True
-DEFINES['IMPL_MFBT'] = True
+DEFINES["IMPL_MFBT"] = True
 
-DEFINES['UNICODE'] = True
-DEFINES['_UNICODE'] = True
+DEFINES["UNICODE"] = True
+DEFINES["_UNICODE"] = True
 
+# If defines are added to this list that are required by the Cache,
+# SetDefaultBrowser, or their dependencies (Registry, EventLog, common),
+# tests/gtest/moz.build will need to be updated as well.
 for var in ("MOZ_APP_BASENAME", "MOZ_APP_DISPLAYNAME", "MOZ_APP_VENDOR"):
     DEFINES[var] = '"%s"' % CONFIG[var]
-
-RCINCLUDE = "DefaultBrowserAgent.rc"
 
 # We need STL headers that aren't allowed when wrapping is on (at least
 # <filesystem>, and possibly others).
@@ -77,19 +86,24 @@ DisableStlWrapping()
 
 # We need this to be able to use wmain as the entry point on MinGW;
 # otherwise it will try to use WinMain.
-if CONFIG['CC_TYPE'] == 'clang-cl':
-    WIN32_EXE_LDFLAGS += ['-ENTRY:wmainCRTStartup']
+if CONFIG["CC_TYPE"] == "clang-cl":
+    WIN32_EXE_LDFLAGS += ["-ENTRY:wmainCRTStartup"]
 else:
-    WIN32_EXE_LDFLAGS += ['-municode']
+    WIN32_EXE_LDFLAGS += ["-municode"]
 
-GENERATED_FILES += ['defaultagent.ini']
-defaultagentini = GENERATED_FILES['defaultagent.ini']
-defaultagentini.script = '/browser/locales/generate_ini.py'
+GENERATED_FILES += ["defaultagent.ini"]
+defaultagentini = GENERATED_FILES["defaultagent.ini"]
+defaultagentini.script = "/browser/locales/generate_ini.py"
 defaultagentini.inputs = [
-    'defaultagent.ini',
-    'defaultagent_append.ini',
+    "defaultagent.ini",
+    "defaultagent_append.ini",
 ]
-FINAL_TARGET_FILES += ['!defaultagent.ini']
+FINAL_TARGET_FILES += ["!defaultagent.ini"]
+
+if CONFIG["ENABLE_TESTS"]:
+    DIRS += ["tests/gtest"]
 
 with Files("**"):
     BUG_COMPONENT = ("Firefox", "Installer")
+
+REQUIRES_UNIFIED_BUILD = True

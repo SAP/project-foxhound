@@ -11,7 +11,9 @@ var Paths;
 var SessionFile;
 
 // We need a XULAppInfo to initialize SessionFile
-ChromeUtils.import("resource://testing-common/AppInfo.jsm", this);
+const { updateAppInfo } = ChromeUtils.import(
+  "resource://testing-common/AppInfo.jsm"
+);
 updateAppInfo({
   name: "SessionRestoreTest",
   ID: "{230de50e-4cd1-11dc-8314-0800200c9a66}",
@@ -24,7 +26,7 @@ function promise_check_exist(path, shouldExist) {
     info(
       "Ensuring that " + path + (shouldExist ? " exists" : " does not exist")
     );
-    if ((await OS.File.exists(path)) != shouldExist) {
+    if ((await IOUtils.exists(path)) != shouldExist) {
       throw new Error(
         "File " + path + " should " + (shouldExist ? "exist" : "not exist")
       );
@@ -35,9 +37,8 @@ function promise_check_exist(path, shouldExist) {
 function promise_check_contents(path, expect) {
   return (async function() {
     info("Checking whether " + path + " has the right contents");
-    let actual = await OS.File.read(path, {
-      encoding: "utf-8",
-      compression: "lz4",
+    let actual = await IOUtils.readUTF8(path, {
+      decompress: true,
     });
     Assert.deepEqual(
       JSON.parse(actual),
@@ -66,9 +67,8 @@ add_task(async function test_migration() {
   source.copyTo(profd, "sessionstore.js");
 
   // Read the content of the session store file.
-  let sessionStoreUncompressed = await OS.File.read(
-    Paths.clean.replace("jsonlz4", "js"),
-    { encoding: "utf-8" }
+  let sessionStoreUncompressed = await IOUtils.readUTF8(
+    Paths.clean.replace("jsonlz4", "js")
   );
   let parsed = JSON.parse(sessionStoreUncompressed);
 
@@ -106,14 +106,12 @@ add_task(async function test_startup_with_compressed_clean() {
   await SessionFile.wipe();
 
   // Populate session files to profile dir.
-  await OS.File.writeAtomic(Paths.clean, stateString, {
-    encoding: "utf-8",
-    compression: "lz4",
+  await IOUtils.writeUTF8(Paths.clean, stateString, {
+    compress: true,
   });
-  await OS.File.makeDir(Paths.backups);
-  await OS.File.writeAtomic(Paths.cleanBackup, stateString, {
-    encoding: "utf-8",
-    compression: "lz4",
+  await IOUtils.makeDirectory(Paths.backups);
+  await IOUtils.writeUTF8(Paths.cleanBackup, stateString, {
+    compress: true,
   });
 
   // Initiate a read.

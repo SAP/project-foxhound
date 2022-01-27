@@ -10,7 +10,7 @@
  * See README.md for more information.
  */
 const { BrowserLoader } = ChromeUtils.import(
-  "resource://devtools/client/shared/browser-loader.js"
+  "resource://devtools/shared/loader/browser-loader.js"
 );
 
 const require = (window.windowRequire = BrowserLoader({
@@ -73,12 +73,17 @@ const url = new window.URL(href);
 // is running in standalone.
 if (window.location.protocol === "chrome:" && url.search.length > 1) {
   const {
-    targetFromURL,
-  } = require("devtools/client/framework/target-from-url");
+    descriptorFromURL,
+  } = require("devtools/client/framework/descriptor-from-url");
+  const {
+    createCommandsDictionary,
+  } = require("devtools/shared/commands/index");
 
   (async function() {
     try {
-      const target = await targetFromURL(url);
+      const descriptor = await descriptorFromURL(url);
+      const target = await descriptor.getTarget();
+      const commands = await createCommandsDictionary(descriptor);
       // Create a fake toolbox object
       const toolbox = {
         target,
@@ -87,6 +92,7 @@ if (window.location.protocol === "chrome:" && url.search.length > 1) {
             "toolbox.viewSourceInDebugger is not implement from a tab"
           );
         },
+        commands,
       };
 
       const api = new NetMonitorAPI();

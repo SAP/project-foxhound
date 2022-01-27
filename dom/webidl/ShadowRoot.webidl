@@ -16,19 +16,26 @@ enum ShadowRootMode {
   "closed"
 };
 
+enum SlotAssignmentMode { "manual", "named" };
+
 // https://dom.spec.whatwg.org/#shadowroot
 [Exposed=Window]
 interface ShadowRoot : DocumentFragment
 {
   // Shadow DOM v1
   readonly attribute ShadowRootMode mode;
+  [Pref="dom.shadowdom.delegatesFocus.enabled"]
+  readonly attribute boolean delegatesFocus;
+  [Pref="dom.shadowdom.slot.assign.enabled"]
+  readonly attribute SlotAssignmentMode slotAssignment;
   readonly attribute Element host;
+  attribute EventHandler onslotchange;
 
   Element? getElementById(DOMString elementId);
 
   // https://w3c.github.io/DOM-Parsing/#the-innerhtml-mixin
   [CEReactions, SetterThrows]
-  attribute [TreatNullAs=EmptyString] DOMString innerHTML;
+  attribute [LegacyNullToEmptyString] DOMString innerHTML;
 
   // When JS invokes importNode or createElement, the binding code needs to
   // create a reflector, and so invoking those methods directly on the content

@@ -10,7 +10,7 @@ function StringProtoHasNoMatch() {
     var StringProto = GetBuiltinPrototype("String");
     if (!ObjectHasPrototype(StringProto, ObjectProto))
         return false;
-    return !(std_match in StringProto);
+    return !(GetBuiltinSymbol("match") in StringProto);
 }
 
 function IsStringMatchOptimizable() {
@@ -19,7 +19,7 @@ function IsStringMatchOptimizable() {
     // guaranteed to be data properties.
     return RegExpPrototypeOptimizable(RegExpProto) &&
            RegExpProto.exec === RegExp_prototype_Exec &&
-           RegExpProto[std_match] === RegExpMatch;
+           RegExpProto[GetBuiltinSymbol("match")] === RegExpMatch;
 }
 
 function addTaintToArray(array, name, arg) {
@@ -49,7 +49,7 @@ function String_match(regexp) {
     var isPatternString = (typeof regexp === "string");
     if (!(isPatternString && StringProtoHasNoMatch()) && regexp !== undefined && regexp !== null) {
         // Step 2.a.
-        var matcher = GetMethod(regexp, std_match);
+        var matcher = GetMethod(regexp, GetBuiltinSymbol("match"));
 
         // Step 2.b.
         if (matcher !== undefined) {
@@ -82,7 +82,7 @@ function String_match(regexp) {
     }
 
     // Step 5.
-    var ret = callContentFunction(GetMethod(rx, std_match), rx, S);
+    var ret callContentFunction(GetMethod(rx, GetBuiltinSymbol("match")), rx, S);
     addTaintToArray(ret, "match", regexp);
     return ret;
 }
@@ -115,7 +115,7 @@ function String_matchAll(regexp) {
         }
 
         // Step 2.c.
-        var matcher = GetMethod(regexp, std_matchAll);
+        var matcher = GetMethod(regexp, GetBuiltinSymbol("matchAll"));
 
         // Step 2.d.
         if (matcher !== undefined)
@@ -129,7 +129,7 @@ function String_matchAll(regexp) {
     var rx = RegExpCreate(regexp, "g");
 
     // Step 5.
-    return callContentFunction(GetMethod(rx, std_matchAll), rx, string);
+    return callContentFunction(GetMethod(rx, GetBuiltinSymbol("matchAll")), rx, string);
 }
 
 /**
@@ -203,7 +203,7 @@ function StringProtoHasNoReplace() {
     var StringProto = GetBuiltinPrototype("String");
     if (!ObjectHasPrototype(StringProto, ObjectProto))
         return false;
-    return !(std_replace in StringProto);
+    return !(GetBuiltinSymbol("replace") in StringProto);
 }
 
 // A thin wrapper to call SubstringKernel with int32-typed arguments.
@@ -227,7 +227,7 @@ function String_replace(searchValue, replaceValue) {
         searchValue !== undefined && searchValue !== null)
     {
         // Step 2.a.
-        var replacer = GetMethod(searchValue, std_replace);
+        var replacer = GetMethod(searchValue, GetBuiltinSymbol("replace"));
 
         // Step 2.b.
         if (replacer !== undefined) {
@@ -322,7 +322,7 @@ function String_replaceAll(searchValue, replaceValue) {
         }
 
         // Step 2.c.
-        var replacer = GetMethod(searchValue, std_replace);
+        var replacer = GetMethod(searchValue, GetBuiltinSymbol("replace"));
 
         // Step 2.b.
         if (replacer !== undefined) {
@@ -406,7 +406,7 @@ function StringProtoHasNoSearch() {
     var StringProto = GetBuiltinPrototype("String");
     if (!ObjectHasPrototype(StringProto, ObjectProto))
         return false;
-    return !(std_search in StringProto);
+    return !(GetBuiltinSymbol("search") in StringProto);
 }
 
 function IsStringSearchOptimizable() {
@@ -415,7 +415,7 @@ function IsStringSearchOptimizable() {
     // guaranteed to be data properties.
     return RegExpPrototypeOptimizable(RegExpProto) &&
            RegExpProto.exec === RegExp_prototype_Exec &&
-           RegExpProto[std_search] === RegExpSearch;
+           RegExpProto[GetBuiltinSymbol("search")] === RegExpSearch;
 }
 
 // ES 2016 draft Mar 25, 2016 21.1.3.15.
@@ -428,7 +428,7 @@ function String_search(regexp) {
     var isPatternString = (typeof regexp === "string");
     if (!(isPatternString && StringProtoHasNoSearch()) && regexp !== undefined && regexp !== null) {
         // Step 2.a.
-        var searcher = GetMethod(regexp, std_search);
+        var searcher = GetMethod(regexp, GetBuiltinSymbol("search"));
 
         // Step 2.b.
         if (searcher !== undefined)
@@ -448,7 +448,7 @@ function String_search(regexp) {
     var rx = RegExpCreate(regexp);
 
     // Step 5.
-    return callContentFunction(GetMethod(rx, std_search), rx, string);
+    return callContentFunction(GetMethod(rx, GetBuiltinSymbol("search")), rx, string);
 }
 
 function StringProtoHasNoSplit() {
@@ -456,7 +456,7 @@ function StringProtoHasNoSplit() {
     var StringProto = GetBuiltinPrototype("String");
     if (!ObjectHasPrototype(StringProto, ObjectProto))
         return false;
-    return !(std_split in StringProto);
+    return !(GetBuiltinSymbol("split") in StringProto);
 }
 
 // ES 2016 draft Mar 25, 2016 21.1.3.17.
@@ -485,7 +485,7 @@ function String_split(separator, limit) {
         separator !== undefined && separator !== null)
     {
         // Step 2.a.
-        var splitter = GetMethod(separator, std_split);
+        var splitter = GetMethod(separator, GetBuiltinSymbol("split"));
 
         // Step 2.b.
         if (splitter !== undefined)
@@ -570,6 +570,7 @@ function String_substring(start, end) {
     AddTaintOperationNative(ret, "substring", start, end);
     return ret;
 }
+SetIsInlinableLargeFunction(String_substring);
 
 // ES2020 draft rev dc1e21c454bd316810be1c0e7af0131a2d7f38e9
 // B.2.3.1 String.prototype.substr ( start, length )
@@ -609,6 +610,7 @@ function String_substr(start, length) {
     AddTaintOperationNative(ret, "substr", start, length);
     return ret;
 }
+SetIsInlinableLargeFunction(String_substr);
 
 // ES2021 draft rev 12a546b92275a0e2f834017db2727bb9c6f6c8fd
 // 21.1.3.4 String.prototype.concat ( ...args )
@@ -684,6 +686,7 @@ function String_slice(start, end) {
     AddTaintOperationNative(ret, "slice", start, end);
     return ret;
 }
+SetIsInlinableLargeFunction(String_slice);
 
 // ES2020 draft rev dc1e21c454bd316810be1c0e7af0131a2d7f38e9
 // 21.1.3.3 String.prototype.codePointAt ( pos )
@@ -824,7 +827,7 @@ function StringIteratorNext() {
 }
 
 #if JS_HAS_INTL_API
-var collatorCache = new Record();
+var collatorCache = new_Record();
 
 /**
  * Compare this String against that String, using the locale and collation
@@ -850,9 +853,9 @@ function String_localeCompare(that) {
     if (locales === undefined && options === undefined) {
         // This cache only optimizes for the old ES5 localeCompare without
         // locales and options.
-        if (!IsRuntimeDefaultLocale(collatorCache.runtimeDefaultLocale)) {
+        if (!intl_IsRuntimeDefaultLocale(collatorCache.runtimeDefaultLocale)) {
             collatorCache.collator = intl_Collator(locales, options);
-            collatorCache.runtimeDefaultLocale = RuntimeDefaultLocale();
+            collatorCache.runtimeDefaultLocale = intl_RuntimeDefaultLocale();
         }
         collator = collatorCache.collator;
     } else {
@@ -995,6 +998,39 @@ function String_static_raw(callSite/*, ...substitutions*/) {
 
     // Step 9.d.i.
     return resultString;
+}
+
+// https://github.com/tc39/proposal-relative-indexing-method
+// String.prototype.at ( index )
+function String_at(index) {
+    // Step 1.
+    if (this === undefined || this === null)
+        ThrowIncompatibleMethod("at", this);
+
+    // Step 2.
+    var string = ToString(this);
+
+    // Step 3.
+    var len = string.length;
+
+    // Step 4.
+    var relativeIndex = ToInteger(index);
+
+    // Steps 5-6.
+    var k;
+    if (relativeIndex >= 0) {
+        k = relativeIndex;
+    } else {
+        k = len + relativeIndex;
+    }
+
+    // Step 7.
+    if (k < 0 || k >= len) {
+        return undefined;
+    }
+
+    // Step 8.
+    return string[k];
 }
 
 // ES6 draft 2014-04-27 B.2.3.3

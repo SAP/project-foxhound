@@ -12,6 +12,7 @@ const { XPCOMUtils } = ChromeUtils.import(
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
+  AppConstants: "resource://gre/modules/AppConstants.jsm",
   ClientEnvironmentBase:
     "resource://gre/modules/components-utils/ClientEnvironment.jsm",
   Database: "resource://services-settings/Database.jsm",
@@ -25,8 +26,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   UptakeTelemetry: "resource://services-common/uptake-telemetry.js",
   Utils: "resource://services-settings/Utils.jsm",
 });
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
 
 const TELEMETRY_COMPONENT = "remotesettings";
 
@@ -242,6 +241,7 @@ class RemoteSettingsClient extends EventEmitter {
   constructor(
     collectionName,
     {
+      bucketName,
       bucketNamePref,
       signerName,
       filterFunc,
@@ -252,6 +252,7 @@ class RemoteSettingsClient extends EventEmitter {
     super(["sync"]); // emitted events
 
     this.collectionName = collectionName;
+    this.bucketName = bucketName;
     this.signerName = signerName;
     this.filterFunc = filterFunc;
     this.localFields = localFields;
@@ -261,20 +262,23 @@ class RemoteSettingsClient extends EventEmitter {
 
     // This attribute allows signature verification to be disabled, when running tests
     // or when pulling data from a dev server.
-    this.verifySignature = true;
+    this.verifySignature = AppConstants.REMOTE_SETTINGS_VERIFY_SIGNATURE;
 
-    // The bucket preference value can be changed (eg. `main` to `main-preview`) in order
-    // to preview the changes to be approved in a real client.
-    this.bucketNamePref = bucketNamePref;
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "bucketName",
-      this.bucketNamePref,
-      null,
-      () => {
-        this.db.identifier = this.identifier;
-      }
-    );
+    if (!bucketName) {
+      // TODO bug 1702759: Remove bucketNamePref.
+      // The bucket preference value can be changed (eg. `main` to `main-preview`) in order
+      // to preview the changes to be approved in a real client.
+      this.bucketNamePref = bucketNamePref;
+      XPCOMUtils.defineLazyPreferenceGetter(
+        this,
+        "bucketName",
+        this.bucketNamePref,
+        null,
+        () => {
+          this.db.identifier = this.identifier;
+        }
+      );
+    }
 
     XPCOMUtils.defineLazyGetter(
       this,
@@ -301,7 +305,9 @@ class RemoteSettingsClient extends EventEmitter {
   }
 
   httpClient() {
-    const api = new KintoHttpClient(Utils.SERVER_URL);
+    const api = new KintoHttpClient(Utils.SERVER_URL, {
+      fetchFunc: Utils.fetch, // Use fetch() wrapper.
+    });
     return api.bucket(this.bucketName).collection(this.collectionName);
   }
 
@@ -335,6 +341,7 @@ class RemoteSettingsClient extends EventEmitter {
    * @param  {Object} options.filters          Filter the results (default: `{}`).
    * @param  {String} options.order            The order to apply (eg. `"-last_modified"`).
    * @param  {boolean} options.dumpFallback    Fallback to dump data if read of local DB fails (default: `true`).
+   * @param  {boolean} options.loadDumpIfNewer Use dump data if it is newer than local data (default: `false`).
    * @param  {boolean} options.syncIfEmpty     Synchronize from server if local data is empty (default: `true`).
    * @param  {boolean} options.verifySignature Verify the signature of the local data (default: `false`).
    * @return {Promise}
@@ -344,13 +351,15 @@ class RemoteSettingsClient extends EventEmitter {
       filters = {},
       order = "", // not sorted by default.
       dumpFallback = true,
+      loadDumpIfNewer = false, // TODO bug 1718083: should default to true.
       syncIfEmpty = true,
     } = options;
     let { verifySignature = false } = options;
 
     let data;
     try {
-      let hasLocalData = await Utils.hasLocalData(this);
+      let lastModified = await this.db.getLastModified();
+      let hasLocalData = lastModified !== null;
 
       if (syncIfEmpty && !hasLocalData) {
         // .get() was called before we had the chance to synchronize the local database.
@@ -369,9 +378,35 @@ class RemoteSettingsClient extends EventEmitter {
               await this.sync({ loadDump: false });
             }
           })();
+        } else {
+          console.debug(`${this.identifier} Awaiting existing import.`);
         }
+      } else if (hasLocalData && loadDumpIfNewer) {
+        // Check whether the local data is older than the packaged dump.
+        // If it is, load the packaged dump (which overwrites the local data).
+        let lastModifiedDump = await Utils.getLocalDumpLastModified(
+          this.bucketName,
+          this.collectionName
+        );
+        if (lastModified < lastModifiedDump) {
+          console.debug(
+            `${this.identifier} Local DB is stale (${lastModified}), using dump instead (${lastModifiedDump})`
+          );
+          if (!this._importingPromise) {
+            // As part of importing, any existing data is wiped.
+            this._importingPromise = this._importJSONDump();
+          } else {
+            console.debug(`${this.identifier} Awaiting existing import.`);
+          }
+        }
+      }
+
+      if (this._importingPromise) {
         try {
           await this._importingPromise;
+          // No need to verify signature, because either we've just load a trusted
+          // dump (here or in a parallel call), or it was verified during sync.
+          verifySignature = false;
         } catch (e) {
           // Report error, but continue because there could have been data
           // loaded from a parrallel call.
@@ -380,9 +415,6 @@ class RemoteSettingsClient extends EventEmitter {
           // then delete this promise again, as now we should have local data:
           delete this._importingPromise;
         }
-        // No need to verify signature, because either we've just load a trusted
-        // dump (here or in a parallel call), or it was verified during sync.
-        verifySignature = false;
       }
 
       // Read from the local DB.
@@ -826,7 +858,7 @@ class RemoteSettingsClient extends EventEmitter {
     const {
       signature: { x5u, signature },
     } = metadata;
-    const certChain = await (await fetch(x5u)).text();
+    const certChain = await (await Utils.fetch(x5u)).text();
     // Merge remote records with local ones and serialize as canonical JSON.
     const serialized = await RemoteSettingsWorker.canonicalStringify(
       records,

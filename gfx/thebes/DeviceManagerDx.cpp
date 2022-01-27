@@ -14,15 +14,14 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/gfx/GPUParent.h"
+#include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/gfx/GraphicsMessages.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/DeviceAttachmentsD3D11.h"
-#include "mozilla/layers/MLGDeviceD3D11.h"
-#include "mozilla/layers/PaintThread.h"
-#include "nsExceptionHandler.h"
+#include "mozilla/Preferences.h"
 #include "nsPrintfCString.h"
 #include "nsString.h"
 
@@ -50,6 +49,10 @@ decltype(D3D11CreateDevice)* sD3D11CreateDeviceFn = nullptr;
 
 // It should only be used within CreateDirectCompositionDevice.
 decltype(DCompositionCreateDevice2)* sDcompCreateDevice2Fn = nullptr;
+
+// It should only be used within CreateDCompSurfaceHandle
+decltype(DCompositionCreateSurfaceHandle)* sDcompCreateSurfaceHandleFn =
+    nullptr;
 
 // We don't have access to the DirectDrawCreateEx type in gfxWindowsPlatform.h,
 // since it doesn't include ddraw.h, so we use a static here. It should only
@@ -121,6 +124,14 @@ bool DeviceManagerDx::LoadDcomp() {
 
   sDcompCreateDevice2Fn = (decltype(DCompositionCreateDevice2)*)GetProcAddress(
       module, "DCompositionCreateDevice2");
+  if (!sDcompCreateDevice2Fn) {
+    return false;
+  }
+
+  // Load optional API for external compositing
+  sDcompCreateSurfaceHandleFn =
+      (decltype(DCompositionCreateSurfaceHandle)*)::GetProcAddress(
+          module, "DCompositionCreateSurfaceHandle");
   if (!sDcompCreateDevice2Fn) {
     return false;
   }
@@ -198,41 +209,55 @@ bool DeviceManagerDx::GetOutputFromMonitor(HMONITOR monitor,
   return false;
 }
 
-bool DeviceManagerDx::CheckHardwareStretchingSupport() {
+void DeviceManagerDx::CheckHardwareStretchingSupport(HwStretchingSupport& aRv) {
   RefPtr<IDXGIAdapter> adapter = GetDXGIAdapter();
 
   if (!adapter) {
     NS_WARNING(
         "Failed to acquire a DXGI adapter for checking hardware stretching "
         "support.");
-    return false;
+    ++aRv.mError;
+    return;
   }
 
-  nsTArray<DXGI_OUTPUT_DESC1> outputs;
   for (UINT i = 0;; ++i) {
     RefPtr<IDXGIOutput> output = nullptr;
-    if (FAILED(adapter->EnumOutputs(i, getter_AddRefs(output)))) {
+    HRESULT result = adapter->EnumOutputs(i, getter_AddRefs(output));
+    if (result == DXGI_ERROR_NOT_FOUND) {
+      // No more outputs to check.
+      break;
+    }
+
+    if (FAILED(result)) {
+      ++aRv.mError;
       break;
     }
 
     RefPtr<IDXGIOutput6> output6 = nullptr;
     if (FAILED(output->QueryInterface(__uuidof(IDXGIOutput6),
                                       getter_AddRefs(output6)))) {
-      break;
+      ++aRv.mError;
+      continue;
     }
 
     UINT flags = 0;
     if (FAILED(output6->CheckHardwareCompositionSupport(&flags))) {
-      break;
+      ++aRv.mError;
+      continue;
     }
 
-    // XXX Do we need add a check about which flags are supported?
-    if (flags) {
-      return true;
+    bool fullScreen = flags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN;
+    bool window = flags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED;
+    if (fullScreen && window) {
+      ++aRv.mBoth;
+    } else if (fullScreen) {
+      ++aRv.mFullScreenOnly;
+    } else if (window) {
+      ++aRv.mWindowOnly;
+    } else {
+      ++aRv.mNone;
     }
   }
-
-  return false;
 }
 
 #ifdef DEBUG
@@ -265,11 +290,6 @@ bool DeviceManagerDx::CreateCompositorDevices() {
     MOZ_ASSERT(!mCompositorDevice);
     ReleaseD3D11();
 
-    // Sync Advanced-Layers with D3D11.
-    if (gfxConfig::IsEnabled(Feature::ADVANCED_LAYERS)) {
-      gfxConfig::SetFailed(Feature::ADVANCED_LAYERS, FeatureStatus::Unavailable,
-                           "Requires D3D11", "FEATURE_FAILURE_NO_D3D11"_ns);
-    }
     return false;
   }
 
@@ -288,7 +308,7 @@ bool DeviceManagerDx::CreateCompositorDevices() {
   // Fallback from WR to D3D11 Non-WR compositor without re-creating gpu process
   // could happen when WR causes error. In this case, the attachments are loaded
   // synchronously.
-  if (!gfx::gfxVars::UseWebRender()) {
+  if (!gfx::gfxVars::UseWebRender() || gfx::gfxVars::UseSoftwareWebRender()) {
     PreloadAttachmentsOnCompositorThread();
   }
 
@@ -364,6 +384,11 @@ bool DeviceManagerDx::CreateCanvasDevice() {
     return false;
   }
 
+  if (!D3D11Checks::DoesTextureSharingWork(mCanvasDevice)) {
+    mCanvasDevice = nullptr;
+    return false;
+  }
+
   if (XRE_IsGPUProcess()) {
     Factory::SetDirect3D11Device(mCanvasDevice);
   }
@@ -411,6 +436,22 @@ void DeviceManagerDx::CreateDirectCompositionDevice() {
   }
 
   mDirectCompositionDevice = compositionDevice;
+}
+
+/* static */
+HANDLE DeviceManagerDx::CreateDCompSurfaceHandle() {
+  if (!sDcompCreateSurfaceHandleFn) {
+    return 0;
+  }
+
+  HANDLE handle = 0;
+  HRESULT hr = sDcompCreateSurfaceHandleFn(COMPOSITIONOBJECT_ALL_ACCESS,
+                                           nullptr, &handle);
+  if (FAILED(hr)) {
+    return 0;
+  }
+
+  return handle;
 }
 
 void DeviceManagerDx::ImportDeviceInfo(const D3D11DeviceStatus& aDeviceStatus) {
@@ -477,8 +518,9 @@ IDXGIAdapter1* DeviceManagerDx::GetDXGIAdapter() {
     // should never reach here. Furthermore, the UI process does not create
     // devices when using a GPU process.
     //
-    // So, this should only ever get called on the content process.
-    MOZ_ASSERT(XRE_IsContentProcess());
+    // So, this should only ever get called on the content process or RDD
+    // process
+    MOZ_ASSERT(XRE_IsContentProcess() || XRE_IsRDDProcess());
 
     // In the child process, we search for the adapter that matches the parent
     // process. The first adapter can be mismatched on dual-GPU systems.
@@ -623,11 +665,13 @@ void DeviceManagerDx::CreateCompositorDevice(FeatureState& d3d11) {
 
   if (!textureSharingWorks) {
     gfxConfig::SetFailed(Feature::D3D11_HW_ANGLE, FeatureStatus::Broken,
-                         "Texture sharing doesn't work");
+                         "Texture sharing doesn't work",
+                         "FEATURE_FAILURE_HW_ANGLE_NEEDS_TEXTURE_SHARING"_ns);
   }
   if (D3D11Checks::DoesRenderTargetViewNeedRecreating(device)) {
     gfxConfig::SetFailed(Feature::D3D11_HW_ANGLE, FeatureStatus::Broken,
-                         "RenderTargetViews need recreating");
+                         "RenderTargetViews need recreating",
+                         "FEATURE_FAILURE_HW_ANGLE_NEEDS_RTV_RECREATION"_ns);
   }
   if (XRE_IsParentProcess()) {
     // It seems like this may only happen when we're using the NVIDIA gpu
@@ -888,100 +932,11 @@ RefPtr<ID3D11Device> DeviceManagerDx::CreateDecoderDevice() {
   return device;
 }
 
-RefPtr<MLGDevice> DeviceManagerDx::GetMLGDevice() {
-  MutexAutoLock lock(mDeviceLock);
-  if (!mMLGDevice) {
-    MutexAutoUnlock unlock(mDeviceLock);
-    CreateMLGDevice();
-  }
-  return mMLGDevice;
-}
-
-static void DisableAdvancedLayers(FeatureStatus aStatus,
-                                  const nsCString aMessage,
-                                  const nsCString& aFailureId) {
-  if (!NS_IsMainThread()) {
-    NS_DispatchToMainThread(NS_NewRunnableFunction(
-        "DisableAdvancedLayers", [aStatus, aMessage, aFailureId]() -> void {
-          DisableAdvancedLayers(aStatus, aMessage, aFailureId);
-        }));
-    return;
-  }
-
-  MOZ_ASSERT(NS_IsMainThread());
-
-  FeatureState& al = gfxConfig::GetFeature(Feature::ADVANCED_LAYERS);
-  if (!al.IsEnabled()) {
-    return;
-  }
-
-  al.SetFailed(aStatus, aMessage.get(), aFailureId);
-
-  FeatureFailure info(aStatus, aMessage, aFailureId);
-  if (GPUParent* gpu = GPUParent::GetSingleton()) {
-    Unused << gpu->SendUpdateFeature(Feature::ADVANCED_LAYERS, info);
-  }
-
-  if (aFailureId.Length()) {
-    nsString failureId = NS_ConvertUTF8toUTF16(aFailureId.get());
-    Telemetry::ScalarAdd(Telemetry::ScalarID::GFX_ADVANCED_LAYERS_FAILURE_ID,
-                         failureId, 1);
-  }
-
-  // Notify TelemetryEnvironment.jsm.
-  if (RefPtr<nsIObserverService> obs =
-          mozilla::services::GetObserverService()) {
-    obs->NotifyObservers(nullptr, "gfx-features-ready", nullptr);
-  }
-}
-
-void DeviceManagerDx::CreateMLGDevice() {
-  MOZ_ASSERT(layers::CompositorThreadHolder::IsInCompositorThread());
-
-  RefPtr<ID3D11Device> d3d11Device = GetCompositorDevice();
-  if (!d3d11Device) {
-    DisableAdvancedLayers(FeatureStatus::Unavailable,
-                          "Advanced-layers requires a D3D11 device"_ns,
-                          "FEATURE_FAILURE_NEED_D3D11_DEVICE"_ns);
-    return;
-  }
-
-  RefPtr<MLGDeviceD3D11> device = new MLGDeviceD3D11(d3d11Device);
-  if (!device->Initialize()) {
-    DisableAdvancedLayers(FeatureStatus::Failed, device->GetFailureMessage(),
-                          device->GetFailureId());
-    return;
-  }
-
-  // While the lock was unheld, we should not have created an MLGDevice, since
-  // this should only be called on the compositor thread.
-  MutexAutoLock lock(mDeviceLock);
-  MOZ_ASSERT(!mMLGDevice);
-
-  // Only set the MLGDevice if the compositor device is still the same.
-  // Otherwise we could possibly have a bad MLGDevice if a device reset
-  // just occurred.
-  if (mCompositorDevice == d3d11Device) {
-    mMLGDevice = device;
-  }
-}
-
 void DeviceManagerDx::ResetDevices() {
-  // Flush the paint thread before revoking all these singletons. This
-  // should ensure that the paint thread doesn't start mixing and matching
-  // old and new objects together.
-  if (PaintThread::Get()) {
-    CompositorBridgeChild* cbc = CompositorBridgeChild::Get();
-    if (cbc) {
-      cbc->FlushAsyncPaints();
-    }
-  }
-
   MutexAutoLock lock(mDeviceLock);
 
   mAdapter = nullptr;
   mCompositorAttachments = nullptr;
-  mMLGDevice = nullptr;
   mCompositorDevice = nullptr;
   mContentDevice = nullptr;
   mCanvasDevice = nullptr;
@@ -998,13 +953,7 @@ bool DeviceManagerDx::MaybeResetAndReacquireDevices() {
     return false;
   }
 
-  if (resetReason != DeviceResetReason::FORCED_RESET) {
-    Telemetry::Accumulate(Telemetry::DEVICE_RESET_REASON,
-                          uint32_t(resetReason));
-  }
-
-  CrashReporter::AnnotateCrashReport(
-      CrashReporter::Annotation::DeviceResetReason, int(resetReason));
+  GPUProcessManager::RecordDeviceReset(resetReason);
 
   bool createCompositorDevice = !!mCompositorDevice;
   bool createContentDevice = !!mContentDevice;
@@ -1069,7 +1018,7 @@ static DeviceResetReason HResultToResetReason(HRESULT hr) {
     default:
       MOZ_ASSERT(false);
   }
-  return DeviceResetReason::UNKNOWN;
+  return DeviceResetReason::OTHER;
 }
 
 bool DeviceManagerDx::HasDeviceReset(DeviceResetReason* aOutReason) {
@@ -1346,8 +1295,6 @@ IDirectDraw7* DeviceManagerDx::GetDirectDraw() { return mDirectDraw; }
 void DeviceManagerDx::GetCompositorDevices(
     RefPtr<ID3D11Device>* aOutDevice,
     RefPtr<layers::DeviceAttachmentsD3D11>* aOutAttachments) {
-  MOZ_ASSERT(layers::CompositorThreadHolder::IsInCompositorThread());
-
   RefPtr<ID3D11Device> device;
   {
     MutexAutoLock lock(mDeviceLock);
@@ -1386,19 +1333,12 @@ void DeviceManagerDx::PreloadAttachmentsOnCompositorThread() {
     return;
   }
 
-  bool enableAL = gfxConfig::IsEnabled(Feature::ADVANCED_LAYERS);
-
   RefPtr<Runnable> task = NS_NewRunnableFunction(
-      "DeviceManagerDx::PreloadAttachmentsOnCompositorThread",
-      [enableAL]() -> void {
+      "DeviceManagerDx::PreloadAttachmentsOnCompositorThread", []() -> void {
         if (DeviceManagerDx* dm = DeviceManagerDx::Get()) {
-          if (enableAL) {
-            dm->GetMLGDevice();
-          } else {
-            RefPtr<ID3D11Device> device;
-            RefPtr<layers::DeviceAttachmentsD3D11> attachments;
-            dm->GetCompositorDevices(&device, &attachments);
-          }
+          RefPtr<ID3D11Device> device;
+          RefPtr<layers::DeviceAttachmentsD3D11> attachments;
+          dm->GetCompositorDevices(&device, &attachments);
         }
       });
   CompositorThread()->Dispatch(task.forget());

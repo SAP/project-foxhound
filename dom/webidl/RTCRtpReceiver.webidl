@@ -11,16 +11,13 @@
  Exposed=Window]
 interface RTCRtpReceiver {
   readonly attribute MediaStreamTrack   track;
+  readonly attribute RTCDtlsTransport?  transport;
   Promise<RTCStatsReport>               getStats();
   [Pref="media.peerconnection.rtpsourcesapi.enabled"]
   sequence<RTCRtpContributingSource>    getContributingSources();
   [Pref="media.peerconnection.rtpsourcesapi.enabled"]
   sequence<RTCRtpSynchronizationSource> getSynchronizationSources();
 
-  [ChromeOnly]
-  void mozAddRIDExtension(unsigned short extensionId);
-  [ChromeOnly]
-  void mozAddRIDFilter(DOMString rid);
   // test-only: for testing getContributingSources
   [ChromeOnly]
   void mozInsertAudioLevelForContributingSource(unsigned long source,

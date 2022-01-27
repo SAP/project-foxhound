@@ -27,17 +27,20 @@ JS_PUBLIC_API JSObject* JS::UnwrapArrayBufferMaybeShared(JSObject* obj) {
 }
 
 JS_PUBLIC_API void JS::GetArrayBufferMaybeSharedLengthAndData(
-    JSObject* obj, uint32_t* length, bool* isSharedMemory, uint8_t** data) {
+    JSObject* obj, size_t* length, bool* isSharedMemory, uint8_t** data) {
   MOZ_ASSERT(obj->is<ArrayBufferObjectMaybeShared>());
 
-  bool isSharedArrayBuffer = obj->is<SharedArrayBufferObject>();
-  *length = isSharedArrayBuffer
-                ? obj->as<SharedArrayBufferObject>().byteLength()
-                : obj->as<ArrayBufferObject>().byteLength();
-  *data = isSharedArrayBuffer
-              ? obj->as<SharedArrayBufferObject>().dataPointerShared().unwrap()
-              : obj->as<ArrayBufferObject>().dataPointer();
-  *isSharedMemory = isSharedArrayBuffer;
+  if (obj->is<SharedArrayBufferObject>()) {
+    auto* buffer = &obj->as<SharedArrayBufferObject>();
+    *length = buffer->byteLength();
+    *data = buffer->dataPointerShared().unwrap();
+    *isSharedMemory = true;
+  } else {
+    auto* buffer = &obj->as<ArrayBufferObject>();
+    *length = buffer->byteLength();
+    *data = buffer->dataPointer();
+    *isSharedMemory = false;
+  }
 }
 
 JS_PUBLIC_API uint8_t* JS::GetArrayBufferMaybeSharedData(
@@ -54,4 +57,20 @@ JS_PUBLIC_API uint8_t* JS::GetArrayBufferMaybeSharedData(
   }
 
   return nullptr;
+}
+
+JS_PUBLIC_API bool JS::IsLargeArrayBufferMaybeShared(JSObject* obj) {
+#ifdef JS_64BIT
+  obj = UnwrapArrayBufferMaybeShared(obj);
+  MOZ_ASSERT(obj);
+  size_t len = obj->is<ArrayBufferObject>()
+                   ? obj->as<ArrayBufferObject>().byteLength()
+                   : obj->as<SharedArrayBufferObject>().byteLength();
+  return len > ArrayBufferObject::MaxByteLengthForSmallBuffer;
+#else
+  // Large ArrayBuffers are not supported on 32-bit.
+  MOZ_ASSERT(ArrayBufferObject::maxBufferByteLength() ==
+             ArrayBufferObject::MaxByteLengthForSmallBuffer);
+  return false;
+#endif
 }

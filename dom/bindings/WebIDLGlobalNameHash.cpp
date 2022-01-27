@@ -8,6 +8,7 @@
 #include "js/Class.h"
 #include "js/GCAPI.h"
 #include "js/Id.h"
+#include "js/Object.h"  // JS::GetClass, JS::GetReservedSlot
 #include "js/Wrapper.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
@@ -17,6 +18,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/DOMJSProxyHandler.h"
+#include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/JSSlots.h"
 #include "mozilla/dom/PrototypeList.h"
 #include "mozilla/dom/RegisterBindings.h"
@@ -24,8 +26,7 @@
 #include "nsTHashtable.h"
 #include "WrapperFactory.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 static JSObject* FindNamedConstructorForXray(
     JSContext* aCx, JS::Handle<jsid> aId, const WebIDLNameTableEntry* aEntry) {
@@ -40,10 +41,9 @@ static JSObject* FindNamedConstructorForXray(
   // (instead of just having it defined on the global now).  Check for named
   // constructors with this id, in case that's what the caller is asking for.
   for (unsigned slot = DOM_INTERFACE_SLOTS_BASE;
-       slot < JSCLASS_RESERVED_SLOTS(js::GetObjectClass(interfaceObject));
-       ++slot) {
+       slot < JSCLASS_RESERVED_SLOTS(JS::GetClass(interfaceObject)); ++slot) {
     JSObject* constructor =
-        &js::GetReservedSlot(interfaceObject, slot).toObject();
+        &JS::GetReservedSlot(interfaceObject, slot).toObject();
     if (JS_GetFunctionId(JS_GetObjectFunction(constructor)) ==
         JSID_TO_STRING(aId)) {
       return constructor;
@@ -58,7 +58,8 @@ static JSObject* FindNamedConstructorForXray(
 /* static */
 bool WebIDLGlobalNameHash::DefineIfEnabled(
     JSContext* aCx, JS::Handle<JSObject*> aObj, JS::Handle<jsid> aId,
-    JS::MutableHandle<JS::PropertyDescriptor> aDesc, bool* aFound) {
+    JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> aDesc,
+    bool* aFound) {
   MOZ_ASSERT(JSID_IS_STRING(aId), "Check for string id before calling this!");
 
   const WebIDLNameTableEntry* entry = GetEntry(JSID_TO_LINEAR_STRING(aId));
@@ -148,7 +149,9 @@ bool WebIDLGlobalNameHash::DefineIfEnabled(
       return Throw(aCx, NS_ERROR_FAILURE);
     }
 
-    FillPropertyDescriptor(aDesc, aObj, 0, JS::ObjectValue(*constructor));
+    aDesc.set(mozilla::Some(JS::PropertyDescriptor::Data(
+        JS::ObjectValue(*constructor), {JS::PropertyAttribute::Configurable,
+                                        JS::PropertyAttribute::Writable})));
     return true;
   }
 
@@ -163,10 +166,9 @@ bool WebIDLGlobalNameHash::DefineIfEnabled(
   // We've already defined the property.  We indicate this to the caller
   // by filling a property descriptor with JS::UndefinedValue() as the
   // value.  We still have to fill in a property descriptor, though, so
-  // that the caller knows the property is in fact on this object.  It
-  // doesn't matter what we pass for the "readonly" argument here.
-  FillPropertyDescriptor(aDesc, aObj, JS::UndefinedValue(), false);
-
+  // that the caller knows the property is in fact on this object.
+  aDesc.set(
+      mozilla::Some(JS::PropertyDescriptor::Data(JS::UndefinedValue(), {})));
   return true;
 }
 
@@ -190,7 +192,7 @@ bool WebIDLGlobalNameHash::GetNames(JSContext* aCx, JS::Handle<JSObject*> aObj,
         (!entry.mEnabled || entry.mEnabled(aCx, aObj))) {
       JSString* str =
           JS_AtomizeStringN(aCx, sNames + entry.mNameOffset, entry.mNameLength);
-      if (!str || !aNames.append(PropertyKey::fromNonIntAtom(str))) {
+      if (!str || !aNames.append(JS::PropertyKey::fromNonIntAtom(str))) {
         return false;
       }
     }
@@ -261,7 +263,7 @@ bool WebIDLGlobalNameHash::NewEnumerateSystemGlobal(
     if (!entry.mEnabled || entry.mEnabled(aCx, aObj)) {
       JSString* str =
           JS_AtomizeStringN(aCx, sNames + entry.mNameOffset, entry.mNameLength);
-      if (!str || !aProperties.append(PropertyKey::fromNonIntAtom(str))) {
+      if (!str || !aProperties.append(JS::PropertyKey::fromNonIntAtom(str))) {
         return false;
       }
     }
@@ -269,5 +271,4 @@ bool WebIDLGlobalNameHash::NewEnumerateSystemGlobal(
   return true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

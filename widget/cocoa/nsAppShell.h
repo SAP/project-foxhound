@@ -11,8 +11,16 @@
 #ifndef nsAppShell_h_
 #define nsAppShell_h_
 
+#import <AppKit/NSApplication.h>
+
 #include "nsBaseAppShell.h"
 #include "nsTArray.h"
+
+class ProfilingStack;
+
+namespace mozilla {
+class nsAvailableMemoryWatcherBase;
+}
 
 // GeckoNSApplication
 //
@@ -36,14 +44,20 @@ class nsAppShell : public nsBaseAppShell {
   NS_IMETHOD OnProcessNextEvent(nsIThreadInternal* aThread, bool aMayWait) override;
   NS_IMETHOD AfterProcessNextEvent(nsIThreadInternal* aThread, bool aEventWasProcessed) override;
 
+  void OnRunLoopActivityChanged(CFRunLoopActivity aActivity);
+
   // public only to be visible to Objective-C code that must call it
   void WillTerminate();
+
+  static void OnMemoryPressureChanged(dispatch_source_memorypressure_flags_t aPressureLevel);
 
  protected:
   virtual ~nsAppShell();
 
   virtual void ScheduleNativeEventCallback() override;
   virtual bool ProcessNextNativeEvent(bool aMayWait) override;
+
+  void InitMemoryPressureObserver();
 
   static void ProcessGeckoEvents(void* aInfo);
 
@@ -53,6 +67,16 @@ class nsAppShell : public nsBaseAppShell {
   AppShellDelegate* mDelegate;
   CFRunLoopRef mCFRunLoop;
   CFRunLoopSourceRef mCFRunLoopSource;
+
+  // An observer for the profiler that is notified when the event loop enters
+  // and exits the waiting state.
+  CFRunLoopObserverRef mCFRunLoopObserver;
+
+  // Non-null while the native event loop is in the waiting state.
+  ProfilingStack* mProfilingStackWhileWaiting = nullptr;
+
+  // For getting notifications from the OS about memory pressure state changes.
+  dispatch_source_t mMemoryPressureSource = nullptr;
 
   bool mRunningEventLoop;
   bool mStarted;

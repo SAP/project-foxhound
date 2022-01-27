@@ -69,6 +69,9 @@ already_AddRefed<Touch> SingleTouchData::ToNewDOMTouch() const {
                 LayoutDeviceIntPoint::Truncate(mScreenPoint.x, mScreenPoint.y),
                 LayoutDeviceIntPoint::Truncate(mRadius.width, mRadius.height),
                 mRotationAngle, mForce);
+  touch->tiltX = mTiltX;
+  touch->tiltY = mTiltY;
+  touch->twist = mTwist;
   return touch.forget();
 }
 
@@ -88,14 +91,18 @@ MultiTouchInput::MultiTouchInput(const MultiTouchInput& aOther)
                 aOther.modifiers),
       mType(aOther.mType),
       mScreenOffset(aOther.mScreenOffset),
-      mHandledByAPZ(aOther.mHandledByAPZ) {
+      mHandledByAPZ(aOther.mHandledByAPZ),
+      mButton(aOther.mButton),
+      mButtons(aOther.mButtons) {
   mTouches.AppendElements(aOther.mTouches);
 }
 
 MultiTouchInput::MultiTouchInput(const WidgetTouchEvent& aTouchEvent)
     : InputData(MULTITOUCH_INPUT, aTouchEvent.mTime, aTouchEvent.mTimeStamp,
                 aTouchEvent.mModifiers),
-      mHandledByAPZ(aTouchEvent.mFlags.mHandledByAPZ) {
+      mHandledByAPZ(aTouchEvent.mFlags.mHandledByAPZ),
+      mButton(aTouchEvent.mButton),
+      mButtons(aTouchEvent.mButtons) {
   MOZ_ASSERT(NS_IsMainThread(),
              "Can only copy from WidgetTouchEvent on main thread");
 
@@ -136,7 +143,7 @@ MultiTouchInput::MultiTouchInput(const WidgetTouchEvent& aTouchEvent)
         ViewAs<ScreenPixel>(
             domTouch->mRefPoint,
             PixelCastJustification::LayoutDeviceIsScreenForUntransformedEvent),
-        ScreenSize(radiusX, radiusY), rotationAngle, force);
+        ScreenSize((float)radiusX, (float)radiusY), rotationAngle, force);
 
     mTouches.AppendElement(data);
   }
@@ -146,14 +153,21 @@ void MultiTouchInput::Translate(const ScreenPoint& aTranslation) {
   const int32_t xTranslation = (int32_t)(aTranslation.x + 0.5f);
   const int32_t yTranslation = (int32_t)(aTranslation.y + 0.5f);
 
-  for (auto iter = mTouches.begin(); iter != mTouches.end(); iter++) {
-    iter->mScreenPoint.MoveBy(xTranslation, yTranslation);
+  for (auto& touchData : mTouches) {
+    for (auto& historicalData : touchData.mHistoricalData) {
+      historicalData.mScreenPoint.MoveBy(xTranslation, yTranslation);
+    }
+    touchData.mScreenPoint.MoveBy(xTranslation, yTranslation);
   }
 }
 
-WidgetTouchEvent MultiTouchInput::ToWidgetTouchEvent(nsIWidget* aWidget) const {
+WidgetTouchEvent MultiTouchInput::ToWidgetEvent(nsIWidget* aWidget,
+                                                uint16_t aInputSource) const {
   MOZ_ASSERT(NS_IsMainThread(),
              "Can only convert To WidgetTouchEvent on main thread");
+  MOZ_ASSERT(aInputSource ==
+                 mozilla::dom::MouseEvent_Binding::MOZ_SOURCE_TOUCH ||
+             aInputSource == mozilla::dom::MouseEvent_Binding::MOZ_SOURCE_PEN);
 
   EventMessage touchEventMessage = eVoidEvent;
   switch (mType) {
@@ -186,6 +200,9 @@ WidgetTouchEvent MultiTouchInput::ToWidgetTouchEvent(nsIWidget* aWidget) const {
   event.mFlags.mHandledByAPZ = mHandledByAPZ;
   event.mFocusSequenceNumber = mFocusSequenceNumber;
   event.mLayersId = mLayersId;
+  event.mInputSource = aInputSource;
+  event.mButton = mButton;
+  event.mButtons = mButtons;
 
   for (size_t i = 0; i < mTouches.Length(); i++) {
     *event.mTouches.AppendElement() = mTouches[i].ToNewDOMTouch();
@@ -205,13 +222,21 @@ int32_t MultiTouchInput::IndexOfTouch(int32_t aTouchIdentifier) {
 
 bool MultiTouchInput::TransformToLocal(
     const ScreenToParentLayerMatrix4x4& aTransform) {
-  for (size_t i = 0; i < mTouches.Length(); i++) {
+  for (auto& touchData : mTouches) {
+    for (auto& historicalData : touchData.mHistoricalData) {
+      Maybe<ParentLayerIntPoint> historicalPoint =
+          UntransformBy(aTransform, historicalData.mScreenPoint);
+      if (!historicalPoint) {
+        return false;
+      }
+      historicalData.mLocalScreenPoint = *historicalPoint;
+    }
     Maybe<ParentLayerIntPoint> point =
-        UntransformBy(aTransform, mTouches[i].mScreenPoint);
+        UntransformBy(aTransform, touchData.mScreenPoint);
     if (!point) {
       return false;
     }
-    mTouches[i].mLocalScreenPoint = *point;
+    touchData.mLocalScreenPoint = *point;
   }
   return true;
 }
@@ -222,7 +247,8 @@ MouseInput::MouseInput()
       mButtonType(NONE),
       mInputSource(0),
       mButtons(0),
-      mHandledByAPZ(false) {}
+      mHandledByAPZ(false),
+      mPreventClickEvent(false) {}
 
 MouseInput::MouseInput(MouseType aType, ButtonType aButtonType,
                        uint16_t aInputSource, int16_t aButtons,
@@ -234,7 +260,8 @@ MouseInput::MouseInput(MouseType aType, ButtonType aButtonType,
       mInputSource(aInputSource),
       mButtons(aButtons),
       mOrigin(aPoint),
-      mHandledByAPZ(false) {}
+      mHandledByAPZ(false),
+      mPreventClickEvent(false) {}
 
 MouseInput::MouseInput(const WidgetMouseEventBase& aMouseEvent)
     : InputData(MOUSE_INPUT, aMouseEvent.mTime, aMouseEvent.mTimeStamp,
@@ -243,7 +270,9 @@ MouseInput::MouseInput(const WidgetMouseEventBase& aMouseEvent)
       mButtonType(NONE),
       mInputSource(aMouseEvent.mInputSource),
       mButtons(aMouseEvent.mButtons),
-      mHandledByAPZ(aMouseEvent.mFlags.mHandledByAPZ) {
+      mHandledByAPZ(aMouseEvent.mFlags.mHandledByAPZ),
+      mPreventClickEvent(aMouseEvent.mClass == eMouseEventClass &&
+                         aMouseEvent.AsMouseEvent()->mClickEventPrevented) {
   MOZ_ASSERT(NS_IsMainThread(),
              "Can only copy from WidgetTouchEvent on main thread");
 
@@ -309,12 +338,13 @@ bool MouseInput::TransformToLocal(
   return true;
 }
 
-WidgetMouseEvent MouseInput::ToWidgetMouseEvent(nsIWidget* aWidget) const {
+WidgetMouseEvent MouseInput::ToWidgetEvent(nsIWidget* aWidget) const {
   MOZ_ASSERT(NS_IsMainThread(),
              "Can only convert To WidgetTouchEvent on main thread");
 
   EventMessage msg = eVoidEvent;
   uint32_t clickCount = 0;
+  Maybe<WidgetMouseEvent::ExitFrom> exitFrom;
   switch (mType) {
     case MOUSE_MOVE:
       msg = eMouseMove;
@@ -338,6 +368,7 @@ WidgetMouseEvent MouseInput::ToWidgetMouseEvent(nsIWidget* aWidget) const {
       break;
     case MOUSE_WIDGET_EXIT:
       msg = eMouseExitFromWidget;
+      exitFrom = Some(WidgetMouseEvent::ePlatformChild);
       break;
     case MOUSE_HITTEST:
       msg = eMouseHitTest;
@@ -374,6 +405,7 @@ WidgetMouseEvent MouseInput::ToWidgetMouseEvent(nsIWidget* aWidget) const {
   event.mModifiers = modifiers;
   event.mTime = mTime;
   event.mTimeStamp = mTimeStamp;
+  event.mLayersId = mLayersId;
   event.mFlags.mHandledByAPZ = mHandledByAPZ;
   event.mRefPoint = RoundedToInt(ViewAs<LayoutDevicePixel>(
       mOrigin,
@@ -381,6 +413,8 @@ WidgetMouseEvent MouseInput::ToWidgetMouseEvent(nsIWidget* aWidget) const {
   event.mClickCount = clickCount;
   event.mInputSource = mInputSource;
   event.mFocusSequenceNumber = mFocusSequenceNumber;
+  event.mExitFrom = exitFrom;
+  event.mClickEventPrevented = mPreventClickEvent;
 
   return event;
 }
@@ -396,7 +430,8 @@ PanGestureInput::PanGestureInput()
       mFollowedByMomentum(false),
       mRequiresContentResponseIfCannotScrollHorizontallyInStartDirection(false),
       mOverscrollBehaviorAllowsSwipe(false),
-      mSimulateMomentum(false) {}
+      mSimulateMomentum(false),
+      mIsNoLineOrPageDelta(true) {}
 
 PanGestureInput::PanGestureInput(PanGestureType aType, uint32_t aTime,
                                  TimeStamp aTimeStamp,
@@ -415,7 +450,15 @@ PanGestureInput::PanGestureInput(PanGestureType aType, uint32_t aTime,
       mFollowedByMomentum(false),
       mRequiresContentResponseIfCannotScrollHorizontallyInStartDirection(false),
       mOverscrollBehaviorAllowsSwipe(false),
-      mSimulateMomentum(false) {}
+      mSimulateMomentum(false),
+      mIsNoLineOrPageDelta(true) {}
+
+void PanGestureInput::SetLineOrPageDeltas(int32_t aLineOrPageDeltaX,
+                                          int32_t aLineOrPageDeltaY) {
+  mLineOrPageDeltaX = aLineOrPageDeltaX;
+  mLineOrPageDeltaY = aLineOrPageDeltaY;
+  mIsNoLineOrPageDelta = false;
+}
 
 bool PanGestureInput::IsMomentum() const {
   switch (mType) {
@@ -428,11 +471,12 @@ bool PanGestureInput::IsMomentum() const {
   }
 }
 
-WidgetWheelEvent PanGestureInput::ToWidgetWheelEvent(nsIWidget* aWidget) const {
+WidgetWheelEvent PanGestureInput::ToWidgetEvent(nsIWidget* aWidget) const {
   WidgetWheelEvent wheelEvent(true, eWheel, aWidget);
   wheelEvent.mModifiers = this->modifiers;
   wheelEvent.mTime = mTime;
   wheelEvent.mTimeStamp = mTimeStamp;
+  wheelEvent.mLayersId = mLayersId;
   wheelEvent.mRefPoint = RoundedToInt(ViewAs<LayoutDevicePixel>(
       mPanStartPoint,
       PixelCastJustification::LayoutDeviceIsScreenForUntransformedEvent));
@@ -445,10 +489,12 @@ WidgetWheelEvent PanGestureInput::ToWidgetWheelEvent(nsIWidget* aWidget) const {
   wheelEvent.mDeltaY = mPanDisplacement.y;
   wheelEvent.mFlags.mHandledByAPZ = mHandledByAPZ;
   wheelEvent.mFocusSequenceNumber = mFocusSequenceNumber;
+  wheelEvent.mIsNoLineOrPageDelta = mIsNoLineOrPageDelta;
   if (mDeltaType == PanGestureInput::PANDELTA_PAGE) {
+    // widget/gtk is currently the only consumer that uses delta type
+    // PANDELTA_PAGE
     // Emulate legacy widget/gtk behavior
     wheelEvent.mDeltaMode = WheelEvent_Binding::DOM_DELTA_LINE;
-    wheelEvent.mIsNoLineOrPageDelta = true;
     wheelEvent.mScrollType = WidgetWheelEvent::SCROLL_ASYNCHRONOUSELY;
     wheelEvent.mDeltaX *= 3;
     wheelEvent.mDeltaY *= 3;
@@ -530,6 +576,7 @@ PinchGestureInput::PinchGestureInput(
       mScreenOffset(aScreenOffset),
       mCurrentSpan(aCurrentSpan),
       mPreviousSpan(aPreviousSpan),
+      mLineOrPageDeltaY(0),
       mHandledByAPZ(false) {}
 
 bool PinchGestureInput::TransformToLocal(
@@ -542,12 +589,12 @@ bool PinchGestureInput::TransformToLocal(
   return true;
 }
 
-WidgetWheelEvent PinchGestureInput::ToWidgetWheelEvent(
-    nsIWidget* aWidget) const {
+WidgetWheelEvent PinchGestureInput::ToWidgetEvent(nsIWidget* aWidget) const {
   WidgetWheelEvent wheelEvent(true, eWheel, aWidget);
   wheelEvent.mModifiers = this->modifiers | MODIFIER_CONTROL;
   wheelEvent.mTime = mTime;
   wheelEvent.mTimeStamp = mTimeStamp;
+  wheelEvent.mLayersId = mLayersId;
   wheelEvent.mRefPoint = RoundedToInt(ViewAs<LayoutDevicePixel>(
       mFocusPoint,
       PixelCastJustification::LayoutDeviceIsScreenForUntransformedEvent));
@@ -555,6 +602,16 @@ WidgetWheelEvent PinchGestureInput::ToWidgetWheelEvent(
   wheelEvent.mFlags.mHandledByAPZ = mHandledByAPZ;
   wheelEvent.mDeltaMode = WheelEvent_Binding::DOM_DELTA_PIXEL;
 
+  wheelEvent.mDeltaY = ComputeDeltaY(aWidget);
+
+  wheelEvent.mLineOrPageDeltaY = mLineOrPageDeltaY;
+
+  MOZ_ASSERT(mType == PINCHGESTURE_END || wheelEvent.mDeltaY != 0.0);
+
+  return wheelEvent;
+}
+
+double PinchGestureInput::ComputeDeltaY(nsIWidget* aWidget) const {
 #if defined(OS_MACOSX)
   // This converts the pinch gesture value to a fake wheel event that has the
   // control key pressed so that pages can implement custom pinch gesture
@@ -583,10 +640,10 @@ WidgetWheelEvent PinchGestureInput::ToWidgetWheelEvent(
   // (1.0 - M)|. We can calculate deltaY by solving the mPreviousSpan equation
   // for M in terms of mPreviousSpan and plugging that into to the formula for
   // deltaY.
-  wheelEvent.mDeltaY = (mPreviousSpan - 100.0) *
-                       (aWidget ? aWidget->GetDefaultScaleInternal() : 1.f);
+  return (mPreviousSpan - 100.0) *
+         (aWidget ? aWidget->GetDefaultScaleInternal() : 1.f);
 #else
-  // This calculation is based on what the Windows widget code does.
+  // This calculation is based on what the Windows and Linux widget code does.
   // Specifically, it creates a PinchGestureInput with |mCurrentSpan == 100.0 *
   // currentScale| and |mPreviousSpan == 100.0 * lastScale| where currentScale
   // is the scale from the current OS event and lastScale is the scale when the
@@ -598,16 +655,53 @@ WidgetWheelEvent PinchGestureInput::ToWidgetWheelEvent(
   // same formula as the macOS code
   // (|-100.0 * M * GetDefaultScaleInternal()|).
 
-  // XXX When we write the code for other platforms to do the same we'll need to
-  // make sure this calculation is reasonable.
-
-  wheelEvent.mDeltaY = (mPreviousSpan - mCurrentSpan) *
-                       (aWidget ? aWidget->GetDefaultScaleInternal() : 1.f);
+  return (mPreviousSpan - mCurrentSpan) *
+         (aWidget ? aWidget->GetDefaultScaleInternal() : 1.f);
 #endif
+}
 
-  MOZ_ASSERT(mType == PINCHGESTURE_END || wheelEvent.mDeltaY != 0.0);
+bool PinchGestureInput::SetLineOrPageDeltaY(nsIWidget* aWidget) {
+  double deltaY = ComputeDeltaY(aWidget);
+  if (deltaY == 0 && mType != PINCHGESTURE_END) {
+    return false;
+  }
+  gfx::IntPoint lineOrPageDelta = PinchGestureInput::GetIntegerDeltaForEvent(
+      (mType == PINCHGESTURE_START), 0, deltaY);
+  mLineOrPageDeltaY = lineOrPageDelta.y;
+  if (mLineOrPageDeltaY == 0) {
+    // For PINCHGESTURE_SCALE events, don't dispatch them. Note that the delta
+    // isn't lost; it remains in the accumulator in GetIntegerDeltaForEvent().
+    if (mType == PINCHGESTURE_SCALE) {
+      return false;
+    }
+    // On Windows, drop PINCHGESTURE_START as well (the Windows widget code will
+    // defer the START event until we accumulate enough delta).
+    // The Linux widget code doesn't support this, so instead set the event's
+    // mLineOrPageDeltaY to the smallest nonzero amount in the relevant
+    // direction.
+    if (mType == PINCHGESTURE_START) {
+#ifdef XP_WIN
+      return false;
+#else
+      mLineOrPageDeltaY = (deltaY >= 0) ? 1 : -1;
+#endif
+    }
+    // For PINCHGESTURE_END events, not dispatching a DOMMouseScroll for them is
+    // fine.
+  }
+  return true;
+}
 
-  return wheelEvent;
+/* static */ gfx::IntPoint PinchGestureInput::GetIntegerDeltaForEvent(
+    bool aIsStart, float x, float y) {
+  static gfx::Point sAccumulator(0.0f, 0.0f);
+  if (aIsStart) {
+    sAccumulator = gfx::Point(0.0f, 0.0f);
+  }
+  sAccumulator.x += x;
+  sAccumulator.y += y;
+  return gfx::IntPoint(TakeLargestInt(&sAccumulator.x),
+                       TakeLargestInt(&sAccumulator.y));
 }
 
 TapGestureInput::TapGestureInput()
@@ -637,6 +731,23 @@ bool TapGestureInput::TransformToLocal(
   }
   mLocalPoint = *point;
   return true;
+}
+
+WidgetSimpleGestureEvent TapGestureInput::ToWidgetEvent(
+    nsIWidget* aWidget) const {
+  WidgetSimpleGestureEvent event(true, eTapGesture, aWidget);
+
+  event.mTime = mTime;
+  event.mTimeStamp = mTimeStamp;
+  event.mLayersId = mLayersId;
+  event.mRefPoint = ViewAs<LayoutDevicePixel>(
+      mPoint,
+      PixelCastJustification::LayoutDeviceIsScreenForUntransformedEvent);
+  event.mButtons = 0;
+  event.mClickCount = 1;
+  event.mModifiers = modifiers;
+
+  return event;
 }
 
 ScrollWheelInput::ScrollWheelInput()
@@ -687,6 +798,8 @@ ScrollWheelInput::ScrollWheelInput(const WidgetWheelEvent& aWheelEvent)
       mHandledByAPZ(aWheelEvent.mFlags.mHandledByAPZ),
       mDeltaX(aWheelEvent.mDeltaX),
       mDeltaY(aWheelEvent.mDeltaY),
+      mWheelTicksX(aWheelEvent.mWheelTicksX),
+      mWheelTicksY(aWheelEvent.mWheelTicksX),
       mLineOrPageDeltaX(aWheelEvent.mLineOrPageDeltaX),
       mLineOrPageDeltaY(aWheelEvent.mLineOrPageDeltaY),
       mScrollSeriesNumber(0),
@@ -745,12 +858,12 @@ ScrollUnit ScrollWheelInput::ScrollUnitForDeltaType(
   return ScrollUnit::LINES;
 }
 
-WidgetWheelEvent ScrollWheelInput::ToWidgetWheelEvent(
-    nsIWidget* aWidget) const {
+WidgetWheelEvent ScrollWheelInput::ToWidgetEvent(nsIWidget* aWidget) const {
   WidgetWheelEvent wheelEvent(true, eWheel, aWidget);
   wheelEvent.mModifiers = this->modifiers;
   wheelEvent.mTime = mTime;
   wheelEvent.mTimeStamp = mTimeStamp;
+  wheelEvent.mLayersId = mLayersId;
   wheelEvent.mRefPoint = RoundedToInt(ViewAs<LayoutDevicePixel>(
       mOrigin,
       PixelCastJustification::LayoutDeviceIsScreenForUntransformedEvent));
@@ -760,6 +873,8 @@ WidgetWheelEvent ScrollWheelInput::ToWidgetWheelEvent(
   wheelEvent.mIsMomentum = mIsMomentum;
   wheelEvent.mDeltaX = mDeltaX;
   wheelEvent.mDeltaY = mDeltaY;
+  wheelEvent.mWheelTicksX = mWheelTicksX;
+  wheelEvent.mWheelTicksY = mWheelTicksY;
   wheelEvent.mLineOrPageDeltaX = mLineOrPageDeltaX;
   wheelEvent.mLineOrPageDeltaY = mLineOrPageDeltaY;
   wheelEvent.mAllowToOverrideSystemScrollSpeed =

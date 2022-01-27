@@ -13,8 +13,14 @@ const {
 
 loader.lazyRequireGetter(
   this,
-  "TargetFactory",
-  "devtools/client/framework/target",
+  "TabDescriptorFactory",
+  "devtools/client/framework/tab-descriptor-factory",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "CommandsFactory",
+  "devtools/shared/commands/commands-factory",
   true
 );
 loader.lazyRequireGetter(
@@ -44,15 +50,13 @@ const EventEmitter = require("devtools/shared/event-emitter");
 const {
   getTheme,
   setTheme,
+  getAutoTheme,
   addThemeObserver,
   removeThemeObserver,
 } = require("devtools/client/shared/theme");
 
 const FORBIDDEN_IDS = new Set(["toolbox", ""]);
 const MAX_ORDINAL = 99;
-
-const CONTENT_FISSION_ENABLED_PREF = "devtools.contenttoolbox.fission";
-const FISSION_AUTOSTART_PREF = "fission.autostart";
 
 /**
  * DevTools is a class that represents a set of developer tools, it holds a
@@ -61,9 +65,9 @@ const FISSION_AUTOSTART_PREF = "fission.autostart";
 function DevTools() {
   this._tools = new Map(); // Map<toolId, tool>
   this._themes = new Map(); // Map<themeId, theme>
-  this._toolboxes = new Map(); // Map<target, toolbox>
+  this._toolboxes = new Map(); // Map<descriptor, toolbox>
   // List of toolboxes that are still in process of creation
-  this._creatingToolboxes = new Map(); // Map<target, toolbox Promise>
+  this._creatingToolboxes = new Map(); // Map<descriptor, toolbox Promise>
 
   EventEmitter.decorate(this);
   this._telemetry = new Telemetry();
@@ -283,6 +287,15 @@ DevTools.prototype = {
   },
 
   /**
+   * Returns the name of the default (auto) theme for devtools.
+   *
+   * @return {string} theme
+   */
+  getAutoTheme() {
+    return getAutoTheme();
+  },
+
+  /**
    * Called when the developer tools theme changes.
    */
   _onThemeChanged() {
@@ -358,7 +371,7 @@ DevTools.prototype = {
       !isCoreTheme &&
       theme.id == currTheme
     ) {
-      setTheme("light");
+      setTheme("auto");
 
       this.emit("theme-unregistered", theme);
     }
@@ -450,42 +463,49 @@ DevTools.prototype = {
   _firstShowToolbox: true,
 
   /**
-   * Show a Toolbox for a target (either by creating a new one, or if a toolbox
-   * already exists for the target, by bring to the front the existing one)
-   * If |toolId| is specified then the displayed toolbox will have the
-   * specified tool selected.
-   * If |hostType| is specified then the toolbox will be displayed using the
-   * specified HostType.
+   * Show a Toolbox for a descriptor (either by creating a new one, or if a
+   * toolbox already exists for the descriptor, by bringing to the front the
+   * existing one).
    *
-   * @param {Target} target
-   *         The target the toolbox will debug
-   * @param {string} toolId
-   *        The id of the tool to show
-   * @param {Toolbox.HostType} hostType
-   *        The type of host (bottom, window, left, right)
-   * @param {object} hostOptions
-   *        Options for host specifically
-   * @param {Number} startTime
-   *        Optional, indicates the time at which the user event related to this toolbox
-   *        opening started. This is a `Cu.now()` timing.
-   * @param {string} reason
-   *        Reason the tool was opened
-   * @param {boolean} shouldRaiseToolbox
-   *        Whether we need to raise the toolbox or not.
+   * If a Toolbox already exists, we will still update it based on some of the
+   * provided parameters:
+   *   - if |toolId| is provided then the toolbox will switch to the specified
+   *     tool.
+   *   - if |hostType| is provided then the toolbox will be switched to the
+   *     specified HostType.
+   *
+   * @param {TargetDescriptor} descriptor
+   *         The target descriptor the toolbox will debug
+   * @param {Object}
+   *        - {String} toolId
+   *          The id of the tool to show
+   *        - {Toolbox.HostType} hostType
+   *          The type of host (bottom, window, left, right)
+   *        - {object} hostOptions
+   *          Options for host specifically
+   *        - {Number} startTime
+   *          Indicates the time at which the user event related to
+   *          this toolbox opening started. This is a `Cu.now()` timing.
+   *        - {string} reason
+   *          Reason the tool was opened
+   *        - {boolean} raise
+   *          Whether we need to raise the toolbox or not.
    *
    * @return {Toolbox} toolbox
    *        The toolbox that was opened
    */
   async showToolbox(
-    target,
-    toolId,
-    hostType,
-    hostOptions,
-    startTime,
-    reason = "toolbox_show",
-    shouldRaiseToolbox = true
+    descriptor,
+    {
+      toolId,
+      hostType,
+      startTime,
+      raise = true,
+      reason = "toolbox_show",
+      hostOptions,
+    } = {}
   ) {
-    let toolbox = this._toolboxes.get(target);
+    let toolbox = this._toolboxes.get(descriptor);
 
     if (toolbox) {
       if (hostType != null && toolbox.hostType != hostType) {
@@ -498,26 +518,26 @@ DevTools.prototype = {
         await toolbox.selectTool(toolId, reason);
       }
 
-      if (shouldRaiseToolbox) {
+      if (raise) {
         toolbox.raise();
       }
     } else {
-      // As toolbox object creation is async, we have to be careful about races
-      // Check for possible already in process of loading toolboxes before
-      // actually trying to create a new one.
-      const promise = this._creatingToolboxes.get(target);
+      // Toolbox creation is async, we have to be careful about races.
+      // Check if we are already waiting for a Toolbox for the provided
+      // descriptor before creating a new one.
+      const promise = this._creatingToolboxes.get(descriptor);
       if (promise) {
         return promise;
       }
-      const toolboxPromise = this.createToolbox(
-        target,
+      const toolboxPromise = this._createToolbox(
+        descriptor,
         toolId,
         hostType,
         hostOptions
       );
-      this._creatingToolboxes.set(target, toolboxPromise);
+      this._creatingToolboxes.set(descriptor, toolboxPromise);
       toolbox = await toolboxPromise;
-      this._creatingToolboxes.delete(target);
+      this._creatingToolboxes.delete(descriptor);
 
       if (startTime) {
         this.logToolboxOpenTime(toolbox, startTime);
@@ -541,6 +561,37 @@ DevTools.prototype = {
     );
 
     return toolbox;
+  },
+
+  /**
+   * Show the toolbox for a given tab. If a toolbox already exists for this tab
+   * the existing toolbox will be raised. Otherwise a new toolbox is created.
+   *
+   * Relies on `showToolbox`, see its jsDoc for additional information and
+   * arguments description.
+   *
+   * Also used by 3rd party tools (eg wptrunner) and exposed by
+   * DevToolsShim.jsm.
+   *
+   * @param {XULTab} tab
+   *        The tab the toolbox will debug
+   * @param {Object} options
+   *        Various options that will be forwarded to `showToolbox`. See the
+   *        JSDoc on this method.
+   */
+  async showToolboxForTab(
+    tab,
+    { toolId, hostType, startTime, raise, reason, hostOptions } = {}
+  ) {
+    const descriptor = await TabDescriptorFactory.createDescriptorForTab(tab);
+    return this.showToolbox(descriptor, {
+      toolId,
+      hostType,
+      startTime,
+      raise,
+      reason,
+      hostOptions,
+    });
   },
 
   /**
@@ -597,12 +648,16 @@ DevTools.prototype = {
     return toolId;
   },
 
-  async createToolbox(target, toolId, hostType, hostOptions) {
-    const manager = new ToolboxHostManager(target, hostType, hostOptions);
+  /**
+   * Unconditionally create a new Toolbox instance for the provided descriptor.
+   * See `showToolbox` for the arguments' jsdoc.
+   */
+  async _createToolbox(descriptor, toolId, hostType, hostOptions) {
+    const manager = new ToolboxHostManager(descriptor, hostType, hostOptions);
 
     const toolbox = await manager.create(toolId);
 
-    this._toolboxes.set(target, toolbox);
+    this._toolboxes.set(descriptor, toolbox);
 
     this.emit("toolbox-created", toolbox);
 
@@ -611,15 +666,8 @@ DevTools.prototype = {
     });
 
     toolbox.once("destroyed", () => {
-      this._toolboxes.delete(target);
+      this._toolboxes.delete(descriptor);
       this.emit("toolbox-destroyed", toolbox);
-    });
-    // If the document navigates to another process, the current target will be
-    // destroyed in favor of a new one. So acknowledge this swap here.
-    toolbox.on("switch-target", newTarget => {
-      this._toolboxes.delete(target);
-      this._toolboxes.set(newTarget, toolbox);
-      target = newTarget;
     });
 
     await toolbox.open();
@@ -629,67 +677,58 @@ DevTools.prototype = {
   },
 
   /**
-   * Return the toolbox for a given target.
+   * Return the toolbox for a given descriptor.
    *
-   * @param  {object} target
-   *         Target value e.g. the target that owns this toolbox
+   * @param  {Descriptor} descriptor
+   *         Target descriptor that owns this toolbox
    *
    * @return {Toolbox} toolbox
-   *         The toolbox that is debugging the given target
+   *         The toolbox that is debugging the given target descriptor
    */
-  getToolbox(target) {
-    return this._toolboxes.get(target);
+  getToolboxForDescriptor(descriptor) {
+    return this._toolboxes.get(descriptor);
   },
 
   /**
-   * Close the toolbox for a given target
-   *
-   * @return promise
-   *         This promise will resolve to false if no toolbox was found
-   *         associated to the target. true, if the toolbox was successfully
-   *         closed.
+   * Retrieve an existing toolbox for the provided tab if it was created before.
+   * Returns null otherwise.
    */
-  async closeToolbox(target) {
-    let toolbox = await this._creatingToolboxes.get(target);
+  async getToolboxForTab(tab) {
+    const descriptor = await TabDescriptorFactory.getDescriptorForTab(tab);
+    return this.getToolboxForDescriptor(descriptor);
+  },
+
+  /**
+   * Close the toolbox for a given tab.
+   *
+   * @return {Promise} Returns a promise that resolves either:
+   *         - immediately if no Toolbox was found
+   *         - or after toolbox.destroy() resolved if a Toolbox was found
+   */
+  async closeToolboxForTab(tab) {
+    const descriptor = await TabDescriptorFactory.getDescriptorForTab(tab);
+
+    let toolbox = await this._creatingToolboxes.get(descriptor);
     if (!toolbox) {
-      toolbox = this._toolboxes.get(target);
+      toolbox = this._toolboxes.get(descriptor);
     }
     if (!toolbox) {
-      return false;
+      return;
     }
     await toolbox.destroy();
-    return true;
-  },
-
-  /**
-   * Wrapper on TargetFactory.forTab, constructs a Target for the provided tab.
-   *
-   * @param  {XULTab} tab
-   *         The tab to use in creating a new target.
-   *
-   * @return {Target} A target object
-   */
-  getTargetForTab: function(tab) {
-    return TargetFactory.forTab(tab);
   },
 
   /**
    * Compatibility layer for web-extensions. Used by DevToolsShim for
    * browser/components/extensions/ext-devtools.js
    *
-   * web-extensions need to use dedicated instances of Target and cannot reuse the
-   * cached instances managed by DevTools target factory.
+   * web-extensions need to use dedicated instances of Commands and cannot reuse the
+   * cached instances managed by DevTools.
+   * Note that is will end up being cached in WebExtension codebase, via
+   * DevToolsExtensionPageContextParent.getDevToolsCommands.
    */
-  createTargetForTab: function(tab) {
-    return TargetFactory.createTargetForTab(tab);
-  },
-
-  /**
-   * Compatibility layer for web-extensions. Used by DevToolsShim for
-   * browser/components/extensions/ext-devtools-inspectedWindow.js
-   */
-  createWebExtensionInspectedWindowFront: function(tabTarget) {
-    return tabTarget.getFront("webExtensionInspectedWindow");
+  createCommandsForTabForWebExtension: function(tab) {
+    return CommandsFactory.forTab(tab, { isWebExtension: true });
   },
 
   /**
@@ -718,16 +757,11 @@ DevTools.prototype = {
    *         markup view.
    */
   async inspectNode(tab, domReference, startTime) {
-    const target = await TargetFactory.forTab(tab);
-
-    const toolbox = await gDevTools.showToolbox(
-      target,
-      "inspector",
-      null,
-      null,
+    const toolbox = await gDevTools.showToolboxForTab(tab, {
+      toolId: "inspector",
       startTime,
-      "inspect_dom"
-    );
+      reason: "inspect_dom",
+    });
     const inspector = toolbox.getCurrentPanel();
 
     const nodeFront = await inspector.inspectorFront.getNodeActorFromContentDomReference(
@@ -766,15 +800,10 @@ DevTools.prototype = {
    *         selected in the accessibility inspector.
    */
   async inspectA11Y(tab, domReference, startTime) {
-    const target = await TargetFactory.forTab(tab);
-
-    const toolbox = await gDevTools.showToolbox(
-      target,
-      "accessibility",
-      null,
-      null,
-      startTime
-    );
+    const toolbox = await gDevTools.showToolboxForTab(tab, {
+      toolId: "accessibility",
+      startTime,
+    });
     const inspectorFront = await toolbox.target.getFront("inspector");
     const nodeFront = await inspectorFront.getNodeActorFromContentDomReference(
       domReference
@@ -824,7 +853,7 @@ DevTools.prototype = {
     }
 
     // Cleaning down the toolboxes: i.e.
-    //   for (let [target, toolbox] of this._toolboxes) toolbox.destroy();
+    //   for (let [, toolbox] of this._toolboxes) toolbox.destroy();
     // Is taken care of by the gDevToolsBrowser.forgetBrowserWindow
   },
 
@@ -836,31 +865,6 @@ DevTools.prototype = {
    */
   getToolboxes() {
     return Array.from(this._toolboxes.values());
-  },
-
-  /**
-   * Check if the content from remote frames should be displayed in the toolbox.
-   * This depends both on enabling the dedicated devtools preference as well as
-   * the fission.autostart preference.
-   */
-  isFissionContentToolboxEnabled() {
-    if (typeof this._isFissionContentToolboxEnabled === "undefined") {
-      const isContentFissionEnabled = Services.prefs.getBoolPref(
-        CONTENT_FISSION_ENABLED_PREF,
-        false
-      );
-
-      // Checking fission.autostart is not used to check if the current target
-      // is a Fission tab, but only to check if the user is currently dogfooding
-      // Fission.
-      const isFissionEnabled = Services.prefs.getBoolPref(
-        FISSION_AUTOSTART_PREF,
-        false
-      );
-      this._isFissionContentToolboxEnabled =
-        isFissionEnabled && isContentFissionEnabled;
-    }
-    return this._isFissionContentToolboxEnabled;
   },
 };
 

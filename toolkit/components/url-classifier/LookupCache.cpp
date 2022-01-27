@@ -363,29 +363,29 @@ void LookupCache::GetCacheInfo(nsIUrlClassifierCacheInfo** aCache) const {
   RefPtr<nsUrlClassifierCacheInfo> info = new nsUrlClassifierCacheInfo;
   info->table = mTableName;
 
-  for (auto iter = mFullHashCache.ConstIter(); !iter.Done(); iter.Next()) {
+  for (const auto& cacheEntry : mFullHashCache) {
     RefPtr<nsUrlClassifierCacheEntry> entry = new nsUrlClassifierCacheEntry;
 
     // Set prefix of the cache entry.
-    nsAutoCString prefix(reinterpret_cast<const char*>(&iter.Key()),
+    nsAutoCString prefix(reinterpret_cast<const char*>(&cacheEntry.GetKey()),
                          PREFIX_SIZE);
     CStringToHexString(prefix, entry->prefix);
 
     // Set expiry of the cache entry.
-    CachedFullHashResponse* response = iter.UserData();
+    CachedFullHashResponse* response = cacheEntry.GetWeak();
     entry->expirySec = response->negativeCacheExpirySec;
 
     // Set positive cache.
     FullHashExpiryCache& fullHashes = response->fullHashes;
-    for (auto iter2 = fullHashes.ConstIter(); !iter2.Done(); iter2.Next()) {
+    for (const auto& fullHashEntry : fullHashes) {
       RefPtr<nsUrlClassifierPositiveCacheEntry> match =
           new nsUrlClassifierPositiveCacheEntry;
 
       // Set fullhash of positive cache entry.
-      CStringToHexString(iter2.Key(), match->fullhash);
+      CStringToHexString(fullHashEntry.GetKey(), match->fullhash);
 
       // Set expiry of positive cache entry.
-      match->expirySec = iter2.Data();
+      match->expirySec = fullHashEntry.GetData();
 
       entry->matches.AppendElement(
           static_cast<nsIUrlClassifierPositiveCacheEntry*>(match));
@@ -591,8 +591,8 @@ nsresult LookupCache::GetLookupFragments(const nsACString& aSpec,
     paths.AppendElement(path);
   }
   // Check an empty path (for whole-domain blocklist entries)
-  if (!paths.Contains(EmptyCString())) {
-    paths.AppendElement(EmptyCString());
+  if (!paths.Contains(""_ns)) {
+    paths.AppendElement(""_ns);
   }
 
   for (uint32_t hostIndex = 0; hostIndex < hosts.Length(); hostIndex++) {
@@ -659,22 +659,23 @@ void LookupCache::DumpCache() const {
     return;
   }
 
-  for (auto iter = mFullHashCache.ConstIter(); !iter.Done(); iter.Next()) {
-    CachedFullHashResponse* response = iter.UserData();
+  for (const auto& cacheEntry : mFullHashCache) {
+    CachedFullHashResponse* response = cacheEntry.GetWeak();
 
     nsAutoCString prefix;
     CStringToHexString(
-        nsCString(reinterpret_cast<const char*>(&iter.Key()), PREFIX_SIZE),
+        nsCString(reinterpret_cast<const char*>(&cacheEntry.GetKey()),
+                  PREFIX_SIZE),
         prefix);
     LOG(("Cache prefix(%s): %s, Expiry: %s", mTableName.get(), prefix.get(),
          GetFormattedTimeString(response->negativeCacheExpirySec).get()));
 
     FullHashExpiryCache& fullHashes = response->fullHashes;
-    for (auto iter2 = fullHashes.ConstIter(); !iter2.Done(); iter2.Next()) {
+    for (const auto& fullHashEntry : fullHashes) {
       nsAutoCString fullhash;
-      CStringToHexString(iter2.Key(), fullhash);
+      CStringToHexString(fullHashEntry.GetKey(), fullhash);
       LOG(("  - %s, Expiry: %s", fullhash.get(),
-           GetFormattedTimeString(iter2.Data()).get()));
+           GetFormattedTimeString(fullHashEntry.GetData()).get()));
     }
   }
 }
@@ -933,16 +934,16 @@ void LookupCacheV2::AddGethashResultToCache(
         reinterpret_cast<const char*>(add.CompleteHash().buf), COMPLETE_SIZE);
 
     CachedFullHashResponse* response =
-        mFullHashCache.LookupOrAdd(add.ToUint32());
+        mFullHashCache.GetOrInsertNew(add.ToUint32());
     response->negativeCacheExpirySec = defaultExpirySec;
 
     FullHashExpiryCache& fullHashes = response->fullHashes;
-    fullHashes.Put(fullhash, defaultExpirySec);
+    fullHashes.InsertOrUpdate(fullhash, defaultExpirySec);
   }
 
   for (const Prefix& prefix : aMissPrefixes) {
     CachedFullHashResponse* response =
-        mFullHashCache.LookupOrAdd(prefix.ToUint32());
+        mFullHashCache.GetOrInsertNew(prefix.ToUint32());
 
     response->negativeCacheExpirySec = defaultExpirySec;
   }

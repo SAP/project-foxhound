@@ -2,13 +2,11 @@
 
 "use strict";
 
+// eslint-disable-next-line mozilla/use-services
 let cs = Cc["@mozilla.org/cookiemanager;1"].getService(Ci.nsICookieManager);
 
 addMessageListener("getCookieCountAndClear", () => {
-  let count = 0;
-  for (let cookie of cs.cookies) {
-    ++count;
-  }
+  let count = cs.cookies.length;
   cs.removeAll();
 
   sendAsyncMessage("getCookieCountAndClear:return", { count });

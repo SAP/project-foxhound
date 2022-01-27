@@ -153,13 +153,13 @@ void nsLineLayout::BeginLineReflow(nscoord aICoord, nscoord aBCoord,
                        "very large sizes, not attempts at intrinsic width "
                        "calculation");
 #ifdef DEBUG
-  if ((aISize != NS_UNCONSTRAINEDSIZE) && CRAZY_SIZE(aISize) &&
-      !LineContainerFrame()->GetParent()->IsCrazySizeAssertSuppressed()) {
+  if ((aISize != NS_UNCONSTRAINEDSIZE) && ABSURD_SIZE(aISize) &&
+      !LineContainerFrame()->GetParent()->IsAbsurdSizeAssertSuppressed()) {
     mBlockReflowInput->mFrame->ListTag(stdout);
     printf(": Init: bad caller: width WAS %d(0x%x)\n", aISize, aISize);
   }
-  if ((aBSize != NS_UNCONSTRAINEDSIZE) && CRAZY_SIZE(aBSize) &&
-      !LineContainerFrame()->GetParent()->IsCrazySizeAssertSuppressed()) {
+  if ((aBSize != NS_UNCONSTRAINEDSIZE) && ABSURD_SIZE(aBSize) &&
+      !LineContainerFrame()->GetParent()->IsAbsurdSizeAssertSuppressed()) {
     mBlockReflowInput->mFrame->ListTag(stdout);
     printf(": Init: bad caller: height WAS %d(0x%x)\n", aBSize, aBSize);
   }
@@ -230,7 +230,8 @@ void nsLineLayout::BeginLineReflow(nscoord aICoord, nscoord aBCoord,
       MOZ_ASSERT(mBlockReflowInput->GetWritingMode() == pfd->mWritingMode,
                  "mBlockReflowInput->frame == frame, "
                  "hence they should have identical writing mode");
-      pfd->mOffsets = mBlockReflowInput->ComputedLogicalOffsets();
+      pfd->mOffsets =
+          mBlockReflowInput->ComputedLogicalOffsets(pfd->mWritingMode);
     }
   }
 }
@@ -292,15 +293,15 @@ void nsLineLayout::UpdateBand(WritingMode aWM,
 #endif
 #ifdef DEBUG
   if ((availSpace.ISize(lineWM) != NS_UNCONSTRAINEDSIZE) &&
-      CRAZY_SIZE(availSpace.ISize(lineWM)) &&
-      !LineContainerFrame()->GetParent()->IsCrazySizeAssertSuppressed()) {
+      ABSURD_SIZE(availSpace.ISize(lineWM)) &&
+      !LineContainerFrame()->GetParent()->IsAbsurdSizeAssertSuppressed()) {
     mBlockReflowInput->mFrame->ListTag(stdout);
     printf(": UpdateBand: bad caller: ISize WAS %d(0x%x)\n",
            availSpace.ISize(lineWM), availSpace.ISize(lineWM));
   }
   if ((availSpace.BSize(lineWM) != NS_UNCONSTRAINEDSIZE) &&
-      CRAZY_SIZE(availSpace.BSize(lineWM)) &&
-      !LineContainerFrame()->GetParent()->IsCrazySizeAssertSuppressed()) {
+      ABSURD_SIZE(availSpace.BSize(lineWM)) &&
+      !LineContainerFrame()->GetParent()->IsAbsurdSizeAssertSuppressed()) {
     mBlockReflowInput->mFrame->ListTag(stdout);
     printf(": UpdateBand: bad caller: BSize WAS %d(0x%x)\n",
            availSpace.BSize(lineWM), availSpace.BSize(lineWM));
@@ -701,8 +702,8 @@ static bool IsPercentageAware(const nsIFrame* aFrame, WritingMode aWM) {
   if ((pos->ISizeDependsOnContainer(aWM) && !pos->ISize(aWM).IsAuto()) ||
       pos->MaxISizeDependsOnContainer(aWM) ||
       pos->MinISizeDependsOnContainer(aWM) ||
-      pos->OffsetHasPercent(aWM.IsVertical() ? eSideBottom : eSideRight) ||
-      pos->OffsetHasPercent(aWM.IsVertical() ? eSideTop : eSideLeft)) {
+      pos->mOffset.GetIStart(aWM).HasPercent() ||
+      pos->mOffset.GetIEnd(aWM).HasPercent()) {
     return true;
   }
 
@@ -728,7 +729,7 @@ static bool IsPercentageAware(const nsIFrame* aFrame, WritingMode aWM) {
     //   is calculated from the constraint equation used for
     //   block-level, non-replaced elements in normal flow.
     nsIFrame* f = const_cast<nsIFrame*>(aFrame);
-    if (f->GetIntrinsicRatio() &&
+    if (f->GetAspectRatio() &&
         // Some percents are treated like 'auto', so check != coord
         !pos->BSize(aWM).ConvertsToLength()) {
       const IntrinsicSize& intrinsicSize = f->GetIntrinsicSize();
@@ -824,16 +825,12 @@ void nsLineLayout::ReflowFrame(nsIFrame* aFrame, nsReflowStatus& aReflowStatus,
     if (reflowInput.ComputedISize() == NS_UNCONSTRAINEDSIZE) {
       reflowInput.AvailableISize() = availableSpaceOnLine;
     }
-    WritingMode stateWM = reflowInput.GetWritingMode();
-    pfd->mMargin =
-        reflowInput.ComputedLogicalMargin().ConvertTo(lineWM, stateWM);
-    pfd->mBorderPadding =
-        reflowInput.ComputedLogicalBorderPadding().ConvertTo(lineWM, stateWM);
+    pfd->mMargin = reflowInput.ComputedLogicalMargin(lineWM);
+    pfd->mBorderPadding = reflowInput.ComputedLogicalBorderPadding(lineWM);
     pfd->mRelativePos =
         reflowInput.mStyleDisplay->IsRelativelyPositionedStyle();
     if (pfd->mRelativePos) {
-      pfd->mOffsets =
-          reflowInput.ComputedLogicalOffsets().ConvertTo(frameWM, stateWM);
+      pfd->mOffsets = reflowInput.ComputedLogicalOffsets(frameWM);
     }
 
     // Calculate whether the the frame should have a start margin and
@@ -968,9 +965,9 @@ void nsLineLayout::ReflowFrame(nsIFrame* aFrame, nsReflowStatus& aReflowStatus,
   // Note: break-before means ignore the reflow metrics since the
   // frame will be reflowed another time.
   if (!aReflowStatus.IsInlineBreakBefore()) {
-    if ((CRAZY_SIZE(reflowOutput.ISize(lineWM)) ||
-         CRAZY_SIZE(reflowOutput.BSize(lineWM))) &&
-        !LineContainerFrame()->GetParent()->IsCrazySizeAssertSuppressed()) {
+    if ((ABSURD_SIZE(reflowOutput.ISize(lineWM)) ||
+         ABSURD_SIZE(reflowOutput.BSize(lineWM))) &&
+        !LineContainerFrame()->GetParent()->IsAbsurdSizeAssertSuppressed()) {
       printf("nsLineLayout: ");
       aFrame->ListTag(stdout);
       printf(" metrics=%d,%d!\n", reflowOutput.Width(), reflowOutput.Height());
@@ -1033,7 +1030,8 @@ void nsLineLayout::ReflowFrame(nsIFrame* aFrame, nsReflowStatus& aReflowStatus,
     // See if we can place the frame. If we can't fit it, then we
     // return now.
     bool optionalBreakAfterFits;
-    NS_ASSERTION(isText || !reflowInputHolder->IsFloating(),
+    NS_ASSERTION(isText || !reflowInputHolder->mStyleDisplay->IsFloating(
+                               reflowInputHolder->mFrame),
                  "How'd we get a floated inline frame? "
                  "The frame ctor should've dealt with this.");
     if (CanPlaceFrame(pfd, notSafeToBreak, continuingTextRun,
@@ -1103,7 +1101,7 @@ void nsLineLayout::ReflowFrame(nsIFrame* aFrame, nsReflowStatus& aReflowStatus,
 
 void nsLineLayout::AllowForStartMargin(PerFrameData* pfd,
                                        ReflowInput& aReflowInput) {
-  NS_ASSERTION(!aReflowInput.IsFloating(),
+  NS_ASSERTION(!aReflowInput.mStyleDisplay->IsFloating(aReflowInput.mFrame),
                "How'd we get a floated inline frame? "
                "The frame ctor should've dealt with this.");
 
@@ -1954,7 +1952,7 @@ void nsLineLayout::VerticalAlignFrames(PerSpanData* psd) {
       logicalBSize =
           pfd->mBounds.BSize(lineWM) + pfd->mMargin.BStartEnd(lineWM);
       if (logicalBSize < 0 &&
-          mPresContext->CompatibilityMode() == eCompatibility_NavQuirks) {
+          mPresContext->CompatibilityMode() != eCompatibility_FullStandards) {
         pfd->mAscent -= logicalBSize;
         logicalBSize = 0;
       }
@@ -2371,7 +2369,7 @@ void nsLineLayout::VerticalAlignFrames(PerSpanData* psd) {
     // they might end up being aligned anywhere.  However, we'll guess
     // that they'll be placed aligned with the top or bottom of this
     // frame (as though this frame is the only thing in the line).
-    // (Guessing isn't crazy, since all we're doing is reducing the
+    // (Guessing isn't unreasonable, since all we're doing is reducing the
     // scope of a quirk and making the behavior more standards-like.)
     if (maxStartBoxBSize > maxBCoord - minBCoord) {
       // Distribute maxStartBoxBSize to ascent (baselineBCoord - minBCoord), and
@@ -2816,7 +2814,7 @@ void nsLineLayout::AdvanceAnnotationInlineBounds(PerFrameData* aPFD,
     // For ruby text frames, only increase frames
     // which are not auto-hidden.
     if (frameType != LayoutFrameType::RubyText ||
-        !static_cast<nsRubyTextFrame*>(frame)->IsAutoHidden()) {
+        !static_cast<nsRubyTextFrame*>(frame)->IsCollapsed()) {
       nscoord reservedISize = RubyUtils::GetReservedISize(frame);
       RubyUtils::SetReservedISize(frame, reservedISize + aDeltaISize);
     }
@@ -3222,8 +3220,8 @@ void nsLineLayout::ApplyRelativePositioning(PerFrameData* aPFD) {
 }
 
 // This method do relative positioning for ruby annotations.
-void nsLineLayout::RelativePositionAnnotations(
-    PerSpanData* aRubyPSD, nsOverflowAreas& aOverflowAreas) {
+void nsLineLayout::RelativePositionAnnotations(PerSpanData* aRubyPSD,
+                                               OverflowAreas& aOverflowAreas) {
   MOZ_ASSERT(aRubyPSD->mFrame->mFrame->IsRubyFrame());
   for (PerFrameData* pfd = aRubyPSD->mFirstFrame; pfd; pfd = pfd->mNext) {
     MOZ_ASSERT(pfd->mFrame->IsRubyBaseContainerFrame());
@@ -3232,7 +3230,7 @@ void nsLineLayout::RelativePositionAnnotations(
       nsIFrame* rtcFrame = rtc->mFrame;
       MOZ_ASSERT(rtcFrame->IsRubyTextContainerFrame());
       ApplyRelativePositioning(rtc);
-      nsOverflowAreas rtcOverflowAreas;
+      OverflowAreas rtcOverflowAreas;
       RelativePositionFrames(rtc->mSpan, rtcOverflowAreas);
       aOverflowAreas.UnionWith(rtcOverflowAreas + rtcFrame->GetPosition());
     }
@@ -3240,8 +3238,8 @@ void nsLineLayout::RelativePositionAnnotations(
 }
 
 void nsLineLayout::RelativePositionFrames(PerSpanData* psd,
-                                          nsOverflowAreas& aOverflowAreas) {
-  nsOverflowAreas overflowAreas;
+                                          OverflowAreas& aOverflowAreas) {
+  OverflowAreas overflowAreas;
   WritingMode wm = psd->mWritingMode;
   if (psd != mRootSpan) {
     // The span's overflow areas come in three parts:
@@ -3290,7 +3288,7 @@ void nsLineLayout::RelativePositionFrames(PerSpanData* psd,
     // system. We adjust the childs combined area into our coordinate
     // system before computing the aggregated value by adding in
     // <b>x</b> and <b>y</b> which were computed above.
-    nsOverflowAreas r;
+    OverflowAreas r;
     if (pfd->mSpan) {
       // Compute a new combined area for the child span before
       // aggregating it into our combined area.

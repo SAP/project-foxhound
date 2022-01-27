@@ -11,6 +11,12 @@ var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 var { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
+if (AppConstants.MOZ_UPDATER) {
+  Services.scriptloader.loadSubScript(
+    "chrome://browser/content/aboutDialog-appUpdater.js",
+    this
+  );
+}
 
 async function init(aEvent) {
   if (aEvent.target != document) {
@@ -72,10 +78,12 @@ async function init(aEvent) {
 
   // Show a release notes link if we have a URL.
   let relNotesLink = document.getElementById("releasenotes");
-  let relNotesPrefType = Services.prefs.getPrefType("app.releaseNotesURL");
+  let relNotesPrefType = Services.prefs.getPrefType(
+    "app.releaseNotesURL.aboutDialog"
+  );
   if (relNotesPrefType != Services.prefs.PREF_INVALID) {
     let relNotesURL = Services.urlFormatter.formatURLPref(
-      "app.releaseNotesURL"
+      "app.releaseNotesURL.aboutDialog"
     );
     if (relNotesURL != "about:blank") {
       relNotesLink.href = relNotesURL;
@@ -89,12 +97,18 @@ async function init(aEvent) {
     let channelLabel = document.getElementById("currentChannel");
     let currentChannelText = document.getElementById("currentChannelText");
     channelLabel.value = UpdateUtils.UpdateChannel;
-    if (/^release($|\-)/.test(channelLabel.value)) {
+    let hasWinPackageId = false;
+    try {
+      hasWinPackageId = Services.sysinfo.getProperty("hasWinPackageId");
+    } catch (_ex) {
+      // The hasWinPackageId property doesn't exist; assume it should be false.
+    }
+    if (/^release($|\-)/.test(channelLabel.value) || hasWinPackageId) {
       currentChannelText.hidden = true;
     }
   }
 
-  if (AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")) {
+  if (AppConstants.IS_ESR) {
     document.getElementById("release").hidden = false;
   }
 

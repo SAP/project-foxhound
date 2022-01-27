@@ -15,28 +15,32 @@ interface nsIURI;
  */
 [scriptable, uuid(1e18680e-052d-4509-a17e-678f5c495e02)]
 interface nsIE10SUtils : nsISupports {
+  cenum RemoteWorkerType: 8 {
+    REMOTE_WORKER_TYPE_SHARED,
+    REMOTE_WORKER_TYPE_SERVICE,
+  };
+
   /**
-   * Determine what remote type should be used to load a document with the given
-   * principal.
+   * Determine what remote type should be used to launch a worker script with
+   * the given principal.
    *
-   * @param aPrincipal  The result principal for the document being loaded.
-   * @param aChannelOriginalURI. The original URI being loaded
-   *                             (which isn't always the same as the Principal's
-   *                              URI)
-   * @param aMultiProcess  Does the browser have remote tabs enabled.
-   * @param aRemoteSubframes  Does the browser have remote subframes enabled.
-   * @param aPreferredRemoteType  If multiple remote types are compatible with
-   *                              the load, prefer staying in this remote type.
-   * @param aCurrentPrincipal  The principal of the currently loaded document.
-   * @param aIsSubframe  Is the process switch occuring in a subframe.
+   * @param aPrincipal  
+   *   The result principal for the document being loaded.
+   * @param aWorkerTypeName
+   *   The type of remote worker being launched (Ci.nsIE10SUtils.REMOTE_WORKER_TYPE_*).
+   * @param aIsMultiProcess
+   *   A boolean to indicate if e10s enabled.
+   * @param aIsFission
+   *   A boolean to indicate if fission is enabled.
+   * @param aPreferredRemoteType
+   *   If multiple remote types are compatible with the worker,
+   *   prefer staying in this remote type.
    *
-   * @return  The remote type to complete this load in.
+   * @return  The remote type to launch the worker in.
    */
-  AUTF8String getRemoteTypeForPrincipal(in nsIPrincipal aPrincipal,
-                                        in nsIURI aChannelOriginalURI,
-                                        in boolean aMultiProcess,
-                                        in boolean aRemoteSubframes,
-                                        in AUTF8String aPreferredRemoteType,
-                                        in nsIPrincipal aCurrentPrincipal,
-                                        in boolean aIsSubframe);
+  AUTF8String getRemoteTypeForWorkerPrincipal(in nsIPrincipal aPrincipal,
+                                              in nsIE10SUtils_RemoteWorkerType aWorkerType,
+                                              in boolean aIsMultiProcess,
+                                              in boolean aIsFission,
+                                              in AUTF8String aPreferredRemoteType);
 };

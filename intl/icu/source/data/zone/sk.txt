@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 sk{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"Abidjan"}
@@ -1946,6 +1946,9 @@ sk{
             ld{"jekaterinburský letný čas"}
             lg{"jekaterinburský čas"}
             ls{"jekaterinburský štandardný čas"}
+        }
+        "meta:Yukon"{
+            ls{"yukonský čas"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

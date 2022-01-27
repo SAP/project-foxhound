@@ -7,14 +7,17 @@
 #include "nsXULAppAPI.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
-#include "js/Array.h"  // JS::NewArrayObject
+#include "js/Array.h"             // JS::NewArrayObject
+#include "js/CallAndConstruct.h"  // JS_CallFunctionValue
 #include "js/CharacterEncoding.h"
 #include "js/CompilationAndEvaluation.h"  // JS::Evaluate
 #include "js/ContextOptions.h"
 #include "js/Printf.h"
+#include "js/PropertyAndElement.h"  // JS_DefineElement, JS_DefineFunctions, JS_DefineProperty
 #include "js/PropertySpec.h"
 #include "js/SourceText.h"  // JS::SourceText
 #include "mozilla/ChaosMode.h"
+#include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/IOInterposer.h"
 #include "mozilla/Preferences.h"
@@ -42,18 +45,23 @@
 #include "nsJSUtils.h"
 
 #include "nsIXULRuntime.h"
+#include "nsIAppStartup.h"
 #include "GeckoProfiler.h"
+#include "Components.h"
 
 #ifdef ANDROID
 #  include <android/log.h>
+#  include "XREShellData.h"
 #endif
 
 #ifdef XP_WIN
+#  include "mozilla/mscom/ProcessRuntime.h"
 #  include "mozilla/ScopeExit.h"
 #  include "mozilla/widget/AudioSession.h"
 #  include "mozilla/WinDllServices.h"
 #  include <windows.h>
 #  if defined(MOZ_SANDBOX)
+#    include "XREShellData.h"
 #    include "sandboxBroker.h"
 #  endif
 #endif
@@ -75,6 +83,14 @@
 #ifdef ENABLE_TESTS
 #  include "xpctest_private.h"
 #endif
+
+// Fuzzing support for XPC runtime fuzzing
+#ifdef FUZZING_INTERFACES
+#  include "xpcrtfuzzing/xpcrtfuzzing.h"
+#  include "XREShellData.h"
+static bool fuzzDoDebug = !!getenv("MOZ_FUZZ_DEBUG");
+static bool fuzzHaveModule = !!getenv("FUZZER");
+#endif  // FUZZING_INTERFACES
 
 using namespace mozilla;
 using namespace JS;
@@ -273,6 +289,15 @@ static bool ReadLine(JSContext* cx, unsigned argc, Value* vp) {
 static bool Print(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   args.rval().setUndefined();
+
+#ifdef FUZZING_INTERFACES
+  if (fuzzHaveModule && !fuzzDoDebug) {
+    // When fuzzing and not debugging, suppress any print() output,
+    // as it slows down fuzzing and makes libFuzzer's output hard
+    // to read.
+    return true;
+  }
+#endif  // FUZZING_INTERFACES
 
   RootedString str(cx);
   nsAutoCString utf8output;
@@ -1021,7 +1046,7 @@ static bool GetCurrentWorkingDirectory(nsAString& workingDirectory) {
   // size back down to the actual string length
   cwd.SetLength(strlen(result) + 1);
   cwd.Replace(cwd.Length() - 1, 1, '/');
-  workingDirectory = NS_ConvertUTF8toUTF16(cwd);
+  CopyUTF8toUTF16(cwd, workingDirectory);
 #endif
   return true;
 }
@@ -1036,8 +1061,13 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
   int result = 0;
   nsresult rv;
 
-  gErrFile = stderr;
+#ifdef ANDROID
+  gOutFile = aShellData->outFile;
+  gErrFile = aShellData->errFile;
+#else
   gOutFile = stdout;
+  gErrFile = stderr;
+#endif
   gInFile = stdin;
 
   NS_LogInit();
@@ -1048,10 +1078,10 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
   // with the IOInterposer will be properly tracked.
   mozilla::IOInterposerInit ioInterposerGuard;
 
-#ifdef MOZ_GECKO_PROFILER
+  XRE_InitCommandLine(argc, argv);
+
   char aLocal;
   profiler_init(&aLocal);
-#endif
 
 #ifdef MOZ_ASAN_REPORTER
   PR_SetEnv("MOZ_DISABLE_ASAN_REPORTER=1");
@@ -1071,6 +1101,14 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
     printf_stderr(
         "*** You are running in chaos test mode. See ChaosMode.h. ***\n");
   }
+
+#ifdef XP_WIN
+  // Some COM settings are global to the process and must be set before any non-
+  // trivial COM is run in the application. Since these settings may affect
+  // stability, we should instantiate COM ASAP so that we can ensure that these
+  // global settings are configured before anything can interfere.
+  mscom::ProcessRuntime mscom;
+#endif
 
   // The provider needs to outlive the call to shutting down XPCOM.
   XPCShellDirProvider dirprovider;
@@ -1191,8 +1229,7 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
       argv += 2;
     }
 
-    nsCOMPtr<nsIServiceManager> servMan;
-    rv = NS_InitXPCOM(getter_AddRefs(servMan), appDir, &dirprovider);
+    rv = NS_InitXPCOM(nullptr, appDir, &dirprovider);
     if (NS_FAILED(rv)) {
       printf("NS_InitXPCOM failed!\n");
       return 1;
@@ -1259,6 +1296,11 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
     options.creationOptions().setNewCompartmentAndZone();
     xpc::SetPrefableRealmOptions(options);
 
+    // Even if we're building in a configuration where source is
+    // discarded, there's no reason to do that on XPCShell, and doing so
+    // might break various automation scripts.
+    options.behaviors().setDiscardSource(false);
+
     JS::Rooted<JSObject*> glob(cx);
     rv = xpc::InitClassesWithNewWrappedGlobal(
         cx, static_cast<nsIGlobalObject*>(backstagePass), systemprincipal, 0,
@@ -1302,14 +1344,15 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
         return 1;
       }
 
+      nsCOMPtr<nsIAppStartup> appStartup(components::AppStartup::Service());
+      if (!appStartup) {
+        return 1;
+      }
+      appStartup->DoneStartingUp();
+
       backstagePass->SetGlobalObject(glob);
 
       JSAutoRealm ar(cx, glob);
-
-      // Even if we're building in a configuration where source is
-      // discarded, there's no reason to do that on XPCShell, and doing so
-      // might break various automation scripts.
-      JS::RealmBehaviorsRef(cx).setDiscardSource(false);
 
       if (!JS_InitReflectParse(cx, glob)) {
         return 1;
@@ -1328,22 +1371,45 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
                         0);
 
       {
-        // We are almost certainly going to run script here, so we need an
-        // AutoEntryScript. This is Gecko-specific and not in any spec.
-        AutoEntryScript aes(backstagePass, "xpcshell argument processing");
+#ifdef FUZZING_INTERFACES
+        if (fuzzHaveModule) {
+#  ifdef LIBFUZZER
+          // argv[0] was removed previously, but libFuzzer expects it
+          argc++;
+          argv--;
 
-        // If an exception is thrown, we'll set our return code
-        // appropriately, and then let the AutoEntryScript destructor report
-        // the error to the console.
-        if (!ProcessArgs(aes, argv, argc, &dirprovider)) {
-          if (gExitCode) {
-            result = gExitCode;
-          } else if (gQuitting) {
-            result = 0;
-          } else {
-            result = EXITCODE_RUNTIME_ERROR;
+          result = FuzzXPCRuntimeStart(&jsapi, &argc, &argv,
+                                       aShellData->fuzzerDriver);
+#  elif AFLFUZZ
+          MOZ_CRASH("AFL is unsupported for XPC runtime fuzzing integration");
+#  endif
+        } else {
+#endif
+          // We are almost certainly going to run script here, so we need an
+          // AutoEntryScript. This is Gecko-specific and not in any spec.
+          AutoEntryScript aes(backstagePass, "xpcshell argument processing");
+
+          // If an exception is thrown, we'll set our return code
+          // appropriately, and then let the AutoEntryScript destructor report
+          // the error to the console.
+          if (!ProcessArgs(aes, argv, argc, &dirprovider)) {
+            if (gExitCode) {
+              result = gExitCode;
+            } else if (gQuitting) {
+              result = 0;
+            } else {
+              result = EXITCODE_RUNTIME_ERROR;
+            }
           }
+#ifdef FUZZING_INTERFACES
         }
+#endif
+      }
+
+      // Signal that we're now shutting down.
+      nsCOMPtr<nsIObserver> obs = do_QueryInterface(appStartup);
+      if (obs) {
+        obs->Observe(nullptr, "quit-application-forced", nullptr);
       }
 
       JS_DropPrincipals(cx, gJSPrincipals);
@@ -1374,13 +1440,13 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
     CrashReporter::UnsetExceptionHandler();
   }
 
-#ifdef MOZ_GECKO_PROFILER
   // This must precede NS_LogTerm(), otherwise xpcshell return non-zero
   // during some tests, which causes failures.
   profiler_shutdown();
-#endif
 
   NS_LogTerm();
+
+  XRE_DeinitCommandLine();
 
   return result;
 }

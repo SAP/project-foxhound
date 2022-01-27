@@ -7,7 +7,6 @@
 #include "mozilla/css/StreamLoader.h"
 
 #include "mozilla/Encoding.h"
-#include "mozilla/ScopeExit.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
 #include "nsIInputStream.h"
@@ -74,8 +73,7 @@ StreamLoader::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
     nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
 
     if (NS_FAILED(mStatus)) {
-      mSheetLoadData->VerifySheetReadyToParse(mStatus, EmptyCString(),
-                                              EmptyCString(), channel);
+      mSheetLoadData->VerifySheetReadyToParse(mStatus, ""_ns, ""_ns, channel);
       return mStatus;
     }
 
@@ -117,19 +115,8 @@ StreamLoader::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
     }
   }  // run destructor for `bytes`
 
-  auto info = nsContentUtils::GetSubresourceCacheValidationInfo(aRequest);
-
-  // data: URIs are safe to cache across documents under any circumstance, so we
-  // special-case them here even though the channel itself doesn't have any
-  // caching policy.
-  //
-  // TODO(emilio): Figure out which other schemes that don't have caching
-  // policies are safe to cache. Blobs should be...
-  if (mSheetLoadData->mURI->SchemeIs("data")) {
-    MOZ_ASSERT(!info.mExpirationTime);
-    MOZ_ASSERT(!info.mMustRevalidate);
-    info.mExpirationTime = Some(0);  // 0 means "doesn't expire".
-  }
+  auto info = nsContentUtils::GetSubresourceCacheValidationInfo(
+      aRequest, mSheetLoadData->mURI, nsContentUtils::SubresourceKind::Style);
 
   // For now, we never cache entries that we have to revalidate, or whose
   // channel don't support caching.
@@ -163,9 +150,7 @@ void StreamLoader::HandleBOM() {
   MOZ_ASSERT(mEncodingFromBOM.isNothing());
   MOZ_ASSERT(mBytes.IsEmpty());
 
-  const Encoding* encoding;
-  size_t bomLength;
-  Tie(encoding, bomLength) = Encoding::ForBOM(mBOMBytes);
+  auto [encoding, bomLength] = Encoding::ForBOM(mBOMBytes);
   mEncodingFromBOM.emplace(encoding);  // Null means no BOM.
 
   // BOMs are three bytes at most, but may be fewer. Copy over anything

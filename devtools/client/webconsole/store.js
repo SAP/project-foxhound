@@ -27,15 +27,12 @@ const { ignore } = require("devtools/client/shared/redux/middleware/ignore");
 const eventTelemetry = require("devtools/client/webconsole/middleware/event-telemetry");
 const historyPersistence = require("devtools/client/webconsole/middleware/history-persistence");
 const performanceMarker = require("devtools/client/webconsole/middleware/performance-marker");
-const {
-  thunkWithOptions,
-} = require("devtools/client/shared/redux/middleware/thunk-with-options");
+const { thunk } = require("devtools/client/shared/redux/middleware/thunk");
 
 // Enhancers
 const enableBatching = require("devtools/client/webconsole/enhancers/batching");
 const enableActorReleaser = require("devtools/client/webconsole/enhancers/actor-releaser");
 const ensureCSSErrorReportingEnabled = require("devtools/client/webconsole/enhancers/css-error-reporting");
-const enableNetProvider = require("devtools/client/webconsole/enhancers/net-provider");
 const enableMessagesCacheClearing = require("devtools/client/webconsole/enhancers/message-cache-clearing");
 
 /**
@@ -84,11 +81,7 @@ function configureStore(webConsoleUI, options = {}) {
       editorWidth: getIntPref(PREFS.UI.EDITOR_WIDTH),
       showEditorOnboarding: getBoolPref(PREFS.UI.EDITOR_ONBOARDING),
       timestampsVisible: getBoolPref(PREFS.UI.MESSAGE_TIMESTAMP),
-      showEvaluationContextSelector: getBoolPref(
-        webConsoleUI.isBrowserToolboxConsole
-          ? PREFS.UI.CONTEXT_SELECTOR_BROWSER_TOOLBOX
-          : PREFS.UI.CONTEXT_SELECTOR_CONTENT_TOOLBOX
-      ),
+      showEvaluationContextSelector: getBoolPref(PREFS.UI.CONTEXT_SELECTOR),
     }),
   };
 
@@ -97,7 +90,7 @@ function configureStore(webConsoleUI, options = {}) {
   const middleware = applyMiddleware(
     performanceMarker(sessionId),
     ignore,
-    thunkWithOptions.bind(null, {
+    thunk({
       prefsService,
       ...options.thunkArgs,
     }),
@@ -112,7 +105,6 @@ function configureStore(webConsoleUI, options = {}) {
       middleware,
       enableActorReleaser(webConsoleUI),
       enableBatching(),
-      enableNetProvider(webConsoleUI),
       enableMessagesCacheClearing(webConsoleUI),
       ensureCSSErrorReportingEnabled(webConsoleUI)
     )

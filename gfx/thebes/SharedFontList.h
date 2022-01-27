@@ -21,7 +21,9 @@ class FontList;  // See the separate SharedFontList-impl.h header
  * A Pointer in the shared font list contains a packed index/offset pair,
  * with a 12-bit index into the array of shared-memory blocks, and a 20-bit
  * offset into the block.
- * The maximum size of each block is therefore 2^20 bytes (1048576).
+ * The maximum size of each block is therefore 2^20 bytes (1 MB) if sub-parts
+ * of the block are to be allocated; however, a larger block (up to 2^32 bytes)
+ * can be created and used as a single allocation if necessary.
  */
 struct Pointer {
  private:
@@ -155,20 +157,30 @@ struct Face {
     nsCString mDescriptor;  // descriptor that can be used to instantiate a
                             // platform font reference
     uint16_t mIndex;        // an index used with descriptor (on some platforms)
-    bool mFixedPitch;       // is the face fixed-pitch (monospaced)?
-    mozilla::WeightRange mWeight;     // CSS font-weight value
-    mozilla::StretchRange mStretch;   // CSS font-stretch value
-    mozilla::SlantStyleRange mStyle;  // CSS font-style value
+#ifdef MOZ_WIDGET_GTK
+    uint16_t mSize;  // pixel size if bitmap; zero indicates scalable
+#endif
+    bool mFixedPitch;                  // is the face fixed-pitch (monospaced)?
+    mozilla::WeightRange mWeight;      // CSS font-weight value
+    mozilla::StretchRange mStretch;    // CSS font-stretch value
+    mozilla::SlantStyleRange mStyle;   // CSS font-style value
+    RefPtr<gfxCharacterMap> mCharMap;  // character map, or null if not loaded
   };
 
+  // Note that mCharacterMap is not set from the InitData by this constructor;
+  // the caller must use SetCharacterMap to handle that separately if required.
   Face(FontList* aList, const InitData& aData)
       : mDescriptor(aList, aData.mDescriptor),
         mIndex(aData.mIndex),
+#ifdef MOZ_WIDGET_GTK
+        mSize(aData.mSize),
+#endif
         mFixedPitch(aData.mFixedPitch),
         mWeight(aData.mWeight),
         mStretch(aData.mStretch),
         mStyle(aData.mStyle),
-        mCharacterMap(Pointer::Null()) {}
+        mCharacterMap(Pointer::Null()) {
+  }
 
   bool HasValidDescriptor() const {
     return !mDescriptor.IsNull() && mIndex != uint16_t(-1);
@@ -178,6 +190,9 @@ struct Face {
 
   String mDescriptor;
   uint16_t mIndex;
+#ifdef MOZ_WIDGET_GTK
+  uint16_t mSize;
+#endif
   bool mFixedPitch;
   mozilla::WeightRange mWeight;
   mozilla::StretchRange mStretch;
@@ -193,16 +208,19 @@ struct Face {
  * want to use the family.
  */
 struct Family {
+  static constexpr uint32_t kNoIndex = uint32_t(-1);
+
   // Data required to initialize a Family
   struct InitData {
-    InitData(const nsACString& aKey,   // lookup key (lowercased)
-             const nsACString& aName,  // display name
-             uint32_t aIndex = 0,  // [win] index in the system font collection
+    InitData(const nsACString& aKey,      // lookup key (lowercased)
+             const nsACString& aName,     // display name
+             uint32_t aIndex = kNoIndex,  // [win] system collection index
              FontVisibility aVisibility = FontVisibility::Unknown,
              bool aBundled = false,       // [win] font was bundled with the app
                                           // rather than system-installed
              bool aBadUnderline = false,  // underline-position in font is bad
-             bool aForceClassic = false   // [win] use "GDI classic" rendering
+             bool aForceClassic = false,  // [win] use "GDI classic" rendering
+             bool aAltLocale = false      // font is alternate localized family
              )
         : mKey(aKey),
           mName(aName),
@@ -210,7 +228,8 @@ struct Family {
           mVisibility(aVisibility),
           mBundled(aBundled),
           mBadUnderline(aBadUnderline),
-          mForceClassic(aForceClassic) {}
+          mForceClassic(aForceClassic),
+          mAltLocale(aAltLocale) {}
     bool operator<(const InitData& aRHS) const { return mKey < aRHS.mKey; }
     bool operator==(const InitData& aRHS) const {
       return mKey == aRHS.mKey && mName == aRHS.mName &&
@@ -224,6 +243,7 @@ struct Family {
     bool mBundled;
     bool mBadUnderline;
     bool mForceClassic;
+    bool mAltLocale;
   };
 
   /**
@@ -254,8 +274,8 @@ struct Family {
 
   const String& DisplayName() const { return mName; }
 
-  uint32_t Index() const { return mIndex & 0x7fffffffu; }
-  bool IsBundled() const { return mIndex & 0x80000000u; }
+  uint32_t Index() const { return mIndex; }
+  bool IsBundled() const { return mIsBundled; }
 
   uint32_t NumFaces() const {
     MOZ_ASSERT(IsInitialized());
@@ -273,8 +293,19 @@ struct Family {
   bool IsBadUnderlineFamily() const { return mIsBadUnderlineFamily; }
   bool IsForceClassic() const { return mIsForceClassic; }
   bool IsSimple() const { return mIsSimple; }
+  bool IsAltLocaleFamily() const { return mIsAltLocale; }
 
+  // IsInitialized indicates whether the family has been populated with faces,
+  // and is therefore ready to use.
+  // It is possible that character maps have not yet been loaded.
   bool IsInitialized() const { return !mFaces.IsNull(); }
+
+  // IsFullyInitialized indicates that not only faces but also character maps
+  // have been set up, so the family can be searched without the possibility
+  // that IPC messaging will be triggered.
+  bool IsFullyInitialized() const {
+    return IsInitialized() && !mCharacterMap.IsNull();
+  }
 
   void FindAllFacesForStyle(FontList* aList, const gfxFontStyle& aStyle,
                             nsTArray<Face*>& aFaceList,
@@ -288,6 +319,11 @@ struct Family {
   void SetupFamilyCharMap(FontList* aList);
 
  private:
+  // Returns true if there are specifically-sized bitmap faces in the list,
+  // so size selection still needs to be done. (Currently only on Linux.)
+  bool FindAllFacesForStyleInternal(FontList* aList, const gfxFontStyle& aStyle,
+                                    nsTArray<Face*>& aFaceList) const;
+
   std::atomic<uint32_t> mFaceCount;
   String mKey;
   String mName;
@@ -296,10 +332,12 @@ struct Family {
   Pointer mFaces;         // Pointer to array of |mFaceCount| face pointers
   uint32_t mIndex;        // [win] Top bit set indicates app-bundled font family
   FontVisibility mVisibility;
-  bool mIsBadUnderlineFamily;
-  bool mIsForceClassic;
   bool mIsSimple;  // family allows simplified style matching: mFaces contains
                    // exactly 4 entries [Regular, Bold, Italic, BoldItalic].
+  bool mIsBundled : 1;
+  bool mIsBadUnderlineFamily : 1;
+  bool mIsForceClassic : 1;
+  bool mIsAltLocale : 1;
 };
 
 /**

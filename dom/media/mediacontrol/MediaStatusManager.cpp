@@ -4,13 +4,17 @@
 
 #include "MediaStatusManager.h"
 
+#include "MediaControlService.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/MediaControlUtils.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "nsContentUtils.h"
 #include "nsIChromeRegistry.h"
 #include "nsIObserverService.h"
 #include "nsIXULAppInfo.h"
+#include "nsNetUtil.h"
 
 #ifdef MOZ_PLACES
 #  include "nsIFaviconService.h"
@@ -24,8 +28,7 @@ extern mozilla::LazyLogModule gMediaControlLog;
   MOZ_LOG(gMediaControlLog, LogLevel::Debug, \
           ("MediaStatusManager=%p, " msg, this, ##__VA_ARGS__))
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 static bool IsMetadataEmpty(const Maybe<MediaMetadataBase>& aMetadata) {
   // Media session's metadata is null.
@@ -59,36 +62,39 @@ void MediaStatusManager::NotifyMediaAudibleChanged(uint64_t aBrowsingContextId,
 }
 
 void MediaStatusManager::NotifySessionCreated(uint64_t aBrowsingContextId) {
-  if (mMediaSessionInfoMap.Contains(aBrowsingContextId)) {
-    return;
-  }
+  const bool created = mMediaSessionInfoMap.WithEntryHandle(
+      aBrowsingContextId, [&](auto&& entry) {
+        if (entry) return false;
 
-  LOG("Session %" PRIu64 " has been created", aBrowsingContextId);
-  mMediaSessionInfoMap.Put(aBrowsingContextId, MediaSessionInfo::EmptyInfo());
-  if (IsSessionOwningAudioFocus(aBrowsingContextId)) {
+        LOG("Session %" PRIu64 " has been created", aBrowsingContextId);
+        entry.Insert(MediaSessionInfo::EmptyInfo());
+        return true;
+      });
+
+  if (created && IsSessionOwningAudioFocus(aBrowsingContextId)) {
+    // This can't be done from within the WithEntryHandle functor, since it
+    // accesses mMediaSessionInfoMap.
     SetActiveMediaSessionContextId(aBrowsingContextId);
   }
 }
 
 void MediaStatusManager::NotifySessionDestroyed(uint64_t aBrowsingContextId) {
-  if (!mMediaSessionInfoMap.Contains(aBrowsingContextId)) {
-    return;
-  }
-  LOG("Session %" PRIu64 " has been destroyed", aBrowsingContextId);
-  mMediaSessionInfoMap.Remove(aBrowsingContextId);
-  if (mActiveMediaSessionContextId &&
-      *mActiveMediaSessionContextId == aBrowsingContextId) {
-    ClearActiveMediaSessionContextIdIfNeeded();
+  if (mMediaSessionInfoMap.Remove(aBrowsingContextId)) {
+    LOG("Session %" PRIu64 " has been destroyed", aBrowsingContextId);
+
+    if (mActiveMediaSessionContextId &&
+        *mActiveMediaSessionContextId == aBrowsingContextId) {
+      ClearActiveMediaSessionContextIdIfNeeded();
+    }
   }
 }
 
 void MediaStatusManager::UpdateMetadata(
     uint64_t aBrowsingContextId, const Maybe<MediaMetadataBase>& aMetadata) {
-  if (!mMediaSessionInfoMap.Contains(aBrowsingContextId)) {
+  auto info = mMediaSessionInfoMap.Lookup(aBrowsingContextId);
+  if (!info) {
     return;
   }
-
-  MediaSessionInfo* info = mMediaSessionInfoMap.GetValue(aBrowsingContextId);
   if (IsMetadataEmpty(aMetadata)) {
     LOG("Reset metadata for session %" PRIu64, aBrowsingContextId);
     info->mMetadata.reset();
@@ -101,8 +107,10 @@ void MediaStatusManager::UpdateMetadata(
   }
   // Only notify the event if the changed metadata belongs to the active media
   // session.
-  if (!mActiveMediaSessionContextId ||
+  if (mActiveMediaSessionContextId &&
       *mActiveMediaSessionContextId == aBrowsingContextId) {
+    LOG("Notify metadata change for active session %" PRIu64,
+        aBrowsingContextId);
     mMetadataChangedEvent.Notify(GetCurrentMediaMetadata());
   }
   if (StaticPrefs::media_mediacontrol_testingevents_enabled()) {
@@ -141,10 +149,16 @@ void MediaStatusManager::SetActiveMediaSessionContextId(
     return;
   }
   mActiveMediaSessionContextId = Some(aBrowsingContextId);
+  StoreMediaSessionContextIdOnWindowContext();
   LOG("context %" PRIu64 " becomes active session context",
       *mActiveMediaSessionContextId);
   mMetadataChangedEvent.Notify(GetCurrentMediaMetadata());
   mSupportedActionsChangedEvent.Notify(GetSupportedActions());
+  if (StaticPrefs::media_mediacontrol_testingevents_enabled()) {
+    if (nsCOMPtr<nsIObserverService> obs = services::GetObserverService()) {
+      obs->NotifyObservers(nullptr, "active-media-session-changed", nullptr);
+    }
+  }
 }
 
 void MediaStatusManager::ClearActiveMediaSessionContextIdIfNeeded() {
@@ -153,8 +167,23 @@ void MediaStatusManager::ClearActiveMediaSessionContextIdIfNeeded() {
   }
   LOG("Clear active session context");
   mActiveMediaSessionContextId.reset();
+  StoreMediaSessionContextIdOnWindowContext();
   mMetadataChangedEvent.Notify(GetCurrentMediaMetadata());
   mSupportedActionsChangedEvent.Notify(GetSupportedActions());
+  if (StaticPrefs::media_mediacontrol_testingevents_enabled()) {
+    if (nsCOMPtr<nsIObserverService> obs = services::GetObserverService()) {
+      obs->NotifyObservers(nullptr, "active-media-session-changed", nullptr);
+    }
+  }
+}
+
+void MediaStatusManager::StoreMediaSessionContextIdOnWindowContext() {
+  RefPtr<CanonicalBrowsingContext> bc =
+      CanonicalBrowsingContext::Get(mTopLevelBrowsingContextId);
+  if (bc && bc->GetTopWindowContext()) {
+    Unused << bc->GetTopWindowContext()->SetActiveMediaSessionContextId(
+        mActiveMediaSessionContextId);
+  }
 }
 
 bool MediaStatusManager::IsSessionOwningAudioFocus(
@@ -177,15 +206,18 @@ MediaMetadataBase MediaStatusManager::CreateDefaultMetadata() const {
 }
 
 nsString MediaStatusManager::GetDefaultTitle() const {
+  RefPtr<MediaControlService> service = MediaControlService::GetService();
+  nsString defaultTitle = service->GetFallbackTitle();
+
   RefPtr<CanonicalBrowsingContext> bc =
       CanonicalBrowsingContext::Get(mTopLevelBrowsingContextId);
   if (!bc) {
-    return EmptyString();
+    return defaultTitle;
   }
 
   RefPtr<WindowGlobalParent> globalParent = bc->GetCurrentWindowGlobal();
   if (!globalParent) {
-    return EmptyString();
+    return defaultTitle;
   }
 
   // The media metadata would be shown on the virtual controller interface. For
@@ -193,22 +225,13 @@ nsString MediaStatusManager::GetDefaultTitle() const {
   // and lockscreen. Therefore, what information we provide via metadata is
   // quite important, because if we're in private browsing, we don't want to
   // expose details about what website the user is browsing on the lockscreen.
-  nsString defaultTitle;
-  if (IsInPrivateBrowsing()) {
-    // TODO : maybe need l10n?
-    if (nsCOMPtr<nsIXULAppInfo> appInfo =
-            do_GetService("@mozilla.org/xre/app-info;1")) {
-      nsCString appName;
-      appInfo->GetName(appName);
-      CopyUTF8toUTF16(appName, defaultTitle);
-    } else {
-      defaultTitle.AssignLiteral("Firefox");
-    }
-    defaultTitle.AppendLiteral(" is playing media");
-  } else {
-    globalParent->GetDocumentTitle(defaultTitle);
+  // Therefore, using the default title when in the private browsing or the
+  // document title is empty. Otherwise, use the document title.
+  nsString documentTitle;
+  if (!IsInPrivateBrowsing()) {
+    globalParent->GetDocumentTitle(documentTitle);
   }
-  return defaultTitle;
+  return documentTitle.IsEmpty() ? defaultTitle : documentTitle;
 }
 
 nsString MediaStatusManager::GetDefaultFaviconURL() const {
@@ -223,26 +246,27 @@ nsString MediaStatusManager::GetDefaultFaviconURL() const {
   // to show the icon on virtual controller interface.
   nsCOMPtr<nsIChromeRegistry> regService = services::GetChromeRegistry();
   if (!regService) {
-    return EmptyString();
+    return u""_ns;
   }
   nsCOMPtr<nsIURI> processedURI;
   regService->ConvertChromeURL(faviconURI, getter_AddRefs(processedURI));
 
   nsAutoCString spec;
   if (NS_FAILED(processedURI->GetSpec(spec))) {
-    return EmptyString();
+    return u""_ns;
   }
   return NS_ConvertUTF8toUTF16(spec);
+#else
+  return u""_ns;
 #endif
-  return EmptyString();
 }
 
 void MediaStatusManager::SetDeclaredPlaybackState(
     uint64_t aBrowsingContextId, MediaSessionPlaybackState aState) {
-  if (!mMediaSessionInfoMap.Contains(aBrowsingContextId)) {
+  auto info = mMediaSessionInfoMap.Lookup(aBrowsingContextId);
+  if (!info) {
     return;
   }
-  MediaSessionInfo* info = mMediaSessionInfoMap.GetValue(aBrowsingContextId);
   LOG("SetDeclaredPlaybackState from %s to %s",
       ToMediaSessionPlaybackStateStr(info->mDeclaredPlaybackState),
       ToMediaSessionPlaybackStateStr(aState));
@@ -301,15 +325,15 @@ void MediaStatusManager::UpdateActualPlaybackState() {
   mActualPlaybackState = newState;
   LOG("UpdateActualPlaybackState : '%s'",
       ToMediaSessionPlaybackStateStr(mActualPlaybackState));
-  HandleActualPlaybackStateChanged();
+  mPlaybackStateChangedEvent.Notify(mActualPlaybackState);
 }
 
 void MediaStatusManager::EnableAction(uint64_t aBrowsingContextId,
                                       MediaSessionAction aAction) {
-  if (!mMediaSessionInfoMap.Contains(aBrowsingContextId)) {
+  auto info = mMediaSessionInfoMap.Lookup(aBrowsingContextId);
+  if (!info) {
     return;
   }
-  MediaSessionInfo* info = mMediaSessionInfoMap.GetValue(aBrowsingContextId);
   if (info->IsActionSupported(aAction)) {
     LOG("Action '%s' has already been enabled for context %" PRIu64,
         ToMediaSessionActionStr(aAction), aBrowsingContextId);
@@ -323,10 +347,10 @@ void MediaStatusManager::EnableAction(uint64_t aBrowsingContextId,
 
 void MediaStatusManager::DisableAction(uint64_t aBrowsingContextId,
                                        MediaSessionAction aAction) {
-  if (!mMediaSessionInfoMap.Contains(aBrowsingContextId)) {
+  auto info = mMediaSessionInfoMap.Lookup(aBrowsingContextId);
+  if (!info) {
     return;
   }
-  MediaSessionInfo* info = mMediaSessionInfoMap.GetValue(aBrowsingContextId);
   if (!info->IsActionSupported(aAction)) {
     LOG("Action '%s' hasn't been enabled yet for context %" PRIu64,
         ToMediaSessionActionStr(aAction), aBrowsingContextId);
@@ -423,7 +447,7 @@ bool MediaStatusManager::IsInPrivateBrowsing() const {
   return nsContentUtils::IsInPrivateBrowsing(element->OwnerDoc());
 }
 
-MediaSessionPlaybackState MediaStatusManager::GetState() const {
+MediaSessionPlaybackState MediaStatusManager::PlaybackState() const {
   return mActualPlaybackState;
 }
 
@@ -439,5 +463,20 @@ bool MediaStatusManager::IsAnyMediaBeingControlled() const {
   return mPlaybackStatusDelegate.IsAnyMediaBeingControlled();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+void MediaStatusManager::NotifyPageTitleChanged() {
+  // If active media session has set non-empty metadata, then we would use that
+  // instead of using default metadata.
+  if (mActiveMediaSessionContextId &&
+      mMediaSessionInfoMap.Lookup(*mActiveMediaSessionContextId)->mMetadata) {
+    return;
+  }
+  // In private browsing mode, we won't show page title on default metadata so
+  // we don't need to update that.
+  if (IsInPrivateBrowsing()) {
+    return;
+  }
+  LOG("page title changed, update default metadata");
+  mMetadataChangedEvent.Notify(GetCurrentMediaMetadata());
+}
+
+}  // namespace mozilla::dom

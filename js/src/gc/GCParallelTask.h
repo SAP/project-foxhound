@@ -8,6 +8,7 @@
 #define gc_GCParallelTask_h
 
 #include "mozilla/LinkedList.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"
 
 #include <utility>
@@ -15,6 +16,7 @@
 #include "js/TypeDecls.h"
 #include "js/Utility.h"
 #include "threading/ProtectedData.h"
+#include "vm/HelperThreadTask.h"
 
 #define JS_MEMBER_FN_PTR_TYPE(ClassT, ReturnT, /* ArgTs */...) \
   ReturnT (ClassT::*)(__VA_ARGS__)
@@ -24,19 +26,26 @@
 
 namespace js {
 
+namespace gcstats {
+enum class PhaseKind : uint8_t;
+}
+
 namespace gc {
 class GCRuntime;
 }
 
 class AutoLockHelperThreadState;
-struct HelperThread;
+class HelperThread;
 
 // A generic task used to dispatch work to the helper thread system.
 // Users override the pure-virtual run() method.
 class GCParallelTask : public mozilla::LinkedListElement<GCParallelTask>,
-                       public RunnableTask {
+                       public HelperThreadTask {
  public:
   gc::GCRuntime* const gc;
+
+  // This can be PhaseKind::NONE for tasks that take place outside a GC.
+  const gcstats::PhaseKind phaseKind;
 
  private:
   // The state of the parallel computation.
@@ -51,10 +60,6 @@ class GCParallelTask : public mozilla::LinkedListElement<GCParallelTask>,
 
     // The task is currently running on a helper thread.
     Running,
-
-    // The task is currently running on a helper thread but has indicated that
-    // it will finish soon.
-    Finishing,
 
     // The task has finished running but has not yet been joined by the main
     // thread.
@@ -73,10 +78,15 @@ class GCParallelTask : public mozilla::LinkedListElement<GCParallelTask>,
   mozilla::Atomic<bool, mozilla::MemoryOrdering::ReleaseAcquire> cancel_;
 
  public:
-  explicit GCParallelTask(gc::GCRuntime* gc)
-      : gc(gc), state_(State::Idle), duration_(nullptr), cancel_(false) {}
+  explicit GCParallelTask(gc::GCRuntime* gc, gcstats::PhaseKind phaseKind)
+      : gc(gc),
+        phaseKind(phaseKind),
+        state_(State::Idle),
+        duration_(nullptr),
+        cancel_(false) {}
   GCParallelTask(GCParallelTask&& other)
       : gc(other.gc),
+        phaseKind(other.phaseKind),
         state_(other.state_),
         duration_(nullptr),
         cancel_(false) {}
@@ -90,13 +100,16 @@ class GCParallelTask : public mozilla::LinkedListElement<GCParallelTask>,
 
   // The simple interface to a parallel task works exactly like pthreads.
   void start();
-  void join();
+  void join(mozilla::Maybe<mozilla::TimeStamp> deadline = mozilla::Nothing());
 
   // If multiple tasks are to be started or joined at once, it is more
   // efficient to take the helper thread lock once and use these methods.
   void startWithLockHeld(AutoLockHelperThreadState& lock);
-  void joinWithLockHeld(AutoLockHelperThreadState& lock);
-  void joinRunningOrFinishedTask(AutoLockHelperThreadState& lock);
+  void joinWithLockHeld(
+      AutoLockHelperThreadState& lock,
+      mozilla::Maybe<mozilla::TimeStamp> deadline = mozilla::Nothing());
+  void joinNonIdleTask(mozilla::Maybe<mozilla::TimeStamp> deadline,
+                       AutoLockHelperThreadState& lock);
 
   // Instead of dispatching to a helper, run the task on the current thread.
   void runFromMainThread();
@@ -109,10 +122,7 @@ class GCParallelTask : public mozilla::LinkedListElement<GCParallelTask>,
   void cancelDispatchedTask(AutoLockHelperThreadState& lock);
 
   // Set the cancel flag and wait for the task to finish.
-  void cancelAndWait() {
-    cancel_ = true;
-    join();
-  }
+  void cancelAndWait();
 
   // Report whether the task is idle. This means either before start() has been
   // called or after join() has been called.
@@ -133,22 +143,11 @@ class GCParallelTask : public mozilla::LinkedListElement<GCParallelTask>,
     return state_ == State::Dispatched;
   }
 
-  ThreadType threadType() override {
-    return ThreadType::THREAD_TYPE_GCPARALLEL;
-  }
-
  protected:
   // Override this method to provide the task's functionality.
-  virtual void run() = 0;
+  virtual void run(AutoLockHelperThreadState& lock) = 0;
 
-  // Can be called to indicate that although the task is still running, it is
-  // about to finish.
-  void setFinishing(const AutoLockHelperThreadState& lock) {
-    MOZ_ASSERT(isIdle(lock) || isRunning(lock));
-    if (isRunning(lock)) {
-      state_ = State::Finishing;
-    }
-  }
+  bool isCancelled() const { return cancel_; }
 
  private:
   void assertIdle() const {
@@ -158,9 +157,6 @@ class GCParallelTask : public mozilla::LinkedListElement<GCParallelTask>,
   }
   bool isRunning(const AutoLockHelperThreadState& lock) const {
     return state_ == State::Running;
-  }
-  bool isFinishing(const AutoLockHelperThreadState& lock) const {
-    return state_ == State::Finishing;
   }
   bool isFinished(const AutoLockHelperThreadState& lock) const {
     return state_ == State::Finished;
@@ -175,7 +171,7 @@ class GCParallelTask : public mozilla::LinkedListElement<GCParallelTask>,
     state_ = State::Running;
   }
   void setFinished(const AutoLockHelperThreadState& lock) {
-    MOZ_ASSERT(isRunning(lock) || isFinishing(lock));
+    MOZ_ASSERT(isRunning(lock));
     state_ = State::Finished;
   }
   void setIdle(const AutoLockHelperThreadState& lock) {
@@ -183,10 +179,13 @@ class GCParallelTask : public mozilla::LinkedListElement<GCParallelTask>,
     state_ = State::Idle;
   }
 
-  void runTask() override;
+  void runTask(AutoLockHelperThreadState& lock);
 
-  friend struct HelperThread;
-  void runFromHelperThread(AutoLockHelperThreadState& locked);
+  // Implement the HelperThreadTask interface.
+  ThreadType threadType() override {
+    return ThreadType::THREAD_TYPE_GCPARALLEL;
+  }
+  void runHelperThreadTask(AutoLockHelperThreadState& locked) override;
 };
 
 } /* namespace js */

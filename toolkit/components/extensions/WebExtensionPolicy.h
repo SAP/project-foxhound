@@ -7,6 +7,7 @@
 #define mozilla_extensions_WebExtensionPolicy_h
 
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/WebExtensionPolicyBinding.h"
 #include "mozilla/dom/WindowProxyHolder.h"
@@ -28,11 +29,38 @@ class Promise;
 
 namespace extensions {
 
+using dom::WebAccessibleResourceInit;
 using dom::WebExtensionInit;
 using dom::WebExtensionLocalizeCallback;
 
 class DocInfo;
 class WebExtensionContentScript;
+
+class WebAccessibleResource final : public nsISupports {
+ public:
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_CLASS(WebAccessibleResource)
+
+  WebAccessibleResource(dom::GlobalObject& aGlobal,
+                        const WebAccessibleResourceInit& aInit,
+                        ErrorResult& aRv);
+
+  bool IsWebAccessiblePath(const nsAString& aPath) const {
+    return mWebAccessiblePaths.Matches(aPath);
+  }
+
+  bool SourceMayAccessPath(const URLInfo& aURI, const nsAString& aPath) {
+    return mWebAccessiblePaths.Matches(aPath) && mMatches &&
+           mMatches->Matches(aURI);
+  }
+
+ protected:
+  virtual ~WebAccessibleResource() = default;
+
+ private:
+  MatchGlobSet mWebAccessiblePaths;
+  RefPtr<MatchPatternSet> mMatches;
+};
 
 class WebExtensionPolicy final : public nsISupports,
                                  public nsWrapperCache,
@@ -61,6 +89,8 @@ class WebExtensionPolicy final : public nsISupports,
 
   bool IsPrivileged() { return mIsPrivileged; }
 
+  bool TemporarilyInstalled() { return mTemporarilyInstalled; }
+
   void GetURL(const nsAString& aPath, nsAString& aURL, ErrorResult& aRv) const;
 
   Result<nsString, nsresult> GetURL(const nsAString& aPath) const;
@@ -75,14 +105,27 @@ class WebExtensionPolicy final : public nsISupports,
 
   bool CanAccessURI(const URLInfo& aURI, bool aExplicit = false,
                     bool aCheckRestricted = true,
-                    bool aAllowFilePermission = false) const {
-    return (!aCheckRestricted || !IsRestrictedURI(aURI)) && mHostPermissions &&
-           mHostPermissions->Matches(aURI, aExplicit) &&
-           (aURI.Scheme() != nsGkAtoms::file || aAllowFilePermission);
+                    bool aAllowFilePermission = false) const;
+
+  bool IsWebAccessiblePath(const nsAString& aPath) const {
+    for (const auto& resource : mWebAccessibleResources) {
+      if (resource->IsWebAccessiblePath(aPath)) {
+        return true;
+      }
+    }
+    return false;
   }
 
-  bool IsPathWebAccessible(const nsAString& aPath) const {
-    return mWebAccessiblePaths.Matches(aPath);
+  bool SourceMayAccessPath(const URLInfo& aURI, const nsAString& aPath) const {
+    if (mManifestVersion < 3) {
+      return IsWebAccessiblePath(aPath);
+    }
+    for (const auto& resource : mWebAccessibleResources) {
+      if (resource->SourceMayAccessPath(aURI, aPath)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   bool HasPermission(const nsAtom* aPermission) const {
@@ -103,11 +146,13 @@ class WebExtensionPolicy final : public nsISupports,
   const nsString& Name() const { return mName; }
   void GetName(nsAString& aName) const { aName = mName; }
 
+  uint32_t ManifestVersion() const { return mManifestVersion; }
+
   const nsString& ExtensionPageCSP() const { return mExtensionPageCSP; }
   void GetExtensionPageCSP(nsAString& aCSP) const { aCSP = mExtensionPageCSP; }
 
-  const nsString& ContentScriptCSP() const { return mContentScriptCSP; }
-  void GetContentScriptCSP(nsAString& aCSP) const { aCSP = mContentScriptCSP; }
+  const nsString& BaseCSP() const { return mBaseCSP; }
+  void GetBaseCSP(nsAString& aCSP) const { aCSP = mBaseCSP; }
 
   already_AddRefed<MatchPatternSet> AllowedOrigins() {
     return do_AddRef(mHostPermissions);
@@ -129,10 +174,7 @@ class WebExtensionPolicy final : public nsISupports,
   bool Active() const { return mActive; }
   void SetActive(bool aActive, ErrorResult& aRv);
 
-  bool PrivateBrowsingAllowed() const {
-    return mAllowPrivateBrowsingByDefault ||
-           HasPermission(nsGkAtoms::privateBrowsingAllowedPermission);
-  }
+  bool PrivateBrowsingAllowed() const;
 
   bool CanAccessContext(nsILoadContext* aContext) const;
 
@@ -150,6 +192,7 @@ class WebExtensionPolicy final : public nsISupports,
   }
 
   uint64_t GetBrowsingContextGroupId() const;
+  uint64_t GetBrowsingContextGroupId(ErrorResult& aRv);
 
   static void GetActiveExtensions(
       dom::GlobalObject& aGlobal,
@@ -186,6 +229,7 @@ class WebExtensionPolicy final : public nsISupports,
 
   bool Enable();
   bool Disable();
+  void InitializeBaseCSP();
 
   nsCOMPtr<nsISupports> mParent;
 
@@ -194,24 +238,26 @@ class WebExtensionPolicy final : public nsISupports,
   nsCOMPtr<nsIURI> mBaseURI;
 
   nsString mName;
+  uint32_t mManifestVersion = 2;
   nsString mExtensionPageCSP;
-  nsString mContentScriptCSP;
+  nsString mBaseCSP;
 
-  uint64_t mBrowsingContextGroupId = 0;
+  dom::BrowsingContextGroup::KeepAlivePtr mBrowsingContextGroup;
 
   bool mActive = false;
-  bool mAllowPrivateBrowsingByDefault = true;
 
   RefPtr<WebExtensionLocalizeCallback> mLocalizeCallback;
 
   bool mIsPrivileged;
+  bool mTemporarilyInstalled;
+
   RefPtr<AtomSet> mPermissions;
   RefPtr<MatchPatternSet> mHostPermissions;
-  MatchGlobSet mWebAccessiblePaths;
 
   dom::Nullable<nsTArray<nsString>> mBackgroundScripts;
-  nsString mBackgroundWorkerScript = EmptyString();
+  nsString mBackgroundWorkerScript;
 
+  nsTArray<RefPtr<WebAccessibleResource>> mWebAccessibleResources;
   nsTArray<RefPtr<WebExtensionContentScript>> mContentScripts;
 
   RefPtr<dom::Promise> mReadyPromise;

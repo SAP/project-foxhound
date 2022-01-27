@@ -26,9 +26,6 @@
 #include "nsMimeTypes.h"
 #include "DecoderTraits.h"
 
-// plugins
-#include "nsPluginHost.h"
-
 // Factory code for creating variations on html documents
 
 #undef NOISY_REGISTRY
@@ -109,9 +106,8 @@ nsContentDLF::CreateInstance(const char* aCommand, nsIChannel* aChannel,
 
     if (knownType) {
       viewSourceChannel->SetContentType(type);
-    } else if (IsImageContentType(type.get())) {
+    } else if (IsImageContentType(type)) {
       // If it's an image, we want to display it the same way we normally would.
-      // Also note the lifetime of "type" allows us to safely use "get()" here.
       contentType = type;
     } else {
       viewSourceChannel->SetContentType(nsLiteralCString(TEXT_PLAIN));
@@ -176,28 +172,12 @@ nsContentDLF::CreateInstance(const char* aCommand, nsIChannel* aChannel,
   }
 
   // Try image types
-  if (IsImageContentType(contentType.get())) {
+  if (IsImageContentType(contentType)) {
     return CreateDocument(
         aCommand, aChannel, aLoadGroup, aContainer,
         []() -> already_AddRefed<Document> {
           RefPtr<Document> doc;
           nsresult rv = NS_NewImageDocument(getter_AddRefs(doc));
-          NS_ENSURE_SUCCESS(rv, nullptr);
-          return doc.forget();
-        },
-        aDocListener, aDocViewer);
-  }
-
-  RefPtr<nsPluginHost> pluginHost = nsPluginHost::GetInst();
-  // Don't exclude disabled plugins, which will still trigger the "this plugin
-  // is disabled" placeholder.
-  if (pluginHost &&
-      pluginHost->HavePluginForType(contentType, nsPluginHost::eExcludeNone)) {
-    return CreateDocument(
-        aCommand, aChannel, aLoadGroup, aContainer,
-        []() -> already_AddRefed<Document> {
-          RefPtr<Document> doc;
-          nsresult rv = NS_NewPluginDocument(getter_AddRefs(doc));
           NS_ENSURE_SUCCESS(rv, nullptr);
           return doc.forget();
         },
@@ -269,11 +249,24 @@ already_AddRefed<Document> nsContentDLF::CreateBlankDocument(
 
   // blat in the structure
   NS_ASSERTION(blankDoc->GetChildCount() == 0, "Shouldn't have children");
-  if (!htmlElement || !headElement || !bodyElement ||
-      NS_FAILED(blankDoc->AppendChildTo(htmlElement, false)) ||
-      NS_FAILED(htmlElement->AppendChildTo(headElement, false)) ||
-      // XXXbz Why not notifying here?
-      NS_FAILED(htmlElement->AppendChildTo(bodyElement, false))) {
+  if (!htmlElement || !headElement || !bodyElement) {
+    return nullptr;
+  }
+
+  mozilla::IgnoredErrorResult rv;
+  blankDoc->AppendChildTo(htmlElement, false, rv);
+  if (rv.Failed()) {
+    return nullptr;
+  }
+
+  htmlElement->AppendChildTo(headElement, false, rv);
+  if (rv.Failed()) {
+    return nullptr;
+  }
+
+  // XXXbz Why not notifying here?
+  htmlElement->AppendChildTo(bodyElement, false, rv);
+  if (rv.Failed()) {
     return nullptr;
   }
 
@@ -326,6 +319,6 @@ nsresult nsContentDLF::CreateDocument(
   return NS_OK;
 }
 
-bool nsContentDLF::IsImageContentType(const char* aContentType) {
+bool nsContentDLF::IsImageContentType(const nsACString& aContentType) {
   return imgLoader::SupportImageWithMimeType(aContentType);
 }

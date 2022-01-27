@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 sw{
     AuxExemplarCharacters{"[c q x]"}
     Ellipsis{
@@ -11,7 +12,7 @@ sw{
         word-medial{"{0} … {1}"}
     }
     ExemplarCharacters{"[a b {ch} d e f g h i j k l m n o p r s t u v w y z]"}
-    ExemplarCharactersIndex{"[A B C D E F G H I J K L M N O P R S T U V W Y Z]"}
+    ExemplarCharactersIndex{"[A B {CH} D E F G H I J K L M N O P R S T U V W Y Z]"}
     ExemplarCharactersNumbers{"[\\- ‑ , . % ‰ + 0 1 2 3 4 5 6 7 8 9]"}
     ExemplarCharactersPunctuation{"[\\- ‑ , ; \\: ! ? . ' \u0022 ( ) \\[ \\] \\{ \\}]"}
     MoreInformation{"?"}
@@ -186,6 +187,7 @@ sw{
                 }
             }
             symbols{
+                approximatelySign{"~"}
                 decimal{"."}
                 exponential{"E"}
                 group{","}
@@ -212,7 +214,6 @@ sw{
         minimumGroupingDigits{"1"}
         native{"latn"}
     }
-    Version{"37"}
     calendar{
         generic{
             DateTimePatterns{
@@ -230,6 +231,16 @@ sw{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "GyMMMMEEEEd",
+                "GyMMMMd",
+                "GyMMMd",
+                "GGGGGyMMdd",
+            }
             availableFormats{
                 Bh{"h B"}
                 Bhm{"h:mm B"}
@@ -246,6 +257,7 @@ sw{
                 GyMMM{"MMM y G"}
                 GyMMMEd{"E, d MMM y G"}
                 GyMMMd{"d MMM y G"}
+                GyMd{"d/M/y GGGGG"}
                 H{"HH"}
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
@@ -436,6 +448,16 @@ sw{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "yMMMMEEEEd",
+                "yMMMMd",
+                "yMMMd",
+                "yMMdd",
+            }
             appendItems{
                 Timezone{"{0} {1}"}
             }
@@ -455,6 +477,7 @@ sw{
                 GyMMM{"MMM y G"}
                 GyMMMEd{"E, d MMM y G"}
                 GyMMMd{"d MMM y G"}
+                GyMd{"d/M/y GGGGG"}
                 H{"HH"}
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
@@ -678,10 +701,10 @@ sw{
                     y{"MMM y – MMM y G"}
                 }
                 GyMMMEd{
-                    G{"E, MMM d, y G – E, MMM d, y G"}
-                    M{"E, MMM d – E, MMM d, y G"}
+                    G{"E, d MMM y G – E, d MMM y G"}
+                    M{"E, d MMM – E, d MMM y G"}
                     d{"E, d MMM – E, d MMM y G"}
-                    y{"E, MMM d, y – E, MMM d, y G"}
+                    y{"E, d MMM y – E, d MMM y G"}
                 }
                 GyMMMd{
                     G{"d MMM y G – d MMM y G"}
@@ -720,12 +743,12 @@ sw{
                     M{"LLL–LLL"}
                 }
                 MMMEd{
-                    M{"MMM d, E – MMM d, E"}
-                    d{"MMM d, E – MMM d, E"}
+                    M{"E, d MMM – E, d MMM"}
+                    d{"E, d MMM – E, d MMM"}
                 }
                 MMMd{
-                    M{"MMM d – MMM d"}
-                    d{"MMM d–d"}
+                    M{"d MMM – d MMM"}
+                    d{"d – d MMM"}
                 }
                 Md{
                     M{"d/M – d/M"}
@@ -770,18 +793,18 @@ sw{
                     y{"MMM y – MMM y"}
                 }
                 yMMMEd{
-                    M{"E, MMM d– E, MMM d y"}
-                    d{"E, MMM d – E, MMM d y"}
-                    y{"E, MMM d y – E, MMM d y"}
+                    M{"E, d MMM – E, d MMM y"}
+                    d{"E, d MMM – E, d MMM y"}
+                    y{"E, d MMM y – E, d MMM y"}
                 }
                 yMMMM{
                     M{"MMMM–MMMM y"}
                     y{"MMMM y – MMMM y"}
                 }
                 yMMMd{
-                    M{"MMM d – d, y"}
-                    d{"MMM d – d, y"}
-                    y{"MMM d y – MMM d y"}
+                    M{"d – d MMM y"}
+                    d{"d – d MMM y"}
+                    y{"d MMM y – d MMM y"}
                 }
                 yMd{
                     M{"d/M/y – d/M/y"}
@@ -932,7 +955,7 @@ sw{
         arrows{"mishale"}
         body{"mwili"}
         box_drawing{"mchoro wa kisanduku"}
-        braille{"nukta vinundu"}
+        braille{"nukta nundu"}
         building{"jengo"}
         bullets_stars{"nukta au nyota"}
         consonantal_jamo{"alama za konsonanti"}
@@ -940,7 +963,7 @@ sw{
         dash_connector{"kistari au dashi"}
         digits{"tarakimu"}
         dingbats{"dingibati"}
-        divination_symbols{"alama za kugawa"}
+        divination_symbols{"alama za ubashiri"}
         downwards_arrows{"mishale inayoelekea chini"}
         downwards_upwards_arrows{"mishale ya kuwili"}
         east_asian_scripts{"hati za mashariki ya Asia"}
@@ -973,7 +996,7 @@ sw{
         limited_use{"matumizi finyu"}
         male{"mwanamume"}
         math_symbols{"alama za hesabu"}
-        middle_eastern_scripts{"hati za mashariki ya kati"}
+        middle_eastern_scripts{"hati za Mashariki ya Kati"}
         miscellaneous{"anuwai"}
         modern_scripts{"hati za kisasa"}
         modifier{"kibadilisha hati"}
@@ -985,7 +1008,7 @@ sw{
         other{"nyingine"}
         paired{"imeoanishwa"}
         person{"mtu"}
-        phonetic_alphabet{"abjadi za fonetiki"}
+        phonetic_alphabet{"alfabeti za fonetiki"}
         pictographs{"picha"}
         place{"mahali"}
         plant{"mmea"}
@@ -993,10 +1016,10 @@ sw{
         rightwards_arrows{"mishale inayoelekea kulia"}
         sign_standard_symbols{"ishara au alama"}
         small_form_variant{"aina za fomu ndogo"}
-        smiley{"tabasamu"}
-        smileys_people{"tabasamu au mtu"}
-        south_asian_scripts{"hati za kusini mwa Asia"}
-        southeast_asian_scripts{"hati za kusini mashariki mwa Asia"}
+        smiley{"kicheshi"}
+        smileys_people{"kicheshi au mtu"}
+        south_asian_scripts{"hati za Kusini mwa Asia"}
+        southeast_asian_scripts{"hati za Kusini Mashariki mwa Asia"}
         spacing{"kuacha nafasi"}
         sport{"michezo"}
         symbols{"alama"}
@@ -1008,7 +1031,7 @@ sw{
         variant_forms{"maumbo mbalimbali"}
         vocalic_jamo{"vibambo vya jamo vya sauti"}
         weather{"hali ya hewa"}
-        western_asian_scripts{"hati za magharibi mwa Asia"}
+        western_asian_scripts{"hati za Magharibi mwa Asia"}
         whitespace{"sehemu wazi"}
     }
     delimiters{
@@ -1865,7 +1888,7 @@ sw{
         date{
             lenient{
                 "[\\--/]",
-                "[\\:∶]",
+                "[\\:∶︓﹕：]",
             }
         }
         general{

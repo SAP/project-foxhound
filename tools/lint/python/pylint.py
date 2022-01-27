@@ -4,6 +4,7 @@
 
 import json
 import os
+import subprocess
 
 import signal
 
@@ -11,7 +12,6 @@ from mozprocess import ProcessHandler
 
 from mozlint import result
 from mozlint.pathutils import expand_exclusions
-from mozlint.util import pip
 
 here = os.path.abspath(os.path.dirname(__file__))
 PYLINT_REQUIREMENTS_PATH = os.path.join(here, "pylint_requirements.txt")
@@ -48,7 +48,13 @@ class PylintProcess(ProcessHandler):
 
 
 def setup(root, **lintargs):
-    if not pip.reinstall_program(PYLINT_REQUIREMENTS_PATH):
+    virtualenv_manager = lintargs["virtualenv_manager"]
+    try:
+        virtualenv_manager.install_pip_requirements(
+            PYLINT_REQUIREMENTS_PATH,
+            quiet=True,
+        )
+    except subprocess.CalledProcessError:
         print(PYLINT_INSTALL_ERROR)
         return 1
 
@@ -91,6 +97,14 @@ def parse_issues(log, config, issues_json, path):
     return results
 
 
+def get_pylint_version(binary):
+    return subprocess.check_output(
+        [binary, "--version"],
+        universal_newlines=True,
+        stderr=subprocess.STDOUT,
+    )
+
+
 def lint(paths, config, **lintargs):
     log = lintargs["log"]
 
@@ -113,6 +127,7 @@ def lint(paths, config, **lintargs):
 
     base_command = cmd_args + paths
     log.debug("Command: {}".format(" ".join(cmd_args)))
+    log.debug("pylint version: {}".format(get_pylint_version(binary)))
     output = " ".join(run_process(config, base_command))
     results = parse_issues(log, config, str(output), [])
 

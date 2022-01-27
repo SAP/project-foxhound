@@ -9,11 +9,6 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(
   this,
-  "BrowserUtils",
-  "resource://gre/modules/BrowserUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "PrivateBrowsingUtils",
   "resource://gre/modules/PrivateBrowsingUtils.jsm"
 );
@@ -28,10 +23,15 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/E10SUtils.jsm"
 );
 
+ChromeUtils.defineModuleGetter(
+  this,
+  "BrowserUtils",
+  "resource://gre/modules/BrowserUtils.jsm"
+);
+
 class ClickHandlerChild extends JSWindowActorChild {
   handleEvent(event) {
     if (
-      !event.isTrusted ||
       event.defaultPrevented ||
       event.button == 2 ||
       (event.type == "click" && event.button == 1)
@@ -64,7 +64,14 @@ class ClickHandlerChild extends JSWindowActorChild {
       }
     }
 
-    let [href, node, principal] = this._hrefAndLinkNodeForClickEvent(event);
+    // For untrusted events, require a valid transient user gesture activation.
+    if (!event.isTrusted && !ownerDoc.hasValidTransientUserGestureActivation) {
+      return;
+    }
+
+    let [href, node, principal] = BrowserUtils.hrefAndLinkNodeForClickEvent(
+      event
+    );
 
     let csp = ownerDoc.csp;
     if (csp) {
@@ -102,9 +109,32 @@ class ClickHandlerChild extends JSWindowActorChild {
 
     if (href) {
       try {
-        BrowserUtils.urlSecurityCheck(href, principal);
+        Services.scriptSecurityManager.checkLoadURIStrWithPrincipal(
+          principal,
+          href
+        );
       } catch (e) {
         return;
+      }
+
+      if (
+        !event.isTrusted &&
+        BrowserUtils.whereToOpenLink(event) != "current"
+      ) {
+        // If we'll open the link, we want to consume the user gesture
+        // activation to ensure that we don't allow multiple links to open
+        // from one user gesture.
+        // Avoid doing so for links opened in the current tab, which get
+        // handled later, by gecko, as otherwise its popup blocker will stop
+        // the link from opening.
+        // We will do the same check (whereToOpenLink) again in the parent and
+        // avoid handling the click for such links... but we still need the
+        // click information in the parent because otherwise places link
+        // tracking breaks. (bug 1742894 tracks improving this.)
+        ownerDoc.consumeTransientUserGestureActivation();
+        // We don't care about the return value because we already checked that
+        // hasValidTransientUserGestureActivation was true earlier in this
+        // function.
       }
 
       json.href = href;
@@ -112,26 +142,6 @@ class ClickHandlerChild extends JSWindowActorChild {
         json.title = node.getAttribute("title");
       }
 
-      // Check if the link needs to be opened with mixed content allowed.
-      // Only when the owner doc has |mixedContentChannel| and the same origin
-      // should we allow mixed content.
-      json.allowMixedContent = false;
-      let docshell = ownerDoc.defaultView.docShell;
-      if (this.docShell.mixedContentChannel) {
-        const sm = Services.scriptSecurityManager;
-        try {
-          let targetURI = Services.io.newURI(href);
-          let isPrivateWin =
-            ownerDoc.nodePrincipal.originAttributes.privateBrowsingId > 0;
-          sm.checkSameOriginURI(
-            docshell.mixedContentChannel.URI,
-            targetURI,
-            false,
-            isPrivateWin
-          );
-          json.allowMixedContent = true;
-        } catch (e) {}
-      }
       json.originPrincipal = ownerDoc.nodePrincipal;
       json.originStoragePrincipal = ownerDoc.effectiveStoragePrincipal;
       json.triggeringPrincipal = ownerDoc.nodePrincipal;
@@ -154,66 +164,5 @@ class ClickHandlerChild extends JSWindowActorChild {
     if (event.button == 1) {
       this.sendAsyncMessage("Content:Click", json);
     }
-  }
-
-  /**
-   * Extracts linkNode and href for the current click target.
-   *
-   * @param event
-   *        The click event.
-   * @return [href, linkNode, linkPrincipal].
-   *
-   * @note linkNode will be null if the click wasn't on an anchor
-   *       element. This includes SVG links, because callers expect |node|
-   *       to behave like an <a> element, which SVG links (XLink) don't.
-   */
-  _hrefAndLinkNodeForClickEvent(event) {
-    let content = this.contentWindow;
-    function isHTMLLink(aNode) {
-      // Be consistent with what nsContextMenu.js does.
-      return (
-        (aNode instanceof content.HTMLAnchorElement && aNode.href) ||
-        (aNode instanceof content.HTMLAreaElement && aNode.href) ||
-        aNode instanceof content.HTMLLinkElement
-      );
-    }
-
-    let node = event.composedTarget;
-    while (node && !isHTMLLink(node)) {
-      node = node.flattenedTreeParentNode;
-    }
-
-    if (node) {
-      return [node.href, node, node.ownerDocument.nodePrincipal];
-    }
-
-    // If there is no linkNode, try simple XLink.
-    let href, baseURI;
-    node = event.composedTarget;
-    while (node && !href) {
-      if (
-        node.nodeType == content.Node.ELEMENT_NODE &&
-        (node.localName == "a" ||
-          node.namespaceURI == "http://www.w3.org/1998/Math/MathML")
-      ) {
-        href =
-          node.getAttribute("href") ||
-          node.getAttributeNS("http://www.w3.org/1999/xlink", "href");
-        if (href) {
-          baseURI = node.ownerDocument.baseURIObject;
-          break;
-        }
-      }
-      node = node.flattenedTreeParentNode;
-    }
-
-    // In case of XLink, we don't return the node we got href from since
-    // callers expect <a>-like elements.
-    // Note: makeURI() will throw if aUri is not a valid URI.
-    return [
-      href ? Services.io.newURI(href, null, baseURI).spec : null,
-      null,
-      node && node.ownerDocument.nodePrincipal,
-    ];
   }
 }

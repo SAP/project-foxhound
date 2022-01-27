@@ -9,11 +9,11 @@
 
 #include "nsCycleCollectionParticipant.h"
 #include "mozilla/Assertions.h"
-#include "js/Id.h"     // must come before js/RootingAPI.h
-#include "js/Value.h"  // must come before js/RootingAPI.h
-#include "js/RootingAPI.h"
+#include "js/HeapAPI.h"
 #include "js/TracingAPI.h"
-#include "jsfriendapi.h"
+#include "js/TypeDecls.h"
+#include "nsISupports.h"
+#include "nsISupportsUtils.h"
 
 namespace mozilla {
 namespace dom {
@@ -85,7 +85,7 @@ static_assert(sizeof(void*) == 4, "Only support 32-bit and 64-bit");
  * codebase. Include nsWrapperCacheInlines.h if you need to call those methods.
  */
 
-class nsWrapperCache {
+class JS_HAZ_ROOTED nsWrapperCache {
  public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_WRAPPERCACHE_IID)
 
@@ -143,6 +143,9 @@ class nsWrapperCache {
  private:
   static bool HasJSObjectMovedOp(JSObject* aWrapper);
 
+  static void AssertUpdatedWrapperZone(const JSObject* aNewObject,
+                                       const JSObject* aOldObject);
+
  public:
 #endif
 
@@ -191,8 +194,9 @@ class nsWrapperCache {
    * any wrapper cached object.
    */
   void UpdateWrapper(JSObject* aNewObject, const JSObject* aOldObject) {
-    MOZ_ASSERT(js::GetObjectZoneFromAnyThread(aNewObject) ==
-               js::GetObjectZoneFromAnyThread(aOldObject));
+#ifdef DEBUG
+    AssertUpdatedWrapperZone(aNewObject, aOldObject);
+#endif
     if (mWrapper) {
       MOZ_ASSERT(mWrapper == aOldObject);
       mWrapper = aNewObject;
@@ -250,7 +254,7 @@ class nsWrapperCache {
    * bits of mFlags to be used by derived classes.
    */
 
-  typedef uint32_t FlagsType;
+  using FlagsType = uint32_t;
 
   FlagsType GetFlags() const { return mFlags & ~kWrapperFlagsMask; }
 

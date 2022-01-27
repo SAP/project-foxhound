@@ -1,4 +1,4 @@
-// |reftest| skip module -- top-level-await is not supported
+// |reftest| module
 // This file was procedurally generated from the following sources:
 // - src/top-level-await/await-expr-this.case
 // - src/top-level-await/syntax/while-expr.template

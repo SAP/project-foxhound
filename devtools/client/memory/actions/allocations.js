@@ -8,14 +8,23 @@ const {
   ALLOCATION_RECORDING_OPTIONS,
 } = require("devtools/client/memory/constants");
 
-exports.toggleRecordingAllocationStacks = function(front) {
-  return async function(dispatch, getState) {
+exports.toggleRecordingAllocationStacks = function(commands) {
+  return async function({ dispatch, getState }) {
     dispatch({ type: actions.TOGGLE_RECORD_ALLOCATION_STACKS_START });
 
-    if (getState().recordingAllocationStacks) {
-      await front.stopRecordingAllocations();
+    if (commands.targetCommand.hasTargetWatcherSupport()) {
+      await commands.targetConfigurationCommand.updateConfiguration({
+        recordAllocations: getState().recordingAllocationStacks
+          ? null
+          : ALLOCATION_RECORDING_OPTIONS,
+      });
     } else {
-      await front.startRecordingAllocations(ALLOCATION_RECORDING_OPTIONS);
+      const front = await commands.targetCommand.targetFront.getFront("memory");
+      if (getState().recordingAllocationStacks) {
+        await front.stopRecordingAllocations();
+      } else {
+        await front.startRecordingAllocations(ALLOCATION_RECORDING_OPTIONS);
+      }
     }
 
     dispatch({ type: actions.TOGGLE_RECORD_ALLOCATION_STACKS_END });

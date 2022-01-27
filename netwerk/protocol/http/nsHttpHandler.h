@@ -25,12 +25,17 @@
 #include "nsIHttpProtocolHandler.h"
 #include "nsIObserver.h"
 #include "nsISpeculativeConnect.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
+#include "nsTHashSet.h"
 #ifdef DEBUG
 #  include "nsIOService.h"
 #endif
 
-class nsIHttpChannel;
+// XXX These includes can be replaced by forward declarations by moving the On*
+// method implementations to the cpp file
+#include "nsIChannel.h"
+#include "nsIHttpChannel.h"
+
 class nsIHttpUpgradeListener;
 class nsIPrefBranch;
 class nsICancelable;
@@ -50,10 +55,11 @@ class EventTokenBucket;
 class Tickler;
 class nsHttpConnection;
 class nsHttpConnectionInfo;
+class HttpBaseChannel;
 class HttpHandlerInitArgs;
 class HttpTransactionShell;
 class AltSvcMapping;
-class TRR;
+class DNSUtils;
 class TRRServiceChannel;
 class SocketProcessChild;
 
@@ -112,9 +118,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   [[nodiscard]] nsresult AddStandardRequestHeaders(
       nsHttpRequestHead*, bool isSecure,
-      nsContentPolicyType aContentPolicyType);
-  [[nodiscard]] nsresult AddConnectionHeader(nsHttpRequestHead*,
-                                             uint32_t capabilities);
+      ExtContentPolicyType aContentPolicyType);
+  [[nodiscard]] nsresult AddConnectionHeader(nsHttpRequestHead*, uint32_t caps);
   bool IsAcceptableEncoding(const char* encoding, bool isSecure);
 
   const nsCString& UserAgent();
@@ -168,7 +173,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     return mCriticalRequestPrioritization;
   }
 
-  bool IsDocumentNosniffEnabled() { return mRespectDocumentNoSniff; }
   bool UseH2Deps() { return mUseH2Deps; }
   bool IsH2WebsocketsEnabled() { return mEnableH2Websockets; }
 
@@ -223,29 +227,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   int32_t GetTCPKeepaliveLongLivedIdleTime() {
     return mTCPKeepaliveLongLivedIdleTimeS;
   }
-
-  bool UseFastOpen() {
-    return mUseFastOpen && mFastOpenSupported &&
-           (mFastOpenStallsCounter < mFastOpenStallsLimit) &&
-           (mFastOpenConsecutiveFailureCounter <
-            mFastOpenConsecutiveFailureLimit);
-  }
-  // If one of tcp connections return PR_NOT_TCP_SOCKET_ERROR while trying
-  // fast open, it means that Fast Open is turned off so we will not try again
-  // until a restart. This is only on Linux.
-  void SetFastOpenNotSupported() { mFastOpenSupported = false; }
-
-  void IncrementFastOpenConsecutiveFailureCounter();
-
-  void ResetFastOpenConsecutiveFailureCounter() {
-    mFastOpenConsecutiveFailureCounter = 0;
-  }
-
-  void IncrementFastOpenStallsCounter();
-  uint32_t CheckIfConnectionIsStalledOnlyIfIdleForThisAmountOfSeconds() {
-    return mFastOpenStallsIdleTime;
-  }
-  uint32_t FastOpenStallsTimeout() { return mFastOpenStallsTimeout; }
 
   // returns the HTTP framing check level preference, as controlled with
   // network.http.enforce-framing.http1 and network.http.enforce-framing.soft
@@ -326,16 +307,18 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   [[nodiscard]] nsresult SpeculativeConnect(nsHttpConnectionInfo* ci,
                                             nsIInterfaceRequestor* callbacks,
-                                            uint32_t caps = 0) {
+                                            uint32_t caps = 0,
+                                            bool aFetchHTTPSRR = false) {
     TickleWifi(callbacks);
     RefPtr<nsHttpConnectionInfo> clone = ci->Clone();
-    return mConnMgr->SpeculativeConnect(clone, callbacks, caps);
+    return mConnMgr->SpeculativeConnect(clone, callbacks, caps, nullptr,
+                                        aFetchHTTPSRR);
   }
 
   [[nodiscard]] nsresult SpeculativeConnect(nsHttpConnectionInfo* ci,
                                             nsIInterfaceRequestor* callbacks,
                                             uint32_t caps,
-                                            NullHttpTransaction* aTrans) {
+                                            SpeculativeTransaction* aTrans) {
     RefPtr<nsHttpConnectionInfo> clone = ci->Clone();
     return mConnMgr->SpeculativeConnect(clone, callbacks, caps, aTrans);
   }
@@ -348,21 +331,27 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
                                           originAttributes);
   }
 
+  void UpdateAltServiceMappingWithoutValidation(
+      AltSvcMapping* map, nsProxyInfo* proxyInfo,
+      nsIInterfaceRequestor* callbacks, uint32_t caps,
+      const OriginAttributes& originAttributes) {
+    mAltSvcCache->UpdateAltServiceMappingWithoutValidation(
+        map, proxyInfo, callbacks, caps, originAttributes);
+  }
+
   already_AddRefed<AltSvcMapping> GetAltServiceMapping(
       const nsACString& scheme, const nsACString& host, int32_t port, bool pb,
-      bool isolated, const nsACString& topWindowOrigin,
-      const OriginAttributes& originAttributes, bool aHttp3Allowed) {
-    return mAltSvcCache->GetAltServiceMapping(scheme, host, port, pb, isolated,
-                                              topWindowOrigin, originAttributes,
-                                              aHttp3Allowed);
+      const OriginAttributes& originAttributes, bool aHttp2Allowed,
+      bool aHttp3Allowed) {
+    return mAltSvcCache->GetAltServiceMapping(
+        scheme, host, port, pb, originAttributes, aHttp2Allowed, aHttp3Allowed);
   }
 
   //
   // The HTTP handler caches pointers to specific XPCOM services, and
   // provides the following helper routines for accessing those services:
   //
-  [[nodiscard]] nsresult GetStreamConverterService(nsIStreamConverterService**);
-  [[nodiscard]] nsresult GetIOService(nsIIOService** service);
+  [[nodiscard]] nsresult GetIOService(nsIIOService** result);
   nsICookieService* GetCookieService();  // not addrefed
   nsISiteSecurityService* GetSSService();
 
@@ -426,6 +415,12 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     NotifyObservers(chan, NS_HTTP_ON_EXAMINE_CACHED_RESPONSE_TOPIC);
   }
 
+  // Called by the channel when the transaction pump is suspended because of
+  // trying to get credentials asynchronously.
+  void OnTransactionSuspendedDueToAuthentication(nsIHttpChannel* chan) {
+    NotifyObservers(chan, "http-on-transaction-suspended-authentication");
+  }
+
   // Generates the host:port string for use in the Host: header as well as the
   // CONNECT line for proxies. This handles IPv6 literals correctly.
   [[nodiscard]] static nsresult GenerateHostPort(const nsCString& host,
@@ -446,12 +441,9 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   uint32_t DefaultHpackBuffer() const { return mDefaultHpackBuffer; }
 
-  bool Bug1563538() const { return mBug1563538; }
-  bool Bug1563695() const { return mBug1563695; }
-  bool Bug1556491() const { return mBug1556491; }
-
   bool IsHttp3VersionSupported(const nsACString& version);
 
+  static bool IsHttp3SupportedByServer(nsHttpResponseHead* aResponseHead);
   bool IsHttp3Enabled() const { return mHttp3Enabled; }
   uint32_t DefaultQpackTableSize() const { return mQpackTableSize; }
   uint16_t DefaultHttp3MaxBlockedStreams() const {
@@ -461,6 +453,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   uint32_t MaxHttpResponseHeaderSize() const {
     return mMaxHttpResponseHeaderSize;
   }
+
+  const nsCString& Http3QlogDir();
 
   float FocusedWindowTransactionRatio() const {
     return mFocusedWindowTransactionRatio;
@@ -472,7 +466,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // took place.  Called only on the parent process and only updates
   // mLastActiveTabLoadOptimizationHit timestamp to now.
   void NotifyActiveTabLoadOptimization();
-  TimeStamp const GetLastActiveTabLoadOptimizationHit();
+  TimeStamp GetLastActiveTabLoadOptimizationHit();
   void SetLastActiveTabLoadOptimizationHit(TimeStamp const& when);
   bool IsBeforeLastActiveTabLoadOptimization(TimeStamp const& when);
 
@@ -487,6 +481,26 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   nsresult DoShiftReloadConnectionCleanupWithConnInfo(
       nsHttpConnectionInfo* aCI);
+
+  void MaybeAddAltSvcForTesting(nsIURI* aUri, const nsACString& aUsername,
+                                bool aPrivateBrowsing,
+                                nsIInterfaceRequestor* aCallbacks,
+                                const OriginAttributes& aOriginAttributes);
+
+  bool UseHTTPSRRAsAltSvcEnabled() const;
+
+  bool EchConfigEnabled(bool aIsHttp3 = false) const;
+  // When EchConfig is enabled and all records with echConfig are failed, this
+  // functon indicate whether we can fallback to the origin server.
+  // In the case an HTTPS RRSet contains some RRs with echConfig and some
+  // without, we always fallback to the origin one.
+  bool FallbackToOriginIfConfigsAreECHAndAllFailed() const;
+
+  bool UseHTTPSRRForSpeculativeConnection() const;
+
+  // So we can ensure that this is done during process preallocation to
+  // avoid first-use overhead
+  static void PresetAcceptLanguages();
 
  private:
   nsHttpHandler();
@@ -510,8 +524,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   void NotifyObservers(nsIChannel* chan, const char* event);
 
-  void SetFastOpenOSSupport();
-
   friend class SocketProcessChild;
   void SetHttpHandlerInitArgs(const HttpHandlerInitArgs& aArgs);
   void SetDeviceModelId(const nsCString& aModelId);
@@ -520,9 +532,10 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // thread. Updates mSpeculativeConnectEnabled when done.
   void MaybeEnableSpeculativeConnect();
 
-  // We only allow TRR and TRRServiceChannel itself to create TRRServiceChannel.
+  // We only allow DNSUtils and TRRServiceChannel itself to create
+  // TRRServiceChannel.
   friend class TRRServiceChannel;
-  friend class TRR;
+  friend class DNSUtils;
   nsresult CreateTRRServiceChannel(nsIURI* uri, nsIProxyInfo* givenProxyInfo,
                                    uint32_t proxyResolveFlags, nsIURI* proxyURI,
                                    nsILoadInfo* aLoadInfo, nsIChannel** result);
@@ -534,7 +547,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
  private:
   // cached services
   nsMainThreadPtrHandle<nsIIOService> mIOService;
-  nsMainThreadPtrHandle<nsIStreamConverterService> mStreamConvSvc;
   nsMainThreadPtrHandle<nsICookieService> mCookieService;
   nsMainThreadPtrHandle<nsISiteSecurityService> mSSService;
 
@@ -551,60 +563,61 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // prefs
   //
 
-  enum HttpVersion mHttpVersion;
-  enum HttpVersion mProxyHttpVersion;
-  uint32_t mCapabilities;
+  enum HttpVersion mHttpVersion { HttpVersion::v1_1 };
+  enum HttpVersion mProxyHttpVersion { HttpVersion::v1_1 };
+  uint32_t mCapabilities{NS_HTTP_ALLOW_KEEPALIVE};
 
-  bool mFastFallbackToIPv4;
+  bool mFastFallbackToIPv4{false};
   PRIntervalTime mIdleTimeout;
   PRIntervalTime mSpdyTimeout;
   PRIntervalTime mResponseTimeout;
-  bool mResponseTimeoutEnabled;
-  uint32_t mNetworkChangedTimeout;  // milliseconds
-  uint16_t mMaxRequestAttempts;
-  uint16_t mMaxRequestDelay;
-  uint16_t mIdleSynTimeout;
-  uint16_t mFallbackSynTimeout;  // seconds
+  Atomic<bool, Relaxed> mResponseTimeoutEnabled{false};
+  uint32_t mNetworkChangedTimeout{5000};  // milliseconds
+  uint16_t mMaxRequestAttempts{6};
+  uint16_t mMaxRequestDelay{10};
+  uint16_t mIdleSynTimeout{250};
+  uint16_t mFallbackSynTimeout{5};  // seconds
 
-  bool mH2MandatorySuiteEnabled;
-  uint16_t mMaxUrgentExcessiveConns;
-  uint16_t mMaxConnections;
-  uint8_t mMaxPersistentConnectionsPerServer;
-  uint8_t mMaxPersistentConnectionsPerProxy;
+  bool mH2MandatorySuiteEnabled{false};
+  uint16_t mMaxUrgentExcessiveConns{3};
+  uint16_t mMaxConnections{24};
+  uint8_t mMaxPersistentConnectionsPerServer{2};
+  uint8_t mMaxPersistentConnectionsPerProxy{4};
 
-  bool mThrottleEnabled;
-  uint32_t mThrottleVersion;
-  uint32_t mThrottleSuspendFor;
-  uint32_t mThrottleResumeFor;
-  uint32_t mThrottleReadLimit;
-  uint32_t mThrottleReadInterval;
-  uint32_t mThrottleHoldTime;
-  uint32_t mThrottleMaxTime;
+  bool mThrottleEnabled{true};
+  uint32_t mThrottleVersion{2};
+  uint32_t mThrottleSuspendFor{3000};
+  uint32_t mThrottleResumeFor{200};
+  uint32_t mThrottleReadLimit{8000};
+  uint32_t mThrottleReadInterval{500};
+  uint32_t mThrottleHoldTime{600};
+  uint32_t mThrottleMaxTime{3000};
 
-  int32_t mSendWindowSize;
+  int32_t mSendWindowSize{1024};
 
-  bool mUrgentStartEnabled;
-  bool mTailBlockingEnabled;
-  uint32_t mTailDelayQuantum;
-  uint32_t mTailDelayQuantumAfterDCL;
-  uint32_t mTailDelayMax;
-  uint32_t mTailTotalMax;
+  bool mUrgentStartEnabled{true};
+  bool mTailBlockingEnabled{true};
+  uint32_t mTailDelayQuantum{600};
+  uint32_t mTailDelayQuantumAfterDCL{100};
+  uint32_t mTailDelayMax{6000};
+  uint32_t mTailTotalMax{0};
 
-  uint8_t mRedirectionLimit;
+  uint8_t mRedirectionLimit{10};
 
-  bool mBeConservativeForProxy;
+  bool mBeConservativeForProxy{true};
 
   // we'll warn the user if we load an URL containing a userpass field
   // unless its length is less than this threshold.  this warning is
   // intended to protect the user against spoofing attempts that use
   // the userpass field of the URL to obscure the actual origin server.
-  uint8_t mPhishyUserPassLength;
+  uint8_t mPhishyUserPassLength{1};
 
-  uint8_t mQoSBits;
+  uint8_t mQoSBits{0x00};
 
-  bool mEnforceAssocReq;
+  bool mEnforceAssocReq{false};
 
   nsCString mImageAcceptHeader;
+  nsCString mDocumentAcceptHeader;
 
   nsCString mAcceptLanguages;
   nsCString mHttpAcceptEncodings;
@@ -614,40 +627,43 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   // cache support
   uint32_t mLastUniqueID;
-  uint32_t mSessionStartTime;
+  uint32_t mSessionStartTime{0};
 
   // useragent components
-  nsCString mLegacyAppName;
-  nsCString mLegacyAppVersion;
+  nsCString mLegacyAppName{"Mozilla"};
+  nsCString mLegacyAppVersion{"5.0"};
   nsCString mPlatform;
   nsCString mOscpu;
   nsCString mMisc;
-  nsCString mProduct;
+  nsCString mProduct{"Gecko"};
   nsCString mProductSub;
   nsCString mAppName;
   nsCString mAppVersion;
   nsCString mCompatFirefox;
-  bool mCompatFirefoxEnabled;
+  bool mCompatFirefoxEnabled{false};
   nsCString mCompatDevice;
   nsCString mDeviceModelId;
 
   nsCString mUserAgent;
   nsCString mSpoofedUserAgent;
   nsCString mUserAgentOverride;
-  bool mUserAgentIsDirty;  // true if mUserAgent should be rebuilt
-  bool mAcceptLanguagesIsDirty;
 
-  bool mPromptTempRedirect;
+  nsCString mExperimentUserAgent;
+
+  bool mUserAgentIsDirty{true};  // true if mUserAgent should be rebuilt
+  bool mAcceptLanguagesIsDirty{true};
+
+  bool mPromptTempRedirect{true};
 
   // Persistent HTTPS caching flag
-  bool mEnablePersistentHttpsCaching;
+  bool mEnablePersistentHttpsCaching{false};
 
   // for broadcasting safe hint;
-  bool mSafeHintEnabled;
-  bool mParentalControlEnabled;
+  bool mSafeHintEnabled{false};
+  bool mParentalControlEnabled{false};
 
   // true in between init and shutdown states
-  Atomic<bool, Relaxed> mHandlerActive;
+  Atomic<bool, Relaxed> mHandlerActive{false};
 
   // The value of 'hidden' network.http.debug-observations : 1;
   uint32_t mDebugObservations : 1;
@@ -668,96 +684,80 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // Try to use SPDY features instead of HTTP/1.1 over SSL
   SpdyInformation mSpdyInfo;
 
-  uint32_t mSpdySendingChunkSize;
-  uint32_t mSpdySendBufferSize;
-  uint32_t mSpdyPushAllowance;
-  uint32_t mSpdyPullAllowance;
-  uint32_t mDefaultSpdyConcurrent;
+  uint32_t mSpdySendingChunkSize{ASpdySession::kSendingChunkSize};
+  uint32_t mSpdySendBufferSize{ASpdySession::kTCPSendBufferSize};
+  uint32_t mSpdyPushAllowance{131072};  // match default pref
+  uint32_t mSpdyPullAllowance{ASpdySession::kInitialRwin};
+  uint32_t mDefaultSpdyConcurrent{ASpdySession::kDefaultMaxConcurrent};
   PRIntervalTime mSpdyPingThreshold;
   PRIntervalTime mSpdyPingTimeout;
 
   // The maximum amount of time to wait for socket transport to be
   // established. In milliseconds.
-  uint32_t mConnectTimeout;
+  uint32_t mConnectTimeout{90000};
 
   // The maximum amount of time to wait for a tls handshake to be
   // established. In milliseconds.
-  uint32_t mTLSHandshakeTimeout;
+  uint32_t mTLSHandshakeTimeout{30000};
 
   // The maximum number of current global half open sockets allowable
   // when starting a new speculative connection.
-  uint32_t mParallelSpeculativeConnectLimit;
+  uint32_t mParallelSpeculativeConnectLimit{6};
 
   // For Rate Pacing of HTTP/1 requests through a netwerk/base/EventTokenBucket
   // Active requests <= *MinParallelism are not subject to the rate pacing
-  bool mRequestTokenBucketEnabled;
-  uint16_t mRequestTokenBucketMinParallelism;
-  uint32_t mRequestTokenBucketHz;     // EventTokenBucket HZ
-  uint32_t mRequestTokenBucketBurst;  // EventTokenBucket Burst
+  bool mRequestTokenBucketEnabled{true};
+  uint16_t mRequestTokenBucketMinParallelism{6};
+  uint32_t mRequestTokenBucketHz{100};    // EventTokenBucket HZ
+  uint32_t mRequestTokenBucketBurst{32};  // EventTokenBucket Burst
 
   // Whether or not to block requests for non head js/css items (e.g. media)
   // while those elements load.
-  bool mCriticalRequestPrioritization;
-
-  // Whether to respect X-Content-Type nosniff on Page loads
-  bool mRespectDocumentNoSniff;
+  bool mCriticalRequestPrioritization{true};
 
   // TCP Keepalive configuration values.
 
   // True if TCP keepalive is enabled for short-lived conns.
-  bool mTCPKeepaliveShortLivedEnabled;
+  bool mTCPKeepaliveShortLivedEnabled{false};
   // Time (secs) indicating how long a conn is considered short-lived.
-  int32_t mTCPKeepaliveShortLivedTimeS;
+  int32_t mTCPKeepaliveShortLivedTimeS{60};
   // Time (secs) before first keepalive probe; between successful probes.
-  int32_t mTCPKeepaliveShortLivedIdleTimeS;
+  int32_t mTCPKeepaliveShortLivedIdleTimeS{10};
 
   // True if TCP keepalive is enabled for long-lived conns.
-  bool mTCPKeepaliveLongLivedEnabled;
+  bool mTCPKeepaliveLongLivedEnabled{false};
   // Time (secs) before first keepalive probe; between successful probes.
-  int32_t mTCPKeepaliveLongLivedIdleTimeS;
+  int32_t mTCPKeepaliveLongLivedIdleTimeS{600};
 
   // if true, generate NS_ERROR_PARTIAL_TRANSFER for h1 responses with
   // incorrect content lengths or malformed chunked encodings
-  FrameCheckLevel mEnforceH1Framing;
+  FrameCheckLevel mEnforceH1Framing{FRAMECHECK_BARELY};
 
   nsCOMPtr<nsIRequestContextService> mRequestContextService;
 
   // The default size (in bytes) of the HPACK decompressor table.
-  uint32_t mDefaultHpackBuffer;
+  uint32_t mDefaultHpackBuffer{4096};
 
-  // Pref for the whole fix that bug provides
-  Atomic<bool, Relaxed> mBug1563538;
-  Atomic<bool, Relaxed> mBug1563695;
-  Atomic<bool, Relaxed> mBug1556491;
-
-  Atomic<bool, Relaxed> mHttp3Enabled;
+  Atomic<bool, Relaxed> mHttp3Enabled{true};
   // Http3 parameters
-  Atomic<uint32_t, Relaxed> mQpackTableSize;
-  Atomic<uint32_t, Relaxed>
-      mHttp3MaxBlockedStreams;  // uint16_t is enough here, but Atomic only
-                                // supports uint32_t or uint64_t.
+  Atomic<uint32_t, Relaxed> mQpackTableSize{4096};
+  // uint16_t is enough here, but Atomic only supports uint32_t or uint64_t.
+  Atomic<uint32_t, Relaxed> mHttp3MaxBlockedStreams{10};
+
+  nsCString mHttp3QlogDir;
 
   // The max size (in bytes) for received Http response header.
-  uint32_t mMaxHttpResponseHeaderSize;
+  uint32_t mMaxHttpResponseHeaderSize{393216};
 
   // The ratio for dispatching transactions from the focused window.
-  float mFocusedWindowTransactionRatio;
+  float mFocusedWindowTransactionRatio{0.9f};
 
   // We may disable speculative connect if the browser has user certificates
   // installed as that might randomly popup the certificate choosing window.
-  Atomic<bool, Relaxed> mSpeculativeConnectEnabled;
-
-  Atomic<bool, Relaxed> mUseFastOpen;
-  Atomic<bool, Relaxed> mFastOpenSupported;
-  uint32_t mFastOpenConsecutiveFailureLimit;
-  uint32_t mFastOpenConsecutiveFailureCounter;
-  uint32_t mFastOpenStallsLimit;
-  uint32_t mFastOpenStallsCounter;
-  uint32_t mFastOpenStallsIdleTime;
-  uint32_t mFastOpenStallsTimeout;
+  Atomic<bool, Relaxed> mSpeculativeConnectEnabled{false};
 
   // If true, the transactions from active tab will be dispatched first.
-  bool mActiveTabPriority;
+  bool mActiveTabPriority{true};
 
   HttpTrafficAnalyzer mHttpTrafficAnalyzer;
 
@@ -800,10 +800,11 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   [[nodiscard]] nsresult SpeculativeConnectInternal(
       nsIURI* aURI, nsIPrincipal* aPrincipal, nsIInterfaceRequestor* aCallbacks,
       bool anonymous);
+  void ExcludeHttp2OrHttp3Internal(const nsHttpConnectionInfo* ci);
 
   // State for generating channelIds
-  uint32_t mProcessId;
-  Atomic<uint32_t, Relaxed> mNextChannelId;
+  uint32_t mProcessId{0};
+  Atomic<uint32_t, Relaxed> mNextChannelId{1};
 
   // The last time any of the active tab page load optimization took place.
   // This is accessed on multiple threads, hence a lock is needed.
@@ -814,10 +815,11 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // value from ipc onstoprequest arguments.  This is a sufficent way of passing
   // it down to the content process, since the value will be used only after
   // onstoprequest notification coming from an http channel.
-  Mutex mLastActiveTabLoadOptimizationLock;
+  Mutex mLastActiveTabLoadOptimizationLock{
+      "nsHttpConnectionMgr::LastActiveTabLoadOptimization"};
   TimeStamp mLastActiveTabLoadOptimizationHit;
 
-  Mutex mSpdyBlacklistLock;
+  Mutex mHttpExclusionLock{"nsHttpHandler::HttpExclusion"};
 
  public:
   [[nodiscard]] nsresult NewChannelId(uint64_t& channelId);
@@ -825,16 +827,32 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   void RemoveHttpChannel(uint64_t aId);
   nsWeakPtr GetWeakHttpChannel(uint64_t aId);
 
-  void BlacklistSpdy(const nsHttpConnectionInfo* ci);
-  [[nodiscard]] bool IsSpdyBlacklisted(const nsHttpConnectionInfo* ci);
+  void ExcludeHttp2(const nsHttpConnectionInfo* ci);
+  [[nodiscard]] bool IsHttp2Excluded(const nsHttpConnectionInfo* ci);
+  void ExcludeHttp3(const nsHttpConnectionInfo* ci);
+  [[nodiscard]] bool IsHttp3Excluded(const nsACString& aRoutedHost);
+  void Exclude0RttTcp(const nsHttpConnectionInfo* ci);
+  [[nodiscard]] bool Is0RttTcpExcluded(const nsHttpConnectionInfo* ci);
+
+  void ExcludeHTTPSRRHost(const nsACString& aHost);
+  [[nodiscard]] bool IsHostExcludedForHTTPSRR(const nsACString& aHost);
 
  private:
-  nsTHashtable<nsCStringHashKey> mBlacklistedSpdyOrigins;
+  nsTHashSet<nsCString> mExcludedHttp2Origins;
+  nsTHashSet<nsCString> mExcludedHttp3Origins;
+  nsTHashSet<nsCString> mExcluded0RttTcpOrigins;
+  // A set of hosts that we should not upgrade to HTTPS with HTTPS RR.
+  nsTHashSet<nsCString> mExcludedHostsForHTTPSRRUpgrade;
 
-  bool mThroughCaptivePortal;
+  Atomic<bool, Relaxed> mThroughCaptivePortal{false};
 
   // The mapping of channel id and the weak pointer of nsHttpChannel.
-  nsDataHashtable<nsUint64HashKey, nsWeakPtr> mIDToHttpChannelMap;
+  nsTHashMap<nsUint64HashKey, nsWeakPtr> mIDToHttpChannelMap;
+
+  // This is parsed pref network.http.http3.alt-svc-mapping-for-testing.
+  // The pref set artificial altSvc-s for origin for testing.
+  // This maps an origin to an altSvc.
+  nsClassHashtable<nsCStringHashKey, nsCString> mAltSvcMappingTemptativeMap;
 };
 
 extern StaticRefPtr<nsHttpHandler> gHttpHandler;

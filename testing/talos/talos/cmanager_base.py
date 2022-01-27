@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 from __future__ import absolute_import
 
 
@@ -20,8 +24,7 @@ class CounterManager(object):
         """
         for counter in counters:
             if counter in self.allCounters:
-                self.registeredCounters[counter] = \
-                    [self.allCounters[counter], []]
+                self.registeredCounters[counter] = [self.allCounters[counter], []]
 
     def getCounterValue(self, counterName):
         """Returns the last value of the counter 'counterName'"""

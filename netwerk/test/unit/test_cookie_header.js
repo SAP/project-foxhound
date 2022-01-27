@@ -9,10 +9,7 @@ XPCOMUtils.defineLazyGetter(this, "URL", function() {
 });
 
 function inChildProcess() {
-  return (
-    Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime)
-      .processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT
-  );
+  return Services.appinfo.processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
 }
 
 function check_request_header(chan, name, value) {
@@ -95,10 +92,6 @@ function run_test() {
 
 async function run_test_continued() {
   var chan = makeChan();
-
-  var cookServ = Cc["@mozilla.org/cookieService;1"].getService(
-    Ci.nsICookieService
-  );
 
   var cookie2 = "C2=V2";
 

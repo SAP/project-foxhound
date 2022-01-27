@@ -17,12 +17,18 @@ mod exp;
 #[macro_use]
 mod p11;
 
-pub mod aead;
+#[cfg(not(feature = "fuzzing"))]
+mod aead;
+
+#[cfg(feature = "fuzzing")]
+mod aead_fuzzing;
+
 pub mod agent;
 mod agentio;
 mod auth;
 mod cert;
 pub mod constants;
+mod ech;
 mod err;
 pub mod ext;
 pub mod hkdf;
@@ -35,15 +41,28 @@ pub mod selfencrypt;
 mod ssl;
 mod time;
 
+#[cfg(not(feature = "fuzzing"))]
+pub use self::aead::Aead;
+
+#[cfg(feature = "fuzzing")]
+pub use self::aead_fuzzing::Aead;
+
+#[cfg(feature = "fuzzing")]
+pub use self::aead_fuzzing::FIXED_TAG_FUZZING;
+
 pub use self::agent::{
-    Agent, AllowZeroRtt, Client, HandshakeState, Record, RecordList, SecretAgent, SecretAgentInfo,
-    SecretAgentPreInfo, Server, ZeroRttCheckResult, ZeroRttChecker,
+    Agent, AllowZeroRtt, Client, HandshakeState, Record, RecordList, ResumptionToken, SecretAgent,
+    SecretAgentInfo, SecretAgentPreInfo, Server, ZeroRttCheckResult, ZeroRttChecker,
 };
 pub use self::auth::AuthenticationStatus;
 pub use self::constants::*;
+pub use self::ech::{
+    encode_config as encode_ech_config, generate_keys as generate_ech_keys, AeadId, KdfId, KemId,
+    SymmetricSuite,
+};
 pub use self::err::{Error, PRErrorCode, Res};
 pub use self::ext::{ExtensionHandler, ExtensionHandlerResult, ExtensionWriterResult};
-pub use self::p11::{random, SymKey};
+pub use self::p11::{random, PrivateKey, PublicKey, SymKey};
 pub use self::replay::AntiReplay;
 pub use self::secrets::SecretDirection;
 pub use self::ssl::Opt;
@@ -51,12 +70,14 @@ pub use self::ssl::Opt;
 use self::once::OnceResult;
 
 use std::ffi::CString;
-use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 use std::ptr::null;
 
+const MINIMUM_NSS_VERSION: &str = "3.66";
+
+#[allow(non_upper_case_globals, clippy::redundant_static_lifetimes)]
+#[allow(clippy::upper_case_acronyms)]
 mod nss {
-    #![allow(clippy::redundant_static_lifetimes, non_upper_case_globals)]
     include!(concat!(env!("OUT_DIR"), "/nss_init.rs"));
 }
 
@@ -73,11 +94,10 @@ enum NssLoaded {
 
 impl Drop for NssLoaded {
     fn drop(&mut self) {
-        match self {
-            Self::NoDb | Self::Db(_) => unsafe {
-                secstatus_to_res(nss::NSS_Shutdown()).expect("NSS Shutdown failed")
-            },
-            _ => {}
+        if !matches!(self, Self::External) {
+            unsafe {
+                secstatus_to_res(nss::NSS_Shutdown()).expect("NSS Shutdown failed");
+            }
         }
     }
 }
@@ -88,12 +108,23 @@ fn already_initialized() -> bool {
     unsafe { nss::NSS_IsInitialized() != 0 }
 }
 
+fn version_check() {
+    let min_ver = CString::new(MINIMUM_NSS_VERSION).unwrap();
+    assert_ne!(
+        unsafe { nss::NSS_VersionCheck(min_ver.as_ptr()) },
+        0,
+        "Minimum NSS version of {} not supported",
+        MINIMUM_NSS_VERSION,
+    );
+}
+
 /// Initialize NSS.  This only executes the initialization routines once, so if there is any chance that
 pub fn init() {
     // Set time zero.
     time::init();
     unsafe {
         INITIALIZED.call_once(|| {
+            version_check();
             if already_initialized() {
                 return NssLoaded::External;
             }
@@ -118,10 +149,14 @@ fn enable_ssl_trace() {
         .expect("SSL_OptionGetDefault failed");
 }
 
+/// Initialize with a database.
+/// # Panics
+/// If NSS cannot be initialized.
 pub fn init_db<P: Into<PathBuf>>(dir: P) {
     time::init();
     unsafe {
         INITIALIZED.call_once(|| {
+            version_check();
             if already_initialized() {
                 return NssLoaded::External;
             }
@@ -129,13 +164,13 @@ pub fn init_db<P: Into<PathBuf>>(dir: P) {
             let path = dir.into();
             assert!(path.is_dir());
             let pathstr = path.to_str().expect("path converts to string").to_string();
-            let dircstr = CString::new(pathstr).expect("new CString");
-            let empty = CString::new("").expect("new empty CString");
+            let dircstr = CString::new(pathstr).unwrap();
+            let empty = CString::new("").unwrap();
             secstatus_to_res(nss::NSS_Initialize(
                 dircstr.as_ptr(),
                 empty.as_ptr(),
                 empty.as_ptr(),
-                nss::SECMOD_DB.as_ptr() as *const c_char,
+                nss::SECMOD_DB.as_ptr().cast(),
                 nss::NSS_INIT_READONLY,
             ))
             .expect("NSS_Initialize failed");
@@ -157,7 +192,8 @@ pub fn init_db<P: Into<PathBuf>>(dir: P) {
     }
 }
 
-/// Panic if NSS isn't initialized.
+/// # Panics
+/// If NSS isn't initialized.
 pub fn assert_initialized() {
     unsafe {
         INITIALIZED.call_once(|| {

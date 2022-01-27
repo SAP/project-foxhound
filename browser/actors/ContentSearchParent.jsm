@@ -12,24 +12,19 @@ const { XPCOMUtils } = ChromeUtils.import(
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest"]);
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormHistory",
-  "resource://gre/modules/FormHistory.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "SearchSuggestionController",
-  "resource://gre/modules/SearchSuggestionController.jsm"
-);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.jsm",
+  FormHistory: "resource://gre/modules/FormHistory.jsm",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
+  SearchSuggestionController:
+    "resource://gre/modules/SearchSuggestionController.jsm",
+  UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
+});
 
 const MAX_LOCAL_SUGGESTIONS = 3;
 const MAX_SUGGESTIONS = 6;
+const SEARCH_ENGINE_PLACEHOLDER_ICON =
+  "chrome://browser/skin/search-engine-placeholder.png";
 
 // Set of all ContentSearch actors, used to broadcast messages to all of them.
 let gContentSearchActors = new Set();
@@ -116,9 +111,7 @@ let ContentSearch = {
       Services.obs.addObserver(this, "browser-search-service");
       Services.obs.addObserver(this, "shutdown-leaks-before-check");
       Services.prefs.addObserver("browser.search.hiddenOneOffs", this);
-      this._stringBundle = Services.strings.createBundle(
-        "chrome://global/locale/autocomplete.properties"
-      );
+      UrlbarPrefs.addObserver(this);
 
       this.initialized = true;
     }
@@ -156,6 +149,7 @@ let ContentSearch = {
       return this._destroyedPromise;
     }
 
+    Services.prefs.removeObserver("browser.search.hiddenOneOffs", this);
     Services.obs.removeObserver(this, "browser-search-engine-modified");
     Services.obs.removeObserver(this, "browser-search-service");
     Services.obs.removeObserver(this, "shutdown-leaks-before-check");
@@ -189,6 +183,22 @@ let ContentSearch = {
     }
   },
 
+  /**
+   * Observes changes in prefs tracked by UrlbarPrefs.
+   * @param {string} pref
+   *   The name of the pref, relative to `browser.urlbar.` if the pref is
+   *   in that branch.
+   */
+  onPrefChanged(pref) {
+    if (UrlbarPrefs.shouldHandOffToSearchModePrefs.includes(pref)) {
+      this._eventQueue.push({
+        type: "Observe",
+        data: "shouldHandOffToSearchMode",
+      });
+      this._processEventQueue();
+    }
+  },
+
   removeFormHistoryEntry(browser, entry) {
     let browserData = this._suggestionDataForBrowser(browser);
     if (browserData && browserData.previousFormHistoryResult) {
@@ -202,7 +212,7 @@ let ContentSearch = {
     }
   },
 
-  performSearch(browser, data) {
+  performSearch(actor, browser, data) {
     this._ensureDataHasProperties(data, [
       "engineName",
       "searchString",
@@ -231,7 +241,7 @@ let ContentSearch = {
     if (where === "current") {
       // Since we're going to load the search in the same browser, blur the search
       // UI to prevent further interaction before we start loading.
-      this._reply(browser, "Blur");
+      this._reply(actor, "Blur");
       browser.loadURI(submission.uri.spec, {
         postData: submission.postData,
         triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
@@ -251,8 +261,9 @@ let ContentSearch = {
       };
       win.openTrustedLinkIn(submission.uri.spec, where, params);
     }
-    win.BrowserSearch.recordSearchInTelemetry(engine, data.healthReportKey, {
+    BrowserSearchTelemetry.recordSearch(browser, engine, data.healthReportKey, {
       selection: data.selection,
+      url: submission.uri,
     });
   },
 
@@ -304,7 +315,7 @@ let ContentSearch = {
     return result;
   },
 
-  async addFormHistoryEntry(browser, entry = "") {
+  async addFormHistoryEntry(browser, entry = null) {
     let isPrivate = false;
     try {
       // isBrowserPrivate assumes that the passed-in browser has all the normal
@@ -314,7 +325,12 @@ let ContentSearch = {
     } catch (err) {
       return false;
     }
-    if (isPrivate || entry === "") {
+    if (
+      isPrivate ||
+      !entry ||
+      entry.value.length >
+        SearchSuggestionController.SEARCH_HISTORY_MAX_VALUE_LENGTH
+    ) {
       return false;
     }
     let browserData = this._suggestionDataForBrowser(browser, true);
@@ -322,7 +338,8 @@ let ContentSearch = {
       {
         op: "bump",
         fieldname: browserData.controller.formHistoryParam,
-        value: entry,
+        value: entry.value,
+        source: entry.engineName,
       },
       {
         handleCompletion: () => {},
@@ -344,21 +361,20 @@ let ContentSearch = {
     let pref = Services.prefs.getStringPref("browser.search.hiddenOneOffs");
     let hiddenList = pref ? pref.split(",") : [];
     for (let engine of await Services.search.getVisibleEngines()) {
-      let uri = engine.getIconURLBySize(16, 16);
-      let iconData = await this._maybeConvertURIToArrayBuffer(uri);
-
       state.engines.push({
         name: engine.name,
-        iconData,
+        iconData: await this._getEngineIconURL(engine),
         hidden: hiddenList.includes(engine.name),
         isAppProvided: engine.isAppProvided,
       });
     }
 
     if (window) {
-      state.isPrivateWindow = PrivateBrowsingUtils.isContentWindowPrivate(
+      state.isInPrivateBrowsingMode = PrivateBrowsingUtils.isContentWindowPrivate(
         window
       );
+      state.isAboutPrivateBrowsing =
+        window.gBrowser.currentURI.spec == "about:privatebrowsing";
     }
 
     return state;
@@ -384,7 +400,7 @@ let ContentSearch = {
     })();
   },
 
-  _cancelSuggestions(browser) {
+  _cancelSuggestions({ actor, browser }) {
     let cancelled = false;
     // cancel active suggestion request
     if (
@@ -397,14 +413,14 @@ let ContentSearch = {
     // cancel queued suggestion requests
     for (let i = 0; i < this._eventQueue.length; i++) {
       let m = this._eventQueue[i];
-      if (browser === m.browser && m.name === "GetSuggestions") {
+      if (actor === m.actor && m.name === "GetSuggestions") {
         this._eventQueue.splice(i, 1);
         cancelled = true;
         i--;
       }
     }
     if (cancelled) {
-      this._reply(browser, "SuggestionsCancelled");
+      this._reply(actor, "SuggestionsCancelled");
     }
   },
 
@@ -412,45 +428,54 @@ let ContentSearch = {
     let methodName = "_onMessage" + eventItem.name;
     if (methodName in this) {
       await this._initService();
-      await this[methodName](eventItem.browser, eventItem.data);
+      await this[methodName](eventItem);
       eventItem.browser.removeEventListener("SwapDocShells", eventItem, true);
     }
   },
 
-  _onMessageGetState(browser, data) {
+  _onMessageGetState({ actor, browser }) {
     return this.currentStateObj(browser.ownerGlobal).then(state => {
-      this._reply(browser, "State", state);
+      this._reply(actor, "State", state);
     });
   },
 
-  _onMessageGetEngine(browser, data) {
+  _onMessageGetEngine({ actor, browser }) {
     return this.currentStateObj(browser.ownerGlobal).then(state => {
-      this._reply(browser, "Engine", {
-        isPrivateWindow: state.isPrivateWindow,
-        engine: state.isPrivateWindow
+      this._reply(actor, "Engine", {
+        isPrivateEngine: state.isInPrivateBrowsingMode,
+        isAboutPrivateBrowsing: state.isAboutPrivateBrowsing,
+        engine: state.isInPrivateBrowsingMode
           ? state.currentPrivateEngine
           : state.currentEngine,
       });
     });
   },
 
-  _onMessageGetStrings(browser, data) {
-    this._reply(browser, "Strings", this.searchSuggestionUIStrings);
+  _onMessageGetHandoffSearchModePrefs({ actor }) {
+    this._reply(
+      actor,
+      "HandoffSearchModePrefs",
+      UrlbarPrefs.get("shouldHandOffToSearchMode")
+    );
   },
 
-  _onMessageSearch(browser, data) {
-    this.performSearch(browser, data);
+  _onMessageGetStrings({ actor }) {
+    this._reply(actor, "Strings", this.searchSuggestionUIStrings);
   },
 
-  _onMessageSetCurrentEngine(browser, data) {
+  _onMessageSearch({ actor, browser, data }) {
+    this.performSearch(actor, browser, data);
+  },
+
+  _onMessageSetCurrentEngine({ data }) {
     Services.search.defaultEngine = Services.search.getEngineByName(data);
   },
 
-  _onMessageManageEngines(browser) {
+  _onMessageManageEngines({ browser }) {
     browser.ownerGlobal.openPreferences("paneSearch");
   },
 
-  async _onMessageGetSuggestions(browser, data) {
+  async _onMessageGetSuggestions({ actor, browser, data }) {
     this._ensureDataHasProperties(data, ["engineName", "searchString"]);
     let { engineName, searchString } = data;
     let suggestions = await this.getSuggestions(
@@ -459,7 +484,7 @@ let ContentSearch = {
       browser
     );
 
-    this._reply(browser, "Suggestions", {
+    this._reply(actor, "Suggestions", {
       engineName: data.engineName,
       searchString: suggestions.term,
       formHistory: suggestions.local,
@@ -467,15 +492,15 @@ let ContentSearch = {
     });
   },
 
-  async _onMessageAddFormHistoryEntry(browser, entry) {
+  async _onMessageAddFormHistoryEntry({ browser, data: entry }) {
     await this.addFormHistoryEntry(browser, entry);
   },
 
-  _onMessageRemoveFormHistoryEntry(browser, entry) {
+  _onMessageRemoveFormHistoryEntry({ browser, data: entry }) {
     this.removeFormHistoryEntry(browser, entry);
   },
 
-  _onMessageSpeculativeConnect(browser, engineName) {
+  _onMessageSpeculativeConnect({ browser, data: engineName }) {
     let engine = Services.search.getEngineByName(engineName);
     if (!engine) {
       throw new Error("Unknown engine name: " + engineName);
@@ -489,15 +514,26 @@ let ContentSearch = {
   },
 
   async _onObserve(eventItem) {
-    if (eventItem.data === "engine-default") {
-      let engine = await this._currentEngineObj(false);
-      this._broadcast("CurrentEngine", engine);
-    } else if (eventItem.data === "engine-default-private") {
-      let engine = await this._currentEngineObj(true);
-      this._broadcast("CurrentPrivateEngine", engine);
-    } else {
-      let state = await this.currentStateObj();
-      this._broadcast("CurrentState", state);
+    let engine;
+    switch (eventItem.data) {
+      case "engine-default":
+        engine = await this._currentEngineObj(false);
+        this._broadcast("CurrentEngine", engine);
+        break;
+      case "engine-default-private":
+        engine = await this._currentEngineObj(true);
+        this._broadcast("CurrentPrivateEngine", engine);
+        break;
+      case "shouldHandOffToSearchMode":
+        this._broadcast(
+          "HandoffSearchModePrefs",
+          UrlbarPrefs.get("shouldHandOffToSearchMode")
+        );
+        break;
+      default:
+        let state = await this.currentStateObj();
+        this._broadcast("CurrentState", state);
+        break;
     }
   },
 
@@ -515,8 +551,8 @@ let ContentSearch = {
     return data;
   },
 
-  _reply(browser, type, data) {
-    browser.sendMessageToActor(type, data, "ContentSearch");
+  _reply(actor, type, data) {
+    actor.sendAsyncMessage(type, data);
   },
 
   _broadcast(type, data) {
@@ -528,23 +564,21 @@ let ContentSearch = {
   async _currentEngineObj(usePrivate) {
     let engine =
       Services.search[usePrivate ? "defaultPrivateEngine" : "defaultEngine"];
-    let favicon = engine.getIconURLBySize(16, 16);
-    let placeholder = this._stringBundle.formatStringFromName(
-      "searchWithEngine",
-      [engine.name]
-    );
     let obj = {
       name: engine.name,
-      placeholder,
-      iconData: await this._maybeConvertURIToArrayBuffer(favicon),
+      iconData: await this._getEngineIconURL(engine),
       isAppProvided: engine.isAppProvided,
     };
     return obj;
   },
 
-  _maybeConvertURIToArrayBuffer(uri) {
-    if (!uri) {
-      return Promise.resolve(null);
+  /**
+   * Converts the engine's icon into an appropriate URL for display at
+   */
+  async _getEngineIconURL(engine) {
+    let url = engine.getIconURLBySize(16, 16);
+    if (!url) {
+      return SEARCH_ENGINE_PLACEHOLDER_ICON;
     }
 
     // The uri received here can be of two types
@@ -554,25 +588,25 @@ let ContentSearch = {
     // If the URI is not a data: URI, there's no point in converting
     // it to an arraybuffer (which is used to optimize passing the data
     // accross processes): we can just pass the original URI, which is cheaper.
-    if (!uri.startsWith("data:")) {
-      return Promise.resolve(uri);
+    if (!url.startsWith("data:")) {
+      return url;
     }
 
     return new Promise(resolve => {
       let xhr = new XMLHttpRequest();
-      xhr.open("GET", uri, true);
+      xhr.open("GET", url, true);
       xhr.responseType = "arraybuffer";
       xhr.onload = () => {
         resolve(xhr.response);
       };
       xhr.onerror = xhr.onabort = xhr.ontimeout = () => {
-        resolve(null);
+        resolve(SEARCH_ENGINE_PLACEHOLDER_ICON);
       };
       try {
         // This throws if the URI is erroneously encoded.
         xhr.send();
       } catch (err) {
-        resolve(null);
+        resolve(SEARCH_ENGINE_PLACEHOLDER_ICON);
       }
     });
   },
@@ -615,6 +649,7 @@ class ContentSearchParent extends JSWindowActorParent {
       name: msg.name,
       data: msg.data,
       browser,
+      actor: this,
       handleEvent: event => {
         let browserData = ContentSearch._suggestionMap.get(eventItem.browser);
         if (browserData) {
@@ -631,7 +666,7 @@ class ContentSearchParent extends JSWindowActorParent {
     // Search requests cause cancellation of all Suggestion requests from the
     // same browser.
     if (msg.name === "Search") {
-      ContentSearch._cancelSuggestions();
+      ContentSearch._cancelSuggestions(eventItem);
     }
 
     ContentSearch._eventQueue.push(eventItem);

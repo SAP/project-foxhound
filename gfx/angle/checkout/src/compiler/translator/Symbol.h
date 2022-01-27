@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2017 The ANGLE Project Authors. All rights reserved.
+// Copyright 2017 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -138,7 +138,7 @@ class TStructure : public TSymbol, public TFieldListCollection
     // TODO(zmo): Find a way to get rid of the const_cast in function
     // setName().  At the moment keep this function private so only
     // friend class RegenerateStructNames may call it.
-    friend class RegenerateStructNames;
+    friend class RegenerateStructNamesTraverser;
     void setName(const ImmutableString &name);
 
     bool mAtGlobalScope;
@@ -234,7 +234,8 @@ class TFunction : public TSymbol
     bool isMain() const;
     bool isImageFunction() const;
     bool isAtomicCounterFunction() const;
-    bool hasSamplerInStructParams() const;
+    bool hasSamplerInStructOrArrayParams() const;
+    bool hasSamplerInStructOrArrayOfArrayParams() const;
 
     // Note: Only to be used for static built-in functions!
     constexpr TFunction(const TSymbolUniqueId &id,

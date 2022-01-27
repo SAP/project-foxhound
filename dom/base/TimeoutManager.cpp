@@ -8,6 +8,8 @@
 #include "nsGlobalWindow.h"
 #include "mozilla/Logging.h"
 #include "mozilla/PerformanceCounter.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/Telemetry.h"
@@ -15,6 +17,7 @@
 #include "mozilla/TimeStamp.h"
 #include "nsINamed.h"
 #include "mozilla/dom/DocGroup.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/TimeoutHandler.h"
@@ -22,9 +25,6 @@
 #include "TimeoutBudgetManager.h"
 #include "mozilla/net/WebSocketEventService.h"
 #include "mozilla/MediaManager.h"
-#ifdef MOZ_GECKO_PROFILER
-#  include "ProfilerMarkerPayload.h"
-#endif
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -127,9 +127,7 @@ void TimeoutManager::SetLoading(bool value) {
 void TimeoutManager::MoveIdleToActive() {
   uint32_t num = 0;
   TimeStamp when;
-#if MOZ_GECKO_PROFILER
   TimeStamp now;
-#endif
   // Ensure we maintain the ordering of timeouts, so timeouts
   // never fire before a timeout set for an earlier time, or
   // before a timeout for the same time already submitted.
@@ -140,8 +138,7 @@ void TimeoutManager::MoveIdleToActive() {
     }
     timeout->remove();
     mTimeouts.InsertFront(timeout);
-#if MOZ_GECKO_PROFILER
-    if (profiler_can_accept_markers()) {
+    if (profiler_thread_is_being_profiled_for_markers()) {
       if (num == 0) {
         now = TimeStamp::Now();
       }
@@ -154,12 +151,14 @@ void TimeoutManager::MoveIdleToActive() {
           int(elapsed.ToMilliseconds()), int(target.ToMilliseconds()),
           int(delta.ToMilliseconds()));
       // don't have end before start...
-      PROFILER_ADD_MARKER_WITH_PAYLOAD(
-          "setTimeout deferred release", DOM, TextMarkerPayload,
-          (marker, delta.ToMilliseconds() >= 0 ? timeout->When() : now, now,
-           Some(mWindow.WindowID())));
+      PROFILER_MARKER_TEXT(
+          "setTimeout deferred release", DOM,
+          MarkerOptions(
+              MarkerTiming::Interval(
+                  delta.ToMilliseconds() >= 0 ? timeout->When() : now, now),
+              MarkerInnerWindowId(mWindow.WindowID())),
+          marker);
     }
-#endif
     num++;
   }
   if (num > 0) {
@@ -243,13 +242,18 @@ TimeDuration TimeoutManager::MinSchedulingDelay() const {
       isBackground ? TimeDuration::FromMilliseconds(
                          StaticPrefs::dom_min_background_timeout_value())
                    : TimeDuration();
-  if (BudgetThrottlingEnabled(isBackground) &&
-      mExecutionBudget < TimeDuration()) {
+  bool budgetThrottlingEnabled = BudgetThrottlingEnabled(isBackground);
+  if (budgetThrottlingEnabled && mExecutionBudget < TimeDuration()) {
     // Only throttle if execution budget is less than 0
     double factor = 1.0 / GetRegenerationFactor(mWindow.IsBackgroundInternal());
     return TimeDuration::Max(unthrottled, -mExecutionBudget.MultDouble(factor));
   }
-  //
+  if (!budgetThrottlingEnabled && isBackground) {
+    return TimeDuration::FromMilliseconds(
+        StaticPrefs::
+            dom_min_background_timeout_value_without_budget_throttling());
+  }
+
   return unthrottled;
 }
 
@@ -395,27 +399,6 @@ void TimeoutManager::UpdateBudget(const TimeStamp& aNow,
   mLastBudgetUpdate = aNow;
 }
 
-size_t TimeoutManager::GetNumPendingInputs() {
-  ContentChild* contentChild = ContentChild::GetSingleton();
-  mozilla::ipc::MessageChannel* channel =
-      contentChild ? contentChild->GetIPCChannel() : nullptr;
-
-  if (channel) {
-    size_t count = 0;
-    channel->PeekMessages([&count](const IPC::Message& aMsg) -> bool {
-      if (nsContentUtils::IsMessageCriticalInputEvent(aMsg)) {
-        // The max number we can record in the telemetry is 80,
-        // so we don't need to continue the counting.
-        if (++count > 80) {
-          return false;
-        }
-      }
-      return true;
-    });
-    return count;
-  }
-  return 0;
-}
 // The longest interval (as PRIntervalTime) we permit, or that our
 // timer code can handle, really. See DELAY_INTERVAL_LIMIT in
 // nsTimerImpl.h for details.
@@ -591,7 +574,8 @@ bool TimeoutManager::ClearTimeoutInternal(int32_t aTimerId,
           ("%s(TimeoutManager=%p, timeout=%p, ID=%u)\n",
            timeout->mReason == Timeout::Reason::eIdleCallbackTimeout
                ? "CancelIdleCallback"
-               : timeout->mIsInterval ? "ClearInterval" : "ClearTimeout",
+           : timeout->mIsInterval ? "ClearInterval"
+                                  : "ClearTimeout",
            this, timeout, timeout->mTimeoutId));
 
   if (timeout->mRunning) {
@@ -906,30 +890,7 @@ void TimeoutManager::RunTimeout(const TimeStamp& aNow,
         mLastFiringIndex = timeout->mFiringIndex;
 #endif
         // This timeout is good to run.
-        Telemetry::Accumulate(Telemetry::PENDING_CRITICAL_INPUT_WHEN_TIMEOUT,
-                              GetNumPendingInputs());
         bool timeout_was_cleared = window->RunTimeoutHandler(timeout, scx);
-#if MOZ_GECKO_PROFILER
-        if (profiler_can_accept_markers()) {
-          TimeDuration elapsed = now - timeout->SubmitTime();
-          TimeDuration target = timeout->When() - timeout->SubmitTime();
-          TimeDuration delta = now - timeout->When();
-          TimeDuration runtime = TimeStamp::Now() - now;
-          nsPrintfCString marker(
-              "%sset%s() for %dms (original target time was %dms (%dms "
-              "delta)); runtime = %dms",
-              aProcessIdle ? "Deferred " : "",
-              timeout->mIsInterval ? "Interval" : "Timeout",
-              int(elapsed.ToMilliseconds()), int(target.ToMilliseconds()),
-              int(delta.ToMilliseconds()), int(runtime.ToMilliseconds()));
-          // don't have end before start...
-          PROFILER_ADD_MARKER_WITH_PAYLOAD(
-              "setTimeout", DOM, TextMarkerPayload,
-              (marker, delta.ToMilliseconds() >= 0 ? timeout->When() : now, now,
-               Some(mWindow.WindowID())));
-        }
-#endif
-
         MOZ_LOG(gTimeoutLog, LogLevel::Debug,
                 ("Run%s(TimeoutManager=%p, timeout=%p) returned %d\n",
                  timeout->mIsInterval ? "Interval" : "Timeout", this,

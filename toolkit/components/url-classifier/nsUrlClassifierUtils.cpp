@@ -34,6 +34,7 @@
 #include "nsPIDOMWindow.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadManager.h"
+#include "nsTHashSet.h"
 #include "Classifier.h"
 #include "Entries.h"
 #include "prprf.h"
@@ -270,15 +271,30 @@ nsUrlClassifierUtils::GetKeyForURI(nsIURI* uri, nsACString& _retval) {
   rv = innerURI->GetPathQueryRef(path);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // strip out anchors
+  // Strip fragment and query because canonicalization only applies to path
   int32_t ref = path.FindChar('#');
-  if (ref != kNotFound) path.SetLength(ref);
+  if (ref != kNotFound) {
+    path.SetLength(ref);
+  }
+
+  int32_t query = path.FindChar('?');
+  if (query != kNotFound) {
+    path.SetLength(query);
+  }
 
   nsAutoCString temp;
   rv = CanonicalizePath(path, temp);
   NS_ENSURE_SUCCESS(rv, rv);
 
   _retval.Append(temp);
+
+  if (query != kNotFound) {
+    nsAutoCString query;
+    rv = innerURI->GetQuery(query);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    _retval.AppendPrintf("?%s", query.get());
+  }
 
   return NS_OK;
 }
@@ -351,9 +367,9 @@ nsUrlClassifierUtils::GetProvider(const nsACString& aTableName,
   if (IsTestTable(aTableName)) {
     aProvider = nsLiteralCString(TESTING_TABLE_PROVIDER_NAME);
   } else if (mProviderDict.Get(aTableName, &provider)) {
-    aProvider = provider ? *provider : EmptyCString();
+    aProvider = provider ? *provider : ""_ns;
   } else {
-    aProvider = EmptyCString();
+    aProvider.Truncate();
   }
   return NS_OK;
 }
@@ -530,9 +546,9 @@ static nsresult GetSpecWithoutSensitiveData(nsIURI* aUri, nsACString& aSpec) {
   if (url) {
     nsCOMPtr<nsIURI> clone;
     rv = NS_MutateURI(url)
-             .SetQuery(EmptyCString())
-             .SetRef(EmptyCString())
-             .SetUserPass(EmptyCString())
+             .SetQuery(""_ns)
+             .SetRef(""_ns)
+             .SetUserPass(""_ns)
              .Finalize(clone);
     NS_ENSURE_SUCCESS(rv, rv);
     rv = clone->GetAsciiSpec(aSpec);
@@ -829,7 +845,7 @@ nsresult nsUrlClassifierUtils::ReadProvidersFromPrefs(ProviderDictType& aDict) {
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Collect providers from childArray.
-  nsTHashtable<nsCStringHashKey> providers;
+  nsTHashSet<nsCString> providers;
   for (auto& child : childArray) {
     auto dotPos = child.FindChar('.');
     if (dotPos < 0) {
@@ -838,16 +854,15 @@ nsresult nsUrlClassifierUtils::ReadProvidersFromPrefs(ProviderDictType& aDict) {
 
     nsDependentCSubstring provider = Substring(child, 0, dotPos);
 
-    providers.PutEntry(provider);
+    providers.Insert(provider);
   }
 
   // Now we have all providers. Check which one owns |aTableName|.
   // e.g. The owning lists of provider "google" is defined in
   // "browser.safebrowsing.provider.google.lists".
-  for (auto itr = providers.Iter(); !itr.Done(); itr.Next()) {
-    auto entry = itr.Get();
-    nsCString provider(entry->GetKey());
-    nsPrintfCString owninListsPref("%s.lists", provider.get());
+  for (const auto& provider : providers) {
+    nsPrintfCString owninListsPref("%s.lists",
+                                   nsPromiseFlatCString{provider}.get());
 
     nsAutoCString owningLists;
     nsresult rv = prefBranch->GetCharPref(owninListsPref.get(), owningLists);
@@ -860,7 +875,7 @@ nsresult nsUrlClassifierUtils::ReadProvidersFromPrefs(ProviderDictType& aDict) {
     nsTArray<nsCString> tables;
     Classifier::SplitTables(owningLists, tables);
     for (auto tableName : tables) {
-      aDict.Put(tableName, new nsCString(provider));
+      aDict.InsertOrUpdate(tableName, MakeUnique<nsCString>(provider));
     }
   }
 
@@ -1081,7 +1096,7 @@ bool nsUrlClassifierUtils::SpecialEncode(const nsACString& url,
 }
 
 bool nsUrlClassifierUtils::ShouldURLEscape(const unsigned char c) const {
-  return c <= 32 || c == '%' || c >= 127;
+  return c <= 32 || c == '%' || c == '#' || c >= 127;
 }
 
 // moztest- tables are built-in created in LookupCache, they contain hardcoded

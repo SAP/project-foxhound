@@ -13,17 +13,17 @@
 
 #include "nsCOMPtr.h"
 #include "mozilla/dom/AbstractRange.h"
-#include "nsLayoutUtils.h"
 #include "prmon.h"
 #include "nsStubMutationObserver.h"
 #include "nsWrapperCache.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/GuardObjects.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/RangeBoundary.h"
+#include "mozilla/WeakPtr.h"
 
 namespace mozilla {
+class RectCallback;
 namespace dom {
 struct ClientRectsAndTexts;
 class DocGroup;
@@ -39,13 +39,13 @@ class nsRange final : public mozilla::dom::AbstractRange,
                       public nsStubMutationObserver,
                       // For linking together selection-associated ranges.
                       public mozilla::LinkedListElement<nsRange> {
-  typedef mozilla::ErrorResult ErrorResult;
-  typedef mozilla::dom::AbstractRange AbstractRange;
-  typedef mozilla::dom::DocGroup DocGroup;
-  typedef mozilla::dom::DOMRect DOMRect;
-  typedef mozilla::dom::DOMRectList DOMRectList;
-  typedef mozilla::RangeBoundary RangeBoundary;
-  typedef mozilla::RawRangeBoundary RawRangeBoundary;
+  using ErrorResult = mozilla::ErrorResult;
+  using AbstractRange = mozilla::dom::AbstractRange;
+  using DocGroup = mozilla::dom::DocGroup;
+  using DOMRect = mozilla::dom::DOMRect;
+  using DOMRectList = mozilla::dom::DOMRectList;
+  using RangeBoundary = mozilla::RangeBoundary;
+  using RawRangeBoundary = mozilla::RawRangeBoundary;
 
   virtual ~nsRange();
   explicit nsRange(nsINode* aNode);
@@ -277,14 +277,22 @@ class nsRange final : public mozilla::dom::AbstractRange,
   nsRange(const nsRange&);
   nsRange& operator=(const nsRange&);
 
+  template <typename SPT, typename SRT, typename EPT, typename ERT>
+  static void AssertIfMismatchRootAndRangeBoundaries(
+      const mozilla::RangeBoundaryBase<SPT, SRT>& aStartBoundary,
+      const mozilla::RangeBoundaryBase<EPT, ERT>& aEndBoundary,
+      const nsINode* aRootNode, bool aNotInsertedYet = false);
+
   /**
    * Cut or delete the range's contents.
    *
    * @param aFragment DocumentFragment containing the nodes.
    *                  May be null to indicate the caller doesn't want a
-   * fragment.
+   *                  fragment.
+   * @param aRv The error if any.
    */
-  nsresult CutContents(mozilla::dom::DocumentFragment** frag);
+  void CutContents(mozilla::dom::DocumentFragment** aFragment,
+                   ErrorResult& aRv);
 
   static nsresult CloneParentsBetween(nsINode* aAncestor, nsINode* aNode,
                                       nsINode** aClosestAncestor,
@@ -322,7 +330,7 @@ class nsRange final : public mozilla::dom::AbstractRange,
    * @param aTextList optional where nullptr = don't retrieve text
    */
   static void CollectClientRectsAndText(
-      nsLayoutUtils::RectCallback* aCollector,
+      mozilla::RectCallback* aCollector,
       mozilla::dom::Sequence<nsString>* aTextList, nsRange* aRange,
       nsINode* aStartContainer, uint32_t aStartOffset, nsINode* aEndContainer,
       uint32_t aEndOffset, bool aClampToEdge, bool aFlushLayout);
@@ -344,8 +352,6 @@ class nsRange final : public mozilla::dom::AbstractRange,
    * Notify the selection listeners after a range has been modified.
    */
   MOZ_CAN_RUN_SCRIPT void NotifySelectionListenersAfterRangeSet();
-
-  typedef nsTHashtable<nsPtrHashKey<nsRange>> RangeHashTable;
 
  protected:
   /**
@@ -399,14 +405,10 @@ class nsRange final : public mozilla::dom::AbstractRange,
    private:
     nsRange& mRange;
     bool mOldValue;
-    MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 
    public:
-    explicit AutoCalledByJSRestore(
-        nsRange& aRange MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-        : mRange(aRange), mOldValue(aRange.mCalledByJS) {
-      MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-    }
+    explicit AutoCalledByJSRestore(nsRange& aRange)
+        : mRange(aRange), mOldValue(aRange.mCalledByJS) {}
     ~AutoCalledByJSRestore() { mRange.mCalledByJS = mOldValue; }
     bool SavedValue() const { return mOldValue; }
   };

@@ -114,7 +114,7 @@ class MinidumpGenerator {
   bool Write(const char *path);
 
   // Specify some exception information, if applicable
-  void SetExceptionInformation(int type, int code, int subcode,
+  void SetExceptionInformation(int type, int64_t code, int64_t subcode,
                                mach_port_t thread_name) {
     exception_type_ = type;
     exception_code_ = code;
@@ -148,6 +148,8 @@ class MinidumpGenerator {
   bool WriteModuleListStream(MDRawDirectory *module_list_stream);
   bool WriteMiscInfoStream(MDRawDirectory *misc_info_stream);
   bool WriteBreakpadInfoStream(MDRawDirectory *breakpad_info_stream);
+  bool WriteCrashInfoStream(MDRawDirectory *crash_info_stream);
+  bool WriteThreadNamesStream(MDRawDirectory *thread_names_stream);
 
   // Helpers
   uint64_t CurrentPCForStack(breakpad_thread_state_data_t state);
@@ -160,10 +162,22 @@ class MinidumpGenerator {
   bool WriteContext(breakpad_thread_state_data_t state,
                     MDLocationDescriptor *register_location);
   bool WriteCVRecord(MDRawModule *module, int cpu_type, int cpu_subtype,
-                     const char *module_path, bool in_memory);
+                     const char *module_path, bool in_memory,
+                     bool out_of_process, bool in_dyld_shared_cache);
   bool WriteModuleStream(unsigned int index, MDRawModule *module);
+  bool WriteCrashInfoRecord(MDLocationDescriptor *location,
+                            const char *module_path,
+                            const char *crash_info,
+                            unsigned long crash_info_size,
+                            bool out_of_process,
+                            bool in_dyld_shared_cache);
+  bool WriteThreadName(mach_port_t thread_id,
+                       MDRawThreadName *thread_name);
   size_t CalculateStackSize(mach_vm_address_t start_addr);
   int  FindExecutableModule();
+  bool IsValidExcCrash(uint64_t exception_code);
+  void RecoverExceptionDataFromExcCrash(uint64_t exception_code,
+                                        int& signal_number);
 
   // Per-CPU implementations of these methods
 #ifdef HAS_ARM_SUPPORT
@@ -216,8 +230,8 @@ class MinidumpGenerator {
  private:
   // Exception information
   int exception_type_;
-  int exception_code_;
-  int exception_subcode_;
+  int64_t exception_code_;
+  int64_t exception_subcode_;
   mach_port_t exception_thread_;
   mach_port_t crashing_task_;
   mach_port_t handler_thread_;

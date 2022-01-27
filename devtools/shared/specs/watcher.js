@@ -45,6 +45,34 @@ const watcherSpecPrototype = {
       },
       oneway: true,
     },
+
+    getNetworkParentActor: {
+      request: {},
+      response: {
+        network: RetVal("networkParent"),
+      },
+    },
+
+    getBreakpointListActor: {
+      request: {},
+      response: {
+        breakpointList: RetVal("breakpoint-list"),
+      },
+    },
+
+    getTargetConfigurationActor: {
+      request: {},
+      response: {
+        configuration: RetVal("target-configuration"),
+      },
+    },
+
+    getThreadConfigurationActor: {
+      request: {},
+      response: {
+        configuration: RetVal("thread-configuration"),
+      },
+    },
   },
 
   events: {
@@ -63,6 +91,10 @@ const watcherSpecPrototype = {
     },
     "resource-destroyed-form": {
       type: "resource-destroyed-form",
+      resources: Arg(0, "array:json"),
+    },
+    "resource-updated-form": {
+      type: "resource-updated-form",
       resources: Arg(0, "array:json"),
     },
   },

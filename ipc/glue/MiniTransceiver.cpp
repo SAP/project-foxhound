@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "mozilla/ipc/MiniTransceiver.h"
 #include "chrome/common/ipc_message.h"
+#include "chrome/common/ipc_message_utils.h"
 #include "base/eintr_wrapper.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/DebugOnly.h"
@@ -16,6 +17,8 @@
 #include <sys/socket.h>
 #include <string.h>
 #include <errno.h>
+
+namespace mozilla::ipc {
 
 static const size_t kMaxIOVecSize = 64;
 static const size_t kMaxDataSize = 8 * 1024;
@@ -35,18 +38,18 @@ namespace {
  * Initialize the IO vector for sending data and the control buffer for sending
  * FDs.
  */
-static void InitMsgHdr(msghdr* aHdr, int aIOVSize, int aMaxNumFds) {
+static void InitMsgHdr(msghdr* aHdr, int aIOVSize, size_t aMaxNumFds) {
   aHdr->msg_name = nullptr;
   aHdr->msg_namelen = 0;
   aHdr->msg_flags = 0;
 
   // Prepare the IO vector to receive the content of message.
-  auto iov = new iovec[aIOVSize];
+  auto* iov = new iovec[aIOVSize];
   aHdr->msg_iov = iov;
   aHdr->msg_iovlen = aIOVSize;
 
   // Prepare the control buffer to receive file descriptors.
-  auto cbuf = new char[CMSG_SPACE(sizeof(int) * aMaxNumFds)];
+  auto* cbuf = new char[CMSG_SPACE(sizeof(int) * aMaxNumFds)];
   aHdr->msg_control = cbuf;
   aHdr->msg_controllen = CMSG_SPACE(sizeof(int) * aMaxNumFds);
 }
@@ -63,18 +66,20 @@ static void DeinitMsgHdr(msghdr* aHdr) {
 
 void MiniTransceiver::PrepareFDs(msghdr* aHdr, IPC::Message& aMsg) {
   // Set control buffer to send file descriptors of the Message.
-  int num_fds = aMsg.file_descriptor_set()->size();
+  size_t num_fds = aMsg.attached_handles_.Length();
 
   cmsghdr* cmsg = CMSG_FIRSTHDR(aHdr);
   cmsg->cmsg_level = SOL_SOCKET;
   cmsg->cmsg_type = SCM_RIGHTS;
   cmsg->cmsg_len = CMSG_LEN(sizeof(int) * num_fds);
-  aMsg.file_descriptor_set()->GetDescriptors(
-      reinterpret_cast<int*>(CMSG_DATA(cmsg)));
+  for (size_t i = 0; i < num_fds; ++i) {
+    reinterpret_cast<int*>(CMSG_DATA(cmsg))[i] =
+        aMsg.attached_handles_[i].get();
+  }
 
   // This number will be sent in the header of the message. So, we
   // can check it at the other side.
-  aMsg.header()->num_fds = num_fds;
+  aMsg.header()->num_handles = num_fds;
 }
 
 size_t MiniTransceiver::PrepareBuffers(msghdr* aHdr, IPC::Message& aMsg) {
@@ -108,11 +113,10 @@ bool MiniTransceiver::Send(IPC::Message& aMsg) {
   mState = STATE_SENDING;
 #endif
 
-  auto clean_fdset =
-      MakeScopeExit([&] { aMsg.file_descriptor_set()->CommitAll(); });
+  auto clean_fdset = MakeScopeExit([&] { aMsg.attached_handles_.Clear(); });
 
-  int num_fds = aMsg.file_descriptor_set()->size();
-  msghdr hdr;
+  size_t num_fds = aMsg.attached_handles_.Length();
+  msghdr hdr{};
   InitMsgHdr(&hdr, kMaxIOVecSize, num_fds);
 
   UniquePtr<msghdr, decltype(&DeinitMsgHdr)> uniq(&hdr, &DeinitMsgHdr);
@@ -224,7 +228,11 @@ bool MiniTransceiver::Recv(IPC::Message& aMsg) {
 
   // Create Message from databuf & all_fds.
   UniquePtr<IPC::Message> msg = MakeUnique<IPC::Message>(databuf.get(), msgsz);
-  msg->file_descriptor_set()->SetDescriptors(all_fds, num_all_fds);
+  nsTArray<UniqueFileHandle> handles(num_all_fds);
+  for (unsigned i = 0; i < num_all_fds; ++i) {
+    handles.AppendElement(UniqueFileHandle(all_fds[i]));
+  }
+  msg->SetAttachedFileHandles(std::move(handles));
 
   if (mDataBufClear == DataBufferClear::AfterReceiving) {
     // Avoid content processes from reading the content of
@@ -232,10 +240,12 @@ bool MiniTransceiver::Recv(IPC::Message& aMsg) {
     memset(databuf.get(), 0, msgsz);
   }
 
-  MOZ_ASSERT(msg->header()->num_fds == msg->file_descriptor_set()->size(),
+  MOZ_ASSERT(msg->header()->num_handles == msg->attached_handles_.Length(),
              "The number of file descriptors in the header is different from"
              " the number actually received");
 
   aMsg = std::move(*msg);
   return true;
 }
+
+}  // namespace mozilla::ipc

@@ -35,9 +35,7 @@ class xpcAccessibleApplication : public xpcAccessibleGeneric,
   virtual ~xpcAccessibleApplication() { Shutdown(); }
 
  private:
-  ApplicationAccessible* Intl() {
-    return mIntl.AsAccessible()->AsApplication();
-  }
+  ApplicationAccessible* Intl() { return mIntl->AsLocal()->AsApplication(); }
 
   xpcAccessibleApplication(const xpcAccessibleApplication&) = delete;
   xpcAccessibleApplication& operator=(const xpcAccessibleApplication&) = delete;

@@ -8,13 +8,7 @@ loader.lazyRequireGetter(this, "Ci", "chrome", true);
 loader.lazyRequireGetter(this, "Services");
 loader.lazyRequireGetter(
   this,
-  "loadSheet",
-  "devtools/shared/layout/utils",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "removeSheet",
+  ["loadSheet", "removeSheet"],
   "devtools/shared/layout/utils",
   true
 );
@@ -23,7 +17,7 @@ loader.lazyRequireGetter(
 // when calculating colour contrast.
 const HIGHLIGHTER_STYLES_SHEET = `data:text/css;charset=utf-8,
 * {
-  transition: none !important;
+  transition: initial !important;
 }
 
 :-moz-devtools-highlighted {

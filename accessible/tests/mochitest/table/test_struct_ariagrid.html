@@ -54,6 +54,10 @@
       cellsArray = [ [] ];
       testTableStruct("grid4", cellsArray);
 
+      // ////////////////////////////////////////////////////////////////////////
+      // ARIA table with tr inside a shadow root (bug 1698097).
+      testTableStruct("tableShadow", [ [ kDataCell ] ]);
+
       SimpleTest.finish();
     }
 
@@ -70,7 +74,7 @@
      title="implement IAccessibleTable2"
      href="https://bugzilla.mozilla.org/show_bug.cgi?id=512424">Mozilla Bug 512424</a>
   <a target="_blank"
-     title="nsHTMLTableCellAccessible is used in dojo's crazy ARIA grid"
+     title="nsHTMLTableCellAccessible is used in dojo's ARIA grid"
      href="https://bugzilla.mozilla.org/show_bug.cgi?id=513848">Mozilla Bug 513848</a>
   <a target="_blank"
      title="Crash [@ AccIterator::GetNext()]"
@@ -143,5 +147,17 @@
   <!-- Wrong markup ARIA grid -->
   <div role="grid" id="grid3"></div>
   <div role="grid" id="grid4"><div role="row"></div></div>
+
+  <div id="tableShadow" role="table"></div>
+  <script>
+    let host = document.getElementById("tableShadow");
+    let shadow = host.attachShadow({mode: "open"});
+    let tr = document.createElement("tr");
+    shadow.append(tr);
+    tr.setAttribute("role", "row");
+    let td = document.createElement("td");
+    tr.append(td);
+    td.textContent = "test";
+  </script>
 </body>
 </html>

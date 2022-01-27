@@ -49,12 +49,7 @@ enum DOM4ErrorTypeCodeMap {
   TimeoutError = DOMException_Binding::TIMEOUT_ERR,
   InvalidNodeTypeError = DOMException_Binding::INVALID_NODE_TYPE_ERR,
   DataCloneError = DOMException_Binding::DATA_CLONE_ERR,
-  InvalidPointerId = 0,
   EncodingError = 0,
-
-  /* XXX Should be JavaScript native errors */
-  TypeError = 0,
-  RangeError = 0,
 
   /* IndexedDB errors
      http://dvcs.w3.org/hg/IndexedDB/raw-file/tip/Overview.html#exceptions */
@@ -137,8 +132,7 @@ nsresult NS_GetNameAndMessageForDOMNSResult(nsresult aNSResult,
   return NS_ERROR_NOT_AVAILABLE;
 }
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Exception)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
@@ -201,7 +195,6 @@ bool Exception::StealJSVal(JS::Value* aVp) {
 
   if (mHoldingJSVal) {
     *aVp = mThrownJSVal;
-    mThrownJSVal.setNull();
 
     mozilla::DropJSObjects(this);
     mHoldingJSVal = false;
@@ -406,5 +399,4 @@ already_AddRefed<DOMException> DOMException::Create(
   return inst.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

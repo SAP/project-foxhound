@@ -188,6 +188,13 @@ impl EmitterScope {
             EmitterScope::Lexical(scope) => scope.has_environment_object(),
         }
     }
+
+    fn is_var_scope(&self) -> bool {
+        match self {
+            EmitterScope::Global(_) => true,
+            EmitterScope::Lexical(_) => false,
+        }
+    }
 }
 
 /// Stack that tracks the current scope chain while emitting bytecode.
@@ -227,7 +234,12 @@ impl EmitterScopeStack {
     ///
     /// [1]: https://tc39.es/ecma262/#sec-runtime-semantics-scriptevaluation
     /// [2]: https://tc39.es/ecma262/#sec-globaldeclarationinstantiation
-    pub fn enter_global(&mut self, emit: &mut InstructionWriter, scope_data_map: &ScopeDataMap) {
+    pub fn enter_global(
+        &mut self,
+        emit: &mut InstructionWriter,
+        scope_data_map: &ScopeDataMap,
+        top_level_function_count: u32,
+    ) {
         let scope_index = scope_data_map.get_global_index();
         let scope_data = scope_data_map.get_global_at(scope_index);
 
@@ -236,25 +248,7 @@ impl EmitterScopeStack {
         emit.enter_global_scope(scope_index);
 
         if scope_data.base.bindings.len() > 0 {
-            emit.check_global_or_eval_decl();
-        }
-
-        for item in scope_data.iter() {
-            let name_index = emit.get_atom_gcthing_index(item.name());
-
-            match item.kind() {
-                BindingKind::Var => {
-                    if !item.is_top_level_function() {
-                        emit.def_var(name_index);
-                    }
-                }
-                BindingKind::Let => {
-                    emit.def_let(name_index);
-                }
-                BindingKind::Const => {
-                    emit.def_const(name_index);
-                }
-            }
+            emit.global_or_eval_decl_instantiation(top_level_function_count);
         }
 
         emit.switch_to_main();
@@ -359,6 +353,31 @@ impl EmitterScopeStack {
                     _ => loc,
                 };
             }
+            if scope.has_environment_object() {
+                hops.next();
+            }
+        }
+
+        NameLocation::Dynamic
+    }
+
+    /// Just like lookup_name, but only in var scope.
+    pub fn lookup_name_in_var(&mut self, name: SourceAtomSetIndex) -> NameLocation {
+        let mut hops = EnvironmentHops::new(0);
+
+        for scope in self.scope_stack.iter().rev() {
+            if scope.is_var_scope() {
+                if let Some(loc) = scope.lookup_name(name) {
+                    return match loc {
+                        NameLocation::EnvironmentCoord(orig_hops, slot, kind) => {
+                            debug_assert!(u8::from(orig_hops) == 0u8);
+                            NameLocation::EnvironmentCoord(hops, slot, kind)
+                        }
+                        _ => loc,
+                    };
+                }
+            }
+
             if scope.has_environment_object() {
                 hops.next();
             }

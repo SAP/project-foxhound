@@ -1,4 +1,4 @@
-// |reftest| skip async -- class-methods-private is not supported
+// |reftest| async
 // This file was procedurally generated from the following sources:
 // - src/arguments/args-trailing-comma-single-args.case
 // - src/arguments/default/cls-expr-async-private-gen-meth.template

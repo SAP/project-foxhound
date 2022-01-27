@@ -7,13 +7,12 @@
 #ifndef frontend_CForEmitter_h
 #define frontend_CForEmitter_h
 
-#include "mozilla/Attributes.h"  // MOZ_STACK_CLASS, MOZ_MUST_USE
+#include "mozilla/Attributes.h"  // MOZ_STACK_CLASS
 #include "mozilla/Maybe.h"       // mozilla::Maybe
 
 #include <stdint.h>  // uint32_t
 
 #include "frontend/BytecodeControlStructures.h"  // LoopControl
-#include "frontend/BytecodeOffset.h"             // BytecodeOffset
 #include "frontend/TDZCheckCache.h"              // TDZCheckCache
 
 namespace js {
@@ -32,20 +31,20 @@ class EmitterScope;
 //     emit(init); // without pushing value
 //     cfor.emitCond(Some(offset_of_cond));
 //     emit(cond);
-//     cfor.emitBody(CForEmitter::Cond::Present, Some(offset_of_body));
+//     cfor.emitBody(CForEmitter::Cond::Present);
 //     emit(body);
 //     cfor.emitUpdate(CForEmitter::Update::Present, Some(offset_of_update)));
 //     emit(update);
-//     cfor.emitEnd(Some(offset_of_for));
+//     cfor.emitEnd(offset_of_for);
 //
 //   `for (;;) body`
 //     CForEmitter cfor(this, nullptr);
 //     cfor.emitInit(Nothing());
 //     cfor.emitCond(Nothing());
-//     cfor.emitBody(CForEmitter::Cond::Missing, Some(offset_of_body));
+//     cfor.emitBody(CForEmitter::Cond::Missing);
 //     emit(body);
 //     cfor.emitUpdate(CForEmitter::Update::Missing, Nothing());
-//     cfor.emitEnd(Some(offset_of_for));
+//     cfor.emitEnd(offset_of_for);
 //
 class MOZ_STACK_CLASS CForEmitter {
   // Basic structure of the bytecode (not complete).
@@ -55,7 +54,7 @@ class MOZ_STACK_CLASS CForEmitter {
   //   loop:
   //     JSOp::LoopHead
   //     {cond}
-  //     JSOp::IfEq break
+  //     JSOp::JumpIfFalse break
   //     {body}
   //   continue:
   //     {update}
@@ -162,12 +161,12 @@ class MOZ_STACK_CLASS CForEmitter {
   //   forPos
   //
   // Can be Nothing() if not available.
-  MOZ_MUST_USE bool emitInit(const mozilla::Maybe<uint32_t>& initPos);
-  MOZ_MUST_USE bool emitCond(const mozilla::Maybe<uint32_t>& condPos);
-  MOZ_MUST_USE bool emitBody(Cond cond);
-  MOZ_MUST_USE bool emitUpdate(Update update,
-                               const mozilla::Maybe<uint32_t>& updatePos);
-  MOZ_MUST_USE bool emitEnd(const mozilla::Maybe<uint32_t>& forPos);
+  [[nodiscard]] bool emitInit(const mozilla::Maybe<uint32_t>& initPos);
+  [[nodiscard]] bool emitCond(const mozilla::Maybe<uint32_t>& condPos);
+  [[nodiscard]] bool emitBody(Cond cond);
+  [[nodiscard]] bool emitUpdate(Update update,
+                                const mozilla::Maybe<uint32_t>& updatePos);
+  [[nodiscard]] bool emitEnd(uint32_t forPos);
 };
 
 } /* namespace frontend */

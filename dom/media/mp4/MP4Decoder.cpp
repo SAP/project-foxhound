@@ -9,6 +9,7 @@
 #include "MP4Demuxer.h"
 #include "MediaContainerType.h"
 #include "PDMFactory.h"
+#include "PlatformDecoderModule.h"
 #include "VideoUtils.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/gfx/Tools.h"
@@ -36,12 +37,6 @@ static bool IsWhitelistedH264Codec(const nsAString& aCodec) {
   return level >= H264_LEVEL_1 && level <= H264_LEVEL_5_2 &&
          (profile == H264_PROFILE_BASE || profile == H264_PROFILE_MAIN ||
           profile == H264_PROFILE_EXTENDED || profile == H264_PROFILE_HIGH);
-}
-
-/* static */
-bool MP4Decoder::IsSupportedTypeWithoutDiagnostics(
-    const MediaContainerType& aContainerType) {
-  return IsSupportedType(aContainerType, nullptr);
 }
 
 static bool IsTypeValid(const MediaContainerType& aType) {
@@ -112,7 +107,7 @@ nsTArray<UniquePtr<TrackInfo>> MP4Decoder::GetTracksInfo(
       continue;
     }
 #ifdef MOZ_AV1
-    if (IsAV1CodecString(codec)) {
+    if (StaticPrefs::media_av1_enabled() && IsAV1CodecString(codec)) {
       tracks.AppendElement(
           CreateTrackInfoWithMIMETypeAndContainerTypeExtraParameters(
               "video/av1"_ns, aType));
@@ -171,7 +166,8 @@ bool MP4Decoder::IsSupportedType(const MediaContainerType& aType,
   // Verify that we have a PDM that supports the whitelisted types.
   RefPtr<PDMFactory> platform = new PDMFactory();
   for (const auto& track : tracks) {
-    if (!track || !platform->Supports(*track, aDiagnostics)) {
+    if (!track ||
+        !platform->Supports(SupportDecoderParams(*track), aDiagnostics)) {
       return false;
     }
   }

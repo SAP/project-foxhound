@@ -2,18 +2,18 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-loader: taskgraph.loader.transform:loader
+loader: gecko_taskgraph.loader.transform:loader
 
 kind-dependencies:
     - toolchain
     - instrumented-build
 
 transforms:
-    - taskgraph.transforms.build_attrs:transforms
-    - taskgraph.transforms.release_deps:transforms
-    - taskgraph.transforms.run_pgo_profile:transforms
-    - taskgraph.transforms.job:transforms
-    - taskgraph.transforms.task:transforms
+    - gecko_taskgraph.transforms.build_attrs:transforms
+    - gecko_taskgraph.transforms.release_deps:transforms
+    - gecko_taskgraph.transforms.run_pgo_profile:transforms
+    - gecko_taskgraph.transforms.job:transforms
+    - gecko_taskgraph.transforms.task:transforms
 
 
 job-defaults:
@@ -21,6 +21,7 @@ job-defaults:
         symbol: Bpgo(run)
         kind: build
         tier: 1
+    run-on-projects: ['release']
 
 jobs:
     linux-shippable/opt:
@@ -34,6 +35,7 @@ jobs:
             platform: linux32-shippable/opt
         worker-type: b-linux
         worker:
+            chain-of-trust: true
             env:
                 NEED_XVFB: "true"
             max-run-time: 1200
@@ -64,10 +66,11 @@ jobs:
             platform: linux64-shippable/opt
         worker-type: b-linux
         worker:
+            chain-of-trust: true
             env:
                 NEED_XVFB: "true"
             max-run-time: 1200
-            docker-image: {in-tree: debian10-amd64-build}
+            docker-image: {in-tree: ubuntu1804-test}
             artifacts:
                 - type: directory
                   name: public/build
@@ -82,18 +85,19 @@ jobs:
                 - linux64-clang
                 - linux64-minidump-stackwalk
 
-    android-api-16-shippable/opt:
-        description: "Android 4.0 api-16+ Profile Generation"
+    android-x86-shippable/opt:
+        description: "Android 5.0 x86 Profile Generation"
         shipping-phase: build
         shipping-product: fennec
         index:
             product: mobile
-            job-name: android-api-16-profile
+            job-name: android-x86-profile
         treeherder:
-            platform: android-4-0-armv7-api16/pgo
+            platform: android-5-0-x86/pgo
         worker-type: t-linux-xlarge-pgo
         worker:
-            max-run-time: 1800
+            chain-of-trust: true
+            max-run-time: 2700
             docker-image: {in-tree: ubuntu1804-test}
             env:
                 WORKING_DIR: "/builds/worker"
@@ -108,15 +112,58 @@ jobs:
             job-script: taskcluster/scripts/tester/test-linux.sh
             script: android_emulator_pgo.py
             tooltool-downloads: internal
-            options: [installer-path=/builds/worker/fetches/geckoview-androidTest.apk]
+            options: [installer-path=/builds/worker/fetches/geckoview-test_runner.apk]
             config:
                 - android/android_common.py
-                - android/androidarm_4_3.py
+                - android/android-x86_64-profile-generation.py
                 - android/android_pgo.py
         fetches:
             toolchain:
                 - linux64-clang
                 - linux64-minidump-stackwalk
+                - android-sdk-linux
+                - android-system-image-x86_64-linux
+                - android-avd-x86_64-linux
+
+    android-x86_64-shippable/opt:
+        description: "Android 5.0 x86_64 Profile Generation"
+        shipping-phase: build
+        shipping-product: fennec
+        index:
+            product: mobile
+            job-name: android-x86_64-profile
+        treeherder:
+            platform: android-5-0-x86_64/pgo
+        worker-type: t-linux-xlarge-pgo
+        worker:
+            chain-of-trust: true
+            max-run-time: 2700
+            docker-image: {in-tree: ubuntu1804-test}
+            env:
+                WORKING_DIR: "/builds/worker"
+                MOZHARNESS_PATH: "/builds/worker/checkouts/gecko/testing/mozharness"
+            artifacts:
+                - type: directory
+                  name: public/build
+                  path: /builds/worker/artifacts/
+        run:
+            using: mozharness
+            need-xvfb: true
+            job-script: taskcluster/scripts/tester/test-linux.sh
+            script: android_emulator_pgo.py
+            tooltool-downloads: internal
+            options: [installer-path=/builds/worker/fetches/geckoview-test_runner.apk]
+            config:
+                - android/android_common.py
+                - android/android-x86_64-profile-generation.py
+                - android/android_pgo.py
+        fetches:
+            toolchain:
+                - linux64-clang
+                - linux64-minidump-stackwalk
+                - android-sdk-linux
+                - android-system-image-x86_64-linux
+                - android-avd-x86_64-linux
 
     win32-shippable/opt:
         description: "Win32 Profile Generation"
@@ -129,6 +176,7 @@ jobs:
             platform: windows2012-32-shippable/opt
         worker-type: b-win2012
         worker:
+            chain-of-trust: true
             max-run-time: 1200
             env:
                 UPLOAD_PATH: "artifacts"
@@ -143,7 +191,7 @@ jobs:
             command: ./taskcluster/scripts/misc/run-profileserver.sh
         fetches:
             toolchain:
-                - win64-clang-cl-2stage
+                - win64-clang-2stage
                 - win32-minidump-stackwalk
 
     win64-shippable/opt:
@@ -157,6 +205,7 @@ jobs:
             platform: windows2012-64-shippable/opt
         worker-type: b-win2012
         worker:
+            chain-of-trust: true
             max-run-time: 1200
             env:
                 UPLOAD_PATH: "artifacts"
@@ -171,7 +220,7 @@ jobs:
             command: ./taskcluster/scripts/misc/run-profileserver.sh
         fetches:
             toolchain:
-                - win64-clang-cl-2stage
+                - win64-clang-2stage
                 - win32-minidump-stackwalk
 
     macosx64-shippable/opt:
@@ -183,8 +232,9 @@ jobs:
             job-name: macosx64-profile
         treeherder:
             platform: macosx1014-64-shippable/opt
-        worker-type: t-osx-1014-pgo
+        worker-type: b-osx-1015
         worker:
+            chain-of-trust: true
             max-run-time: 7200
             env:
                 SHELL: "/bin/bash"

@@ -1,62 +1,76 @@
-# First run on-boarding flow
+# Onboarding flow
 
-First Run flow describes the entire experience users have after Firefox has successfully been installed up until the first instance of new tab is shown. 
-First run help onboard new users by showing relevant messaging on about:welcome and about:newtab using interrupts and triplets. 
+Onboarding flow comprises of entire flow users have after Firefox has successfully been installed or upgraded.
 
-## Interrupts
-A first run experience shown on about:welcome page and decide UI based on messaging template provided. In Firefox 72, interrupt can be one of below three types
-
-### First Run Modal
-A modal that shows up on first run, usually the first stage.
-
-In 71+, below modal interrupts are supported:
-* join - purple first run modal with "Meet Firefox + Products / Knowledge Privacy + Join Firefox" messaging
-* sync - purple first run modal but with 70 fxa messaging
-* modal_control - First Run Modal control with same messaging as “join” modal
-* modal_variant_a - First Run Modal with "Get the most + Sync/Monitor/Lockwise  + Start Here" messaging.
-* modal_variant_b - First Run Modal with "Supercharge privacy + Sync/Monitor/Lockwise  + Start Here" messaging.
-* modal_variant_c - First Run Modal with "Add Privacy + Sync/Monitor/Lockwise  + Start Here" messaging.
-* modal_variant_f - First Run Modal with "Meet Firefox + Products / Knowledge Privacy + Start Here" messaging.
+For new users, the first instance of new tab shows relevant messaging on about:welcome. For existing users, an upgrade dialog with release highlights is shown on major release upgrades.
 
 
-### First Run Takeover
-A full-page experience that shows up on first run, usually the first stage (a previous variant of this was the blue FxA Sync sign-in page).
+### New User Onboarding
 
-A modal less page showing signup form and triplet messaging together on the same page.
-* full_page_d - FxA signup form on top with triplet messaging on bottom
-* full_page_e - FxA signup form on bottom with triplet messaging on top
+A full-page multistep experience that shows up on first run since Fx80 with `browser.aboutwelcome.enabled` pref as `true`. Setting `browser.aboutwelcome.enabled` to `false` takes user to about:newtab and hides about:welcome.
 
-### First Run Return to AMO
-Part of a custom First Run Flow for users that installed Firefox after attempting to add an add-on from another browser. This is a full-page experience on first run.
+#### Default values
 
-Please Note: This is unique interrupt experience shown on about:welcome and not controlled by interrupt value of pref 'trailhead.firstrun.branches' and instead uses attribution targeting condition below
+Multistage proton onboarding experience is live since Fx89 and its major variations are:
 
-``` "attributionData.campaign == 'non-fx-button' && attributionData.source == 'addons.mozilla.org'"```
+##### Zero onboarding
 
-## Triplets
-The cards that show up above the new tab content on the first instance of new tab, usually the second stage.
+No about:welcome experience is shown (users see about:newtab during first run).
 
-* supercharge - Shows Sync, Monitor and Mobile onboarding cards. Supported in 71+.
-* payoff - Shows Monitor, Facbook Container and Firefox Send onboarding cards. Supported in 71 only.
-* mutidevice - Shows Pocket, Send Tabs and Mobile onboarding cards. Supported in 71 only.
-* privacy - Shows Private Browsing, Tracking Protection and Lockwise. Supported in 71 only.
+Testing instructions: Set `browser.aboutwelcome.enabled` to `false` in about:config
 
-In 72+
-* static - same experience as ‘supercharge’ triplet - with Sync, Monitor and Mobile onboarding cards
-* dynamic - Dynamic triplets showing three onboarding cards (Sync, Monitor and Private Browsing) that gets swapped with preselected list of cards that satisfies targeting rules. Preselected cards supported are Send Tab, Mobile and Lockwise.
-* dynamic_chrome - Dynamic triplets showing three onboarding cards (Chrome switchers, Sync and Monitor) that gets swapped with preselected list of cards that satisfies targeting rules. Preselected cards supported are Private Browsing, Send Tab, Mobile and Lockwise.
+##### Proton
 
-## Misc
-Below experiences are controlled by using following interrupt values inside 'trailhead.firstrun.branches' 
-* nofirstrun - nothing - looks like about:newtab and hides both first and second stage of about:welcome
-* cards - no modal straight to triplet. This hides only first stage and takes user straight to triplets on opening about:welcome page.
+A full-page multistep experience that shows a large splash screen and several subsequent screens. See [Default experience variations](#default-experience-variations) for more information.
 
+##### Legacy (non-proton)
 
-## How to switch between first run experiences
+An older multi-stage experience that has been available since Fx80 but was deprecated in Fx89 and support removed in Fx92.
 
-First run experiences are controlled by pref 'trailhead.firstrun.branches'. This pref value follow format ```'<interrupt>-<triplet>'``` where ```<interrupt>``` is the interrupt message name from interrupt section above and ```<triplet>``` is triplet message name. If no value is set for 'trailhead.firstrun.branches', by default 'join-supercharge' interrupt and triplet experience is used. 'join-supercharge' is default first run experience in 71+.
+Testing instructions: 
+- In Fx89, set `browser.proton.enabled` as `false` in about:config.
+- In Fx90+, set `browser.aboutwelcome.protonDesign` as `false` in about:config
 
-For Example:
-* Open about:config and set preference 'trailhead.firstrun.branches' to string value 'modal_variant_a-supercharge'
-* Open about:welcome shows 'modal_variant_a' first run modal stage 1 on welcome screen.
-* Dismissing welcome screen by clicking on “Start browsing” shows stage 2 'supercharge' triplets experience on new tab.
+##### Return to AMO (RTAMO)
+
+Special custom onboarding experience shown to users when they try to download an addon from addons.mozilla.org but don’t have Firefox installed. This experience allows them to install the addon they were trying to install directly from a button on RTAMO.
+
+Note that this uses [attribution data](https://docs.google.com/document/d/1zB5zwiyNVOiTD4I3aZ-Wm8KFai9nnWuRHsPg-NW4tcc/edit#heading=h.szk066tfte4n) added to the browser during the download process, which is only currently implemented for Windows.
+
+Testing instructions: 
+- Set pref browser.newtabpage.activity-stream.asrouter.devtoolsEnabled as true
+- Open about:newtab#devtools
+- Click Targeting -> Attribution -> Force Attribution
+- Open about:welcome, should display RTAMO page
+
+#### General capabilities
+- Run experiments and roll-outs through Nimbus (see [FeatureManifests](https://searchfox.org/mozilla-central/rev/5e955a47c4af398e2a859b34056017764e7a2252/toolkit/components/nimbus/FeatureManifest.js#56)), only windows is supported. FeatureConfig (from prefs or experiments) has higher precedence to defaults. See [Default experience variations](#default-experience-variations)
+- AboutWelcomeDefaults methods [getDefaults](https://searchfox.org/mozilla-central/rev/81c32a2ea5605c5cb22bd02d28c362c140b5cfb4/browser/components/newtab/aboutwelcome/lib/AboutWelcomeDefaults.jsm#539) and [prepareContentForReact](https://searchfox.org/mozilla-central/rev/81c32a2ea5605c5cb22bd02d28c362c140b5cfb4/browser/components/newtab/aboutwelcome/lib/AboutWelcomeDefaults.jsm#566) have dynamic rules which are applied to both experiments and default UI before content is shown to user.
+- about:welcome only shows up for users who download Firefox Beta or release (currently not enabled on Nightly)
+- [Enterprise builds](https://searchfox.org/mozilla-central/rev/5e955a47c4af398e2a859b34056017764e7a2252/browser/components/enterprisepolicies/Policies.jsm#1385) can turn off about:welcome by setting the browser.aboutwelcome.enabled preference to false. 
+
+#### Default experience variations
+In order of precedence:
+- Has AMO attribution
+   - Return to AMO
+- Experiments
+- Defaults
+  - Proton default content with below screens
+    - Welcome Screen with option to 'Pin Firefox', 'Set default' or 'Get Started'
+    - Import screen allows user to import password, bookmarks and browsing history from previous browser.
+    - Set a theme lets users personalize Firefox with a theme.
+
+### Upgrade Dialog 
+Upgrade Dialog was first introduced in Fx89 with MR1 release. It replaces whatsnew tab with an upgrade modal explaining proton changes, setting Firefox as default and/or pinning, and allowing theme change.
+
+#### Feature Details:
+- Hides whatsnew tab on release channel when Upgrade Modal is shown
+- Modal dialog appears on major version upgrade to 89 for MR1
+  - It’s a window modal preventing access to tabs and other toolbar UI
+- Support desired content and actions on each screen. For MR1 initial screen explains proton changes, highlight option to set Firefox as default and pin.  Subsequent screen allows theme changes.
+
+#### Testing Instructions:
+- In about:config, set:
+  - `browser.startup.homepage_override.mstone` to `88.0` . The dialog only shows after it detects a major upgrade and need to set to 88 to trigger MR1 upgrade dialog.
+  - Ensure pref `browser.startup.upgradeDialog.version` is empty. After the dialog shows, `browser.startup.upgradeDialog.version` remembers what version of the dialog to avoid reshowing.
+- Restart Firefox

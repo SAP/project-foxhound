@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 kk{
     Keys{
         calendar{"Күнтізбе"}
@@ -18,7 +19,7 @@ kk{
         ada{"адангме тілі"}
         ady{"адыгей тілі"}
         af{"африкаанс тілі"}
-        agq{"агхем тілі"}
+        agq{"агем тілі"}
         ain{"айну тілі"}
         ak{"акан тілі"}
         ale{"алеут тілі"}
@@ -84,6 +85,7 @@ kk{
         de_CH{"швейцариялық әдеби неміс тілі"}
         dgr{"догриб тілі"}
         dje{"зарма тілі"}
+        doi{"Догри"}
         dsb{"төменгі лужица тілі"}
         dua{"дуала тілі"}
         dv{"дивехи тілі"}
@@ -302,12 +304,12 @@ kk{
         quc{"киче тілі"}
         rap{"рапануй тілі"}
         rar{"раротонган тілі"}
+        rhg{"рохинджа"}
         rm{"романш тілі"}
         rn{"рунди тілі"}
         ro{"румын тілі"}
         ro_MD{"молдован тілі"}
         rof{"ромбо тілі"}
-        root{"ата тіл"}
         ru{"орыс тілі"}
         rup{"арумын тілі"}
         rw{"киньяруанда тілі"}
@@ -550,7 +552,6 @@ kk{
             tibt{"Тибет сандары"}
         }
     }
-    Version{"37"}
     characterLabelPattern{
         all{"{0} — барлығы"}
         category-list{"{0}: {1}"}
@@ -565,6 +566,8 @@ kk{
             one{"{0} сызық"}
             other{"{0} сызық"}
         }
+        subscript{"жол асты таңба {0}"}
+        superscript{"жол үсті таңба {0}"}
     }
     codePatterns{
         language{"Тіл: {0}"}

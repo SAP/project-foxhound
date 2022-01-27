@@ -1,8 +1,8 @@
 use core::pin::Pin;
-use futures::io::{AsyncRead, AsyncBufRead};
+use futures::io::{AsyncBufRead, AsyncRead};
 use futures::stream::{self, TryStreamExt};
 use futures::task::Poll;
-use futures_test::{task::noop_context, stream::StreamTestExt};
+use futures_test::{stream::StreamTestExt, task::noop_context};
 
 macro_rules! assert_read {
     ($reader:expr, $buf:expr, $item:expr) => {
@@ -72,7 +72,7 @@ fn test_into_async_read() {
 }
 
 #[test]
-fn test_into_async_bufread() -> std::io::Result<()> {
+fn test_into_async_bufread() {
     let stream = stream::iter((1..=2).flat_map(|_| vec![Ok(vec![]), Ok(vec![1, 2, 3, 4, 5])]));
     let mut reader = stream.interleave_pending().into_async_read();
 
@@ -91,6 +91,4 @@ fn test_into_async_bufread() -> std::io::Result<()> {
     reader.as_mut().consume(3);
 
     assert_fill_buf!(reader, &[][..]);
-
-    Ok(())
 }

@@ -12,7 +12,7 @@
         xmlns:html="http://www.w3.org/1999/xhtml"
         data-l10n-id="connection-window"
         data-l10n-attrs="title, style"
-        persist="lastSelected screenX screenY"
+        persist="lastSelected"
         onload="gConnectionsDialog.checkForSystemProxy();">
 <dialog id="ConnectionsDialog"
         buttons="accept,cancel,help"
@@ -67,7 +67,7 @@
         <html:div class="proxy-grid-row">
           <hbox/>
           <hbox>
-            <checkbox id="shareAllProxies" data-l10n-id="connection-proxy-http-sharing"
+            <checkbox id="shareAllProxies" data-l10n-id="connection-proxy-https-sharing"
                       preference="network.proxy.share_proxy_settings"/>
           </hbox>
         </html:div>
@@ -80,17 +80,6 @@
             <label data-l10n-id="connection-proxy-ssl-port" control="networkProxySSL_Port" />
             <html:input id="networkProxySSL_Port" class="proxy-port-input" hidespinbuttons="true" type="number" min="0" max="65535" size="5"
                         preference="network.proxy.ssl_port"/>
-          </hbox>
-        </html:div>
-        <html:div class="proxy-grid-row">
-          <hbox pack="end">
-            <label data-l10n-id="connection-proxy-ftp" control="networkProxyFTP"/>
-          </hbox>
-          <hbox align="center">
-            <html:input id="networkProxyFTP" type="text" style="-moz-box-flex: 1;" preference="network.proxy.ftp"/>
-            <label data-l10n-id="connection-proxy-ftp-port" control="networkProxyFTP_Port"/>
-            <html:input id="networkProxyFTP_Port" class="proxy-port-input" hidespinbuttons="true" type="number" min="0" max="65535" size="5"
-                        preference="network.proxy.ftp_port"/>
           </hbox>
         </html:div>
         <separator class="thin"/>
@@ -131,7 +120,7 @@
   <label data-l10n-id="connection-proxy-noproxy" control="networkProxyNone"/>
   <html:textarea id="networkProxyNone" preference="network.proxy.no_proxies_on" rows="2"/>
   <label control="networkProxyNone" data-l10n-id="connection-proxy-noproxy-desc" />
-  <label id="networkProxyNoneLocalhost" control="networkProxyNone" data-l10n-id="connection-proxy-noproxy-localhost-desc" />
+  <label id="networkProxyNoneLocalhost" control="networkProxyNone" data-l10n-id="connection-proxy-noproxy-localhost-desc-2" />
   <separator class="thin"/>
   <checkbox id="autologinProxy"
             data-l10n-id="connection-proxy-autologin"

@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 ar{
     Currencies{
         ADP{
@@ -967,7 +968,7 @@ ar{
             "(UIC)فرنك فرنسي",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "فرنك غرب أفريقي",
         }
         XPD{
@@ -987,7 +988,7 @@ ar{
             "كود اختبار العملة",
         }
         XXX{
-            "***",
+            "¤",
             "عملة غير معروفة",
         }
         YDD{
@@ -1804,6 +1805,14 @@ ar{
             two{"دولاران ليبيريان"}
             zero{"دولار ليبيري"}
         }
+        LSL{
+            few{"لوتي ليسوتو"}
+            many{"لوتي ليسوتو"}
+            one{"لوتي ليسوتو"}
+            other{"لوتي ليسوتو"}
+            two{"لوتي ليسوتو"}
+            zero{"لوتي ليسوتو"}
+        }
         LTL{
             few{"ليتا ليتوانية"}
             many{"ليتا ليتوانية"}
@@ -2453,5 +2462,4 @@ ar{
         two{"{0} {1}"}
         zero{"{0} {1}"}
     }
-    Version{"37"}
 }

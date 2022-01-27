@@ -38,9 +38,6 @@ async function addTestTab(url) {
 
   const tab = await addTab(url);
 
-  // Load devtools/shared/test/frame-script-utils.js
-  loadFrameScriptUtils();
-
   // Select the DOM panel and wait till it's initialized.
   const panel = await initDOMPanel(tab);
 
@@ -67,8 +64,8 @@ async function addTestTab(url) {
  * @return a promise that is resolved once the web console is open.
  */
 async function initDOMPanel(tab) {
-  const target = await TargetFactory.forTab(tab || gBrowser.selectedTab);
-  const toolbox = await gDevTools.showToolbox(target, "dom");
+  tab = tab || gBrowser.selectedTab;
+  const toolbox = await gDevTools.showToolboxForTab(tab, { toolId: "dom" });
   const panel = toolbox.getCurrentPanel();
   return panel;
 }
@@ -184,13 +181,9 @@ function expandRow(panel, labelText) {
   return synthesizeMouseClickSoon(panel, row).then(() => {
     // Wait till children (properties) are fetched
     // from the backend.
-    return waitForDispatch(panel, "FETCH_PROPERTIES");
+    const store = getReduxStoreFromPanel(panel);
+    return waitForDispatch(store, "FETCH_PROPERTIES");
   });
-}
-
-async function evaluateJSAsync(panel, expression) {
-  const consoleFront = await panel.currentTarget.getFront("console");
-  return consoleFront.evaluateJSAsync(expression);
 }
 
 function refreshPanel(panel) {
@@ -199,48 +192,11 @@ function refreshPanel(panel) {
   return synthesizeMouseClickSoon(panel, button).then(() => {
     // Wait till children (properties) are fetched
     // from the backend.
-    return waitForDispatch(panel, "FETCH_PROPERTIES");
+    const store = getReduxStoreFromPanel(panel);
+    return waitForDispatch(store, "FETCH_PROPERTIES");
   });
 }
 
-// Redux related API, use from shared location
-// as soon as bug 1261076 is fixed.
-
-// Wait until an action of `type` is dispatched. If it's part of an
-// async operation, wait until the `status` field is "done" or "error"
-function _afterDispatchDone(store, type) {
-  return new Promise(resolve => {
-    store.dispatch({
-      // Normally we would use `services.WAIT_UNTIL`, but use the
-      // internal name here so tests aren't forced to always pass it
-      // in
-      type: "@@service/waitUntil",
-      predicate: action => {
-        if (action.type === type) {
-          return action.status
-            ? action.status === "end" || action.status === "error"
-            : true;
-        }
-        return false;
-      },
-      run: (dispatch, getState, action) => {
-        resolve(action);
-      },
-    });
-  });
-}
-
-function waitForDispatch(panel, type, eventRepeat = 1) {
-  const store = panel.panelWin.view.mainFrame.store;
-  const actionType = constants[type];
-  let count = 0;
-
-  return (async function() {
-    info("Waiting for " + type + " to dispatch " + eventRepeat + " time(s)");
-    while (count < eventRepeat) {
-      await _afterDispatchDone(store, actionType);
-      count++;
-      info(type + " dispatched " + count + " time(s)");
-    }
-  })();
+function getReduxStoreFromPanel(panel) {
+  return panel.panelWin.view.mainFrame.store;
 }

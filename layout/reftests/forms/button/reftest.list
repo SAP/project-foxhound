@@ -27,7 +27,7 @@ fuzzy-if(Android,0-125,0-20) == percent-width-child.html  percent-width-child-re
 
 # Looks like Android changes the text color, but to something slightly
 # different from ColorGray
-fails-if(Android&&nativeThemePref) == disabled-1.html disabled-1-ref.html
+== disabled-1.html disabled-1-ref.html
 == disabled-2.html disabled-2-ref.html
 
 != disabled-3.html disabled-3-notref.html
@@ -49,8 +49,11 @@ fails-if(Android&&nativeThemePref) == disabled-1.html disabled-1-ref.html
 
 == dynamic-text-indent.html dynamic-text-indent-ref.html
 
-== 1349646.html 1349646-ref.html
+fuzzy-if(!nativeThemePref,0-5,0-1) == 1349646.html 1349646-ref.html
 
 == appearance-revert.html appearance-revert-ref.html
 
 needs-focus == focus-non-themed.html focus-non-themed-ref.html
+
+== button-visibility-1.html button-visibility-1-ref.html
+

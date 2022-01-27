@@ -7,13 +7,15 @@
 #ifndef nsImageRenderer_h__
 #define nsImageRenderer_h__
 
-#include "nsLayoutUtils.h"
 #include "nsStyleStruct.h"
 #include "Units.h"
 #include "mozilla/AspectRatio.h"
+#include "mozilla/SurfaceFromElementResult.h"
 
 class gfxDrawable;
+
 namespace mozilla {
+class nsDisplayItem;
 
 namespace layers {
 class StackingContextHelper;
@@ -94,7 +96,6 @@ struct CSSSizeOrRatio {
 class nsImageRenderer {
  public:
   typedef mozilla::image::ImgDrawResult ImgDrawResult;
-  typedef mozilla::layers::LayerManager LayerManager;
   typedef mozilla::layers::ImageContainer ImageContainer;
 
   enum {
@@ -243,8 +244,6 @@ class nsImageRenderer {
   /// Retrieves the image associated with this nsImageRenderer, if there is one.
   already_AddRefed<imgIContainer> GetImage();
 
-  bool IsImageContainerAvailable(layers::LayerManager* aManager,
-                                 uint32_t aFlags);
   bool IsReady() const { return mPrepareResult == ImgDrawResult::SUCCESS; }
   ImgDrawResult PrepareResult() const { return mPrepareResult; }
   void SetExtendMode(mozilla::gfx::ExtendMode aMode) { mExtendMode = aMode; }
@@ -298,11 +297,12 @@ class nsImageRenderer {
 
   nsIFrame* mForFrame;
   const mozilla::StyleImage* mImage;
+  ImageResolution mImageResolution;
   mozilla::StyleImage::Tag mType;
   nsCOMPtr<imgIContainer> mImageContainer;
   const mozilla::StyleGradient* mGradientData;
   nsIFrame* mPaintServerFrame;
-  nsLayoutUtils::SurfaceFromElementResult mImageElementSurface;
+  SurfaceFromElementResult mImageElementSurface;
   ImgDrawResult mPrepareResult;
   nsSize mSize;  // unscaled size of the image, in app units
   uint32_t mFlags;

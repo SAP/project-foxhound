@@ -87,14 +87,6 @@ class AnimationInspector {
 
   initComponents() {
     const {
-      onShowBoxModelHighlighterForNode,
-    } = this.inspector.getCommonComponentProps();
-
-    const { onHideBoxModelHighlighter } = this.inspector
-      .getPanel("boxmodel")
-      .getComponentProps();
-
-    const {
       addAnimationsCurrentTimeListener,
       emitForTests: emitEventForTest,
       getAnimatedPropertyMap,
@@ -137,8 +129,6 @@ class AnimationInspector {
         getComputedStyle,
         getNodeFromActor,
         isAnimationsRunning,
-        onHideBoxModelHighlighter,
-        onShowBoxModelHighlighterForNode,
         removeAnimationsCurrentTimeListener,
         rewindAnimationsCurrentTime,
         selectAnimation,
@@ -157,10 +147,10 @@ class AnimationInspector {
   }
 
   async initListeners() {
-    await this.inspector.toolbox.targetList.watchTargets(
-      [this.inspector.toolbox.targetList.TYPES.FRAME],
-      this.onTargetAvailable
-    );
+    await this.inspector.commands.targetCommand.watchTargets({
+      types: [this.inspector.commands.targetCommand.TYPES.FRAME],
+      onAvailable: this.onTargetAvailable,
+    });
 
     this.inspector.on("new-root", this.onNavigate);
     this.inspector.selection.on("new-node-front", this.update);
@@ -260,9 +250,8 @@ class AnimationInspector {
    *           distance: {Number} use as y coordinate in graph,
    *         }
    */
-  async getAnimatedPropertyMap(animation) {
-    // getProperties might throw an error.
-    const properties = await animation.getProperties();
+  getAnimatedPropertyMap(animation) {
+    const properties = animation.state.properties;
     const animatedPropertyMap = new Map();
 
     for (const { name, values } of properties) {
@@ -531,13 +520,6 @@ class AnimationInspector {
   }
 
   async setAnimationsPlayState(doPlay) {
-    if (typeof this.hasPausePlaySome === "undefined") {
-      this.hasPausePlaySome = await this.inspector.currentTarget.actorHasMethod(
-        "animations",
-        "pauseSome"
-      );
-    }
-
     let { animations, timeScale } = this.state;
 
     try {
@@ -551,19 +533,10 @@ class AnimationInspector {
         await this.doSetCurrentTimes(timeScale.zeroPositionTime);
       }
 
-      // If the server does not support pauseSome/playSome function, (which happens
-      // when connected to server older than FF62), use pauseAll/playAll instead.
-      // See bug 1456857.
-      if (this.hasPausePlaySome) {
-        if (doPlay) {
-          await this.animationsFront.playSome(animations);
-        } else {
-          await this.animationsFront.pauseSome(animations);
-        }
-      } else if (doPlay) {
-        await this.animationsFront.playAll();
+      if (doPlay) {
+        await this.animationsFront.playSome(animations);
       } else {
-        await this.animationsFront.pauseAll();
+        await this.animationsFront.pauseSome(animations);
       }
 
       animations = await this.refreshAnimationsState(animations);
@@ -601,19 +574,41 @@ class AnimationInspector {
   }
 
   /**
-   * Highlight the given node with the box model highlighter.
-   * If no node is provided, hide the box model highlighter.
+   * Persistently highlight the given node identified with a unique selector.
+   * If no node is provided, hide any persistent highlighter.
    *
    * @param {NodeFront} nodeFront
    */
   async setHighlightedNode(nodeFront) {
-    await this.inspector.highlighters.hideBoxModelHighlighter();
+    await this.inspector.highlighters.hideHighlighterType(
+      this.inspector.highlighters.TYPES.SELECTOR
+    );
 
     if (nodeFront) {
-      await this.inspector.highlighters.showBoxModelHighlighter(nodeFront, {
-        hideInfoBar: true,
-        hideGuides: true,
-      });
+      const selector = await nodeFront.getUniqueSelector();
+      if (!selector) {
+        console.warn(
+          `Couldn't get unique selector for NodeFront: ${nodeFront.actorID}`
+        );
+        return;
+      }
+
+      /**
+       * NOTE: Using a Selector Highlighter here because only one Box Model Highlighter
+       * can be visible at a time. The Box Model Highlighter is shown when hovering nodes
+       * which would cause this persistent highlighter to be hidden unexpectedly.
+       * This limitation of one highlighter type a time should be solved by switching
+       * to a highlighter by role approach (Bug 1663443).
+       */
+      await this.inspector.highlighters.showHighlighterTypeForNode(
+        this.inspector.highlighters.TYPES.SELECTOR,
+        nodeFront,
+        {
+          hideInfoBar: true,
+          hideGuides: true,
+          selector,
+        }
+      );
     }
 
     this.inspector.store.dispatch(updateHighlightedNode(nodeFront));

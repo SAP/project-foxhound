@@ -27,10 +27,7 @@ add_task(async function() {
   );
   await wait;
 
-  EventUtils.sendMouseEvent(
-    { type: "click" },
-    document.querySelector("#request-tab")
-  );
+  clickOnSidebarTab(document, "request");
 
   // The Params panel should render the following
   // POSTed JSON data structure:

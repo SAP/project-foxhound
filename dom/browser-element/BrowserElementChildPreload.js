@@ -120,7 +120,6 @@ BrowserElementChild.prototype = {
 
     let mmCalls = {
       "unblock-modal-prompt": this._recvStopWaiting,
-      "owner-visibility-change": this._recvOwnerVisibilityChange,
     };
 
     if (message.data.msg_name in mmCalls) {
@@ -134,9 +133,8 @@ BrowserElementChild.prototype = {
   },
 
   _tryGetInnerWindowID(win) {
-    let utils = win.windowUtils;
     try {
-      return utils.currentInnerWindowID;
+      return win.windowGlobalChild.innerWindowId;
     } catch (e) {
       return null;
     }
@@ -146,10 +144,8 @@ BrowserElementChild.prototype = {
    * Show a modal prompt.  Called by BrowserElementPromptService.
    */
   showModalPrompt(win, args) {
-    let utils = win.windowUtils;
-
     args.windowID = {
-      outer: utils.outerWindowID,
+      outer: win.docShell.outerWindowID,
       inner: this._tryGetInnerWindowID(win),
     };
     sendAsyncMsg("showmodalprompt", args);
@@ -174,7 +170,7 @@ BrowserElementChild.prototype = {
     debug("_waitForResult(" + win + ")");
     let utils = win.windowUtils;
 
-    let outerWindowID = utils.outerWindowID;
+    let outerWindowID = win.docShell.outerWindowID;
     let innerWindowID = this._tryGetInnerWindowID(win);
     if (innerWindowID === null) {
       // I have no idea what waiting for a result means when there's no inner
@@ -205,20 +201,23 @@ BrowserElementChild.prototype = {
     let origModalDepth = win.modalDepth;
 
     debug("Nested event loop - begin");
-    Services.tm.spinEventLoopUntil(() => {
-      // Bail out of the loop if the inner window changed; that means the
-      // window navigated.  Bail out when we're shutting down because otherwise
-      // we'll leak our window.
-      if (this._tryGetInnerWindowID(win) !== innerWindowID) {
-        debug(
-          "_waitForResult: Inner window ID changed " +
-            "while in nested event loop."
-        );
-        return true;
-      }
+    Services.tm.spinEventLoopUntil(
+      "BrowserElementChildPreload.js:_waitForResult",
+      () => {
+        // Bail out of the loop if the inner window changed; that means the
+        // window navigated.  Bail out when we're shutting down because otherwise
+        // we'll leak our window.
+        if (this._tryGetInnerWindowID(win) !== innerWindowID) {
+          debug(
+            "_waitForResult: Inner window ID changed " +
+              "while in nested event loop."
+          );
+          return true;
+        }
 
-      return win.modalDepth !== origModalDepth || this._shuttingDown;
-    });
+        return win.modalDepth !== origModalDepth || this._shuttingDown;
+      }
+    );
     debug("Nested event loop - finish");
 
     if (win.modalDepth == 0) {
@@ -286,18 +285,6 @@ BrowserElementChild.prototype = {
     debug("recvStopWaiting " + win);
     win.modalReturnValue = returnValue;
     win.modalDepth--;
-  },
-
-  /**
-   * Called when the window which contains this iframe becomes hidden or
-   * visible.
-   */
-  _recvOwnerVisibilityChange(data) {
-    debug("Received ownerVisibilityChange: (" + data.json.visible + ")");
-    var visible = data.json.visible;
-    if (docShell && docShell.isActive !== visible) {
-      docShell.isActive = visible;
-    }
   },
 };
 

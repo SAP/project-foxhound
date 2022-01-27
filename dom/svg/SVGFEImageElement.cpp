@@ -8,6 +8,8 @@
 
 #include "mozilla/EventStates.h"
 #include "mozilla/SVGObserverUtils.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/SVGFEImageElementBinding.h"
 #include "mozilla/dom/SVGFilterElement.h"
 #include "mozilla/dom/UserActivation.h"
@@ -87,6 +89,10 @@ nsresult SVGFEImageElement::LoadSVGImage(bool aForce, bool aNotify) {
   return LoadImage(href, aForce, aNotify, eImageLoadType_Normal);
 }
 
+bool SVGFEImageElement::ShouldLoadImage() const {
+  return LoadingEnabled() && OwnerDoc()->ShouldLoadImages();
+}
+
 //----------------------------------------------------------------------
 // EventTarget methods:
 
@@ -113,7 +119,9 @@ nsresult SVGFEImageElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
   if (aName == nsGkAtoms::href && (aNamespaceID == kNameSpaceID_XLink ||
                                    aNamespaceID == kNameSpaceID_None)) {
     if (aValue) {
-      LoadSVGImage(true, aNotify);
+      if (ShouldLoadImage()) {
+        LoadSVGImage(true, aNotify);
+      }
     } else {
       CancelImageRequests(aNotify);
     }
@@ -138,11 +146,16 @@ nsresult SVGFEImageElement::BindToTree(BindContext& aContext,
 
   nsImageLoadingContent::BindToTree(aContext, aParent);
 
-  if (mStringAttributes[HREF].IsExplicitlySet() ||
-      mStringAttributes[XLINK_HREF].IsExplicitlySet()) {
+  if ((mStringAttributes[HREF].IsExplicitlySet() ||
+       mStringAttributes[XLINK_HREF].IsExplicitlySet()) &&
+      ShouldLoadImage()) {
     nsContentUtils::AddScriptRunner(
         NewRunnableMethod("dom::SVGFEImageElement::MaybeLoadSVGImage", this,
                           &SVGFEImageElement::MaybeLoadSVGImage));
+  }
+
+  if (aContext.InComposedDoc()) {
+    aContext.OwnerDoc().SetUseCounter(eUseCounter_custom_feImage);
   }
 
   return rv;
@@ -259,7 +272,7 @@ bool SVGFEImageElement::OutputIsTainted(const nsTArray<bool>& aInputsAreTainted,
 
   int32_t corsmode;
   if (NS_SUCCEEDED(currentRequest->GetCORSMode(&corsmode)) &&
-      corsmode != imgIRequest::CORS_NONE) {
+      corsmode != CORS_NONE) {
     // If CORS was used to load the image, the page is allowed to read from it.
     return false;
   }

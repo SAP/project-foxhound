@@ -29,10 +29,7 @@ add_task(async function() {
   );
   await wait;
 
-  EventUtils.sendMouseEvent(
-    { type: "click" },
-    document.querySelector("#request-tab")
-  );
+  clickOnSidebarTab(document, "request");
 
   return teardown(monitor);
 });

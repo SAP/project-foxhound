@@ -309,7 +309,6 @@ system_headers = [
     'gdk/gdkkeysyms.h',
     'gdk/gdkprivate.h',
     'gdk/gdkwayland.h',
-    'gdk/gdkx.h',
     'gdk-pixbuf/gdk-pixbuf.h',
     'Gestalt.h',
     'getopt.h',
@@ -333,7 +332,6 @@ system_headers = [
     'gst/video/video.h',
     'gtk/gtk.h',
     'gtk/gtkunixprint.h',
-    'gtk/gtkx.h',
     'hasht.h',
     'HIToolbox/HIToolbox.h',
     'hlink.h',
@@ -591,7 +589,6 @@ system_headers = [
     'Palettes.h',
     'PALM_CMN.H',
     'pango/pango-break.h',
-    'pango/pangocairo.h',
     'pango/pangofc-decoder.h',
     'pango/pangofc-font.h',
     'pango/pangofc-fontmap.h',
@@ -724,6 +721,7 @@ system_headers = [
     'sane/sanei.h',
     'sane/saneopts.h',
     'sanitizer/asan_interface.h',
+    'sanitizer/common_interface_defs.h',
     'sched.h',
     'Scrap.h',
     'Screen.h',
@@ -1015,37 +1013,44 @@ system_headers = [
     'wx/toolbar.h',
     'wx/wx.h',
     'wx/xrc/xmlres.h',
-    'X11/cursorfont.h',
-    'X11/extensions/Print.h',
-    'X11/extensions/scrnsaver.h',
-    'X11/extensions/shape.h',
-    'X11/extensions/Xcomposite.h',
-    'X11/extensions/Xdamage.h',
-    'X11/extensions/Xfixes.h',
-    'X11/extensions/Xrender.h',
-    'X11/extensions/XShm.h',
-    'X11/ImUtil.h',
-    'X11/Intrinsic.h',
-    'X11/keysymdef.h',
-    'X11/keysym.h',
-    'X11/Shell.h',
-    'X11/StringDefs.h',
-    'X11/Xatom.h',
-    'X11/Xft/Xft.h',
-    'X11/Xfuncproto.h',
-    'X11/X.h',
-    'X11/XKBlib.h',
-    'X11/Xlib.h',
-    'X11/Xlibint.h',
-    'X11/Xlib-xcb.h',
-    'X11/Xlocale.h',
-    'X11/Xos.h',
-    'X11/Xutil.h',
-    'xcb/shm.h',
-    'xcb/xcb.h',
     'xlocale.h',
     'zmouse.h',
 ]
+
+if CONFIG['MOZ_X11']:
+    system_headers += [
+        'gdk/gdkx.h',
+        'gtk/gtkx.h',
+        'X11/cursorfont.h',
+        'X11/extensions/Print.h',
+        'X11/extensions/scrnsaver.h',
+        'X11/extensions/shape.h',
+        'X11/extensions/Xcomposite.h',
+        'X11/extensions/Xdamage.h',
+        'X11/extensions/Xfixes.h',
+        'X11/extensions/Xrandr.h',
+        'X11/extensions/XShm.h',
+        'X11/extensions/XTest.h',
+        'X11/ImUtil.h',
+        'X11/Intrinsic.h',
+        'X11/keysymdef.h',
+        'X11/keysym.h',
+        'X11/Shell.h',
+        'X11/StringDefs.h',
+        'X11/Xatom.h',
+        'X11/Xft/Xft.h',
+        'X11/Xfuncproto.h',
+        'X11/X.h',
+        'X11/XKBlib.h',
+        'X11/Xlib.h',
+        'X11/Xlibint.h',
+        'X11/Xlib-xcb.h',
+        'X11/Xlocale.h',
+        'X11/Xos.h',
+        'X11/Xutil.h',
+        'xcb/shm.h',
+        'xcb/xcb.h',
+    ]
 
 if CONFIG['OS_TARGET'] == 'Android':
     system_headers += [
@@ -1297,7 +1302,9 @@ if CONFIG['MOZ_SYSTEM_LIBVPX']:
 
 if CONFIG['MOZ_SYSTEM_ICU']:
     system_headers += [
+        'unicode/calendar.h',
         'unicode/datefmt.h',
+        'unicode/dtfmtsym.h',
         'unicode/locid.h',
         'unicode/numberformatter.h',
         'unicode/numsys.h',
@@ -1324,6 +1331,7 @@ if CONFIG['MOZ_SYSTEM_ICU']:
         'unicode/unorm.h',
         'unicode/unum.h',
         'unicode/unumberformatter.h',
+        'unicode/uobject.h',
         'unicode/upluralrules.h',
         'unicode/ureldatefmt.h',
         'unicode/ures.h',
@@ -1347,6 +1355,11 @@ if CONFIG['OS_TARGET'] in ('Android', 'Linux', 'FreeBSD'):
 if CONFIG['OS_TARGET'] == 'Linux' and CONFIG['CPU_ARCH'].startswith('mips'):
     system_headers += [
         'sys/cachectl.h',
+    ]
+
+if CONFIG['OS_TARGET'] == 'FreeBSD':
+    system_headers += [
+        'sys/capsicum.h',
     ]
 
 if CONFIG['MOZ_APP_SYSTEM_HEADERS']:

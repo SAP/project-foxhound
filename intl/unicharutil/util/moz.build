@@ -5,24 +5,36 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 EXPORTS += [
-    'GreekCasing.h',
-    'ICUUtils.h',
-    'IrishCasing.h',
-    'nsBidiUtils.h',
-    'nsSpecialCasingData.h',
-    'nsUnicharUtils.h',
-    'nsUnicodeProperties.h',
-    'nsUnicodeScriptCodes.h',
+    "GreekCasing.h",
+    "ICUUtils.h",
+    "IrishCasing.h",
+    "nsBidiUtils.h",
+    "nsSpecialCasingData.h",
+    "nsUnicharUtils.h",
+    "nsUnicodeProperties.h",
+    "nsUnicodeScriptCodes.h",
 ]
 
 UNIFIED_SOURCES += [
-    'GreekCasing.cpp',
-    'ICUUtils.cpp',
-    'IrishCasing.cpp',
-    'nsBidiUtils.cpp',
-    'nsSpecialCasingData.cpp',
-    'nsUnicharUtils.cpp',
-    'nsUnicodeProperties.cpp',
+    "GreekCasing.cpp",
+    "ICUUtils.cpp",
+    "IrishCasing.cpp",
+    "nsBidiUtils.cpp",
+    "nsSpecialCasingData.cpp",
+    "nsUnicharUtils.cpp",
+    "nsUnicodeProperties.cpp",
 ]
 
-FINAL_LIBRARY = 'xul'
+include("/ipc/chromium/chromium-config.mozbuild")
+
+GeneratedFile(
+    "BaseChars.h",
+    script="base_chars.py",
+    inputs=["../../icu/source/data/translit/Latin_ASCII.txt"],
+)
+
+GeneratedFile("IsCombiningDiacritic.h", script="is_combining_diacritic.py", force=True)
+
+FINAL_LIBRARY = "xul"
+
+REQUIRES_UNIFIED_BUILD = True

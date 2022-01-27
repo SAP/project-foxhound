@@ -6,42 +6,35 @@
 #ifndef NSIMAGETOPIXBUF_H_
 #define NSIMAGETOPIXBUF_H_
 
-#include "nsIImageToPixbuf.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Maybe.h"
+#include "nsSize.h"
 
-namespace mozilla {
-namespace gfx {
+class imgIContainer;
+typedef struct _GdkPixbuf GdkPixbuf;
+
+namespace mozilla::gfx {
 class SourceSurface;
-}
-}  // namespace mozilla
+}  // namespace mozilla::gfx
 
-class nsImageToPixbuf final : public nsIImageToPixbuf {
-  typedef mozilla::gfx::SourceSurface SourceSurface;
+class nsImageToPixbuf final {
+  using SourceSurface = mozilla::gfx::SourceSurface;
 
  public:
-  NS_DECL_ISUPPORTS
-  NS_IMETHOD_(GdkPixbuf*) ConvertImageToPixbuf(imgIContainer* aImage) override;
-
   // Friendlier version of ConvertImageToPixbuf for callers inside of
   // widget
   /**
    * The return value of all these, if not null, should be
    * released as needed by the caller using g_object_unref.
    */
-  static GdkPixbuf* ImageToPixbuf(imgIContainer* aImage);
+  static GdkPixbuf* ImageToPixbuf(
+      imgIContainer* aImage,
+      const mozilla::Maybe<nsIntSize>& aOverrideSize = mozilla::Nothing());
   static GdkPixbuf* SourceSurfaceToPixbuf(SourceSurface* aSurface,
                                           int32_t aWidth, int32_t aHeight);
 
  private:
   ~nsImageToPixbuf() = default;
 };
-
-// fc2389b8-c650-4093-9e42-b05e5f0685b7
-#define NS_IMAGE_TO_PIXBUF_CID                       \
-  {                                                  \
-    0xfc2389b8, 0xc650, 0x4093, {                    \
-      0x9e, 0x42, 0xb0, 0x5e, 0x5f, 0x06, 0x85, 0xb7 \
-    }                                                \
-  }
 
 #endif

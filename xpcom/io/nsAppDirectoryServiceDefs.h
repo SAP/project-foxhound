@@ -41,7 +41,6 @@
 
 #define NS_APP_CHROME_DIR_LIST "AChromDL"
 #define NS_APP_PLUGINS_DIR_LIST "APluginsDL"
-#define NS_APP_DISTRIBUTION_SEARCH_DIR_LIST "SrchPluginsDistDL"
 
 // --------------------------------------------------------------------------------------
 // Files and directories which exist on a per-profile basis
@@ -106,11 +105,5 @@
 // Otherwise NS_APP_CONTENT_PROCESS_TEMP_DIR must match NS_OS_TEMP_DIR.
 #  define NS_APP_CONTENT_PROCESS_TEMP_DIR "TmpD"
 #endif  // defined(MOZ_SANDBOX)
-
-#if defined(MOZ_SANDBOX)
-#  define NS_APP_PLUGIN_PROCESS_TEMP_DIR "PluginTmpD"
-#else
-#  define NS_APP_PLUGIN_PROCESS_TEMP_DIR "TmpD"
-#endif
 
 #endif  // nsAppDirectoryServiceDefs_h___

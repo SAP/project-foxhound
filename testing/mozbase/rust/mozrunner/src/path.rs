@@ -1,10 +1,14 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 //! Provides utilities for searching the system path.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
-fn is_executable(path: &PathBuf) -> bool {
+fn is_executable(path: &Path) -> bool {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
 
@@ -19,14 +23,14 @@ fn is_executable(path: &PathBuf) -> bool {
 }
 
 #[cfg(not(unix))]
-fn is_executable(_: &PathBuf) -> bool {
+fn is_executable(_: &Path) -> bool {
     true
 }
 
 /// Determines if the path is an executable binary.  That is, if it exists, is
 /// a file, and is executable where applicable.
-pub fn is_binary(path: &PathBuf) -> bool {
-    path.exists() && path.is_file() && is_executable(&path)
+pub fn is_binary(path: &Path) -> bool {
+    path.exists() && path.is_file() && is_executable(path)
 }
 
 /// Searches the system path (`PATH`) for an executable binary and returns the

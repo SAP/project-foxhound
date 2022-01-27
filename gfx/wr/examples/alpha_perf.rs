@@ -14,6 +14,7 @@ mod boilerplate;
 use crate::boilerplate::{Example, HandyDandyRectBuilder};
 use std::cmp;
 use webrender::api::*;
+use webrender::render_api::*;
 use webrender::api::units::DeviceIntSize;
 
 
@@ -35,7 +36,7 @@ impl Example for App {
         let space_and_clip = SpaceAndClipInfo::root_scroll(pipeline_id);
 
         builder.push_simple_stacking_context(
-            bounds.origin,
+            bounds.min,
             space_and_clip.spatial_id,
             PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );

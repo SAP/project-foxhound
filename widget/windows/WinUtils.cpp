@@ -22,9 +22,11 @@
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
+#include "mozilla/gfx/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SchedulerGroup.h"
+#include "mozilla/WinHeaderOnlyUtils.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/Unused.h"
 #include "nsIContentPolicy.h"
@@ -52,11 +54,10 @@
 #include "nsUnicharUtils.h"
 #include "nsWindowsHelpers.h"
 #include "WinContentSystemParameters.h"
+#include "WinWindowOcclusionTracker.h"
 
-#ifdef NS_ENABLE_TSF
-#  include <textstor.h>
-#  include "TSFTextStore.h"
-#endif  // #ifdef NS_ENABLE_TSF
+#include <textstor.h>
+#include "TSFTextStore.h"
 
 #include <shlobj.h>
 #include <shlwapi.h>
@@ -430,10 +431,17 @@ struct CoTaskMemFreePolicy {
 SetThreadDpiAwarenessContextProc WinUtils::sSetThreadDpiAwarenessContext = NULL;
 EnableNonClientDpiScalingProc WinUtils::sEnableNonClientDpiScaling = NULL;
 GetSystemMetricsForDpiProc WinUtils::sGetSystemMetricsForDpi = NULL;
+bool WinUtils::sHasPackageIdentity = false;
+
+using GetDpiForWindowProc = UINT(WINAPI*)(HWND);
+static GetDpiForWindowProc sGetDpiForWindow = NULL;
 
 /* static */
 void WinUtils::Initialize() {
-  if (IsWin10OrLater()) {
+  // Dpi-Awareness is not supported with Win32k Lockdown enabled, so we don't
+  // initialize DPI-related members and assert later that nothing accidently
+  // uses these static members
+  if (IsWin10OrLater() && !IsWin32kLockedDown()) {
     HMODULE user32Dll = ::GetModuleHandleW(L"user32");
     if (user32Dll) {
       auto getThreadDpiAwarenessContext =
@@ -457,7 +465,13 @@ void WinUtils::Initialize() {
 
       sGetSystemMetricsForDpi = (GetSystemMetricsForDpiProc)::GetProcAddress(
           user32Dll, "GetSystemMetricsForDpi");
+      sGetDpiForWindow =
+          (GetDpiForWindowProc)::GetProcAddress(user32Dll, "GetDpiForWindow");
     }
+  }
+
+  if (IsWin8OrLater()) {
+    sHasPackageIdentity = mozilla::HasPackageIdentity();
   }
 }
 
@@ -465,6 +479,11 @@ void WinUtils::Initialize() {
 LRESULT WINAPI WinUtils::NonClientDpiScalingDefWindowProcW(HWND hWnd, UINT msg,
                                                            WPARAM wParam,
                                                            LPARAM lParam) {
+  MOZ_DIAGNOSTIC_ASSERT(!IsWin32kLockedDown());
+
+  // NOTE: this function was copied out into the body of the pre-XUL skeleton
+  // UI window proc (PreXULSkeletonUI.cpp). If this function changes at any
+  // point, we should probably factor this out and use it from both locations.
   if (msg == WM_NCCREATE && sEnableNonClientDpiScaling) {
     sEnableNonClientDpiScaling(hWnd);
   }
@@ -637,6 +656,24 @@ int32_t WinUtils::LogToPhys(HMONITOR aMonitor, double aValue) {
 }
 
 /* static */
+double WinUtils::LogToPhysFactor(HWND aWnd) {
+  // if there's an ancestor window, we want to share its DPI setting
+  HWND ancestor = ::GetAncestor(aWnd, GA_ROOTOWNER);
+
+  // The GetDpiForWindow api is not available everywhere where we run as
+  // per-monitor, but if it is available rely on it to tell us the scale
+  // factor of the window.  See bug 1722085.
+  if (sGetDpiForWindow) {
+    UINT dpi = sGetDpiForWindow(ancestor ? ancestor : aWnd);
+    if (dpi > 0) {
+      return static_cast<double>(dpi) / 96.0;
+    }
+  }
+  return LogToPhysFactor(::MonitorFromWindow(ancestor ? ancestor : aWnd,
+                                             MONITOR_DEFAULTTOPRIMARY));
+}
+
+/* static */
 HMONITOR
 WinUtils::GetPrimaryMonitor() {
   const POINT pt = {0, 0};
@@ -660,11 +697,13 @@ WinUtils::MonitorFromRect(const gfx::Rect& rect) {
 
 /* static */
 bool WinUtils::HasSystemMetricsForDpi() {
+  MOZ_DIAGNOSTIC_ASSERT(!IsWin32kLockedDown());
   return (sGetSystemMetricsForDpi != NULL);
 }
 
 /* static */
 int WinUtils::GetSystemMetricsForDpi(int nIndex, UINT dpi) {
+  MOZ_DIAGNOSTIC_ASSERT(!IsWin32kLockedDown());
   if (HasSystemMetricsForDpi()) {
     return sGetSystemMetricsForDpi(nIndex, dpi);
   } else {
@@ -709,7 +748,7 @@ gfx::MarginDouble WinUtils::GetUnwriteableMarginsForDeviceInInches(HDC aHdc) {
 
 #ifdef ACCESSIBILITY
 /* static */
-a11y::Accessible* WinUtils::GetRootAccessibleForHWND(HWND aHwnd) {
+a11y::LocalAccessible* WinUtils::GetRootAccessibleForHWND(HWND aHwnd) {
   nsWindow* window = GetNSWindowPtr(aHwnd);
   if (!window) {
     return nullptr;
@@ -722,7 +761,6 @@ a11y::Accessible* WinUtils::GetRootAccessibleForHWND(HWND aHwnd) {
 /* static */
 bool WinUtils::PeekMessage(LPMSG aMsg, HWND aWnd, UINT aFirstMessage,
                            UINT aLastMessage, UINT aOption) {
-#ifdef NS_ENABLE_TSF
   RefPtr<ITfMessagePump> msgPump = TSFTextStore::GetMessagePump();
   if (msgPump) {
     BOOL ret = FALSE;
@@ -731,14 +769,12 @@ bool WinUtils::PeekMessage(LPMSG aMsg, HWND aWnd, UINT aFirstMessage,
     NS_ENSURE_TRUE(SUCCEEDED(hr), false);
     return ret;
   }
-#endif  // #ifdef NS_ENABLE_TSF
   return ::PeekMessageW(aMsg, aWnd, aFirstMessage, aLastMessage, aOption);
 }
 
 /* static */
 bool WinUtils::GetMessage(LPMSG aMsg, HWND aWnd, UINT aFirstMessage,
                           UINT aLastMessage) {
-#ifdef NS_ENABLE_TSF
   RefPtr<ITfMessagePump> msgPump = TSFTextStore::GetMessagePump();
   if (msgPump) {
     BOOL ret = FALSE;
@@ -747,7 +783,6 @@ bool WinUtils::GetMessage(LPMSG aMsg, HWND aWnd, UINT aFirstMessage,
     NS_ENSURE_TRUE(SUCCEEDED(hr), false);
     return ret;
   }
-#endif  // #ifdef NS_ENABLE_TSF
   return ::GetMessageW(aMsg, aWnd, aFirstMessage, aLastMessage);
 }
 
@@ -1167,8 +1202,8 @@ AsyncFaviconDataReady::AsyncFaviconDataReady(
 
 NS_IMETHODIMP
 myDownloadObserver::OnDownloadComplete(nsIDownloader* downloader,
-                                       nsIRequest* request, nsISupports* ctxt,
-                                       nsresult status, nsIFile* result) {
+                                       nsIRequest* request, nsresult status,
+                                       nsIFile* result) {
   return NS_OK;
 }
 
@@ -1354,8 +1389,8 @@ NS_IMETHODIMP AsyncEncodeAndWriteIcon::Run() {
       return rv;
     }
   }
-  nsresult rv = gfxUtils::EncodeSourceSurface(
-      surface, ImageType::ICO, EmptyString(), gfxUtils::eBinaryEncode, file);
+  nsresult rv = gfxUtils::EncodeSourceSurface(surface, ImageType::ICO, u""_ns,
+                                              gfxUtils::eBinaryEncode, file);
   fclose(file);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1636,19 +1671,12 @@ LayoutDeviceIntRect WinUtils::ToIntRect(const RECT& aRect) {
 
 /* static */
 bool WinUtils::IsIMEEnabled(const InputContext& aInputContext) {
-  if (!IsIMEEnabled(aInputContext.mIMEState.mEnabled)) {
-    return false;
-  }
-  if (aInputContext.mIMEState.mEnabled == IMEState::PLUGIN &&
-      aInputContext.mHTMLInputType.EqualsLiteral("password")) {
-    return false;
-  }
-  return true;
+  return IsIMEEnabled(aInputContext.mIMEState.mEnabled);
 }
 
 /* static */
-bool WinUtils::IsIMEEnabled(IMEState::Enabled aIMEState) {
-  return (aIMEState == IMEState::ENABLED || aIMEState == IMEState::PLUGIN);
+bool WinUtils::IsIMEEnabled(IMEEnabled aIMEState) {
+  return aIMEState == IMEEnabled::Enabled;
 }
 
 /* static */
@@ -2146,7 +2174,7 @@ const WinUtils::WhitelistVec& WinUtils::GetWhitelistedPaths() {
   static WhitelistVec sWhitelist([]() -> WhitelistVec {
     auto setClearFn = [ptr = &sWhitelist]() -> void {
       RunOnShutdown([ptr]() -> void { ptr->clear(); },
-                    ShutdownPhase::ShutdownFinal);
+                    ShutdownPhase::XPCOMShutdownFinal);
     };
 
     if (NS_IsMainThread()) {
@@ -2275,6 +2303,48 @@ bool WinUtils::PreparePathForTelemetry(nsAString& aPath,
   }
 
   return true;
+}
+
+nsString WinUtils::GetPackageFamilyName() {
+  nsString rv;
+
+  UniquePtr<wchar_t[]> packageIdentity = mozilla::GetPackageFamilyName();
+  if (packageIdentity) {
+    rv = packageIdentity.get();
+  }
+
+  return rv;
+}
+
+bool WinUtils::GetClassName(HWND aHwnd, nsAString& aClassName) {
+  const int bufferLength = 256;
+  aClassName.SetLength(bufferLength);
+
+  int length = ::GetClassNameW(aHwnd, (char16ptr_t)aClassName.BeginWriting(),
+                               bufferLength);
+  if (length == 0) {
+    return false;
+  }
+  MOZ_RELEASE_ASSERT(length <= (bufferLength - 1));
+  aClassName.Truncate(length);
+  return true;
+}
+
+static BOOL CALLBACK EnumUpdateWindowOcclusionProc(HWND aHwnd, LPARAM aLParam) {
+  const bool* const enable = reinterpret_cast<bool*>(aLParam);
+  nsWindow* window = WinUtils::GetNSWindowPtr(aHwnd);
+  if (window) {
+    window->MaybeEnableWindowOcclusion(*enable);
+  }
+  return TRUE;
+}
+
+void WinUtils::EnableWindowOcclusion(const bool aEnable) {
+  if (aEnable) {
+    WinWindowOcclusionTracker::Ensure();
+  }
+  ::EnumWindows(EnumUpdateWindowOcclusionProc,
+                reinterpret_cast<LPARAM>(&aEnable));
 }
 
 }  // namespace widget

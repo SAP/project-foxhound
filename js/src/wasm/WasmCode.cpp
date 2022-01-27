@@ -20,12 +20,15 @@
 
 #include "mozilla/BinarySearch.h"
 #include "mozilla/EnumeratedRange.h"
+#include "mozilla/Sprintf.h"
 
 #include <algorithm>
 
 #include "jsnum.h"
 
+#include "jit/Disassemble.h"
 #include "jit/ExecutableAllocator.h"
+#include "jit/MacroAssembler.h"
 #ifdef JS_ION_PERF
 #  include "jit/PerfSpewer.h"
 #endif
@@ -38,12 +41,11 @@
 #include "wasm/WasmSerialize.h"
 #include "wasm/WasmStubs.h"
 
-#include "jit/MacroAssembler-inl.h"
-
 using namespace js;
 using namespace js::jit;
 using namespace js::wasm;
 using mozilla::BinarySearch;
+using mozilla::BinarySearchIf;
 using mozilla::MakeEnumeratedRange;
 using mozilla::PodAssign;
 
@@ -376,7 +378,7 @@ UniqueModuleSegment ModuleSegment::create(Tier tier, const Bytes& unlinkedBytes,
                                        linkData);
 }
 
-bool ModuleSegment::initialize(const CodeTier& codeTier,
+bool ModuleSegment::initialize(IsTier2 isTier2, const CodeTier& codeTier,
                                const LinkData& linkData,
                                const Metadata& metadata,
                                const MetadataTier& metadataTier) {
@@ -384,9 +386,15 @@ bool ModuleSegment::initialize(const CodeTier& codeTier,
     return false;
   }
 
+  // Optimized compilation finishes on a background thread, so we must make sure
+  // to flush the icaches of all the executing threads.
+  FlushICacheSpec flushIcacheSpec = isTier2 == IsTier2::Tier2
+                                        ? FlushICacheSpec::AllThreads
+                                        : FlushICacheSpec::LocalThreadOnly;
+
   // Reprotect the whole region to avoid having separate RW and RX mappings.
   if (!ExecutableAllocator::makeExecutableAndFlushICache(
-          base(), RoundupCodeLength(length()))) {
+          flushIcacheSpec, base(), RoundupCodeLength(length()))) {
     return false;
   }
 
@@ -529,14 +537,21 @@ size_t CacheableChars::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
 size_t MetadataTier::serializedSize() const {
   return SerializedPodVectorSize(funcToCodeRange) +
          SerializedPodVectorSize(codeRanges) +
-         SerializedPodVectorSize(callSites) + trapSites.serializedSize() +
-         SerializedVectorSize(funcImports) + SerializedVectorSize(funcExports);
+         SerializedPodVectorSize(callSites) +
+#ifdef ENABLE_WASM_EXCEPTIONS
+         SerializedPodVectorSize(tryNotes) +
+#endif
+         trapSites.serializedSize() + SerializedVectorSize(funcImports) +
+         SerializedVectorSize(funcExports);
 }
 
 size_t MetadataTier::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
   return funcToCodeRange.sizeOfExcludingThis(mallocSizeOf) +
          codeRanges.sizeOfExcludingThis(mallocSizeOf) +
          callSites.sizeOfExcludingThis(mallocSizeOf) +
+#ifdef ENABLE_WASM_EXCEPTIONS
+         tryNotes.sizeOfExcludingThis(mallocSizeOf) +
+#endif
          trapSites.sizeOfExcludingThis(mallocSizeOf) +
          SizeOfVectorExcludingThis(funcImports, mallocSizeOf) +
          SizeOfVectorExcludingThis(funcExports, mallocSizeOf);
@@ -546,6 +561,9 @@ uint8_t* MetadataTier::serialize(uint8_t* cursor) const {
   cursor = SerializePodVector(cursor, funcToCodeRange);
   cursor = SerializePodVector(cursor, codeRanges);
   cursor = SerializePodVector(cursor, callSites);
+#ifdef ENABLE_WASM_EXCEPTIONS
+  cursor = SerializePodVector(cursor, tryNotes);
+#endif
   cursor = trapSites.serialize(cursor);
   cursor = SerializeVector(cursor, funcImports);
   cursor = SerializeVector(cursor, funcExports);
@@ -557,6 +575,9 @@ uint8_t* MetadataTier::serialize(uint8_t* cursor) const {
   (cursor = DeserializePodVector(cursor, &funcToCodeRange)) &&
       (cursor = DeserializePodVector(cursor, &codeRanges)) &&
       (cursor = DeserializePodVector(cursor, &callSites)) &&
+#ifdef ENABLE_WASM_EXCEPTIONS
+      (cursor = DeserializePodVector(cursor, &tryNotes)) &&
+#endif
       (cursor = trapSites.deserialize(cursor)) &&
       (cursor = DeserializeVector(cursor, &funcImports)) &&
       (cursor = DeserializeVector(cursor, &funcExports));
@@ -613,14 +634,7 @@ bool LazyStubSegment::addStubs(size_t codeLength,
     codeRanges_.back().offsetBy(offsetInSegment);
     i++;
 
-#ifdef ENABLE_WASM_SIMD
-    if (funcExports[funcExportIndex].funcType().hasV128ArgOrRet()) {
-      continue;
-    }
-#endif
-    if (funcExports[funcExportIndex]
-            .funcType()
-            .temporarilyUnsupportedReftypeForEntry()) {
+    if (!funcExports[funcExportIndex].canHaveJitEntry()) {
       continue;
     }
 
@@ -631,6 +645,34 @@ bool LazyStubSegment::addStubs(size_t codeLength,
     codeRanges_.infallibleAppend(jitRange);
     codeRanges_.back().offsetBy(offsetInSegment);
     i++;
+  }
+
+  return true;
+}
+
+bool LazyStubSegment::addIndirectStubs(
+    size_t codeLength, const VectorOfIndirectStubTarget& targets,
+    const CodeRangeVector& codeRanges, uint8_t** codePtr,
+    size_t* indexFirstInsertedCodeRange) {
+  MOZ_ASSERT(hasSpace(codeLength));
+
+  if (!codeRanges_.reserve(codeRanges_.length() + codeRanges.length())) {
+    return false;
+  }
+
+  size_t offsetInSegment = usedBytes_;
+  *codePtr = base() + usedBytes_;
+  usedBytes_ += codeLength;
+  *indexFirstInsertedCodeRange = codeRanges_.length();
+
+  for (size_t i = 0; i < targets.length(); ++i) {
+    DebugOnly<uint32_t> funcIndex = targets[i].functionIdx;
+    const CodeRange& indirectStubRange = codeRanges[i];
+    MOZ_ASSERT(indirectStubRange.isIndirectStub());
+    MOZ_ASSERT(indirectStubRange.funcIndex() == funcIndex);
+
+    codeRanges_.infallibleAppend(indirectStubRange);
+    codeRanges_.back().offsetBy(offsetInSegment);
   }
 
   return true;
@@ -648,20 +690,12 @@ void LazyStubSegment::addSizeOfMisc(MallocSizeOf mallocSizeOf, size_t* code,
   *data += mallocSizeOf(this);
 }
 
-struct ProjectLazyFuncIndex {
-  const LazyFuncExportVector& funcExports;
-  explicit ProjectLazyFuncIndex(const LazyFuncExportVector& funcExports)
-      : funcExports(funcExports) {}
-  uint32_t operator[](size_t index) const {
-    return funcExports[index].funcIndex;
-  }
-};
-
 static constexpr unsigned LAZY_STUB_LIFO_DEFAULT_CHUNK_SIZE = 8 * 1024;
 
-bool LazyStubTier::createMany(const Uint32Vector& funcExportIndices,
-                              const CodeTier& codeTier,
-                              size_t* stubSegmentIndex) {
+bool LazyStubTier::createManyEntryStubs(const Uint32Vector& funcExportIndices,
+                                        const CodeTier& codeTier,
+                                        bool flushAllThreadsIcaches,
+                                        size_t* stubSegmentIndex) {
   MOZ_ASSERT(funcExportIndices.length());
 
   LifoAlloc lifo(LAZY_STUB_LIFO_DEFAULT_CHUNK_SIZE);
@@ -677,13 +711,8 @@ bool LazyStubTier::createMany(const Uint32Vector& funcExportIndices,
   DebugOnly<uint32_t> numExpectedRanges = 0;
   for (uint32_t funcExportIndex : funcExportIndices) {
     const FuncExport& fe = funcExports[funcExportIndex];
-    // Entries with unsupported types get only the interp exit
-    bool unsupportedType =
-#ifdef ENABLE_WASM_SIMD
-        fe.funcType().hasV128ArgOrRet() ||
-#endif
-        fe.funcType().temporarilyUnsupportedReftypeForEntry();
-    numExpectedRanges += (unsupportedType ? 1 : 2);
+    // Exports that don't support a jit entry get only the interp entry.
+    numExpectedRanges += (fe.canHaveJitEntry() ? 2 : 1);
     void* calleePtr =
         moduleSegmentBase + metadata.codeRange(fe).funcUncheckedCallEntry();
     Maybe<ImmPtr> callee;
@@ -695,6 +724,181 @@ bool LazyStubTier::createMany(const Uint32Vector& funcExportIndices,
   }
   MOZ_ASSERT(codeRanges.length() == numExpectedRanges,
              "incorrect number of entries per function");
+
+  masm.finish();
+
+  MOZ_ASSERT(masm.callSites().empty());
+  MOZ_ASSERT(masm.callSiteTargets().empty());
+  MOZ_ASSERT(masm.trapSites().empty());
+#ifdef ENABLE_WASM_EXCEPTIONS
+  MOZ_ASSERT(masm.tryNotes().empty());
+#endif
+
+  if (masm.oom()) {
+    return false;
+  }
+
+  size_t codeLength = LazyStubSegment::AlignBytesNeeded(masm.bytesNeeded());
+
+  if (!stubSegments_.length() ||
+      !stubSegments_[lastStubSegmentIndex_]->hasSpace(codeLength)) {
+    size_t newSegmentSize = std::max(codeLength, ExecutableCodePageSize);
+    UniqueLazyStubSegment newSegment =
+        LazyStubSegment::create(codeTier, newSegmentSize);
+    if (!newSegment) {
+      return false;
+    }
+    lastStubSegmentIndex_ = stubSegments_.length();
+    if (!stubSegments_.emplaceBack(std::move(newSegment))) {
+      return false;
+    }
+  }
+
+  LazyStubSegment* segment = stubSegments_[lastStubSegmentIndex_].get();
+  *stubSegmentIndex = lastStubSegmentIndex_;
+
+  size_t interpRangeIndex;
+  uint8_t* codePtr = nullptr;
+  if (!segment->addStubs(codeLength, funcExportIndices, funcExports, codeRanges,
+                         &codePtr, &interpRangeIndex)) {
+    return false;
+  }
+
+  masm.executableCopy(codePtr);
+  PatchDebugSymbolicAccesses(codePtr, masm);
+  memset(codePtr + masm.bytesNeeded(), 0, codeLength - masm.bytesNeeded());
+
+  for (const CodeLabel& label : masm.codeLabels()) {
+    Assembler::Bind(codePtr, label);
+  }
+
+  // Optimized compilation finishes on a background thread, so we must make sure
+  // to flush the icaches of all the executing threads.
+  FlushICacheSpec flushIcacheSpec = flushAllThreadsIcaches
+                                        ? FlushICacheSpec::AllThreads
+                                        : FlushICacheSpec::LocalThreadOnly;
+  if (!ExecutableAllocator::makeExecutableAndFlushICache(flushIcacheSpec,
+                                                         codePtr, codeLength)) {
+    return false;
+  }
+
+  // Create lazy function exports for funcIndex -> entry lookup.
+  if (!exports_.reserve(exports_.length() + funcExportIndices.length())) {
+    return false;
+  }
+
+  for (uint32_t funcExportIndex : funcExportIndices) {
+    const FuncExport& fe = funcExports[funcExportIndex];
+
+    DebugOnly<CodeRange> cr = segment->codeRanges()[interpRangeIndex];
+    MOZ_ASSERT(cr.value.isInterpEntry());
+    MOZ_ASSERT(cr.value.funcIndex() == fe.funcIndex());
+
+    LazyFuncExport lazyExport(fe.funcIndex(), *stubSegmentIndex,
+                              interpRangeIndex);
+
+    size_t exportIndex;
+    const uint32_t targetFunctionIndex = fe.funcIndex();
+    MOZ_ALWAYS_FALSE(BinarySearchIf(
+        exports_, 0, exports_.length(),
+        [targetFunctionIndex](const LazyFuncExport& funcExport) {
+          return targetFunctionIndex - funcExport.funcIndex;
+        },
+        &exportIndex));
+    MOZ_ALWAYS_TRUE(
+        exports_.insert(exports_.begin() + exportIndex, std::move(lazyExport)));
+
+    // Exports that don't support a jit entry get only the interp entry.
+    interpRangeIndex += (fe.canHaveJitEntry() ? 2 : 1);
+  }
+
+  return true;
+}
+
+bool LazyStubTier::createOneEntryStub(uint32_t funcExportIndex,
+                                      const CodeTier& codeTier) {
+  Uint32Vector funcExportIndexes;
+  if (!funcExportIndexes.append(funcExportIndex)) {
+    return false;
+  }
+
+  // This happens on the executing thread (when createOneEntryStub is called
+  // from GetInterpEntryAndEnsureStubs), so no need to flush the icaches on all
+  // the threads.
+  bool flushAllThreadIcaches = false;
+
+  size_t stubSegmentIndex;
+  if (!createManyEntryStubs(funcExportIndexes, codeTier, flushAllThreadIcaches,
+                            &stubSegmentIndex)) {
+    return false;
+  }
+
+  const UniqueLazyStubSegment& segment = stubSegments_[stubSegmentIndex];
+  const CodeRangeVector& codeRanges = segment->codeRanges();
+
+  // Exports that don't support a jit entry get only the interp entry.
+  if (!codeTier.metadata().funcExports[funcExportIndex].canHaveJitEntry()) {
+    MOZ_ASSERT(codeRanges.length() >= 1);
+    MOZ_ASSERT(codeRanges.back().isInterpEntry());
+    return true;
+  }
+
+  MOZ_ASSERT(codeRanges.length() >= 2);
+  MOZ_ASSERT(codeRanges[codeRanges.length() - 2].isInterpEntry());
+
+  const CodeRange& cr = codeRanges[codeRanges.length() - 1];
+  MOZ_ASSERT(cr.isJitEntry());
+
+  codeTier.code().setJitEntry(cr.funcIndex(), segment->base() + cr.begin());
+  return true;
+}
+
+// This uses the funcIndex as the major key and the tls pointer value as the
+// minor key, the same as the < and == predicates used in RemoveDuplicates.
+
+auto IndirectStubComparator = [](uint32_t funcIndex, void* tlsData,
+                                 const IndirectStub& stub) -> int {
+  if (funcIndex < stub.funcIndex) {
+    return -1;
+  }
+  if (funcIndex > stub.funcIndex) {
+    return 1;
+  }
+  // Function indices are equal.
+  if (uintptr_t(tlsData) < uintptr_t(stub.tls)) {
+    return -1;
+  }
+  if (uintptr_t(tlsData) > uintptr_t(stub.tls)) {
+    return 1;
+  }
+  return 0;
+};
+
+bool LazyStubTier::createManyIndirectStubs(
+    const VectorOfIndirectStubTarget& targets, const CodeTier& codeTier) {
+  MOZ_ASSERT(targets.length());
+
+  LifoAlloc lifo(LAZY_STUB_LIFO_DEFAULT_CHUNK_SIZE);
+  TempAllocator alloc(&lifo);
+  JitContext jitContext(&alloc);
+  WasmMacroAssembler masm(alloc);
+  AutoCreatedBy acb(masm, "LazyStubTier::createManyIndirectStubs");
+
+  CodeRangeVector codeRanges;
+  for (const auto& target : targets) {
+    MOZ_ASSERT(!lookupIndirectStub(target.functionIdx, target.tls));
+
+    Offsets offsets;
+    if (!GenerateIndirectStub(
+            masm, static_cast<uint8_t*>(target.checkedCallEntryAddress),
+            target.tls, &offsets)) {
+      return false;
+    }
+    if (!codeRanges.emplaceBack(CodeRange::IndirectStub, target.functionIdx,
+                                offsets)) {
+      return false;
+    }
+  }
 
   masm.finish();
 
@@ -723,13 +927,13 @@ bool LazyStubTier::createMany(const Uint32Vector& funcExportIndices,
   }
 
   LazyStubSegment* segment = stubSegments_[lastStubSegmentIndex_].get();
-  *stubSegmentIndex = lastStubSegmentIndex_;
 
-  size_t interpRangeIndex;
+  size_t indirectStubRangeIndex;
   uint8_t* codePtr = nullptr;
-  if (!segment->addStubs(codeLength, funcExportIndices, funcExports, codeRanges,
-                         &codePtr, &interpRangeIndex))
+  if (!segment->addIndirectStubs(codeLength, targets, codeRanges, &codePtr,
+                                 &indirectStubRangeIndex)) {
     return false;
+  }
 
   masm.executableCopy(codePtr);
   PatchDebugSymbolicAccesses(codePtr, masm);
@@ -739,86 +943,44 @@ bool LazyStubTier::createMany(const Uint32Vector& funcExportIndices,
     Assembler::Bind(codePtr, label);
   }
 
-  if (!ExecutableAllocator::makeExecutableAndFlushICache(codePtr, codeLength)) {
+  if (!ExecutableAllocator::makeExecutableAndFlushICache(
+          FlushICacheSpec::LocalThreadOnly, codePtr, codeLength)) {
     return false;
   }
 
-  // Create lazy function exports for funcIndex -> entry lookup.
-  if (!exports_.reserve(exports_.length() + funcExportIndices.length())) {
+  // Record the runtime info about generated indirect stubs.
+  if (!indirectStubVector_.reserve(indirectStubVector_.length() +
+                                   targets.length())) {
     return false;
   }
 
-  for (uint32_t funcExportIndex : funcExportIndices) {
-    const FuncExport& fe = funcExports[funcExportIndex];
+  for (const auto& target : targets) {
+    auto stub = IndirectStub{target.functionIdx, lastStubSegmentIndex_,
+                             indirectStubRangeIndex, target.tls};
 
-    DebugOnly<CodeRange> cr = segment->codeRanges()[interpRangeIndex];
-    MOZ_ASSERT(cr.value.isInterpEntry());
-    MOZ_ASSERT(cr.value.funcIndex() == fe.funcIndex());
+    size_t indirectStubIndex;
+    MOZ_ALWAYS_FALSE(BinarySearchIf(
+        indirectStubVector_, 0, indirectStubVector_.length(),
+        [&stub](const IndirectStub& otherStub) {
+          return IndirectStubComparator(stub.funcIndex, stub.tls, otherStub);
+        },
+        &indirectStubIndex));
+    MOZ_ALWAYS_TRUE(indirectStubVector_.insert(
+        indirectStubVector_.begin() + indirectStubIndex, std::move(stub)));
 
-    LazyFuncExport lazyExport(fe.funcIndex(), *stubSegmentIndex,
-                              interpRangeIndex);
-
-    size_t exportIndex;
-    MOZ_ALWAYS_FALSE(BinarySearch(ProjectLazyFuncIndex(exports_), 0,
-                                  exports_.length(), fe.funcIndex(),
-                                  &exportIndex));
-    MOZ_ALWAYS_TRUE(
-        exports_.insert(exports_.begin() + exportIndex, std::move(lazyExport)));
-
-    // Functions with unsupported types in their sig have only one entry
-    // (interp).  All other functions get an extra jit entry.
-    bool unsupportedType =
-#ifdef ENABLE_WASM_SIMD
-        fe.funcType().hasV128ArgOrRet() ||
-#endif
-        fe.funcType().temporarilyUnsupportedReftypeForEntry();
-    interpRangeIndex += (unsupportedType ? 1 : 2);
+    ++indirectStubRangeIndex;
   }
-
   return true;
 }
 
-bool LazyStubTier::createOne(uint32_t funcExportIndex,
-                             const CodeTier& codeTier) {
-  Uint32Vector funcExportIndexes;
-  if (!funcExportIndexes.append(funcExportIndex)) {
-    return false;
+const CodeRange* LazyStubTier::lookupRange(const void* pc) const {
+  for (const UniqueLazyStubSegment& stubSegment : stubSegments_) {
+    const CodeRange* result = stubSegment->lookupRange(pc);
+    if (result) {
+      return result;
+    }
   }
-
-  size_t stubSegmentIndex;
-  if (!createMany(funcExportIndexes, codeTier, &stubSegmentIndex)) {
-    return false;
-  }
-
-  const UniqueLazyStubSegment& segment = stubSegments_[stubSegmentIndex];
-  const CodeRangeVector& codeRanges = segment->codeRanges();
-
-  // Functions that have unsupported types in their sig don't get a jit
-  // entry.
-  if (codeTier.metadata()
-          .funcExports[funcExportIndex]
-          .funcType()
-          .temporarilyUnsupportedReftypeForEntry()
-#ifdef ENABLE_WASM_SIMD
-      || codeTier.metadata()
-             .funcExports[funcExportIndex]
-             .funcType()
-             .hasV128ArgOrRet()
-#endif
-  ) {
-    MOZ_ASSERT(codeRanges.length() >= 1);
-    MOZ_ASSERT(codeRanges.back().isInterpEntry());
-    return true;
-  }
-
-  MOZ_ASSERT(codeRanges.length() >= 2);
-  MOZ_ASSERT(codeRanges[codeRanges.length() - 2].isInterpEntry());
-
-  const CodeRange& cr = codeRanges[codeRanges.length() - 1];
-  MOZ_ASSERT(cr.isJitEntry());
-
-  codeTier.code().setJitEntry(cr.funcIndex(), segment->base() + cr.begin());
-  return true;
+  return nullptr;
 }
 
 bool LazyStubTier::createTier2(const Uint32Vector& funcExportIndices,
@@ -828,8 +990,13 @@ bool LazyStubTier::createTier2(const Uint32Vector& funcExportIndices,
     return true;
   }
 
+  // This compilation happens on a background compiler thread, so the icache may
+  // need to be flushed on all the threads.
+  bool flushAllThreadIcaches = true;
+
   size_t stubSegmentIndex;
-  if (!createMany(funcExportIndices, codeTier, &stubSegmentIndex)) {
+  if (!createManyEntryStubs(funcExportIndices, codeTier, flushAllThreadIcaches,
+                            &stubSegmentIndex)) {
     return false;
   }
 
@@ -851,21 +1018,47 @@ void LazyStubTier::setJitEntries(const Maybe<size_t>& stubSegmentIndex,
   }
 }
 
-bool LazyStubTier::hasStub(uint32_t funcIndex) const {
+bool LazyStubTier::hasEntryStub(uint32_t funcIndex) const {
   size_t match;
-  return BinarySearch(ProjectLazyFuncIndex(exports_), 0, exports_.length(),
-                      funcIndex, &match);
+  return BinarySearchIf(
+      exports_, 0, exports_.length(),
+      [funcIndex](const LazyFuncExport& funcExport) {
+        return funcIndex - funcExport.funcIndex;
+      },
+      &match);
 }
 
 void* LazyStubTier::lookupInterpEntry(uint32_t funcIndex) const {
   size_t match;
-  if (!BinarySearch(ProjectLazyFuncIndex(exports_), 0, exports_.length(),
-                    funcIndex, &match)) {
+  if (!BinarySearchIf(
+          exports_, 0, exports_.length(),
+          [funcIndex](const LazyFuncExport& funcExport) {
+            return funcIndex - funcExport.funcIndex;
+          },
+          &match)) {
     return nullptr;
   }
   const LazyFuncExport& fe = exports_[match];
   const LazyStubSegment& stub = *stubSegments_[fe.lazyStubSegmentIndex];
   return stub.base() + stub.codeRanges()[fe.funcCodeRangeIndex].begin();
+}
+
+void* LazyStubTier::lookupIndirectStub(uint32_t funcIndex, void* tls) const {
+  size_t match;
+  if (!BinarySearchIf(
+          indirectStubVector_, 0, indirectStubVector_.length(),
+          [funcIndex, tls](const IndirectStub& stub) {
+            return IndirectStubComparator(funcIndex, tls, stub);
+          },
+          &match)) {
+    return nullptr;
+  }
+
+  const IndirectStub& indirectStub = indirectStubVector_[match];
+
+  const LazyStubSegment& segment = *stubSegments_[indirectStub.segmentIndex];
+  return segment.base() +
+         segment.codeRanges()[indirectStub.codeRangeIndex].begin();
 }
 
 void LazyStubTier::addSizeOfMisc(MallocSizeOf mallocSizeOf, size_t* code,
@@ -890,6 +1083,11 @@ bool MetadataTier::clone(const MetadataTier& src) {
   if (!debugTrapFarJumpOffsets.appendAll(src.debugTrapFarJumpOffsets)) {
     return false;
   }
+#ifdef ENABLE_WASM_EXCEPTIONS
+  if (!tryNotes.appendAll(src.tryNotes)) {
+    return false;
+  }
+#endif
 
   for (Trap trap : MakeEnumeratedRange(Trap::Limit)) {
     if (!trapSites[trap].appendAll(src.trapSites[trap])) {
@@ -915,8 +1113,12 @@ bool MetadataTier::clone(const MetadataTier& src) {
 }
 
 size_t Metadata::serializedSize() const {
-  return sizeof(pod()) + SerializedVectorSize(funcTypeIds) +
-         SerializedPodVectorSize(globals) + SerializedPodVectorSize(tables) +
+  return sizeof(pod()) + SerializedVectorSize(types) +
+         SerializedPodVectorSize(typesRenumbering) +
+         SerializedVectorSize(globals) + SerializedPodVectorSize(tables) +
+#ifdef ENABLE_WASM_EXCEPTIONS
+         SerializedPodVectorSize(tags) +
+#endif
          sizeof(moduleName) + SerializedPodVectorSize(funcNames) +
          filename.serializedSize() + sourceMapURL.serializedSize();
 }
@@ -925,9 +1127,13 @@ uint8_t* Metadata::serialize(uint8_t* cursor) const {
   MOZ_ASSERT(!debugEnabled && debugFuncArgTypes.empty() &&
              debugFuncReturnTypes.empty());
   cursor = WriteBytes(cursor, &pod(), sizeof(pod()));
-  cursor = SerializeVector(cursor, funcTypeIds);
-  cursor = SerializePodVector(cursor, globals);
+  cursor = SerializeVector(cursor, types);
+  cursor = SerializePodVector(cursor, typesRenumbering);
+  cursor = SerializeVector(cursor, globals);
   cursor = SerializePodVector(cursor, tables);
+#ifdef ENABLE_WASM_EXCEPTIONS
+  cursor = SerializePodVector(cursor, tags);
+#endif
   cursor = WriteBytes(cursor, &moduleName, sizeof(moduleName));
   cursor = SerializePodVector(cursor, funcNames);
   cursor = filename.serialize(cursor);
@@ -937,9 +1143,13 @@ uint8_t* Metadata::serialize(uint8_t* cursor) const {
 
 /* static */ const uint8_t* Metadata::deserialize(const uint8_t* cursor) {
   (cursor = ReadBytes(cursor, &pod(), sizeof(pod()))) &&
-      (cursor = DeserializeVector(cursor, &funcTypeIds)) &&
-      (cursor = DeserializePodVector(cursor, &globals)) &&
+      (cursor = DeserializeVector(cursor, &types)) &&
+      (cursor = DeserializePodVector(cursor, &typesRenumbering)) &&
+      (cursor = DeserializeVector(cursor, &globals)) &&
       (cursor = DeserializePodVector(cursor, &tables)) &&
+#ifdef ENABLE_WASM_EXCEPTIONS
+      (cursor = DeserializePodVector(cursor, &tags)) &&
+#endif
       (cursor = ReadBytes(cursor, &moduleName, sizeof(moduleName))) &&
       (cursor = DeserializePodVector(cursor, &funcNames)) &&
       (cursor = filename.deserialize(cursor)) &&
@@ -951,9 +1161,13 @@ uint8_t* Metadata::serialize(uint8_t* cursor) const {
 }
 
 size_t Metadata::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
-  return SizeOfVectorExcludingThis(funcTypeIds, mallocSizeOf) +
+  return SizeOfVectorExcludingThis(types, mallocSizeOf) +
+         typesRenumbering.sizeOfExcludingThis(mallocSizeOf) +
          globals.sizeOfExcludingThis(mallocSizeOf) +
          tables.sizeOfExcludingThis(mallocSizeOf) +
+#ifdef ENABLE_WASM_EXCEPTIONS
+         tags.sizeOfExcludingThis(mallocSizeOf) +
+#endif
          funcNames.sizeOfExcludingThis(mallocSizeOf) +
          filename.sizeOfExcludingThis(mallocSizeOf) +
          sourceMapURL.sizeOfExcludingThis(mallocSizeOf);
@@ -1031,15 +1245,15 @@ bool Metadata::getFuncName(NameContext ctx, uint32_t funcIndex,
   return AppendFunctionIndexName(funcIndex, name);
 }
 
-bool CodeTier::initialize(const Code& code, const LinkData& linkData,
-                          const Metadata& metadata) {
+bool CodeTier::initialize(IsTier2 isTier2, const Code& code,
+                          const LinkData& linkData, const Metadata& metadata) {
   MOZ_ASSERT(!initialized());
   code_ = &code;
 
-  MOZ_ASSERT(lazyStubs_.lock()->empty());
+  MOZ_ASSERT(lazyStubs_.lock()->entryStubsEmpty());
 
   // See comments in CodeSegment::initialize() for why this must be last.
-  if (!segment_->initialize(*this, linkData, metadata, *metadata_)) {
+  if (!segment_->initialize(isTier2, *this, linkData, metadata, *metadata_)) {
     return false;
   }
 
@@ -1095,6 +1309,23 @@ const CodeRange* CodeTier::lookupRange(const void* pc) const {
   return LookupInSorted(metadata_->codeRanges, target);
 }
 
+#ifdef ENABLE_WASM_EXCEPTIONS
+const wasm::WasmTryNote* CodeTier::lookupWasmTryNote(const void* pc) const {
+  size_t target = (uint8_t*)pc - segment_->base();
+  const WasmTryNoteVector& tryNotes = metadata_->tryNotes;
+
+  // We find the first hit (there may be multiple) to obtain the innermost
+  // handler, which is why we cannot binary search here.
+  for (const auto& tryNote : tryNotes) {
+    if (target >= tryNote.begin && target < tryNote.end) {
+      return &tryNote;
+    }
+  }
+
+  return nullptr;
+}
+#endif
+
 bool JumpTables::init(CompileMode mode, const ModuleSegment& ms,
                       const CodeRangeVector& codeRanges) {
   static_assert(JSScript::offsetOfJitCodeRaw() == 0,
@@ -1139,18 +1370,17 @@ bool JumpTables::init(CompileMode mode, const ModuleSegment& ms,
 }
 
 Code::Code(UniqueCodeTier tier1, const Metadata& metadata,
-           JumpTables&& maybeJumpTables, StructTypeVector&& structTypes)
+           JumpTables&& maybeJumpTables)
     : tier1_(std::move(tier1)),
       metadata_(&metadata),
       profilingLabels_(mutexid::WasmCodeProfilingLabels,
                        CacheableCharsVector()),
-      jumpTables_(std::move(maybeJumpTables)),
-      structTypes_(std::move(structTypes)) {}
+      jumpTables_(std::move(maybeJumpTables)) {}
 
 bool Code::initialize(const LinkData& linkData) {
   MOZ_ASSERT(!initialized());
 
-  if (!tier1_->initialize(*this, linkData, *metadata_)) {
+  if (!tier1_->initialize(IsTier2::NotTier2, *this, linkData, *metadata_)) {
     return false;
   }
 
@@ -1158,25 +1388,31 @@ bool Code::initialize(const LinkData& linkData) {
   return true;
 }
 
-bool Code::setTier2(UniqueCodeTier tier2, const LinkData& linkData) const {
+bool Code::setAndBorrowTier2(UniqueCodeTier tier2, const LinkData& linkData,
+                             const CodeTier** borrowedTier) const {
   MOZ_RELEASE_ASSERT(!hasTier2());
   MOZ_RELEASE_ASSERT(tier2->tier() == Tier::Optimized &&
                      tier1_->tier() == Tier::Baseline);
 
-  if (!tier2->initialize(*this, linkData, *metadata_)) {
+  if (!tier2->initialize(IsTier2::Tier2, *this, linkData, *metadata_)) {
     return false;
   }
 
   tier2_ = std::move(tier2);
+  *borrowedTier = &*tier2_;
 
   return true;
 }
 
 void Code::commitTier2() const {
   MOZ_RELEASE_ASSERT(!hasTier2());
-  MOZ_RELEASE_ASSERT(tier2_.get());
   hasTier2_ = true;
   MOZ_ASSERT(hasTier2());
+
+  // To maintain the invariant that tier2_ is never read without the tier having
+  // been committed, this checks tier2_ here instead of before setting hasTier2_
+  // (as would be natural).  See comment in WasmCode.h.
+  MOZ_RELEASE_ASSERT(tier2_.get());
 }
 
 uint32_t Code::getFuncIndex(JSFunction* fun) const {
@@ -1223,11 +1459,13 @@ const CodeTier& Code::codeTier(Tier tier) const {
         MOZ_ASSERT(tier1_->initialized());
         return *tier1_;
       }
-      if (tier2_) {
-        MOZ_ASSERT(tier2_->initialized());
-        return *tier2_;
-      }
-      MOZ_CRASH("No code segment at this tier");
+      // It is incorrect to ask for the optimized tier without there being such
+      // a tier and the tier having been committed.  The guard here could
+      // instead be `if (hasTier2()) ... ` but codeTier(t) should not be called
+      // in contexts where that test is necessary.
+      MOZ_RELEASE_ASSERT(hasTier2());
+      MOZ_ASSERT(tier2_->initialized());
+      return *tier2_;
   }
   MOZ_CRASH();
 }
@@ -1259,8 +1497,9 @@ const CallSite* Code::lookupCallSite(void* returnAddress) const {
 
     size_t match;
     if (BinarySearch(CallSiteRetAddrOffset(metadata(t).callSites), lowerBound,
-                     upperBound, target, &match))
+                     upperBound, target, &match)) {
       return &metadata(t).callSites[match];
+    }
   }
 
   return nullptr;
@@ -1276,6 +1515,22 @@ const CodeRange* Code::lookupFuncRange(void* pc) const {
   return nullptr;
 }
 
+const CodeRange* Code::lookupIndirectStubRange(void* pc) const {
+  // TODO / OPTIMIZE:
+  // There is only one client of this function - Table::getFuncRef.
+  // Table::getFuncRef can return only exported function,
+  // so if we pregenerate indirect stubs for all exported functions
+  // we can eliminate the lock below.
+  for (Tier tier : tiers()) {
+    auto stubs = codeTier(tier).lazyStubs().lock();
+    const CodeRange* result = stubs->lookupRange(pc);
+    if (result && result->isIndirectStub()) {
+      return result;
+    }
+  }
+  return nullptr;
+}
+
 const StackMap* Code::lookupStackMap(uint8_t* nextPC) const {
   for (Tier t : tiers()) {
     const StackMap* result = metadata(t).stackMaps.findMap(nextPC);
@@ -1285,6 +1540,19 @@ const StackMap* Code::lookupStackMap(uint8_t* nextPC) const {
   }
   return nullptr;
 }
+
+#ifdef ENABLE_WASM_EXCEPTIONS
+const wasm::WasmTryNote* Code::lookupWasmTryNote(void* pc, Tier* tier) const {
+  for (Tier t : tiers()) {
+    const WasmTryNote* result = codeTier(t).lookupWasmTryNote(pc);
+    if (result) {
+      *tier = t;
+      return result;
+    }
+  }
+  return nullptr;
+}
+#endif
 
 struct TrapSitePCOffset {
   const TrapSiteVector& trapSites;
@@ -1413,13 +1681,11 @@ void Code::addSizeOfMiscIfNotSeen(MallocSizeOf mallocSizeOf,
   for (auto t : tiers()) {
     codeTier(t).addSizeOfMisc(mallocSizeOf, code, data);
   }
-  *data += SizeOfVectorExcludingThis(structTypes_, mallocSizeOf);
 }
 
 size_t Code::serializedSize() const {
   return metadata().serializedSize() +
-         codeTier(Tier::Serialized).serializedSize() +
-         SerializedVectorSize(structTypes_);
+         codeTier(Tier::Serialized).serializedSize();
 }
 
 uint8_t* Code::serialize(uint8_t* cursor, const LinkData& linkData) const {
@@ -1427,7 +1693,6 @@ uint8_t* Code::serialize(uint8_t* cursor, const LinkData& linkData) const {
 
   cursor = metadata().serialize(cursor);
   cursor = codeTier(Tier::Serialized).serialize(cursor, linkData);
-  cursor = SerializeVector(cursor, structTypes_);
   return cursor;
 }
 
@@ -1452,21 +1717,73 @@ uint8_t* Code::serialize(uint8_t* cursor, const LinkData& linkData) const {
     return nullptr;
   }
 
-  StructTypeVector structTypes;
-  cursor = DeserializeVector(cursor, &structTypes);
-  if (!cursor) {
-    return nullptr;
-  }
-
   MutableCode code =
-      js_new<Code>(std::move(codeTier), metadata, std::move(jumpTables),
-                   std::move(structTypes));
+      js_new<Code>(std::move(codeTier), metadata, std::move(jumpTables));
   if (!code || !code->initialize(linkData)) {
     return nullptr;
   }
 
   *out = code;
   return cursor;
+}
+
+void Code::disassemble(JSContext* cx, Tier tier, int kindSelection,
+                       PrintCallback printString) const {
+  const MetadataTier& metadataTier = metadata(tier);
+  const CodeTier& codeTier = this->codeTier(tier);
+  const ModuleSegment& segment = codeTier.segment();
+
+  for (const CodeRange& range : metadataTier.codeRanges) {
+    if (kindSelection & (1 << range.kind())) {
+      MOZ_ASSERT(range.begin() < segment.length());
+      MOZ_ASSERT(range.end() < segment.length());
+
+      const char* kind;
+      char kindbuf[128];
+      switch (range.kind()) {
+        case CodeRange::Function:
+          kind = "Function";
+          break;
+        case CodeRange::InterpEntry:
+          kind = "InterpEntry";
+          break;
+        case CodeRange::JitEntry:
+          kind = "JitEntry";
+          break;
+        case CodeRange::ImportInterpExit:
+          kind = "ImportInterpExit";
+          break;
+        case CodeRange::ImportJitExit:
+          kind = "ImportJitExit";
+          break;
+        default:
+          SprintfLiteral(kindbuf, "CodeRange::Kind(%d)", range.kind());
+          kind = kindbuf;
+          break;
+      }
+      const char* separator =
+          "\n--------------------------------------------------\n";
+      // The buffer is quite large in order to accomodate mangled C++ names;
+      // lengths over 3500 have been observed in the wild.
+      char buf[4096];
+      if (range.hasFuncIndex()) {
+        const char* funcName = "(unknown)";
+        UTF8Bytes namebuf;
+        if (metadata().getFuncNameStandalone(range.funcIndex(), &namebuf) &&
+            namebuf.append('\0')) {
+          funcName = namebuf.begin();
+        }
+        SprintfLiteral(buf, "%sKind = %s, index = %d, name = %s:\n", separator,
+                       kind, range.funcIndex(), funcName);
+      } else {
+        SprintfLiteral(buf, "%sKind = %s\n", separator, kind);
+      }
+      printString(buf);
+
+      uint8_t* theCode = segment.base() + range.begin();
+      jit::Disassemble(theCode, range.end() - range.begin(), printString);
+    }
+  }
 }
 
 void wasm::PatchDebugSymbolicAccesses(uint8_t* codeBase, MacroAssembler& masm) {

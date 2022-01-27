@@ -23,7 +23,7 @@
 #include "nsIContentInlines.h"
 #include "nsIScriptError.h"
 #include "nsContentUtils.h"
-#include "ImageLayers.h"
+#include "nsLayoutUtils.h"
 
 #ifdef ACCESSIBILITY
 #  include "nsAccessibilityService.h"

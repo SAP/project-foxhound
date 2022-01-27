@@ -39,9 +39,10 @@ decorator in an existing mach command module. E.g:
 .. code-block:: python
 
     from mach.decorators import SettingsProvider
+    from mozbuild.base import MachCommandBase
 
     @SettingsProvider
-    class ArbitraryClassName(object):
+    class ArbitraryClassName(MachCommandBase):
         config_settings = [
             ('foo.bar', 'string', "A helpful description"),
             ('foo.baz', 'int', "Another description", 0, {'choices': set([0,1,2])}),
@@ -108,16 +109,16 @@ Accessing Settings
 ==================
 
 Now that the settings are defined and documented, they're accessible from
-individual mach commands if the command receives a context in its constructor.
+individual mach commands from the mach command context.
 For example:
 
 .. code-block:: python
 
     from mach.decorators import (
         Command,
-        CommandProvider,
         SettingsProvider,
     )
+    from mozbuild.base import MachCommandBase
 
     @SettingsProvider
     class ExampleSettings(object):
@@ -127,14 +128,10 @@ For example:
             ('foo.baz', 'int', 'desc', 0, {'choices': set([0,1,2])}),
         ]
 
-    @CommandProvider
-    class Commands(object):
-        def __init__(self, context):
-            self.settings = context.settings
-
-        @Command('command', category='misc',
-                 description='Prints a setting')
-        def command(self):
-            print(self.settings.a.b)
-            for option in self.settings.foo:
-                print(self.settings.foo[option])
+    @Command('command', category='misc',
+             description='Prints a setting')
+    def command(command_context):
+        settings = command_context._mach_context.settings
+        print(settings.a.b)
+        for option in settings.foo:
+            print(settings.foo[option])

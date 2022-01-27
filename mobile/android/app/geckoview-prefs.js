@@ -1,6 +1,8 @@
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+#filter dumbComments emptyLines substitution
+
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Non-static prefs that are specific to GeckoView belong in this file (unless
 // there is a compelling and documented reason for them to belong in another
@@ -11,18 +13,15 @@
 // improves readability, particular for conditional blocks that exceed a single
 // screen.
 
-#filter substitution
-
 #include mobile.js
 
 pref("privacy.trackingprotection.pbmode.enabled", false);
 
+pref("browser.tabs.remote.autostart", true);
 pref("dom.ipc.keepProcessesAlive.web", 1);
-pref("dom.ipc.processCount", 1);
+
 pref("dom.ipc.processPrelaunch.enabled", false);
 
-// Disable the Telemetry Event Ping
-pref("toolkit.telemetry.eventping.enabled", false);
 // Don't create the hidden window during startup.
 pref("toolkit.lazyHiddenWindow", true);
 
@@ -46,8 +45,8 @@ pref("dom.push.enabled", true);
 // enable external storage API
 pref("dom.storageManager.enabled", true);
 
-// enable Visual Viewport API
-pref("dom.visualviewport.enabled", true);
+// enable storage access API
+pref("dom.storage_access.enabled", true);
 
 // Inherit locale from the OS, used for multi-locale builds
 pref("intl.locale.requested", "");
@@ -64,13 +63,6 @@ pref("browser.safebrowsing.features.trackingProtection.update", true);
 pref("browser.safebrowsing.features.cryptomining.update", true);
 // Enable fingerprinting protection blocklist updates
 pref("browser.safebrowsing.features.fingerprinting.update", true);
-
-// Treat mouse as touch only on TV-ish devices
-pref("ui.android.mouse_as_touch", 2);
-
-// Fenix is currently not whitelisted for Web Authentication
-pref("security.webauth.webauthn_enable_android_fido2", false);
-pref("security.webauth.webauthn", false);
 
 // Enable autoplay permission prompts
 pref("media.geckoview.autoplay.request", true);
@@ -89,3 +81,17 @@ pref("toolkit.autocomplete.delegate", true);
 // Android doesn't support the new sync storage yet, we will have our own in
 // Bug 1625257.
 pref("webextensions.storage.sync.kinto", true);
+
+// This value is derived from the calculation:
+// MOZ_ANDROID_CONTENT_SERVICE_COUNT - dom.ipc.processCount
+// (dom.ipc.processCount is set in GeckoRuntimeSettings.java)
+#ifdef NIGHTLY_BUILD
+  pref("dom.ipc.processCount.webCOOP+COEP", 38);
+#endif
+
+// Form autofill prefs.
+pref("extensions.formautofill.addresses.capture.enabled", true);
+
+// Debug prefs.
+pref("browser.formfill.debug", false);
+pref("extensions.formautofill.loglevel", "Warn");

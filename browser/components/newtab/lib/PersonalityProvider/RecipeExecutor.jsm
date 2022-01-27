@@ -27,8 +27,8 @@ var EXPORTED_SYMBOLS = ["RecipeExecutor"];
  *   {"function": "conditionally_nmf_tag", "fields": ["title", "description"]} ]
  *
  * Recipes are sandboxed by the fact that the step functions must be explicitly
- * whitelisted. Functions whitelisted for builder recipes are specifed in the
- * RecipeExecutor.ITEM_BUILDER_REGISTRY, while combiner functions are whitelisted
+ * allowed. Functions allowed for builder recipes are specifed in the
+ * RecipeExecutor.ITEM_BUILDER_REGISTRY, while combiner functions are allowed
  * in RecipeExecutor.ITEM_COMBINER_REGISTRY .
  */
 const RecipeExecutor = class RecipeExecutor {
@@ -48,7 +48,7 @@ const RecipeExecutor = class RecipeExecutor {
       scalar_add: this.scalarAdd,
       vector_add: this.vectorAdd,
       make_boolean: this.makeBoolean,
-      whitelist_fields: this.whitelistFields,
+      allow_fields: this.allowFields,
       filter_by_value: this.filterByValue,
       l2_normalize: this.l2Normalize,
       prob_normalize: this.probNormalize,
@@ -626,7 +626,7 @@ const RecipeExecutor = class RecipeExecutor {
    * or 1/-1).
    *
    * Config:
-   *   field            Field containing either a mpa of strings to numbers or
+   *   field            Field containing either a map of strings to numbers or
    *                      an array of numbers to  convert.
    *   threshold        OPTIONAL (DEFAULT: 0) Values above this will be replaced
    *                      with 1.0. Those below will be converted to 0.
@@ -681,7 +681,7 @@ const RecipeExecutor = class RecipeExecutor {
    *
    * fields           An array of strings indicating the fields to keep
    */
-  whitelistFields(item, config) {
+  allowFields(item, config) {
     let newItem = {};
     for (let ele of config.fields) {
       if (ele in item) {

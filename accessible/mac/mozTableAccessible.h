@@ -1,6 +1,6 @@
+/* clang-format off */
 /* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
+/* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -49,13 +49,25 @@
 // override
 - (NSString*)moxRole;
 
+// override
+- (void)handleAccessibleEvent:(uint32_t)eventType;
+
 - (BOOL)isLayoutTablePart;
+
+- (void)invalidateLayoutTableCache;
 
 @end
 
 @interface mozTableAccessible : mozTablePartAccessible {
   NSMutableArray* mColContainers;
+  uint32_t mIsLayoutTable;
 }
+
+// local override
+- (BOOL)isLayoutTablePart;
+
+// local override
+- (void)invalidateLayoutTableCache;
 
 - (void)invalidateColumns;
 
@@ -111,5 +123,61 @@
 
 // override
 - (NSArray*)moxColumnHeaderUIElements;
+
+@end
+
+@interface mozOutlineAccessible : mozAccessible
+
+// local override
+- (BOOL)isLayoutTablePart;
+
+// override
+- (NSArray*)moxRows;
+
+// override
+- (NSArray*)moxColumns;
+
+// override
+- (NSArray*)moxSelectedRows;
+
+// override
+- (NSString*)moxOrientation;
+
+@end
+
+@interface mozOutlineRowAccessible : mozTableRowAccessible
+
+// override
+- (BOOL)isLayoutTablePart;
+
+// override
+- (NSNumber*)moxDisclosing;
+
+// override
+- (void)moxSetDisclosing:(NSNumber*)disclosing;
+
+// override
+- (NSNumber*)moxExpanded;
+
+// override
+- (id)moxDisclosedByRow;
+
+// override
+- (NSNumber*)moxDisclosureLevel;
+
+// override
+- (NSArray*)moxDisclosedRows;
+
+// override
+- (NSNumber*)moxIndex;
+
+// override
+- (NSString*)moxLabel;
+
+// override
+- (id)moxValue;
+
+// override
+- (void)stateChanged:(uint64_t)state isEnabled:(BOOL)enabled;
 
 @end

@@ -9,7 +9,7 @@
 
 #include "mozilla/EventStates.h"
 #include "mozilla/dom/BindContext.h"
-#include "mozilla/dom/HTMLFormSubmission.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLObjectElement.h"
 #include "mozilla/dom/HTMLObjectElementBinding.h"
 #include "mozilla/dom/ElementInlines.h"
@@ -17,10 +17,7 @@
 #include "nsAttrValueInlines.h"
 #include "nsGkAtoms.h"
 #include "nsError.h"
-#include "mozilla/dom/Document.h"
-#include "nsIPluginDocument.h"
-#include "nsIObjectFrame.h"
-#include "nsNPAPIPluginInstance.h"
+#include "nsIContentInlines.h"
 #include "nsIWidget.h"
 #include "nsContentUtils.h"
 #ifdef XP_MACOSX
@@ -29,13 +26,13 @@
 #  include "nsFocusManager.h"
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 HTMLObjectElement::HTMLObjectElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
     FromParser aFromParser)
-    : nsGenericHTMLFormElement(std::move(aNodeInfo), NS_FORM_OBJECT),
+    : nsGenericHTMLFormControlElement(std::move(aNodeInfo),
+                                      FormControlType::Object),
       mIsDoneAddingChildren(!aFromParser) {
   RegisterActivityObserver();
   SetIsNetworkCreated(aFromParser == FROM_PARSER_NETWORK);
@@ -48,16 +45,13 @@ HTMLObjectElement::HTMLObjectElement(
 }
 
 HTMLObjectElement::~HTMLObjectElement() {
-#ifdef XP_MACOSX
-  OnFocusBlurPlugin(this, false);
-#endif
   UnregisterActivityObserver();
   nsImageLoadingContent::Destroy();
 }
 
 bool HTMLObjectElement::IsInteractiveHTMLContent() const {
   return HasAttr(kNameSpaceID_None, nsGkAtoms::usemap) ||
-         nsGenericHTMLFormElement::IsInteractiveHTMLContent();
+         nsGenericHTMLFormControlElement::IsInteractiveHTMLContent();
 }
 
 void HTMLObjectElement::AsyncEventRunning(AsyncEventDispatcher* aEvent) {
@@ -78,164 +72,47 @@ void HTMLObjectElement::DoneAddingChildren(bool aHaveNotified) {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLObjectElement)
 
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLObjectElement,
-                                                  nsGenericHTMLFormElement)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(
+    HTMLObjectElement, nsGenericHTMLFormControlElement)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mValidity)
   nsObjectLoadingContent::Traverse(tmp, cb);
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLObjectElement,
-                                                nsGenericHTMLFormElement)
+                                                nsGenericHTMLFormControlElement)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mValidity)
+  nsObjectLoadingContent::Unlink(tmp);
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(
-    HTMLObjectElement, nsGenericHTMLFormElement, imgINotificationObserver,
-    nsIRequestObserver, nsIStreamListener, nsFrameLoaderOwner,
-    nsIObjectLoadingContent, nsIImageLoadingContent, nsIChannelEventSink,
-    nsIConstraintValidation)
+    HTMLObjectElement, nsGenericHTMLFormControlElement,
+    imgINotificationObserver, nsIRequestObserver, nsIStreamListener,
+    nsFrameLoaderOwner, nsIObjectLoadingContent, nsIImageLoadingContent,
+    nsIChannelEventSink, nsIConstraintValidation)
 
 NS_IMPL_ELEMENT_CLONE(HTMLObjectElement)
 
-#ifdef XP_MACOSX
-
-static nsIWidget* GetWidget(Element* aElement) {
-  return nsContentUtils::WidgetForDocument(aElement->OwnerDoc());
-}
-
-Element* HTMLObjectElement::sLastFocused = nullptr;  // Weak
-
-class PluginFocusSetter : public Runnable {
- public:
-  PluginFocusSetter(nsIWidget* aWidget, Element* aElement)
-      : Runnable("PluginFocusSetter"), mWidget(aWidget), mElement(aElement) {}
-
-  NS_IMETHOD Run() override {
-    if (mElement) {
-      HTMLObjectElement::sLastFocused = mElement;
-      bool value = true;
-      mWidget->SetPluginFocused(value);
-    } else if (!HTMLObjectElement::sLastFocused) {
-      bool value = false;
-      mWidget->SetPluginFocused(value);
-    }
-
-    return NS_OK;
-  }
-
- private:
-  nsCOMPtr<nsIWidget> mWidget;
-  nsCOMPtr<Element> mElement;
-};
-
-void HTMLObjectElement::OnFocusBlurPlugin(Element* aElement, bool aFocus) {
-  // In general we don't want to call nsIWidget::SetPluginFocused() for any
-  // Element that doesn't have a plugin running.  But if SetPluginFocused(true)
-  // was just called for aElement while it had a plugin running, we want to
-  // make sure nsIWidget::SetPluginFocused(false) gets called for it now, even
-  // if aFocus is true.
-  if (aFocus) {
-    nsCOMPtr<nsIObjectLoadingContent> olc = do_QueryInterface(aElement);
-    bool hasRunningPlugin = false;
-    if (olc) {
-      hasRunningPlugin =
-          static_cast<nsObjectLoadingContent*>(olc.get())->HasRunningPlugin();
-    }
-    if (!hasRunningPlugin) {
-      aFocus = false;
-    }
-  }
-
-  if (aFocus || aElement == sLastFocused) {
-    if (!aFocus) {
-      sLastFocused = nullptr;
-    }
-    nsIWidget* widget = GetWidget(aElement);
-    if (widget) {
-      nsContentUtils::AddScriptRunner(
-          new PluginFocusSetter(widget, aFocus ? aElement : nullptr));
-    }
-  }
-}
-
-void HTMLObjectElement::HandlePluginCrashed(Element* aElement) {
-  OnFocusBlurPlugin(aElement, false);
-}
-
-void HTMLObjectElement::HandlePluginInstantiated(Element* aElement) {
-  // If aElement is already focused when a plugin is instantiated, we need
-  // to initiate a call to nsIWidget::SetPluginFocused(true).  Otherwise
-  // keyboard input won't work in a click-to-play plugin until aElement
-  // loses focus and regains it.
-  nsFocusManager* fm = nsFocusManager::GetFocusManager();
-  if (fm && fm->GetFocusedElement() == aElement) {
-    OnFocusBlurPlugin(aElement, true);
-  }
-}
-
-void HTMLObjectElement::HandleFocusBlurPlugin(Element* aElement,
-                                              WidgetEvent* aEvent) {
-  if (!aEvent->IsTrusted()) {
-    return;
-  }
-  switch (aEvent->mMessage) {
-    case eFocus: {
-      OnFocusBlurPlugin(aElement, true);
-      break;
-    }
-    case eBlur: {
-      OnFocusBlurPlugin(aElement, false);
-      break;
-    }
-    default:
-      break;
-  }
-}
-
-NS_IMETHODIMP
-HTMLObjectElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
-  HandleFocusBlurPlugin(this, aVisitor.mEvent);
-  return NS_OK;
-}
-
-#endif  // #ifdef XP_MACOSX
-
 nsresult HTMLObjectElement::BindToTree(BindContext& aContext,
                                        nsINode& aParent) {
-  nsresult rv = nsGenericHTMLFormElement::BindToTree(aContext, aParent);
+  nsresult rv = nsGenericHTMLFormControlElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = nsObjectLoadingContent::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // Don't kick off load from being bound to a plugin document - the plugin
-  // document will call nsObjectLoadingContent::InitializeFromChannel() for the
-  // initial load.
-  if (IsInComposedDoc()) {
-    nsCOMPtr<nsIPluginDocument> pluginDoc =
-        do_QueryInterface(&aContext.OwnerDoc());
-    // If we already have all the children, start the load.
-    if (mIsDoneAddingChildren && !pluginDoc) {
-      void (HTMLObjectElement::*start)() = &HTMLObjectElement::StartObjectLoad;
-      nsContentUtils::AddScriptRunner(
-          NewRunnableMethod("dom::HTMLObjectElement::BindToTree", this, start));
-    }
+  // If we already have all the children, start the load.
+  if (IsInComposedDoc() && mIsDoneAddingChildren) {
+    void (HTMLObjectElement::*start)() = &HTMLObjectElement::StartObjectLoad;
+    nsContentUtils::AddScriptRunner(
+        NewRunnableMethod("dom::HTMLObjectElement::BindToTree", this, start));
   }
 
   return NS_OK;
 }
 
 void HTMLObjectElement::UnbindFromTree(bool aNullParent) {
-#ifdef XP_MACOSX
-  // When a page is reloaded (when an Document's content is removed), the
-  // focused element isn't necessarily sent an eBlur event. See
-  // nsFocusManager::ContentRemoved(). This means that a widget may think it
-  // still contains a focused plugin when it doesn't -- which in turn can
-  // disable text input in the browser window. See bug 1137229.
-  OnFocusBlurPlugin(this, false);
-#endif
   nsObjectLoadingContent::UnbindFromTree(aNullParent);
-  nsGenericHTMLFormElement::UnbindFromTree(aNullParent);
+  nsGenericHTMLFormControlElement::UnbindFromTree(aNullParent);
 }
 
 nsresult HTMLObjectElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
@@ -257,7 +134,7 @@ nsresult HTMLObjectElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
   nsresult rv = AfterMaybeChangeAttr(aNamespaceID, aName, aNotify);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return nsGenericHTMLFormElement::AfterSetAttr(
+  return nsGenericHTMLFormControlElement::AfterSetAttr(
       aNamespaceID, aName, aValue, aOldValue, aSubjectPrincipal, aNotify);
 }
 
@@ -267,8 +144,8 @@ nsresult HTMLObjectElement::OnAttrSetButNotChanged(
   nsresult rv = AfterMaybeChangeAttr(aNamespaceID, aName, aNotify);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return nsGenericHTMLFormElement::OnAttrSetButNotChanged(aNamespaceID, aName,
-                                                          aValue, aNotify);
+  return nsGenericHTMLFormControlElement::OnAttrSetButNotChanged(
+      aNamespaceID, aName, aValue, aNotify);
 }
 
 nsresult HTMLObjectElement::AfterMaybeChangeAttr(int32_t aNamespaceID,
@@ -283,7 +160,14 @@ nsresult HTMLObjectElement::AfterMaybeChangeAttr(int32_t aNamespaceID,
     // attributes before inserting the node into the document.
     if (aNotify && IsInComposedDoc() && mIsDoneAddingChildren &&
         aName == nsGkAtoms::data && !BlockEmbedOrObjectContentLoading()) {
-      return LoadObject(aNotify, true);
+      nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
+          "HTMLObjectElement::LoadObject",
+          [self = RefPtr<HTMLObjectElement>(this), aNotify]() {
+            if (self->IsInComposedDoc()) {
+              self->LoadObject(aNotify, true);
+            }
+          }));
+      return NS_OK;
     }
   }
 
@@ -295,7 +179,17 @@ bool HTMLObjectElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
   // TODO: this should probably be managed directly by IsHTMLFocusable.
   // See bug 597242.
   Document* doc = GetComposedDoc();
-  if (!doc || doc->HasFlag(NODE_IS_EDITABLE)) {
+  if (!doc || IsInDesignMode()) {
+    if (aTabIndex) {
+      *aTabIndex = -1;
+    }
+
+    *aIsFocusable = false;
+    return false;
+  }
+
+  // Plugins that show the empty fallback should not accept focus.
+  if (Type() == eType_Fallback) {
     if (aTabIndex) {
       *aTabIndex = -1;
     }
@@ -307,18 +201,7 @@ bool HTMLObjectElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
   const nsAttrValue* attrVal = mAttrs.GetAttr(nsGkAtoms::tabindex);
   bool isFocusable = attrVal && attrVal->Type() == nsAttrValue::eInteger;
 
-  // Has plugin content: let the plugin decide what to do in terms of
-  // internal focus from mouse clicks
-  if (Type() == eType_Plugin) {
-    if (aTabIndex) {
-      *aTabIndex = isFocusable ? attrVal->GetIntegerValue() : -1;
-    }
-
-    *aIsFocusable = true;
-    return false;
-  }
-
-  // This method doesn't call nsGenericHTMLFormElement intentionally.
+  // This method doesn't call nsGenericHTMLFormControlElement intentionally.
   // TODO: It should probably be changed when bug 597242 will be fixed.
   if (IsEditableRoot() ||
       ((Type() == eType_Document || Type() == eType_FakePlugin) &&
@@ -339,47 +222,6 @@ bool HTMLObjectElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
   }
 
   return false;
-}
-
-nsIContent::IMEState HTMLObjectElement::GetDesiredIMEState() {
-  if (Type() == eType_Plugin) {
-    return IMEState(IMEState::PLUGIN);
-  }
-
-  return nsGenericHTMLFormElement::GetDesiredIMEState();
-}
-
-NS_IMETHODIMP
-HTMLObjectElement::Reset() { return NS_OK; }
-
-NS_IMETHODIMP
-HTMLObjectElement::SubmitNamesValues(HTMLFormSubmission* aFormSubmission) {
-  nsAutoString name;
-  if (!GetAttr(kNameSpaceID_None, nsGkAtoms::name, name)) {
-    // No name, don't submit.
-
-    return NS_OK;
-  }
-
-  nsIFrame* frame = GetPrimaryFrame();
-
-  nsIObjectFrame* objFrame = do_QueryFrame(frame);
-  if (!objFrame) {
-    // No frame, nothing to submit.
-
-    return NS_OK;
-  }
-
-  RefPtr<nsNPAPIPluginInstance> pi = objFrame->GetPluginInstance();
-  if (!pi) {
-    return NS_OK;
-  }
-
-  nsAutoString value;
-  nsresult rv = pi->GetFormValue(value);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return aFormSubmission->AddNameValuePair(name, value);
 }
 
 int32_t HTMLObjectElement::TabIndexDefault() { return 0; }
@@ -410,17 +252,21 @@ bool HTMLObjectElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
     }
   }
 
-  return nsGenericHTMLFormElement::ParseAttribute(
+  return nsGenericHTMLFormControlElement::ParseAttribute(
       aNamespaceID, aAttribute, aValue, aMaybeScriptedPrincipal, aResult);
 }
 
 void HTMLObjectElement::MapAttributesIntoRule(
     const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls) {
-  nsGenericHTMLFormElement::MapImageAlignAttributeInto(aAttributes, aDecls);
-  nsGenericHTMLFormElement::MapImageBorderAttributeInto(aAttributes, aDecls);
-  nsGenericHTMLFormElement::MapImageMarginAttributeInto(aAttributes, aDecls);
-  nsGenericHTMLFormElement::MapImageSizeAttributesInto(aAttributes, aDecls);
-  nsGenericHTMLFormElement::MapCommonAttributesInto(aAttributes, aDecls);
+  nsGenericHTMLFormControlElement::MapImageAlignAttributeInto(aAttributes,
+                                                              aDecls);
+  nsGenericHTMLFormControlElement::MapImageBorderAttributeInto(aAttributes,
+                                                               aDecls);
+  nsGenericHTMLFormControlElement::MapImageMarginAttributeInto(aAttributes,
+                                                               aDecls);
+  nsGenericHTMLFormControlElement::MapImageSizeAttributesInto(aAttributes,
+                                                              aDecls);
+  nsGenericHTMLFormControlElement::MapCommonAttributesInto(aAttributes, aDecls);
 }
 
 NS_IMETHODIMP_(bool)
@@ -453,7 +299,7 @@ void HTMLObjectElement::StartObjectLoad(bool aNotify, bool aForce) {
 }
 
 EventStates HTMLObjectElement::IntrinsicState() const {
-  return nsGenericHTMLFormElement::IntrinsicState() | ObjectState();
+  return nsGenericHTMLFormControlElement::IntrinsicState() | ObjectState();
 }
 
 uint32_t HTMLObjectElement::GetCapabilities() const {
@@ -462,11 +308,11 @@ uint32_t HTMLObjectElement::GetCapabilities() const {
 
 void HTMLObjectElement::DestroyContent() {
   nsObjectLoadingContent::Destroy();
-  nsGenericHTMLFormElement::DestroyContent();
+  nsGenericHTMLFormControlElement::DestroyContent();
 }
 
 nsresult HTMLObjectElement::CopyInnerTo(Element* aDest) {
-  nsresult rv = nsGenericHTMLFormElement::CopyInnerTo(aDest);
+  nsresult rv = nsGenericHTMLFormControlElement::CopyInnerTo(aDest);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (aDest->OwnerDoc()->IsStaticDocument()) {
@@ -478,16 +324,9 @@ nsresult HTMLObjectElement::CopyInnerTo(Element* aDest) {
 
 JSObject* HTMLObjectElement::WrapNode(JSContext* aCx,
                                       JS::Handle<JSObject*> aGivenProto) {
-  JS::Rooted<JSObject*> obj(
-      aCx, HTMLObjectElement_Binding::Wrap(aCx, this, aGivenProto));
-  if (!obj) {
-    return nullptr;
-  }
-  SetupProtoChain(aCx, obj);
-  return obj;
+  return HTMLObjectElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(Object)

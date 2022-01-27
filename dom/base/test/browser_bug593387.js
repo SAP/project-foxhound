@@ -13,6 +13,7 @@ add_task(async function test() {
     set: [
       ["security.csp.enable", false],
       ["dom.security.skip_about_page_has_csp_assert", true],
+      ["dom.security.https_first", false],
     ],
   });
 
@@ -50,7 +51,7 @@ add_task(async function test() {
       // ---------------------------------------------------
       // Test 2: Try the same with a content top-level context)
 
-      await BrowserTestUtils.loadURI(newBrowser, "http://example.com/");
+      BrowserTestUtils.loadURI(newBrowser, "http://example.com/");
       await BrowserTestUtils.browserLoaded(newBrowser);
 
       let observerData = await SpecialPowers.spawn(

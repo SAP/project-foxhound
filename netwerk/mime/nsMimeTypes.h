@@ -75,8 +75,46 @@
 #define APPLICATION_RDF_XML "application/rdf+xml"
 #define APPLICATION_WAPXHTML_XML "application/vnd.wap.xhtml+xml"
 #define APPLICATION_PACKAGE "application/package"
-#define APPLICATION_JAVASCRIPT_BINAST "application/javascript-binast"
 #define APPLICATION_WASM "application/wasm"
+#define APPLICATION_MSEXCEL "application/msexcel"
+#define APPLICATION_MSPPT "application/mspowerpoint"
+#define APPLICATION_MSWORD "application/msword"
+#define APPLICATION_MSWORD_TEMPLATE "application/msword-template"
+#define APPLICATION_VND_CES_QUICKPOINT "application/vnd.ces-quickpoint"
+#define APPLICATION_VND_CES_QUICKSHEET "application/vnd.ces-quicksheet"
+#define APPLICATION_VND_CES_QUICKWORD "application/vnd.ces-quickword"
+#define APPLICATION_VND_MS_EXCEL "application/vnd.ms-excel"
+#define APPLICATION_VND_MS_EXCEL2 \
+  "application/vnd.ms-excel.sheet.macroenabled.12"
+#define APPLICATION_VND_MS_PPT "application/vnd.ms-powerpoint"
+#define APPLICATION_VND_MS_PPT2 \
+  "application/vnd.ms-powerpoint.presentation.macroenabled.12"
+#define APPLICATION_VND_MS_WORD "application/vnd.ms-word"
+#define APPLICATION_VND_MS_WORD2 "application/vnd.ms-word.document.12"
+#define APPLICATION_VND_MS_WORD3 \
+  "application/vnd.ms-word.document.macroenabled.12"
+#define APPLICATION_VND_MSWORD "application/vnd.msword"
+#define APPLICATION_VND_PRESENTATIONML_PRESENTATION \
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+#define APPLICATION_VND_PRESENTATIONML_TEMPLATE \
+  "application/vnd.openxmlformats-officedocument.presentationml.template"
+#define APPLICATION_VND_SPREADSHEETML_SHEET \
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+#define APPLICATION_VND_SPREADSHEETML_TEMPLATE \
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.template"
+#define APPLICATION_VND_WORDPROCESSINGML_DOCUMENT \
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+#define APPLICATION_VND_WORDPROCESSINGML_TEMPLATE \
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.template"
+#define APPLICATION_VND_PRESENTATION_OPENXML \
+  "application/vnd.presentation-openxml"
+#define APPLICATION_VND_PRESENTATION_OPENXMLM \
+  "application/vnd.presentation-openxmlm"
+#define APPLICATION_VND_SPREADSHEET_OPENXML \
+  "application/vnd.spreadsheet-openxml"
+#define APPLICATION_VND_WORDPROSSING_OPENXML \
+  "application/vnd.wordprocessing-openxml"
+#define APPLICATION_XPROTOBUF "application/x-protobuf"
 
 #define AUDIO_BASIC "audio/basic"
 #define AUDIO_OGG "audio/ogg"
@@ -91,6 +129,7 @@
 #define AUDIO_MIDI "audio/x-midi"
 #define AUDIO_MATROSKA "audio/x-matroska"
 #define AUDIO_AAC "audio/aac"
+#define AUDIO_MPEG_TS "audio/mp2t"
 
 #define BINARY_OCTET_STREAM "binary/octet-stream"
 
@@ -120,6 +159,7 @@
 #define IMAGE_SVG_XML "image/svg+xml"
 #define IMAGE_WEBP "image/webp"
 #define IMAGE_AVIF "image/avif"
+#define IMAGE_JXL "image/jxl"
 
 #define MESSAGE_EXTERNAL_BODY "message/external-body"
 #define MESSAGE_NEWS "message/news"
@@ -157,6 +197,7 @@
 #define TEXT_XSL "text/xsl"
 #define TEXT_EVENT_STREAM "text/event-stream"
 #define TEXT_CACHE_MANIFEST "text/cache-manifest"
+#define TEXT_CSV "text/csv"
 
 #define VIDEO_MPEG "video/mpeg"
 #define VIDEO_MP4 "video/mp4"
@@ -170,6 +211,7 @@
 #define VIDEO_AVI "video/avi"
 #define VIDEO_MATROSKA "video/x-matroska"
 #define APPLICATION_OGG "application/ogg"
+#define APPLICATION_MPEGURL "application/vnd.apple.mpegurl"
 
 /* x-uuencode-apple-single. QuickMail made me do this. */
 #define UUENCODE_APPLE_SINGLE "x-uuencode-apple-single"

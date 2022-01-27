@@ -9,8 +9,10 @@
 
 #include "nsHtml5TreeOperation.h"
 #include "mozAutoDocUpdate.h"
+#include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/Likely.h"
 #include "mozilla/dom/Comment.h"
+#include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/dom/DocumentType.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/LinkStyle.h"
@@ -155,8 +157,6 @@ nsHtml5TreeOperation::~nsHtml5TreeOperation() {
 
     void operator()(const opUpdateStyleSheet& aOperation) {}
 
-    void operator()(const opProcessMeta& aOperation) {}
-
     void operator()(const opProcessOfflineManifest& aOperation) {
       free(aOperation.mUrl);
     }
@@ -256,12 +256,32 @@ nsresult nsHtml5TreeOperation::Append(nsIContent* aNode, nsIContent* aParent,
                                       nsHtml5DocumentBuilder* aBuilder) {
   MOZ_ASSERT(aBuilder);
   MOZ_ASSERT(aBuilder->IsInDocUpdate());
-  nsresult rv = NS_OK;
+  ErrorResult rv;
   nsHtml5OtherDocUpdate update(aParent->OwnerDoc(), aBuilder->GetDocument());
-  rv = aParent->AppendChildTo(aNode, false);
-  if (NS_SUCCEEDED(rv)) {
+  aParent->AppendChildTo(aNode, false, rv);
+  if (!rv.Failed()) {
     aNode->SetParserHasNotified();
     MutationObservers::NotifyContentAppended(aParent, aNode);
+  }
+  return rv.StealNSResult();
+}
+
+nsresult nsHtml5TreeOperation::Append(nsIContent* aNode, nsIContent* aParent,
+                                      mozilla::dom::FromParser aFromParser,
+                                      nsHtml5DocumentBuilder* aBuilder) {
+  Maybe<nsHtml5AutoPauseUpdate> autoPause;
+  Maybe<dom::AutoCEReaction> autoCEReaction;
+  dom::DocGroup* docGroup = aParent->OwnerDoc()->GetDocGroup();
+  if (docGroup && aFromParser != mozilla::dom::FROM_PARSER_FRAGMENT) {
+    autoCEReaction.emplace(docGroup->CustomElementReactionsStack(), nullptr);
+  }
+  nsresult rv = Append(aNode, aParent, aBuilder);
+  // Pause the parser only when there are reactions to be invoked to avoid
+  // pausing parsing too aggressive.
+  if (autoCEReaction.isSome() && docGroup &&
+      docGroup->CustomElementReactionsStack()
+          ->IsElementQueuePushedForCurrentRecursionDepth()) {
+    autoPause.emplace(aBuilder);
   }
   return rv;
 }
@@ -271,15 +291,18 @@ nsresult nsHtml5TreeOperation::AppendToDocument(
   MOZ_ASSERT(aBuilder);
   MOZ_ASSERT(aBuilder->GetDocument() == aNode->OwnerDoc());
   MOZ_ASSERT(aBuilder->IsInDocUpdate());
-  nsresult rv = NS_OK;
 
+  ErrorResult rv;
   Document* doc = aBuilder->GetDocument();
-  rv = doc->AppendChildTo(aNode, false);
-  if (rv == NS_ERROR_DOM_HIERARCHY_REQUEST_ERR) {
+  doc->AppendChildTo(aNode, false, rv);
+  if (rv.ErrorCodeIs(NS_ERROR_DOM_HIERARCHY_REQUEST_ERR)) {
     aNode->SetParserHasNotified();
     return NS_OK;
   }
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (rv.Failed()) {
+    return rv.StealNSResult();
+  }
+
   aNode->SetParserHasNotified();
   MutationObservers::NotifyContentInserted(doc, aNode);
 
@@ -289,7 +312,7 @@ nsresult nsHtml5TreeOperation::AppendToDocument(
     nsContentUtils::AddScriptRunner(
         new nsDocElementCreatedNotificationRunner(doc));
   }
-  return rv;
+  return NS_OK;
 }
 
 static bool IsElementOrTemplateContent(nsINode* aNode) {
@@ -329,8 +352,12 @@ nsresult nsHtml5TreeOperation::AppendChildrenToNewParent(
   while (aNode->HasChildren()) {
     nsCOMPtr<nsIContent> child = aNode->GetFirstChild();
     aNode->RemoveChildNode(child, true);
-    nsresult rv = aParent->AppendChildTo(child, false);
-    NS_ENSURE_SUCCESS(rv, rv);
+
+    ErrorResult rv;
+    aParent->AppendChildTo(child, false, rv);
+    if (rv.Failed()) {
+      return rv.StealNSResult();
+    }
     didAppend = true;
   }
   if (didAppend) {
@@ -350,10 +377,14 @@ nsresult nsHtml5TreeOperation::FosterParent(nsIContent* aNode,
   if (IsElementOrTemplateContent(foster)) {
     nsHtml5OtherDocUpdate update(foster->OwnerDoc(), aBuilder->GetDocument());
 
-    nsresult rv = foster->InsertChildBefore(aNode, aTable, false);
-    NS_ENSURE_SUCCESS(rv, rv);
+    ErrorResult rv;
+    foster->InsertChildBefore(aNode, aTable, false, rv);
+    if (rv.Failed()) {
+      return rv.StealNSResult();
+    }
+
     MutationObservers::NotifyContentInserted(foster, aNode);
-    return rv;
+    return NS_OK;
   }
 
   return Append(aNode, aParent, aBuilder);
@@ -618,22 +649,18 @@ nsIContent* nsHtml5TreeOperation::CreateMathMLElement(
 
 void nsHtml5TreeOperation::SetFormElement(nsIContent* aNode,
                                           nsIContent* aParent) {
-  nsCOMPtr<nsIFormControl> formControl(do_QueryInterface(aNode));
-  RefPtr<dom::HTMLImageElement> domImageElement =
-      dom::HTMLImageElement::FromNodeOrNull(aNode);
-  // NS_ASSERTION(formControl, "Form-associated element did not implement
-  // nsIFormControl.");
-  // TODO: uncomment the above line when img doesn't cause an issue (bug
-  // 1558793)
   RefPtr<dom::HTMLFormElement> formElement =
       dom::HTMLFormElement::FromNodeOrNull(aParent);
   NS_ASSERTION(formElement,
                "The form element doesn't implement HTMLFormElement.");
-  // Avoid crashing on <img>
+  nsCOMPtr<nsIFormControl> formControl(do_QueryInterface(aNode));
   if (formControl &&
+      formControl->ControlType() !=
+          FormControlType::FormAssociatedCustomElement &&
       !aNode->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::form)) {
     formControl->SetForm(formElement);
-  } else if (domImageElement) {
+  } else if (HTMLImageElement* domImageElement =
+                 dom::HTMLImageElement::FromNodeOrNull(aNode)) {
     domImageElement->SetForm(formElement);
   }
 }
@@ -663,8 +690,12 @@ nsresult nsHtml5TreeOperation::FosterParentText(
     rv = text->SetText(aBuffer, aLength, false, EmptyTaint);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    rv = foster->InsertChildBefore(text, aTable, false);
-    NS_ENSURE_SUCCESS(rv, rv);
+    ErrorResult error;
+    foster->InsertChildBefore(text, aTable, false, error);
+    if (error.Failed()) {
+      return error.StealNSResult();
+    }
+
     MutationObservers::NotifyContentInserted(foster, text);
     return rv;
   }
@@ -776,7 +807,8 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
     bool* mStreamEnded;
 
     nsresult operator()(const opAppend& aOperation) {
-      return Append(*(aOperation.mChild), *(aOperation.mParent), mBuilder);
+      return Append(*(aOperation.mChild), *(aOperation.mParent),
+                    aOperation.mFromNetwork, mBuilder);
     }
 
     nsresult operator()(const opDetach& aOperation) {
@@ -981,13 +1013,8 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       return NS_OK;
     }
 
-    nsresult operator()(const opProcessMeta& aOperation) {
-      return mBuilder->ProcessMETATag(*(aOperation.mElement));
-    }
-
     nsresult operator()(const opProcessOfflineManifest& aOperation) {
-      nsDependentString dependentString(aOperation.mUrl);
-      mBuilder->ProcessOfflineManifest(dependentString);
+      // TODO: remove this
       return NS_OK;
     }
 

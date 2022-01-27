@@ -7,7 +7,9 @@
 #ifndef mozilla_dom_PaymentActionResponse_h
 #define mozilla_dom_PaymentActionResponse_h
 
+#include "nsCOMPtr.h"
 #include "nsIPaymentActionResponse.h"
+#include "nsString.h"
 
 namespace mozilla {
 namespace dom {

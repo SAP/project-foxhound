@@ -6,9 +6,7 @@ import { GlobalOverrider } from "test/unit/utils";
 import { CardGrid } from "content-src/components/DiscoveryStreamComponents/CardGrid/CardGrid";
 import { CollapsibleSection } from "content-src/components/CollapsibleSection/CollapsibleSection";
 import { DSMessage } from "content-src/components/DiscoveryStreamComponents/DSMessage/DSMessage";
-import { Hero } from "content-src/components/DiscoveryStreamComponents/Hero/Hero";
 import { HorizontalRule } from "content-src/components/DiscoveryStreamComponents/HorizontalRule/HorizontalRule";
-import { List } from "content-src/components/DiscoveryStreamComponents/List/List";
 import { Navigation } from "content-src/components/DiscoveryStreamComponents/Navigation/Navigation";
 import React from "react";
 import { shallow } from "enzyme";
@@ -20,11 +18,11 @@ describe("<isAllowedCSS>", () => {
     assert.isTrue(isAllowedCSS("color", "red"));
   });
 
-  it("should allow resource urls", () => {
+  it("should allow chrome urls", () => {
     assert.isTrue(
       isAllowedCSS(
         "background-image",
-        `url("resource://activity-stream/data/content/assets/glyph-info-16.svg")`
+        `url("chrome://global/skin/icons/info.svg")`
       )
     );
   });
@@ -111,6 +109,9 @@ describe("<DiscoveryStreamBase>", () => {
             "feeds.topsites": true,
           },
         }}
+        App={{
+          locale: "en-US",
+        }}
         document={{
           documentElement: { lang: "en-US" },
         }}
@@ -167,36 +168,6 @@ describe("<DiscoveryStreamBase>", () => {
         .at(0)
         .type(),
       HorizontalRule
-    );
-  });
-
-  it("should render a List component", () => {
-    wrapper = mountComponent({
-      layout: [{ components: [{ properties: {}, type: "List" }] }],
-    });
-
-    assert.equal(
-      wrapper
-        .find(".ds-column-grid div")
-        .children()
-        .at(0)
-        .type(),
-      List
-    );
-  });
-
-  it("should render a Hero component", () => {
-    wrapper = mountComponent({
-      layout: [{ components: [{ properties: {}, type: "Hero" }] }],
-    });
-
-    assert.equal(
-      wrapper
-        .find(".ds-column-grid div")
-        .children()
-        .at(0)
-        .type(),
-      Hero
     );
   });
 
@@ -276,6 +247,13 @@ describe("<DiscoveryStreamBase>", () => {
         .at(0)
         .type(),
       CollapsibleSection
+    );
+    assert.equal(
+      wrapper
+        .children()
+        .at(0)
+        .props().eventSource,
+      "CARDGRID"
     );
   });
 

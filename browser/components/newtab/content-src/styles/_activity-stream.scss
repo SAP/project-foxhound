@@ -106,9 +106,9 @@ a {
   // Blue button
   &.primary,
   &.done {
-    background-color: var(--newtab-button-primary-color);
-    border: solid 1px var(--newtab-button-primary-color);
-    color: $white;
+    background-color: var(--newtab-primary-action-background);
+    border: solid 1px var(--newtab-primary-action-background);
+    color: var(--newtab-primary-element-text-color);
     margin-inline-start: auto;
   }
 }
@@ -139,6 +139,7 @@ input {
 @import '../components/Search/Search';
 @import '../components/ContextMenu/ContextMenu';
 @import '../components/ConfirmDialog/ConfirmDialog';
+@import '../components/CustomizeMenu/CustomizeMenu';
 @import '../components/Card/Card';
 @import '../components/CollapsibleSection/CollapsibleSection';
 @import '../components/ASRouterAdmin/ASRouterAdmin';
@@ -149,10 +150,8 @@ input {
 // Discovery Stream Components
 @import '../components/DiscoveryStreamComponents/CardGrid/CardGrid';
 @import '../components/DiscoveryStreamComponents/CollectionCardGrid/CollectionCardGrid';
-@import '../components/DiscoveryStreamComponents/Hero/Hero';
 @import '../components/DiscoveryStreamComponents/Highlights/Highlights';
 @import '../components/DiscoveryStreamComponents/HorizontalRule/HorizontalRule';
-@import '../components/DiscoveryStreamComponents/List/List';
 @import '../components/DiscoveryStreamComponents/Navigation/Navigation';
 @import '../components/DiscoveryStreamComponents/SectionTitle/SectionTitle';
 @import '../components/DiscoveryStreamComponents/TopSites/TopSites';
@@ -167,17 +166,13 @@ input {
 @import '../components/DiscoveryStreamComponents/DSTextPromo/DSTextPromo';
 @import '../components/DiscoveryStreamComponents/DSSignup/DSSignup';
 @import '../components/DiscoveryStreamComponents/DSPrivacyModal/DSPrivacyModal';
+@import '../components/DiscoveryStreamComponents/PrivacyLink/PrivacyLink';
 
 // AS Router
 @import '../asrouter/components/Button/Button';
 @import '../asrouter/components/SnippetBase/SnippetBase';
 @import '../asrouter/components/ModalOverlay/ModalOverlay';
-@import '../asrouter/templates/ReturnToAMO/ReturnToAMO';
 @import '../asrouter/templates/SimpleBelowSearchSnippet/SimpleBelowSearchSnippet';
 @import '../asrouter/templates/SimpleSnippet/SimpleSnippet';
 @import '../asrouter/templates/SubmitFormSnippet/SubmitFormSnippet';
-@import '../asrouter/templates/OnboardingMessage/OnboardingMessage';
 @import '../asrouter/templates/EOYSnippet/EOYSnippet';
-@import '../asrouter/components/FxASignupForm/FxASignupForm';
-@import '../asrouter/templates/Trailhead/Trailhead';
-@import '../asrouter/templates/FullPageInterrupt/FullPageInterrupt';

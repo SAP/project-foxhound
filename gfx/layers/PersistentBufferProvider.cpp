@@ -7,10 +7,11 @@
 #include "PersistentBufferProvider.h"
 
 #include "Layers.h"
-#include "mozilla/layers/ShadowLayers.h"
 #include "mozilla/layers/TextureClient.h"
+#include "mozilla/layers/TextureForwarder.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/Logging.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/StaticPrefs_layers.h"
 #include "pratom.h"
 #include "gfxPlatform.h"
@@ -95,16 +96,28 @@ PersistentBufferProviderBasic::Create(gfx::IntSize aSize,
   return provider.forget();
 }
 
+PersistentBufferProviderAccelerated::PersistentBufferProviderAccelerated(
+    DrawTarget* aDt)
+    : PersistentBufferProviderBasic(aDt) {
+  MOZ_COUNT_CTOR(PersistentBufferProviderAccelerated);
+}
+
+PersistentBufferProviderAccelerated::~PersistentBufferProviderAccelerated() {
+  MOZ_COUNT_DTOR(PersistentBufferProviderAccelerated);
+}
+
+ClientWebGLContext* PersistentBufferProviderAccelerated::AsWebgl() {
+  return (ClientWebGLContext*)mDrawTarget->GetNativeSurface(
+      NativeSurfaceType::WEBGL_CONTEXT);
+}
+
 // static
 already_AddRefed<PersistentBufferProviderShared>
 PersistentBufferProviderShared::Create(gfx::IntSize aSize,
                                        gfx::SurfaceFormat aFormat,
                                        KnowsCompositor* aKnowsCompositor) {
   if (!aKnowsCompositor || !aKnowsCompositor->GetTextureForwarder() ||
-      !aKnowsCompositor->GetTextureForwarder()->IPCOpen() ||
-      // Bug 1556433 - shared buffer provider and direct texture mapping do not
-      // synchronize properly
-      aKnowsCompositor->SupportsTextureDirectMapping()) {
+      !aKnowsCompositor->GetTextureForwarder()->IPCOpen()) {
     return nullptr;
   }
 
@@ -117,8 +130,7 @@ PersistentBufferProviderShared::Create(gfx::IntSize aSize,
   // instability, unless we are remoting the canvas drawing to the GPU process.
   if (gfxPlatform::GetPlatform()->GetPreferredCanvasBackend() ==
           BackendType::DIRECT2D1_1 &&
-      !TextureData::IsRemote(aKnowsCompositor->GetCompositorBackendType(),
-                             BackendSelector::Canvas)) {
+      !TextureData::IsRemote(aKnowsCompositor, BackendSelector::Canvas)) {
     return nullptr;
   }
 #endif
@@ -147,19 +159,22 @@ PersistentBufferProviderShared::PersistentBufferProviderShared(
       mKnowsCompositor(aKnowsCompositor),
       mFront(Nothing()) {
   MOZ_ASSERT(aKnowsCompositor);
-  if (mTextures.append(aTexture)) {
-    mBack = Some<uint32_t>(0);
+
+  // If our textures have synchronization use a separate permanent back buffer.
+  if (aTexture->HasSynchronization()) {
+    mPermanentBackBuffer = aTexture;
+    if (!mPermanentBackBuffer->Lock(OpenMode::OPEN_READ_WRITE)) {
+      mPermanentBackBuffer = nullptr;
+    }
+  } else {
+    if (mTextures.append(aTexture)) {
+      mBack = Some<uint32_t>(0);
+    }
   }
 
-  // If we are using webrender and our textures don't have an intermediate
-  // buffer, then we have to hold onto the textures for longer to make sure that
-  // the GPU has finished using them. So, we need to allow more TextureClients
-  // to be created.
-  if (!aTexture->HasIntermediateBuffer() && gfxVars::UseWebRender()) {
+  // XXX KnowsCompositor could be used for mMaxAllowedTextures
+  if (gfxVars::UseWebRenderTripleBufferingWin()) {
     ++mMaxAllowedTextures;
-    if (gfxVars::UseWebRenderTripleBufferingWin()) {
-      ++mMaxAllowedTextures;
-    }
   }
 
   MOZ_COUNT_CTOR(PersistentBufferProviderShared);
@@ -173,15 +188,6 @@ PersistentBufferProviderShared::~PersistentBufferProviderShared() {
   }
 
   Destroy();
-}
-
-LayersBackend PersistentBufferProviderShared::GetType() {
-  if (mKnowsCompositor->GetCompositorBackendType() ==
-      LayersBackend::LAYERS_WR) {
-    return LayersBackend::LAYERS_WR;
-  } else {
-    return LayersBackend::LAYERS_CLIENT;
-  }
 }
 
 bool PersistentBufferProviderShared::SetKnowsCompositor(
@@ -230,6 +236,24 @@ bool PersistentBufferProviderShared::SetKnowsCompositor(
       // Destroy. Not ideal but at least we won't try to use it with a
       // an incompatible ipc channel.
 
+      // If our new texture has internal synchronization then create a new
+      // permanent back buffer as well.
+      if (newTexture->HasSynchronization()) {
+        RefPtr<TextureClient> mPermanentBackBuffer =
+            TextureClient::CreateForDrawing(
+                aKnowsCompositor, mFormat, mSize, BackendSelector::Canvas,
+                TextureFlags::DEFAULT | TextureFlags::NON_BLOCKING_READ_LOCK,
+                TextureAllocationFlags::ALLOC_DEFAULT);
+        if (!mPermanentBackBuffer) {
+          return false;
+        }
+
+        if (!mPermanentBackBuffer->Lock(OpenMode::OPEN_READ_WRITE)) {
+          mPermanentBackBuffer = nullptr;
+          return false;
+        }
+      }
+
       if (!newTexture->Lock(OpenMode::OPEN_WRITE)) {
         return false;
       }
@@ -241,6 +265,11 @@ bool PersistentBufferProviderShared::SetKnowsCompositor(
 
       bool success =
           prevTexture->CopyToTextureClient(newTexture, nullptr, nullptr);
+
+      if (success && mPermanentBackBuffer) {
+        success = prevTexture->CopyToTextureClient(mPermanentBackBuffer,
+                                                   nullptr, nullptr);
+      }
 
       prevTexture->Unlock();
       newTexture->Unlock();
@@ -365,31 +394,45 @@ PersistentBufferProviderShared::BorrowDrawTarget(
     }
   }
 
-  if (!tex || !tex->Lock(OpenMode::OPEN_READ_WRITE)) {
+  if (!tex) {
     return nullptr;
+  }
+
+  if (mPermanentBackBuffer) {
+    // If we have a permanent back buffer lock the selected one and switch to
+    // the permanent one before borrowing the DrawTarget. We will copy back into
+    // the selected one when ReturnDrawTarget is called, before we make it the
+    // new front buffer.
+    if (!tex->Lock(OpenMode::OPEN_WRITE)) {
+      return nullptr;
+    }
+    tex = mPermanentBackBuffer;
+  } else {
+    // Copy from the previous back buffer if required.
+    Maybe<TextureClientAutoLock> autoReadLock;
+    TextureClient* previous = nullptr;
+    if (mBack != previousBackBuffer && !aPersistedRect.IsEmpty()) {
+      previous = GetTexture(previousBackBuffer);
+      if (previous) {
+        autoReadLock.emplace(previous, OpenMode::OPEN_READ);
+      }
+    }
+
+    if (!tex->Lock(OpenMode::OPEN_READ_WRITE)) {
+      return nullptr;
+    }
+
+    if (autoReadLock.isSome() && autoReadLock->Succeeded() && previous) {
+      DebugOnly<bool> success =
+          previous->CopyToTextureClient(tex, &aPersistedRect, nullptr);
+      MOZ_ASSERT(success);
+    }
   }
 
   // Clear dirty texture, since new back texture is selected.
   mTextureLockIsUnreliable = Nothing();
 
   mDrawTarget = tex->BorrowDrawTarget();
-  if (mBack != previousBackBuffer && !aPersistedRect.IsEmpty()) {
-    if (mPreviousSnapshot) {
-      mDrawTarget->CopySurface(mPreviousSnapshot, aPersistedRect,
-                               gfx::IntPoint(0, 0));
-    } else {
-      TextureClient* previous = GetTexture(previousBackBuffer);
-      if (previous && previous->Lock(OpenMode::OPEN_READ)) {
-        DebugOnly<bool> success =
-            previous->CopyToTextureClient(tex, &aPersistedRect, nullptr);
-        MOZ_ASSERT(success);
-
-        previous->Unlock();
-      }
-    }
-  }
-  mPreviousSnapshot = nullptr;
-
   if (mDrawTarget) {
     // This is simply to ensure the DrawTarget gets initialized, and will detect
     // a device reset, even if we're on the main thread.
@@ -414,19 +457,19 @@ bool PersistentBufferProviderShared::ReturnDrawTarget(
   TextureClient* back = GetTexture(mBack);
   MOZ_ASSERT(back);
 
-  // If our TextureClients have internal synchronization then, if locks are
-  // needed for reading and writing, this can cause locking issues with the
-  // compositor. To prevent this we take a snapshot when the DrawTarget is
-  // returned, so this can be used when our own BorrowSnapshot is called and
-  // also for copying to the next TextureClient. Using this snapshot outside of
-  // the locks is safe, because the TextureClient calls DetachAllSnapshots on
-  // its DrawTarget when we Unlock below.
-  if (back->HasSynchronization()) {
-    mPreviousSnapshot = back->BorrowSnapshot();
-  }
-
   mDrawTarget = nullptr;
   dt = nullptr;
+
+  // If we have a permanent back buffer we have actually been drawing to that,
+  // so now we must copy to the shared one.
+  if (mPermanentBackBuffer && back) {
+    DebugOnly<bool> success =
+        mPermanentBackBuffer->CopyToTextureClient(back, nullptr, nullptr);
+    MOZ_ASSERT(success);
+
+    // Let our permanent back buffer know that we have finished drawing.
+    mPermanentBackBuffer->EndDraw();
+  }
 
   if (back) {
     back->Unlock();
@@ -443,14 +486,42 @@ TextureClient* PersistentBufferProviderShared::GetTextureClient() {
   if (!texture) {
     gfxCriticalNote
         << "PersistentBufferProviderShared: front buffer unavailable";
+    return nullptr;
   }
+
+  // Sometimes, for example on tab switch, we re-forward our texture. So if we
+  // are and it is still read locked, then borrow and return our DrawTarget to
+  // force it to be copied to a texture that we will safely read lock.
+  if (texture->IsReadLocked()) {
+    RefPtr<DrawTarget> dt =
+        BorrowDrawTarget(IntRect(0, 0, mSize.width, mSize.height));
+
+    // If we failed to borrow a DrawTarget then all our textures must be read
+    // locked or we failed to create one, so we'll just return the current front
+    // buffer even though that might lead to contention.
+    if (dt) {
+      ReturnDrawTarget(dt.forget());
+      texture = GetTexture(mFront);
+      if (!texture) {
+        gfxCriticalNote
+            << "PersistentBufferProviderShared: front buffer unavailable";
+        return nullptr;
+      }
+    }
+  } else {
+    // If it isn't read locked then make sure it is set as updated, so that we
+    // will always read lock even if we've forwarded the texture before.
+    texture->SetUpdated();
+  }
+
   return texture;
 }
 
 already_AddRefed<gfx::SourceSurface>
 PersistentBufferProviderShared::BorrowSnapshot() {
-  if (mPreviousSnapshot) {
-    mSnapshot = mPreviousSnapshot;
+  // If we have a permanent back buffer we can always use that to snapshot.
+  if (mPermanentBackBuffer) {
+    mSnapshot = mPermanentBackBuffer->BorrowSnapshot();
     return do_AddRef(mSnapshot);
   }
 
@@ -484,7 +555,7 @@ void PersistentBufferProviderShared::ReturnSnapshot(
   mSnapshot = nullptr;
   snapshot = nullptr;
 
-  if (mPreviousSnapshot || mDrawTarget) {
+  if (mDrawTarget || mPermanentBackBuffer) {
     return;
   }
 
@@ -526,8 +597,12 @@ void PersistentBufferProviderShared::ClearCachedResources() {
 
 void PersistentBufferProviderShared::Destroy() {
   mSnapshot = nullptr;
-  mPreviousSnapshot = nullptr;
   mDrawTarget = nullptr;
+
+  if (mPermanentBackBuffer) {
+    mPermanentBackBuffer->Unlock();
+    mPermanentBackBuffer = nullptr;
+  }
 
   for (auto& mTexture : mTextures) {
     TextureClient* texture = mTexture;

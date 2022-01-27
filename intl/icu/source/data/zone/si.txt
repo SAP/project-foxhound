@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 si{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"අබිජාන්"}
@@ -1885,6 +1885,9 @@ si{
             ld{"යෙකටෙරින්බර්ග් ග්‍රීෂ්ම වේලාව"}
             lg{"යෙකටෙරින්බර්ග් වේලාව"}
             ls{"යෙකටෙරින්බර්ග් සම්මත වේලාව"}
+        }
+        "meta:Yukon"{
+            ls{"යුකොන් වේලාව"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"ග්‍රිමවේ{0}"}

@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 so{
     Currencies{
         AED{
@@ -366,6 +367,10 @@ so{
             "LRD",
             "Doolarka Liberiya",
         }
+        LSL{
+            "LSL",
+            "Lesotho Loti",
+        }
         LVR{
             "LVR",
             "Rubalka Latfiya",
@@ -475,7 +480,7 @@ so{
             "Kinada Babua Niyuu Gini",
         }
         PHP{
-            "PHP",
+            "₱",
             "Biso Filibin",
         }
         PKR{
@@ -651,7 +656,7 @@ so{
             "Doolarka Iist Kaaribyan",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "Faranka CFA Galbeedka Afrika",
         }
         XPF{
@@ -676,6 +681,10 @@ so{
         }
     }
     Currencies%narrow{
+        AFN{"؋"}
+        AMD{"֏"}
+        AZN{"₼"}
+        GHS{"GH₵"}
         VEF{"Bs"}
     }
     CurrencyPlurals{
@@ -1050,6 +1059,10 @@ so{
             one{"doolarka Liberiya"}
             other{"doolarka Liberiya"}
         }
+        LSL{
+            one{"Lesotho loti"}
+            other{"Lesotho lotis"}
+        }
         LVR{
             one{"rubalka Latvia"}
             other{"rubalka Latfiya"}
@@ -1355,5 +1368,4 @@ so{
             other{"Kawajada Sambiya"}
         }
     }
-    Version{"37"}
 }

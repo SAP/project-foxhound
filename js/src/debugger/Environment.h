@@ -8,7 +8,6 @@
 #define debugger_Environment_h
 
 #include "mozilla/Assertions.h"  // for AssertionConditionType, MOZ_ASSERT
-#include "mozilla/Attributes.h"  // for MOZ_MUST_USE
 #include "mozilla/Maybe.h"       // for Maybe
 
 #include "jstypes.h"            // for JS_PUBLIC_API
@@ -32,9 +31,7 @@ enum class DebuggerEnvironmentType { Declarative, With, Object };
 
 class DebuggerEnvironment : public NativeObject {
  public:
-  enum { OWNER_SLOT };
-
-  static const unsigned RESERVED_SLOTS = 1;
+  enum { ENV_SLOT, OWNER_SLOT, RESERVED_SLOTS };
 
   static const JSClass class_;
 
@@ -48,37 +45,41 @@ class DebuggerEnvironment : public NativeObject {
 
   DebuggerEnvironmentType type() const;
   mozilla::Maybe<ScopeKind> scopeKind() const;
-  MOZ_MUST_USE bool getParent(JSContext* cx,
-                              MutableHandleDebuggerEnvironment result) const;
-  MOZ_MUST_USE bool getObject(JSContext* cx,
-                              MutableHandleDebuggerObject result) const;
-  MOZ_MUST_USE bool getCallee(JSContext* cx,
-                              MutableHandleDebuggerObject result) const;
+  [[nodiscard]] bool getParent(JSContext* cx,
+                               MutableHandleDebuggerEnvironment result) const;
+  [[nodiscard]] bool getObject(JSContext* cx,
+                               MutableHandleDebuggerObject result) const;
+  [[nodiscard]] bool getCalleeScript(JSContext* cx,
+                                     MutableHandleDebuggerScript result) const;
   bool isDebuggee() const;
   bool isOptimized() const;
 
-  static MOZ_MUST_USE bool getNames(JSContext* cx,
-                                    HandleDebuggerEnvironment environment,
-                                    MutableHandle<IdVector> result);
-  static MOZ_MUST_USE bool find(JSContext* cx,
-                                HandleDebuggerEnvironment environment,
-                                HandleId id,
-                                MutableHandleDebuggerEnvironment result);
-  static MOZ_MUST_USE bool getVariable(JSContext* cx,
-                                       HandleDebuggerEnvironment environment,
-                                       HandleId id, MutableHandleValue result);
-  static MOZ_MUST_USE bool setVariable(JSContext* cx,
-                                       HandleDebuggerEnvironment environment,
-                                       HandleId id, HandleValue value);
+  [[nodiscard]] static bool getNames(JSContext* cx,
+                                     HandleDebuggerEnvironment environment,
+                                     MutableHandle<IdVector> result);
+  [[nodiscard]] static bool find(JSContext* cx,
+                                 HandleDebuggerEnvironment environment,
+                                 HandleId id,
+                                 MutableHandleDebuggerEnvironment result);
+  [[nodiscard]] static bool getVariable(JSContext* cx,
+                                        HandleDebuggerEnvironment environment,
+                                        HandleId id, MutableHandleValue result);
+  [[nodiscard]] static bool setVariable(JSContext* cx,
+                                        HandleDebuggerEnvironment environment,
+                                        HandleId id, HandleValue value);
 
   bool isInstance() const;
   Debugger* owner() const;
 
+  Env* maybeReferent() const { return maybePtrFromReservedSlot<Env>(ENV_SLOT); }
+
   Env* referent() const {
-    Env* env = static_cast<Env*>(getPrivate());
+    Env* env = maybeReferent();
     MOZ_ASSERT(env);
     return env;
   }
+
+  void clearReferent() { clearReservedSlotGCThingAsPrivate(ENV_SLOT); }
 
  private:
   static const JSClassOps classOps_;
@@ -88,7 +89,7 @@ class DebuggerEnvironment : public NativeObject {
 
   bool requireDebuggee(JSContext* cx) const;
 
-  static MOZ_MUST_USE bool construct(JSContext* cx, unsigned argc, Value* vp);
+  [[nodiscard]] static bool construct(JSContext* cx, unsigned argc, Value* vp);
 
   struct CallData;
 };

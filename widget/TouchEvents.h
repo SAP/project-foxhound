@@ -156,6 +156,9 @@ class WidgetTouchEvent : public WidgetInputEvent {
     mTime = aOther.mTime;
     mTimeStamp = aOther.mTimeStamp;
     mTouches.AppendElements(aOther.mTouches);
+    mInputSource = aOther.mInputSource;
+    mButton = aOther.mButton;
+    mButtons = aOther.mButtons;
     mFlags.mCancelable = mMessage != eTouchCancel;
     mFlags.mHandledByAPZ = aOther.mFlags.mHandledByAPZ;
   }
@@ -179,6 +182,9 @@ class WidgetTouchEvent : public WidgetInputEvent {
   }
 
   TouchArray mTouches;
+  uint16_t mInputSource = 5;  // MouseEvent_Binding::MOZ_SOURCE_TOUCH
+  int16_t mButton = eNotPressed;
+  int16_t mButtons = 0;
 
   void AssignTouchEventData(const WidgetTouchEvent& aEvent, bool aCopyTargets) {
     AssignInputEventData(aEvent, aCopyTargets);
@@ -186,6 +192,7 @@ class WidgetTouchEvent : public WidgetInputEvent {
     // Assign*EventData() assume that they're called only new instance.
     MOZ_ASSERT(mTouches.IsEmpty());
     mTouches.AppendElements(aEvent.mTouches);
+    mInputSource = aEvent.mInputSource;
   }
 };
 

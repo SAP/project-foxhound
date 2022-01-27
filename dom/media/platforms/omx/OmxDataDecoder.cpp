@@ -9,9 +9,7 @@
 #include "OMX_Audio.h"
 #include "OMX_Component.h"
 #include "OMX_Types.h"
-
 #include "OmxPlatformLayer.h"
-
 #include "mozilla/IntegerPrintfMacros.h"
 
 #ifdef LOG
@@ -94,11 +92,9 @@ class MediaDataHelper {
 };
 
 OmxDataDecoder::OmxDataDecoder(const TrackInfo& aTrackInfo,
-                               TaskQueue* aTaskQueue,
                                layers::ImageContainer* aImageContainer)
     : mOmxTaskQueue(
           CreateMediaDecodeTaskQueue("OmxDataDecoder::mOmxTaskQueue")),
-      mTaskQueue(aTaskQueue),
       mImageContainer(aImageContainer),
       mWatchManager(this, mOmxTaskQueue),
       mOmxState(OMX_STATETYPE::OMX_StateInvalid, "OmxDataDecoder::mOmxState"),
@@ -135,6 +131,7 @@ void OmxDataDecoder::EndOfStream() {
 RefPtr<MediaDataDecoder::InitPromise> OmxDataDecoder::Init() {
   LOG("");
 
+  mThread = GetCurrentSerialEventTarget();
   RefPtr<OmxDataDecoder> self = this;
   return InvokeAsync(mOmxTaskQueue, __func__, [self, this]() {
     InitializationTask();
@@ -158,6 +155,7 @@ RefPtr<MediaDataDecoder::InitPromise> OmxDataDecoder::Init() {
 RefPtr<MediaDataDecoder::DecodePromise> OmxDataDecoder::Decode(
     MediaRawData* aSample) {
   LOG("sample %p", aSample);
+  MOZ_ASSERT(mThread->IsOnCurrentThread());
   MOZ_ASSERT(mInitPromise.IsEmpty());
 
   RefPtr<OmxDataDecoder> self = this;
@@ -176,6 +174,7 @@ RefPtr<MediaDataDecoder::DecodePromise> OmxDataDecoder::Decode(
 
 RefPtr<MediaDataDecoder::FlushPromise> OmxDataDecoder::Flush() {
   LOG("");
+  MOZ_ASSERT(mThread->IsOnCurrentThread());
 
   mFlushing = true;
 
@@ -184,6 +183,7 @@ RefPtr<MediaDataDecoder::FlushPromise> OmxDataDecoder::Flush() {
 
 RefPtr<MediaDataDecoder::DecodePromise> OmxDataDecoder::Drain() {
   LOG("");
+  MOZ_ASSERT(mThread->IsOnCurrentThread());
 
   RefPtr<OmxDataDecoder> self = this;
   return InvokeAsync(mOmxTaskQueue, __func__, [self]() {
@@ -195,6 +195,8 @@ RefPtr<MediaDataDecoder::DecodePromise> OmxDataDecoder::Drain() {
 
 RefPtr<ShutdownPromise> OmxDataDecoder::Shutdown() {
   LOG("");
+  // mThread may not be set if Init hasn't been called first.
+  MOZ_ASSERT(!mThread || mThread->IsOnCurrentThread());
 
   mShuttingDown = true;
 
@@ -269,7 +271,7 @@ RefPtr<ShutdownPromise> OmxDataDecoder::DoAsyncShutdown() {
             return ShutdownPromise::CreateAndReject(false, __func__);
           })
       ->Then(
-          mTaskQueue, __func__,
+          mThread, __func__,
           [self]() {
             self->mOmxTaskQueue->BeginShutdown();
             self->mOmxTaskQueue->AwaitShutdownAndIdle();
@@ -935,12 +937,14 @@ already_AddRefed<VideoData> MediaDataHelper::CreateYUV420VideoData(
   b.mPlanes[2].mStride = (stride + 1) / 2;
   b.mPlanes[2].mSkip = 0;
 
-  b.mYUVColorSpace =
-      mTrackInfo->GetAsVideoInfo()->mColorSpace == YUVColorSpace::UNKNOWN
-          ? DefaultColorSpace({width, height})
-          : mTrackInfo->GetAsVideoInfo()->mColorSpace;
-
   VideoInfo info(*mTrackInfo->GetAsVideoInfo());
+
+  auto maybeColorSpace = info.mColorSpace;
+  if (!maybeColorSpace) {
+    maybeColorSpace = Some(DefaultColorSpace({width, height}));
+  }
+  b.mYUVColorSpace = *maybeColorSpace;
+
   RefPtr<VideoData> data = VideoData::CreateAndCopyData(
       info, mImageContainer,
       0,                                     // Filled later by caller.
@@ -948,7 +952,7 @@ already_AddRefed<VideoData> MediaDataHelper::CreateYUV420VideoData(
       media::TimeUnit::FromMicroseconds(1),  // We don't know the duration.
       b,
       0,  // Filled later by caller.
-      media::TimeUnit::FromMicroseconds(-1), info.ImageRect());
+      media::TimeUnit::FromMicroseconds(-1), info.ImageRect(), nullptr);
 
   MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug,
           ("YUV420 VideoData: disp width %d, height %d, pic width %d, height "

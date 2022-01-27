@@ -6,14 +6,17 @@
 
 #include "mozilla/dom/ChildSHistory.h"
 #include "mozilla/dom/ChildSHistoryBinding.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentFrameMessageManager.h"
-#include "mozilla/StaticPrefs_fission.h"
+#include "nsIXULRuntime.h"
 #include "nsComponentManagerUtils.h"
 #include "nsSHEntry.h"
 #include "nsSHistory.h"
 #include "nsDocShell.h"
 #include "nsXULAppAPI.h"
+
+extern mozilla::LazyLogModule gSHLog;
 
 namespace mozilla {
 namespace dom {
@@ -21,14 +24,31 @@ namespace dom {
 ChildSHistory::ChildSHistory(BrowsingContext* aBrowsingContext)
     : mBrowsingContext(aBrowsingContext) {}
 
+ChildSHistory::~ChildSHistory() {
+  if (mHistory) {
+    static_cast<nsSHistory*>(mHistory.get())->SetBrowsingContext(nullptr);
+  }
+}
+
+void ChildSHistory::SetBrowsingContext(BrowsingContext* aBrowsingContext) {
+  mBrowsingContext = aBrowsingContext;
+}
+
 void ChildSHistory::SetIsInProcess(bool aIsInProcess) {
   if (!aIsInProcess) {
-    mHistory = nullptr;
+    MOZ_ASSERT_IF(mozilla::SessionHistoryInParent(), !mHistory);
+    if (!mozilla::SessionHistoryInParent()) {
+      RemovePendingHistoryNavigations();
+      if (mHistory) {
+        static_cast<nsSHistory*>(mHistory.get())->SetBrowsingContext(nullptr);
+        mHistory = nullptr;
+      }
+    }
 
     return;
   }
 
-  if (mHistory) {
+  if (mHistory || mozilla::SessionHistoryInParent()) {
     return;
   }
 
@@ -36,38 +56,24 @@ void ChildSHistory::SetIsInProcess(bool aIsInProcess) {
 }
 
 int32_t ChildSHistory::Count() {
-  if (StaticPrefs::fission_sessionHistoryInParent() || mAsyncHistoryLength) {
+  if (mozilla::SessionHistoryInParent()) {
     uint32_t length = mLength;
     for (uint32_t i = 0; i < mPendingSHistoryChanges.Length(); ++i) {
       length += mPendingSHistoryChanges[i].mLengthDelta;
     }
 
-    if (mAsyncHistoryLength) {
-      MOZ_ASSERT(!StaticPrefs::fission_sessionHistoryInParent());
-      // XXX The assertion may be too strong here, but it fires only
-      //    when the pref is enabled.
-      MOZ_ASSERT(mHistory->GetCount() == int32_t(length));
-    }
     return length;
   }
   return mHistory->GetCount();
 }
 
 int32_t ChildSHistory::Index() {
-  if (StaticPrefs::fission_sessionHistoryInParent() || mAsyncHistoryLength) {
+  if (mozilla::SessionHistoryInParent()) {
     uint32_t index = mIndex;
     for (uint32_t i = 0; i < mPendingSHistoryChanges.Length(); ++i) {
       index += mPendingSHistoryChanges[i].mIndexDelta;
     }
 
-    if (mAsyncHistoryLength) {
-      MOZ_ASSERT(!StaticPrefs::fission_sessionHistoryInParent());
-      int32_t realIndex;
-      mHistory->GetIndex(&realIndex);
-      // XXX The assertion may be too strong here, but it fires only
-      //    when the pref is enabled.
-      MOZ_ASSERT(realIndex == int32_t(index));
-    }
     return index;
   }
   int32_t index;
@@ -101,6 +107,20 @@ void ChildSHistory::SetIndexAndLength(uint32_t aIndex, uint32_t aLength,
 }
 
 void ChildSHistory::Reload(uint32_t aReloadFlags, ErrorResult& aRv) {
+  if (mozilla::SessionHistoryInParent()) {
+    if (XRE_IsParentProcess()) {
+      nsISHistory* shistory =
+          mBrowsingContext->Canonical()->GetSessionHistory();
+      if (shistory) {
+        aRv = shistory->Reload(aReloadFlags);
+      }
+    } else {
+      ContentChild::GetSingleton()->SendHistoryReload(mBrowsingContext,
+                                                      aReloadFlags);
+    }
+
+    return;
+  }
   aRv = mHistory->Reload(aReloadFlags);
 }
 
@@ -114,7 +134,11 @@ bool ChildSHistory::CanGo(int32_t aOffset) {
 }
 
 void ChildSHistory::Go(int32_t aOffset, bool aRequireUserInteraction,
-                       ErrorResult& aRv) {
+                       bool aUserActivation, ErrorResult& aRv) {
+  CheckedInt<int32_t> index = Index();
+  MOZ_LOG(
+      gSHLog, LogLevel::Debug,
+      ("ChildSHistory::Go(%d), current index = %d", aOffset, index.value()));
   if (aRequireUserInteraction && aOffset != -1 && aOffset != 1) {
     NS_ERROR(
         "aRequireUserInteraction may only be used with an offset of -1 or 1");
@@ -122,7 +146,6 @@ void ChildSHistory::Go(int32_t aOffset, bool aRequireUserInteraction,
     return;
   }
 
-  CheckedInt<int32_t> index = Index();
   while (true) {
     index += aOffset;
     if (!index.isValid()) {
@@ -137,48 +160,101 @@ void ChildSHistory::Go(int32_t aOffset, bool aRequireUserInteraction,
         index.value() <= 0) {
       break;
     }
-    if (mHistory->HasUserInteractionAtIndex(index.value())) {
+    if (mHistory && mHistory->HasUserInteractionAtIndex(index.value())) {
       break;
     }
   }
 
-  if (StaticPrefs::fission_sessionHistoryInParent()) {
-    nsCOMPtr<nsISHistory> shistory = mHistory;
-    ContentChild::GetSingleton()->SendHistoryGo(
-        mBrowsingContext, index.value(),
-        [shistory](int32_t&& aRequestedIndex) {
-          // FIXME Should probably only do this for non-fission.
-          shistory->InternalSetRequestedIndex(aRequestedIndex);
-        },
-        [](mozilla::ipc::
-               ResponseRejectReason) { /* FIXME Is ignoring this fine? */ });
-  } else {
-    aRv = mHistory->GotoIndex(index.value());
-  }
+  GotoIndex(index.value(), aOffset, aRequireUserInteraction, aUserActivation,
+            aRv);
 }
 
-void ChildSHistory::AsyncGo(int32_t aOffset, bool aRequireUserInteraction) {
-  if (!CanGo(aOffset)) {
+void ChildSHistory::AsyncGo(int32_t aOffset, bool aRequireUserInteraction,
+                            bool aUserActivation, CallerType aCallerType,
+                            ErrorResult& aRv) {
+  CheckedInt<int32_t> index = Index();
+  MOZ_LOG(gSHLog, LogLevel::Debug,
+          ("ChildSHistory::AsyncGo(%d), current index = %d", aOffset,
+           index.value()));
+  nsresult rv = mBrowsingContext->CheckLocationChangeRateLimit(aCallerType);
+  if (NS_FAILED(rv)) {
+    MOZ_LOG(gSHLog, LogLevel::Debug, ("Rejected"));
+    aRv.Throw(rv);
     return;
   }
 
   RefPtr<PendingAsyncHistoryNavigation> asyncNav =
-      new PendingAsyncHistoryNavigation(this, aOffset, aRequireUserInteraction);
+      new PendingAsyncHistoryNavigation(this, aOffset, aRequireUserInteraction,
+                                        aUserActivation);
   mPendingNavigations.insertBack(asyncNav);
   NS_DispatchToCurrentThread(asyncNav.forget());
 }
 
+void ChildSHistory::GotoIndex(int32_t aIndex, int32_t aOffset,
+                              bool aRequireUserInteraction,
+                              bool aUserActivation, ErrorResult& aRv) {
+  MOZ_LOG(gSHLog, LogLevel::Debug,
+          ("ChildSHistory::GotoIndex(%d, %d), epoch %" PRIu64, aIndex, aOffset,
+           mHistoryEpoch));
+  if (mozilla::SessionHistoryInParent()) {
+    if (!mPendingEpoch) {
+      mPendingEpoch = true;
+      RefPtr<ChildSHistory> self(this);
+      NS_DispatchToCurrentThread(
+          NS_NewRunnableFunction("UpdateEpochRunnable", [self] {
+            self->mHistoryEpoch++;
+            self->mPendingEpoch = false;
+          }));
+    }
+
+    nsCOMPtr<nsISHistory> shistory = mHistory;
+    mBrowsingContext->HistoryGo(
+        aOffset, mHistoryEpoch, aRequireUserInteraction, aUserActivation,
+        [shistory](int32_t&& aRequestedIndex) {
+          // FIXME Should probably only do this for non-fission.
+          if (shistory) {
+            shistory->InternalSetRequestedIndex(aRequestedIndex);
+          }
+        });
+  } else {
+    aRv = mHistory->GotoIndex(aIndex, aUserActivation);
+  }
+}
+
 void ChildSHistory::RemovePendingHistoryNavigations() {
+  // Per the spec, this generally shouldn't remove all navigations - it
+  // depends if they're in the same document family or not.  We don't do
+  // that.  Also with SessionHistoryInParent, this can only abort AsyncGo's
+  // that have not yet been sent to the parent - see discussion of point
+  // 2.2 in comments in nsDocShell::UpdateURLAndHistory()
+  MOZ_LOG(gSHLog, LogLevel::Debug,
+          ("ChildSHistory::RemovePendingHistoryNavigations: %zu",
+           mPendingNavigations.length()));
   mPendingNavigations.clear();
 }
 
 void ChildSHistory::EvictLocalContentViewers() {
-  mHistory->EvictAllContentViewers();
+  if (!mozilla::SessionHistoryInParent()) {
+    mHistory->EvictAllContentViewers();
+  }
+}
+
+nsISHistory* ChildSHistory::GetLegacySHistory(ErrorResult& aError) {
+  if (mozilla::SessionHistoryInParent()) {
+    aError.ThrowTypeError(
+        "legacySHistory is not available with session history in the parent.");
+    return nullptr;
+  }
+
+  MOZ_RELEASE_ASSERT(mHistory);
+  return mHistory;
 }
 
 nsISHistory* ChildSHistory::LegacySHistory() {
-  MOZ_RELEASE_ASSERT(mHistory);
-  return mHistory;
+  IgnoredErrorResult ignore;
+  nsISHistory* shistory = GetLegacySHistory(ignore);
+  MOZ_RELEASE_ASSERT(shistory);
+  return shistory;
 }
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ChildSHistory)
@@ -189,7 +265,21 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(ChildSHistory)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(ChildSHistory)
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(ChildSHistory, mBrowsingContext, mHistory)
+NS_IMPL_CYCLE_COLLECTION_CLASS(ChildSHistory)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ChildSHistory)
+  if (tmp->mHistory) {
+    static_cast<nsSHistory*>(tmp->mHistory.get())->SetBrowsingContext(nullptr);
+  }
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mBrowsingContext, mHistory)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(ChildSHistory)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mBrowsingContext, mHistory)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(ChildSHistory)
 
 JSObject* ChildSHistory::WrapObject(JSContext* cx,
                                     JS::Handle<JSObject*> aGivenProto) {
@@ -198,27 +288,6 @@ JSObject* ChildSHistory::WrapObject(JSContext* cx,
 
 nsISupports* ChildSHistory::GetParentObject() const {
   return xpc::NativeGlobal(xpc::PrivilegedJunkScope());
-}
-
-void ChildSHistory::SetAsyncHistoryLength(bool aEnable, ErrorResult& aRv) {
-  if (StaticPrefs::fission_sessionHistoryInParent() || !mHistory) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return;
-  }
-
-  if (mAsyncHistoryLength == aEnable) {
-    return;
-  }
-
-  mAsyncHistoryLength = aEnable;
-  if (mAsyncHistoryLength) {
-    mHistory->GetIndex(&mIndex);
-    mLength = mHistory->GetCount();
-  } else {
-    mIndex = -1;
-    mLength = 0;
-    mPendingSHistoryChanges.Clear();
-  }
 }
 
 }  // namespace dom

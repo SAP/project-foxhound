@@ -16,38 +16,44 @@ const HTML = `<div style="width: 300px; height: 3000px; position:relative;">
 const TEST_URL = "data:text/html;charset=utf-8," + encodeURIComponent(HTML);
 
 add_task(async function() {
-  const { inspector, testActor } = await openInspectorForURL(TEST_URL);
+  const { inspector } = await openInspectorForURL(TEST_URL);
 
   info("Make sure the markup frame has the focus");
   inspector.markup._frame.focus();
 
   info("Before test starts, #scroll-top is visible, #scroll-bottom is hidden");
-  await checkElementIsInViewport("#scroll-top", true, testActor);
-  await checkElementIsInViewport("#scroll-bottom", false, testActor);
+  await checkElementIsInViewport("#scroll-top", true);
+  await checkElementIsInViewport("#scroll-bottom", false);
 
   info("Select the #scroll-bottom node");
   await selectNode("#scroll-bottom", inspector);
   info("Press S to scroll to the bottom node");
-  let waitForScroll = testActor.waitForEventOnNode("scroll");
+  let waitForScroll = BrowserTestUtils.waitForContentEvent(
+    gBrowser.selectedBrowser,
+    "scroll"
+  );
   await EventUtils.synthesizeKey("S", {}, inspector.panelWin);
   await waitForScroll;
   ok(true, "Scroll event received");
 
   info("#scroll-top should be scrolled out, #scroll-bottom should be visible");
-  await checkElementIsInViewport("#scroll-top", false, testActor);
-  await checkElementIsInViewport("#scroll-bottom", true, testActor);
+  await checkElementIsInViewport("#scroll-top", false);
+  await checkElementIsInViewport("#scroll-bottom", true);
 
   info("Select the #scroll-top node");
   await selectNode("#scroll-top", inspector);
   info("Press S to scroll to the top node");
-  waitForScroll = testActor.waitForEventOnNode("scroll");
+  waitForScroll = BrowserTestUtils.waitForContentEvent(
+    gBrowser.selectedBrowser,
+    "scroll"
+  );
   await EventUtils.synthesizeKey("S", {}, inspector.panelWin);
   await waitForScroll;
   ok(true, "Scroll event received");
 
   info("#scroll-top should be visible, #scroll-bottom should be scrolled out");
-  await checkElementIsInViewport("#scroll-top", true, testActor);
-  await checkElementIsInViewport("#scroll-bottom", false, testActor);
+  await checkElementIsInViewport("#scroll-top", true);
+  await checkElementIsInViewport("#scroll-bottom", false);
 
   info("Select #scroll-bottom node");
   await selectNode("#scroll-bottom", inspector);
@@ -55,8 +61,8 @@ add_task(async function() {
   await EventUtils.synthesizeKey("S", { shiftKey: true }, inspector.panelWin);
 
   info("Same state, #scroll-top is visible, #scroll-bottom is scrolled out");
-  await checkElementIsInViewport("#scroll-top", true, testActor);
-  await checkElementIsInViewport("#scroll-bottom", false, testActor);
+  await checkElementIsInViewport("#scroll-top", true);
+  await checkElementIsInViewport("#scroll-bottom", false);
 });
 
 /**
@@ -68,17 +74,23 @@ add_task(async function() {
  *        css selector for the element to test
  * @param {Boolean} expected
  *        true if the element is expected to be in the viewport, false otherwise
- * @param {TestActor} testActor
- *        current test actor
  * @return {Promise} promise
  */
-async function checkElementIsInViewport(selector, expected, testActor) {
-  const isInViewport = await testActor.eval(`
-    let node = document.querySelector("${selector}");
-    let rect = node.getBoundingClientRect();
-    rect.bottom >= 0 && rect.right >= 0 &&
-      rect.top <= window.innerHeight && rect.left <= window.innerWidth;
-  `);
+async function checkElementIsInViewport(selector, expected) {
+  const isInViewport = await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [selector],
+    _selector => {
+      const node = content.document.querySelector(_selector);
+      const rect = node.getBoundingClientRect();
+      return (
+        rect.bottom >= 0 &&
+        rect.right >= 0 &&
+        rect.top <= content.innerHeight &&
+        rect.left <= content.innerWidth
+      );
+    }
+  );
 
   is(
     isInViewport,

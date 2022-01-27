@@ -133,4 +133,39 @@ template<typename T>
 constexpr auto is_member_of_rlbox_detail =
   detail_is_member_of_rlbox_detail::is_member_of_rlbox_detail_helper<T>::value;
 
+// https://stackoverflow.com/questions/9644477/how-to-check-whether-a-class-has-specified-nested-class-definition-or-typedef-in
+namespace detail_has_member_using_can_grant_deny_access {
+  template<class T, class Enable = void>
+  struct has_member_using_can_grant_deny_access : std::false_type
+  {};
+
+  template<class T>
+  struct has_member_using_can_grant_deny_access<
+    T,
+    std::void_t<typename T::can_grant_deny_access>> : std::true_type
+  {};
+}
+
+template<class T>
+constexpr bool has_member_using_can_grant_deny_access_v =
+  detail_has_member_using_can_grant_deny_access::
+    has_member_using_can_grant_deny_access<T>::value;
+
+namespace detail_has_member_using_needs_internal_lookup_symbol {
+  template<class T, class Enable = void>
+  struct has_member_using_needs_internal_lookup_symbol : std::false_type
+  {};
+
+  template<class T>
+  struct has_member_using_needs_internal_lookup_symbol<
+    T,
+    std::void_t<typename T::needs_internal_lookup_symbol>> : std::true_type
+  {};
+}
+
+template<class T>
+constexpr bool has_member_using_needs_internal_lookup_symbol_v =
+  detail_has_member_using_needs_internal_lookup_symbol::
+    has_member_using_needs_internal_lookup_symbol<T>::value;
+
 }

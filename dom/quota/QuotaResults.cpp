@@ -6,9 +6,59 @@
 
 #include "QuotaResults.h"
 
-namespace mozilla {
-namespace dom {
-namespace quota {
+#include "ErrorList.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/MacroForEach.h"
+#include "nscore.h"
+
+namespace mozilla::dom::quota {
+
+FullOriginMetadataResult::FullOriginMetadataResult(
+    const FullOriginMetadata& aFullOriginMetadata)
+    : mFullOriginMetadata(aFullOriginMetadata) {}
+
+NS_IMPL_ISUPPORTS(FullOriginMetadataResult, nsIQuotaFullOriginMetadataResult)
+
+NS_IMETHODIMP
+FullOriginMetadataResult::GetSuffix(nsACString& aSuffix) {
+  aSuffix = mFullOriginMetadata.mSuffix;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+FullOriginMetadataResult::GetGroup(nsACString& aGroup) {
+  aGroup = mFullOriginMetadata.mGroup;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+FullOriginMetadataResult::GetOrigin(nsACString& aOrigin) {
+  aOrigin = mFullOriginMetadata.mOrigin;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+FullOriginMetadataResult::GetPersistenceType(nsACString& aPersistenceType) {
+  aPersistenceType =
+      PersistenceTypeToString(mFullOriginMetadata.mPersistenceType);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+FullOriginMetadataResult::GetPersisted(bool* aPersisted) {
+  MOZ_ASSERT(aPersisted);
+
+  *aPersisted = mFullOriginMetadata.mPersisted;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+FullOriginMetadataResult::GetLastAccessTime(int64_t* aLastAccessTime) {
+  MOZ_ASSERT(aLastAccessTime);
+
+  *aLastAccessTime = mFullOriginMetadata.mLastAccessTime;
+  return NS_OK;
+}
 
 UsageResult::UsageResult(const nsACString& aOrigin, bool aPersisted,
                          uint64_t aUsage, uint64_t aLastAccessed)
@@ -91,6 +141,4 @@ EstimateResult::GetLimit(uint64_t* aLimit) {
   return NS_OK;
 }
 
-}  // namespace quota
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::quota

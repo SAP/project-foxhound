@@ -4,13 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/JSProcessActorBinding.h"
 #include "mozilla/dom/JSProcessActorChild.h"
 #include "mozilla/dom/InProcessChild.h"
 #include "mozilla/dom/InProcessParent.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(JSProcessActorChild, JSActor, mManager)
 
@@ -28,17 +28,22 @@ JSObject* JSProcessActorChild::WrapObject(JSContext* aCx,
   return JSProcessActorChild_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void JSProcessActorChild::SendRawMessage(const JSActorMessageMeta& aMeta,
-                                         ipc::StructuredCloneData&& aData,
-                                         ipc::StructuredCloneData&& aStack,
-                                         ErrorResult& aRv) {
+void JSProcessActorChild::SendRawMessage(
+    const JSActorMessageMeta& aMeta, Maybe<ipc::StructuredCloneData>&& aData,
+    Maybe<ipc::StructuredCloneData>&& aStack, ErrorResult& aRv) {
   if (NS_WARN_IF(!CanSend() || !mManager || !mManager->GetCanSend())) {
     aRv.ThrowInvalidStateError("JSProcessActorChild cannot send at the moment");
     return;
   }
 
-  if (NS_WARN_IF(
-          !AllowMessage(aMeta, aData.DataLength() + aStack.DataLength()))) {
+  size_t length = 0;
+  if (aData) {
+    length += aData->DataLength();
+  }
+  if (aStack) {
+    length += aStack->DataLength();
+  }
+  if (NS_WARN_IF(!AllowMessage(aMeta, length))) {
     aRv.ThrowDataCloneError(
         nsPrintfCString("JSProcessActorChild serialization error: data too "
                         "large, in actor '%s'",
@@ -56,16 +61,26 @@ void JSProcessActorChild::SendRawMessage(const JSActorMessageMeta& aMeta,
     return;
   }
 
-  ClonedMessageData msgData;
-  ClonedMessageData stackData;
-  if (NS_WARN_IF(
-          !aData.BuildClonedMessageDataForChild(contentChild, msgData)) ||
-      NS_WARN_IF(
-          !aStack.BuildClonedMessageDataForChild(contentChild, stackData))) {
-    aRv.ThrowDataCloneError(nsPrintfCString(
-        "JSProcessActorChild serialization error: cannot clone, in actor '%s'",
-        PromiseFlatCString(aMeta.actorName()).get()));
-    return;
+  // Cross-process case - send data over ContentChild to other side.
+  Maybe<ClonedMessageData> msgData;
+  if (aData) {
+    msgData.emplace();
+    if (NS_WARN_IF(
+            !aData->BuildClonedMessageDataForChild(contentChild, *msgData))) {
+      aRv.ThrowDataCloneError(
+          nsPrintfCString("JSProcessActorChild serialization error: cannot "
+                          "clone, in actor '%s'",
+                          PromiseFlatCString(aMeta.actorName()).get()));
+      return;
+    }
+  }
+
+  Maybe<ClonedMessageData> stackData;
+  if (aStack) {
+    stackData.emplace();
+    if (!aStack->BuildClonedMessageDataForChild(contentChild, *stackData)) {
+      stackData.reset();
+    }
   }
 
   if (NS_WARN_IF(!contentChild->SendRawMessage(aMeta, msgData, stackData))) {
@@ -87,5 +102,4 @@ void JSProcessActorChild::Init(const nsACString& aName,
 
 void JSProcessActorChild::ClearManager() { mManager = nullptr; }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

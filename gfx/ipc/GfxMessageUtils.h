@@ -17,13 +17,18 @@
 #include "gfxRect.h"
 #include "gfxTelemetry.h"
 #include "gfxTypes.h"
+#include "ipc/EnumSerializer.h"
+#include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/gfx/CrossProcessPaint.h"
 #include "mozilla/gfx/Matrix.h"
+#include "mozilla/gfx/ScaleFactor.h"
+#include "mozilla/gfx/ScaleFactors2D.h"
 #include "nsRect.h"
 #include "nsRegion.h"
 #include "mozilla/Array.h"
+#include "mozilla/ipc/IPDLParamTraits.h"
 #include "mozilla/ipc/ProtocolUtils.h"
-#include "mozilla/ipc/Shmem.h"
+#include "mozilla/ipc/ShmemMessageUtils.h"
 
 #include <stdint.h>
 
@@ -717,21 +722,28 @@ struct ParamTraits<mozilla::gfx::SurfaceFormat>
 
 template <>
 struct ParamTraits<mozilla::gfx::ColorDepth>
-    : public ContiguousEnumSerializer<mozilla::gfx::ColorDepth,
-                                      mozilla::gfx::ColorDepth::COLOR_8,
-                                      mozilla::gfx::ColorDepth::UNKNOWN> {};
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::gfx::ColorDepth, mozilla::gfx::ColorDepth::_First,
+          mozilla::gfx::ColorDepth::_Last> {};
 
 template <>
 struct ParamTraits<mozilla::gfx::ColorRange>
-    : public ContiguousEnumSerializer<mozilla::gfx::ColorRange,
-                                      mozilla::gfx::ColorRange::LIMITED,
-                                      mozilla::gfx::ColorRange::UNKNOWN> {};
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::gfx::ColorRange, mozilla::gfx::ColorRange::_First,
+          mozilla::gfx::ColorRange::_Last> {};
 
 template <>
 struct ParamTraits<mozilla::gfx::YUVColorSpace>
-    : public ContiguousEnumSerializer<
-          mozilla::gfx::YUVColorSpace, mozilla::gfx::YUVColorSpace::BT601,
-          mozilla::gfx::YUVColorSpace::_NUM_COLORSPACE> {};
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::gfx::YUVColorSpace, mozilla::gfx::YUVColorSpace::_First,
+          mozilla::gfx::YUVColorSpace::_Last> {};
+
+template <>
+struct ParamTraits<mozilla::gfx::YUVRangedColorSpace>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::gfx::YUVRangedColorSpace,
+          mozilla::gfx::YUVRangedColorSpace::_First,
+          mozilla::gfx::YUVRangedColorSpace::_Last> {};
 
 template <>
 struct ParamTraits<mozilla::StereoMode>

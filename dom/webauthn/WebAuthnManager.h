@@ -9,6 +9,7 @@
 
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/dom/AbortSignal.h"
 #include "mozilla/dom/PWebAuthnTransaction.h"
 #include "mozilla/dom/WebAuthnManagerBase.h"
 
@@ -44,6 +45,8 @@
 
 namespace mozilla {
 namespace dom {
+
+class Credential;
 
 class WebAuthnTransaction {
  public:
@@ -104,7 +107,7 @@ class WebAuthnManager final : public WebAuthnManagerBase, public AbortFollower {
 
   // AbortFollower
 
-  void Abort() override;
+  void RunAbortAlgorithm() override;
 
  protected:
   // Cancels the current transaction (by sending a Cancel message to the

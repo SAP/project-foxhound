@@ -17,14 +17,14 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   DeferredTask: "resource://gre/modules/DeferredTask.jsm",
   FormLikeFactory: "resource://gre/modules/FormLikeFactory.jsm",
   LoginManagerChild: "resource://gre/modules/LoginManagerChild.jsm",
+  Services: "resource://gre/modules/Services.jsm",
 });
 
-const { debug, warn } = GeckoViewUtils.initLogging("Autofill"); // eslint-disable-line no-unused-vars
+const { debug, warn } = GeckoViewUtils.initLogging("Autofill");
 
 class GeckoViewAutofill {
   constructor(aEventDispatcher) {
     this._eventDispatcher = aEventDispatcher;
-    this._autofillId = 0;
     this._autofillElements = undefined;
     this._autofillInfos = undefined;
     this._autofillTasks = undefined;
@@ -57,16 +57,21 @@ class GeckoViewAutofill {
 
     const window = aElement.ownerGlobal;
     const bounds = aElement.getBoundingClientRect();
+    const isInputElement = aElement instanceof window.HTMLInputElement;
 
     info = {
-      id: ++this._autofillId,
-      parent: aParent,
-      root: aRoot,
+      isInputElement,
+      uuid: Services.uuid
+        .generateUUID()
+        .toString()
+        .slice(1, -1), // discard the surrounding curly braces
+      parentUuid: aParent,
+      rootUuid: aRoot,
       tag: aElement.tagName,
-      type: aElement instanceof window.HTMLInputElement ? aElement.type : null,
-      value: aElement.value,
+      type: isInputElement ? aElement.type : null,
+      value: isInputElement ? aElement.value : null,
       editable:
-        aElement instanceof window.HTMLInputElement &&
+        isInputElement &&
         [
           "color",
           "date",
@@ -83,8 +88,7 @@ class GeckoViewAutofill {
           "url",
           "week",
         ].includes(aElement.type),
-      disabled:
-        aElement instanceof window.HTMLInputElement ? aElement.disabled : null,
+      disabled: isInputElement ? aElement.disabled : null,
       attributes: Object.assign(
         {},
         ...Array.from(aElement.attributes)
@@ -103,7 +107,7 @@ class GeckoViewAutofill {
 
     if (aElement === aUsernameField) {
       info.autofillhint = "username"; // AUTOFILL.HINT.USERNAME
-    } else if (aElement instanceof window.HTMLInputElement) {
+    } else if (isInputElement) {
       // Using autocomplete attribute if it is email.
       const autocompleteInfo = aElement.getAutocompleteInfo();
       if (autocompleteInfo) {
@@ -115,7 +119,7 @@ class GeckoViewAutofill {
     }
 
     this._autofillInfos.set(aElement, info);
-    this._autofillElements.set(info.id, Cu.getWeakReference(aElement));
+    this._autofillElements.set(info.uuid, Cu.getWeakReference(aElement));
     return info;
   }
 
@@ -127,7 +131,8 @@ class GeckoViewAutofill {
     const updated = [];
     for (const element of aElements) {
       const info = this._autofillInfos.get(element);
-      if (!info || info.value === element.value) {
+
+      if (!info?.isInputElement || info.value === element.value) {
         continue;
       }
       debug`Updating value ${info.value} to ${element.value}`;
@@ -197,7 +202,7 @@ class GeckoViewAutofill {
       null
     );
 
-    rootInfo.root = rootInfo.id;
+    rootInfo.rootUuid = rootInfo.uuid;
     rootInfo.children = aFormLike.elements
       .filter(
         element =>
@@ -210,22 +215,27 @@ class GeckoViewAutofill {
       )
       .map(element => {
         sendFocusEvent |= element === focusedElement;
-        return this._getInfo(element, rootInfo.id, rootInfo.id, usernameField);
+        return this._getInfo(
+          element,
+          rootInfo.uuid,
+          rootInfo.uuid,
+          usernameField
+        );
       });
 
     this._eventDispatcher.dispatch("GeckoView:AddAutofill", rootInfo, {
       onSuccess: responses => {
-        // `responses` is an object with IDs as keys.
+        // `responses` is an object with global IDs as keys.
         debug`Performing auto-fill ${Object.keys(responses)}`;
 
-        const AUTOFILL_STATE = "-moz-autofill";
+        const AUTOFILL_STATE = "autofill";
         const winUtils = window.windowUtils;
 
-        for (const id in responses) {
+        for (const uuid in responses) {
           const entry =
-            this._autofillElements && this._autofillElements.get(+id);
+            this._autofillElements && this._autofillElements.get(uuid);
           const element = entry && entry.get();
-          const value = responses[id] || "";
+          const value = responses[uuid] || "";
 
           if (
             element instanceof window.HTMLInputElement &&

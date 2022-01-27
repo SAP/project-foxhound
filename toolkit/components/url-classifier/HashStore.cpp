@@ -153,7 +153,7 @@ nsresult TableUpdateV2::NewMissPrefix(const Prefix& aPrefix) {
 void TableUpdateV4::NewPrefixes(int32_t aSize, const nsACString& aPrefixes) {
   NS_ENSURE_TRUE_VOID(aSize >= 4 && aSize <= COMPLETE_SIZE);
   NS_ENSURE_TRUE_VOID(aPrefixes.Length() % aSize == 0);
-  NS_ENSURE_TRUE_VOID(!mPrefixesMap.Get(aSize));
+  NS_ENSURE_TRUE_VOID(!mPrefixesMap.Contains(aSize));
 
   int numOfPrefixes = aPrefixes.Length() / aSize;
 
@@ -186,7 +186,7 @@ void TableUpdateV4::NewPrefixes(int32_t aSize, const nsACString& aPrefixes) {
          aPrefixes.Length() / aSize));
   }
 
-  mPrefixesMap.Put(aSize, new nsCString(aPrefixes));
+  mPrefixesMap.InsertOrUpdate(aSize, MakeUnique<nsCString>(aPrefixes));
 }
 
 nsresult TableUpdateV4::NewRemovalIndices(const uint32_t* aIndices,
@@ -211,7 +211,7 @@ void TableUpdateV4::SetSHA256(const std::string& aSHA256) {
 nsresult TableUpdateV4::NewFullHashResponse(
     const Prefix& aPrefix, const CachedFullHashResponse& aResponse) {
   CachedFullHashResponse* response =
-      mFullHashResponseMap.LookupOrAdd(aPrefix.ToUint32());
+      mFullHashResponseMap.GetOrInsertNew(aPrefix.ToUint32());
   if (!response) {
     return NS_ERROR_OUT_OF_MEMORY;
   }

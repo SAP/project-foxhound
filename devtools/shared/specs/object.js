@@ -29,12 +29,6 @@ types.addDictType("object.completion", {
   throw: "nullable:json",
 });
 
-types.addDictType("object.definitionSite", {
-  source: "source",
-  line: "number",
-  column: "number",
-});
-
 types.addDictType("object.prototypeproperties", {
   prototype: "object.descriptor",
   ownProperties: "nullable:json",
@@ -98,6 +92,14 @@ types.addDictType("object.originalSourceLocation", {
   functionDisplayName: "string",
 });
 
+types.addDictType("object.promiseState", {
+  state: "string",
+  value: "nullable:object.descriptor",
+  reason: "nullable:object.descriptor",
+  creationTimestamp: "number",
+  timeToSettle: "nullable:number",
+});
+
 types.addDictType("object.proxySlots", {
   proxyTarget: "object.descriptor",
   proxyHandler: "object.descriptor",
@@ -117,10 +119,6 @@ const objectSpec = generateActorSpec({
         pretty: Arg(0, "boolean"),
       },
       response: RetVal("object.decompile"),
-    },
-    definitionSite: {
-      request: {},
-      response: RetVal("object.definitionSite"),
     },
     dependentPromises: {
       request: {},
@@ -142,6 +140,12 @@ const objectSpec = generateActorSpec({
       },
       response: {
         iterator: RetVal("propertyIterator"),
+      },
+    },
+    enumPrivateProperties: {
+      request: {},
+      response: {
+        iterator: RetVal("privatePropertiesIterator"),
       },
     },
     enumSymbols: {
@@ -197,6 +201,10 @@ const objectSpec = generateActorSpec({
       response: {
         rejectionStack: RetVal("array:object.originalSourceLocation"),
       },
+    },
+    promiseState: {
+      request: {},
+      response: RetVal("object.promiseState"),
     },
     proxySlots: {
       request: {},

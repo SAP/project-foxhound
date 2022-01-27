@@ -122,11 +122,14 @@ help-button =
 ## Variables:
 ##   $value (number) - Amount of data being stored
 ##   $unit (string) - The unit of data being stored (Usually KB)
+
 security-site-data-cookies = Yes, cookies and { $value } { $unit } of site data
 security-site-data-only = Yes, { $value } { $unit } of site data
 
 security-site-data-cookies-only = Yes, cookies
 security-site-data-no = No
+
+##
 
 image-size-unknown = Unknown
 page-info-not-specified =
@@ -246,8 +249,8 @@ media-block-image =
 # This string is used to display the URL of the website on top of the
 # pageInfo dialog box
 # Variables:
-#   $website (string) - The url of the website pageInfo is getting info for
+#   $website (string) — The url of the website pageInfo is getting info for
 page-info-page =
-    .title = Page Info - { $website }
+    .title = Page Info — { $website }
 page-info-frame =
-    .title = Frame Info - { $website }
+    .title = Frame Info — { $website }

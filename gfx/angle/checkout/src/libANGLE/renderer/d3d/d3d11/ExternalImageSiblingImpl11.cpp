@@ -17,32 +17,25 @@
 
 namespace rx
 {
-ExternalImageSiblingImpl11::ExternalImageSiblingImpl11(Renderer11 *renderer, EGLClientBuffer buffer)
-    : mRenderer(renderer),
-      mBuffer(buffer),
-      mFormat(GL_NONE),
-      mIsRenderable(false),
-      mIsTexturable(false),
-      mSamples(0)
+ExternalImageSiblingImpl11::ExternalImageSiblingImpl11(Renderer11 *renderer,
+                                                       EGLClientBuffer buffer,
+                                                       const egl::AttributeMap &attribs)
+    : mRenderer(renderer), mBuffer(buffer), mAttribs(attribs)
 {}
 
 ExternalImageSiblingImpl11::~ExternalImageSiblingImpl11() {}
 
 egl::Error ExternalImageSiblingImpl11::initialize(const egl::Display *display)
 {
-    EGLint width, height, samples = 0;
-    const angle::Format *format = nullptr;
-    ANGLE_TRY(mRenderer->getD3DTextureInfo(nullptr, static_cast<IUnknown *>(mBuffer), &width,
-                                           &height, &samples, &format));
-    mFormat  = gl::Format(format->glInternalFormat);
-    mSize    = gl::Extents(width, height, 1);
-    mSamples = static_cast<size_t>(samples);
-
+    const angle::Format *angleFormat = nullptr;
+    ANGLE_TRY(mRenderer->getD3DTextureInfo(nullptr, static_cast<IUnknown *>(mBuffer), mAttribs,
+                                           &mWidth, &mHeight, &mSamples, &mFormat, &angleFormat,
+                                           &mArraySlice));
     ID3D11Texture2D *texture =
         d3d11::DynamicCastComObject<ID3D11Texture2D>(static_cast<IUnknown *>(mBuffer));
     ASSERT(texture != nullptr);
     // TextureHelper11 will release texture on destruction.
-    mTexture.set(texture, d3d11::Format::Get(format->glInternalFormat,
+    mTexture.set(texture, d3d11::Format::Get(angleFormat->glInternalFormat,
                                              mRenderer->getRenderer11DeviceCaps()));
     D3D11_TEXTURE2D_DESC textureDesc = {};
     mTexture.getDesc(&textureDesc);
@@ -59,6 +52,11 @@ egl::Error ExternalImageSiblingImpl11::initialize(const egl::Display *display)
 
     mIsTexturable = (textureDesc.BindFlags & D3D11_BIND_SHADER_RESOURCE) &&
                     (resourceUsage & DXGI_USAGE_SHADER_INPUT);
+
+    mIsTextureArray = (textureDesc.ArraySize > 1);
+
+    mYUV = (textureDesc.Format == DXGI_FORMAT_NV12 || textureDesc.Format == DXGI_FORMAT_P010 ||
+            textureDesc.Format == DXGI_FORMAT_P016);
 
     return egl::NoError();
 }
@@ -78,9 +76,14 @@ bool ExternalImageSiblingImpl11::isTexturable(const gl::Context *context) const
     return mIsTexturable;
 }
 
+bool ExternalImageSiblingImpl11::isYUV() const
+{
+    return mYUV;
+}
+
 gl::Extents ExternalImageSiblingImpl11::getSize() const
 {
-    return mSize;
+    return gl::Extents(mWidth, mHeight, 1);
 }
 
 size_t ExternalImageSiblingImpl11::getSamples() const
@@ -92,6 +95,7 @@ angle::Result ExternalImageSiblingImpl11::getAttachmentRenderTarget(
     const gl::Context *context,
     GLenum binding,
     const gl::ImageIndex &imageIndex,
+    GLsizei samples,
     FramebufferAttachmentRenderTarget **rtOut)
 {
     ANGLE_TRY(createRenderTarget(context));
@@ -119,9 +123,34 @@ angle::Result ExternalImageSiblingImpl11::createRenderTarget(const gl::Context *
     {
         D3D11_RENDER_TARGET_VIEW_DESC rtvDesc;
         rtvDesc.Format = formatInfo.rtvFormat;
-        rtvDesc.ViewDimension =
-            mSamples == 0 ? D3D11_RTV_DIMENSION_TEXTURE2D : D3D11_RTV_DIMENSION_TEXTURE2DMS;
-        rtvDesc.Texture2D.MipSlice = 0;
+        if (mIsTextureArray)
+        {
+            if (mSamples == 0)
+            {
+                rtvDesc.ViewDimension                  = D3D11_RTV_DIMENSION_TEXTURE2DARRAY;
+                rtvDesc.Texture2DArray.MipSlice        = 0;
+                rtvDesc.Texture2DArray.FirstArraySlice = mArraySlice;
+                rtvDesc.Texture2DArray.ArraySize       = 1;
+            }
+            else
+            {
+                rtvDesc.ViewDimension                    = D3D11_RTV_DIMENSION_TEXTURE2DMSARRAY;
+                rtvDesc.Texture2DMSArray.FirstArraySlice = mArraySlice;
+                rtvDesc.Texture2DMSArray.ArraySize       = 1;
+            }
+        }
+        else
+        {
+            if (mSamples == 0)
+            {
+                rtvDesc.ViewDimension      = D3D11_RTV_DIMENSION_TEXTURE2D;
+                rtvDesc.Texture2D.MipSlice = 0;
+            }
+            else
+            {
+                rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DMS;
+            }
+        }
 
         ANGLE_TRY(mRenderer->allocateResource(context11, rtvDesc, mTexture.get(), &rtv));
         rtv.setDebugName("getAttachmentRenderTarget.RTV");
@@ -132,10 +161,36 @@ angle::Result ExternalImageSiblingImpl11::createRenderTarget(const gl::Context *
     {
         D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
         srvDesc.Format = formatInfo.srvFormat;
-        srvDesc.ViewDimension =
-            mSamples == 0 ? D3D11_SRV_DIMENSION_TEXTURE2D : D3D11_SRV_DIMENSION_TEXTURE2DMS;
-        srvDesc.Texture2D.MostDetailedMip = 0;
-        srvDesc.Texture2D.MipLevels       = 1;
+        if (mIsTextureArray)
+        {
+            if (mSamples == 0)
+            {
+                srvDesc.ViewDimension                  = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
+                srvDesc.Texture2DArray.MostDetailedMip = 0;
+                srvDesc.Texture2DArray.MipLevels       = 1;
+                srvDesc.Texture2DArray.FirstArraySlice = mArraySlice;
+                srvDesc.Texture2DArray.ArraySize       = 1;
+            }
+            else
+            {
+                srvDesc.ViewDimension                  = D3D11_SRV_DIMENSION_TEXTURE2DMSARRAY;
+                srvDesc.Texture2DArray.FirstArraySlice = mArraySlice;
+                srvDesc.Texture2DArray.ArraySize       = 1;
+            }
+        }
+        else
+        {
+            if (mSamples == 0)
+            {
+                srvDesc.ViewDimension             = D3D11_SRV_DIMENSION_TEXTURE2D;
+                srvDesc.Texture2D.MostDetailedMip = 0;
+                srvDesc.Texture2D.MipLevels       = 1;
+            }
+            else
+            {
+                srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DMS;
+            }
+        }
 
         ANGLE_TRY(mRenderer->allocateResource(context11, srvDesc, mTexture.get(), &srv));
         srv.setDebugName("getAttachmentRenderTarget.SRV");
@@ -143,8 +198,8 @@ angle::Result ExternalImageSiblingImpl11::createRenderTarget(const gl::Context *
     d3d11::SharedSRV blitSrv = srv.makeCopy();
 
     mRenderTarget = std::make_unique<TextureRenderTarget11>(
-        std::move(rtv), mTexture, std::move(srv), std::move(blitSrv), formatInfo.internalFormat,
-        formatInfo, mSize.width, mSize.height, 1, 1);
+        std::move(rtv), mTexture, std::move(srv), std::move(blitSrv), mFormat.info->internalFormat,
+        formatInfo, mWidth, mHeight, 1, mSamples);
     return angle::Result::Continue;
 }
 

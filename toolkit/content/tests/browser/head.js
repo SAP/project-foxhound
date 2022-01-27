@@ -1,6 +1,60 @@
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+
+/**
+ * Set the findbar value to the given text, start a search for that text, and
+ * return a promise that resolves when the find has completed.
+ *
+ * @param gBrowser tabbrowser to search in the current tab.
+ * @param searchText text to search for.
+ * @param highlightOn true if highlight mode should be enabled before searching.
+ * @returns Promise resolves when find is complete.
+ */
+async function promiseFindFinished(gBrowser, searchText, highlightOn = false) {
+  let findbar = await gBrowser.getFindBar();
+  findbar.startFind(findbar.FIND_NORMAL);
+  let highlightElement = findbar.getElement("highlight");
+  if (highlightElement.checked != highlightOn) {
+    highlightElement.click();
+  }
+  return new Promise(resolve => {
+    executeSoon(() => {
+      findbar._findField.value = searchText;
+
+      let resultListener;
+      // When highlighting is on the finder sends a second "FOUND" message after
+      // the search wraps. This causes timing problems with e10s. waitMore
+      // forces foundOrTimeout wait for the second "FOUND" message before
+      // resolving the promise.
+      let waitMore = highlightOn;
+      let findTimeout = setTimeout(() => foundOrTimedout(null), 2000);
+      let foundOrTimedout = function(aData) {
+        if (aData !== null && waitMore) {
+          waitMore = false;
+          return;
+        }
+        if (aData === null) {
+          info("Result listener not called, timeout reached.");
+        }
+        clearTimeout(findTimeout);
+        findbar.browser.finder.removeResultListener(resultListener);
+        resolve();
+      };
+
+      resultListener = {
+        onFindResult: foundOrTimedout,
+        onCurrentSelection() {},
+        onMatchesCountResult() {},
+        onHighlightFinished() {},
+      };
+      findbar.browser.finder.addResultListener(resultListener);
+      findbar._find();
+    });
+  });
+}
 
 /**
  * A wrapper for the findbar's method "close", which is not synchronous
@@ -64,7 +118,7 @@ async function waitForTabPlayingEvent(tab, expectPlaying) {
   if (tab.soundPlaying == expectPlaying) {
     ok(true, "The tab should " + (expectPlaying ? "" : "not ") + "be playing");
   } else {
-    info("Playing state doens't match, wait for attributes changes.");
+    info("Playing state doesn't match, wait for attributes changes.");
     await BrowserTestUtils.waitForEvent(
       tab,
       "TabAttrModified",
@@ -82,41 +136,6 @@ async function waitForTabPlayingEvent(tab, expectPlaying) {
       }
     );
   }
-}
-
-function getTestPlugin(pluginName) {
-  var ph = SpecialPowers.Cc["@mozilla.org/plugin/host;1"].getService(
-    SpecialPowers.Ci.nsIPluginHost
-  );
-  var tags = ph.getPluginTags();
-  var name = pluginName || "Test Plug-in";
-  for (var tag of tags) {
-    if (tag.name == name) {
-      return tag;
-    }
-  }
-
-  ok(false, "Could not find plugin tag with plugin name '" + name + "'");
-  return null;
-}
-
-async function setTestPluginEnabledState(newEnabledState, pluginName) {
-  var oldEnabledState = await SpecialPowers.setTestPluginEnabledState(
-    newEnabledState,
-    pluginName
-  );
-  if (!oldEnabledState) {
-    return;
-  }
-  var plugin = getTestPlugin(pluginName);
-  // Run a nested event loop to wait for the preference change to
-  // propagate to the child. Yuck!
-  SpecialPowers.Services.tm.spinEventLoopUntil(() => {
-    return plugin.enabledState == newEnabledState;
-  });
-  SimpleTest.registerCleanupFunction(function() {
-    return SpecialPowers.setTestPluginEnabledState(oldEnabledState, pluginName);
-  });
 }
 
 function disable_non_test_mouse(disable) {
@@ -166,34 +185,70 @@ class DateTimeTestHelper {
    * ready for testing.
    *
    * @param  {String} pageUrl
+   * @param  {bool} inFrame true if input is in the first child frame
    */
-  async openPicker(pageUrl) {
+  async openPicker(pageUrl, inFrame) {
     this.tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
-    await BrowserTestUtils.synthesizeMouseAtCenter(
-      "input",
-      {},
-      gBrowser.selectedBrowser
-    );
+    let bc = gBrowser.selectedBrowser;
+    if (inFrame) {
+      await SpecialPowers.spawn(bc, [], async function() {
+        const iframe = content.document.querySelector("iframe");
+        // Ensure the iframe's position is correct before doing any
+        // other operations
+        iframe.getBoundingClientRect();
+      });
+      bc = bc.browsingContext.children[0];
+    }
+    await BrowserTestUtils.synthesizeMouseAtCenter("input", {}, bc);
     this.frame = this.panel.querySelector("#dateTimePopupFrame");
     await this.waitForPickerReady();
+  }
+
+  promisePickerClosed() {
+    return new Promise(resolve => {
+      this.panel.addEventListener("popuphidden", resolve, { once: true });
+    });
+  }
+
+  promiseChange(selector = "input") {
+    return SpecialPowers.spawn(
+      this.tab.linkedBrowser,
+      [selector],
+      async selector => {
+        let input = content.document.querySelector(selector);
+        await ContentTaskUtils.waitForEvent(input, "change", false, e => {
+          ok(
+            content.window.windowUtils.isHandlingUserInput,
+            "isHandlingUserInput should be true"
+          );
+          return true;
+        });
+      }
+    );
   }
 
   async waitForPickerReady() {
     let readyPromise;
     let loadPromise = new Promise(resolve => {
-      this.frame.addEventListener(
-        "load",
-        () => {
-          // Add the PickerReady event listener directly inside the load event
-          // listener to avoid missing the event.
-          readyPromise = BrowserTestUtils.waitForEvent(
-            this.frame.contentDocument,
-            "PickerReady"
-          );
-          resolve();
-        },
-        { capture: true, once: true }
-      );
+      let listener = () => {
+        if (
+          this.frame.browsingContext.currentURI.spec !=
+          "chrome://global/content/datepicker.xhtml"
+        ) {
+          return;
+        }
+
+        this.frame.removeEventListener("load", listener, { capture: true });
+        // Add the PickerReady event listener directly inside the load event
+        // listener to avoid missing the event.
+        readyPromise = BrowserTestUtils.waitForEvent(
+          this.frame.contentDocument,
+          "PickerReady"
+        );
+        resolve();
+      };
+
+      this.frame.addEventListener("load", listener, { capture: true });
     });
 
     await loadPromise;
@@ -234,10 +289,8 @@ class DateTimeTestHelper {
    * Close the panel and the tab
    */
   async tearDown() {
-    if (!this.panel.hidden) {
-      let pickerClosePromise = new Promise(resolve => {
-        this.panel.addEventListener("popuphidden", resolve, { once: true });
-      });
+    if (this.panel.state != "closed") {
+      let pickerClosePromise = this.promisePickerClosed();
       this.panel.hidePopup();
       await pickerClosePromise;
     }
@@ -272,83 +325,64 @@ function once(target, name) {
   return p;
 }
 
-// Runs a content script that creates an autoplay video.
-//  browser: the browser to run the script in.
-//  args: test case definition, required members {
-//    mode: String, "autoplay attribute" or "call play".
-//  }
-function loadAutoplayVideo(browser, args) {
-  return SpecialPowers.spawn(browser, [args], async args => {
-    info("- create a new autoplay video -");
-    let video = content.document.createElement("video");
-    video.id = "v1";
-    video.didPlayPromise = new Promise((resolve, reject) => {
-      video.addEventListener(
-        "playing",
-        e => {
-          video.didPlay = true;
+/**
+ * check if current wakelock is equal to expected state, if not, then wait until
+ * the wakelock changes its state to expected state.
+ * @param needLock
+ *        the wakolock should be locked or not
+ * @param isForegroundLock
+ *        when the lock is on, the wakelock should be in the foreground or not
+ */
+async function waitForExpectedWakeLockState(
+  topic,
+  { needLock, isForegroundLock }
+) {
+  const powerManagerService = Cc["@mozilla.org/power/powermanagerservice;1"];
+  const powerManager = powerManagerService.getService(
+    Ci.nsIPowerManagerService
+  );
+  const wakelockState = powerManager.getWakeLockState(topic);
+  let expectedLockState = "unlocked";
+  if (needLock) {
+    expectedLockState = isForegroundLock
+      ? "locked-foreground"
+      : "locked-background";
+  }
+  if (wakelockState != expectedLockState) {
+    info(`wait until wakelock becomes ${expectedLockState}`);
+    await wakeLockObserved(
+      powerManager,
+      topic,
+      state => state == expectedLockState
+    );
+  }
+  is(
+    powerManager.getWakeLockState(topic),
+    expectedLockState,
+    `the wakelock state for '${topic}' is equal to '${expectedLockState}'`
+  );
+}
+
+function wakeLockObserved(powerManager, observeTopic, checkFn) {
+  return new Promise(resolve => {
+    function wakeLockListener() {}
+    wakeLockListener.prototype = {
+      QueryInterface: ChromeUtils.generateQI(["nsIDOMMozWakeLockListener"]),
+      callback(topic, state) {
+        if (topic == observeTopic && checkFn(state)) {
+          powerManager.removeWakeLockListener(wakeLockListener.prototype);
           resolve();
-        },
-        { once: true }
-      );
-      video.addEventListener(
-        "blocked",
-        e => {
-          video.didPlay = false;
-          resolve();
-        },
-        { once: true }
-      );
-    });
-    if (args.mode == "autoplay attribute") {
-      info("autoplay attribute set to true");
-      video.autoplay = true;
-    } else if (args.mode == "call play") {
-      info("will call play() when reached loadedmetadata");
-      video.addEventListener(
-        "loadedmetadata",
-        e => {
-          video.play().then(
-            () => {
-              info("video play() resolved");
-            },
-            () => {
-              info("video play() rejected");
-            }
-          );
-        },
-        { once: true }
-      );
-    } else {
-      ok(false, "Invalid 'mode' arg");
-    }
-    video.src = "gizmo.mp4";
-    content.document.body.appendChild(video);
+        }
+      },
+    };
+    powerManager.addWakeLockListener(wakeLockListener.prototype);
   });
 }
 
-// Runs a content script that checks whether the video created by
-// loadAutoplayVideo() started playing.
-// Parameters:
-//  browser: the browser to run the script in.
-//  args: test case definition, required members {
-//    name: String, description of test.
-//    mode: String, "autoplay attribute" or "call play".
-//    shouldPlay: boolean, whether video should play.
-//  }
-function checkVideoDidPlay(browser, args) {
-  return SpecialPowers.spawn(browser, [args], async args => {
-    let video = content.document.getElementById("v1");
-    await video.didPlayPromise;
-    is(
-      video.didPlay,
-      args.shouldPlay,
-      args.name +
-        " should " +
-        (!args.shouldPlay ? "not " : "") +
-        "be able to autoplay"
-    );
-    video.src = "";
-    content.document.body.remove(video);
-  });
+function getTestWebBasedURL(fileName, { crossOrigin = false } = {}) {
+  const origin = crossOrigin ? "http://example.org" : "http://example.com";
+  return (
+    getRootDirectory(gTestPath).replace("chrome://mochitests/content", origin) +
+    fileName
+  );
 }

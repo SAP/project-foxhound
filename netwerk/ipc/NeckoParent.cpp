@@ -14,17 +14,18 @@
 #include "mozilla/net/NeckoParent.h"
 #include "mozilla/net/HttpChannelParent.h"
 #include "mozilla/net/CookieServiceParent.h"
-#include "mozilla/net/FTPChannelParent.h"
 #include "mozilla/net/WebSocketChannelParent.h"
 #include "mozilla/net/WebSocketEventListenerParent.h"
 #include "mozilla/net/DataChannelParent.h"
+#ifdef MOZ_WIDGET_GTK
+#  include "mozilla/net/GIOChannelParent.h"
+#endif
 #include "mozilla/net/DocumentChannelParent.h"
 #include "mozilla/net/SimpleChannelParent.h"
 #include "mozilla/net/AltDataOutputStreamParent.h"
 #include "mozilla/Unused.h"
 #include "mozilla/net/FileChannelParent.h"
 #include "mozilla/net/DNSRequestParent.h"
-#include "mozilla/net/ChannelDiverterParent.h"
 #include "mozilla/net/ClassifierDummyChannelParent.h"
 #include "mozilla/net/IPCTransportProvider.h"
 #include "mozilla/net/RequestContextService.h"
@@ -38,6 +39,7 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/TabContext.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/MaybeDiscarded.h"
 #include "mozilla/dom/network/TCPSocketParent.h"
 #include "mozilla/dom/network/TCPServerSocketParent.h"
 #include "mozilla/dom/network/UDPSocketParent.h"
@@ -45,16 +47,16 @@
 #include "mozilla/LoadContext.h"
 #include "mozilla/MozPromise.h"
 #include "nsPrintfCString.h"
-#include "nsHTMLDNSPrefetch.h"
+#include "mozilla/dom/HTMLDNSPrefetch.h"
 #include "nsEscape.h"
 #include "SerializedLoadContext.h"
 #include "nsAuthInformationHolder.h"
-#include "nsIAuthPromptCallback.h"
 #include "nsINetworkPredictor.h"
 #include "nsINetworkPredictorVerifier.h"
 #include "nsISpeculativeConnect.h"
 #include "nsHttpHandler.h"
 #include "nsNetUtil.h"
+#include "nsIOService.h"
 
 using IPC::SerializedLoadContext;
 using mozilla::OriginAttributes;
@@ -121,16 +123,6 @@ static already_AddRefed<nsIPrincipal> GetRequestingPrincipal(
   }
 
   const HttpChannelOpenArgs& args = aArgs.get_HttpChannelOpenArgs();
-  return GetRequestingPrincipal(args.loadInfo());
-}
-
-static already_AddRefed<nsIPrincipal> GetRequestingPrincipal(
-    const FTPChannelCreationArgs& aArgs) {
-  if (aArgs.type() != FTPChannelCreationArgs::TFTPChannelOpenArgs) {
-    return nullptr;
-  }
-
-  const FTPChannelOpenArgs& args = aArgs.get_FTPChannelOpenArgs();
   return GetRequestingPrincipal(args.loadInfo());
 }
 
@@ -276,50 +268,9 @@ bool NeckoParent::DeallocPAltDataOutputStreamParent(
   return true;
 }
 
-PFTPChannelParent* NeckoParent::AllocPFTPChannelParent(
-    PBrowserParent* aBrowser, const SerializedLoadContext& aSerialized,
-    const FTPChannelCreationArgs& aOpenArgs) {
-  nsCOMPtr<nsIPrincipal> requestingPrincipal =
-      GetRequestingPrincipal(aOpenArgs);
-
-  nsCOMPtr<nsILoadContext> loadContext;
-  const char* error = CreateChannelLoadContext(
-      aBrowser, Manager(), aSerialized, requestingPrincipal, loadContext);
-  if (error) {
-    printf_stderr(
-        "NeckoParent::AllocPFTPChannelParent: "
-        "FATAL error: %s: KILLING CHILD PROCESS\n",
-        error);
-    return nullptr;
-  }
-  PBOverrideStatus overrideStatus =
-      PBOverrideStatusFromLoadContext(aSerialized);
-  FTPChannelParent* p = new FTPChannelParent(BrowserParent::GetFrom(aBrowser),
-                                             loadContext, overrideStatus);
-  p->AddRef();
-  return p;
-}
-
-bool NeckoParent::DeallocPFTPChannelParent(PFTPChannelParent* channel) {
-  FTPChannelParent* p = static_cast<FTPChannelParent*>(channel);
-  p->Release();
-  return true;
-}
-
-mozilla::ipc::IPCResult NeckoParent::RecvPFTPChannelConstructor(
-    PFTPChannelParent* aActor, PBrowserParent* aBrowser,
-    const SerializedLoadContext& aSerialized,
-    const FTPChannelCreationArgs& aOpenArgs) {
-  FTPChannelParent* p = static_cast<FTPChannelParent*>(aActor);
-  if (!p->Init(aOpenArgs)) {
-    return IPC_FAIL_NO_REASON(this);
-  }
-  return IPC_OK();
-}
-
 already_AddRefed<PDocumentChannelParent>
 NeckoParent::AllocPDocumentChannelParent(
-    const MaybeDiscarded<BrowsingContext>& aContext,
+    const dom::MaybeDiscarded<BrowsingContext>& aContext,
     const DocumentChannelCreationArgs& args) {
   RefPtr<DocumentChannelParent> p = new DocumentChannelParent();
   return p.forget();
@@ -327,7 +278,7 @@ NeckoParent::AllocPDocumentChannelParent(
 
 mozilla::ipc::IPCResult NeckoParent::RecvPDocumentChannelConstructor(
     PDocumentChannelParent* aActor,
-    const MaybeDiscarded<BrowsingContext>& aContext,
+    const dom::MaybeDiscarded<BrowsingContext>& aContext,
     const DocumentChannelCreationArgs& aArgs) {
   DocumentChannelParent* p = static_cast<DocumentChannelParent*>(aActor);
 
@@ -408,6 +359,58 @@ mozilla::ipc::IPCResult NeckoParent::RecvPDataChannelConstructor(
   MOZ_ASSERT(rv);
   return IPC_OK();
 }
+
+#ifdef MOZ_WIDGET_GTK
+static already_AddRefed<nsIPrincipal> GetRequestingPrincipal(
+    const GIOChannelCreationArgs& aArgs) {
+  if (aArgs.type() != GIOChannelCreationArgs::TGIOChannelOpenArgs) {
+    return nullptr;
+  }
+
+  const GIOChannelOpenArgs& args = aArgs.get_GIOChannelOpenArgs();
+  return GetRequestingPrincipal(args.loadInfo());
+}
+
+PGIOChannelParent* NeckoParent::AllocPGIOChannelParent(
+    PBrowserParent* aBrowser, const SerializedLoadContext& aSerialized,
+    const GIOChannelCreationArgs& aOpenArgs) {
+  nsCOMPtr<nsIPrincipal> requestingPrincipal =
+      GetRequestingPrincipal(aOpenArgs);
+
+  nsCOMPtr<nsILoadContext> loadContext;
+  const char* error = CreateChannelLoadContext(
+      aBrowser, Manager(), aSerialized, requestingPrincipal, loadContext);
+  if (error) {
+    printf_stderr(
+        "NeckoParent::AllocPGIOChannelParent: "
+        "FATAL error: %s: KILLING CHILD PROCESS\n",
+        error);
+    return nullptr;
+  }
+  PBOverrideStatus overrideStatus =
+      PBOverrideStatusFromLoadContext(aSerialized);
+  GIOChannelParent* p = new GIOChannelParent(BrowserParent::GetFrom(aBrowser),
+                                             loadContext, overrideStatus);
+  p->AddRef();
+  return p;
+}
+
+bool NeckoParent::DeallocPGIOChannelParent(PGIOChannelParent* channel) {
+  GIOChannelParent* p = static_cast<GIOChannelParent*>(channel);
+  p->Release();
+  return true;
+}
+
+mozilla::ipc::IPCResult NeckoParent::RecvPGIOChannelConstructor(
+    PGIOChannelParent* actor, PBrowserParent* aBrowser,
+    const SerializedLoadContext& aSerialized,
+    const GIOChannelCreationArgs& aOpenArgs) {
+  GIOChannelParent* p = static_cast<GIOChannelParent*>(actor);
+  DebugOnly<bool> rv = p->Init(aOpenArgs);
+  MOZ_ASSERT(rv);
+  return IPC_OK();
+}
+#endif
 
 PSimpleChannelParent* NeckoParent::AllocPSimpleChannelParent(
     const uint32_t& channelId) {
@@ -541,7 +544,7 @@ mozilla::ipc::IPCResult NeckoParent::RecvSpeculativeConnect(
 mozilla::ipc::IPCResult NeckoParent::RecvHTMLDNSPrefetch(
     const nsString& hostname, const bool& isHttps,
     const OriginAttributes& aOriginAttributes, const uint32_t& flags) {
-  nsHTMLDNSPrefetch::Prefetch(hostname, isHttps, aOriginAttributes, flags);
+  dom::HTMLDNSPrefetch::Prefetch(hostname, isHttps, aOriginAttributes, flags);
   return IPC_OK();
 }
 
@@ -549,27 +552,9 @@ mozilla::ipc::IPCResult NeckoParent::RecvCancelHTMLDNSPrefetch(
     const nsString& hostname, const bool& isHttps,
     const OriginAttributes& aOriginAttributes, const uint32_t& flags,
     const nsresult& reason) {
-  nsHTMLDNSPrefetch::CancelPrefetch(hostname, isHttps, aOriginAttributes, flags,
-                                    reason);
+  dom::HTMLDNSPrefetch::CancelPrefetch(hostname, isHttps, aOriginAttributes,
+                                       flags, reason);
   return IPC_OK();
-}
-
-PChannelDiverterParent* NeckoParent::AllocPChannelDiverterParent(
-    const ChannelDiverterArgs& channel) {
-  return new ChannelDiverterParent();
-}
-
-mozilla::ipc::IPCResult NeckoParent::RecvPChannelDiverterConstructor(
-    PChannelDiverterParent* actor, const ChannelDiverterArgs& channel) {
-  auto parent = static_cast<ChannelDiverterParent*>(actor);
-  parent->Init(channel);
-  return IPC_OK();
-}
-
-bool NeckoParent::DeallocPChannelDiverterParent(
-    PChannelDiverterParent* parent) {
-  delete static_cast<ChannelDiverterParent*>(parent);
-  return true;
 }
 
 PTransportProviderParent* NeckoParent::AllocPTransportProviderParent() {
@@ -582,76 +567,6 @@ bool NeckoParent::DeallocPTransportProviderParent(
   RefPtr<TransportProviderParent> provider =
       dont_AddRef(static_cast<TransportProviderParent*>(aActor));
   return true;
-}
-
-namespace {
-std::map<uint64_t, nsCOMPtr<nsIAuthPromptCallback> >& CallbackMap() {
-  MOZ_ASSERT(NS_IsMainThread());
-  static std::map<uint64_t, nsCOMPtr<nsIAuthPromptCallback> > sCallbackMap;
-  return sCallbackMap;
-}
-}  // namespace
-
-NS_IMPL_ISUPPORTS(NeckoParent::NestedFrameAuthPrompt, nsIAuthPrompt2)
-
-NeckoParent::NestedFrameAuthPrompt::NestedFrameAuthPrompt(PNeckoParent* aParent,
-                                                          TabId aNestedFrameId)
-    : mNeckoParent(aParent), mNestedFrameId(aNestedFrameId) {}
-
-NS_IMETHODIMP
-NeckoParent::NestedFrameAuthPrompt::AsyncPromptAuth(
-    nsIChannel* aChannel, nsIAuthPromptCallback* callback, nsISupports*,
-    uint32_t, nsIAuthInformation* aInfo, nsICancelable**) {
-  static uint64_t callbackId = 0;
-  MOZ_ASSERT(XRE_IsParentProcess());
-  nsCOMPtr<nsIURI> uri;
-  nsresult rv = aChannel->GetURI(getter_AddRefs(uri));
-  NS_ENSURE_SUCCESS(rv, rv);
-  nsAutoCString spec;
-  if (uri) {
-    rv = uri->GetSpec(spec);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-  nsString realm;
-  rv = aInfo->GetRealm(realm);
-  NS_ENSURE_SUCCESS(rv, rv);
-  callbackId++;
-  if (mNeckoParent->SendAsyncAuthPromptForNestedFrame(mNestedFrameId, spec,
-                                                      realm, callbackId)) {
-    CallbackMap()[callbackId] = callback;
-    return NS_OK;
-  }
-  return NS_ERROR_FAILURE;
-}
-
-mozilla::ipc::IPCResult NeckoParent::RecvOnAuthAvailable(
-    const uint64_t& aCallbackId, const nsString& aUser,
-    const nsString& aPassword, const nsString& aDomain) {
-  nsCOMPtr<nsIAuthPromptCallback> callback = CallbackMap()[aCallbackId];
-  if (!callback) {
-    return IPC_OK();
-  }
-  CallbackMap().erase(aCallbackId);
-
-  RefPtr<nsAuthInformationHolder> holder =
-      new nsAuthInformationHolder(0, EmptyString(), EmptyCString());
-  holder->SetUsername(aUser);
-  holder->SetPassword(aPassword);
-  holder->SetDomain(aDomain);
-
-  callback->OnAuthAvailable(nullptr, holder);
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult NeckoParent::RecvOnAuthCancelled(
-    const uint64_t& aCallbackId, const bool& aUserCancel) {
-  nsCOMPtr<nsIAuthPromptCallback> callback = CallbackMap()[aCallbackId];
-  if (!callback) {
-    return IPC_OK();
-  }
-  CallbackMap().erase(aCallbackId);
-  callback->OnAuthCancelled(nullptr, aUserCancel);
-  return IPC_OK();
 }
 
 /* Predictor Messages */
@@ -848,35 +763,50 @@ mozilla::ipc::IPCResult NeckoParent::RecvInitSocketProcessBridge(
     InitSocketProcessBridgeResolver&& aResolver) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  Endpoint<PSocketProcessBridgeChild> invalidEndpoint;
-  if (NS_WARN_IF(mSocketProcessBridgeInited)) {
-    aResolver(std::move(invalidEndpoint));
-    return IPC_OK();
-  }
+  // Initing the socket process bridge must be async here in order to
+  // wait for the socket process launch before executing.
+  auto task = [self = this, resolver = std::move(aResolver)]() {
+    Endpoint<PSocketProcessBridgeChild> invalidEndpoint;
+    if (NS_WARN_IF(self->mSocketProcessBridgeInited)) {
+      resolver(std::move(invalidEndpoint));
+      return;
+    }
 
-  SocketProcessParent* parent = SocketProcessParent::GetSingleton();
-  if (NS_WARN_IF(!parent)) {
-    aResolver(std::move(invalidEndpoint));
-    return IPC_OK();
-  }
+    SocketProcessParent* parent = SocketProcessParent::GetSingleton();
+    if (NS_WARN_IF(!parent)) {
+      resolver(std::move(invalidEndpoint));
+      return;
+    }
 
-  Endpoint<PSocketProcessBridgeParent> parentEndpoint;
-  Endpoint<PSocketProcessBridgeChild> childEndpoint;
-  if (NS_WARN_IF(NS_FAILED(PSocketProcessBridge::CreateEndpoints(
-          parent->OtherPid(), Manager()->OtherPid(), &parentEndpoint,
-          &childEndpoint)))) {
-    aResolver(std::move(invalidEndpoint));
-    return IPC_OK();
-  }
+    Endpoint<PSocketProcessBridgeParent> parentEndpoint;
+    Endpoint<PSocketProcessBridgeChild> childEndpoint;
+    if (NS_WARN_IF(NS_FAILED(PSocketProcessBridge::CreateEndpoints(
+            parent->OtherPid(), self->Manager()->OtherPid(), &parentEndpoint,
+            &childEndpoint)))) {
+      resolver(std::move(invalidEndpoint));
+      return;
+    }
 
-  if (NS_WARN_IF(!parent->SendInitSocketProcessBridgeParent(
-          Manager()->OtherPid(), std::move(parentEndpoint)))) {
-    aResolver(std::move(invalidEndpoint));
-    return IPC_OK();
-  }
+    if (NS_WARN_IF(!parent->SendInitSocketProcessBridgeParent(
+            self->Manager()->OtherPid(), std::move(parentEndpoint)))) {
+      resolver(std::move(invalidEndpoint));
+      return;
+    }
 
-  aResolver(std::move(childEndpoint));
-  mSocketProcessBridgeInited = true;
+    resolver(std::move(childEndpoint));
+    self->mSocketProcessBridgeInited = true;
+  };
+  gIOService->CallOrWaitForSocketProcess(std::move(task));
+
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult NeckoParent::RecvResetSocketProcessBridge() {
+  // SendResetSocketProcessBridge is called from
+  // SocketProcessBridgeChild::ActorDestroy if the socket process
+  // crashes.  This is necessary in order to properly initialize the
+  // restarted socket process.
+  mSocketProcessBridgeInited = false;
   return IPC_OK();
 }
 

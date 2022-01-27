@@ -1,7 +1,11 @@
 /* exported getTargetForSelectedTab, waitFor, plotFPS */
 "use strict";
-const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
-const { TargetFactory } = require("devtools/client/framework/target");
+const { require } = ChromeUtils.import(
+  "resource://devtools/shared/loader/Loader.jsm"
+);
+const {
+  CommandsFactory,
+} = require("devtools/shared/commands/commands-factory");
 const Services = require("Services");
 
 // Always log packets when running tests.
@@ -17,10 +21,12 @@ SimpleTest.waitForExplicitFinish();
  * @return Promise a promise that resolves to the new target representing
  *         the page currently opened.
  */
-function getTargetForSelectedTab() {
+async function getTargetForSelectedTab() {
   // Get the target and get the necessary front
   const { gBrowser } = Services.wm.getMostRecentWindow("navigator:browser");
-  return TargetFactory.forTab(gBrowser.selectedTab);
+  const commands = await CommandsFactory.forTab(gBrowser.selectedTab);
+  await commands.targetCommand.startListening();
+  return commands.targetCommand.targetFront;
 }
 
 function waitFor(time) {

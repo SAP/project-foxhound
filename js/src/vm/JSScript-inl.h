@@ -11,10 +11,8 @@
 
 #include <utility>
 
-#include "jit/BaselineJIT.h"
-#include "jit/IonAnalysis.h"
+#include "jit/IonScript.h"
 #include "jit/JitScript.h"
-#include "vm/EnvironmentObject.h"
 #include "vm/RegExpObject.h"
 #include "wasm/AsmJS.h"
 
@@ -65,7 +63,7 @@ inline void ScriptWarmUpData::initEnclosingScript(BaseScript* enclosingScript) {
                 "BaseScript must be TenuredCell to avoid post-barriers");
 }
 inline void ScriptWarmUpData::clearEnclosingScript() {
-  BaseScript::writeBarrierPre(toEnclosingScript());
+  gc::PreWriteBarrier(toEnclosingScript());
   data_ = ResetState();
 }
 
@@ -76,7 +74,7 @@ inline void ScriptWarmUpData::initEnclosingScope(Scope* enclosingScope) {
                 "Scope must be TenuredCell to avoid post-barriers");
 }
 inline void ScriptWarmUpData::clearEnclosingScope() {
-  Scope::writeBarrierPre(toEnclosingScope());
+  gc::PreWriteBarrier(toEnclosingScope());
   data_ = ResetState();
 }
 
@@ -95,7 +93,7 @@ inline JSFunction* JSScript::getFunction(js::GCThingIndex index) const {
   JSObject* obj = getObject(index);
   MOZ_RELEASE_ASSERT(obj->is<JSFunction>(), "Script object is not JSFunction");
   JSFunction* fun = &obj->as<JSFunction>();
-  MOZ_ASSERT_IF(fun->isNative(), IsAsmJSModuleNative(fun->native()));
+  MOZ_ASSERT_IF(fun->isNativeFun(), IsAsmJSModuleNative(fun->native()));
   return fun;
 }
 
@@ -159,13 +157,6 @@ inline js::Shape* JSScript::initialEnvironmentShape() const {
   return nullptr;
 }
 
-inline bool JSScript::ensureHasAnalyzedArgsUsage(JSContext* cx) {
-  if (needsArgsAnalysis()) {
-    return js::jit::AnalyzeArgumentsUsage(cx, this);
-  }
-  return true;
-}
-
 inline bool JSScript::isDebuggee() const {
   return realm()->debuggerObservesAllExecution() || hasDebugScript();
 }
@@ -183,7 +174,7 @@ inline bool JSScript::isIonCompilingOffThread() const {
 }
 
 inline bool JSScript::canBaselineCompile() const {
-  bool disabled = hasFlag(MutableFlags::BaselineDisabled);
+  bool disabled = baselineDisabled();
 #ifdef DEBUG
   if (hasJitScript()) {
     bool jitScriptDisabled =
@@ -195,7 +186,7 @@ inline bool JSScript::canBaselineCompile() const {
 }
 
 inline bool JSScript::canIonCompile() const {
-  bool disabled = hasFlag(MutableFlags::IonDisabled);
+  bool disabled = ionDisabled();
 #ifdef DEBUG
   if (hasJitScript()) {
     bool jitScriptDisabled =

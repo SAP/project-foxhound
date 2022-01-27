@@ -143,7 +143,7 @@ check-local:
 ICUDATA_SOURCE_ARCHIVE = $(wildcard $(srcdir)/in/$(ICUDATA_PLATFORM_NAME).dat)
 ifeq ($(ICUDATA_SOURCE_ARCHIVE),)
 ICUDATA_ARCHIVE = $(firstword $(wildcard $(srcdir)/in/$(ICUDATA_BASENAME_VERSION)*.dat))
-# We don't have the data in the current endianess or charset.
+# We don't have the data in the current endianness or charset.
 # See if we can find data of any archive type,
 # and convert it to the current type.
 ifneq ($(ICUDATA_ARCHIVE),)
@@ -159,7 +159,7 @@ endif
 else
 ifneq ($(ENABLE_STATIC),YES)
 ifeq ($(PKGDATA_MODE),common)
-# We have a source data common archive in the native endianess,
+# We have a source data common archive in the native endianness,
 # and it's what we want to build. Try to not run any of ICU's tools.
 ICUDATA_SOURCE_IS_NATIVE_TARGET=YES
 endif
@@ -240,7 +240,7 @@ include $(top_builddir)/$(subdir)/rules.mk
 ifeq ($(ENABLE_SO_VERSION_DATA),1)
 ifeq ($(PKGDATA_MODE),dll)
 SO_VERSION_DATA = $(OUTTMPDIR)/icudata.res
-$(SO_VERSION_DATA) : $(MISCSRCDIR)/icudata.rc
+$(SO_VERSION_DATA) : $(MISCSRCDIR)/icudata.rc | $(TMP_DIR)/dirs.timestamp
 ifeq ($(MSYS_RC_MODE),1)
 	rc.exe -i$(srcdir)/../common -i$(top_builddir)/common -fo$@ $(CPPFLAGS) $<
 else

@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 hi{
     Keys{
         calendar{"कैलेंडर"}
@@ -121,7 +122,7 @@ hi{
         dgr{"डोग्रिब"}
         din{"दिन्का"}
         dje{"झार्मा"}
-        doi{"डोग्री"}
+        doi{"डोगरी"}
         dsb{"निचला सॉर्बियन"}
         dua{"दुआला"}
         dum{"मध्यकालीन पुर्तगाली"}
@@ -398,13 +399,13 @@ hi{
         raj{"राजस्थानी"}
         rap{"रापानुई"}
         rar{"रारोतोंगन"}
+        rhg{"रोहिंग्या"}
         rm{"रोमान्श"}
         rn{"रुन्दी"}
         ro{"रोमानियाई"}
         ro_MD{"मोलडावियन"}
         rof{"रोम्बो"}
         rom{"रोमानी"}
-        root{"रूट"}
         ru{"रूसी"}
         rup{"अरोमानियन"}
         rw{"किन्यारवांडा"}
@@ -850,11 +851,12 @@ hi{
         AREVELA{"पूर्वी अर्मेनियाई"}
         MONOTON{"एकस्वरीय"}
         NJIVA{"जीवा बोली"}
+        PINYIN{"पिनयिन रोमनाइज़ेशन"}
         POLYTON{"बहुस्वरीय"}
         POSIX{"कम्प्यूटर"}
         REVISED{"संशोधित वर्तनी"}
+        WADEGILE{"वेड-जाइल्स रोमनाइज़ेशन"}
     }
-    Version{"37"}
     characterLabelPattern{
         all{"{0} — सभी"}
         category-list{"{0}: {1}"}
@@ -869,6 +871,8 @@ hi{
             one{"{0} स्ट्रोक"}
             other{"{0} स्ट्रोक"}
         }
+        subscript{"सबस्क्रिप्ट {0}"}
+        superscript{"सुपरस्क्रिप्ट {0}"}
     }
     codePatterns{
         language{"भाषा: {0}"}

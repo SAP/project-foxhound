@@ -1,10 +1,10 @@
+use super::{copy_buf, BufReader, CopyBuf};
 use futures_core::future::Future;
 use futures_core::task::{Context, Poll};
 use futures_io::{AsyncRead, AsyncWrite};
+use pin_project_lite::pin_project;
 use std::io;
 use std::pin::Pin;
-use super::{BufReader, copy_buf, CopyBuf};
-use pin_utils::unsafe_pinned;
 
 /// Creates a future which copies all the bytes from one object to another.
 ///
@@ -36,28 +36,23 @@ where
     R: AsyncRead,
     W: AsyncWrite + Unpin + ?Sized,
 {
-    Copy {
-        inner: copy_buf(BufReader::new(reader), writer),
+    Copy { inner: copy_buf(BufReader::new(reader), writer) }
+}
+
+pin_project! {
+    /// Future for the [`copy()`] function.
+    #[derive(Debug)]
+    #[must_use = "futures do nothing unless you `.await` or poll them"]
+    pub struct Copy<'a, R, W: ?Sized> {
+        #[pin]
+        inner: CopyBuf<'a, BufReader<R>, W>,
     }
-}
-
-/// Future for the [`copy()`] function.
-#[derive(Debug)]
-#[must_use = "futures do nothing unless you `.await` or poll them"]
-pub struct Copy<'a, R, W: ?Sized> {
-    inner: CopyBuf<'a, BufReader<R>, W>,
-}
-
-impl<'a, R: AsyncRead, W: ?Sized> Unpin for Copy<'a, R, W> where CopyBuf<'a, BufReader<R>, W>: Unpin {}
-
-impl<'a, R: AsyncRead, W: ?Sized> Copy<'a, R, W> {
-    unsafe_pinned!(inner: CopyBuf<'a, BufReader<R>, W>);
 }
 
 impl<R: AsyncRead, W: AsyncWrite + Unpin + ?Sized> Future for Copy<'_, R, W> {
     type Output = io::Result<u64>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.inner().poll(cx)
+        self.project().inner.poll(cx)
     }
 }

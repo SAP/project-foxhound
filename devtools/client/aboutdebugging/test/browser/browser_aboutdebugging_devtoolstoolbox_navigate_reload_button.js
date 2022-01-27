@@ -25,10 +25,14 @@ add_task(async function() {
 
   info("Clicking reload button and waiting for requests to complete");
   const toolbox = getToolbox(devtoolsWindow);
+  const {
+    onDomCompleteResource,
+  } = await waitForNextTopLevelDomCompleteResource(toolbox.commands);
+
   const refreshes = Promise.all([
-    toolbox.target.once("navigate"),
-    toolbox.target.client.waitForRequestsToSettle(),
-    waitForRequestsToSettle(window.AboutDebugging.store),
+    onDomCompleteResource,
+    toolbox.commands.client.waitForRequestsToSettle(),
+    waitForAboutDebuggingRequests(window.AboutDebugging.store),
   ]);
   clickReload(devtoolsDocument);
   await refreshes;

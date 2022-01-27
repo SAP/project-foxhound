@@ -237,7 +237,7 @@ class nsTableRowFrame : public nsContainerFrame {
                                   BCPixelSize aPixelValue);
 
   virtual bool IsFrameOfType(uint32_t aFlags) const override {
-    if (aFlags & eSupportsContainLayoutAndPaint) {
+    if (aFlags & (eSupportsContainLayoutAndPaint | eSupportsAspectRatio)) {
       return false;
     }
 
@@ -269,8 +269,7 @@ class nsTableRowFrame : public nsContainerFrame {
                             bool aBorderCollapse,
                             TableCellReflowInput& aReflowInput);
 
-  virtual LogicalSides GetLogicalSkipSides(
-      const ReflowInput* aReflowInput = nullptr) const override;
+  LogicalSides GetLogicalSkipSides() const override;
 
   // row-specific methods
 

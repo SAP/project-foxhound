@@ -39,12 +39,6 @@ const animationPlayerSpec = generateActorSpec({
         data: RetVal("json"),
       },
     },
-    getProperties: {
-      request: {},
-      response: {
-        properties: RetVal("array:json"),
-      },
-    },
     getAnimationTypes: {
       request: {
         propertyNames: Arg(0, "array:string"),

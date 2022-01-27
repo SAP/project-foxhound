@@ -8,6 +8,7 @@
  */
 
 #include "SessionStorage.h"
+
 #include "SessionStorageCache.h"
 #include "SessionStorageManager.h"
 
@@ -16,10 +17,7 @@
 #include "nsContentUtils.h"
 #include "nsIPrincipal.h"
 #include "nsPIDOMWindow.h"
-
-#define DATASET                                          \
-  IsSessionOnly() ? SessionStorageCache::eSessionSetType \
-                  : SessionStorageCache::eDefaultSetType
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 namespace dom {
@@ -42,14 +40,20 @@ SessionStorage::SessionStorage(nsPIDOMWindowInner* aWindow,
       mCache(aCache),
       mManager(aManager),
       mDocumentURI(aDocumentURI),
-      mIsPrivate(aIsPrivate) {
+      mIsPrivate(aIsPrivate),
+      mHasPendingStableStateCallback(false) {
   MOZ_ASSERT(aCache);
 }
 
 SessionStorage::~SessionStorage() = default;
 
 int64_t SessionStorage::GetOriginQuotaUsage() const {
-  return mCache->GetOriginQuotaUsage(DATASET);
+  nsresult rv = EnsureCacheLoadedOrCloned();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return 0;
+  }
+
+  return mCache->GetOriginQuotaUsage();
 }
 
 uint32_t SessionStorage::GetLength(nsIPrincipal& aSubjectPrincipal,
@@ -59,7 +63,13 @@ uint32_t SessionStorage::GetLength(nsIPrincipal& aSubjectPrincipal,
     return 0;
   }
 
-  return mCache->Length(DATASET);
+  nsresult rv = EnsureCacheLoadedOrCloned();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aRv.Throw(rv);
+    return 0;
+  }
+
+  return mCache->Length();
 }
 
 void SessionStorage::Key(uint32_t aIndex, nsAString& aResult,
@@ -69,7 +79,13 @@ void SessionStorage::Key(uint32_t aIndex, nsAString& aResult,
     return;
   }
 
-  mCache->Key(DATASET, aIndex, aResult);
+  nsresult rv = EnsureCacheLoadedOrCloned();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aRv.Throw(rv);
+    return;
+  }
+
+  mCache->Key(aIndex, aResult);
 }
 
 void SessionStorage::GetItem(const nsAString& aKey, nsAString& aResult,
@@ -80,7 +96,13 @@ void SessionStorage::GetItem(const nsAString& aKey, nsAString& aResult,
     return;
   }
 
-  mCache->GetItem(DATASET, aKey, aResult);
+  nsresult rv = EnsureCacheLoadedOrCloned();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aRv.Throw(rv);
+    return;
+  }
+
+  mCache->GetItem(aKey, aResult);
 
   // TaintFox: sessionStorage.getItem source
   MarkTaintSource(aResult, "sessionStorage.getItem");
@@ -93,22 +115,35 @@ void SessionStorage::GetSupportedNames(nsTArray<nsString>& aKeys) {
     return;
   }
 
-  mCache->GetKeys(DATASET, aKeys);
+  nsresult rv = EnsureCacheLoadedOrCloned();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    // return just an empty array
+    aKeys.Clear();
+    return;
+  }
+
+  mCache->GetKeys(aKeys);
 }
 
 void SessionStorage::SetItem(const nsAString& aKey, const nsAString& aValue,
                              nsIPrincipal& aSubjectPrincipal,
                              ErrorResult& aRv) {
+  // TaintFox: sessionStorage.setItem sink.
+  ReportTaintSink(aValue, "sessionStorage.setItem");
+
   if (!CanUseStorage(aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return;
   }
 
-  // TaintFox: sessionStorage.setItem sink.
-  ReportTaintSink(aValue, "sessionStorage.setItem");
+  nsresult rv = EnsureCacheLoadedOrCloned();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aRv.Throw(rv);
+    return;
+  }
 
   nsString oldValue;
-  nsresult rv = mCache->SetItem(DATASET, aKey, aValue, oldValue);
+  rv = mCache->SetItem(aKey, aValue, oldValue);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
     return;
@@ -129,8 +164,14 @@ void SessionStorage::RemoveItem(const nsAString& aKey,
     return;
   }
 
+  nsresult rv = EnsureCacheLoadedOrCloned();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aRv.Throw(rv);
+    return;
+  }
+
   nsString oldValue;
-  nsresult rv = mCache->RemoveItem(DATASET, aKey, oldValue);
+  rv = mCache->RemoveItem(aKey, oldValue);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
   if (rv == NS_SUCCESS_DOM_NO_OPERATION) {
@@ -146,7 +187,13 @@ void SessionStorage::Clear(nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
     return;
   }
 
-  mCache->Clear(DATASET);
+  nsresult rv = EnsureCacheLoadedOrCloned();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aRv.Throw(rv);
+    return;
+  }
+
+  mCache->Clear();
   BroadcastChangeNotification(VoidString(), VoidString(), VoidString());
 }
 
@@ -155,6 +202,11 @@ void SessionStorage::BroadcastChangeNotification(const nsAString& aKey,
                                                  const nsAString& aNewValue) {
   NotifyChange(this, StoragePrincipal(), aKey, aOldValue, aNewValue,
                u"sessionStorage", mDocumentURI, mIsPrivate, false);
+
+  // Sync changes on SessionStorageCache at the next statble state.
+  if (mManager->CanLoadData()) {
+    MaybeScheduleStableStateCallback();
+  }
 }
 
 bool SessionStorage::IsForkOf(const Storage* aOther) const {
@@ -164,6 +216,53 @@ bool SessionStorage::IsForkOf(const Storage* aOther) const {
   }
 
   return mCache == static_cast<const SessionStorage*>(aOther)->mCache;
+}
+
+void SessionStorage::MaybeScheduleStableStateCallback() {
+  AssertIsOnOwningThread();
+
+  if (!mHasPendingStableStateCallback) {
+    nsContentUtils::RunInStableState(
+        NewRunnableMethod("SessionStorage::StableStateCallback", this,
+                          &SessionStorage::StableStateCallback));
+
+    mHasPendingStableStateCallback = true;
+  }
+}
+
+void SessionStorage::StableStateCallback() {
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(mHasPendingStableStateCallback);
+  MOZ_ASSERT(mManager);
+  MOZ_ASSERT(mCache);
+
+  mHasPendingStableStateCallback = false;
+
+  if (mManager->CanLoadData()) {
+    mManager->CheckpointData(*StoragePrincipal(), *mCache);
+  }
+}
+
+nsresult SessionStorage::EnsureCacheLoadedOrCloned() const {
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(mManager);
+
+  if (!mManager->CanLoadData()) {
+    return NS_OK;
+  }
+
+  // Ensure manager actor.
+  nsresult rv = mManager->EnsureManager();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  // Ensure cache is loaded or cloned.
+  if (mCache->WasLoadedOrCloned()) {
+    return NS_OK;
+  }
+
+  return mManager->LoadData(*StoragePrincipal(), *mCache);
 }
 
 }  // namespace dom

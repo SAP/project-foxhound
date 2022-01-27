@@ -120,6 +120,8 @@ D2D1_COMPOSITE_MODE D2DFilterCompositionMode(uint32_t aMode) {
       return D2D1_COMPOSITE_MODE_SOURCE_ATOP;
     case COMPOSITE_OPERATOR_XOR:
       return D2D1_COMPOSITE_MODE_XOR;
+    case COMPOSITE_OPERATOR_LIGHTER:
+      return D2D1_COMPOSITE_MODE_PLUS;
   }
 
   MOZ_CRASH("GFX: Unknown enum value D2DFilterCompositionMode!");
@@ -144,11 +146,9 @@ D2D1_CHANNEL_SELECTOR D2DChannelSelector(uint32_t aMode) {
 
 already_AddRefed<ID2D1Image> GetImageForSourceSurface(DrawTarget* aDT,
                                                       SourceSurface* aSurface) {
-  if (aDT->IsTiledDrawTarget() || aDT->IsDualDrawTarget() ||
-      aDT->IsCaptureDT()) {
+  if (aDT->IsTiledDrawTarget()) {
     gfxDevCrash(LogReason::FilterNodeD2D1Target)
-        << "Incompatible draw target type! " << (int)aDT->IsTiledDrawTarget()
-        << " " << (int)aDT->IsDualDrawTarget();
+        << "Incompatible draw target type! " << (int)aDT->IsTiledDrawTarget();
     return nullptr;
   }
   switch (aDT->GetBackendType()) {

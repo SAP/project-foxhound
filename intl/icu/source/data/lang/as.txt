@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 as{
     Keys{
         calendar{"কেলেণ্ডাৰ"}
@@ -83,6 +84,7 @@ as{
         de_CH{"ছুইচ হাই জাৰ্মান"}
         dgr{"ডোগ্ৰিব"}
         dje{"ঝাৰ্মা"}
+        doi{"ডোগ্ৰী"}
         dsb{"ল’ৱাৰ ছোৰ্বিয়ান"}
         dua{"ডুৱালা"}
         dv{"দিবেহি"}
@@ -268,6 +270,7 @@ as{
         nmg{"কোৱাছিঅ’"}
         nn{"নৰৱেজিয়ান নায়নোৰ্স্ক"}
         nnh{"নিয়েম্বোন"}
+        no{"নৰৱেজিয়ান"}
         nog{"নোগাই"}
         nqo{"এন্কো"}
         nr{"দক্ষিণ দেবেল"}
@@ -296,12 +299,12 @@ as{
         quc{"কিচিয়ে"}
         rap{"ৰাপানুই"}
         rar{"ৰাৰোতোঙ্গন"}
+        rhg{"ৰোহিঙ্গিয়া"}
         rm{"ৰোমানচ"}
         rn{"ৰুন্দি"}
         ro{"ৰোমানীয়"}
         ro_MD{"মোল্ডাভিয়ান"}
         rof{"ৰোম্বো"}
-        root{"ৰুট"}
         ru{"ৰাছিয়ান"}
         rup{"আৰোমানীয়"}
         rw{"কিনয়াৰোৱাণ্ডা"}
@@ -553,7 +556,6 @@ as{
             tibt{"তিব্বতী অংক"}
         }
     }
-    Version{"37"}
     characterLabelPattern{
         all{"{0} — সকলো"}
         category-list{"{0}: {1}"}
@@ -568,6 +570,8 @@ as{
             one{"{0} ষ্ট্ৰ’ক"}
             other{"{0} ষ্ট্ৰ’ক"}
         }
+        subscript{"ছাবস্ক্ৰিপ্ট {0}"}
+        superscript{"ছুপাৰস্ক্ৰিপ্ট {0}"}
     }
     codePatterns{
         language{"ভাষা: {0}"}

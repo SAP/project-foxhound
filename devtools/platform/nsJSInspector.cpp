@@ -4,9 +4,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsJSInspector.h"
-#include "nsThreadUtils.h"
 #include "jsfriendapi.h"
 #include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "nsServiceManagerUtils.h"
 #include "nsMemory.h"
@@ -71,7 +71,8 @@ nsJSInspector::EnterNestedEventLoop(JS::Handle<JS::Value> requestor,
   mozilla::dom::AutoNoJSAPI nojsapi;
 
   uint32_t nestLevel = ++mNestedLoopLevel;
-  if (!SpinEventLoopUntil([&]() { return mNestedLoopLevel < nestLevel; })) {
+  if (!SpinEventLoopUntil("nsJSInspector::EnterNestedEventLoop"_ns,
+                          [&]() { return mNestedLoopLevel < nestLevel; })) {
     rv = NS_ERROR_UNEXPECTED;
   }
 

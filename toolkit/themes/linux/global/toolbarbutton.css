@@ -30,24 +30,24 @@ toolbarbutton.tabbable {
   -moz-user-focus: normal !important;
 }
 
-toolbarbutton[checked="true"] {
+toolbarbutton:where([checked="true"]) {
   color: ButtonText;
 }
 
-toolbarbutton:hover {
+toolbarbutton:where(:hover) {
   color: -moz-buttonhovertext;
 }
 
-toolbarbutton:hover:active:not([disabled="true"]),
-toolbarbutton[open="true"] {
+toolbarbutton:where(:hover:active:not([disabled="true"])),
+toolbarbutton:where([open="true"]) {
   color: ButtonText;
 }
 
-toolbarbutton[disabled="true"] {
+toolbarbutton:where([disabled="true"]) {
   color: GrayText;
 }
 
-toolbarbutton:-moz-lwtheme:not(:hover):not([checked="true"]):not([open="true"]):not([disabled="true"]) {
+toolbarbutton:-moz-lwtheme:not(:hover, [checked="true"], [open="true"], [disabled="true"]) {
   text-shadow: inherit;
 }
 
@@ -56,6 +56,14 @@ toolbarbutton:-moz-lwtheme:not(:hover):not([checked="true"]):not([open="true"]):
 .toolbarbutton-menu-dropmarker {
   appearance: auto;
   -moz-default-appearance: toolbarbutton-dropdown;
+}
+
+.toolbarbutton-combined-buttons-dropmarker {
+  appearance: none;
+  list-style-image: url("chrome://global/skin/icons/arrow-down-12.svg");
+  -moz-context-properties: fill;
+  fill: currentColor;
+  width: auto;
 }
 
 /* ::::: toolbarbutton badged ::::: */
@@ -76,10 +84,10 @@ toolbarbutton:-moz-lwtheme:not(:hover):not([checked="true"]):not([open="true"]):
   box-shadow: 0 1px 0 hsla(0, 100%, 100%, .2) inset,
               0 -1px 0 hsla(0, 0%, 0%, .1) inset,
               0 1px 0 hsla(206, 50%, 10%, .2);
-  margin: -6px 0 0 !important;
-  margin-inline-end: -8px !important;
+  margin: -5px 0 0 !important;
+  margin-inline-end: -4px !important;
   min-width: 14px;
-  max-width: 24px;
+  max-width: 20px;
   line-height: 10px;
   text-align: center;
   align-self: start;

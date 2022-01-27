@@ -3,13 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 import { makeMockDisplaySource } from "../../test-mockup";
 
 import {
   createDirectoryNode,
-  getRelativePath,
   isExactUrlMatch,
   isDirectory,
   addToTree,
@@ -20,9 +17,7 @@ import {
   getAllSources,
 } from "../index";
 
-type RawSource = {| url: string, id: string, actors?: any |};
-
-function createSourcesMap(sources: RawSource[]) {
+function createSourcesMap(sources) {
   const sourcesMap = sources.reduce((map, source) => {
     map[source.id] = makeMockDisplaySource(source.url, source.id);
     return map;
@@ -72,26 +67,6 @@ describe("sources tree", () => {
       expect(isDirectory(aFileNode)).toBe(false);
       expect(isDirectory(cFolderNode)).toBe(true);
       expect(isDirectory(dFileNode)).toBe(false);
-    });
-  });
-
-  describe("getRelativePath", () => {
-    it("gets the relative path of the file", () => {
-      const relPath = "path/to/file.html";
-      expect(getRelativePath("http://example.com/path/to/file.html")).toBe(
-        relPath
-      );
-      expect(getRelativePath("http://www.example.com/path/to/file.html")).toBe(
-        relPath
-      );
-      expect(getRelativePath("https://www.example.com/path/to/file.js")).toBe(
-        "path/to/file.js"
-      );
-      expect(getRelativePath("webpack:///path/to/file.html")).toBe(relPath);
-      expect(getRelativePath("file:///path/to/file.html")).toBe(relPath);
-      expect(getRelativePath("file:///path/to/file.html?bla")).toBe(relPath);
-      expect(getRelativePath("file:///path/to/file.html#bla")).toBe(relPath);
-      expect(getRelativePath("file:///path/to/file")).toBe("path/to/file");
     });
   });
 
@@ -193,13 +168,15 @@ describe("sources tree", () => {
         actor: "FakeThread",
         name: "FakeThread",
         url: "https://example.com/",
-        type: "worker",
+        targetType: "worker",
+        isTopLevel: false,
       },
       {
         actor: "OtherThread",
         name: "OtherThread",
         url: "https://example.com/",
-        type: "worker",
+        targetType: "worker",
+        isTopLevel: false,
       },
     ];
 

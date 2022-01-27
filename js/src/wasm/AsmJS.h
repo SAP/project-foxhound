@@ -19,8 +19,7 @@
 #ifndef wasm_AsmJS_h
 #define wasm_AsmJS_h
 
-#include "mozilla/Attributes.h"  // MOZ_MUST_USE
-#include "mozilla/Utf8.h"        // mozilla::Utf8Unit
+#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
 #include <stdint.h>  // uint32_t
 
@@ -43,6 +42,7 @@ namespace js {
 
 namespace frontend {
 
+class ParserAtomsTable;
 class ParseContext;
 class ParseNode;
 
@@ -62,15 +62,17 @@ using AsmJSParser = frontend::Parser<frontend::FullParseHandler, Unit>;
 // indeterminate amount and the entire function should be reparsed from the
 // beginning.
 
-extern MOZ_MUST_USE bool CompileAsmJS(JSContext* cx,
-                                      AsmJSParser<mozilla::Utf8Unit>& parser,
-                                      frontend::ParseNode* stmtList,
-                                      bool* validated);
+[[nodiscard]] extern bool CompileAsmJS(JSContext* cx,
+                                       frontend::ParserAtomsTable& parserAtoms,
+                                       AsmJSParser<mozilla::Utf8Unit>& parser,
+                                       frontend::ParseNode* stmtList,
+                                       bool* validated);
 
-extern MOZ_MUST_USE bool CompileAsmJS(JSContext* cx,
-                                      AsmJSParser<char16_t>& parser,
-                                      frontend::ParseNode* stmtList,
-                                      bool* validated);
+[[nodiscard]] extern bool CompileAsmJS(JSContext* cx,
+                                       frontend::ParserAtomsTable& parserAtoms,
+                                       AsmJSParser<char16_t>& parser,
+                                       frontend::ParseNode* stmtList,
+                                       bool* validated);
 
 // asm.js module/export queries:
 
@@ -89,6 +91,8 @@ extern bool InstantiateAsmJS(JSContext* cx, unsigned argc, JS::Value* vp);
 extern bool IsAsmJSCompilationAvailable(JSContext* cx, unsigned argc,
                                         JS::Value* vp);
 
+extern bool IsAsmJSCompilationAvailable(JSContext* cx);
+
 extern bool IsAsmJSModule(JSContext* cx, unsigned argc, JS::Value* vp);
 
 extern bool IsAsmJSFunction(JSContext* cx, unsigned argc, JS::Value* vp);
@@ -103,7 +107,7 @@ extern JSString* AsmJSModuleToString(JSContext* cx, JS::Handle<JSFunction*> fun,
 
 // asm.js heap:
 
-extern bool IsValidAsmJSHeapLength(uint32_t length);
+extern bool IsValidAsmJSHeapLength(size_t length);
 
 }  // namespace js
 

@@ -10,6 +10,7 @@
 #include "MediaControlUtils.h"
 #include "MediaControlKeySource.h"
 #include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/MediaSession.h"
@@ -22,12 +23,12 @@
           ("MediaController=%p, Id=%" PRId64 ", " msg, this, this->Id(), \
            ##__VA_ARGS__))
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(MediaController, DOMEventTargetHelper)
-NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(MediaController,
-                                               DOMEventTargetHelper)
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(MediaController,
+                                             DOMEventTargetHelper,
+                                             nsITimerCallback, nsINamed)
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(MediaController,
                                                DOMEventTargetHelper)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
@@ -47,6 +48,29 @@ void MediaController::GetSupportedKeys(
   aRetVal.Clear();
   for (const auto& key : mSupportedKeys) {
     aRetVal.AppendElement(key);
+  }
+}
+
+void MediaController::GetMetadata(MediaMetadataInit& aMetadata,
+                                  ErrorResult& aRv) {
+  if (!IsActive() || mShutdown) {
+    aRv.Throw(NS_ERROR_NOT_AVAILABLE);
+    return;
+  }
+
+  const MediaMetadataBase metadata = GetCurrentMediaMetadata();
+  aMetadata.mTitle = metadata.mTitle;
+  aMetadata.mArtist = metadata.mArtist;
+  aMetadata.mAlbum = metadata.mAlbum;
+  for (const auto& artwork : metadata.mArtwork) {
+    if (MediaImage* image = aMetadata.mArtwork.AppendElement(fallible)) {
+      image->mSrc = artwork.mSrc;
+      image->mSizes = artwork.mSizes;
+      image->mType = artwork.mType;
+    } else {
+      aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+      return;
+    }
   }
 }
 
@@ -70,9 +94,15 @@ MediaController::MediaController(uint64_t aBrowsingContextId)
   mSupportedActionsChangedListener = SupportedActionsChangedEvent().Connect(
       AbstractThread::MainThread(), this,
       &MediaController::HandleSupportedMediaSessionActionsChanged);
+  mPlaybackChangedListener = PlaybackChangedEvent().Connect(
+      AbstractThread::MainThread(), this,
+      &MediaController::HandleActualPlaybackStateChanged);
   mPositionStateChangedListener = PositionChangedEvent().Connect(
       AbstractThread::MainThread(), this,
       &MediaController::HandlePositionStateChanged);
+  mMetadataChangedListener =
+      MetadataChangedEvent().Connect(AbstractThread::MainThread(), this,
+                                     &MediaController::HandleMetadataChanged);
 }
 
 MediaController::~MediaController() {
@@ -140,6 +170,7 @@ void MediaController::Stop() {
   LOG("Stop");
   UpdateMediaControlActionToContentMediaIfNeeded(
       MediaControlAction(MediaControlKey::Stop));
+  MediaStatusManager::ClearActiveMediaSessionContextIdIfNeeded();
 }
 
 uint64_t MediaController::Id() const { return mTopLevelBrowsingContextId; }
@@ -148,6 +179,18 @@ bool MediaController::IsAudible() const { return IsMediaAudible(); }
 
 bool MediaController::IsPlaying() const { return IsMediaPlaying(); }
 
+bool MediaController::IsActive() const { return mIsActive; };
+
+bool MediaController::ShouldPropagateActionToAllContexts(
+    const MediaControlAction& aAction) const {
+  // These three actions have default action handler for each frame, so we
+  // need to propagate to all contexts. We would handle default handlers in
+  // `ContentMediaController::HandleMediaKey`.
+  return aAction.mKey == MediaControlKey::Play ||
+         aAction.mKey == MediaControlKey::Pause ||
+         aAction.mKey == MediaControlKey::Stop;
+}
+
 void MediaController::UpdateMediaControlActionToContentMediaIfNeeded(
     const MediaControlAction& aAction) {
   // If the controller isn't active or it has been shutdown, we don't need to
@@ -155,17 +198,30 @@ void MediaController::UpdateMediaControlActionToContentMediaIfNeeded(
   if (!mIsActive || mShutdown) {
     return;
   }
-  // If we have an active media session, then we should directly notify the
-  // browsing context where active media session exists in order to let the
-  // session handle media control key events. Otherwises, we would notify the
-  // top-level browsing context to let it handle events.
-  RefPtr<BrowsingContext> context =
-      mActiveMediaSessionContextId
-          ? BrowsingContext::Get(*mActiveMediaSessionContextId)
-          : BrowsingContext::Get(Id());
-  if (context && !context->IsDiscarded()) {
+
+  // For some actions which have default action handler, we want to propagate
+  // them on all contexts in order to trigger the default handler on each
+  // context separately. Otherwise, other action should only be propagated to
+  // the context where active media session exists.
+  const bool propateToAll = ShouldPropagateActionToAllContexts(aAction);
+  const uint64_t targetContextId = propateToAll || !mActiveMediaSessionContextId
+                                       ? Id()
+                                       : *mActiveMediaSessionContextId;
+  RefPtr<BrowsingContext> context = BrowsingContext::Get(targetContextId);
+  if (!context || context->IsDiscarded()) {
+    return;
+  }
+
+  if (propateToAll) {
+    context->PreOrderWalk([&](BrowsingContext* bc) {
+      bc->Canonical()->UpdateMediaControlAction(aAction);
+    });
+  } else {
     context->Canonical()->UpdateMediaControlAction(aAction);
   }
+  RefPtr<MediaControlService> service = MediaControlService::GetService();
+  MOZ_ASSERT(service);
+  service->NotifyMediaControlHasEverBeenUsed();
 }
 
 void MediaController::Shutdown() {
@@ -180,7 +236,9 @@ void MediaController::Shutdown() {
   Deactivate();
   mShutdown = true;
   mSupportedActionsChangedListener.DisconnectIfExists();
+  mPlaybackChangedListener.DisconnectIfExists();
   mPositionStateChangedListener.DisconnectIfExists();
+  mMetadataChangedListener.DisconnectIfExists();
 }
 
 void MediaController::NotifyMediaPlaybackChanged(uint64_t aBrowsingContextId,
@@ -194,8 +252,11 @@ void MediaController::NotifyMediaPlaybackChanged(uint64_t aBrowsingContextId,
 }
 
 void MediaController::UpdateDeactivationTimerIfNeeded() {
-  bool shouldBeAlwaysActive =
-      IsPlaying() || IsMediaBeingUsedInPIPModeOrFullScreen();
+  if (!StaticPrefs::media_mediacontrol_stopcontrol_timer()) {
+    return;
+  }
+
+  bool shouldBeAlwaysActive = IsPlaying() || IsBeingUsedInPIPModeOrFullscreen();
   if (shouldBeAlwaysActive && mDeactivationTimer) {
     LOG("Cancel deactivation timer");
     mDeactivationTimer->Cancel();
@@ -213,12 +274,16 @@ void MediaController::UpdateDeactivationTimerIfNeeded() {
   }
 }
 
-bool MediaController::IsMediaBeingUsedInPIPModeOrFullScreen() const {
+bool MediaController::IsBeingUsedInPIPModeOrFullscreen() const {
   return mIsInPictureInPictureMode || mIsInFullScreenMode;
 }
 
 NS_IMETHODIMP MediaController::Notify(nsITimer* aTimer) {
   mDeactivationTimer = nullptr;
+  if (!StaticPrefs::media_mediacontrol_stopcontrol_timer()) {
+    return NS_OK;
+  }
+
   if (mShutdown) {
     LOG("Cancel deactivation timer because controller has been shutdown");
     return NS_OK;
@@ -227,7 +292,7 @@ NS_IMETHODIMP MediaController::Notify(nsITimer* aTimer) {
   // As the media being used in the PIP mode or fullscreen would always display
   // on the screen, users would have high chance to interact with it again, so
   // we don't want to stop media control.
-  if (IsMediaBeingUsedInPIPModeOrFullScreen()) {
+  if (IsBeingUsedInPIPModeOrFullscreen()) {
     LOG("Cancel deactivation timer because controller is in PIP mode");
     return NS_OK;
   }
@@ -242,6 +307,11 @@ NS_IMETHODIMP MediaController::Notify(nsITimer* aTimer) {
     return NS_OK;
   }
   Deactivate();
+  return NS_OK;
+}
+
+NS_IMETHODIMP MediaController::GetName(nsACString& aName) {
+  aName.AssignLiteral("MediaController");
   return NS_OK;
 }
 
@@ -276,27 +346,25 @@ bool MediaController::ShouldActivateController() const {
   // sound, then it would be able to be controlled once the controll gets
   // activated.
   //
-  // Activating a controller means that we would start to interfere the media
+  // Activating a controller means that we would start to intercept the media
   // keys on the platform and show the virtual control interface (if needed).
-  // The controller would be activated when (1) the controller becomes audible
-  // or (2) enters fullscreen or PIP mode.
-  //
-  // The reason of activating controller after it beomes audible is, if there is
-  // another application playing audio at the same time, it doesn't make sense
-  // to interfere it if we're playing an inaudible media. In addtion, it can
-  // preven showing control interface for those inaudible media which are used
-  // for GIF-like image or background image.
-  //
-  // When a media enters fullscreen or Picture-in-Picture mode, we can regard it
-  // as a sign of that a user is going to start that media soon. Therefore, it
-  // makes sense to activate the controller in order to start controlling media.
+  // The controller would be activated when (1) controllable media starts in the
+  // browsing context that controller belongs to (2) controllable media enters
+  // fullscreen or PIP mode.
   return IsAnyMediaBeingControlled() &&
-         (IsAudible() || IsMediaBeingUsedInPIPModeOrFullScreen()) && !mIsActive;
+         (IsPlaying() || IsBeingUsedInPIPModeOrFullscreen()) && !mIsActive;
 }
 
 bool MediaController::ShouldDeactivateController() const {
   MOZ_ASSERT(!mShutdown);
-  return !IsAnyMediaBeingControlled() && mIsActive;
+  // If we don't have an active media session and no controlled media exists,
+  // then we don't need to keep controller active, because there is nothing to
+  // control. However, if we still have an active media session, then we should
+  // keep controller active in order to receive media keys even if we don't have
+  // any controlled media existing, because a website might start other media
+  // when media session receives media keys.
+  return !IsAnyMediaBeingControlled() && mIsActive &&
+         !mActiveMediaSessionContextId;
 }
 
 void MediaController::Activate() {
@@ -306,6 +374,7 @@ void MediaController::Activate() {
     LOG("Activate");
     mIsActive = service->RegisterActiveMediaController(this);
     MOZ_ASSERT(mIsActive, "Fail to register controller!");
+    DispatchAsyncEvent(u"activated"_ns);
   }
 }
 
@@ -318,6 +387,7 @@ void MediaController::Deactivate() {
       LOG("Deactivate");
       mIsActive = !service->UnregisterActiveMediaController(this);
       MOZ_ASSERT(!mIsActive, "Fail to unregister controller!");
+      DispatchAsyncEvent(u"deactivated"_ns);
     }
   }
 }
@@ -330,11 +400,7 @@ void MediaController::SetIsInPictureInPictureMode(
   LOG("Set IsInPictureInPictureMode to %s",
       aIsInPictureInPictureMode ? "true" : "false");
   mIsInPictureInPictureMode = aIsInPictureInPictureMode;
-  UpdateActivatedStateIfNeeded();
-  if (RefPtr<MediaControlService> service = MediaControlService::GetService();
-      service && mIsInPictureInPictureMode) {
-    service->NotifyControllerBeingUsedInPictureInPictureMode(this);
-  }
+  ForceToBecomeMainControllerIfNeeded();
   UpdateDeactivationTimerIfNeeded();
   mPictureInPictureModeChangedEvent.Notify(mIsInPictureInPictureMode);
 }
@@ -346,8 +412,41 @@ void MediaController::NotifyMediaFullScreenState(uint64_t aBrowsingContextId,
   }
   LOG("%s fullscreen", aIsInFullScreen ? "Entered" : "Left");
   mIsInFullScreenMode = aIsInFullScreen;
-  UpdateActivatedStateIfNeeded();
+  ForceToBecomeMainControllerIfNeeded();
   mFullScreenChangedEvent.Notify(mIsInFullScreenMode);
+}
+
+bool MediaController::IsMainController() const {
+  RefPtr<MediaControlService> service = MediaControlService::GetService();
+  return service ? service->GetMainController() == this : false;
+}
+
+bool MediaController::ShouldRequestForMainController() const {
+  // This controller is already the main controller.
+  if (IsMainController()) {
+    return false;
+  }
+  // We would only force controller to become main controller if it's in the
+  // PIP mode or fullscreen, otherwise it should follow the general rule.
+  // In addition, do nothing if the controller has been shutdowned.
+  return IsBeingUsedInPIPModeOrFullscreen() && !mShutdown;
+}
+
+void MediaController::ForceToBecomeMainControllerIfNeeded() {
+  if (!ShouldRequestForMainController()) {
+    return;
+  }
+  RefPtr<MediaControlService> service = MediaControlService::GetService();
+  MOZ_ASSERT(service, "service was shutdown before shutting down controller?");
+  // If the controller hasn't been activated and it's ready to be activated,
+  // then activating it should also make it become a main controller. If it's
+  // already activated but isn't a main controller yet, then explicitly request
+  // it.
+  if (!IsActive() && ShouldActivateController()) {
+    Activate();
+  } else if (IsActive()) {
+    service->RequestUpdateMainController(this);
+  }
 }
 
 void MediaController::HandleActualPlaybackStateChanged() {
@@ -357,10 +456,7 @@ void MediaController::HandleActualPlaybackStateChanged() {
   if (RefPtr<MediaControlService> service = MediaControlService::GetService()) {
     service->NotifyControllerPlaybackStateChanged(this);
   }
-}
-
-bool MediaController::IsInPictureInPictureMode() const {
-  return mIsInPictureInPictureMode;
+  DispatchAsyncEvent(u"playbackstatechange"_ns);
 }
 
 void MediaController::UpdateActivatedStateIfNeeded() {
@@ -407,17 +503,38 @@ void MediaController::HandlePositionStateChanged(const PositionState& aState) {
   DispatchAsyncEvent(event);
 }
 
+void MediaController::HandleMetadataChanged(
+    const MediaMetadataBase& aMetadata) {
+  // The reason we don't append metadata with `metadatachange` event is that
+  // allocating artwork might fail if the memory is not enough, but for the
+  // event we are not able to throw an error. Therefore, we want to the listener
+  // to use `getMetadata()` to get metadata, because it would throw an error if
+  // we fail to allocate artwork.
+  DispatchAsyncEvent(u"metadatachange"_ns);
+  // If metadata change is because of resetting active media session, then we
+  // should check if controller needs to be deactivated.
+  if (ShouldDeactivateController()) {
+    Deactivate();
+  }
+}
+
 void MediaController::DispatchAsyncEvent(const nsAString& aName) {
-  LOG("Dispatch event %s", NS_ConvertUTF16toUTF8(aName).get());
-  RefPtr<AsyncEventDispatcher> asyncDispatcher =
-      new AsyncEventDispatcher(this, aName, CanBubble::eYes);
-  asyncDispatcher->PostDOMEvent();
+  RefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
+  event->InitEvent(aName, false, false);
+  event->SetTrusted(true);
+  DispatchAsyncEvent(event);
 }
 
 void MediaController::DispatchAsyncEvent(Event* aEvent) {
   MOZ_ASSERT(aEvent);
   nsAutoString eventType;
   aEvent->GetType(eventType);
+  if (!mIsActive && !eventType.EqualsLiteral("deactivated")) {
+    LOG("Only 'deactivated' can be dispatched on a deactivated controller, not "
+        "'%s'",
+        NS_ConvertUTF16toUTF8(eventType).get());
+    return;
+  }
   LOG("Dispatch event %s", NS_ConvertUTF16toUTF8(eventType).get());
   RefPtr<AsyncEventDispatcher> asyncDispatcher =
       new AsyncEventDispatcher(this, aEvent);
@@ -428,5 +545,16 @@ CopyableTArray<MediaControlKey> MediaController::GetSupportedMediaKeys() const {
   return mSupportedKeys;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+void MediaController::Select() const {
+  if (RefPtr<BrowsingContext> bc = BrowsingContext::Get(Id())) {
+    bc->Canonical()->AddPageAwakeRequest();
+  }
+}
+
+void MediaController::Unselect() const {
+  if (RefPtr<BrowsingContext> bc = BrowsingContext::Get(Id())) {
+    bc->Canonical()->RemovePageAwakeRequest();
+  }
+}
+
+}  // namespace mozilla::dom

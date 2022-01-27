@@ -6,17 +6,19 @@
 
 #include "jit/Bailouts.h"
 
+#include "mozilla/ArrayUtils.h"
 #include "mozilla/ScopeExit.h"
 
 #include "jit/BaselineJIT.h"
-#include "jit/Ion.h"
-#include "jit/JitRealm.h"
+#include "jit/JitFrames.h"
+#include "jit/JitRuntime.h"
 #include "jit/JitSpewer.h"
-#include "jit/Snapshots.h"
+#include "jit/JSJitFrameIter.h"
+#include "jit/SafepointIndex.h"
 #include "vm/JSContext.h"
+#include "vm/Stack.h"
 #include "vm/TraceLogging.h"
 
-#include "jit/JSJitFrameIter-inl.h"
 #include "vm/Probes-inl.h"
 #include "vm/Stack-inl.h"
 
@@ -63,8 +65,7 @@ bool jit::Bailout(BailoutStack* sp, BaselineBailoutInfo** bailoutInfo) {
 
   *bailoutInfo = nullptr;
   bool success = BailoutIonToBaseline(cx, bailoutData.activation(), frame,
-                                      false, bailoutInfo,
-                                      /* excInfo = */ nullptr);
+                                      bailoutInfo, /*exceptionInfo=*/nullptr);
   MOZ_ASSERT_IF(success, *bailoutInfo != nullptr);
 
   if (!success) {
@@ -139,12 +140,15 @@ bool jit::InvalidationBailout(InvalidationBailoutStack* sp,
   MOZ_ASSERT(IsBaselineJitEnabled(cx));
 
   *bailoutInfo = nullptr;
-  bool success = BailoutIonToBaseline(cx, bailoutData.activation(), frame, true,
-                                      bailoutInfo,
-                                      /* excInfo = */ nullptr);
+  bool success = BailoutIonToBaseline(cx, bailoutData.activation(), frame,
+                                      bailoutInfo, /*exceptionInfo=*/nullptr);
   MOZ_ASSERT_IF(success, *bailoutInfo != nullptr);
 
-  if (!success) {
+  if (success) {
+    // Update the bailout kind.
+    (*bailoutInfo)->bailoutKind =
+        mozilla::Some(BailoutKind::OnStackInvalidation);
+  } else {
     MOZ_ASSERT(cx->isExceptionPending());
 
     // If the bailout failed, then bailout trampoline will pop the
@@ -206,6 +210,8 @@ bool jit::ExceptionHandlerBailout(JSContext* cx,
   MOZ_ASSERT_IF(!excInfo.propagatingIonExceptionForDebugMode(),
                 cx->isExceptionPending());
 
+  JS::AutoSaveExceptionState savedExc(cx);
+
   JitActivation* act = cx->activation()->asJit();
   uint8_t* prevExitFP = act->jsExitFP();
   auto restoreExitFP =
@@ -221,7 +227,7 @@ bool jit::ExceptionHandlerBailout(JSContext* cx,
 
   BaselineBailoutInfo* bailoutInfo = nullptr;
   bool success = BailoutIonToBaseline(cx, bailoutData.activation(), frameView,
-                                      true, &bailoutInfo, &excInfo);
+                                      &bailoutInfo, &excInfo);
   if (success) {
     MOZ_ASSERT(bailoutInfo);
 
@@ -236,6 +242,9 @@ bool jit::ExceptionHandlerBailout(JSContext* cx,
     rfe->target = cx->runtime()->jitRuntime()->getBailoutTail().value;
     rfe->bailoutInfo = bailoutInfo;
   } else {
+    // Drop the exception that triggered the bailout and instead propagate the
+    // failure caused by processing the bailout (eg. OOM).
+    savedExc.drop();
     MOZ_ASSERT(!bailoutInfo);
     MOZ_ASSERT(cx->isExceptionPending());
   }
@@ -269,31 +278,6 @@ bool jit::EnsureHasEnvironmentObjects(JSContext* cx, AbstractFramePtr fp) {
   }
 
   return true;
-}
-
-void jit::CheckFrequentBailouts(JSContext* cx, JSScript* script,
-                                BailoutKind bailoutKind) {
-  if (script->hasIonScript()) {
-    // Invalidate if this script keeps bailing out without invalidation. Next
-    // time we compile this script LICM will be disabled.
-    IonScript* ionScript = script->ionScript();
-
-    if (ionScript->bailoutExpected()) {
-      // If we bailout because of the first execution of a basic block,
-      // then we should record which basic block we are returning in,
-      // which should prevent this from happening again.  Also note that
-      // the first execution bailout can be related to an inlined script,
-      // so there is no need to penalize the caller.
-      if (bailoutKind != BailoutKind::FirstExecution &&
-          !script->hadFrequentBailouts()) {
-        script->setHadFrequentBailouts();
-      }
-
-      JitSpew(JitSpew_IonInvalidate, "Invalidating due to too many bailouts");
-
-      Invalidate(cx, script);
-    }
-  }
 }
 
 void BailoutFrameInfo::attachOnJitActivation(

@@ -9,16 +9,15 @@
 
 #include "mozilla/dom/quota/QuotaCommon.h"
 
-// IndexedDB equivalent of QM_TRY.
-#define IDB_TRY(...) QM_TRY_META(mozilla::dom::indexedDB, ##__VA_ARGS__)
-
-// IndexedDB equivalent of QM_TRY_VAR.
-#define IDB_TRY_VAR(...) QM_TRY_VAR_META(mozilla::dom::indexedDB, ##__VA_ARGS__)
+class JSStructuredCloneData;
+class nsIInputStream;
 
 namespace mozilla::dom::indexedDB {
 
-void HandleError(const nsLiteralCString& aExpr,
-                 const nsLiteralCString& aSourceFile, int32_t aSourceLine);
+static constexpr uint32_t kFileCopyBufferSize = 32768;
+
+nsresult SnappyUncompressStructuredCloneData(
+    nsIInputStream& aInputStream, JSStructuredCloneData& aStructuredCloneData);
 
 }  // namespace mozilla::dom::indexedDB
 

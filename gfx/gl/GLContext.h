@@ -8,12 +8,10 @@
 #define GLCONTEXT_H_
 
 #include <bitset>
-#include <ctype.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <map>
-#include <queue>
 #include <stack>
+#include <vector>
 
 #ifdef DEBUG
 #  include <string.h>
@@ -29,40 +27,37 @@
 #  define MOZ_GL_DEBUG 1
 #endif
 
+#include "mozilla/IntegerRange.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/ThreadLocal.h"
 
 #include "MozFramebuffer.h"
 #include "nsTArray.h"
+#include "GLConsts.h"
 #include "GLDefs.h"
-#include "GLLibraryLoader.h"
-#include "nsISupportsImpl.h"
+#include "GLTypes.h"
 #include "nsRegionFwd.h"
 #include "nsString.h"
-#include "plstr.h"
 #include "GLContextTypes.h"
-#include "SurfaceTypes.h"
 #include "GLContextSymbols.h"
 #include "base/platform_thread.h"  // for PlatformThreadId
 #include "mozilla/GenericRefCounted.h"
 #include "mozilla/WeakPtr.h"
-#include "gfx2DGlue.h"
-#include "GeckoProfiler.h"
+
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/ProfilerLabels.h"
+#endif
 
 namespace mozilla {
-namespace gfx {
-class DataSourceSurface;
-class SourceSurface;
-}  // namespace gfx
 
 namespace gl {
 class GLBlitHelper;
-class GLBlitTextureImageHelper;
-class GLContext;
 class GLLibraryEGL;
 class GLReadTexImageHelper;
 class SharedSurface;
+class SymbolLoader;
+struct SymLoadStruct;
 }  // namespace gl
 
 namespace layers {
@@ -84,6 +79,7 @@ enum class GLFeature {
   copy_buffer,
   depth_texture,
   draw_buffers,
+  draw_buffers_indexed,
   draw_instanced,
   element_index_uint,
   ES2_compatibility,
@@ -137,6 +133,7 @@ enum class GLFeature {
   texture_half_float,
   texture_half_float_linear,
   texture_non_power_of_two,
+  texture_norm16,
   texture_rg,
   texture_storage,
   texture_swizzle,
@@ -204,8 +201,10 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
 
    public:
     explicit TlsScope(GLContext* const gl)
-        : mGL(gl), mWasTlsOk(gl->mUseTLSIsCurrent) {
-      mGL->mUseTLSIsCurrent = true;
+        : mGL(gl), mWasTlsOk(gl && gl->mUseTLSIsCurrent) {
+      if (mGL) {
+        mGL->mUseTLSIsCurrent = true;
+      }
     }
 
     ~TlsScope() {
@@ -282,8 +281,8 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
   }
 
   GLVendor Vendor() const { return mVendor; }
-
   GLRenderer Renderer() const { return mRenderer; }
+  bool IsMesa() const { return mIsMesa; }
 
   bool IsContextLost() const { return mContextLost; }
 
@@ -337,6 +336,7 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
 
   GLVendor mVendor = GLVendor::Other;
   GLRenderer mRenderer = GLRenderer::Other;
+  bool mIsMesa = false;
 
   // -----------------------------------------------------------------------------
   // Extensions management
@@ -435,7 +435,6 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
     EXT_sRGB,
     EXT_sRGB_write_control,
     EXT_shader_texture_lod,
-    EXT_texture3D,
     EXT_texture_compression_bptc,
     EXT_texture_compression_dxt1,
     EXT_texture_compression_rgtc,
@@ -443,6 +442,7 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
     EXT_texture_compression_s3tc_srgb,
     EXT_texture_filter_anisotropic,
     EXT_texture_format_BGRA8888,
+    EXT_texture_norm16,
     EXT_texture_sRGB,
     EXT_texture_storage,
     EXT_timer_query,
@@ -474,6 +474,7 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
     OES_depth24,
     OES_depth32,
     OES_depth_texture,
+    OES_draw_buffers_indexed,
     OES_element_index_uint,
     OES_fbo_render_mipmap,
     OES_framebuffer_object,
@@ -1191,8 +1192,14 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
  public:
   void fGetIntegerv(GLenum pname, GLint* params) const;
 
-  void GetUIntegerv(GLenum pname, GLuint* params) const {
+  template <typename T>
+  void GetInt(const GLenum pname, T* const params) const {
+    static_assert(sizeof(T) == sizeof(GLint), "Invalid T.");
     fGetIntegerv(pname, reinterpret_cast<GLint*>(params));
+  }
+
+  void GetUIntegerv(GLenum pname, GLuint* params) const {
+    GetInt(pname, params);
   }
 
   template <typename T>
@@ -2014,10 +2021,49 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
     AFTER_GL_CALL;
   }
 
-  void fBindFramebuffer(GLenum target, GLuint framebuffer) {
+ private:
+  mutable GLuint mCachedDrawFb = 0;
+  mutable GLuint mCachedReadFb = 0;
+
+ public:
+  bool mElideDuplicateBindFramebuffers = false;
+
+  void fBindFramebuffer(const GLenum target, const GLuint fb) const {
+    if (mElideDuplicateBindFramebuffers) {
+      MOZ_ASSERT(mCachedDrawFb ==
+                 GetIntAs<GLuint>(LOCAL_GL_DRAW_FRAMEBUFFER_BINDING));
+      MOZ_ASSERT(mCachedReadFb ==
+                 GetIntAs<GLuint>(LOCAL_GL_READ_FRAMEBUFFER_BINDING));
+
+      switch (target) {
+        case LOCAL_GL_FRAMEBUFFER:
+          if (mCachedDrawFb == fb && mCachedReadFb == fb) return;
+          break;
+        case LOCAL_GL_DRAW_FRAMEBUFFER:
+          if (mCachedDrawFb == fb) return;
+          break;
+        case LOCAL_GL_READ_FRAMEBUFFER:
+          if (mCachedReadFb == fb) return;
+          break;
+      }
+    }
+
     BEFORE_GL_CALL;
-    mSymbols.fBindFramebuffer(target, framebuffer);
+    mSymbols.fBindFramebuffer(target, fb);
     AFTER_GL_CALL;
+
+    switch (target) {
+      case LOCAL_GL_FRAMEBUFFER:
+        mCachedDrawFb = fb;
+        mCachedReadFb = fb;
+        break;
+      case LOCAL_GL_DRAW_FRAMEBUFFER:
+        mCachedDrawFb = fb;
+        break;
+      case LOCAL_GL_READ_FRAMEBUFFER:
+        mCachedReadFb = fb;
+        break;
+    }
   }
 
   void fBindRenderbuffer(GLenum target, GLuint renderbuffer) {
@@ -2281,6 +2327,16 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
     BEFORE_GL_CALL;
     mSymbols.fDeleteFramebuffers(n, names);
     AFTER_GL_CALL;
+
+    for (const auto i : IntegerRange(n)) {
+      const auto fb = names[i];
+      if (mCachedDrawFb == fb) {
+        mCachedDrawFb = 0;
+      }
+      if (mCachedReadFb == fb) {
+        mCachedReadFb = 0;
+      }
+    }
   }
 
   void raw_fDeleteRenderbuffers(GLsizei n, const GLuint* names) {
@@ -2319,6 +2375,13 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
   }
 
   void fDeleteTextures(GLsizei n, const GLuint* names) {
+#ifdef XP_MACOSX
+    // On the Mac the call to fDeleteTextures() triggers a flush. But it
+    // happens at the wrong time, which can lead to crashes. To work around
+    // this we call fFlush() explicitly ourselves, before the call to
+    // fDeleteTextures(). This fixes bug 1666293.
+    fFlush();
+#endif
     raw_fDeleteTextures(n, names);
     TRACKING_CONTEXT(DeletedTextures(this, n, names));
   }
@@ -3299,6 +3362,43 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
     AFTER_GL_CALL;
   }
 
+  // -
+  // draw_buffers_indexed
+
+  void fBlendEquationSeparatei(GLuint i, GLenum modeRGB,
+                               GLenum modeAlpha) const {
+    BEFORE_GL_CALL;
+    mSymbols.fBlendEquationSeparatei(i, modeRGB, modeAlpha);
+    AFTER_GL_CALL;
+  }
+
+  void fBlendFuncSeparatei(GLuint i, GLenum sfactorRGB, GLenum dfactorRGB,
+                           GLenum sfactorAlpha, GLenum dfactorAlpha) const {
+    BEFORE_GL_CALL;
+    mSymbols.fBlendFuncSeparatei(i, sfactorRGB, dfactorRGB, sfactorAlpha,
+                                 dfactorAlpha);
+    AFTER_GL_CALL;
+  }
+
+  void fColorMaski(GLuint i, realGLboolean red, realGLboolean green,
+                   realGLboolean blue, realGLboolean alpha) const {
+    BEFORE_GL_CALL;
+    mSymbols.fColorMaski(i, red, green, blue, alpha);
+    AFTER_GL_CALL;
+  }
+
+  void fDisablei(GLenum capability, GLuint i) const {
+    BEFORE_GL_CALL;
+    mSymbols.fDisablei(capability, i);
+    AFTER_GL_CALL;
+  }
+
+  void fEnablei(GLenum capability, GLuint i) const {
+    BEFORE_GL_CALL;
+    mSymbols.fEnablei(capability, i);
+    AFTER_GL_CALL;
+  }
+
 #undef BEFORE_GL_CALL
 #undef AFTER_GL_CALL
 #undef ASSERT_SYMBOL_PRESENT
@@ -3355,25 +3455,6 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
   virtual bool SwapBuffers() { return false; }
 
   /**
-   * If this context supports it, submit a subset of its content instead of
-   * using SwapBuffer.
-   *
-   * Check the result of HasCopySubBuffer Before calling this.
-   *
-   * Only supported by GLX contexts on MESA.
-   */
-  virtual void CopySubBuffer(int x, int y, int w, int h) {
-    MOZ_CRASH("Unsupported CopySubBuffer");
-  }
-
-  /**
-   * Returns true if this context supports CopySubBuffer.
-   *
-   * Only supported by GLX contexts on MESA.
-   */
-  virtual bool HasCopySubBuffer() const { return false; }
-
-  /**
    * Stores a damage region (in origin bottom left coordinates), which
    * makes the next SwapBuffers call do eglSwapBuffersWithDamage if supported.
    *
@@ -3382,6 +3463,12 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
    * telling the system compositor which parts of the buffer were updated.
    */
   virtual void SetDamage(const nsIntRegion& aDamageRegion) {}
+
+  /**
+   * Get the buffer age. If it returns 0, that indicates the buffer state is
+   * unknown and the entire frame should be redrawn.
+   */
+  virtual GLint GetBufferAge() const { return 0; }
 
   /**
    * Defines a two-dimensional texture image for context target surface
@@ -3491,7 +3578,6 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
 
  public:
   GLBlitHelper* BlitHelper();
-  GLBlitTextureImageHelper* BlitTextureImageHelper();
   GLReadTexImageHelper* ReadTexImageHelper();
 
   // Assumes shares are created by all sharing with the same global context.
@@ -3780,6 +3866,8 @@ UniquePtr<Texture> CreateTexture(GLContext&, const gfx::IntSize& size);
  * texel for a texture from its format and type.
  */
 uint32_t GetBytesPerTexel(GLenum format, GLenum type);
+
+void MesaMemoryLeakWorkaround();
 
 } /* namespace gl */
 } /* namespace mozilla */

@@ -54,13 +54,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   XPIInternal: "resource://gre/modules/addons/XPIProvider.jsm",
 });
 
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "uuidGen",
-  "@mozilla.org/uuid-generator;1",
-  "nsIUUIDGenerator"
-);
-
 XPCOMUtils.defineLazyGetter(this, "IconDetails", () => {
   return ChromeUtils.import("resource://gre/modules/ExtensionParent.jsm", {})
     .ExtensionParent.IconDetails;
@@ -113,7 +106,7 @@ const PREF_XPI_DIRECT_WHITELISTED = "xpinstall.whitelist.directRequest";
 const PREF_XPI_FILE_WHITELISTED = "xpinstall.whitelist.fileRequest";
 const PREF_XPI_WHITELIST_REQUIRED = "xpinstall.whitelist.required";
 
-const PREF_SELECTED_LWT = "lightweightThemes.selectedThemeID";
+const PREF_SELECTED_THEME = "extensions.activeThemeID";
 
 const TOOLKIT_ID = "toolkit@mozilla.org";
 
@@ -179,7 +172,9 @@ function getFile(path, base = null) {
  */
 function flushJarCache(aJarFile) {
   Services.obs.notifyObservers(aJarFile, "flush-cache-entry");
-  Services.mm.broadcastAsyncMessage(MSG_JAR_FLUSH, aJarFile.path);
+  Services.ppmm.broadcastAsyncMessage(MSG_JAR_FLUSH, {
+    path: aJarFile.path,
+  });
 }
 
 const PREF_EM_UPDATE_BACKGROUND_URL = "extensions.update.background.url";
@@ -196,7 +191,7 @@ const TEMP_INSTALL_ID_GEN_SESSION = new Uint8Array(
   Float64Array.of(Math.random()).buffer
 );
 
-const MSG_JAR_FLUSH = "AddonJarFlush";
+const MSG_JAR_FLUSH = "Extension:FlushJarCache";
 
 /**
  * Valid IDs fit this pattern.
@@ -210,10 +205,10 @@ const LOGGER_ID = "addons.xpi";
 // (Requires AddonManager.jsm)
 var logger = Log.repository.getLogger(LOGGER_ID);
 
-// Stores the ID of the lightweight theme which was selected during the
-// last session, if any. When installing a new built-in theme with this
-// ID, it will be automatically enabled.
-let lastLightweightTheme = null;
+// Stores the ID of the theme which was selected during the last session,
+// if any. When installing a new built-in theme with this ID, it will be
+// automatically enabled.
+let lastSelectedTheme = null;
 
 function getJarURI(file, path = "") {
   if (file instanceof Ci.nsIFile) {
@@ -467,31 +462,23 @@ async function loadManifestFromWebManifest(aPackage) {
     throw error;
   }
 
-  let bss =
-    (manifest.browser_specific_settings &&
-      manifest.browser_specific_settings.gecko) ||
-    (manifest.applications && manifest.applications.gecko) ||
-    {};
-  if (manifest.browser_specific_settings && manifest.applications) {
-    logger.warn("Ignoring applications property in manifest");
-  }
+  let bss = manifest.applications?.gecko || {};
 
   // A * is illegal in strict_min_version
-  if (
-    bss.strict_min_version &&
-    bss.strict_min_version.split(".").some(part => part == "*")
-  ) {
+  if (bss.strict_min_version?.split(".").some(part => part == "*")) {
     throw new Error("The use of '*' in strict_min_version is invalid");
   }
 
   let addon = new AddonInternal();
   addon.id = bss.id;
   addon.version = manifest.version;
+  addon.manifestVersion = manifest.manifest_version;
   addon.type = extension.type === "langpack" ? "locale" : extension.type;
   addon.loader = null;
   addon.strictCompatibility = true;
   addon.internalName = null;
   addon.updateURL = bss.update_url;
+  addon.installOrigins = manifest.install_origins;
   addon.optionsBrowserStyle = true;
   addon.optionsURL = null;
   addon.optionsType = null;
@@ -626,7 +613,7 @@ function defineSyncGUID(aAddon) {
   // Define .syncGUID as a lazy property which is also settable
   Object.defineProperty(aAddon, "syncGUID", {
     get: () => {
-      aAddon.syncGUID = uuidGen.generateUUID().toString();
+      aAddon.syncGUID = Services.uuid.generateUUID().toString();
       return aAddon.syncGUID;
     },
     set: val => {
@@ -705,6 +692,15 @@ var loadManifest = async function(aPackage, aLocation, aOldAddon) {
 
     await addon.updateBlocklistState();
     addon.appDisabled = !XPIDatabase.isUsableAddon(addon);
+
+    // Always report when there is an attempt to install a blocked add-on.
+    // (transitions from STATE_BLOCKED to STATE_NOT_BLOCKED are checked
+    //  in the individual AddonInstall subclasses).
+    if (addon.blocklistState == nsIBlocklistService.STATE_BLOCKED) {
+      addon.recordAddonBlockChangeTelemetry(
+        aOldAddon ? "addon_update" : "addon_install"
+      );
+    }
   }
 
   defineSyncGUID(addon);
@@ -1375,6 +1371,17 @@ class AddonInstall {
     return this._installPromise;
   }
 
+  continuePostponedInstall() {
+    if (this.state !== AddonManager.STATE_POSTPONED) {
+      throw new Error("AddonInstall not in postponed state");
+    }
+
+    // Force the postponed install to continue.
+    logger.info(`${this.addon.id} has resumed a previously postponed upgrade`);
+    this.state = AddonManager.STATE_READY;
+    this.install();
+  }
+
   /**
    * Called during XPIProvider shutdown so that we can do any necessary
    * pre-shutdown cleanup.
@@ -1637,10 +1644,21 @@ class AddonInstall {
         try {
           await this.promptHandler(info);
         } catch (err) {
-          logger.info(`Install of ${this.addon.id} cancelled by user`);
-          this.state = AddonManager.STATE_CANCELLED;
-          this._cleanup();
-          this._callInstallListeners("onInstallCancelled");
+          if (this.error < 0) {
+            logger.info(`Install of ${this.addon.id} failed ${this.error}`);
+            this.state = AddonManager.STATE_INSTALL_FAILED;
+            this._cleanup();
+            // In some cases onOperationCancelled is called during failures
+            // to install/uninstall/enable/disable addons.  We may need to
+            // do that here in the future.
+            this._callInstallListeners("onInstallFailed");
+            this.removeTemporaryFile();
+          } else {
+            logger.info(`Install of ${this.addon.id} cancelled by user`);
+            this.state = AddonManager.STATE_CANCELLED;
+            this._cleanup();
+            this._callInstallListeners("onInstallCancelled");
+          }
           return;
         }
       }
@@ -1663,11 +1681,7 @@ class AddonInstall {
         `add-on ${this.addon.id} has an upgrade listener, postponing upgrade until restart`
       );
       let resumeFn = () => {
-        logger.info(
-          `${this.addon.id} has resumed a previously postponed upgrade`
-        );
-        this.state = AddonManager.STATE_READY;
-        this.install();
+        this.continuePostponedInstall();
       };
       this.postpone(resumeFn);
       return;
@@ -2047,6 +2061,14 @@ var LocalAddonInstall = class extends AddonInstall {
     await this.addon.updateBlocklistState();
     this.addon.updateDate = Date.now();
     this.addon.installDate = addon ? addon.installDate : this.addon.updateDate;
+
+    // Report if blocked add-on becomes unblocked through this install.
+    if (
+      addon?.blocklistState === nsIBlocklistService.STATE_BLOCKED &&
+      this.addon.blocklistState === nsIBlocklistService.STATE_NOT_BLOCKED
+    ) {
+      this.addon.recordAddonBlockChangeTelemetry("addon_install");
+    }
 
     if (!this.addon.isCompatible) {
       this.state = AddonManager.STATE_CHECKING_UPDATE;
@@ -2503,6 +2525,7 @@ var DownloadAddonInstall = class extends AddonInstall {
    * Notify listeners that the download completed.
    */
   async downloadCompleted() {
+    let wasUpdate = !!this.existingAddon;
     let aAddon = await XPIDatabase.getVisibleAddonForID(this.addon.id);
     if (aAddon) {
       this.existingAddon = aAddon;
@@ -2519,6 +2542,16 @@ var DownloadAddonInstall = class extends AddonInstall {
     }
     this.addon.propagateDisabledState(this.existingAddon);
     await this.addon.updateBlocklistState();
+
+    // Report if blocked add-on becomes unblocked through this install/update.
+    if (
+      aAddon?.blocklistState === nsIBlocklistService.STATE_BLOCKED &&
+      this.addon.blocklistState === nsIBlocklistService.STATE_NOT_BLOCKED
+    ) {
+      this.addon.recordAddonBlockChangeTelemetry(
+        wasUpdate ? "addon_update" : "addon_install"
+      );
+    }
 
     if (this._callInstallListeners("onDownloadEnded")) {
       // If a listener changed our state then do not proceed with the install
@@ -2628,6 +2661,14 @@ AddonInstallWrapper.prototype = {
     return AppConstants.DEBUG ? installFor(this) : undefined;
   },
 
+  get error() {
+    return installFor(this).error;
+  },
+
+  set error(err) {
+    installFor(this).error = err;
+  },
+
   get type() {
     return installFor(this).type;
   },
@@ -2652,6 +2693,10 @@ AddonInstallWrapper.prototype = {
 
   set promptHandler(handler) {
     installFor(this).promptHandler = handler;
+  },
+
+  get promptHandler() {
+    return installFor(this).promptHandler;
   },
 
   get installTelemetryInfo() {
@@ -2688,6 +2733,10 @@ AddonInstallWrapper.prototype = {
     installFor(this).cancel();
   },
 
+  continuePostponedInstall() {
+    return installFor(this).continuePostponedInstall();
+  },
+
   addListener(listener) {
     installFor(this).addListener(listener);
   },
@@ -2704,7 +2753,6 @@ AddonInstallWrapper.prototype = {
   "releaseNotesURI",
   "file",
   "state",
-  "error",
   "progress",
   "maxProgress",
 ].forEach(function(aProp) {
@@ -2896,17 +2944,14 @@ UpdateChecker.prototype = {
 
     let update = await AUC.getNewestCompatibleUpdate(
       aUpdates,
+      this.addon,
       this.appVersion,
       this.platformVersion,
       ignoreMaxVersion,
       ignoreStrictCompat
     );
 
-    if (
-      update &&
-      Services.vc.compare(this.addon.version, update.version) < 0 &&
-      !this.addon.location.locked
-    ) {
+    if (update && !this.addon.location.locked) {
       for (let currentInstall of XPIInstall.installs) {
         // Skip installs that don't match the available update
         if (
@@ -3525,7 +3570,7 @@ class SystemAddonInstaller extends DirectoryInstaller {
     newDir.append("blank");
 
     while (true) {
-      newDir.leafName = uuidGen.generateUUID().toString();
+      newDir.leafName = Services.uuid.generateUUID().toString();
       try {
         await OS.File.makeDir(newDir.path, { ignoreExisting: false });
         break;
@@ -3547,7 +3592,15 @@ class SystemAddonInstaller extends DirectoryInstaller {
     for (let addon of aAddons) {
       let install = await createLocalInstall(
         addon._sourceBundle,
-        this.location
+        this.location,
+        // Make sure that system addons being installed for the first time through
+        // Balrog have telemetryInfo associated with them (on the contrary the ones
+        // updated through Balrog but part of the build will already have the same
+        // `source`, but we expect no `method` to be set for them).
+        {
+          source: "system-addon",
+          method: "product-updates",
+        }
       );
       installs.push(install);
     }
@@ -3559,6 +3612,7 @@ class SystemAddonInstaller extends DirectoryInstaller {
     }
 
     async function postponeAddon(install) {
+      install.ownsTempFile = true;
       let resumeFn;
       if (AddonManagerPrivate.hasUpgradeListener(install.addon.id)) {
         logger.info(
@@ -3928,14 +3982,6 @@ var XPIInstall = {
 
     let addon = await loadManifestFromFile(source, location);
 
-    // Ensure a staged addon is compatible with the current running version of
-    // Firefox.  If a prior version of the addon is installed, it will remain.
-    if (!addon.isCompatible) {
-      throw new Error(
-        `Add-on ${addon.id} is not compatible with application version.`
-      );
-    }
-
     if (
       XPIDatabase.mustSign(addon.type) &&
       addon.signedState <= AddonManager.SIGNEDSTATE_MISSING
@@ -3945,7 +3991,16 @@ var XPIInstall = {
       );
     }
 
+    // Import saved metadata before checking for compatibility.
     addon.importMetadata(metadata);
+
+    // Ensure a staged addon is compatible with the current running version of
+    // Firefox.  If a prior version of the addon is installed, it will remain.
+    if (!addon.isCompatible) {
+      throw new Error(
+        `Add-on ${addon.id} is not compatible with application version.`
+      );
+    }
 
     logger.debug(`Processing install of ${id} in ${location.name}`);
     let existingAddon = XPIStates.findAddon(id);
@@ -4058,8 +4113,8 @@ var XPIInstall = {
         if (sourceAddon && sourceAddon.version == item.spec.version) {
           // Copying the file to a temporary location has some benefits. If the
           // file is locked and cannot be read then we'll fall back to
-          // downloading a fresh copy. It also means we don't have to remember
-          // whether to delete the temporary copy later.
+          // downloading a fresh copy. We later mark the install object with
+          // ownsTempFile so that we will cleanup later (see installAddonSet).
           try {
             let path = OS.Path.join(OS.Constants.Path.tmpDir, "tmpaddon");
             let unique = await OS.File.openUnique(path);
@@ -4363,9 +4418,11 @@ var XPIInstall = {
    *          installed.
    */
   async installBuiltinAddon(base) {
-    if (lastLightweightTheme === null) {
-      lastLightweightTheme = Services.prefs.getCharPref(PREF_SELECTED_LWT, "");
-      Services.prefs.clearUserPref(PREF_SELECTED_LWT);
+    // We have to get this before the install, as the install will overwrite
+    // the pref. We then keep the value for this run, so we can restore
+    // the selected theme once it becomes available.
+    if (lastSelectedTheme === null) {
+      lastSelectedTheme = Services.prefs.getCharPref(PREF_SELECTED_THEME, "");
     }
 
     let baseURL = Services.io.newURI(base);
@@ -4385,20 +4442,14 @@ var XPIInstall = {
     // If this is a theme, decide whether to enable it. Themes are
     // disabled by default. However:
     //
-    // If a lightweight theme was selected in the last session, and this
-    // theme has the same ID, then we clearly want to enable it.
-    //
-    // If it is the default theme, more specialized behavior applies:
-    //
     // We always want one theme to be active, falling back to the
-    // default theme when the active theme is disabled. The first time
-    // we install the default theme, though, there likely aren't any
-    // other theme add-ons installed yet, in which case we want to
-    // enable it immediately.
+    // default theme when the active theme is disabled.
+    // During a theme migration, such as a change in the path to the addon, we
+    // will need to ensure a correct theme is enabled.
     if (addon.type === "theme") {
       if (
-        addon.id === lastLightweightTheme ||
-        (!lastLightweightTheme.endsWith("@mozilla.org") &&
+        addon.id === lastSelectedTheme ||
+        (!lastSelectedTheme.endsWith("@mozilla.org") &&
           addon.id === AddonSettings.DEFAULT_THEME_ID &&
           !XPIDatabase.getAddonsByType("theme").some(theme => !theme.disabled))
       ) {

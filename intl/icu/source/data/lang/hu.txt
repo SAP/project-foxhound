@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 hu{
     Keys{
         calendar{"Naptár"}
@@ -42,7 +43,7 @@ hu{
         ang{"óangol"}
         anp{"angika"}
         ar{"arab"}
-        ar_001{"modern szabányos arab"}
+        ar_001{"modern szabványos arab"}
         arc{"arámi"}
         arn{"mapucse"}
         arp{"arapaho"}
@@ -209,7 +210,7 @@ hu{
         he{"héber"}
         hi{"hindi"}
         hil{"ilokano"}
-        hit{"hittite"}
+        hit{"hettita"}
         hmn{"hmong"}
         ho{"hiri motu"}
         hr{"horvát"}
@@ -295,6 +296,7 @@ hu{
         lez{"lezg"}
         lg{"ganda"}
         li{"limburgi"}
+        lij{"ligur"}
         lkt{"lakota"}
         ln{"lingala"}
         lo{"lao"}
@@ -413,13 +415,13 @@ hu{
         raj{"radzsasztáni"}
         rap{"rapanui"}
         rar{"rarotongai"}
+        rhg{"rohingja"}
         rm{"rétoromán"}
         rn{"kirundi"}
         ro{"román"}
         ro_MD{"moldvai"}
         rof{"rombo"}
         rom{"roma"}
-        root{"ősi"}
         ru{"orosz"}
         rup{"aromán"}
         rw{"kinyarvanda"}
@@ -563,12 +565,14 @@ hu{
     }
     Languages%menu{
         ars{"arab, nedzsdi"}
-        ckb{"kurd, szoráni"}
         yue{"kantoni kínai"}
         zh{"mandarin"}
     }
     Languages%short{
         az{"azeri"}
+    }
+    Languages%variant{
+        ckb{"kurd, szoráni"}
     }
     Scripts{
         Arab{"Arab"}
@@ -916,7 +920,6 @@ hu{
         VALLADER{"Vallader"}
         WADEGILE{"Wade-Giles átírás"}
     }
-    Version{"37"}
     characterLabelPattern{
         all{"{0} – összes"}
         category-list{"{0}: {1}"}
@@ -931,6 +934,8 @@ hu{
             one{"{0} vonás"}
             other{"{0} vonás"}
         }
+        subscript{"alsó index {0}"}
+        superscript{"felső index {0}"}
     }
     codePatterns{
         language{"Nyelv: {0}"}

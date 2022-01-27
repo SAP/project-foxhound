@@ -76,8 +76,7 @@ class ServiceWorkerUpdateFinishCallback {
  * installation, querying and event dispatch of ServiceWorkers for all the
  * origins in the process.
  *
- * NOTE: the following documentation is a WIP and only applies with
- * dom.serviceWorkers.parent_intercept=true:
+ * NOTE: the following documentation is a WIP:
  *
  * The ServiceWorkerManager (SWM) is a main-thread, parent-process singleton
  * that encapsulates the browser-global state of service workers. This state
@@ -104,6 +103,7 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
   friend class GetRegistrationRunnable;
   friend class ServiceWorkerJob;
   friend class ServiceWorkerRegistrationInfo;
+  friend class ServiceWorkerShutdownBlocker;
   friend class ServiceWorkerUnregisterJob;
   friend class ServiceWorkerUpdateJob;
   friend class UpdateTimerCallback;
@@ -122,24 +122,6 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
   bool IsAvailable(nsIPrincipal* aPrincipal, nsIURI* aURI,
                    nsIChannel* aChannel);
 
-  // Return true if the given content process could potentially be executing
-  // service worker code with the given principal.  At the current time, this
-  // just means that we have any registration for the origin, regardless of
-  // scope.  This is a very weak guarantee but is the best we can do when push
-  // notifications can currently spin up a service worker in content processes
-  // without our involvement in the parent process.
-  //
-  // In the future when there is only a single ServiceWorkerManager in the
-  // parent process that is entirely in control of spawning and running service
-  // worker code, we will be able to authoritatively indicate whether there is
-  // an activate service worker in the given content process.  At that time we
-  // will rename this method HasActiveServiceWorkerInstance and provide
-  // semantics that ensure this method returns true until the worker is known to
-  // have shut down in order to allow the caller to induce a crash for security
-  // reasons without having to worry about shutdown races with the worker.
-  bool MayHaveActiveServiceWorkerInstance(ContentParent* aContent,
-                                          nsIPrincipal* aPrincipal);
-
   void DispatchFetchEvent(nsIInterceptedChannel* aChannel, ErrorResult& aRv);
 
   void Update(nsIPrincipal* aPrincipal, const nsACString& aScope,
@@ -156,17 +138,6 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
   void SoftUpdateInternal(const OriginAttributes& aOriginAttributes,
                           const nsACString& aScope,
                           ServiceWorkerUpdateFinishCallback* aCallback);
-
-  void PropagateSoftUpdate(const OriginAttributes& aOriginAttributes,
-                           const nsAString& aScope);
-
-  void PropagateRemove(const nsACString& aHost);
-
-  void Remove(const nsACString& aHost);
-
-  void PropagateRemoveAll();
-
-  void RemoveAll();
 
   RefPtr<ServiceWorkerRegistrationPromise> Register(
       const ClientInfo& aClientInfo, const nsACString& aScopeURL,
@@ -188,14 +159,14 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
 
   already_AddRefed<ServiceWorkerRegistrationInfo> CreateNewRegistration(
       const nsCString& aScope, nsIPrincipal* aPrincipal,
-      ServiceWorkerUpdateViaCache aUpdateViaCache);
+      ServiceWorkerUpdateViaCache aUpdateViaCache,
+      IPCNavigationPreloadState aNavigationPreloadState =
+          IPCNavigationPreloadState(false, "true"_ns));
 
   void RemoveRegistration(ServiceWorkerRegistrationInfo* aRegistration);
 
   void StoreRegistration(nsIPrincipal* aPrincipal,
                          ServiceWorkerRegistrationInfo* aRegistration);
-
-  void FinishFetch(ServiceWorkerRegistrationInfo* aRegistration);
 
   /**
    * Report an error for the given scope to any window we think might be
@@ -230,9 +201,8 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
   static void LocalizeAndReportToAllClients(
       const nsCString& aScope, const char* aStringKey,
       const nsTArray<nsString>& aParamArray, uint32_t aFlags = 0x0,
-      const nsString& aFilename = EmptyString(),
-      const nsString& aLine = EmptyString(), uint32_t aLineNumber = 0,
-      uint32_t aColumnNumber = 0);
+      const nsString& aFilename = u""_ns, const nsString& aLine = u""_ns,
+      uint32_t aLineNumber = 0, uint32_t aColumnNumber = 0);
 
   // Always consumes the error by reporting to consoles of all controlled
   // documents.
@@ -250,9 +220,6 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
       const ClientInfo& aClientInfo,
       const ServiceWorkerDescriptor& aServiceWorker);
 
-  void SetSkipWaitingFlag(nsIPrincipal* aPrincipal, const nsCString& aScope,
-                          uint64_t aServiceWorkerID);
-
   static already_AddRefed<ServiceWorkerManager> GetInstance();
 
   void LoadRegistration(const ServiceWorkerRegistrationData& aRegistration);
@@ -265,8 +232,6 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
   nsresult SendPushEvent(const nsACString& aOriginAttributes,
                          const nsACString& aScope, const nsAString& aMessageId,
                          const Maybe<nsTArray<uint8_t>>& aData);
-
-  nsresult NotifyUnregister(nsIPrincipal* aPrincipal, const nsAString& aScope);
 
   void WorkerIsIdle(ServiceWorkerInfo* aWorker);
 
@@ -286,6 +251,11 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
   nsresult GetClientRegistration(
       const ClientInfo& aClientInfo,
       ServiceWorkerRegistrationInfo** aRegistrationInfo);
+
+  int32_t GetPrincipalQuotaUsageCheckCount(nsIPrincipal* aPrincipal);
+
+  void CheckPrincipalQuotaUsage(nsIPrincipal* aPrincipal,
+                                const nsACString& aScope);
 
   // Returns the shutdown state ID (may be an invalid ID if an
   // nsIAsyncShutdownBlocker is not used).
@@ -371,9 +341,6 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
 
   void MaybeRemoveRegistration(ServiceWorkerRegistrationInfo* aRegistration);
 
-  // Removes all service worker registrations that matches the given pattern.
-  void RemoveAllRegistrations(OriginAttributesPattern* aPattern);
-
   RefPtr<ServiceWorkerManagerChild> mActor;
 
   bool mShuttingDown;
@@ -384,6 +351,9 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
       nsIServiceWorkerRegistrationInfo* aRegistration);
 
   void NotifyListenersOnUnregister(
+      nsIServiceWorkerRegistrationInfo* aRegistration);
+
+  void NotifyListenersOnQuotaUsageCheckFinish(
       nsIServiceWorkerRegistrationInfo* aRegistration);
 
   void ScheduleUpdateTimer(nsIPrincipal* aPrincipal, const nsACString& aScope);

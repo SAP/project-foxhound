@@ -7,9 +7,10 @@
 #include "mozilla/dom/BrowserBridgeHost.h"
 
 #include "mozilla/Unused.h"
+#include "mozilla/dom/Element.h"
+#include "nsFrameLoader.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(BrowserBridgeHost)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
@@ -37,30 +38,28 @@ nsILoadContext* BrowserBridgeHost::GetLoadContext() const {
   return mBridge->GetLoadContext();
 }
 
-void BrowserBridgeHost::LoadURL(nsIURI* aURI,
-                                nsIPrincipal* aTriggeringPrincipal) {
-  MOZ_ASSERT(aURI);
-  MOZ_ASSERT(aTriggeringPrincipal);
+bool BrowserBridgeHost::CanRecv() const {
+  return mBridge && mBridge->CanRecv();
+}
 
-  nsAutoCString spec;
-  aURI->GetSpec(spec);
-  Unused << mBridge->SendLoadURL(spec, aTriggeringPrincipal);
+void BrowserBridgeHost::LoadURL(nsDocShellLoadState* aLoadState) {
+  MOZ_ASSERT(aLoadState);
+  Unused << mBridge->SendLoadURL(aLoadState);
 }
 
 void BrowserBridgeHost::ResumeLoad(uint64_t aPendingSwitchId) {
   Unused << mBridge->SendResumeLoad(aPendingSwitchId);
 }
 
-void BrowserBridgeHost::DestroyStart() { DestroyComplete(); }
-
-void BrowserBridgeHost::DestroyComplete() {
-  if (!mBridge) {
-    return;
+void BrowserBridgeHost::DestroyStart() {
+  // We don't clear the bridge until BrowserBridgeChild::ActorDestroy is called,
+  // which will end up calling DestroyComplete().
+  if (mBridge) {
+    Unused << mBridge->SendBeginDestroy();
   }
-
-  Unused << mBridge->Send__delete__(mBridge);
-  mBridge = nullptr;
 }
+
+void BrowserBridgeHost::DestroyComplete() { mBridge = nullptr; }
 
 bool BrowserBridgeHost::Show(const OwnerShowInfo& aShowInfo) {
   Unused << mBridge->SendShow(aShowInfo);
@@ -89,5 +88,4 @@ already_AddRefed<nsIWidget> BrowserBridgeHost::GetWidget() const {
   return widget.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

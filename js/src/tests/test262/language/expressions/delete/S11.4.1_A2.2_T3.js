@@ -3,13 +3,13 @@
 
 /*---
 info: If GetBase(x) doesn't have a property GetPropertyName(x), return true
-es5id: 11.4.1_A2.2_T3
+esid: sec-delete-operator-runtime-semantics-evaluation
 description: Checking undeclared variable case
 ---*/
 
 //CHECK#1
 if (delete this.x !== true) {
-  $ERROR('#1: delete this.x === true');
+  throw new Test262Error('#1: delete this.x === true');
 }
 
 reportCompare(0, 0);

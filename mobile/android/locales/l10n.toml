@@ -128,13 +128,6 @@ exclude-multi-locale = [
     reference = "mobile/android/locales/en-US/**"
     l10n = "{l}mobile/android/**"
 
-[[paths]]
-    reference = "mobile/android/base/locales/en-US/**"
-    l10n = "{l}mobile/android/base/**"
-    test = [
-        "android-dtd",
-    ]
-
 # hand-picked paths from toolkit, keep in sync with jar.mn
 [[paths]]
     reference = "dom/locales/en-US/chrome/global.dtd"
@@ -151,10 +144,6 @@ exclude-multi-locale = [
 [[paths]]
     reference = "toolkit/locales/en-US/toolkit/about/*Plugins.ftl"
     l10n = "{l}toolkit/toolkit/about/*Plugins.ftl"
-
-[[paths]]
-    reference = "dom/locales/en-US/chrome/plugins.properties"
-    l10n = "{l}dom/chrome/plugins.properties"
 
 [[paths]]
     reference = "toolkit/locales/en-US/toolkit/about/*About.ftl"
@@ -185,10 +174,6 @@ exclude-multi-locale = [
     l10n = "{l}toolkit/toolkit/about/*Compat.ftl"
 
 [[paths]]
-    reference = "toolkit/locales/en-US/chrome/global/charsetMenu.properties"
-    l10n = "{l}toolkit/chrome/global/charsetMenu.properties"
-
-[[paths]]
     reference = "toolkit/locales/en-US/chrome/global/commonDialogs.properties"
     l10n = "{l}toolkit/chrome/global/commonDialogs.properties"
 
@@ -199,14 +184,6 @@ exclude-multi-locale = [
 [[paths]]
     reference = "toolkit/locales/en-US/chrome/global/intl.css"
     l10n = "{l}toolkit/chrome/global/intl.css"
-
-[[paths]]
-    reference = "toolkit/locales/en-US/chrome/search/search.properties"
-    l10n = "{l}toolkit/chrome/search/search.properties"
-
-[[paths]]
-    reference = "toolkit/locales/en-US/chrome/pluginproblem/pluginproblem.dtd"
-    l10n = "{l}toolkit/chrome/pluginproblem/pluginproblem.dtd"
 
 [[paths]]
     reference = "toolkit/locales/en-US/chrome/global/aboutSupport.dtd"
@@ -240,6 +217,9 @@ exclude-multi-locale = [
     reference = "toolkit/locales/en-US/chrome/global/aboutWebrtc.properties"
     l10n = "{l}toolkit/chrome/global/aboutWebrtc.properties"
 
+[[paths]]
+    reference = "toolkit/locales/en-US/toolkit/about/*Webrtc.ftl"
+    l10n = "{l}toolkit/toolkit/about/*Webrtc.ftl"
 
 [[filters]]
     path = [

@@ -19,17 +19,18 @@ this.DynamicFPIHelper = {
       );
 
       await SpecialPowers.flushPrefEnv();
+      await setCookieBehaviorPref(
+        BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+        runInPrivateWindow
+      );
       await SpecialPowers.pushPrefEnv({
         set: [
           ["dom.storage_access.enabled", true],
-          [
-            "network.cookie.cookieBehavior",
-            Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
-          ],
           ["privacy.trackingprotection.enabled", false],
           ["privacy.trackingprotection.pbmode.enabled", false],
           ["privacy.trackingprotection.annotate_channels", true],
-          ["privacy.storagePrincipal.enabledForTrackers", false],
+          ["privacy.dynamic_firstparty.use_site", true],
+          ["dom.security.https_first_pbm", false],
           [
             "privacy.restrict3rdpartystorage.userInteractionRequiredForHosts",
             "not-tracking.example.com",
@@ -53,6 +54,22 @@ this.DynamicFPIHelper = {
 
       let browser = win.gBrowser.getBrowserForTab(tab);
       await BrowserTestUtils.browserLoaded(browser);
+
+      info("Check the cookieJarSettings of the browser object");
+      ok(
+        browser.cookieJarSettings,
+        "The browser object has the cookieJarSettings."
+      );
+      is(
+        browser.cookieJarSettings.cookieBehavior,
+        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+        "The cookieJarSettings has the correct cookieBehavior"
+      );
+      is(
+        browser.cookieJarSettings.partitionKey,
+        "(http,example.net)",
+        "The cookieJarSettings has the correct partitionKey"
+      );
 
       info("Creating a 3rd party content");
       await SpecialPowers.spawn(

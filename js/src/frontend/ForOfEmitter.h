@@ -13,9 +13,8 @@
 #include <stdint.h>
 
 #include "frontend/ForOfLoopControl.h"
-#include "frontend/JumpList.h"
+#include "frontend/IteratorKind.h"
 #include "frontend/TDZCheckCache.h"
-#include "vm/Iteration.h"
 
 namespace js {
 namespace frontend {
@@ -32,11 +31,11 @@ class EmitterScope;
 //     ForOfEmitter forOf(this, headLexicalEmitterScope);
 //     forOf.emitIterated();
 //     emit(iterated);
-//     forOf.emitInitialize(Some(offset_of_for));
+//     forOf.emitInitialize(offset_of_for);
 //     emit(init);
 //     forOf.emitBody();
 //     emit(body);
-//     forOf.emitEnd(Some(offset_of_iterated));
+//     forOf.emitEnd(offset_of_iterated);
 //
 class MOZ_STACK_CLASS ForOfEmitter {
   BytecodeEmitter* bce_;
@@ -103,12 +102,10 @@ class MOZ_STACK_CLASS ForOfEmitter {
   //   |              iteratedPos
   //   |
   //   forPos
-  //
-  // Can be Nothing() if not available.
-  MOZ_MUST_USE bool emitIterated();
-  MOZ_MUST_USE bool emitInitialize(const mozilla::Maybe<uint32_t>& forPos);
-  MOZ_MUST_USE bool emitBody();
-  MOZ_MUST_USE bool emitEnd(const mozilla::Maybe<uint32_t>& iteratedPos);
+  [[nodiscard]] bool emitIterated();
+  [[nodiscard]] bool emitInitialize(uint32_t forPos);
+  [[nodiscard]] bool emitBody();
+  [[nodiscard]] bool emitEnd(uint32_t iteratedPos);
 };
 
 } /* namespace frontend */

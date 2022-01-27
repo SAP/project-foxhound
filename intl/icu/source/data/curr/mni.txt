@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 mni{
     Currencies{
         BRL{
@@ -20,7 +21,7 @@ mni{
         }
         INR{
             "₹",
-            "ইন্দিয়ান রুপি",
+            "ইন্দিয়ান রুপী",
         }
         JPY{
             "JP¥",
@@ -56,7 +57,7 @@ mni{
             other{"ব্রিটিশ পাউন্দ"}
         }
         INR{
-            other{"ইন্দিয়ান রুপি"}
+            other{"ইন্দিয়ান রুপী"}
         }
         JPY{
             other{"জাপানিজ য়েন"}
@@ -71,5 +72,4 @@ mni{
             other{"মশকখংদবা করেন্সি"}
         }
     }
-    Version{"37"}
 }

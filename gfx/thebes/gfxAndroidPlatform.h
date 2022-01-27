@@ -11,13 +11,6 @@
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
 
-namespace mozilla {
-namespace dom {
-class FontListEntry;
-};
-};  // namespace mozilla
-using mozilla::dom::FontListEntry;
-
 class gfxAndroidPlatform final : public gfxPlatform {
  public:
   gfxAndroidPlatform();
@@ -33,12 +26,12 @@ class gfxAndroidPlatform final : public gfxPlatform {
   gfxImageFormat GetOffscreenFormat() override { return mOffscreenFormat; }
 
   // platform implementations of font functions
-  gfxPlatformFontList* CreatePlatformFontList() override;
+  bool CreatePlatformFontList() override;
 
-  void ReadSystemFontList(
-      nsTArray<mozilla::dom::SystemFontListEntry>* aFontList) override;
+  void ReadSystemFontList(mozilla::dom::SystemFontList*) override;
 
-  void GetCommonFallbackFonts(uint32_t aCh, uint32_t aNextCh, Script aRunScript,
+  void GetCommonFallbackFonts(uint32_t aCh, Script aRunScript,
+                              eFontPresentation aPresentation,
                               nsTArray<const char*>& aFontList) override;
 
   bool FontHintingEnabled() override;

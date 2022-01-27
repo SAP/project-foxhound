@@ -205,6 +205,11 @@ interface nsIDOMWindowUtils : nsISupports {
    * Note that on some platforms, scrollbars don't take up layout space
    * ("overlay scrollbars"). On such platforms, the returned sizes are
    * always zero.
+   *
+   * Layout scrollbars that normally take up space but were only shown to
+   * scroll the visual viewport inside the layout viewport (the layout viewport
+   * cannot be scrolled) do not take up space but they still return their size
+   * from this function.
    */
   void getScrollbarSizes(in Element aElement,
                          out uint32_t aVerticalScrollbarWidth,
@@ -260,6 +265,12 @@ interface nsIDOMWindowUtils : nsISupports {
   attribute boolean isFirstPaint;
 
   uint32_t getPresShellId();
+
+  /**
+   * Returns whether a given header and value is a CORS-safelisted request
+   * header per https://fetch.spec.whatwg.org/#cors-safelisted-request-header
+   */
+  boolean isCORSSafelistedRequestHeader(in ACString name, in ACString value);
 
   /**
    * Following modifiers are for sent*Event() except sendNative*Event().
@@ -465,6 +476,30 @@ interface nsIDOMWindowUtils : nsISupports {
                       in unsigned long aOptions);
 
   /**
+   * Native modifiers for sendNativeKeyEvent and sendNativeMouseEvent.
+   * TODO: The other sendNative*Event should take these values instead.
+   */
+  const unsigned long NATIVE_MODIFIER_CAPS_LOCK       = 0x00000001;
+  const unsigned long NATIVE_MODIFIER_NUM_LOCK        = 0x00000002;
+  const unsigned long NATIVE_MODIFIER_SHIFT_LEFT      = 0x00000100;
+  const unsigned long NATIVE_MODIFIER_SHIFT_RIGHT     = 0x00000200;
+  const unsigned long NATIVE_MODIFIER_CONTROL_LEFT    = 0x00000400;
+  const unsigned long NATIVE_MODIFIER_CONTROL_RIGHT   = 0x00000800;
+  const unsigned long NATIVE_MODIFIER_ALT_LEFT        = 0x00001000;
+  const unsigned long NATIVE_MODIFIER_ALT_RIGHT       = 0x00002000;
+  const unsigned long NATIVE_MODIFIER_COMMAND_LEFT    = 0x00004000;
+  const unsigned long NATIVE_MODIFIER_COMMAND_RIGHT   = 0x00008000;
+  const unsigned long NATIVE_MODIFIER_HELP            = 0x00010000;
+  // On Windows, AltGraph key emulates the AltRight key on specific keyboard
+  // layouts.  Therefore, this shouldn't be used without `synthesizeNativeKey`.
+  const unsigned long NATIVE_MODIFIER_ALT_GRAPH       = 0x00020000;
+  // Available only on macOS.
+  const unsigned long NATIVE_MODIFIER_FUNCTION        = 0x00100000;
+  // Available only on macOS.  When pressing a key in numeric key pad, this
+  // must be included.
+  const unsigned long NATIVE_MODIFIER_NUMERIC_KEY_PAD = 0x01000000;
+
+  /**
    * See nsIWidget::SynthesizeNativeKeyEvent
    *
    * Cannot be accessed from unprivileged context (not content-accessible)
@@ -478,7 +513,7 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   void sendNativeKeyEvent(in long aNativeKeyboardLayout,
                           in long aNativeKeyCode,
-                          in long aModifierFlags,
+                          in unsigned long aModifierFlags,
                           in AString aCharacters,
                           in AString aUnmodifiedCharacters,
                           [optional] in nsIObserver aObserver);
@@ -490,23 +525,28 @@ interface nsIDOMWindowUtils : nsISupports {
    * Cannot be accessed from unprivileged context (not content-accessible)
    * Will throw a DOM security error if called without chrome privileges.
    *
-   * NOTE: The synthesized native event will be fired asynchronously, and upon
-   * completion the observer, if provided, will be notified with a "mouseevent"
-   * topic.
+   * @param aScreenX    X offset in the screen in device pixels.
+   * @param aScreenY    Y offset in the screen in derive pixels.
+   * @param aNativeMessage      One of NATIVE_MOUSE_MESSAGE_*
+   * @param aButton     Same as `MouseEvent.button` value.
+   * @param aModifierFlags      See nsIWidget's native modifier flags.
+   * @param aElementOnWidget    An element which is on a widget.
+   * @param aObserver   The synthesized native event will be fired
+   *                    asynchronously, and upon completion the observer, if
+   *                    provided, will be notified with a "mouseevent" topic.
    */
+  const unsigned long NATIVE_MOUSE_MESSAGE_BUTTON_DOWN  = 0x00000001;
+  const unsigned long NATIVE_MOUSE_MESSAGE_BUTTON_UP    = 0x00000002;
+  const unsigned long NATIVE_MOUSE_MESSAGE_MOVE         = 0x00000003;
+  const unsigned long NATIVE_MOUSE_MESSAGE_ENTER_WINDOW = 0x00000004;
+  const unsigned long NATIVE_MOUSE_MESSAGE_LEAVE_WINDOW = 0x00000005;
   void sendNativeMouseEvent(in long aScreenX,
                             in long aScreenY,
-                            in long aNativeMessage,
-                            in long aModifierFlags,
-                            in Element aElement,
+                            in unsigned long aNativeMessage,
+                            in short aButton,
+                            in unsigned long aModifierFlags,
+                            in Element aElementOnWidget,
                             [optional] in nsIObserver aObserver);
-  /**
-   * See nsIWidget::SynthesizeNativeMouseMove and sendNativeMouseEvent
-   */
-  void sendNativeMouseMove(in long aScreenX,
-                           in long aScreenY,
-                           in Element aElement,
-                           [optional] in nsIObserver aObserver);
 
   /**
    * Suppress animations that are applied to a window by OS when
@@ -585,6 +625,13 @@ interface nsIDOMWindowUtils : nsISupports {
   const long TOUCH_CANCEL  = 0x08;
 
   /**
+   * Phase states for sendNativeTouchPadPinch.
+   */
+  const long PHASE_BEGIN = 0;
+  const long PHASE_UPDATE = 1;
+  const long PHASE_END  = 2;
+
+  /**
    * Create a new or update an existing touch point on the digitizer.
    * To trigger os level gestures, individual touch points should
    * transition through a complete set of touch states which should be
@@ -613,6 +660,23 @@ interface nsIDOMWindowUtils : nsISupports {
                             in double aPressure,
                             in unsigned long aOrientation,
                             [optional] in nsIObserver aObserver);
+  /**
+   * These values indicate touchpad pinch phase states :
+   * PHASE_BEGIN
+   * PHASE_UPDATE
+   * PHASE_END
+   * Widget support: Linux GTK 3.18+.
+   * @param aEventPhase The touchpad pinch phase using states listed above.
+   * @param aScale Events with PHASE_UPDATE will change the zoom level by
+   * the ratio between the scale of the current event and the scale of the last event.
+   * @param aScreenX, aScreenY screen coords of the focus point of this event.
+   * @param aModifierFlags is expected to contain native modifier values.
+   */
+  void sendNativeTouchpadPinch(in unsigned long aEventPhase,
+                               in float aScale,
+                               in long aScreenX,
+                               in long aScreenY,
+                               in long aModifierFlags);
 
   /**
    * Simulates native touch based taps on the input digitizer. Events
@@ -643,6 +707,39 @@ interface nsIDOMWindowUtils : nsISupports {
                           [optional] in nsIObserver aObserver);
 
   /**
+   * Create a new or update an existing pen input on the digitizer.
+   *
+   * Widget support: Windows 10 1809+. Other widgets will throw.
+   *
+   * NOTE: The synthesized native event will be fired asynchronously, and upon
+   * completion the observer, if provided, will be notified with a "peninput"
+   * topic.
+   *
+   * @param aPointerId The touch point id to create or update.
+   * @param aPointerState one or more of the TOUCH_* listed above
+   * @param aScreenX x screen coord of this event
+   * @param aScreenY y screen coord of this event
+   * @param aPressure 0.0 -> 1.0 float val indicating pressure
+   * @param aRotation 0 -> 359 degree value indicating the rotation of the
+   * pointer. Use 0 for normal taps.
+   * @param aTiltX -90 -> 90 degree value indicating the tilt along the x-axis
+   * of the pointer. Use 0 for normal taps.
+   * @param aTiltY -90 -> 90 degree value indicating the tilt along the y-axis
+   * of the pointer. Use 0 for normal taps.
+   * @param aButton Same as MouseEvent::button.
+   */
+  void sendNativePenInput(in unsigned long aPointerId,
+                          in unsigned long aPointerState,
+                          in long aScreenX,
+                          in long aScreenY,
+                          in double aPressure,
+                          in unsigned long aRotation,
+                          in long aTiltX,
+                          in long aTiltY,
+                          in long aButton,
+                          [optional] in nsIObserver aObserver);
+
+  /**
    * Cancel any existing touch points or long tap delays. Calling this is safe
    * even if you're sure there aren't any pointers recorded. You should call
    * this when tests shut down to reset the digitizer driver. Not doing so can
@@ -654,6 +751,34 @@ interface nsIDOMWindowUtils : nsISupports {
    * topic.
    */
   void clearNativeTouchSequence([optional] in nsIObserver aObserver);
+
+  /**
+   * Send a native event as if the user double tapped the touchpad with two
+   * fingers.
+   *
+   * Widget support: macOS.
+   * @param aScreenX, aScreenY screen coords of the focus point of this event.
+   * @param aModifierFlags is expected to contain native modifier values.
+   */
+  void sendNativeTouchpadDoubleTap(in long aScreenX,
+                                   in long aScreenY,
+                                   in long aModifierFlags);
+
+  /**
+   * Send a native event as if the user panned on the touchpad with two
+   * fingers.
+   *
+   * Widget support: Windows.
+   * @param aScreenX, aScreenY screen coords of the focus point of this event.
+   * @param aDeltaX, aDeltaY the amount of delta in the pan.
+   * @param aModifierFlags is expected to contain native modifier values.
+   */
+  void sendNativeTouchpadPan(in unsigned long aEventPhase,
+                             in long aScreenX,
+                             in long aScreenY,
+                             in double aDeltaX,
+                             in double aDeltaY,
+                             in long aModifierFlags);
 
   /**
    * Clears the SharedStyleSheetCache.
@@ -714,8 +839,20 @@ interface nsIDOMWindowUtils : nsISupports {
   /**
    * Trigger whichever GC or CC timer is currently active and waiting to fire.
    * Don't do this too much for initiating heavy actions, like the start of a IGC.
+   *
+   * @param aReason the reason for the GC, from js/public/GCAPI.h. Defaults to
+   * DOM_WINDOW_UTILS.
    */
-  void runNextCollectorTimer();
+  void runNextCollectorTimer([optional] in ACString aReason);
+
+  /**
+   * "Poke" the GC: set a timer to run a GC soon (usually 4 seconds), unless
+   * another GC timer has already been set. This is used for testing.
+   *
+   * @param aReason the reason for the GC, from js/public/GCAPI.h. Defaults to
+   * DOM_WINDOW_UTILS.
+   */
+  void pokeGC([optional] in ACString aReason);
 
   /** Synthesize a simple gesture event for a window. The event types
    *  supported are: MozSwipeGestureMayStart, MozSwipeGestureStart,
@@ -772,6 +909,11 @@ interface nsIDOMWindowUtils : nsISupports {
    * @param aFlushLayout flushes layout if true. Otherwise, no flush occurs.
    * @param aOnlyVisible Set to true if you only want nodes that pass a visibility
    *        hit test.
+   * @param aTransparencyThreshold Only has an effect if aOnlyVisible is true.
+   *        Returns what amount of transparency is considered "opaque enough"
+   *        to consider elements "not visible". The default is effectively "1"
+   *        (so, only opaque elements will stop an element from being
+   *        "visible").
    */
   NodeList nodesFromRect(in float aX,
                          in float aY,
@@ -781,7 +923,8 @@ interface nsIDOMWindowUtils : nsISupports {
                          in float aLeftSize,
                          in boolean aIgnoreRootScrollFrame,
                          in boolean aFlushLayout,
-                         in boolean aOnlyVisible);
+                         in boolean aOnlyVisible,
+                         [optional] in float aTransparencyThreshold);
 
 
   /**
@@ -809,6 +952,11 @@ interface nsIDOMWindowUtils : nsISupports {
    * fired.
    */
   readonly attribute boolean isMozAfterPaintPending;
+
+  /**
+   * Returns true if the InputTaskManager is suspended.
+   */
+  readonly attribute boolean isInputTaskManagerSuspended;
 
   /**
    * Suppresses/unsuppresses user initiated event handling in window's document
@@ -895,6 +1043,30 @@ interface nsIDOMWindowUtils : nsISupports {
                                       in float aWidth, in float aHeight);
 
   /**
+   * Transform a rectangle given in coordinates relative to this document
+   * into CSS coordinates relative to the screen.
+   */
+  DOMRect toScreenRectInCSSUnits(in float aX, in float aY,
+                                 in float aWidth, in float aHeight);
+
+  /**
+   * Transform a rectangle given in coordinates relative to this document
+   * to the screen.
+   */
+  DOMRect toScreenRect(in float aX, in float aY,
+                       in float aWidth, in float aHeight);
+
+  /**
+   * Transform a rectangle given in coordinates relative to the top level
+   * parent process widget to the local widget. This window should be in a
+   * child process.
+   */
+  DOMRect convertFromParentProcessWidgetToLocal(in float aX,
+                                                in float aY,
+                                                in float aWidth,
+                                                in float aHeight);
+
+  /**
    * Sets the maximum height of the dynamic toolbar in Screen pixel units.
    */
   [can_run_script]
@@ -954,15 +1126,22 @@ interface nsIDOMWindowUtils : nsISupports {
   const unsigned long IME_STATUS_PASSWORD = 2;
 
   /**
-   * PLUGIN means a plug-in has focus. At this time we should not touch to
-   * controlling the IME state.
-   */
-  const unsigned long IME_STATUS_PLUGIN   = 3;
-
-  /**
    * Get IME status, see above IME_STATUS_* definitions.
    */
   readonly attribute unsigned long IMEStatus;
+
+  /**
+   * Get whether current input context (including IME status) in the widget
+   * is set by content or not.
+   */
+  const unsigned long INPUT_CONTEXT_ORIGIN_MAIN = 0;
+  const unsigned long INPUT_CONTEXT_ORIGIN_CONTENT = 1;
+  readonly attribute unsigned long inputContextOrigin;
+
+  /**
+   * Get a root node which is observed by IMEContentObserver.
+   */
+  readonly attribute Node nodeObservedByIMEContentObserver;
 
   /**
    * Get the number of screen pixels per CSS pixel.
@@ -1031,12 +1210,16 @@ interface nsIDOMWindowUtils : nsISupports {
    * Will throw a DOM security error if called without chrome privileges.
    *
    * @param aType Type of command content event to send.  Can be one of "cut",
-   *        "copy", "paste", "delete", "undo", "redo", or "pasteTransferable".
+   *        "copy", "paste", "delete", "undo", "redo", "insertText" or
+   *        "pasteTransferable".
    * @param aTransferable an instance of nsITransferable when aType is
    *        "pasteTransferable"
+   * @param aString The string to be inserted into focused editor when aType is
+   *        "insertText"
    */
   void sendContentCommandEvent(in AString aType,
-                               [optional] in nsITransferable aTransferable);
+                               [optional] in nsITransferable aTransferable,
+                               [optional] in AString aString);
 
   /**
    * If sendQueryContentEvent()'s aAdditionalFlags argument is
@@ -1271,6 +1454,7 @@ interface nsIDOMWindowUtils : nsISupports {
    * issues, and NS_ERROR_INVALID_ARG for coordinates that are outside
    * this window.
    */
+  [can_run_script]
   boolean selectAtPoint(in float aX,
                         in float aY,
                         in unsigned long aSelectBehavior);
@@ -1294,17 +1478,6 @@ interface nsIDOMWindowUtils : nsISupports {
                                            in AString aPropertyName);
 
   /**
-   * Get the id of the outer window of this window.  This will never throw.
-   */
-  readonly attribute unsigned long long outerWindowID;
-
-  /**
-   * Get the id of the current inner window of this window.  If there
-   * is no current inner window, throws NS_ERROR_NOT_AVAILABLE.
-   */
-  readonly attribute unsigned long long currentInnerWindowID;
-
-  /**
    * Put the window into a state where scripts are frozen and events
    * suppressed, for use when the window has launched a modal prompt.
    */
@@ -1322,9 +1495,9 @@ interface nsIDOMWindowUtils : nsISupports {
   boolean isInModalState();
 
   /**
-   * Request set internal desktopMode flag change.
+   * Internal desktopMode flag.
    */
-  void setDesktopModeViewport(in boolean aDesktopModeViewport);
+  attribute boolean desktopModeViewport;
 
   /**
    * Suspend/resume timeouts on this window and its descendant windows.
@@ -1345,11 +1518,6 @@ interface nsIDOMWindowUtils : nsISupports {
    * error if there is no widget associated with this window.
    */
   readonly attribute boolean layerManagerRemote;
-
-  /**
-   * True if advanced layers is enabled on this window, false otherwise.
-   */
-  readonly attribute boolean usingAdvancedLayers;
 
   /**
    * True if webrender was requested by the user (via pref or env-var), false
@@ -1520,6 +1688,11 @@ interface nsIDOMWindowUtils : nsISupports {
                                      in long aFlushType);
 
   /**
+   * Returns the effective canvas background color for the window.
+   */
+  readonly attribute AString canvasBackgroundColor;
+
+  /**
    * Get the type of the currently focused html input, if any.
    */
   readonly attribute AString focusedInputType;
@@ -1535,18 +1708,15 @@ interface nsIDOMWindowUtils : nsISupports {
   readonly attribute AString focusedInputMode;
 
   /**
+   * Get the autocapitalize of the currently focused editing host, if any.
+   */
+  readonly attribute AString focusedAutocapitalize;
+
+  /**
    * Find the view ID for a given element. This is the reverse of
    * findElementWithViewId().
    */
   nsViewID getViewId(in Element aElement);
-
-  /**
-   * Checks the layer tree for this window and returns true
-   * if all layers have transforms that are translations by integers,
-   * no leaf layers overlap, and the union of the leaf layers is exactly
-   * the bounds of the window. Always returns true in non-DEBUG builds.
-   */
-  boolean leafLayersPartitionWindow();
 
   /**
    * Check if any PaintedLayer painting has been done for this element,
@@ -1648,16 +1818,6 @@ interface nsIDOMWindowUtils : nsISupports {
   readonly attribute boolean paintingSuppressed;
 
   /**
-   * Returns an array of plugins on the page for opt-in activation.
-   *
-   * Cannot be accessed from unprivileged context (not content-accessible).
-   * Will throw a DOM security error if called without chrome privileges.
-   *
-   */
-  [implicit_jscontext]
-  readonly attribute jsval plugins;
-
-  /**
    * Set the viewport size for the purposes of clamping scroll positions for
    * the root scroll frame of this document to be (aWidth,aHeight) in CSS pixels.
    *
@@ -1667,11 +1827,13 @@ interface nsIDOMWindowUtils : nsISupports {
 
   /**
    * These are used to control whether dialogs (alert, prompt, confirm) are
-   * allowed.
+   * allowed, and to reset the inernal state that controls whether dialogs
+   * are currently blocked or not.
    */
   void disableDialogs();
   void enableDialogs();
   bool areDialogsEnabled();
+  void resetDialogAbuseState();
 
   const unsigned long AGENT_SHEET = 0;
   const unsigned long USER_SHEET = 1;
@@ -1752,28 +1914,15 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   boolean isNodeDisabledForEvents(in Node aNode);
 
-  /**
-   * Setting paintFlashing to true will flash newly painted area.
-   */
-  attribute boolean paintFlashing;
-
   /*
    * Returns the value of a given property animated on the compositor thread.
    * If the property is NOT currently being animated on the compositor thread,
    * returns an empty string.
+   * NOTE: Do not use this function for elements that there was another
+   * animation running on the compositor before.
    */
   AString getOMTAStyle(in Element aElement, in AString aProperty,
                        [optional] in AString aPseudoElement);
-
-  /*
-   * Returns the value of the transform on the compositor, in layer pixels.
-   * Unlike the above getOMTAStyle, the transform value returned by this
-   * includes both of animating and APZ values.
-   * Note: This function doesn't work on WebRender at all.  Also this function
-   * does work only for transform layer and opacity layer with animations.
-   */
-  AString getOMTCTransform(in Element aElement,
-                           [optional] in AString aPseudoElement);
 
   /*
    * Returns true if the given animation is being tracked by the pending
@@ -1845,11 +1994,6 @@ interface nsIDOMWindowUtils : nsISupports {
                        in int32_t aRight,
                        in int32_t aBottom,
                        in int32_t aLeft);
-
-  /**
-   * Enable some service workers testing features.
-   */
-  attribute boolean serviceWorkersTestingEnabled;
 
   /**
    * Returns a JSObject which contains a list of frame uniformities
@@ -1963,12 +2107,38 @@ interface nsIDOMWindowUtils : nsISupports {
   void wrCapture();
 
   /**
-   * Start capturing the contents of the current WebRender frame and
-   * save them to a folder relative to the current working directory,
-   * as well as any frames generated from this point onward. If called
-   * again, it will stop capturing.
+   * Flag bits for use in |wrStartCaptureSequence|'s |aFlags| argument.
    */
-  void wrToggleCaptureSequence();
+  const uint32_t WR_CAPTURE_SCENE = 0x1;
+  const uint32_t WR_CAPTURE_FRAME = 0x2;
+  const uint32_t WR_CAPTURE_TILE_CACHE = 0x4;
+  const uint32_t WR_CAPTURE_EXTERNAL_RESOURCES = 0x8;
+
+  /**
+   * Start capturing each WebRender frame to disk.
+   *
+   * |aPath| is the name of a new directory to be created to hold the captures.
+   * it is relative to:
+   * - the |PUBLIC_STORAGE| environment variable, if set, else
+   * - the |MOZ_UPLOAD_DIR| environment variable, if set, else
+   * - the user's home directory, if known, else
+   * the current directory.
+   *
+   * If there is already a directory with the given name, a numeric suffix is
+   * added to ensure a fresh directory is created. This means that you can't
+   * be sure your capture directory is actually named |aPath|.
+   *
+   * |aFlags| is a set of flags from |webrender::render_api::CaptureBits|.
+   *
+   * If there is already a sequence capture in progress, stop it and start a new
+   * one, with the new path and flags.
+   */
+  void wrStartCaptureSequence(in ACString aPath, in uint32_t aFlags);
+
+  /**
+   * Stop a capture begun with |wrStartCaptureSequence|.
+   */
+  void wrStopCaptureSequence();
 
   /**
    * Toggle recording of composition on and off.
@@ -2005,6 +2175,13 @@ interface nsIDOMWindowUtils : nsISupports {
    * Throws if there's no document or the property is invalid.
    */
   bool isCssPropertyRecordedInUseCounter(in ACString aProperty);
+
+  /**
+   * Calls SetInitialViewport on the MobileViewportManager, which effectively
+   * causes it to refresh all of its internal state and update things that
+   * need updating.
+   */
+  void resetMobileViewportManager();
 
   /**
    * NOTE: Currently works only on GTK+.
@@ -2052,8 +2229,8 @@ interface nsIDOMWindowUtils : nsISupports {
 
   unsigned long long getLayersId();
 
-  // Returns true if we are using overlay scrollbars.
-  readonly attribute bool usesOverlayScrollbars;
+  // Returns true if we are effectively throttling frame requests.
+  readonly attribute bool effectivelyThrottlesFrameRequests;
 
   // Returns the ID for the underlying window widget, which can
   // be compared against the rawId from a nsIMediaDevice to determine
@@ -2063,6 +2240,9 @@ interface nsIDOMWindowUtils : nsISupports {
   // will intentionally crash any non-parent process that tries to access
   // it.
   readonly attribute AString webrtcRawDeviceId;
+
+  // Used for testing to check the suspend status.
+  readonly attribute bool suspendedByBrowsingContextGroup;
 };
 
 [scriptable, uuid(c694e359-7227-4392-a138-33c0cc1f15a6)]

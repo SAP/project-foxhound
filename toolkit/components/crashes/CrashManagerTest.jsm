@@ -16,10 +16,17 @@ var EXPORTED_SYMBOLS = [
   "TestingCrashManager",
 ];
 
-ChromeUtils.import("resource://gre/modules/CrashManager.jsm", this);
-ChromeUtils.import("resource://gre/modules/Log.jsm", this);
-ChromeUtils.import("resource://gre/modules/osfile.jsm", this);
-ChromeUtils.import("resource://gre/modules/Timer.jsm", this);
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+
+XPCOMUtils.defineLazyModuleGetters(this, {
+  CrashManager: "resource://gre/modules/CrashManager.jsm",
+  Log: "resource://gre/modules/Log.jsm",
+  OS: "resource://gre/modules/osfile.jsm",
+  Services: "resource://gre/modules/Services.jsm",
+  setTimeout: "resource://gre/modules/Timer.jsm",
+});
 
 var loggingConfigured = false;
 
@@ -52,10 +59,7 @@ TestingCrashManager.prototype = {
   __proto__: CrashManager.prototype,
 
   createDummyDump(submitted = false, date = new Date(), hr = false) {
-    let uuid = Cc["@mozilla.org/uuid-generator;1"]
-      .getService(Ci.nsIUUIDGenerator)
-      .generateUUID()
-      .toString();
+    let uuid = Services.uuid.generateUUID().toString();
     uuid = uuid.substring(1, uuid.length - 1);
 
     let path;
@@ -111,6 +115,16 @@ TestingCrashManager.prototype = {
     return (async function() {
       await OS.File.writeAtomic(path, array);
       await OS.File.setDates(path, date, date);
+    })();
+  },
+
+  deleteEventsDirs() {
+    let dirs = this._eventsDirs;
+
+    return (async function() {
+      for (let dir of dirs) {
+        await OS.File.removeDir(dir);
+      }
     })();
   },
 

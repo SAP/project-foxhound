@@ -6,9 +6,11 @@
 #ifndef widget_windows_RemoteBackbuffer_h
 #define widget_windows_RemoteBackbuffer_h
 
-#include <thread>
-#include <windows.h>
+#include "nsIWidget.h"
+#include "mozilla/widget/PCompositorWidgetParent.h"
 #include "mozilla/Maybe.h"
+#include "prthread.h"
+#include <windows.h>
 
 namespace mozilla {
 namespace widget {
@@ -48,13 +50,13 @@ class Provider {
                             PresentResponseData* aResponseData);
 
   HWND mWindowHandle;
-  DWORD mTargetProcessId;
+  HANDLE mTargetProcess;
   HANDLE mFileMapping;
   HANDLE mRequestReadyEvent;
   HANDLE mResponseReadyEvent;
   SharedData* mSharedDataPtr;
   bool mStopServiceThread;
-  std::thread mServiceThread;
+  PRThread* mServiceThread;
   std::unique_ptr<PresentableSharedImage> mBackbuffer;
   mozilla::Atomic<nsTransparencyMode, MemoryOrdering::Relaxed>
       mTransparencyMode;
@@ -68,7 +70,7 @@ class Client {
   bool Initialize(const RemoteBackbufferHandles& aRemoteHandles);
 
   already_AddRefed<gfx::DrawTarget> BorrowDrawTarget();
-  bool PresentDrawTarget(const gfx::IntRect& aDirtyRect);
+  bool PresentDrawTarget(gfx::IntRegion aDirtyRegion);
 
   Client(const Client&) = delete;
   Client(Client&&) = delete;

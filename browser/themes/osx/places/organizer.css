@@ -10,12 +10,6 @@
   width: 160px;
 }
 
-@media (-moz-mac-yosemite-theme: 0) {
-  #placesList {
-    box-shadow: inset -2px 0 0 hsla(0,0%,100%,.2);
-  }
-}
-
 #placesList > treechildren::-moz-tree-cell-text {
   margin-inline-end: 6px;
 }
@@ -37,21 +31,8 @@
 }
 
 #placesList > treechildren::-moz-tree-separator {
-  border-top: 1px solid #505d6d;
+  border-top: 1px solid color-mix(in srgb, FieldText 70%, transparent);
   margin: 0 10px;
-}
-
-/* Match selected item styling for -moz-appearance values on OSX 10.9 */
-@media (-moz-mac-yosemite-theme: 0) {
-  #placesList > treechildren::-moz-tree-image(selected),
-  #placesList > treechildren::-moz-tree-twisty(selected),
-  #placesList > treechildren::-moz-tree-cell-text(selected) {
-    color: #fff;
-  }
-
-  #placesList > treechildren::-moz-tree-cell-text(selected) {
-    font-weight: bold;
-  }
 }
 
 #placesToolbar {
@@ -64,7 +45,7 @@
 
 #placesView > splitter {
   border-inline-start: none !important;
-  border-inline-end: 1px solid #b4b4b4;
+  border-inline-end: 1px solid color-mix(in srgb, FieldText 30%, transparent);
   min-width: 1px;
   width: 3px;
   margin-inline-start: -3px;
@@ -92,7 +73,7 @@
 }
 
 #placesToolbar > toolbarbutton[type="menu"] > .toolbarbutton-menu-dropmarker {
-  list-style-image: url(chrome://global/skin/icons/arrow-dropdown-12.svg);
+  list-style-image: url(chrome://global/skin/icons/arrow-down-12.svg);
   padding: 0;
   margin-inline-end: 2px;
 }
@@ -115,8 +96,13 @@
 
 /* back and forward button */
 #back-button,
-#forward-button {
+#forward-button:-moz-locale-dir(rtl) {
   list-style-image: url("chrome://global/skin/icons/arrow-left.svg");
+}
+
+#forward-button,
+#back-button:-moz-locale-dir(rtl) {
+  list-style-image: url("chrome://global/skin/icons/arrow-right.svg");
 }
 
 #back-button {
@@ -125,11 +111,6 @@
 
 #forward-button {
   margin-inline-start: 0 !important; /* override margin from #placesToolbar > toolbarbutton */
-}
-
-#back-button:-moz-locale-dir(rtl) > .toolbarbutton-icon,
-#forward-button:-moz-locale-dir(ltr) > .toolbarbutton-icon {
-  transform: scaleX(-1);
 }
 
 #back-button > .toolbarbutton-icon {
@@ -162,9 +143,8 @@
 }
 
 /* Info box */
-#detailsDeck {
-  border-top: 1px solid #919191;
-  background-color: #f0f0f0;
+#detailsPane {
+  border-top: 1px solid color-mix(in srgb, FieldText 50%, transparent);
   padding: 10px;
 }
 
@@ -175,7 +155,7 @@
 
 #placeContent > treechildren::-moz-tree-cell,
 #placeContent > treechildren::-moz-tree-column {
-  border-inline-end: 1px solid #d7dad7;
+  border-inline-end: 1px solid color-mix(in srgb, FieldText 30%, transparent);
 }
 
 #placeContent > treechildren::-moz-tree-cell(separator) {
@@ -201,4 +181,23 @@
 
 #clearDownloadsButton > .toolbarbutton-icon {
   display: none;
+}
+
+/**** expanders ****/
+
+.expander-up,
+.expander-down {
+  margin-block: 0 1px;
+  margin-inline: 8px 4px;
+  padding: 0;
+}
+
+.expander-up {
+  appearance: auto;
+  -moz-default-appearance: -moz-mac-disclosure-button-open;
+}
+
+.expander-down {
+  appearance: auto;
+  -moz-default-appearance: -moz-mac-disclosure-button-closed;
 }

@@ -8,8 +8,9 @@
 #define mozilla_dom_HTMLLinkElement_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/Link.h"
+#include "mozilla/dom/HTMLDNSPrefetch.h"
 #include "mozilla/dom/LinkStyle.h"
+#include "mozilla/dom/Link.h"
 #include "mozilla/WeakPtr.h"
 #include "nsGenericHTMLElement.h"
 #include "nsDOMTokenList.h"
@@ -17,13 +18,13 @@
 namespace mozilla {
 class EventChainPostVisitor;
 class EventChainPreVisitor;
+class PreloaderBase;
+
 namespace dom {
 
-// NOTE(emilio): If we stop inheriting from Link, we need to remove the
-// IsHTMLElement(nsGkAtoms::link) checks in Link.cpp.
 class HTMLLinkElement final : public nsGenericHTMLElement,
                               public LinkStyle,
-                              public Link {
+                              public SupportsDNSPrefetch {
  public:
   explicit HTMLLinkElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -41,47 +42,38 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
   void LinkAdded();
   void LinkRemoved();
 
-  // EventTarget
-  void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
-  MOZ_CAN_RUN_SCRIPT
-  nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
-
   // nsINode
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  JSObject* WrapNode(JSContext* aCx,
+                     JS::Handle<JSObject*> aGivenProto) override;
 
   // nsIContent
-  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  virtual void UnbindFromTree(bool aNullParent = true) override;
-  virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                 const nsAttrValueOrString* aValue,
-                                 bool aNotify) override;
-  virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                const nsAttrValue* aValue,
-                                const nsAttrValue* aOldValue,
-                                nsIPrincipal* aSubjectPrincipal,
-                                bool aNotify) override;
-  virtual bool IsLink(nsIURI** aURI) const override;
-  virtual already_AddRefed<nsIURI> GetHrefURI() const override;
-
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  void UnbindFromTree(bool aNullParent = true) override;
+  nsresult BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                         const nsAttrValueOrString* aValue,
+                         bool aNotify) override;
+  nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                        const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                        nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
   // Element
-  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
-                              const nsAString& aValue,
-                              nsIPrincipal* aMaybeScriptedPrincipal,
-                              nsAttrValue& aResult) override;
-  virtual void GetLinkTarget(nsAString& aTarget) override;
-  virtual EventStates IntrinsicState() const override;
+  bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                      const nsAString& aValue,
+                      nsIPrincipal* aMaybeScriptedPrincipal,
+                      nsAttrValue& aResult) override;
 
   void CreateAndDispatchEvent(Document* aDoc, const nsAString& aEventName);
-
-  virtual void OnDNSPrefetchDeferred() override;
-  virtual void OnDNSPrefetchRequested() override;
-  virtual bool HasDeferredDNSPrefetchRequest() override;
 
   // WebIDL
   bool Disabled() const;
   void SetDisabled(bool aDisabled, ErrorResult& aRv);
+
+  nsIURI* GetURI() {
+    if (!mCachedURI) {
+      GetURIAttr(nsGkAtoms::href, nullptr, getter_AddRefs(mCachedURI));
+    }
+    return mCachedURI.get();
+  }
 
   void GetHref(nsAString& aValue) {
     GetURIAttr(nsGkAtoms::href, nullptr, aValue);
@@ -160,7 +152,7 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
     SetHTMLAttr(nsGkAtoms::referrerpolicy, aReferrer, aError);
   }
   void GetReferrerPolicy(nsAString& aReferrer) {
-    GetEnumAttr(nsGkAtoms::referrerpolicy, EmptyCString().get(), aReferrer);
+    GetEnumAttr(nsGkAtoms::referrerpolicy, "", aReferrer);
   }
   void GetImageSrcset(nsAString& aImageSrcset) {
     GetHTMLAttr(nsGkAtoms::imagesrcset, aImageSrcset);
@@ -180,12 +172,13 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
   }
 
   void NodeInfoChanged(Document* aOldDoc) final {
-    ClearHasPendingLinkUpdate();
+    mCachedURI = nullptr;
     nsGenericHTMLElement::NodeInfoChanged(aOldDoc);
   }
 
   static bool CheckPreloadAttrs(const nsAttrValue& aAs, const nsAString& aType,
                                 const nsAString& aMedia, Document* aDocument);
+  static void WarnIgnoredPreload(const Document&, nsIURI&);
 
  protected:
   virtual ~HTMLLinkElement();
@@ -218,6 +211,9 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
   // this node updates or unbounds from the tree.  We want to prevent cycles,
   // the preload is held alive by other means.
   WeakPtr<PreloaderBase> mPreload;
+
+  // The cached href attribute value.
+  nsCOMPtr<nsIURI> mCachedURI;
 
   // The "explicitly enabled" flag. This flag is set whenever the `disabled`
   // attribute is explicitly unset, and makes alternate stylesheets not be

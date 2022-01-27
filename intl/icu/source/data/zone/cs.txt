@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 cs{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"Abidžan"}
@@ -1964,6 +1964,9 @@ cs{
             ld{"Jekatěrinburský letní čas"}
             lg{"Jekatěrinburský čas"}
             ls{"Jekatěrinburský standardní čas"}
+        }
+        "meta:Yukon"{
+            ls{"Yukonský čas"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

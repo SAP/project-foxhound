@@ -9,7 +9,7 @@
  * communications. The lifetime of a JSWindowActor{Child, Parent} is the `WindowGlobalParent`
  * (for the parent-side) / `WindowGlobalChild` (for the child-side).
  *
- * See https://firefox-source-docs.mozilla.org/dom/Fission.html#jswindowactor for
+ * See https://firefox-source-docs.mozilla.org/dom/ipc/jsactors.html for
  * more details on how to use this architecture.
  */
 
@@ -27,6 +27,14 @@ interface JSWindowActorParent {
    */
   readonly attribute WindowGlobalParent? manager;
 
+  /**
+   * The WindowContext associated with this JSWindowActorParent. For
+   * JSWindowActorParent this is identical to `manager`, but is also exposed as
+   * `windowContext` for consistency with `JSWindowActorChild`. Until the actor
+   * is initialized, accesses to windowContext will fail.
+   */
+  readonly attribute WindowContext? windowContext;
+
   [Throws]
   readonly attribute CanonicalBrowsingContext? browsingContext;
 };
@@ -43,6 +51,12 @@ interface JSWindowActorChild {
    * manager will fail.
    */
   readonly attribute WindowGlobalChild? manager;
+
+  /**
+   * The WindowContext associated with this JSWindowActorChild. Until the actor
+   * is initialized, accesses to windowContext will fail.
+   */
+  readonly attribute WindowContext? windowContext;
 
   [Throws]
   readonly attribute Document? document;
@@ -119,6 +133,20 @@ dictionary WindowActorSidedOptions {
   required ByteString moduleURI;
 };
 
+dictionary WindowActorEventListenerOptions : AddEventListenerOptions {
+  /**
+   * If this attribute is set to true (the default), this event will cause the
+   * actor to be created when it is fired. If the attribute is set false, the
+   * actor will not receive the event unless it had already been created through
+   * some other mechanism.
+   *
+   * This should be set to `false` for event listeners which are only intended
+   * to perform cleanup operations, and will have no effect if the actor doesn't
+   * already exist.
+   */
+  boolean createActor = true;
+};
+
 dictionary WindowActorChildOptions : WindowActorSidedOptions {
   /**
    * Events which this actor wants to be listening to. When these events fire,
@@ -129,7 +157,7 @@ dictionary WindowActorChildOptions : WindowActorSidedOptions {
    * NOTE: `once` option is not support due to we register listeners in a shared
    * location.
    */
-  record<DOMString, AddEventListenerOptions> events;
+  record<DOMString, WindowActorEventListenerOptions> events;
 
  /**
   * An array of observer topics to listen to. An observer will be added for each
@@ -139,6 +167,6 @@ dictionary WindowActorChildOptions : WindowActorSidedOptions {
   * nsGlobalWindowOuter object as their subject, and the events will only be
   * dispatched to the corresponding window actor. If additional observer
   * notification's subjects are needed, please file a bug for that.
-  **/
+  */
   sequence<ByteString> observers;
 };

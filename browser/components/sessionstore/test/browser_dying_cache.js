@@ -53,7 +53,7 @@ add_task(async function test() {
 function checkWindowState(window) {
   let {
     windows: [{ tabs }],
-  } = JSON.parse(ss.getWindowState(window));
+  } = ss.getWindowState(window);
   is(tabs.length, 1, "the window has a single tab");
   is(tabs[0].entries[0].url, "about:mozilla", "the tab is about:mozilla");
 
@@ -64,7 +64,7 @@ function checkWindowState(window) {
         entries: [{ url }],
       },
     },
-  ] = JSON.parse(ss.getClosedTabData(window));
+  ] = ss.getClosedTabData(window);
   is(url, "about:robots", "the closed tab is about:robots");
 
   is(ss.getCustomWindowValue(window, "foo"), "bar", "correct extData value");

@@ -8,17 +8,11 @@ XPCOMUtils.defineLazyGetter(this, "URL", function() {
 
 var httpServer = null;
 
-function make_uri(url) {
-  var ios = Cc["@mozilla.org/network/io-service;1"].getService(Ci.nsIIOService);
-  return ios.newURI(url);
-}
-
 function isParentProcess() {
   let appInfo = Cc["@mozilla.org/xre/app-info;1"];
   return (
     !appInfo ||
-    appInfo.getService(Ci.nsIXULRuntime).processType ==
-      Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT
+    Services.appinfo.processType == Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT
   );
 }
 
@@ -26,9 +20,7 @@ if (isParentProcess()) {
   // ensure the cache service is prepped when running the test
   // We only do this in the main process, as the cache storage service leaks
   // when instantiated in the content process.
-  Cc["@mozilla.org/netwerk/cache-storage-service;1"].getService(
-    Ci.nsICacheStorageService
-  );
+  Services.cache2;
 }
 
 var gotOnProgress;
@@ -125,7 +117,7 @@ function handle_remote_response(request, buffer) {
 // hit the network instead of synthesizing
 add_test(function() {
   var chan = make_channel(URL + "/body", null, function(chan) {
-    chan.resetInterception();
+    chan.resetInterception(false);
   });
   chan.asyncOpen(new ChannelListener(handle_remote_response, null));
 });
@@ -142,7 +134,7 @@ add_test(function() {
 // cache entry is used.
 add_test(function() {
   var chan = make_channel(URL + "/body", null, function(chan) {
-    chan.resetInterception();
+    chan.resetInterception(false);
   });
   chan.asyncOpen(new ChannelListener(handle_remote_response, null));
 });
@@ -179,7 +171,7 @@ add_test(function() {
 add_test(function() {
   var chan = make_channel(URL + "/body", null, function(chan) {
     do_timeout(100, function() {
-      chan.resetInterception();
+      chan.resetInterception(false);
     });
   });
   chan.asyncOpen(new ChannelListener(handle_remote_response, null));
@@ -219,7 +211,7 @@ add_test(function() {
 // ensure that the channel can't be cancelled via nsIInterceptedChannel after making a decision
 add_test(function() {
   var chan = make_channel(URL + "/body", null, function(chan) {
-    chan.resetInterception();
+    chan.resetInterception(false);
     do_timeout(0, function() {
       var gotexception = false;
       try {

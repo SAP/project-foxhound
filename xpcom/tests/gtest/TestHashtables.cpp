@@ -6,12 +6,13 @@
 
 #include "nsTHashtable.h"
 #include "nsBaseHashtable.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsInterfaceHashtable.h"
 #include "nsClassHashtable.h"
 #include "nsRefPtrHashtable.h"
 
 #include "nsCOMPtr.h"
+#include "nsIMemoryReporter.h"
 #include "nsISupports.h"
 #include "nsCOMArray.h"
 #include "mozilla/Attributes.h"
@@ -21,6 +22,8 @@
 
 #include <numeric>
 
+using mozilla::MakeRefPtr;
+using mozilla::MakeUnique;
 using mozilla::UniquePtr;
 
 namespace TestHashtables {
@@ -45,15 +48,41 @@ class TestUniCharDerived : public TestUniChar {
 class TestUniCharRefCounted  // for nsRefPtrHashtable
 {
  public:
-  NS_INLINE_DECL_REFCOUNTING(TestUniCharRefCounted);
+  explicit TestUniCharRefCounted(uint32_t aWord,
+                                 uint32_t aExpectedAddRefCnt = 0)
+      : mExpectedAddRefCnt(aExpectedAddRefCnt),
+        mAddRefCnt(0),
+        mRefCnt(0),
+        mWord(aWord) {}
 
-  explicit TestUniCharRefCounted(uint32_t aWord) { mWord = aWord; }
+  uint32_t AddRef() {
+    mRefCnt++;
+    mAddRefCnt++;
+    return mRefCnt;
+  }
+
+  uint32_t Release() {
+    EXPECT_TRUE(mRefCnt > 0);
+    mRefCnt--;
+    if (mRefCnt == 0) {
+      delete this;
+      return 0;
+    }
+    return mRefCnt;
+  }
 
   uint32_t GetChar() const { return mWord; }
 
  private:
-  ~TestUniCharRefCounted() = default;
+  ~TestUniCharRefCounted() {
+    if (mExpectedAddRefCnt > 0) {
+      EXPECT_EQ(mAddRefCnt, mExpectedAddRefCnt);
+    }
+  }
 
+  uint32_t mExpectedAddRefCnt;
+  uint32_t mAddRefCnt;
+  uint32_t mRefCnt;
   uint32_t mWord;
 };
 
@@ -256,6 +285,255 @@ static nsresult CreateIFoo(IFoo** result)
   return NS_OK;
 }
 
+class DefaultConstructible {
+ public:
+  // Allow default construction.
+  DefaultConstructible() = default;
+
+  // Construct/assign from a ref counted char.
+  explicit DefaultConstructible(RefPtr<TestUniCharRefCounted> aChar)
+      : mChar(std::move(aChar)) {}
+
+  const RefPtr<TestUniCharRefCounted>& CharRef() const { return mChar; }
+
+  // DefaultConstructible can be copied and moved.
+  DefaultConstructible(const DefaultConstructible&) = default;
+  DefaultConstructible& operator=(const DefaultConstructible&) = default;
+  DefaultConstructible(DefaultConstructible&&) = default;
+  DefaultConstructible& operator=(DefaultConstructible&&) = default;
+
+ private:
+  RefPtr<TestUniCharRefCounted> mChar;
+};
+
+class MovingNonDefaultConstructible;
+
+class NonDefaultConstructible {
+ public:
+  // Construct/assign from a ref counted char.
+  explicit NonDefaultConstructible(RefPtr<TestUniCharRefCounted> aChar)
+      : mChar(std::move(aChar)) {}
+
+  // Disallow default construction.
+  NonDefaultConstructible() = delete;
+
+  MOZ_IMPLICIT NonDefaultConstructible(MovingNonDefaultConstructible&& aOther);
+
+  const RefPtr<TestUniCharRefCounted>& CharRef() const { return mChar; }
+
+  // NonDefaultConstructible can be copied, but not trivially (efficiently)
+  // moved.
+  NonDefaultConstructible(const NonDefaultConstructible&) = default;
+  NonDefaultConstructible& operator=(const NonDefaultConstructible&) = default;
+
+ private:
+  RefPtr<TestUniCharRefCounted> mChar;
+};
+
+class MovingNonDefaultConstructible {
+ public:
+  // Construct/assign from a ref counted char.
+  explicit MovingNonDefaultConstructible(RefPtr<TestUniCharRefCounted> aChar)
+      : mChar(std::move(aChar)) {}
+
+  MovingNonDefaultConstructible() = delete;
+
+  MOZ_IMPLICIT MovingNonDefaultConstructible(
+      const NonDefaultConstructible& aSrc)
+      : mChar(aSrc.CharRef()) {}
+
+  RefPtr<TestUniCharRefCounted> unwrapChar() && { return std::move(mChar); }
+
+  // MovingNonDefaultConstructible can be moved, but not copied.
+  MovingNonDefaultConstructible(const MovingNonDefaultConstructible&) = delete;
+  MovingNonDefaultConstructible& operator=(
+      const MovingNonDefaultConstructible&) = delete;
+  MovingNonDefaultConstructible(MovingNonDefaultConstructible&&) = default;
+  MovingNonDefaultConstructible& operator=(MovingNonDefaultConstructible&&) =
+      default;
+
+ private:
+  RefPtr<TestUniCharRefCounted> mChar;
+};
+
+NonDefaultConstructible::NonDefaultConstructible(
+    MovingNonDefaultConstructible&& aOther)
+    : mChar(std::move(aOther).unwrapChar()) {}
+
+struct DefaultConstructible_DefaultConstructible {
+  using DataType = DefaultConstructible;
+  using UserDataType = DefaultConstructible;
+
+  static constexpr uint32_t kExpectedAddRefCnt_Contains = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_GetGeneration = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_SizeOfExcludingThis = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_SizeOfIncludingThis = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_Count = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_IsEmpty = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_Get_OutputParam = 3;
+  static constexpr uint32_t kExpectedAddRefCnt_Get = 3;
+  static constexpr uint32_t kExpectedAddRefCnt_MaybeGet = 3;
+  static constexpr uint32_t kExpectedAddRefCnt_LookupOrInsert = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_InsertOrUpdate = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_InsertOrUpdate_Fallible = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_InsertOrUpdate_Rvalue = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_InsertOrUpdate_Rvalue_Fallible =
+      1;
+  static constexpr uint32_t kExpectedAddRefCnt_Remove_OutputParam = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_Remove = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_Extract = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_RemoveIf = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_Lookup = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_Lookup_Remove = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_LookupForAdd = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_LookupForAdd_OrInsert = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_LookupForAdd_OrRemove = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_Iter = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_ConstIter = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_begin_end = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_cbegin_cend = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_Clear = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_ShallowSizeOfExcludingThis = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_ShallowSizeOfIncludingThis = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_SwapElements = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_MarkImmutable = 1;
+};
+
+struct NonDefaultConstructible_NonDefaultConstructible {
+  using DataType = NonDefaultConstructible;
+  using UserDataType = NonDefaultConstructible;
+
+  static constexpr uint32_t kExpectedAddRefCnt_Contains = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_GetGeneration = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_SizeOfExcludingThis = 3;
+  static constexpr uint32_t kExpectedAddRefCnt_SizeOfIncludingThis = 3;
+  static constexpr uint32_t kExpectedAddRefCnt_Count = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_IsEmpty = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_Get_OutputParam = 5;
+  static constexpr uint32_t kExpectedAddRefCnt_MaybeGet = 5;
+  static constexpr uint32_t kExpectedAddRefCnt_InsertOrUpdate = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_InsertOrUpdate_Fallible = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_InsertOrUpdate_Rvalue = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_InsertOrUpdate_Rvalue_Fallible =
+      2;
+  static constexpr uint32_t kExpectedAddRefCnt_Remove = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_Extract = 3;
+  static constexpr uint32_t kExpectedAddRefCnt_RemoveIf = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_Lookup = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_Lookup_Remove = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_Iter = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_ConstIter = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_begin_end = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_cbegin_cend = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_Clear = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_ShallowSizeOfExcludingThis = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_ShallowSizeOfIncludingThis = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_SwapElements = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_MarkImmutable = 2;
+};
+
+struct NonDefaultConstructible_MovingNonDefaultConstructible {
+  using DataType = NonDefaultConstructible;
+  using UserDataType = MovingNonDefaultConstructible;
+
+  static constexpr uint32_t kExpectedAddRefCnt_Contains = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_GetGeneration = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_SizeOfExcludingThis = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_SizeOfIncludingThis = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_Count = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_IsEmpty = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_Get_OutputParam = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_MaybeGet = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_InsertOrUpdate = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_InsertOrUpdate_Fallible = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_InsertOrUpdate_Rvalue = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_InsertOrUpdate_Rvalue_Fallible =
+      1;
+  static constexpr uint32_t kExpectedAddRefCnt_Remove = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_Extract = 2;
+  static constexpr uint32_t kExpectedAddRefCnt_RemoveIf = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_Lookup = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_Lookup_Remove = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_Iter = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_ConstIter = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_begin_end = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_cbegin_cend = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_Clear = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_ShallowSizeOfExcludingThis = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_ShallowSizeOfIncludingThis = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_SwapElements = 1;
+  static constexpr uint32_t kExpectedAddRefCnt_MarkImmutable = 1;
+};
+
+template <bool flag = false>
+void UnsupportedType() {
+  static_assert(flag, "Unsupported type!");
+}
+
+class TypeNames {
+ public:
+  template <typename T>
+  static std::string GetName(int) {
+    if constexpr (std::is_same<T,
+                               DefaultConstructible_DefaultConstructible>()) {
+      return "DefaultConstructible_DefaultConstructible";
+    } else if constexpr (
+        std::is_same<T, NonDefaultConstructible_NonDefaultConstructible>()) {
+      return "NonDefaultConstructible_NonDefaultConstructible";
+    } else if constexpr (
+        std::is_same<T,
+                     NonDefaultConstructible_MovingNonDefaultConstructible>()) {
+      return "NonDefaultConstructible_MovingNonDefaultConstructible";
+    } else {
+      UnsupportedType();
+    }
+  }
+};
+
+template <typename TypeParam>
+auto MakeEmptyBaseHashtable() {
+  nsBaseHashtable<nsUint64HashKey, typename TypeParam::DataType,
+                  typename TypeParam::UserDataType>
+      table;
+
+  return table;
+}
+
+template <typename TypeParam>
+auto MakeBaseHashtable(const uint32_t aExpectedAddRefCnt) {
+  auto table = MakeEmptyBaseHashtable<TypeParam>();
+
+  auto myChar = MakeRefPtr<TestUniCharRefCounted>(42, aExpectedAddRefCnt);
+
+  table.InsertOrUpdate(1, typename TypeParam::UserDataType(std::move(myChar)));
+
+  return table;
+}
+
+template <typename TypeParam>
+typename TypeParam::DataType GetDataFrom(
+    typename TypeParam::UserDataType& aUserData) {
+  if constexpr (std::is_same_v<TypeParam,
+                               DefaultConstructible_DefaultConstructible> ||
+                std::is_same_v<
+                    TypeParam,
+                    NonDefaultConstructible_NonDefaultConstructible>) {
+    return aUserData;
+  } else if constexpr (
+      std::is_same_v<TypeParam,
+                     NonDefaultConstructible_MovingNonDefaultConstructible>) {
+    return std::move(aUserData);
+  } else {
+    UnsupportedType();
+  }
+}
+
+template <typename TypeParam>
+typename TypeParam::DataType GetDataFrom(
+    mozilla::Maybe<typename TypeParam::UserDataType>& aMaybeUserData) {
+  return GetDataFrom<TypeParam>(*aMaybeUserData);
+}
+
 }  // namespace TestHashtables
 
 using namespace TestHashtables;
@@ -309,13 +587,460 @@ TEST(Hashtable, Move)
   EXPECT_FALSE(table.Contains(kPtr));
 }
 
+TEST(Hashtable, Keys)
+{
+  static constexpr uint64_t count = 10;
+
+  nsTHashtable<nsUint64HashKey> table;
+  for (uint64_t i = 0; i < count; i++) {
+    table.PutEntry(i);
+  }
+
+  nsTArray<uint64_t> keys;
+  for (const uint64_t& key : table.Keys()) {
+    keys.AppendElement(key);
+  }
+  keys.Sort();
+
+  EXPECT_EQ((nsTArray<uint64_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}), keys);
+}
+
+template <typename TypeParam>
+class BaseHashtableTest : public ::testing::Test {};
+
+TYPED_TEST_CASE_P(BaseHashtableTest);
+
+TYPED_TEST_P(BaseHashtableTest, Contains) {
+  auto table =
+      MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_Contains);
+
+  auto res = table.Contains(1);
+  EXPECT_TRUE(res);
+}
+
+TYPED_TEST_P(BaseHashtableTest, GetGeneration) {
+  auto table =
+      MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_GetGeneration);
+
+  auto res = table.GetGeneration();
+  EXPECT_GT(res, 0u);
+}
+
+MOZ_DEFINE_MALLOC_SIZE_OF(MallocSizeOf);
+
+TYPED_TEST_P(BaseHashtableTest, SizeOfExcludingThis) {
+  // This doesn't compile at the moment, since nsBaseHashtableET lacks
+  // SizeOfExcludingThis implementation. Bug 1689214.
+#if 0
+  auto table = MakeBaseHashtable<TypeParam>(
+      TypeParam::kExpectedAddRefCnt_SizeOfExcludingThis);
+
+  auto res = table.SizeOfExcludingThis(MallocSizeOf);
+  EXPECT_GT(res, 0u);
+#endif
+}
+
+TYPED_TEST_P(BaseHashtableTest, SizeOfIncludingThis) {
+  // This doesn't compile at the moment, since nsBaseHashtableET lacks
+  // SizeOfIncludingThis implementation. Bug 1689214.
+#if 0
+  auto table = MakeBaseHashtable<TypeParam>(
+      TypeParam::kExpectedAddRefCnt_SizeOfIncludingThis);
+
+  auto res = table.SizeOfIncludingThis(MallocSizeOf);
+  EXPECT_GT(res, 0u);
+#endif
+}
+
+TYPED_TEST_P(BaseHashtableTest, Count) {
+  auto table =
+      MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_Count);
+
+  auto res = table.Count();
+  EXPECT_EQ(res, 1u);
+}
+
+TYPED_TEST_P(BaseHashtableTest, IsEmpty) {
+  auto table =
+      MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_IsEmpty);
+
+  auto res = table.IsEmpty();
+  EXPECT_EQ(res, false);
+}
+
+TYPED_TEST_P(BaseHashtableTest, Get_OutputParam) {
+  auto table = MakeBaseHashtable<TypeParam>(
+      TypeParam::kExpectedAddRefCnt_Get_OutputParam);
+
+  typename TypeParam::UserDataType userData(nullptr);
+  auto res = table.Get(1, &userData);
+  EXPECT_TRUE(res);
+
+  auto data = GetDataFrom<TypeParam>(userData);
+  EXPECT_EQ(data.CharRef()->GetChar(), 42u);
+}
+
+TYPED_TEST_P(BaseHashtableTest, Get) {
+  // The Get overload can't support non-default-constructible UserDataType.
+  if constexpr (std::is_default_constructible_v<
+                    typename TypeParam::UserDataType>) {
+    auto table =
+        MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_Get);
+
+    auto userData = table.Get(1);
+
+    auto data = GetDataFrom<TypeParam>(userData);
+    EXPECT_EQ(data.CharRef()->GetChar(), 42u);
+  }
+}
+
+TYPED_TEST_P(BaseHashtableTest, MaybeGet) {
+  auto table =
+      MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_MaybeGet);
+
+  auto maybeUserData = table.MaybeGet(1);
+  EXPECT_TRUE(maybeUserData);
+
+  auto data = GetDataFrom<TypeParam>(maybeUserData);
+  EXPECT_EQ(data.CharRef()->GetChar(), 42u);
+}
+
+TYPED_TEST_P(BaseHashtableTest, LookupOrInsert_Default) {
+  if constexpr (std::is_default_constructible_v<typename TypeParam::DataType>) {
+    auto table = MakeEmptyBaseHashtable<TypeParam>();
+
+    typename TypeParam::DataType& data = table.LookupOrInsert(1);
+    EXPECT_EQ(data.CharRef(), nullptr);
+
+    data = typename TypeParam::DataType(MakeRefPtr<TestUniCharRefCounted>(
+        42, TypeParam::kExpectedAddRefCnt_LookupOrInsert));
+  }
+}
+
+TYPED_TEST_P(BaseHashtableTest, LookupOrInsert_NonDefault) {
+  auto table = MakeEmptyBaseHashtable<TypeParam>();
+
+  typename TypeParam::DataType& data = table.LookupOrInsert(
+      1, typename TypeParam::DataType{MakeRefPtr<TestUniCharRefCounted>(42)});
+  EXPECT_NE(data.CharRef(), nullptr);
+}
+
+TYPED_TEST_P(BaseHashtableTest, LookupOrInsert_NonDefault_AlreadyPresent) {
+  auto table = MakeEmptyBaseHashtable<TypeParam>();
+
+  typename TypeParam::DataType& data1 = table.LookupOrInsert(
+      1, typename TypeParam::DataType{MakeRefPtr<TestUniCharRefCounted>(42)});
+  TestUniCharRefCounted* const address = data1.CharRef();
+  typename TypeParam::DataType& data2 = table.LookupOrInsert(
+      1,
+      typename TypeParam::DataType{MakeRefPtr<TestUniCharRefCounted>(42, 1)});
+  EXPECT_EQ(&data1, &data2);
+  EXPECT_EQ(address, data2.CharRef());
+}
+
+TYPED_TEST_P(BaseHashtableTest, LookupOrInsertWith) {
+  auto table = MakeEmptyBaseHashtable<TypeParam>();
+
+  typename TypeParam::DataType& data = table.LookupOrInsertWith(1, [] {
+    return typename TypeParam::DataType{MakeRefPtr<TestUniCharRefCounted>(42)};
+  });
+  EXPECT_NE(data.CharRef(), nullptr);
+}
+
+TYPED_TEST_P(BaseHashtableTest, LookupOrInsertWith_AlreadyPresent) {
+  auto table = MakeEmptyBaseHashtable<TypeParam>();
+
+  table.LookupOrInsertWith(1, [] {
+    return typename TypeParam::DataType{MakeRefPtr<TestUniCharRefCounted>(42)};
+  });
+  table.LookupOrInsertWith(1, [] {
+    ADD_FAILURE();
+    return typename TypeParam::DataType{MakeRefPtr<TestUniCharRefCounted>(42)};
+  });
+}
+
+TYPED_TEST_P(BaseHashtableTest, InsertOrUpdate) {
+  auto table = MakeEmptyBaseHashtable<TypeParam>();
+
+  auto myChar = MakeRefPtr<TestUniCharRefCounted>(
+      42, TypeParam::kExpectedAddRefCnt_InsertOrUpdate);
+
+  table.InsertOrUpdate(1, typename TypeParam::UserDataType(std::move(myChar)));
+}
+
+TYPED_TEST_P(BaseHashtableTest, InsertOrUpdate_Fallible) {
+  auto table = MakeEmptyBaseHashtable<TypeParam>();
+
+  auto myChar = MakeRefPtr<TestUniCharRefCounted>(
+      42, TypeParam::kExpectedAddRefCnt_InsertOrUpdate_Fallible);
+
+  auto res = table.InsertOrUpdate(
+      1, typename TypeParam::UserDataType(std::move(myChar)),
+      mozilla::fallible);
+  EXPECT_TRUE(res);
+}
+
+TYPED_TEST_P(BaseHashtableTest, InsertOrUpdate_Rvalue) {
+  auto table = MakeEmptyBaseHashtable<TypeParam>();
+
+  auto myChar = MakeRefPtr<TestUniCharRefCounted>(
+      42, TypeParam::kExpectedAddRefCnt_InsertOrUpdate_Rvalue);
+
+  table.InsertOrUpdate(
+      1, std::move(typename TypeParam::UserDataType(std::move(myChar))));
+}
+
+TYPED_TEST_P(BaseHashtableTest, InsertOrUpdate_Rvalue_Fallible) {
+  auto table = MakeEmptyBaseHashtable<TypeParam>();
+
+  auto myChar = MakeRefPtr<TestUniCharRefCounted>(
+      42, TypeParam::kExpectedAddRefCnt_InsertOrUpdate_Rvalue_Fallible);
+
+  auto res = table.InsertOrUpdate(
+      1, std::move(typename TypeParam::UserDataType(std::move(myChar))),
+      mozilla::fallible);
+  EXPECT_TRUE(res);
+}
+
+TYPED_TEST_P(BaseHashtableTest, Remove_OutputParam) {
+  // The Remove overload can't support non-default-constructible DataType.
+  if constexpr (std::is_default_constructible_v<typename TypeParam::DataType>) {
+    auto table = MakeBaseHashtable<TypeParam>(
+        TypeParam::kExpectedAddRefCnt_Remove_OutputParam);
+
+    typename TypeParam::DataType data;
+    auto res = table.Remove(1, &data);
+    EXPECT_TRUE(res);
+    EXPECT_EQ(data.CharRef()->GetChar(), 42u);
+  }
+}
+
+TYPED_TEST_P(BaseHashtableTest, Remove) {
+  auto table =
+      MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_Remove);
+
+  auto res = table.Remove(1);
+  EXPECT_TRUE(res);
+}
+
+TYPED_TEST_P(BaseHashtableTest, Extract) {
+  auto table =
+      MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_Extract);
+
+  auto maybeData = table.Extract(1);
+  EXPECT_TRUE(maybeData);
+  EXPECT_EQ(maybeData->CharRef()->GetChar(), 42u);
+}
+
+TYPED_TEST_P(BaseHashtableTest, RemoveIf) {
+  auto table =
+      MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_RemoveIf);
+
+  table.RemoveIf([](const auto&) { return true; });
+}
+
+TYPED_TEST_P(BaseHashtableTest, Lookup) {
+  auto table =
+      MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_Lookup);
+
+  auto res = table.Lookup(1);
+  EXPECT_TRUE(res);
+  EXPECT_EQ(res.Data().CharRef()->GetChar(), 42u);
+}
+
+TYPED_TEST_P(BaseHashtableTest, Lookup_Remove) {
+  auto table =
+      MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_Lookup_Remove);
+
+  auto res = table.Lookup(1);
+  EXPECT_TRUE(res);
+  EXPECT_EQ(res.Data().CharRef()->GetChar(), 42u);
+
+  res.Remove();
+}
+
+TYPED_TEST_P(BaseHashtableTest, WithEntryHandle_NoOp) {
+  auto table = MakeEmptyBaseHashtable<TypeParam>();
+
+  table.WithEntryHandle(1, [](auto&&) {});
+
+  EXPECT_FALSE(table.Contains(1));
+}
+
+TYPED_TEST_P(BaseHashtableTest, WithEntryHandle_NotFound_OrInsert) {
+  auto table = MakeEmptyBaseHashtable<TypeParam>();
+
+  table.WithEntryHandle(1, [](auto&& entry) {
+    entry.OrInsert(typename TypeParam::UserDataType(
+        MakeRefPtr<TestUniCharRefCounted>(42)));
+  });
+
+  EXPECT_TRUE(table.Contains(1));
+}
+
+TYPED_TEST_P(BaseHashtableTest, WithEntryHandle_NotFound_OrInsertFrom) {
+  auto table = MakeEmptyBaseHashtable<TypeParam>();
+
+  table.WithEntryHandle(1, [](auto&& entry) {
+    entry.OrInsertWith([] {
+      return typename TypeParam::UserDataType(
+          MakeRefPtr<TestUniCharRefCounted>(42));
+    });
+  });
+
+  EXPECT_TRUE(table.Contains(1));
+}
+
+TYPED_TEST_P(BaseHashtableTest, WithEntryHandle_NotFound_OrInsertFrom_Exists) {
+  auto table = MakeEmptyBaseHashtable<TypeParam>();
+
+  table.WithEntryHandle(1, [](auto&& entry) {
+    entry.OrInsertWith([] {
+      return typename TypeParam::UserDataType(
+          MakeRefPtr<TestUniCharRefCounted>(42));
+    });
+  });
+  table.WithEntryHandle(1, [](auto&& entry) {
+    entry.OrInsertWith([]() -> typename TypeParam::UserDataType {
+      ADD_FAILURE();
+      return typename TypeParam::UserDataType(
+          MakeRefPtr<TestUniCharRefCounted>(42));
+    });
+  });
+
+  EXPECT_TRUE(table.Contains(1));
+}
+
+TYPED_TEST_P(BaseHashtableTest, WithEntryHandle_NotFound_OrRemove) {
+  auto table = MakeEmptyBaseHashtable<TypeParam>();
+
+  table.WithEntryHandle(1, [](auto&& entry) { entry.OrRemove(); });
+
+  EXPECT_FALSE(table.Contains(1));
+}
+
+TYPED_TEST_P(BaseHashtableTest, WithEntryHandle_NotFound_OrRemove_Exists) {
+  auto table = MakeEmptyBaseHashtable<TypeParam>();
+
+  table.WithEntryHandle(1, [](auto&& entry) {
+    entry.OrInsertWith([] {
+      return typename TypeParam::UserDataType(
+          MakeRefPtr<TestUniCharRefCounted>(42));
+    });
+  });
+  table.WithEntryHandle(1, [](auto&& entry) { entry.OrRemove(); });
+
+  EXPECT_FALSE(table.Contains(1));
+}
+
+TYPED_TEST_P(BaseHashtableTest, Iter) {
+  auto table = MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_Iter);
+
+  for (auto iter = table.Iter(); !iter.Done(); iter.Next()) {
+    EXPECT_EQ(iter.Data().CharRef()->GetChar(), 42u);
+  }
+}
+
+TYPED_TEST_P(BaseHashtableTest, ConstIter) {
+  auto table =
+      MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_ConstIter);
+
+  for (auto iter = table.ConstIter(); !iter.Done(); iter.Next()) {
+    EXPECT_EQ(iter.Data().CharRef()->GetChar(), 42u);
+  }
+}
+
+TYPED_TEST_P(BaseHashtableTest, begin_end) {
+  auto table =
+      MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_begin_end);
+
+  auto res = std::count_if(table.begin(), table.end(), [](const auto& entry) {
+    return entry.GetData().CharRef()->GetChar() == 42;
+  });
+  EXPECT_EQ(res, 1);
+}
+
+TYPED_TEST_P(BaseHashtableTest, cbegin_cend) {
+  auto table =
+      MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_cbegin_cend);
+
+  auto res = std::count_if(table.cbegin(), table.cend(), [](const auto& entry) {
+    return entry.GetData().CharRef()->GetChar() == 42;
+  });
+  EXPECT_EQ(res, 1);
+}
+
+TYPED_TEST_P(BaseHashtableTest, Clear) {
+  auto table =
+      MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_Clear);
+
+  table.Clear();
+}
+
+TYPED_TEST_P(BaseHashtableTest, ShallowSizeOfExcludingThis) {
+  auto table = MakeBaseHashtable<TypeParam>(
+      TypeParam::kExpectedAddRefCnt_ShallowSizeOfExcludingThis);
+
+  auto res = table.ShallowSizeOfExcludingThis(MallocSizeOf);
+  EXPECT_GT(res, 0u);
+}
+
+TYPED_TEST_P(BaseHashtableTest, ShallowSizeOfIncludingThis) {
+  // Make this work with ASAN builds, bug 1689549.
+#if !defined(MOZ_ASAN)
+  auto table = MakeBaseHashtable<TypeParam>(
+      TypeParam::kExpectedAddRefCnt_ShallowSizeOfIncludingThis);
+
+  auto res = table.ShallowSizeOfIncludingThis(MallocSizeOf);
+  EXPECT_GT(res, 0u);
+#endif
+}
+
+TYPED_TEST_P(BaseHashtableTest, SwapElements) {
+  auto table =
+      MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_SwapElements);
+
+  auto table2 = MakeEmptyBaseHashtable<TypeParam>();
+
+  table.SwapElements(table2);
+}
+
+TYPED_TEST_P(BaseHashtableTest, MarkImmutable) {
+  auto table =
+      MakeBaseHashtable<TypeParam>(TypeParam::kExpectedAddRefCnt_MarkImmutable);
+
+  table.MarkImmutable();
+}
+
+REGISTER_TYPED_TEST_CASE_P(
+    BaseHashtableTest, Contains, GetGeneration, SizeOfExcludingThis,
+    SizeOfIncludingThis, Count, IsEmpty, Get_OutputParam, Get, MaybeGet,
+    LookupOrInsert_Default, LookupOrInsert_NonDefault,
+    LookupOrInsert_NonDefault_AlreadyPresent, LookupOrInsertWith,
+    LookupOrInsertWith_AlreadyPresent, InsertOrUpdate, InsertOrUpdate_Fallible,
+    InsertOrUpdate_Rvalue, InsertOrUpdate_Rvalue_Fallible, Remove_OutputParam,
+    Remove, Extract, RemoveIf, Lookup, Lookup_Remove, WithEntryHandle_NoOp,
+    WithEntryHandle_NotFound_OrInsert, WithEntryHandle_NotFound_OrInsertFrom,
+    WithEntryHandle_NotFound_OrInsertFrom_Exists,
+    WithEntryHandle_NotFound_OrRemove, WithEntryHandle_NotFound_OrRemove_Exists,
+    Iter, ConstIter, begin_end, cbegin_cend, Clear, ShallowSizeOfExcludingThis,
+    ShallowSizeOfIncludingThis, SwapElements, MarkImmutable);
+
+using BaseHashtableTestTypes =
+    ::testing::Types<DefaultConstructible_DefaultConstructible,
+                     NonDefaultConstructible_NonDefaultConstructible,
+                     NonDefaultConstructible_MovingNonDefaultConstructible>;
+
+INSTANTIATE_TYPED_TEST_CASE_P(Hashtables, BaseHashtableTest,
+                              BaseHashtableTestTypes, TypeNames);
+
 TEST(Hashtables, DataHashtable)
 {
   // check a data-hashtable
-  nsDataHashtable<nsUint32HashKey, const char*> UniToEntity(ENTITY_COUNT);
+  nsTHashMap<nsUint32HashKey, const char*> UniToEntity(ENTITY_COUNT);
 
   for (auto& entity : gEntities) {
-    UniToEntity.Put(entity.mUnicode, entity.mStr);
+    UniToEntity.InsertOrUpdate(entity.mUnicode, entity.mStr);
   }
 
   const char* str;
@@ -346,14 +1071,14 @@ TEST(Hashtables, DataHashtable_STLIterators)
 {
   using mozilla::Unused;
 
-  nsDataHashtable<nsUint32HashKey, const char*> UniToEntity(ENTITY_COUNT);
+  nsTHashMap<nsUint32HashKey, const char*> UniToEntity(ENTITY_COUNT);
 
   for (auto& entity : gEntities) {
-    UniToEntity.Put(entity.mUnicode, entity.mStr);
+    UniToEntity.InsertOrUpdate(entity.mUnicode, entity.mStr);
   }
 
   // operators, including conversion from iterator to const_iterator
-  nsDataHashtable<nsUint32HashKey, const char*>::const_iterator ci =
+  nsTHashMap<nsUint32HashKey, const char*>::const_iterator ci =
       UniToEntity.begin();
   ++ci;
   ASSERT_EQ(1, std::distance(UniToEntity.cbegin(), ci++));
@@ -364,8 +1089,8 @@ TEST(Hashtables, DataHashtable_STLIterators)
   ++ci;
   ASSERT_TRUE(&*ci == &*otherCi);
 
-  // STL algorithms (just to check that the iterator sufficiently conforms with
-  // the actual syntactical requirements of those algorithms).
+  // STL algorithms (just to check that the iterator sufficiently conforms
+  // with the actual syntactical requirements of those algorithms).
   std::for_each(UniToEntity.cbegin(), UniToEntity.cend(),
                 [](const auto& entry) {});
   Unused << std::find_if(
@@ -385,7 +1110,7 @@ TEST(Hashtables, DataHashtable_STLIterators)
   {
     std::set<EntityNode> entities(gEntities, gEntities + ENTITY_COUNT);
     for (const auto& entity :
-         const_cast<const nsDataHashtable<nsUint32HashKey, const char*>&>(
+         const_cast<const nsTHashMap<nsUint32HashKey, const char*>&>(
              UniToEntity)) {
       ASSERT_EQ(1u,
                 entities.erase(EntityNode{entity.GetData(), entity.GetKey()}));
@@ -410,10 +1135,10 @@ TEST(Hashtables, DataHashtable_STLIterators)
 TEST(Hashtables, DataHashtable_RemoveIf)
 {
   // check a data-hashtable
-  nsDataHashtable<nsUint32HashKey, const char*> UniToEntity(ENTITY_COUNT);
+  nsTHashMap<nsUint32HashKey, const char*> UniToEntity(ENTITY_COUNT);
 
   for (auto& entity : gEntities) {
-    UniToEntity.Put(entity.mUnicode, entity.mStr);
+    UniToEntity.InsertOrUpdate(entity.mUnicode, entity.mStr);
   }
 
   UniToEntity.RemoveIf([](const auto& iter) { return iter.Key() >= 170; });
@@ -427,9 +1152,11 @@ TEST(Hashtables, ClassHashtable)
   nsClassHashtable<nsCStringHashKey, TestUniChar> EntToUniClass(ENTITY_COUNT);
 
   for (auto& entity : gEntities) {
-    // Insert a sub-class of TestUniChar to test if this is accepted by Put.
-    EntToUniClass.Put(nsDependentCString(entity.mStr),
-                      mozilla::MakeUnique<TestUniCharDerived>(entity.mUnicode));
+    // Insert a sub-class of TestUniChar to test if this is accepted by
+    // InsertOrUpdate.
+    EntToUniClass.InsertOrUpdate(
+        nsDependentCString(entity.mStr),
+        mozilla::MakeUnique<TestUniCharDerived>(entity.mUnicode));
   }
 
   TestUniChar* myChar;
@@ -461,8 +1188,8 @@ TEST(Hashtables, ClassHashtable_RangeBasedFor)
   nsClassHashtable<nsCStringHashKey, TestUniChar> EntToUniClass(ENTITY_COUNT);
 
   for (auto& entity : gEntities) {
-    auto* temp = new TestUniChar(entity.mUnicode);
-    EntToUniClass.Put(nsDependentCString(entity.mStr), temp);
+    EntToUniClass.InsertOrUpdate(nsDependentCString(entity.mStr),
+                                 MakeUnique<TestUniChar>(entity.mUnicode));
   }
 
   // const range-based for
@@ -498,7 +1225,7 @@ TEST(Hashtables, ClassHashtable_RangeBasedFor)
 TEST(Hashtables, DataHashtableWithInterfaceKey)
 {
   // check a data-hashtable with an interface key
-  nsDataHashtable<nsISupportsHashKey, uint32_t> EntToUniClass2(ENTITY_COUNT);
+  nsTHashMap<nsISupportsHashKey, uint32_t> EntToUniClass2(ENTITY_COUNT);
 
   nsCOMArray<IFoo> fooArray;
 
@@ -509,7 +1236,7 @@ TEST(Hashtables, DataHashtableWithInterfaceKey)
 
     fooArray.InsertObjectAt(foo, i);
 
-    EntToUniClass2.Put(foo, gEntities[i].mUnicode);
+    EntToUniClass2.InsertOrUpdate(foo, gEntities[i].mUnicode);
   }
 
   uint32_t myChar2;
@@ -551,7 +1278,7 @@ TEST(Hashtables, InterfaceHashtable)
     CreateIFoo(getter_AddRefs(foo));
     foo->SetString(nsDependentCString(entity.mStr));
 
-    UniToEntClass2.Put(entity.mUnicode, foo);
+    UniToEntClass2.InsertOrUpdate(entity.mUnicode, foo);
   }
 
   for (auto& entity : gEntities) {
@@ -584,21 +1311,25 @@ TEST(Hashtables, InterfaceHashtable)
   ASSERT_EQ(count, uint32_t(0));
 }
 
-TEST(Hashtables, DataHashtable_LookupForAdd)
+TEST(Hashtables, DataHashtable_WithEntryHandle)
 {
-  // check LookupForAdd/OrInsert
-  nsDataHashtable<nsUint32HashKey, const char*> UniToEntity(ENTITY_COUNT);
+  // check WithEntryHandle/OrInsertWith
+  nsTHashMap<nsUint32HashKey, const char*> UniToEntity(ENTITY_COUNT);
 
   for (auto& entity : gEntities) {
-    auto entry = UniToEntity.LookupForAdd(entity.mUnicode);
-    const char* val = entry.OrInsert([&entity]() { return entity.mStr; });
-    ASSERT_FALSE(entry);
-    ASSERT_TRUE(val == entity.mStr);
-    ASSERT_TRUE(entry.Data() == entity.mStr);
+    UniToEntity.WithEntryHandle(entity.mUnicode, [&entity](auto&& entry) {
+      EXPECT_FALSE(entry);
+      const char* const val =
+          entry.OrInsertWith([&entity]() { return entity.mStr; });
+      EXPECT_TRUE(entry);
+      EXPECT_TRUE(val == entity.mStr);
+      EXPECT_TRUE(entry.Data() == entity.mStr);
+    });
   }
 
   for (auto& entity : gEntities) {
-    ASSERT_TRUE(UniToEntity.LookupForAdd(entity.mUnicode));
+    UniToEntity.WithEntryHandle(entity.mUnicode,
+                                [](auto&& entry) { EXPECT_TRUE(entry); });
   }
 
   // 0 should not be found
@@ -616,7 +1347,8 @@ TEST(Hashtables, DataHashtable_LookupForAdd)
   ASSERT_TRUE(count == UniToEntity.Count());
 
   for (auto& entity : gEntities) {
-    ASSERT_TRUE(UniToEntity.LookupForAdd(entity.mUnicode));
+    UniToEntity.WithEntryHandle(entity.mUnicode,
+                                [](auto&& entry) { EXPECT_TRUE(entry); });
   }
 
   // Lookup().Remove() should remove all entries.
@@ -629,45 +1361,53 @@ TEST(Hashtables, DataHashtable_LookupForAdd)
 
   // Remove newly added entries via OrRemove.
   for (auto& entity : gEntities) {
-    auto entry = UniToEntity.LookupForAdd(entity.mUnicode);
-    ASSERT_FALSE(entry);
-    entry.OrRemove();
+    UniToEntity.WithEntryHandle(entity.mUnicode, [](auto&& entry) {
+      EXPECT_FALSE(entry);
+      entry.OrRemove();
+    });
   }
   ASSERT_TRUE(0 == UniToEntity.Count());
 
   // Remove existing entries via OrRemove.
   for (auto& entity : gEntities) {
-    auto entry = UniToEntity.LookupForAdd(entity.mUnicode);
-    const char* val = entry.OrInsert([&entity]() { return entity.mStr; });
-    ASSERT_FALSE(entry);
-    ASSERT_TRUE(val == entity.mStr);
-    ASSERT_TRUE(entry.Data() == entity.mStr);
+    UniToEntity.WithEntryHandle(entity.mUnicode, [&entity](auto&& entry) {
+      EXPECT_FALSE(entry);
+      const char* const val = entry.OrInsert(entity.mStr);
+      EXPECT_TRUE(entry);
+      EXPECT_TRUE(val == entity.mStr);
+      EXPECT_TRUE(entry.Data() == entity.mStr);
+    });
 
-    auto entry2 = UniToEntity.LookupForAdd(entity.mUnicode);
-    ASSERT_TRUE(entry2);
-    entry2.OrRemove();
+    UniToEntity.WithEntryHandle(entity.mUnicode, [](auto&& entry) {
+      EXPECT_TRUE(entry);
+      entry.OrRemove();
+    });
   }
   ASSERT_TRUE(0 == UniToEntity.Count());
 }
 
-TEST(Hashtables, ClassHashtable_LookupForAdd)
+TEST(Hashtables, ClassHashtable_WithEntryHandle)
 {
-  // check a class-hashtable LookupForAdd with null values
+  // check a class-hashtable WithEntryHandle with null values
   nsClassHashtable<nsCStringHashKey, TestUniChar> EntToUniClass(ENTITY_COUNT);
 
   for (auto& entity : gEntities) {
-    auto entry = EntToUniClass.LookupForAdd(nsDependentCString(entity.mStr));
-    const TestUniChar* val = entry.OrInsert([]() { return nullptr; }).get();
-    ASSERT_FALSE(entry);
-    ASSERT_TRUE(val == nullptr);
-    ASSERT_TRUE(entry.Data() == nullptr);
+    EntToUniClass.WithEntryHandle(
+        nsDependentCString(entity.mStr), [](auto&& entry) {
+          EXPECT_FALSE(entry);
+          const TestUniChar* val = entry.OrInsert(nullptr).get();
+          EXPECT_TRUE(entry);
+          EXPECT_TRUE(val == nullptr);
+          EXPECT_TRUE(entry.Data() == nullptr);
+        });
   }
 
   for (auto& entity : gEntities) {
-    ASSERT_TRUE(EntToUniClass.LookupForAdd(nsDependentCString(entity.mStr)));
-    ASSERT_TRUE(
-        EntToUniClass.LookupForAdd(nsDependentCString(entity.mStr)).Data() ==
-        nullptr);
+    EntToUniClass.WithEntryHandle(nsDependentCString(entity.mStr),
+                                  [](auto&& entry) { EXPECT_TRUE(entry); });
+    EntToUniClass.WithEntryHandle(
+        nsDependentCString(entity.mStr),
+        [](auto&& entry) { EXPECT_TRUE(entry.Data() == nullptr); });
   }
 
   // "" should not be found
@@ -685,7 +1425,8 @@ TEST(Hashtables, ClassHashtable_LookupForAdd)
   ASSERT_TRUE(count == EntToUniClass.Count());
 
   for (auto& entity : gEntities) {
-    ASSERT_TRUE(EntToUniClass.LookupForAdd(nsDependentCString(entity.mStr)));
+    EntToUniClass.WithEntryHandle(nsDependentCString(entity.mStr),
+                                  [](auto&& entry) { EXPECT_TRUE(entry); });
   }
 
   // Lookup().Remove() should remove all entries.
@@ -698,69 +1439,78 @@ TEST(Hashtables, ClassHashtable_LookupForAdd)
 
   // Remove newly added entries via OrRemove.
   for (auto& entity : gEntities) {
-    auto entry = EntToUniClass.LookupForAdd(nsDependentCString(entity.mStr));
-    ASSERT_FALSE(entry);
-    entry.OrRemove();
+    EntToUniClass.WithEntryHandle(nsDependentCString(entity.mStr),
+                                  [](auto&& entry) {
+                                    EXPECT_FALSE(entry);
+                                    entry.OrRemove();
+                                  });
   }
   ASSERT_TRUE(0 == EntToUniClass.Count());
 
   // Remove existing entries via OrRemove.
   for (auto& entity : gEntities) {
-    auto entry = EntToUniClass.LookupForAdd(nsDependentCString(entity.mStr));
-    const TestUniChar* val = entry.OrInsert([]() { return nullptr; }).get();
-    ASSERT_FALSE(entry);
-    ASSERT_TRUE(val == nullptr);
-    ASSERT_TRUE(entry.Data() == nullptr);
+    EntToUniClass.WithEntryHandle(
+        nsDependentCString(entity.mStr), [](auto&& entry) {
+          EXPECT_FALSE(entry);
+          const TestUniChar* val = entry.OrInsert(nullptr).get();
+          EXPECT_TRUE(entry);
+          EXPECT_TRUE(val == nullptr);
+          EXPECT_TRUE(entry.Data() == nullptr);
+        });
 
-    auto entry2 = EntToUniClass.LookupForAdd(nsDependentCString(entity.mStr));
-    ASSERT_TRUE(entry2);
-    entry2.OrRemove();
+    EntToUniClass.WithEntryHandle(nsDependentCString(entity.mStr),
+                                  [](auto&& entry) {
+                                    EXPECT_TRUE(entry);
+                                    entry.OrRemove();
+                                  });
   }
   ASSERT_TRUE(0 == EntToUniClass.Count());
 }
 
-TEST(Hashtables, ClassHashtable_LookupOrAdd_Present)
+TEST(Hashtables, ClassHashtable_GetOrInsertNew_Present)
 {
   nsClassHashtable<nsCStringHashKey, TestUniChar> EntToUniClass(ENTITY_COUNT);
 
   for (const auto& entity : gEntities) {
-    EntToUniClass.Put(nsDependentCString(entity.mStr),
-                      mozilla::MakeUnique<TestUniCharDerived>(entity.mUnicode));
+    EntToUniClass.InsertOrUpdate(
+        nsDependentCString(entity.mStr),
+        mozilla::MakeUnique<TestUniCharDerived>(entity.mUnicode));
   }
 
-  auto* entry = EntToUniClass.LookupOrAdd("uml"_ns, 42);
+  auto* entry = EntToUniClass.GetOrInsertNew("uml"_ns, 42);
   EXPECT_EQ(168u, entry->GetChar());
 }
 
-TEST(Hashtables, ClassHashtable_LookupOrAdd_NotPresent)
+TEST(Hashtables, ClassHashtable_GetOrInsertNew_NotPresent)
 {
   nsClassHashtable<nsCStringHashKey, TestUniChar> EntToUniClass(ENTITY_COUNT);
 
   // This is going to insert a TestUniChar.
-  auto* entry = EntToUniClass.LookupOrAdd("uml"_ns, 42);
+  auto* entry = EntToUniClass.GetOrInsertNew("uml"_ns, 42);
   EXPECT_EQ(42u, entry->GetChar());
 }
 
-TEST(Hashtables, ClassHashtable_LookupOrAddFromFactory_Present)
+TEST(Hashtables, ClassHashtable_LookupOrInsertWith_Present)
 {
   nsClassHashtable<nsCStringHashKey, TestUniChar> EntToUniClass(ENTITY_COUNT);
 
   for (const auto& entity : gEntities) {
-    EntToUniClass.Put(nsDependentCString(entity.mStr),
-                      mozilla::MakeUnique<TestUniCharDerived>(entity.mUnicode));
+    EntToUniClass.InsertOrUpdate(
+        nsDependentCString(entity.mStr),
+        mozilla::MakeUnique<TestUniCharDerived>(entity.mUnicode));
   }
 
-  auto* entry = EntToUniClass.LookupOrAddFromFactory(
+  const auto& entry = EntToUniClass.LookupOrInsertWith(
       "uml"_ns, [] { return mozilla::MakeUnique<TestUniCharDerived>(42); });
   EXPECT_EQ(168u, entry->GetChar());
 }
 
-TEST(Hashtables, ClassHashtable_LookupOrAddFromFactory_NotPresent)
+TEST(Hashtables, ClassHashtable_LookupOrInsertWith_NotPresent)
 {
   nsClassHashtable<nsCStringHashKey, TestUniChar> EntToUniClass(ENTITY_COUNT);
 
   // This is going to insert a TestUniCharDerived.
-  auto* entry = EntToUniClass.LookupOrAddFromFactory(
+  const auto& entry = EntToUniClass.LookupOrInsertWith(
       "uml"_ns, [] { return mozilla::MakeUnique<TestUniCharDerived>(42); });
   EXPECT_EQ(42u, entry->GetChar());
 }
@@ -772,9 +1522,9 @@ TEST(Hashtables, RefPtrHashtable)
       ENTITY_COUNT);
 
   for (auto& entity : gEntities) {
-    EntToUniClass.Put(
+    EntToUniClass.InsertOrUpdate(
         nsDependentCString(entity.mStr),
-        mozilla::MakeRefPtr<TestUniCharRefCounted>(entity.mUnicode));
+        MakeRefPtr<TestUniCharRefCounted>(entity.mUnicode));
   }
 
   TestUniCharRefCounted* myChar;
@@ -798,4 +1548,70 @@ TEST(Hashtables, RefPtrHashtable)
     count++;
   }
   ASSERT_EQ(count, uint32_t(0));
+}
+
+TEST(Hashtables, RefPtrHashtable_Clone)
+{
+  // check a RefPtr-hashtable
+  nsRefPtrHashtable<nsCStringHashKey, TestUniCharRefCounted> EntToUniClass(
+      ENTITY_COUNT);
+
+  for (auto& entity : gEntities) {
+    EntToUniClass.InsertOrUpdate(
+        nsDependentCString(entity.mStr),
+        MakeRefPtr<TestUniCharRefCounted>(entity.mUnicode));
+  }
+
+  auto clone = EntToUniClass.Clone();
+  static_assert(std::is_same_v<decltype(clone), decltype(EntToUniClass)>);
+
+  EXPECT_EQ(clone.Count(), EntToUniClass.Count());
+
+  for (const auto& entry : EntToUniClass) {
+    auto cloneEntry = clone.Lookup(entry.GetKey());
+
+    EXPECT_TRUE(cloneEntry);
+    EXPECT_EQ(cloneEntry.Data(), entry.GetWeak());
+  }
+}
+
+TEST(Hashtables, Clone)
+{
+  static constexpr uint64_t count = 10;
+
+  nsTHashMap<nsUint64HashKey, uint64_t> table;
+  for (uint64_t i = 0; i < count; i++) {
+    table.InsertOrUpdate(42 + i, i);
+  }
+
+  auto clone = table.Clone();
+
+  static_assert(std::is_same_v<decltype(clone), decltype(table)>);
+
+  EXPECT_EQ(clone.Count(), table.Count());
+
+  for (const auto& entry : table) {
+    auto cloneEntry = clone.Lookup(entry.GetKey());
+
+    EXPECT_TRUE(cloneEntry);
+    EXPECT_EQ(cloneEntry.Data(), entry.GetData());
+  }
+}
+
+TEST(Hashtables, Values)
+{
+  static constexpr uint64_t count = 10;
+
+  nsTHashMap<nsUint64HashKey, uint64_t> table;
+  for (uint64_t i = 0; i < count; i++) {
+    table.InsertOrUpdate(42 + i, i);
+  }
+
+  nsTArray<uint64_t> values;
+  for (const uint64_t& value : table.Values()) {
+    values.AppendElement(value);
+  }
+  values.Sort();
+
+  EXPECT_EQ((nsTArray<uint64_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}), values);
 }

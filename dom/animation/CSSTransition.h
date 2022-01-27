@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_CSSTransition_h
 #define mozilla_dom_CSSTransition_h
 
+#include "mozilla/ComputedTiming.h"
 #include "mozilla/dom/Animation.h"
 #include "mozilla/StyleAnimationValue.h"
 #include "AnimationCommon.h"
@@ -19,7 +20,7 @@ namespace dom {
 class CSSTransition final : public Animation {
  public:
   explicit CSSTransition(nsIGlobalObject* aGlobal)
-      : dom::Animation(aGlobal),
+      : Animation(aGlobal),
         mPreviousTransitionPhase(TransitionPhase::Idle),
         mNeedsNewAnimationIndexWhenRun(false),
         mTransitionProperty(eCSSProperty_UNKNOWN) {}
@@ -67,7 +68,7 @@ class CSSTransition final : public Animation {
     mOwningElement = OwningElementRef();
   }
 
-  void SetEffectFromStyle(AnimationEffect* aEffect);
+  void SetEffectFromStyle(KeyframeEffect*);
 
   void Tick() override;
 

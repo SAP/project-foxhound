@@ -59,9 +59,9 @@ async function runTests(topPage, limitForeignContexts) {
     .then(r => r.text())
     .then(text => {
       if (limitForeignContexts) {
-        is(text, 0, "No cookie received for images.");
+        is(text, "0", "No cookie received for images.");
       } else {
-        is(text, 1, "One cookie received for images.");
+        is(text, "1", "One cookie received for images.");
       }
     });
 
@@ -71,9 +71,9 @@ async function runTests(topPage, limitForeignContexts) {
     .then(r => r.text())
     .then(text => {
       if (limitForeignContexts) {
-        is(text, 0, "No cookie received received for scripts.");
+        is(text, "0", "No cookie received received for scripts.");
       } else {
-        is(text, 1, "One cookie received received for scripts.");
+        is(text, "1", "One cookie received received for scripts.");
       }
     });
 
@@ -174,9 +174,9 @@ async function runTests(topPage, limitForeignContexts) {
     .then(r => r.text())
     .then(text => {
       if (limitForeignContexts) {
-        is(text, 0, "No cookie received for images.");
+        is(text, "0", "No cookie received for images.");
       } else {
-        is(text, 1, "One cookie received for images.");
+        is(text, "1", "One cookie received for images.");
       }
     });
 
@@ -186,9 +186,9 @@ async function runTests(topPage, limitForeignContexts) {
     .then(r => r.text())
     .then(text => {
       if (limitForeignContexts) {
-        is(text, 0, "No cookie received received for scripts.");
+        is(text, "0", "No cookie received received for scripts.");
       } else {
-        is(text, 1, "One cookie received received for scripts.");
+        is(text, "1", "One cookie received received for scripts.");
       }
     });
 
@@ -268,9 +268,15 @@ add_task(async function() {
         "network.cookie.cookieBehavior",
         Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
       ],
+      [
+        "network.cookie.cookieBehavior.pbmode",
+        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+      ],
       ["privacy.trackingprotection.enabled", false],
       ["privacy.trackingprotection.pbmode.enabled", false],
       ["privacy.trackingprotection.annotate_channels", true],
+      // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
+      ["network.cookie.sameSite.laxByDefault", false],
     ],
   });
 
@@ -285,6 +291,7 @@ add_task(async function() {
   }
 
   SpecialPowers.clearUserPref("privacy.dynamic_firstparty.limitForeign");
+  SpecialPowers.clearUserPref("network.cookie.sameSite.laxByDefault");
 });
 
 add_task(async function() {

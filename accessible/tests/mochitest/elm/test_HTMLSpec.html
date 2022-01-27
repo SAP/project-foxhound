@@ -459,22 +459,30 @@
       testElm("em_container", obj);
 
       // ////////////////////////////////////////////////////////////////////////
-      // HTML:embed (windowless and windowed plugins)
+      // HTML:embed
 
-      if (WIN) {
-        obj = {
-          role: ROLE_EMBEDDED_OBJECT,
-          states: STATE_UNAVAILABLE,
-        };
+      obj = {
+        role: ROLE_GRAPHIC,
+        interfaces: [ nsIAccessibleImage ],
+      };
+      testElm("embed_png", obj);
 
-        testElm("embed_plugin_windowless", obj);
+      obj = {
+        INTERNAL_FRAME: [ {
+          DOCUMENT: [ {
+            role: ROLE_PARAGRAPH,
+          } ],
+        } ],
+      };
+      testElm("embed_html", obj);
 
-        obj = {
-          role: ROLE_EMBEDDED_OBJECT,
-          absentStates: STATE_UNAVAILABLE,
-        };
-        testElm("embed_plugin_windowed", obj);
-      }
+      obj = {
+        INTERNAL_FRAME: [ {
+          DOCUMENT: [ {
+          } ],
+        } ],
+      };
+      testElm("embed_pdf", obj);
 
       // ////////////////////////////////////////////////////////////////////////
       // HTML:fieldset and HTML:legend
@@ -857,7 +865,7 @@
       // HTML:input@type="time"
 
       obj = {
-        role: ROLE_GROUPING,
+        role: ROLE_TIME_EDITOR,
         name: "time label",
         attributes: { "text-input-type": "time" },
         children: [
@@ -1030,21 +1038,21 @@
         children: [
           { role: ROLE_LISTITEM,
             children: [ // home
-              { role: ROLE_STATICTEXT },
+              { role: ROLE_LISTITEM_MARKER },
               { role: ROLE_TEXT_LEAF }
             ]
           },
           {
             role: ROLE_LISTITEM,
             children: [
-              { role: ROLE_STATICTEXT },
+              { role: ROLE_LISTITEM_MARKER },
               { role: ROLE_TEXT_LEAF }, // about
               {
                 role: ROLE_LIST, // menu
                 children: [
                   { role: ROLE_LISTITEM,
                     children: [
-                    { role: ROLE_STATICTEXT },
+                    { role: ROLE_LISTITEM_MARKER },
                     { role: ROLE_TEXT_LEAF } // our story
                     ]
                   },
@@ -1062,7 +1070,7 @@
         {
           role: ROLE_LISTITEM,
           children: [
-          { role: ROLE_STATICTEXT },
+          { role: ROLE_LISTITEM_MARKER },
           {
             role: ROLE_PUSHBUTTON,
             children: [
@@ -1075,8 +1083,8 @@
             {
               role: ROLE_LISTITEM,
               children: [
-                { role: ROLE_STATICTEXT },
-                { 
+                { role: ROLE_LISTITEM_MARKER },
+                {
                   role: ROLE_PUSHBUTTON,
                   children: [
                     { role: ROLE_TEXT_LEAF }
@@ -1094,8 +1102,10 @@
 
       // ////////////////////////////////////////////////////////////////////////
       // HTML:meter
-
-      todo(isAccessible("meter"), "meter element is not accessible");
+      obj = {
+        role: ROLE_METER
+      };
+      testElm("meter", obj);
 
       // ////////////////////////////////////////////////////////////////////////
       // HTML:nav
@@ -1108,22 +1118,30 @@
       testElm("nav", obj);
 
       // ////////////////////////////////////////////////////////////////////////
-      // HTML:object (windowless and windowed plugins) and HTML:param
+      // HTML:object and HTML:param
 
-      if (WIN) {
-        obj = {
-          role: ROLE_EMBEDDED_OBJECT,
-          states: STATE_UNAVAILABLE,
-          children: [ ], // no child for HTML:param
-        };
-        testElm("object_plugin_windowless", obj);
+      obj = {
+        role: ROLE_GRAPHIC,
+        interfaces: [ nsIAccessibleImage ],
+      };
+      testElm("object_png", obj);
 
-        obj = {
-          role: ROLE_EMBEDDED_OBJECT,
-          absentStates: STATE_UNAVAILABLE,
-        };
-        testElm("object_plugin_windowed", obj);
-      }
+      obj = {
+        INTERNAL_FRAME: [ {
+          DOCUMENT: [ {
+            role: ROLE_PARAGRAPH,
+          } ],
+        } ],
+      };
+      testElm("object_html", obj);
+
+      obj = {
+        INTERNAL_FRAME: [ {
+          DOCUMENT: [ {
+          } ],
+        } ],
+      };
+      testElm("object_pdf", obj);
 
       // ////////////////////////////////////////////////////////////////////////
       // HTML:select, HTML:optgroup and HTML:option
@@ -1435,7 +1453,6 @@
 
     SimpleTest.waitForExplicitFinish();
     addA11yLoadEvent(doTest);
-    setTestPluginEnabledState(SpecialPowers.Ci.nsIPluginTag.STATE_ENABLED);
 
     </script>
 </head>
@@ -1573,10 +1590,15 @@
 
   <p id="em_container">normal<em>emphasis</em></p>
 
-  <embed id="embed_plugin_windowless" type="application/x-test"
-         width="300" height="300"></embed>
-  <embed id="embed_plugin_windowed" type="application/x-test" wmode="window"
-         width="300" height="300"></embed>
+  <embed id="embed_png" type="image/png" src="../moz.png"
+         width="300" height="300">
+  </embed>
+  <embed id="embed_html" type="text/html" src="../longdesc_src.html"
+         width="300" height="300">
+  </embed>
+  <embed id="embed_pdf" type="application/pdf" src="../dummy.pdf"
+         width="300" height="300">
+  </embed>
 
   <fieldset id="fieldset">
     <legend id="legend">legend</legend>
@@ -1860,12 +1882,15 @@
     </ul>
   </nav>
 
-  <object id="object_plugin_windowless" type="application/x-test"
+  <object id="object_png" type="image/png" data="../moz.png"
          width="300" height="300">
-    <param name="foo" value="bar">
   </object>
-  <object id="object_plugin_windowed" type="application/x-test" wmode="window"
-         width="300" height="300"></object>
+  <object id="object_html" type="text/html" data="../longdesc_src.html"
+         width="300" height="300">
+  </object>
+  <object id="object_pdf" type="application/pdf" data="../dummy.pdf"
+         width="300" height="300">
+  </object>
 
   <select id="select_listbox" size="4">
     <optgroup label="Colors">

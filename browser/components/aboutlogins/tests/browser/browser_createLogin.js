@@ -1,8 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-ChromeUtils.import("resource://testing-common/OSKeyStoreTestUtils.jsm", this);
-
 add_task(async function setup() {
   let aboutLoginsTab = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
@@ -10,7 +8,7 @@ add_task(async function setup() {
   });
   registerCleanupFunction(() => {
     BrowserTestUtils.removeTab(aboutLoginsTab);
-    Services.logins.removeAllLogins();
+    Services.logins.removeAllUserFacingLogins();
   });
 });
 
@@ -128,10 +126,13 @@ add_task(async function test_create_login() {
     await storageChangedPromised;
     info("login added to storage");
 
-    storageChangedPromised = TestUtils.topicObserved(
-      "passwordmgr-storage-changed",
-      (_, data) => data == "modifyLogin"
-    );
+    let canTestOSKeyStoreLogin = OSKeyStoreTestUtils.canTestOSKeyStoreLogin();
+    if (canTestOSKeyStoreLogin) {
+      storageChangedPromised = TestUtils.topicObserved(
+        "passwordmgr-storage-changed",
+        (_, data) => data == "modifyLogin"
+      );
+    }
     await SpecialPowers.spawn(browser, [originTuple], async aOriginTuple => {
       await ContentTaskUtils.waitForCondition(() => {
         return !content.document.documentElement.classList.contains(
@@ -204,7 +205,7 @@ add_task(async function test_create_login() {
       );
     });
 
-    if (!OSKeyStoreTestUtils.canTestOSKeyStoreLogin()) {
+    if (!canTestOSKeyStoreLogin) {
       continue;
     }
 

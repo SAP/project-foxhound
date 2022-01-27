@@ -7,9 +7,6 @@ const { Normandy } = ChromeUtils.import("resource://normandy/Normandy.jsm");
 const { AddonRollouts } = ChromeUtils.import(
   "resource://normandy/lib/AddonRollouts.jsm"
 );
-const { AddonStudies } = ChromeUtils.import(
-  "resource://normandy/lib/AddonStudies.jsm"
-);
 const { PreferenceExperiments } = ChromeUtils.import(
   "resource://normandy/lib/PreferenceExperiments.jsm"
 );
@@ -18,9 +15,6 @@ const { PreferenceRollouts } = ChromeUtils.import(
 );
 const { RecipeRunner } = ChromeUtils.import(
   "resource://normandy/lib/RecipeRunner.jsm"
-);
-const { TelemetryEvents } = ChromeUtils.import(
-  "resource://normandy/lib/TelemetryEvents.jsm"
 );
 const {
   NormandyTestUtils: { factories },
@@ -31,16 +25,18 @@ const experimentPref2 = "test.initExperimentPrefs2";
 const experimentPref3 = "test.initExperimentPrefs3";
 const experimentPref4 = "test.initExperimentPrefs4";
 
-function withStubInits(testFunction) {
-  return decorate(
-    withStub(AddonRollouts, "init"),
-    withStub(AddonStudies, "init"),
-    withStub(PreferenceRollouts, "init"),
-    withStub(PreferenceExperiments, "init"),
-    withStub(RecipeRunner, "init"),
-    withStub(TelemetryEvents, "init"),
-    () => testFunction()
-  );
+function withStubInits() {
+  return function(testFunction) {
+    return decorate(
+      withStub(AddonRollouts, "init"),
+      withStub(AddonStudies, "init"),
+      withStub(PreferenceRollouts, "init"),
+      withStub(PreferenceExperiments, "init"),
+      withStub(RecipeRunner, "init"),
+      withStub(TelemetryEvents, "init"),
+      testFunction
+    );
+  };
 }
 
 decorate_task(
@@ -139,30 +135,43 @@ decorate_task(
 
 decorate_task(
   withStub(Normandy, "finishInit"),
-  async function testStartupDelayed(finishInitStub) {
-    await Normandy.init();
+  async function testStartupDelayed({ finishInitStub }) {
+    let originalDeferred = Normandy.uiAvailableNotificationObserved;
+    let mockUiAvailableDeferred = PromiseUtils.defer();
+    Normandy.uiAvailableNotificationObserved = mockUiAvailableDeferred;
+
+    let initPromise = Normandy.init();
+    await null;
+
     ok(
       !finishInitStub.called,
       "When initialized, do not call finishInit immediately."
     );
 
     Normandy.observe(null, "sessionstore-windows-restored");
+    await initPromise;
     ok(
       finishInitStub.called,
       "Once the sessionstore-windows-restored event is observed, finishInit should be called."
     );
+
+    Normandy.uiAvailableNotificationObserved = originalDeferred;
   }
 );
 
 // During startup, preferences that are changed for experiments should
 // be record by calling PreferenceExperiments.recordOriginalValues.
 decorate_task(
-  withStub(PreferenceExperiments, "recordOriginalValues"),
-  withStub(PreferenceRollouts, "recordOriginalValues"),
-  async function testApplyStartupPrefs(
+  withStub(PreferenceExperiments, "recordOriginalValues", {
+    as: "experimentsRecordOriginalValuesStub",
+  }),
+  withStub(PreferenceRollouts, "recordOriginalValues", {
+    as: "rolloutsRecordOriginalValueStub",
+  }),
+  async function testApplyStartupPrefs({
     experimentsRecordOriginalValuesStub,
-    rolloutsRecordOriginalValueStub
-  ) {
+    rolloutsRecordOriginalValueStub,
+  }) {
     const defaultBranch = Services.prefs.getDefaultBranch("");
 
     defaultBranch.setBoolPref(experimentPref1, false);
@@ -211,7 +220,7 @@ decorate_task(
   }
 );
 
-decorate_task(withStubInits, async function testStartup() {
+decorate_task(withStubInits(), async function testStartup() {
   const initObserved = TestUtils.topicObserved("shield-init-complete");
   await Normandy.finishInit();
   ok(AddonStudies.init.called, "startup calls AddonStudies.init");
@@ -223,7 +232,7 @@ decorate_task(withStubInits, async function testStartup() {
   await initObserved;
 });
 
-decorate_task(withStubInits, async function testStartupPrefInitFail() {
+decorate_task(withStubInits(), async function testStartupPrefInitFail() {
   PreferenceExperiments.init.rejects();
 
   await Normandy.finishInit();
@@ -238,23 +247,26 @@ decorate_task(withStubInits, async function testStartupPrefInitFail() {
   ok(PreferenceRollouts.init.called, "startup calls PreferenceRollouts.init");
 });
 
-decorate_task(withStubInits, async function testStartupAddonStudiesInitFail() {
-  AddonStudies.init.rejects();
+decorate_task(
+  withStubInits(),
+  async function testStartupAddonStudiesInitFail() {
+    AddonStudies.init.rejects();
 
-  await Normandy.finishInit();
-  ok(AddonStudies.init.called, "startup calls AddonStudies.init");
-  ok(AddonRollouts.init.called, "startup calls AddonRollouts.init");
-  ok(
-    PreferenceExperiments.init.called,
-    "startup calls PreferenceExperiments.init"
-  );
-  ok(RecipeRunner.init.called, "startup calls RecipeRunner.init");
-  ok(TelemetryEvents.init.called, "startup calls TelemetryEvents.init");
-  ok(PreferenceRollouts.init.called, "startup calls PreferenceRollouts.init");
-});
+    await Normandy.finishInit();
+    ok(AddonStudies.init.called, "startup calls AddonStudies.init");
+    ok(AddonRollouts.init.called, "startup calls AddonRollouts.init");
+    ok(
+      PreferenceExperiments.init.called,
+      "startup calls PreferenceExperiments.init"
+    );
+    ok(RecipeRunner.init.called, "startup calls RecipeRunner.init");
+    ok(TelemetryEvents.init.called, "startup calls TelemetryEvents.init");
+    ok(PreferenceRollouts.init.called, "startup calls PreferenceRollouts.init");
+  }
+);
 
 decorate_task(
-  withStubInits,
+  withStubInits(),
   async function testStartupTelemetryEventsInitFail() {
     TelemetryEvents.init.throws();
 
@@ -272,7 +284,7 @@ decorate_task(
 );
 
 decorate_task(
-  withStubInits,
+  withStubInits(),
   async function testStartupPreferenceRolloutsInitFail() {
     PreferenceRollouts.init.throws();
 
@@ -299,12 +311,12 @@ decorate_task(
   AddonStudies.withStudies([
     factories.addonStudyFactory({ slug: "test-study" }),
   ]),
-  PreferenceRollouts.withTestMock,
-  AddonRollouts.withTestMock,
-  async function disablingTelemetryClearsEnrollmentIds(
-    [prefExperiment],
-    [addonStudy]
-  ) {
+  PreferenceRollouts.withTestMock(),
+  AddonRollouts.withTestMock(),
+  async function disablingTelemetryClearsEnrollmentIds({
+    prefExperiments: [prefExperiment],
+    addonStudies: [addonStudy],
+  }) {
     const prefRollout = {
       slug: "test-rollout",
       state: PreferenceRollouts.STATE_ACTIVE,

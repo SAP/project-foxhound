@@ -6,13 +6,7 @@
 const EventEmitter = require("devtools/shared/event-emitter");
 loader.lazyRequireGetter(
   this,
-  "setNamedTimeout",
-  "devtools/client/shared/widgets/view-helpers",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "clearNamedTimeout",
+  ["clearNamedTimeout", "setNamedTimeout"],
   "devtools/client/shared/widgets/view-helpers",
   true
 );
@@ -163,7 +157,7 @@ TableWidget.prototype = {
    */
   set selectedRow(id) {
     for (const column of this.columns.values()) {
-      if (id) {
+      if (id || id === "") {
         column.selectRow(id[this.uniqueId] || id);
       } else {
         column.selectedRow = null;
@@ -730,7 +724,7 @@ TableWidget.prototype = {
       menuitem.setAttribute("label", column.header.getAttribute("value"));
       menuitem.setAttribute("data-id", column.id);
       menuitem.setAttribute("type", "checkbox");
-      menuitem.setAttribute("checked", !column.wrapper.getAttribute("hidden"));
+      menuitem.setAttribute("checked", !column.wrapper.hidden);
       if (column.id == this.uniqueId) {
         menuitem.setAttribute("disabled", "true");
       }
@@ -1170,7 +1164,7 @@ Column.prototype = {
    * Returns a boolean indicating whether the column is hidden.
    */
   get hidden() {
-    return this.wrapper.hasAttribute("hidden");
+    return this.wrapper.hidden;
   },
 
   /**
@@ -1441,16 +1435,16 @@ Column.prototype = {
     if (arguments.length == 0) {
       // Act like a toggling method when called with no params
       id = this.id;
-      checked = this.wrapper.hasAttribute("hidden");
+      checked = this.wrapper.hidden;
     }
     if (id != this.id) {
       return;
     }
     if (checked) {
-      this.wrapper.removeAttribute("hidden");
+      this.wrapper.hidden = false;
       this.tbody.insertBefore(this.splitter, this.wrapper.nextSibling);
     } else {
-      this.wrapper.setAttribute("hidden", "true");
+      this.wrapper.hidden = true;
       this.splitter.remove();
     }
   },
@@ -1545,11 +1539,18 @@ Column.prototype = {
     }
     this.items = {};
     // Otherwise, just use the sorted array passed to update the cells value.
-    items.forEach((item, i) => {
+    for (const [i, item] of items.entries()) {
+      // See Bug 1706679 (Intermittent)
+      // Sometimes we would reach the situation in which we were trying to sort
+      // and item that was no longer available in the TableWidget.
+      // We should find exactly what is triggering it.
+      if (!this.cells[i]) {
+        continue;
+      }
       this.items[item[this.uniqueId]] = i;
       this.cells[i].value = item[this.id];
       this.cells[i].id = item[this.uniqueId];
-    });
+    }
     if (this.selectedRow) {
       this.cells[this.items[this.selectedRow]].classList.add("theme-selected");
     }
@@ -1663,15 +1664,11 @@ Cell.prototype = {
   },
 
   get hidden() {
-    return this.label.hasAttribute("hidden");
+    return this.label.hidden;
   },
 
   set hidden(value) {
-    if (value) {
-      this.label.setAttribute("hidden", "hidden");
-    } else {
-      this.label.removeAttribute("hidden");
-    }
+    this.label.hidden = value;
   },
 
   set value(value) {

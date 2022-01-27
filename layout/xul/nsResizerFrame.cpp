@@ -22,6 +22,7 @@
 #include "mozilla/MouseEvents.h"
 #include "nsContentUtils.h"
 #include "nsMenuPopupFrame.h"
+#include "nsServiceManagerUtils.h"
 #include "nsIScreenManager.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/MouseEventBinding.h"
@@ -31,6 +32,13 @@
 #include <algorithm>
 
 using namespace mozilla;
+
+#ifdef MOZ_WAYLAND
+#  include "mozilla/WidgetUtilsGtk.h"
+#  define IS_WAYLAND_DISPLAY() mozilla::widget::GdkIsWaylandDisplay()
+#else
+#  define IS_WAYLAND_DISPLAY() false
+#endif
 
 //
 // NS_NewResizerFrame
@@ -190,7 +198,9 @@ nsresult nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
 
         // Don't allow resizing a window or a popup past the edge of the screen,
         // so adjust the rectangle to fit within the available screen area.
-        if (window) {
+        // Don't check it on Wayland as we can't get absolute window position
+        // there.
+        if (window && !IS_WAYLAND_DISPLAY()) {
           nsCOMPtr<nsIScreen> screen;
           nsCOMPtr<nsIScreenManager> sm(
               do_GetService("@mozilla.org/gfx/screenmanager;1"));
@@ -209,7 +219,7 @@ nsresult nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
               rect.IntersectRect(rect, screenRect);
             }
           }
-        } else if (menuPopupFrame) {
+        } else if (menuPopupFrame && !IS_WAYLAND_DISPLAY()) {
           nsRect frameRect = menuPopupFrame->GetScreenRectInAppUnits();
           nsIFrame* rootFrame = aPresContext->PresShell()->GetRootFrame();
           nsRect rootScreenRect = rootFrame->GetScreenRectInAppUnits();
@@ -285,14 +295,7 @@ nsresult nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
 
     case eMouseClick: {
       WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent();
-      if (mouseEvent->IsLeftClickEvent()
-#ifdef XP_MACOSX
-          // On Mac, ctrl-click will send a context menu event from the widget,
-          // so we don't want to dispatch widget command if it is redispatched
-          // from the mouse event with ctrl key is pressed.
-          && !mouseEvent->IsControl()
-#endif
-      ) {
+      if (mouseEvent->IsLeftClickEvent()) {
         MouseClicked(mouseEvent);
       }
       break;
@@ -405,52 +408,30 @@ void nsResizerFrame::ResizeContent(nsIContent* aContent,
                                    const Direction& aDirection,
                                    const SizeInfo& aSizeInfo,
                                    SizeInfo* aOriginalSizeInfo) {
-  // for XUL elements, just set the width and height attributes. For
-  // other elements, set style.width and style.height
-  if (aContent->IsXULElement()) {
+  if (RefPtr<nsStyledElement> inlineStyleContent =
+          nsStyledElement::FromNode(aContent)) {
+    nsICSSDeclaration* decl = inlineStyleContent->Style();
+
     if (aOriginalSizeInfo) {
-      aContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::width,
-                                     aOriginalSizeInfo->width);
-      aContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::height,
-                                     aOriginalSizeInfo->height);
+      decl->GetPropertyValue("width"_ns, aOriginalSizeInfo->width);
+      decl->GetPropertyValue("height"_ns, aOriginalSizeInfo->height);
     }
-    // only set the property if the element could have changed in that direction
+
+    // only set the property if the element could have changed in that
+    // direction
     if (aDirection.mHorizontal) {
-      aContent->AsElement()->SetAttr(kNameSpaceID_None, nsGkAtoms::width,
-                                     aSizeInfo.width, true);
+      nsAutoCString widthstr(aSizeInfo.width);
+      if (!widthstr.IsEmpty() &&
+          !Substring(widthstr, widthstr.Length() - 2, 2).EqualsLiteral("px"))
+        widthstr.AppendLiteral("px");
+      decl->SetProperty("width"_ns, widthstr, ""_ns, IgnoreErrors());
     }
     if (aDirection.mVertical) {
-      aContent->AsElement()->SetAttr(kNameSpaceID_None, nsGkAtoms::height,
-                                     aSizeInfo.height, true);
-    }
-  } else {
-    nsCOMPtr<nsStyledElement> inlineStyleContent = do_QueryInterface(aContent);
-    if (inlineStyleContent) {
-      nsICSSDeclaration* decl = inlineStyleContent->Style();
-
-      if (aOriginalSizeInfo) {
-        decl->GetPropertyValue("width"_ns, aOriginalSizeInfo->width);
-        decl->GetPropertyValue("height"_ns, aOriginalSizeInfo->height);
-      }
-
-      // only set the property if the element could have changed in that
-      // direction
-      if (aDirection.mHorizontal) {
-        NS_ConvertUTF16toUTF8 widthstr(aSizeInfo.width);
-        if (!widthstr.IsEmpty() &&
-            !Substring(widthstr, widthstr.Length() - 2, 2).EqualsLiteral("px"))
-          widthstr.AppendLiteral("px");
-        decl->SetProperty("width"_ns, widthstr, EmptyString(), IgnoreErrors());
-      }
-      if (aDirection.mVertical) {
-        NS_ConvertUTF16toUTF8 heightstr(aSizeInfo.height);
-        if (!heightstr.IsEmpty() &&
-            !Substring(heightstr, heightstr.Length() - 2, 2)
-                 .EqualsLiteral("px"))
-          heightstr.AppendLiteral("px");
-        decl->SetProperty("height"_ns, heightstr, EmptyString(),
-                          IgnoreErrors());
-      }
+      nsAutoCString heightstr(aSizeInfo.height);
+      if (!heightstr.IsEmpty() &&
+          !Substring(heightstr, heightstr.Length() - 2, 2).EqualsLiteral("px"))
+        heightstr.AppendLiteral("px");
+      decl->SetProperty("height"_ns, heightstr, ""_ns, IgnoreErrors());
     }
   }
 }
@@ -533,7 +514,8 @@ nsResizerFrame::Direction nsResizerFrame::GetDirection() {
 void nsResizerFrame::MouseClicked(WidgetMouseEvent* aEvent) {
   // Execute the oncommand event handler.
   nsCOMPtr<nsIContent> content = mContent;
-  nsContentUtils::DispatchXULCommand(
-      content, false, nullptr, nullptr, aEvent->IsControl(), aEvent->IsAlt(),
-      aEvent->IsShift(), aEvent->IsMeta(), aEvent->mInputSource);
+  nsContentUtils::DispatchXULCommand(content, false, nullptr, nullptr,
+                                     aEvent->IsControl(), aEvent->IsAlt(),
+                                     aEvent->IsShift(), aEvent->IsMeta(),
+                                     aEvent->mInputSource, aEvent->mButton);
 }

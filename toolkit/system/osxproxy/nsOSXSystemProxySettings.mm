@@ -13,9 +13,11 @@
 #include "nsNetCID.h"
 #include "nsObjCExceptions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "ProxyUtils.h"
+#include "ProxyConfig.h"
 
-class nsOSXSystemProxySettings final : public nsISystemProxySettings {
+class nsOSXSystemProxySettings : public nsISystemProxySettings {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSISYSTEMPROXYSETTINGS
@@ -38,8 +40,10 @@ class nsOSXSystemProxySettings final : public nsISystemProxySettings {
   // is host:port on the proxy exception list?
   bool IsInExceptionList(const nsACString& aHost) const;
 
- private:
-  ~nsOSXSystemProxySettings();
+ protected:
+  virtual ~nsOSXSystemProxySettings();
+  virtual void InitDone() {}
+  virtual void OnProxyConfigChangedInternal() {}
 
   SCDynamicStoreContext mContext;
   SCDynamicStoreRef mSystemDynamicStore;
@@ -85,7 +89,7 @@ nsOSXSystemProxySettings::nsOSXSystemProxySettings() : mSystemDynamicStore(NULL)
 }
 
 nsresult nsOSXSystemProxySettings::Init() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   // Register for notification of proxy setting changes
   // See:
@@ -116,13 +120,15 @@ nsresult nsOSXSystemProxySettings::Init() {
   mProxyDict = (NSDictionary*)SCDynamicStoreCopyProxies(mSystemDynamicStore);
   if (!mProxyDict) return NS_ERROR_FAILURE;
 
+  InitDone();
+
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 nsOSXSystemProxySettings::~nsOSXSystemProxySettings() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   [mProxyDict release];
 
@@ -137,22 +143,24 @@ nsOSXSystemProxySettings::~nsOSXSystemProxySettings() {
     CFRelease(mSystemDynamicStore);
   }
 
-  NS_OBJC_END_TRY_ABORT_BLOCK;
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
 void nsOSXSystemProxySettings::ProxyHasChanged() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   [mProxyDict release];
   mProxyDict = (NSDictionary*)SCDynamicStoreCopyProxies(mSystemDynamicStore);
 
-  NS_OBJC_END_TRY_ABORT_BLOCK;
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
+
+  OnProxyConfigChangedInternal();
 }
 
 nsresult nsOSXSystemProxySettings::FindSCProxyPort(const nsACString& aScheme,
                                                    nsACString& aResultHost, int32_t& aResultPort,
                                                    bool& aResultSocksProxy) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NS_ENSURE_TRUE(mProxyDict != NULL, NS_ERROR_FAILURE);
 
@@ -184,21 +192,21 @@ nsresult nsOSXSystemProxySettings::FindSCProxyPort(const nsACString& aScheme,
 
   return NS_ERROR_FAILURE;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 bool nsOSXSystemProxySettings::IsAutoconfigEnabled() const {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NSNumber* value = [mProxyDict objectForKey:(NSString*)kSCPropNetProxiesProxyAutoConfigEnable];
   NS_ENSURE_TRUE(value == NULL || [value isKindOfClass:[NSNumber class]], false);
   return ([value intValue] != 0);
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(false);
+  NS_OBJC_END_TRY_BLOCK_RETURN(false);
 }
 
 nsresult nsOSXSystemProxySettings::GetAutoconfigURL(nsAutoCString& aResult) const {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NSString* value = [mProxyDict objectForKey:(NSString*)kSCPropNetProxiesProxyAutoConfigURLString];
   if (value != NULL) {
@@ -209,11 +217,11 @@ nsresult nsOSXSystemProxySettings::GetAutoconfigURL(nsAutoCString& aResult) cons
 
   return NS_ERROR_FAILURE;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 bool nsOSXSystemProxySettings::IsInExceptionList(const nsACString& aHost) const {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NS_ENSURE_TRUE(mProxyDict != NULL, false);
 
@@ -228,11 +236,11 @@ bool nsOSXSystemProxySettings::IsInExceptionList(const nsACString& aHost) const 
     if (mozilla::toolkit::system::IsHostProxyEntry(aHost, overrideStr)) return true;
   }
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(false);
+  NS_OBJC_END_TRY_BLOCK_RETURN(false);
 }
 
 nsresult nsOSXSystemProxySettings::GetPACURI(nsACString& aResult) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NS_ENSURE_TRUE(mProxyDict != NULL, NS_ERROR_FAILURE);
 
@@ -244,14 +252,14 @@ nsresult nsOSXSystemProxySettings::GetPACURI(nsACString& aResult) {
 
   return NS_ERROR_FAILURE;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 nsresult nsOSXSystemProxySettings::GetProxyForURI(const nsACString& aSpec,
                                                   const nsACString& aScheme,
                                                   const nsACString& aHost, const int32_t aPort,
                                                   nsACString& aResult) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   int32_t proxyPort;
   nsAutoCString proxyHost;
@@ -268,11 +276,122 @@ nsresult nsOSXSystemProxySettings::GetProxyForURI(const nsACString& aSpec,
 
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
+}
+
+using namespace mozilla::net;
+
+class OSXSystemProxySettingsAsync final : public nsOSXSystemProxySettings {
+ public:
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(OSXSystemProxySettingsAsync, nsOSXSystemProxySettings)
+  NS_DECL_NSISYSTEMPROXYSETTINGS
+
+  OSXSystemProxySettingsAsync();
+
+ protected:
+  virtual void OnProxyConfigChangedInternal() override;
+  void InitDone() override;
+
+ private:
+  virtual ~OSXSystemProxySettingsAsync();
+
+  ProxyConfig mConfig;
+};
+
+OSXSystemProxySettingsAsync::OSXSystemProxySettingsAsync() = default;
+
+OSXSystemProxySettingsAsync::~OSXSystemProxySettingsAsync() = default;
+
+void OSXSystemProxySettingsAsync::InitDone() { OnProxyConfigChangedInternal(); }
+
+void OSXSystemProxySettingsAsync::OnProxyConfigChangedInternal() {
+  ProxyConfig config;
+
+  // PAC
+  nsAutoCString pacUrl;
+  if (IsAutoconfigEnabled() && NS_SUCCEEDED(GetAutoconfigURL(pacUrl))) {
+    config.SetPACUrl(pacUrl);
+  }
+
+  // proxies (for now: PROXY and SOCKS)
+  for (const SchemeMapping* keys = gSchemeMappingList; keys->mScheme != NULL; ++keys) {
+    // Check the proxy is enabled
+    NSNumber* enabled = [mProxyDict objectForKey:(NSString*)keys->mEnabled];
+    if (!(enabled == NULL || [enabled isKindOfClass:[NSNumber class]])) {
+      continue;
+    }
+
+    if ([enabled intValue] == 0) {
+      continue;
+    }
+
+    // Get the proxy host
+    NSString* host = [mProxyDict objectForKey:(NSString*)keys->mHost];
+    if (host == NULL) break;
+    if (!([host isKindOfClass:[NSString class]])) {
+      continue;
+    }
+
+    nsCString resultHost;
+    resultHost.Assign([host UTF8String]);
+
+    // Get the proxy port
+    NSNumber* port = [mProxyDict objectForKey:(NSString*)keys->mPort];
+    if (!([port isKindOfClass:[NSNumber class]])) {
+      continue;
+    }
+
+    int32_t resultPort = [port intValue];
+    ProxyServer server(ProxyConfig::ToProxyType(keys->mScheme), resultHost, resultPort);
+    config.Rules().mProxyServers[server.Type()] = std::move(server);
+  }
+
+  // exceptions
+  NSArray* exceptionList = [mProxyDict objectForKey:(NSString*)kSCPropNetProxiesExceptionsList];
+  if (exceptionList != NULL && [exceptionList isKindOfClass:[NSArray class]]) {
+    NSEnumerator* exceptionEnumerator = [exceptionList objectEnumerator];
+    NSString* currentValue = NULL;
+    while ((currentValue = [exceptionEnumerator nextObject])) {
+      if (currentValue != NULL && [currentValue isKindOfClass:[NSString class]]) {
+        nsCString overrideStr([currentValue UTF8String]);
+        config.ByPassRules().mExceptions.AppendElement(std::move(overrideStr));
+      }
+    }
+  }
+
+  mConfig = std::move(config);
+}
+
+NS_IMETHODIMP
+OSXSystemProxySettingsAsync::GetMainThreadOnly(bool* aMainThreadOnly) {
+  return nsOSXSystemProxySettings::GetMainThreadOnly(aMainThreadOnly);
+}
+
+NS_IMETHODIMP
+OSXSystemProxySettingsAsync::GetPACURI(nsACString& aResult) {
+  aResult.Assign(mConfig.PACUrl());
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+OSXSystemProxySettingsAsync::GetProxyForURI(const nsACString& aSpec, const nsACString& aScheme,
+                                            const nsACString& aHost, const int32_t aPort,
+                                            nsACString& aResult) {
+  for (const auto& bypassRule : mConfig.ByPassRules().mExceptions) {
+    if (mozilla::toolkit::system::IsHostProxyEntry(aHost, bypassRule)) {
+      aResult.AssignLiteral("DIRECT");
+      return NS_OK;
+    }
+  }
+
+  mConfig.GetProxyString(aScheme, aResult);
+  return NS_OK;
 }
 
 NS_IMPL_COMPONENT_FACTORY(nsOSXSystemProxySettings) {
-  auto settings = mozilla::MakeRefPtr<nsOSXSystemProxySettings>();
+  auto settings = mozilla::StaticPrefs::network_proxy_detect_system_proxy_changes()
+                      ? mozilla::MakeRefPtr<OSXSystemProxySettingsAsync>()
+                      : mozilla::MakeRefPtr<nsOSXSystemProxySettings>();
   if (NS_SUCCEEDED(settings->Init())) {
     return settings.forget().downcast<nsISupports>();
   }

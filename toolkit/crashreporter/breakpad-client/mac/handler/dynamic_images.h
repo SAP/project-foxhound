@@ -102,6 +102,13 @@ typedef mach_header breakpad_mach_header;
 typedef segment_command breakpad_mach_segment_command;
 #endif
 
+// Bit in mach_header.flags that indicates whether or not the image is in the
+// dyld shared cache. The dyld shared cache is a single image into which
+// commonly used system dylibs and frameworks are incorporated. dyld maps it
+// into every process at load time. The component images all have the same
+// slide.
+#define MH_SHAREDCACHE 0x80000000
+
 // Helper functions to deal with 32-bit/64-bit Mach-O differences.
 class DynamicImage;
 template<typename MachBits>
@@ -129,6 +136,7 @@ class DynamicImage {
       vmaddr_(0),
       vmsize_(0),
       slide_(0),
+      crash_info_(),
       version_(0),
       file_path_(file_path),
       file_mod_date_(image_mod_date),
@@ -153,11 +161,28 @@ class DynamicImage {
   // Address where the image should be loaded
   mach_vm_address_t GetVMAddr() const {return vmaddr_;}
 
+  bool GetInDyldSharedCache()
+    {return (shared_cache_slide_ && (slide_ == shared_cache_slide_));}
+
   // Difference between GetLoadAddress() and GetVMAddr()
   ptrdiff_t GetVMAddrSlide() const {return slide_;}
 
   // Size of the image
   mach_vm_size_t GetVMSize() const {return vmsize_;}
+
+  // Returns the address of the locally cached __DATA,__crash_info section.
+  // The vector will be empty if the image doesn't have a __crash_info
+  // section. But even if the vector isn't empty, its contents may be "empty"
+  // of useful data (see definition of crashreporter_annotations_t in
+  // mach_vm_compat.h).
+  mach_vm_address_t GetCrashInfo() const {
+    return reinterpret_cast<mach_vm_address_t>(&crash_info_[0]);
+  }
+
+  // Size of the locally cached __DATA,__crash_info section. This will be zero
+  // if the vector is empty. But even if it's non-zero, the __crash_info
+  // section of which it's a copy may be empty of useful data.
+  size_t GetCrashInfoSize() const {return crash_info_.size();}
 
   // Task owning this loaded image
   mach_port_t GetTask() {return task_;}
@@ -202,6 +227,7 @@ class DynamicImage {
   mach_vm_address_t       vmaddr_;
   mach_vm_size_t          vmsize_;
   ptrdiff_t               slide_;
+  vector<uint8_t>         crash_info_;
   uint32_t                version_;        // Dylib version
   string                  file_path_;     // path dyld used to load the image
   uintptr_t               file_mod_date_;  // time_t of image file
@@ -328,6 +354,9 @@ kern_return_t ReadTaskMemory(task_port_t target_task,
                              const uint64_t address,
                              size_t length,
                              vector<uint8_t> &bytes);
+
+std::string ReadTaskString(task_port_t target_task,
+                           const uint64_t address);
 
 }   // namespace google_breakpad
 

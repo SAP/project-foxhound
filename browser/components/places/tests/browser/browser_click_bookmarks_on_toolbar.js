@@ -12,6 +12,25 @@ const TEST_PAGES = [
 
 var gBookmarkElements = [];
 
+function waitForBookmarkElements(expectedCount) {
+  let container = document.getElementById("PlacesToolbarItems");
+  if (container.childElementCount == expectedCount) {
+    return Promise.resolve();
+  }
+  return new Promise(resolve => {
+    info("Waiting for bookmarks");
+    let mut = new MutationObserver(mutations => {
+      info("Elements appeared");
+      if (container.childElementCount == expectedCount) {
+        resolve();
+        mut.disconnect();
+      }
+    });
+
+    mut.observe(container, { childList: true });
+  });
+}
+
 function getToolbarNodeForItemGuid(aItemGuid) {
   var children = document.getElementById("PlacesToolbarItems").children;
   for (let child of children) {
@@ -23,9 +42,7 @@ function getToolbarNodeForItemGuid(aItemGuid) {
 }
 
 function waitForLoad(browser, url) {
-  return BrowserTestUtils.browserLoaded(browser, false, url).then(() => {
-    return BrowserTestUtils.loadURI(browser, "about:blank");
-  });
+  return BrowserTestUtils.browserLoaded(browser, false, url);
 }
 
 function waitForNewTab(url, inBackground) {
@@ -49,6 +66,7 @@ function waitForNewTab(url, inBackground) {
 }
 
 add_task(async function setup() {
+  await PlacesUtils.bookmarks.eraseEverything();
   let bookmarks = await Promise.all(
     TEST_PAGES.map((url, index) => {
       return PlacesUtils.bookmarks.insert({
@@ -65,6 +83,7 @@ add_task(async function setup() {
     await promiseSetToolbarVisibility(toolbar, true);
   }
 
+  await waitForBookmarkElements(TEST_PAGES.length);
   for (let bookmark of bookmarks) {
     let element = getToolbarNodeForItemGuid(bookmark.guid);
     Assert.notEqual(element, null, "Found node on toolbar");

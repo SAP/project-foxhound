@@ -9,6 +9,9 @@
 
 mod codec;
 mod datagram;
+pub mod event;
+pub mod header;
+pub mod hrtime;
 mod incrdecoder;
 pub mod log;
 pub mod qlog;
@@ -16,6 +19,7 @@ pub mod timer;
 
 pub use self::codec::{Decoder, Encoder};
 pub use self::datagram::Datagram;
+pub use self::header::Header;
 pub use self::incrdecoder::{
     IncrementalDecoderBuffer, IncrementalDecoderIgnore, IncrementalDecoderUint,
 };
@@ -24,17 +28,18 @@ pub use self::incrdecoder::{
 extern crate lazy_static;
 
 #[must_use]
-pub fn hex(buf: &[u8]) -> String {
-    let mut ret = String::with_capacity(buf.len() * 2);
-    for b in buf {
+pub fn hex(buf: impl AsRef<[u8]>) -> String {
+    let mut ret = String::with_capacity(buf.as_ref().len() * 2);
+    for b in buf.as_ref() {
         ret.push_str(&format!("{:02x}", b));
     }
     ret
 }
 
 #[must_use]
-pub fn hex_snip_middle(buf: &[u8]) -> String {
+pub fn hex_snip_middle(buf: impl AsRef<[u8]>) -> String {
     const SHOW_LEN: usize = 8;
+    let buf = buf.as_ref();
     if buf.len() <= SHOW_LEN * 2 {
         hex_with_len(buf)
     } else {
@@ -52,7 +57,8 @@ pub fn hex_snip_middle(buf: &[u8]) -> String {
 }
 
 #[must_use]
-pub fn hex_with_len(buf: &[u8]) -> String {
+pub fn hex_with_len(buf: impl AsRef<[u8]>) -> String {
+    let buf = buf.as_ref();
     let mut ret = String::with_capacity(10 + buf.len() * 2);
     ret.push_str(&format!("[{}]: ", buf.len()));
     for b in buf {
@@ -91,4 +97,10 @@ impl ::std::fmt::Display for Role {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         write!(f, "{:?}", self)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageType {
+    Request,
+    Response,
 }

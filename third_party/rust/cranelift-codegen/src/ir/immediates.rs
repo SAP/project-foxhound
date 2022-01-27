@@ -5,6 +5,7 @@
 //! `cranelift-codegen/meta/src/shared/immediates` crate in the meta language.
 
 use alloc::vec::Vec;
+use core::cmp::Ordering;
 use core::fmt::{self, Display, Formatter};
 use core::str::FromStr;
 use core::{i32, u32};
@@ -47,6 +48,7 @@ impl IntoBytes for Vec<u8> {
 /// An `Imm64` operand can also be used to represent immediate values of smaller integer types by
 /// sign-extending to `i64`.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct Imm64(i64);
 
 impl Imm64 {
@@ -147,6 +149,7 @@ impl FromStr for Imm64 {
 /// A `Uimm64` operand can also be used to represent immediate values of smaller integer types by
 /// zero-extending to `i64`.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct Uimm64(u64);
 
 impl Uimm64 {
@@ -278,6 +281,7 @@ pub type Uimm8 = u8;
 ///
 /// This is used to represent sizes of memory objects.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct Uimm32(u32);
 
 impl Into<u32> for Uimm32 {
@@ -361,6 +365,7 @@ impl From<&[u8]> for V128Imm {
 /// This is used to encode an immediate offset for load/store instructions. All supported ISAs have
 /// a maximum load/store offset that fits in an `i32`.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub struct Offset32(i32);
 
 impl Offset32 {
@@ -450,6 +455,8 @@ impl FromStr for Offset32 {
 ///
 /// All bit patterns are allowed.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
+#[repr(C)]
 pub struct Ieee32(u32);
 
 /// An IEEE binary64 immediate floating point value, represented as a u64
@@ -457,6 +464,8 @@ pub struct Ieee32(u32);
 ///
 /// All bit patterns are allowed.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
+#[repr(C)]
 pub struct Ieee64(u64);
 
 /// Format a floating point number in a way that is reasonably human-readable, and that can be
@@ -737,6 +746,17 @@ impl Ieee32 {
     pub fn bits(self) -> u32 {
         self.0
     }
+
+    /// Check if the value is a NaN.
+    pub fn is_nan(&self) -> bool {
+        f32::from_bits(self.0).is_nan()
+    }
+}
+
+impl PartialOrd for Ieee32 {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        f32::from_bits(self.0).partial_cmp(&f32::from_bits(other.0))
+    }
 }
 
 impl Display for Ieee32 {
@@ -809,6 +829,18 @@ impl Ieee64 {
     /// Get the bitwise representation.
     pub fn bits(self) -> u64 {
         self.0
+    }
+
+    /// Check if the value is a NaN. For [Ieee64], this means checking that the 11 exponent bits are
+    /// all set.
+    pub fn is_nan(&self) -> bool {
+        f64::from_bits(self.0).is_nan()
+    }
+}
+
+impl PartialOrd for Ieee64 {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        f64::from_bits(self.0).partial_cmp(&f64::from_bits(other.0))
     }
 }
 

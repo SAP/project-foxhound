@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-import { ElementHandle } from './JSHandle';
-import Protocol from '../protocol';
-import { assert } from './assert';
+import { ElementHandle } from './JSHandle.js';
+import { Protocol } from 'devtools-protocol';
+import { assert } from './assert.js';
 
 /**
  * File choosers let you react to the page requesting for a file.
@@ -34,6 +34,7 @@ import { assert } from './assert';
  * **NOTE** In browsers, only one file chooser can be opened at a time.
  * All file choosers must be accepted or canceled. Not doing so will prevent
  * subsequent file choosers from appearing.
+ * @public
  */
 export class FileChooser {
   private _element: ElementHandle;
@@ -45,7 +46,7 @@ export class FileChooser {
    */
   constructor(
     element: ElementHandle,
-    event: Protocol.Page.fileChooserOpenedPayload
+    event: Protocol.Page.FileChooserOpenedEvent
   ) {
     this._element = element;
     this._multiple = event.mode !== 'selectSingle';
@@ -75,7 +76,7 @@ export class FileChooser {
   /**
    * Closes the file chooser without selecting any files.
    */
-  async cancel(): Promise<void> {
+  cancel(): void {
     assert(
       !this._handled,
       'Cannot cancel FileChooser which is already handled!'

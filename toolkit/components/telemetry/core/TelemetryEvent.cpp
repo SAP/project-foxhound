@@ -11,14 +11,13 @@
 #include "ipc/TelemetryIPCAccumulator.h"
 #include "jsapi.h"
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject, JS::NewArrayObject
+#include "js/PropertyAndElement.h"  // JS_DefineElement, JS_DefineProperty, JS_Enumerate, JS_GetElement, JS_GetProperty, JS_GetPropertyById, JS_HasProperty
 #include "mozilla/Maybe.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Unused.h"
 #include "nsClassHashtable.h"
-#include "nsDataHashtable.h"
 #include "nsHashKeys.h"
 #include "nsIObserverService.h"
 #include "nsITelemetry.h"
@@ -31,11 +30,13 @@
 #include "TelemetryEventData.h"
 #include "TelemetryScalar.h"
 
+using mozilla::MakeUnique;
 using mozilla::Maybe;
 using mozilla::StaticAutoPtr;
 using mozilla::StaticMutex;
 using mozilla::StaticMutexAutoLock;
 using mozilla::TimeStamp;
+using mozilla::UniquePtr;
 using mozilla::Telemetry::ChildEventData;
 using mozilla::Telemetry::EventExtraEntry;
 using mozilla::Telemetry::LABELS_TELEMETRY_EVENT_RECORDING_ERROR;
@@ -116,10 +117,15 @@ const uint32_t kMaxObjectNameByteLength = 20;
 const uint32_t kMaxExtraKeyNameByteLength = 15;
 // The maximum number of valid extra keys for an event.
 const uint32_t kMaxExtraKeyCount = 10;
+// The number of event records allowed in an event ping.
+const uint32_t kEventPingLimit = 1000;
 
 struct EventKey {
   uint32_t id;
   bool dynamic;
+
+  EventKey() : id(kExpiredEventId), dynamic(false) {}
+  EventKey(uint32_t id_, bool dynamic_) : id(id_), dynamic(dynamic_) {}
 };
 
 struct DynamicEventInfo {
@@ -283,13 +289,13 @@ bool gCanRecordBase;
 bool gCanRecordExtended;
 
 // The EventName -> EventKey cache map.
-nsClassHashtable<nsCStringHashKey, EventKey> gEventNameIDMap(kEventCount);
+nsTHashMap<nsCStringHashKey, EventKey> gEventNameIDMap(kEventCount);
 
 // The CategoryName set.
-nsTHashtable<nsCStringHashKey> gCategoryNames;
+nsTHashSet<nsCString> gCategoryNames;
 
 // This tracks the IDs of the categories for which recording is enabled.
-nsTHashtable<nsCStringHashKey> gEnabledCategories;
+nsTHashSet<nsCString> gEnabledCategories;
 
 // The main event storage. Events are inserted here, keyed by process id and
 // in recording order.
@@ -372,42 +378,33 @@ bool IsExpired(const EventKey& key) { return key.id == kExpiredEventId; }
 
 EventRecordArray* GetEventRecordsForProcess(const StaticMutexAutoLock& lock,
                                             ProcessID processType) {
-  EventRecordArray* eventRecords = nullptr;
-  if (!gEventRecords.Get(uint32_t(processType), &eventRecords)) {
-    eventRecords = new EventRecordArray();
-    gEventRecords.Put(uint32_t(processType), eventRecords);
-  }
-  return eventRecords;
+  return gEventRecords.GetOrInsertNew(uint32_t(processType));
 }
 
-EventKey* GetEventKey(const StaticMutexAutoLock& lock,
-                      const nsACString& category, const nsACString& method,
-                      const nsACString& object) {
-  EventKey* event;
+bool GetEventKey(const StaticMutexAutoLock& lock, const nsACString& category,
+                 const nsACString& method, const nsACString& object,
+                 EventKey* aEventKey) {
   const nsCString& name = UniqueEventName(category, method, object);
-  if (!gEventNameIDMap.Get(name, &event)) {
-    return nullptr;
-  }
-  return event;
+  return gEventNameIDMap.Get(name, aEventKey);
 }
 
 static bool CheckExtraKeysValid(const EventKey& eventKey,
                                 const ExtraArray& extra) {
-  nsTHashtable<nsCStringHashKey> validExtraKeys;
+  nsTHashSet<nsCString> validExtraKeys;
   if (!eventKey.dynamic) {
     const CommonEventInfo& common = gEventInfo[eventKey.id].common_info;
     for (uint32_t i = 0; i < common.extra_count; ++i) {
-      validExtraKeys.PutEntry(common.extra_key(i));
+      validExtraKeys.Insert(common.extra_key(i));
     }
   } else if (gDynamicEventInfo) {
     const DynamicEventInfo& info = (*gDynamicEventInfo)[eventKey.id];
     for (uint32_t i = 0, len = info.extra_keys.Length(); i < len; ++i) {
-      validExtraKeys.PutEntry(info.extra_keys[i]);
+      validExtraKeys.Insert(info.extra_keys[i]);
     }
   }
 
   for (uint32_t i = 0; i < extra.Length(); ++i) {
-    if (!validExtraKeys.GetEntry(extra[i].key)) {
+    if (!validExtraKeys.Contains(extra[i].key)) {
       return false;
     }
   }
@@ -423,8 +420,8 @@ RecordEventResult RecordEvent(const StaticMutexAutoLock& lock,
                               const Maybe<nsCString>& value,
                               const ExtraArray& extra) {
   // Look up the event id.
-  EventKey* eventKey = GetEventKey(lock, category, method, object);
-  if (!eventKey) {
+  EventKey eventKey;
+  if (!GetEventKey(lock, category, method, object, &eventKey)) {
     mozilla::Telemetry::AccumulateCategorical(
         LABELS_TELEMETRY_EVENT_RECORDING_ERROR::UnknownEvent);
     return RecordEventResult::UnknownEvent;
@@ -434,7 +431,7 @@ RecordEventResult RecordEvent(const StaticMutexAutoLock& lock,
   // this call. We don't want recording for expired probes to be an error so
   // code doesn't have to be removed at a specific time or version. Even logging
   // warnings would become very noisy.
-  if (IsExpired(*eventKey)) {
+  if (IsExpired(eventKey)) {
     mozilla::Telemetry::AccumulateCategorical(
         LABELS_TELEMETRY_EVENT_RECORDING_ERROR::Expired);
     return RecordEventResult::ExpiredEvent;
@@ -443,20 +440,20 @@ RecordEventResult RecordEvent(const StaticMutexAutoLock& lock,
   // Fixup the process id only for non-builtin (e.g. supporting build faster)
   // dynamic events.
   auto dynamicNonBuiltin =
-      eventKey->dynamic && !(*gDynamicEventInfo)[eventKey->id].builtin;
+      eventKey.dynamic && !(*gDynamicEventInfo)[eventKey.id].builtin;
   if (dynamicNonBuiltin) {
     processType = ProcessID::Dynamic;
   }
 
   // Check whether the extra keys passed are valid.
-  if (!CheckExtraKeysValid(*eventKey, extra)) {
+  if (!CheckExtraKeysValid(eventKey, extra)) {
     mozilla::Telemetry::AccumulateCategorical(
         LABELS_TELEMETRY_EVENT_RECORDING_ERROR::ExtraKey);
     return RecordEventResult::InvalidExtraKey;
   }
 
   // Check whether we can record this event.
-  if (!CanRecordEvent(lock, *eventKey, processType)) {
+  if (!CanRecordEvent(lock, eventKey, processType)) {
     return RecordEventResult::CannotRecord;
   }
 
@@ -466,23 +463,15 @@ RecordEventResult RecordEvent(const StaticMutexAutoLock& lock,
                                   processType, dynamicNonBuiltin);
 
   // Check whether this event's category has recording enabled
-  if (!gEnabledCategories.GetEntry(GetCategory(lock, *eventKey))) {
-    return RecordEventResult::Ok;
-  }
-
-  static bool sEventPingEnabled = mozilla::Preferences::GetBool(
-      "toolkit.telemetry.eventping.enabled", true);
-  if (!sEventPingEnabled) {
+  if (!gEnabledCategories.Contains(GetCategory(lock, eventKey))) {
     return RecordEventResult::Ok;
   }
 
   EventRecordArray* eventRecords = GetEventRecordsForProcess(lock, processType);
-  eventRecords->AppendElement(EventRecord(timestamp, *eventKey, value, extra));
+  eventRecords->AppendElement(EventRecord(timestamp, eventKey, value, extra));
 
   // Notify observers when we hit the "event" ping event record limit.
-  static uint32_t sEventPingLimit = mozilla::Preferences::GetUint(
-      "toolkit.telemetry.eventping.eventLimit", 1000);
-  if (eventRecords->Length() == sEventPingLimit) {
+  if (eventRecords->Length() == kEventPingLimit) {
     return RecordEventResult::StorageLimitReached;
   }
 
@@ -493,19 +482,19 @@ RecordEventResult ShouldRecordChildEvent(const StaticMutexAutoLock& lock,
                                          const nsACString& category,
                                          const nsACString& method,
                                          const nsACString& object) {
-  EventKey* eventKey = GetEventKey(lock, category, method, object);
-  if (!eventKey) {
+  EventKey eventKey;
+  if (!GetEventKey(lock, category, method, object, &eventKey)) {
     // This event is unknown in this process, but it might be a dynamic event
     // that was registered in the parent process.
     return RecordEventResult::Ok;
   }
 
-  if (IsExpired(*eventKey)) {
+  if (IsExpired(eventKey)) {
     return RecordEventResult::ExpiredEvent;
   }
 
   const auto processes =
-      gEventInfo[eventKey->id].common_info.record_in_processes;
+      gEventInfo[eventKey.id].common_info.record_in_processes;
   if (!CanRecordInProcess(processes, XRE_GetProcessType())) {
     return RecordEventResult::WrongProcess;
   }
@@ -535,10 +524,10 @@ void RegisterEvents(const StaticMutexAutoLock& lock, const nsACString& category,
     //   changed.
     // * When dynamic builtins ("build faster") events are registered.
     //   The dynamic definition takes precedence then.
-    EventKey* existing = nullptr;
+    EventKey existing;
     if (!aBuiltin && gEventNameIDMap.Get(eventName, &existing)) {
       if (eventExpired[i]) {
-        existing->id = kExpiredEventId;
+        existing.id = kExpiredEventId;
       }
       continue;
     }
@@ -546,18 +535,18 @@ void RegisterEvents(const StaticMutexAutoLock& lock, const nsACString& category,
     gDynamicEventInfo->AppendElement(eventInfos[i]);
     uint32_t eventId =
         eventExpired[i] ? kExpiredEventId : gDynamicEventInfo->Length() - 1;
-    gEventNameIDMap.Put(eventName, new EventKey{eventId, true});
+    gEventNameIDMap.InsertOrUpdate(eventName, EventKey{eventId, true});
   }
 
   // If it is a builtin, add the category name in order to enable it later.
   if (aBuiltin) {
-    gCategoryNames.PutEntry(category);
+    gCategoryNames.Insert(category);
   }
 
   if (!aBuiltin) {
     // Now after successful registration enable recording for this category
     // (if not a dynamic builtin).
-    gEnabledCategories.PutEntry(category);
+    gEnabledCategories.Insert(category);
   }
 }
 
@@ -715,9 +704,13 @@ void TelemetryEvent::InitializeGlobalState(bool aCanRecordBase,
       eventId = kExpiredEventId;
     }
 
-    gEventNameIDMap.Put(UniqueEventName(info), new EventKey{eventId, false});
-    gCategoryNames.PutEntry(info.common_info.category());
+    gEventNameIDMap.InsertOrUpdate(UniqueEventName(info),
+                                   EventKey{eventId, false});
+    gCategoryNames.Insert(info.common_info.category());
   }
+
+  // A hack until bug 1691156 is fixed
+  gEnabledCategories.Insert("avif"_ns);
 
   gInitDone = true;
 }
@@ -1256,8 +1249,8 @@ nsresult TelemetryEvent::CreateSnapshots(uint32_t aDataset, bool aClear,
     auto snapshotter = [aDataset, &locker, &processEvents, &leftovers, aClear,
                         optional_argc,
                         aEventLimit](EventRecordsMapType& aProcessStorage) {
-      for (auto iter = aProcessStorage.Iter(); !iter.Done(); iter.Next()) {
-        const EventRecordArray* eventStorage = iter.UserData();
+      for (const auto& entry : aProcessStorage) {
+        const EventRecordArray* eventStorage = entry.GetWeak();
         EventRecordArray events;
         EventRecordArray leftoverEvents;
 
@@ -1276,12 +1269,11 @@ nsresult TelemetryEvent::CreateSnapshots(uint32_t aDataset, bool aClear,
         }
 
         if (events.Length()) {
-          const char* processName = GetNameForProcessID(ProcessID(iter.Key()));
-          processEvents.AppendElement(
-              std::make_pair(processName, std::move(events)));
+          const char* processName =
+              GetNameForProcessID(ProcessID(entry.GetKey()));
+          processEvents.EmplaceBack(processName, std::move(events));
           if (leftoverEvents.Length()) {
-            leftovers.AppendElement(
-                std::make_pair(iter.Key(), std::move(leftoverEvents)));
+            leftovers.EmplaceBack(entry.GetKey(), std::move(leftoverEvents));
           }
         }
       }
@@ -1292,8 +1284,8 @@ nsresult TelemetryEvent::CreateSnapshots(uint32_t aDataset, bool aClear,
     if (aClear) {
       gEventRecords.Clear();
       for (auto& pair : leftovers) {
-        gEventRecords.Put(pair.first,
-                          new EventRecordArray(std::move(pair.second)));
+        gEventRecords.InsertOrUpdate(
+            pair.first, MakeUnique<EventRecordArray>(std::move(pair.second)));
       }
       leftovers.Clear();
     }
@@ -1351,9 +1343,9 @@ void TelemetryEvent::SetEventRecordingEnabled(const nsACString& category,
   }
 
   if (enabled) {
-    gEnabledCategories.PutEntry(category);
+    gEnabledCategories.Insert(category);
   } else {
-    gEnabledCategories.RemoveEntry(category);
+    gEnabledCategories.Remove(category);
   }
 }
 
@@ -1364,8 +1356,7 @@ size_t TelemetryEvent::SizeOfIncludingThis(
 
   auto getSizeOfRecords = [aMallocSizeOf](auto& storageMap) {
     size_t partial = storageMap.ShallowSizeOfExcludingThis(aMallocSizeOf);
-    for (auto iter = storageMap.Iter(); !iter.Done(); iter.Next()) {
-      EventRecordArray* eventRecords = iter.UserData();
+    for (const auto& eventRecords : storageMap.Values()) {
       partial += eventRecords->ShallowSizeOfIncludingThis(aMallocSizeOf);
 
       const uint32_t len = eventRecords->Length();

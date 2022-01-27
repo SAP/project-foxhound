@@ -4,34 +4,41 @@
 
 #include "nsContentAreaDragDrop.h"
 #include "RemoteDragStartData.h"
+#include "nsContentUtils.h"
+#include "nsICookieJarSettings.h"
 #include "nsVariant.h"
+#include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/IPCBlobUtils.h"
 #include "mozilla/dom/DOMTypes.h"
-#include "ProtocolUtils.h"
+#include "mozilla/ipc/ProtocolUtils.h"
 
 using namespace mozilla::ipc;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 RemoteDragStartData::~RemoteDragStartData() = default;
 
 RemoteDragStartData::RemoteDragStartData(
     BrowserParent* aBrowserParent, nsTArray<IPCDataTransfer>&& aDataTransfer,
     const LayoutDeviceIntRect& aRect, nsIPrincipal* aPrincipal,
-    nsIContentSecurityPolicy* aCsp)
+    nsIContentSecurityPolicy* aCsp, nsICookieJarSettings* aCookieJarSettings,
+    WindowContext* aSourceWindowContext)
     : mBrowserParent(aBrowserParent),
       mDataTransfer(std::move(aDataTransfer)),
       mRect(aRect),
       mPrincipal(aPrincipal),
-      mCsp(aCsp) {}
+      mCsp(aCsp),
+      mCookieJarSettings(aCookieJarSettings),
+      mSourceWindowContext(aSourceWindowContext) {}
 
-void RemoteDragStartData::AddInitialDnDDataTo(DataTransfer* aDataTransfer,
-                                              nsIPrincipal** aPrincipal,
-                                              nsIContentSecurityPolicy** aCsp) {
+void RemoteDragStartData::AddInitialDnDDataTo(
+    DataTransfer* aDataTransfer, nsIPrincipal** aPrincipal,
+    nsIContentSecurityPolicy** aCsp,
+    nsICookieJarSettings** aCookieJarSettings) {
   NS_IF_ADDREF(*aPrincipal = mPrincipal);
   NS_IF_ADDREF(*aCsp = mCsp);
+  NS_IF_ADDREF(*aCookieJarSettings = mCookieJarSettings);
 
   for (uint32_t i = 0; i < mDataTransfer.Length(); ++i) {
     nsTArray<IPCDataTransferItem>& itemArray = mDataTransfer[i].items();
@@ -82,5 +89,4 @@ void RemoteDragStartData::AddInitialDnDDataTo(DataTransfer* aDataTransfer,
   mPrincipal = nullptr;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

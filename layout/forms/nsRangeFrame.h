@@ -42,9 +42,6 @@ class nsRangeFrame final : public nsContainerFrame,
   NS_DECL_FRAMEARENA_HELPERS(nsRangeFrame)
 
   // nsIFrame overrides
-  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
-                    nsIFrame* aPrevInFlow) override;
-
   virtual void DestroyFrom(nsIFrame* aDestructRoot,
                            PostDestroyData& aPostDestroyData) override;
 
@@ -74,11 +71,13 @@ class nsRangeFrame final : public nsContainerFrame,
   virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
                                     int32_t aModType) override;
 
-  virtual mozilla::LogicalSize ComputeAutoSize(
+  mozilla::LogicalSize ComputeAutoSize(
       gfxContext* aRenderingContext, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
+      const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorderPadding,
+      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      mozilla::ComputeSizeFlags aFlags) override;
 
   virtual nscoord GetMinISize(gfxContext* aRenderingContext) override;
   virtual nscoord GetPrefISize(gfxContext* aRenderingContext) override;
@@ -175,23 +174,6 @@ class nsRangeFrame final : public nsContainerFrame,
    * @see nsRangeFrame::CreateAnonymousContent
    */
   nsCOMPtr<Element> mThumbDiv;
-
-  class DummyTouchListener final : public nsIDOMEventListener {
-   private:
-    ~DummyTouchListener() = default;
-
-   public:
-    NS_DECL_ISUPPORTS
-
-    NS_IMETHOD HandleEvent(mozilla::dom::Event* aEvent) override {
-      return NS_OK;
-    }
-  };
-
-  /**
-   * A no-op touch-listener used for APZ purposes (see nsRangeFrame::Init).
-   */
-  RefPtr<DummyTouchListener> mDummyTouchListener;
 };
 
 #endif

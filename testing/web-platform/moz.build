@@ -4,21 +4,21 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-TEST_HARNESS_FILES['web-platform'] += [
-    'mach_commands_base.py',
-    'mach_test_package_commands.py',
-    'outbound/**',
-    'runtests.py',
-    'wptrunner.ini',
+TEST_HARNESS_FILES["web-platform"] += [
+    "mach_commands_base.py",
+    "mach_test_package_commands.py",
+    "outbound/**",
+    "runtests.py",
+    "wptrunner.ini",
 ]
 
-PYTHON_UNITTEST_MANIFESTS += ['python.ini']
+PYTHON_UNITTEST_MANIFESTS += ["python.ini"]
 
 with Files("**"):
     SCHEDULES.exclusive = [
-        'web-platform-tests',
-        'web-platform-tests-reftest',
-        'web-platform-tests-wdspec',
+        "web-platform-tests",
+        "web-platform-tests-reftest",
+        "web-platform-tests-wdspec",
     ]
 
 with Files("moz.build"):
@@ -75,9 +75,6 @@ with Files("mozilla/tests/html/semantics/scripting-1/**"):
 with Files("mozilla/tests/placeholder"):
     BUG_COMPONENT = ("Testing", "web-platform-tests")
 
-with Files("mozilla/tests/wasm/**"):
-    BUG_COMPONENT = ("Core", "Javascript: WebAssembly")
-
 with Files("update/**"):
     BUG_COMPONENT = ("Testing", "web-platform-tests")
 
@@ -92,15 +89,9 @@ with Files("tests/*.md"):
 
 with Files("tests/**"):
     BUG_COMPONENT = ("Testing", "web-platform-tests")
-    SCHEDULES.inclusive += ['test-verify-wpt']
-
-with Files("tests/LICENSE"):
-    BUG_COMPONENT = ("Testing", "web-platform-tests")
+    SCHEDULES.inclusive += ["test-verify-wpt"]
 
 with Files("tests/testharness_runner.html"):
-    BUG_COMPONENT = ("Testing", "web-platform-tests")
-
-with Files("tests/update-built-tests.sh"):
     BUG_COMPONENT = ("Testing", "web-platform-tests")
 
 with Files("tests/wpt"):
@@ -118,9 +109,6 @@ with Files("tests/IndexedDB/**"):
 
 with Files("tests/WebCryptoAPI/**"):
     BUG_COMPONENT = ("Core", "DOM: Security")
-
-with Files("tests/WebIDL/**"):
-    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
 with Files("tests/xhr/**"):
     BUG_COMPONENT = ("Core", "DOM: Networking")
@@ -441,6 +429,9 @@ with Files("tests/element-timing/**"):
 with Files("tests/encoding/**"):
     BUG_COMPONENT = ("Core", "Internationalization")
 
+with Files("tests/encoding-detection/**"):
+    BUG_COMPONENT = ("Core", "Internationalization")
+
 with Files("tests/encrypted-media/**"):
     BUG_COMPONENT = ("Core", "Audio/Video: Playback")
 
@@ -451,7 +442,7 @@ with Files("tests/eventsource/**"):
     BUG_COMPONENT = ("Core", "DOM: Events")
 
 with Files("tests/feature-policy/**"):
-    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
+    BUG_COMPONENT = ("Core", "DOM: Security")
 
 with Files("tests/fetch/**"):
     BUG_COMPONENT = ("Core", "DOM: Networking")
@@ -638,6 +629,9 @@ with Files("tests/resource-timing/**"):
 with Files("tests/resources/**"):
     BUG_COMPONENT = ("Testing", "web-platform-tests")
 
+with Files("tests/sanitizer-api/**"):
+    BUG_COMPONENT = ("Core", "DOM: Security")
+
 with Files("tests/screen-capture/**"):
     BUG_COMPONENT = ("Core", "WebRTC: Audio/Video")
 
@@ -691,7 +685,6 @@ with Files("tests/uievents/**"):
 
 with Files("tests/upgrade-insecure-requests/**"):
     BUG_COMPONENT = ("Core", "DOM: Security")
-
 with Files("tests/url/**"):
     BUG_COMPONENT = ("Core", "DOM: Networking")
 
@@ -728,6 +721,9 @@ with Files("tests/webgl/**"):
 with Files("tests/webmessaging/**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
+with Files("tests/web-locks/**"):
+    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
+
 with Files("tests/web-nfc/**"):
     BUG_COMPONENT = ("Core", "DOM: Device Interfaces")
 
@@ -738,12 +734,6 @@ with Files("tests/webrtc-extensions/**"):
     BUG_COMPONENT = ("Core", "WebRTC")
 
 with Files("tests/webrtc-identity/**"):
-    BUG_COMPONENT = ("Core", "WebRTC")
-
-with Files("tests/webrtc-insertable-streams/**"):
-    BUG_COMPONENT = ("Core", "WebRTC")
-
-with Files("tests/webrtc-quic/**"):
     BUG_COMPONENT = ("Core", "WebRTC")
 
 with Files("tests/webrtc-stats/**"):
@@ -782,5 +772,3 @@ with Files("tests/worklets/**"):
 
 with Files("tests/x-frame-options/**"):
     BUG_COMPONENT = ("Core", "DOM: Security")
-
-SPHINX_TREES["/web-platform"] = "tests/docs"

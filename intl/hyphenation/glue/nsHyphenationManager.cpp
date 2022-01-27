@@ -148,7 +148,7 @@ already_AddRefed<nsHyphenator> nsHyphenationManager::GetHyphenator(
   hyphCapPref.Append(nsAtomCString(aLocale));
   hyph = new nsHyphenator(uri, Preferences::GetBool(hyphCapPref.get()));
   if (hyph->IsValid()) {
-    mHyphenators.Put(aLocale, RefPtr{hyph});
+    mHyphenators.InsertOrUpdate(aLocale, RefPtr{hyph});
     return hyph.forget();
   }
 #ifdef DEBUG
@@ -204,9 +204,10 @@ void nsHyphenationManager::LoadPatternList() {
 // Extract the locale code we'll use to identify a given hyphenation resource
 // from the path name as found in omnijar or on disk.
 static already_AddRefed<nsAtom> LocaleAtomFromPath(const nsCString& aPath) {
-  MOZ_ASSERT(StringEndsWith(aPath, ".hyf"_ns));
+  MOZ_ASSERT(StringEndsWith(aPath, ".hyf"_ns) ||
+             StringEndsWith(aPath, ".dic"_ns));
   nsCString locale(aPath);
-  locale.Truncate(locale.Length() - 4);      // strip ".hyf"
+  locale.Truncate(locale.Length() - 4);      // strip ".hyf" or ".dic"
   locale.Cut(0, locale.RFindChar('/') + 1);  // strip directory
   ToLowerCase(locale);
   if (StringBeginsWith(locale, "hyph_"_ns)) {
@@ -233,7 +234,7 @@ void nsHyphenationManager::LoadPatternListFromOmnijar(Omnijar::Type aType) {
   }
 
   nsZipFind* find;
-  zip->FindInit("hyphenation/hyph_*.hyf", &find);
+  zip->FindInit("hyphenation/hyph_*.*", &find);
   if (!find) {
     return;
   }
@@ -254,7 +255,7 @@ void nsHyphenationManager::LoadPatternListFromOmnijar(Omnijar::Type aType) {
       continue;
     }
     RefPtr<nsAtom> localeAtom = LocaleAtomFromPath(locale);
-    mPatternFiles.Put(localeAtom, uri);
+    mPatternFiles.InsertOrUpdate(localeAtom, uri);
   }
 
   delete find;
@@ -285,7 +286,7 @@ void nsHyphenationManager::LoadPatternListFromDir(nsIFile* aDir) {
     nsAutoString dictName;
     file->GetLeafName(dictName);
     NS_ConvertUTF16toUTF8 path(dictName);
-    if (!StringEndsWith(path, ".hyf"_ns)) {
+    if (!(StringEndsWith(path, ".hyf"_ns) || StringEndsWith(path, ".dic"_ns))) {
       continue;
     }
     RefPtr<nsAtom> localeAtom = LocaleAtomFromPath(path);
@@ -296,7 +297,7 @@ void nsHyphenationManager::LoadPatternListFromDir(nsIFile* aDir) {
       printf("adding hyphenation patterns for %s: %s\n",
              nsAtomCString(localeAtom).get(), path.get());
 #endif
-      mPatternFiles.Put(localeAtom, uri);
+      mPatternFiles.InsertOrUpdate(localeAtom, uri);
     }
   }
 }
@@ -320,29 +321,30 @@ void nsHyphenationManager::LoadAliases() {
         ToLowerCase(value);
         RefPtr<nsAtom> aliasAtom = NS_Atomize(alias);
         RefPtr<nsAtom> valueAtom = NS_Atomize(value);
-        mHyphAliases.Put(aliasAtom, std::move(valueAtom));
+        mHyphAliases.InsertOrUpdate(aliasAtom, std::move(valueAtom));
       }
     }
   }
 }
 
 void nsHyphenationManager::ShareHyphDictToProcess(
-    nsIURI* aURI, base::ProcessId aPid,
-    mozilla::ipc::SharedMemoryBasic::Handle* aOutHandle, uint32_t* aOutSize) {
+    nsIURI* aURI, base::ProcessId aPid, base::SharedMemoryHandle* aOutHandle,
+    uint32_t* aOutSize) {
   MOZ_ASSERT(XRE_IsParentProcess());
   // aURI will be referring to an omnijar resource (otherwise just bail).
-  *aOutHandle = ipc::SharedMemoryBasic::NULLHandle();
+  *aOutHandle = base::SharedMemory::NULLHandle();
   *aOutSize = 0;
-  nsCOMPtr<nsIJARURI> jar = do_QueryInterface(aURI);
-  if (!jar) {
-    MOZ_ASSERT_UNREACHABLE("not a JAR resource");
-    return;
-  }
 
   // Extract the locale code from the URI, and get the corresponding
   // hyphenator (loading it into shared memory if necessary).
   nsCString path;
-  jar->GetJAREntry(path);
+  nsCOMPtr<nsIJARURI> jar = do_QueryInterface(aURI);
+  if (jar) {
+    jar->GetJAREntry(path);
+  } else {
+    aURI->GetFilePath(path);
+  }
+
   RefPtr<nsAtom> localeAtom = LocaleAtomFromPath(path);
   RefPtr<nsHyphenator> hyph = GetHyphenator(localeAtom);
   if (!hyph) {
@@ -350,7 +352,7 @@ void nsHyphenationManager::ShareHyphDictToProcess(
     return;
   }
 
-  hyph->ShareToProcess(aPid, aOutHandle, aOutSize);
+  hyph->CloneHandle(aOutHandle, aOutSize);
 }
 
 size_t nsHyphenationManager::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) {

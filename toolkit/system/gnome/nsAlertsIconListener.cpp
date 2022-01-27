@@ -11,7 +11,7 @@
 #include "nsSystemAlertsService.h"
 #include "nsIAlertsService.h"
 #include "nsICancelable.h"
-#include "nsIImageToPixbuf.h"
+#include "nsImageToPixbuf.h"
 #include "nsIStringBundle.h"
 #include "nsIObserverService.h"
 #include "nsCRT.h"
@@ -84,10 +84,7 @@ static GdkPixbuf* GetPixbufFromImgRequest(imgIRequest* aRequest) {
     return nullptr;
   }
 
-  nsCOMPtr<nsIImageToPixbuf> imgToPixbuf =
-      do_GetService("@mozilla.org/widget/image-to-gdk-pixbuf;1");
-
-  return imgToPixbuf->ConvertImageToPixbuf(image);
+  return nsImageToPixbuf::ImageToPixbuf(image);
 }
 
 NS_IMPL_ISUPPORTS(nsAlertsIconListener, nsIAlertNotificationImageListener,
@@ -284,7 +281,7 @@ nsresult nsAlertsIconListener::InitAlertAsync(nsIAlertNotification* aAlert,
 
       if (bundle) {
         bundle->GetStringFromName("brandShortName", appName);
-        appShortName = NS_ConvertUTF16toUTF8(appName);
+        CopyUTF16toUTF8(appName, appShortName);
       } else {
         NS_WARNING(
             "brand.properties not present, using default application name");
@@ -329,13 +326,13 @@ nsresult nsAlertsIconListener::InitAlertAsync(nsIAlertNotification* aAlert,
   if (title.IsEmpty()) {
     mAlertTitle = " "_ns;
   } else {
-    mAlertTitle = NS_ConvertUTF16toUTF8(title);
+    CopyUTF16toUTF8(title, mAlertTitle);
   }
 
   nsAutoString text;
   rv = aAlert->GetText(text);
   NS_ENSURE_SUCCESS(rv, rv);
-  mAlertText = NS_ConvertUTF16toUTF8(text);
+  CopyUTF16toUTF8(text, mAlertText);
 
   mAlertListener = aAlertListener;
 

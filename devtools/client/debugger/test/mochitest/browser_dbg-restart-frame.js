@@ -7,7 +7,7 @@
 add_task(async function() {
   const dbg = await initDebugger("doc-scripts.html", "simple3.js");
   await selectSource(dbg, "simple3.js");
-  
+
   info("Invokes function 'nestedA' and pauses in function 'nestedC'.");
   invokeInTab("nestedA");
   await waitForPaused(dbg);
@@ -15,9 +15,10 @@ add_task(async function() {
   info("Right clicks frame 'nestedB' and selects 'Restart frame'.");
   const frameEls = findAllElementsWithSelector(dbg, ".pane.frames .frame");
   rightClickEl(dbg, frameEls[1]);
+  await waitForContextMenu(dbg);
 
-  selectContextMenuItem(dbg, "#node-menu-restart-frame");
-  await waitForDispatch(dbg, "COMMAND");
+  selectContextMenuItem(dbg, "#node-menu-restartFrame");
+  await waitForDispatch(dbg.store, "COMMAND");
   await waitForPaused(dbg);
 
   const pauseLine = getVisibleSelectedFrameLine(dbg);

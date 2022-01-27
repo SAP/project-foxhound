@@ -6,11 +6,14 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Integration.jsm", this);
-ChromeUtils.import("resource:///modules/PermissionUI.jsm", this);
-ChromeUtils.import("resource:///modules/SitePermissions.jsm", this);
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
+const { Integration } = ChromeUtils.import(
+  "resource://gre/modules/Integration.jsm"
+);
+const { PermissionUI } = ChromeUtils.import(
+  "resource:///modules/PermissionUI.jsm"
+);
+const { SitePermissions } = ChromeUtils.import(
+  "resource:///modules/SitePermissions.jsm"
 );
 
 // Tests that GeolocationPermissionPrompt works as expected
@@ -67,12 +70,15 @@ async function testPrompt(Prompt) {
       let mockRequest = makeMockPermissionRequest(browser);
       let principal = mockRequest.principal;
       let TestPrompt = new Prompt(mockRequest);
-      let permissionKey =
-        TestPrompt.usePermissionManager && TestPrompt.permissionKey;
+      let { usePermissionManager, permissionKey } = TestPrompt;
 
       registerCleanupFunction(function() {
         if (permissionKey) {
-          PermissionTestUtils.remove(principal.URI, permissionKey);
+          SitePermissions.removeFromPrincipal(
+            principal,
+            permissionKey,
+            browser
+          );
         }
       });
 
@@ -108,11 +114,8 @@ async function testPrompt(Prompt) {
 
       let isNotificationPrompt =
         Prompt == PermissionUI.DesktopNotificationPermissionPrompt;
-      let isPersistentStoragePrompt =
-        Prompt == PermissionUI.PersistentStoragePermissionPrompt;
 
-      let expectedSecondaryActionsCount =
-        isNotificationPrompt || isPersistentStoragePrompt ? 2 : 1;
+      let expectedSecondaryActionsCount = isNotificationPrompt ? 2 : 1;
       Assert.equal(
         notification.secondaryActions.length,
         expectedSecondaryActionsCount,
@@ -165,7 +168,7 @@ async function testPrompt(Prompt) {
       // or by clicking the "never" option from the dropdown (for notifications and persistent-storage).
       popupNotification = getPopupNotificationNode();
       let secondaryActionToClickIndex = 0;
-      if (isNotificationPrompt || isPersistentStoragePrompt) {
+      if (isNotificationPrompt) {
         secondaryActionToClickIndex = 1;
       } else {
         popupNotification.checkbox.checked = true;
@@ -180,16 +183,26 @@ async function testPrompt(Prompt) {
       );
       await clickSecondaryAction(secondaryActionToClickIndex);
       if (permissionKey) {
-        curPerm = PermissionTestUtils.getPermissionObject(
-          principal.URI,
-          permissionKey
+        curPerm = SitePermissions.getForPrincipal(
+          principal,
+          permissionKey,
+          browser
         );
         Assert.equal(
-          curPerm.capability,
-          Services.perms.DENY_ACTION,
+          curPerm.state,
+          SitePermissions.BLOCK,
           "Should have denied the action"
         );
-        Assert.equal(curPerm.expireTime, 0, "Deny should be permanent");
+
+        let expectedScope = usePermissionManager
+          ? SitePermissions.SCOPE_PERSISTENT
+          : SitePermissions.SCOPE_TEMPORARY;
+        Assert.equal(
+          curPerm.scope,
+          expectedScope,
+          `Deny should be ${usePermissionManager ? "persistent" : "temporary"}`
+        );
+
         Assert.ok(
           mockRequest._cancelled,
           "The request should have been cancelled"
@@ -200,11 +213,7 @@ async function testPrompt(Prompt) {
         );
       }
 
-      SitePermissions.removeFromPrincipal(
-        principal,
-        TestPrompt.permissionKey,
-        browser
-      );
+      SitePermissions.removeFromPrincipal(principal, permissionKey, browser);
       mockRequest._cancelled = false;
 
       // Bring the PopupNotification back up now...
@@ -220,17 +229,24 @@ async function testPrompt(Prompt) {
       popupNotification.checkbox.checked = true;
 
       await clickMainAction();
-      if (permissionKey) {
-        curPerm = PermissionTestUtils.getPermissionObject(
-          principal.URI,
-          permissionKey
+      // If the prompt does not use the permission manager, it can not set a
+      // persistent allow. Temporary allow is not supported.
+      if (usePermissionManager && permissionKey) {
+        curPerm = SitePermissions.getForPrincipal(
+          principal,
+          permissionKey,
+          browser
         );
         Assert.equal(
-          curPerm.capability,
-          Services.perms.ALLOW_ACTION,
+          curPerm.state,
+          SitePermissions.ALLOW,
           "Should have allowed the action"
         );
-        Assert.equal(curPerm.expireTime, 0, "Allow should be permanent");
+        Assert.equal(
+          curPerm.scope,
+          SitePermissions.SCOPE_PERSISTENT,
+          "Allow should be permanent"
+        );
         Assert.ok(
           !mockRequest._cancelled,
           "The request should not have been cancelled"

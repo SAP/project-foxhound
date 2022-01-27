@@ -15,9 +15,18 @@
 // "Techniques For Accessibility Evalution And Repair Tools".
 // See http://www.w3.org/TR/AERT#color-contrast
 #define NS_SUFFICIENT_LUMINOSITY_DIFFERENCE 125000
+// NS_SUFFICIENT_LUMINOSITY_DIFFERENCE is the a11y standard for text
+// on a background. Use 20% of that standard since we have a background
+// on top of another background
+#define NS_SUFFICIENT_LUMINOSITY_DIFFERENCE_BG \
+  (NS_SUFFICIENT_LUMINOSITY_DIFFERENCE / 5)
+
 #define NS_LUMINOSITY_DIFFERENCE(a, b)                    \
   int32_t(mozilla::Abs(NS_GetLuminosity(a | 0xff000000) - \
                        NS_GetLuminosity(b | 0xff000000)))
+
+// Maximum value that NS_GetLuminosity can return.
+#define NS_MAX_LUMINOSITY 255000
 
 // To determine 3D colors for groove / ridge borders based on the border color
 void NS_GetSpecial3DColors(nscolor aResult[2], nscolor aBorderColor);
@@ -26,7 +35,7 @@ void NS_GetSpecial3DColors(nscolor aResult[2], nscolor aBorderColor);
 int NS_GetBrightness(uint8_t aRed, uint8_t aGreen, uint8_t aBlue);
 
 // Get Luminosity of a specific color. That is same as Y of YIQ color space.
-// The range of return value is 0 to 255000.
+// The range of return value is 0 to NS_MAX_LUMINOSITY.
 int32_t NS_GetLuminosity(nscolor aColor);
 
 // function to convert from RGBA color space to HSVA color space

@@ -1,7 +1,9 @@
 #include "gtest/gtest.h"
 
 #include "mozilla/NonBlockingAsyncInputStream.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "nsIAsyncInputStream.h"
+#include "nsIThread.h"
 #include "nsStreamUtils.h"
 #include "nsString.h"
 #include "nsStringStream.h"
@@ -133,7 +135,9 @@ TEST(TestNonBlockingAsyncInputStream, AsyncWait_Simple)
 
   ASSERT_EQ(NS_OK, async->AsyncWait(cb, 0, 0, thread));
   ASSERT_FALSE(cb->Called());
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return cb->Called(); }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "xpcom:TEST(TestNonBlockingAsyncInputStream, AsyncWait_Simple)"_ns,
+      [&]() { return cb->Called(); }));
   ASSERT_TRUE(cb->Called());
 
   // Read works fine.
@@ -200,7 +204,9 @@ TEST(TestNonBlockingAsyncInputStream, AsyncWait_ClosureOnly_withEventTarget)
   ASSERT_EQ(NS_OK, async->Close());
   ASSERT_FALSE(cb->Called());
 
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return cb->Called(); }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "xpcom:TEST(TestNonBlockingAsyncInputStream, AsyncWait_ClosureOnly_withEventTarget)"_ns,
+      [&]() { return cb->Called(); }));
   ASSERT_TRUE(cb->Called());
 }
 

@@ -4,13 +4,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsCOMPtr.h"
-
 #include "nsIOutputStream.h"
 #include "nsString.h"
-
 #include "nsConverterOutputStream.h"
 #include "mozilla/Encoding.h"
-#include "mozilla/Unused.h"
 
 using namespace mozilla;
 
@@ -51,16 +48,14 @@ nsConverterOutputStream::Write(uint32_t aCount, const char16_t* aChars,
   }
   MOZ_ASSERT(mConverter, "Must have a converter when not closed");
   uint8_t buffer[4096];
-  auto dst = MakeSpan(buffer);
-  auto src = MakeSpan(aChars, aCount);
+  auto dst = Span(buffer);
+  auto src = Span(aChars, aCount);
   for (;;) {
     uint32_t result;
     size_t read;
     size_t written;
-    bool hadErrors;
-    Tie(result, read, written, hadErrors) =
+    std::tie(result, read, written, std::ignore) =
         mConverter->EncodeFromUTF16(src, dst, false);
-    Unused << hadErrors;
     src = src.From(read);
     uint32_t streamWritten;
     nsresult rv = mOutStream->Write(reinterpret_cast<char*>(dst.Elements()),
@@ -92,15 +87,12 @@ nsConverterOutputStream::Flush() {
   // needs to be large enough for an additional NCR,
   // though.
   uint8_t buffer[12];
-  auto dst = MakeSpan(buffer);
+  auto dst = Span(buffer);
   Span<char16_t> src(nullptr);
   uint32_t result;
-  size_t read;
   size_t written;
-  bool hadErrors;
-  Tie(result, read, written, hadErrors) =
+  std::tie(result, std::ignore, written, std::ignore) =
       mConverter->EncodeFromUTF16(src, dst, true);
-  Unused << hadErrors;
   MOZ_ASSERT(result == kInputEmpty);
   uint32_t streamWritten;
   if (!written) {

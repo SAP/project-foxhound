@@ -58,12 +58,18 @@ app-basics-enabled-plugins = Enabled Plugins
 app-basics-build-config = Build Configuration
 app-basics-user-agent = User Agent
 app-basics-os = OS
+app-basics-os-theme = OS Theme
+# Rosetta is Apple's translation process to run apps containing x86_64
+# instructions on Apple Silicon. This should remain in English.
+app-basics-rosetta = Rosetta Translated
 app-basics-memory-use = Memory Use
 app-basics-performance = Performance
 app-basics-service-workers = Registered Service Workers
+app-basics-third-party = Third-party Modules
 app-basics-profiles = Profiles
 app-basics-launcher-process-status = Launcher Process
 app-basics-multi-process-support = Multiprocess Windows
+app-basics-fission-support = Fission Windows
 app-basics-remote-processes-count = Remote Processes
 app-basics-enterprise-policies = Enterprise Policies
 app-basics-location-service-key-google = Google Location Service Key
@@ -76,6 +82,9 @@ show-dir-label =
         [windows] Open Folder
        *[other] Open Directory
     }
+environment-variables-title = Environment Variables
+environment-variables-name = Name
+environment-variables-value = Value
 experimental-features-title = Experimental Features
 experimental-features-name = Name
 experimental-features-value = Value
@@ -120,12 +129,12 @@ sandbox-sys-call-tid = TID
 sandbox-sys-call-proc-type = Process Type
 sandbox-sys-call-number = Syscall
 sandbox-sys-call-args = Arguments
-safe-mode-title = Try Safe Mode
-restart-in-safe-mode-label = Restart with Add-ons Disabled…
+troubleshoot-mode-title = Diagnose issues
+restart-in-troubleshoot-mode-label = Troubleshoot Mode…
 clear-startup-cache-title = Try clearing the startup cache
 clear-startup-cache-label = Clear startup cache…
-startup-cache-dialog-title = Clear startup cache
-startup-cache-dialog-body = Restart { -brand-short-name } to clear startup cache. This will not change your settings or remove extensions you’ve added to { -brand-short-name }.
+startup-cache-dialog-title2 = Restart { -brand-short-name } to clear startup cache?
+startup-cache-dialog-body2 = This will not change your settings or remove extensions.
 restart-button-label = Restart
 
 ## Media titles
@@ -149,6 +158,7 @@ media-device-latency = Latency
 media-capabilities-title = Media Capabilities
 # List all the entries of the database.
 media-capabilities-enumerate = Enumerate database
+
 ##
 
 intl-title = Internationalization & Localization
@@ -173,6 +183,7 @@ intl-regional-prefs = Regional Preferences
 remote-debugging-title = Remote Debugging (Chromium Protocol)
 remote-debugging-accepting-connections = Accepting Connections
 remote-debugging-url = URL
+
 ##
 
 # Variables
@@ -219,6 +230,7 @@ raw-data-copied = Raw data copied to clipboard
 text-copied = Text copied to clipboard
 
 ## The verb "blocked" here refers to a graphics feature such as "Direct2D" or "OpenGL layers".
+
 blocked-driver = Blocked for your graphics driver version.
 blocked-gfx-card = Blocked for your graphics card because of unresolved driver issues.
 blocked-os-version = Blocked for your operating system version.
@@ -242,6 +254,7 @@ virtual-monitor-disp = Virtual Monitor Display
 ## The following strings indicate if an API key has been found.
 ## In some development versions, it's expected for some API keys that they are
 ## not found.
+
 found = Found
 missing = Missing
 
@@ -277,8 +290,6 @@ support-blocklisted-bug = Blocklisted due to known issues: <a data-l10n-name="bu
 unknown-failure = Blocklisted; failure code { $failureCode }
 
 d3d11layers-crash-guard = D3D11 Compositor
-d3d11video-crash-guard = D3D11 Video Decoder
-d3d9video-crash-guard = D3D9 Video Decoder
 glcontext-crash-guard = OpenGL
 wmfvpxvideo-crash-guard = WMF VPX Video Decoder
 
@@ -303,6 +314,7 @@ can-sandbox-content = Content Process Sandboxing
 can-sandbox-media = Media Plugin Sandboxing
 content-sandbox-level = Content Process Sandbox Level
 effective-content-sandbox-level = Effective Content Process Sandbox Level
+content-win32k-lockdown-state = Win32k Lockdown State for Content Process
 sandbox-proc-type-content = content
 sandbox-proc-type-file = file content
 sandbox-proc-type-media-plugin = media plugin
@@ -323,14 +335,21 @@ launcher-process-status-unknown = Unknown status
 # $remoteWindows (integer) - Number of remote windows
 # $totalWindows (integer) - Number of total windows
 multi-process-windows = { $remoteWindows }/{ $totalWindows }
-multi-process-status-0 = Enabled by user
-multi-process-status-1 = Enabled by default
-multi-process-status-2 = Disabled
-multi-process-status-4 = Disabled by accessibility tools
-multi-process-status-6 = Disabled by unsupported text input
-multi-process-status-7 = Disabled by add-ons
-multi-process-status-8 = Disabled forcibly
-multi-process-status-unknown = Unknown status
+# Variables
+# $fissionWindows (integer) - Number of remote windows
+# $totalWindows (integer) - Number of total windows
+fission-windows = { $fissionWindows }/{ $totalWindows }
+fission-status-experiment-control = Disabled by experiment
+fission-status-experiment-treatment = Enabled by experiment
+fission-status-disabled-by-e10s-env = Disabled by environment
+fission-status-enabled-by-env = Enabled by environment
+fission-status-disabled-by-safe-mode = Disabled by safe mode
+fission-status-enabled-by-default = Enabled by default
+fission-status-disabled-by-default = Disabled by default
+fission-status-enabled-by-user-pref = Enabled by user
+fission-status-disabled-by-user-pref = Disabled by user
+fission-status-disabled-by-e10s-other = E10s disabled
+fission-status-enabled-by-rollout = Enabled by phased rollout
 
 async-pan-zoom = Asynchronous Pan/Zoom
 apz-none = none
@@ -343,10 +362,32 @@ zooming-enabled = smooth pinch-zoom enabled
 
 ## Variables
 ## $preferenceKey (string) - String ID of preference
+
 wheel-warning = async wheel input disabled due to unsupported pref: { $preferenceKey }
 touch-warning = async touch input disabled due to unsupported pref: { $preferenceKey }
 
 ## Strings representing the status of the Enterprise Policies engine.
+
 policies-inactive = Inactive
 policies-active = Active
 policies-error = Error
+
+## Printing section
+
+support-printing-title = Printing
+support-printing-troubleshoot = Troubleshooting
+support-printing-clear-settings-button = Clear saved print settings
+support-printing-modified-settings = Modified print settings
+support-printing-prefs-name = Name
+support-printing-prefs-value = Value
+
+## Normandy sections
+
+support-remote-experiments-title = Remote Experiments
+support-remote-experiments-name = Name
+support-remote-experiments-branch = Experiment Branch
+support-remote-experiments-see-about-studies = See <a data-l10n-name="support-about-studies-link">about:studies</a> for more information, including how to disable individual experiments or to disable { -brand-short-name } from running this type of experiment in the future.
+
+support-remote-features-title = Remote Features
+support-remote-features-name = Name
+support-remote-features-status = Status

@@ -1,9 +1,15 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 use serde::ser::{Serialize, Serializer};
 use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
+use std::fmt::{self, Display, Formatter};
 
 pub static ELEMENT_KEY: &str = "element-6066-11e4-a52e-4f735466cecf";
 pub static FRAME_KEY: &str = "frame-075b-4da1-b6ba-e579c2d3230a";
+pub static SHADOW_KEY: &str = "shadow-6066-11e4-a52e-4f735466cecf";
 pub static WINDOW_KEY: &str = "window-fcc6-11e5-b4f8-330a88ab9d7f";
 
 pub static MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
@@ -63,6 +69,40 @@ pub enum LocatorStrategy {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct ShadowRoot(pub String);
+
+// private
+#[derive(Serialize, Deserialize)]
+struct ShadowRootObject {
+    #[serde(rename = "shadow-6066-11e4-a52e-4f735466cecf")]
+    id: String,
+}
+
+impl Serialize for ShadowRoot {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        ShadowRootObject { id: self.0.clone() }.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ShadowRoot {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Deserialize::deserialize(deserializer).map(|ShadowRootObject { id }| ShadowRoot(id))
+    }
+}
+
+impl Display for ShadowRoot {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct WebElement(pub String);
 
 // private
@@ -90,9 +130,9 @@ impl<'de> Deserialize<'de> for WebElement {
     }
 }
 
-impl WebElement {
-    pub fn to_string(&self) -> String {
-        self.0.clone()
+impl Display for WebElement {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -217,6 +257,16 @@ mod tests {
     #[test]
     fn test_json_locator_strategy_invalid() {
         assert!(serde_json::from_value::<LocatorStrategy>(json!("foo")).is_err());
+    }
+
+    #[test]
+    fn test_json_shadowroot() {
+        assert_ser_de(&ShadowRoot("shadow".into()), json!({SHADOW_KEY: "shadow"}));
+    }
+
+    #[test]
+    fn test_json_shadowroot_invalid() {
+        assert!(serde_json::from_value::<ShadowRoot>(json!({"invalid":"shadow"})).is_err());
     }
 
     #[test]

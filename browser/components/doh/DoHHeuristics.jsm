@@ -9,7 +9,7 @@
  * or disable DoH on different networks. DoHController is responsible for running
  * these at startup and upon network changes.
  */
-var EXPORTED_SYMBOLS = ["Heuristics"];
+var EXPORTED_SYMBOLS = ["Heuristics", "parentalControls"];
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
@@ -25,9 +25,22 @@ XPCOMUtils.defineLazyServiceGetter(
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
+  "gNetworkLinkService",
+  "@mozilla.org/network/network-link-service;1",
+  "nsINetworkLinkService"
+);
+
+XPCOMUtils.defineLazyServiceGetter(
+  this,
   "gParentalControlsService",
   "@mozilla.org/parental-controls-service;1",
   "nsIParentalControlsService"
+);
+
+ChromeUtils.defineModuleGetter(
+  this,
+  "DoHConfigController",
+  "resource:///modules/DoHConfig.jsm"
 );
 
 ChromeUtils.defineModuleGetter(
@@ -36,12 +49,9 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/Preferences.jsm"
 );
 
-const GLOBAL_CANARY = "use-application-dns.net";
+const GLOBAL_CANARY = "use-application-dns.net.";
 
 const NXDOMAIN_ERR = "NS_ERROR_UNKNOWN_HOST";
-
-const kProviderSteeringEnabledPref = "doh-rollout.provider-steering.enabled";
-const kProviderSteeringListPref = "doh-rollout.provider-steering.provider-list";
 
 const Heuristics = {
   // String constants used to indicate outcome of heuristics.
@@ -49,16 +59,26 @@ const Heuristics = {
   DISABLE_DOH: "disable_doh",
 
   async run() {
-    let safeSearchChecks = await safeSearch();
+    // Run all the heuristics at the same time.
+    let [safeSearchChecks, zscaler, canary] = await Promise.all([
+      safeSearch(),
+      zscalerCanary(),
+      globalCanary(),
+    ]);
+
+    let platformChecks = await platform();
     let results = {
       google: safeSearchChecks.google,
       youtube: safeSearchChecks.youtube,
-      zscalerCanary: await zscalerCanary(),
-      canary: await globalCanary(),
+      zscalerCanary: zscaler,
+      canary,
       modifiedRoots: await modifiedRoots(),
       browserParent: await parentalControls(),
       thirdPartyRoots: await thirdPartyRoots(),
       policy: await enterprisePolicy(),
+      vpn: platformChecks.vpn,
+      proxy: platformChecks.proxy,
+      nrpt: platformChecks.nrpt,
       steeredProvider: "",
     };
 
@@ -75,6 +95,11 @@ const Heuristics = {
   async checkEnterprisePolicy() {
     return enterprisePolicy();
   },
+
+  // Test only
+  async _setMockLinkService(mockLinkService) {
+    this.mockLinkService = mockLinkService;
+  },
 };
 
 async function dnsLookup(hostname, resolveCanonicalName = false) {
@@ -90,6 +115,7 @@ async function dnsLookup(hostname, resolveCanonicalName = false) {
             reject({ message: new Components.Exception("", inStatus).name });
             return;
           }
+          inRecord.QueryInterface(Ci.nsIDNSAddrRecord);
           if (resolveCanonicalName) {
             try {
               response.canonicalName = inRecord.canonicalName;
@@ -109,14 +135,16 @@ async function dnsLookup(hostname, resolveCanonicalName = false) {
       },
     };
     let dnsFlags =
-      Ci.nsIDNSService.RESOLVE_DISABLE_TRR |
+      Ci.nsIDNSService.RESOLVE_TRR_DISABLED_MODE |
       Ci.nsIDNSService.RESOLVE_DISABLE_IPV6 |
       Ci.nsIDNSService.RESOLVE_BYPASS_CACHE |
       Ci.nsIDNSService.RESOLVE_CANONICAL_NAME;
     try {
       request = gDNSService.asyncResolve(
         hostname,
+        Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
         dnsFlags,
+        null,
         listener,
         null,
         {} /* defaultOriginAttributes */
@@ -144,8 +172,10 @@ async function dnsLookup(hostname, resolveCanonicalName = false) {
 async function dnsListLookup(domainList) {
   let results = [];
 
-  for (let domain of domainList) {
-    let { addresses } = await dnsLookup(domain);
+  let resolutions = await Promise.all(
+    domainList.map(domain => dnsLookup(domain))
+  );
+  for (let { addresses } of resolutions) {
     results = results.concat(addresses);
   }
 
@@ -156,7 +186,13 @@ async function dnsListLookup(domainList) {
 async function globalCanary() {
   let { addresses, err } = await dnsLookup(GLOBAL_CANARY);
 
-  if (err === NXDOMAIN_ERR || !addresses.length) {
+  if (
+    err === NXDOMAIN_ERR ||
+    !addresses.length ||
+    addresses.every(addr =>
+      Services.io.hostnameIsLocalIPAddress(Services.io.newURI(`http://${addr}`))
+    )
+  ) {
     return "disable_doh";
   }
 
@@ -178,13 +214,10 @@ async function modifiedRoots() {
 }
 
 async function parentalControls() {
-  if (Cu.isInAutomation) {
-    return "enable_doh";
-  }
-
   if (gParentalControlsService.parentalControlsEnabled) {
     return "disable_doh";
   }
+
   return "enable_doh";
 }
 
@@ -197,20 +230,12 @@ async function thirdPartyRoots() {
     Ci.nsIX509CertDB
   );
 
-  let allCerts = certdb.getCerts();
-  for (let cert of allCerts) {
-    if (
-      certdb.isCertTrusted(
-        cert,
-        Ci.nsIX509Cert.CA_CERT,
-        Ci.nsIX509CertDB.TRUSTED_SSL
-      )
-    ) {
-      if (!cert.isBuiltInRoot) {
-        // this cert is a trust anchor that wasn't shipped with the browser
-        return "disable_doh";
-      }
-    }
+  let hasThirdPartyRoots = await new Promise(resolve => {
+    certdb.asyncHasThirdPartyRoots(resolve);
+  });
+
+  if (hasThirdPartyRoots) {
+    return "disable_doh";
   }
 
   return "enable_doh";
@@ -242,46 +267,57 @@ async function safeSearch() {
   const providerList = [
     {
       name: "google",
-      unfiltered: ["www.google.com", "google.com"],
-      safeSearch: ["forcesafesearch.google.com"],
+      unfiltered: ["www.google.com.", "google.com."],
+      safeSearch: ["forcesafesearch.google.com."],
     },
     {
       name: "youtube",
       unfiltered: [
-        "www.youtube.com",
-        "m.youtube.com",
-        "youtubei.googleapis.com",
-        "youtube.googleapis.com",
-        "www.youtube-nocookie.com",
+        "www.youtube.com.",
+        "m.youtube.com.",
+        "youtubei.googleapis.com.",
+        "youtube.googleapis.com.",
+        "www.youtube-nocookie.com.",
       ],
-      safeSearch: ["restrict.youtube.com", "restrictmoderate.youtube.com"],
+      safeSearch: ["restrict.youtube.com.", "restrictmoderate.youtube.com."],
     },
   ];
 
-  // Compare strict domain lookups to non-strict domain lookups
-  let safeSearchChecks = {};
-  for (let provider of providerList) {
-    let providerName = provider.name;
-    safeSearchChecks[providerName] = "enable_doh";
-
-    let results = {};
-    results.unfilteredAnswers = await dnsListLookup(provider.unfiltered);
-    results.safeSearchAnswers = await dnsListLookup(provider.safeSearch);
+  async function checkProvider(provider) {
+    let [unfilteredAnswers, safeSearchAnswers] = await Promise.all([
+      dnsListLookup(provider.unfiltered),
+      dnsListLookup(provider.safeSearch),
+    ]);
 
     // Given a provider, check if the answer for any safe search domain
     // matches the answer for any default domain
-    for (let answer of results.safeSearchAnswers) {
-      if (answer && results.unfilteredAnswers.includes(answer)) {
-        safeSearchChecks[providerName] = "disable_doh";
+    for (let answer of safeSearchAnswers) {
+      if (answer && unfilteredAnswers.includes(answer)) {
+        return { name: provider.name, result: "disable_doh" };
       }
     }
+
+    return { name: provider.name, result: "enable_doh" };
   }
 
-  return safeSearchChecks;
+  // Compare strict domain lookups to non-strict domain lookups.
+  // Resolutions has a type of [{ name, result }]
+  let resolutions = await Promise.all(
+    providerList.map(provider => checkProvider(provider))
+  );
+
+  // Reduce that array entries into a single map
+  return resolutions.reduce(
+    (accumulator, check) => {
+      accumulator[check.name] = check.result;
+      return accumulator;
+    },
+    {} // accumulator
+  );
 }
 
 async function zscalerCanary() {
-  const ZSCALER_CANARY = "sitereview.zscaler.com";
+  const ZSCALER_CANARY = "sitereview.zscaler.com.";
 
   let { addresses } = await dnsLookup(ZSCALER_CANARY);
   for (let address of addresses) {
@@ -297,25 +333,52 @@ async function zscalerCanary() {
   return "enable_doh";
 }
 
+async function platform() {
+  let platformChecks = {};
+
+  let indications = Ci.nsINetworkLinkService.NONE_DETECTED;
+  try {
+    let linkService = gNetworkLinkService;
+    if (Heuristics.mockLinkService) {
+      linkService = Heuristics.mockLinkService;
+    }
+    indications = linkService.platformDNSIndications;
+  } catch (e) {
+    if (e.result != Cr.NS_ERROR_NOT_IMPLEMENTED) {
+      Cu.reportError(e);
+    }
+  }
+
+  platformChecks.vpn =
+    indications & Ci.nsINetworkLinkService.VPN_DETECTED
+      ? "disable_doh"
+      : "enable_doh";
+  platformChecks.proxy =
+    indications & Ci.nsINetworkLinkService.PROXY_DETECTED
+      ? "disable_doh"
+      : "enable_doh";
+  platformChecks.nrpt =
+    indications & Ci.nsINetworkLinkService.NRPT_DETECTED
+      ? "disable_doh"
+      : "enable_doh";
+
+  return platformChecks;
+}
+
 // Check if the network provides a DoH endpoint to use. Returns the name of the
 // provider if the check is successful, else null. Currently we only support
 // this for Comcast networks.
 async function providerSteering() {
-  if (!Preferences.get(kProviderSteeringEnabledPref, false)) {
+  if (!DoHConfigController.currentConfig.providerSteering.enabled) {
     return null;
   }
-  const TEST_DOMAIN = "doh.test";
+  const TEST_DOMAIN = "doh.test.";
 
   // Array of { name, canonicalName, uri } where name is an identifier for
   // telemetry, canonicalName is the expected CNAME when looking up doh.test,
   // and uri is the provider's DoH endpoint.
-  let steeredProviders = Preferences.get(kProviderSteeringListPref, "[]");
-  try {
-    steeredProviders = JSON.parse(steeredProviders);
-  } catch (e) {
-    console.log("Provider list is invalid JSON, moving on.");
-    return null;
-  }
+  let steeredProviders =
+    DoHConfigController.currentConfig.providerSteering.providerList;
 
   if (!steeredProviders || !steeredProviders.length) {
     return null;
@@ -329,7 +392,7 @@ async function providerSteering() {
   let provider = steeredProviders.find(p => {
     return p.canonicalName == canonicalName;
   });
-  if (!provider || !provider.uri || !provider.name) {
+  if (!provider || !provider.uri || !provider.id) {
     return null;
   }
 

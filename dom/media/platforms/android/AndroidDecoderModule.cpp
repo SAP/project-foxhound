@@ -2,19 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/java/HardwareCodecCapabilityUtilsWrappers.h"
+#include <jni.h>
+
 #include "MediaInfo.h"
 #include "OpusDecoder.h"
 #include "RemoteDataDecoder.h"
+#include "TheoraDecoder.h"
 #include "VPXDecoder.h"
 #include "VorbisDecoder.h"
-
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/Components.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "mozilla/java/HardwareCodecCapabilityUtilsWrappers.h"
 #include "nsIGfxInfo.h"
 #include "nsPromiseFlatString.h"
-
 #include "prlog.h"
-
-#include <jni.h>
 
 #undef LOG
 #define LOG(arg, ...)                                     \
@@ -44,7 +46,7 @@ const nsCString TranslateMimeType(const nsACString& aMimeType) {
 }
 
 static bool GetFeatureStatus(int32_t aFeature) {
-  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
   int32_t status = nsIGfxInfo::FEATURE_STATUS_UNKNOWN;
   nsCString discardFailureId;
   if (!gfxInfo || NS_FAILED(gfxInfo->GetFeatureStatus(
@@ -57,6 +59,8 @@ static bool GetFeatureStatus(int32_t aFeature) {
 AndroidDecoderModule::AndroidDecoderModule(CDMProxy* aProxy) {
   mProxy = static_cast<MediaDrmCDMProxy*>(aProxy);
 }
+
+StaticAutoPtr<nsTArray<nsCString>> AndroidDecoderModule::sSupportedMimeTypes;
 
 bool AndroidDecoderModule::SupportsMimeType(const nsACString& aMimeType) {
   if (jni::GetAPIVersion() < 16) {
@@ -110,8 +114,32 @@ bool AndroidDecoderModule::SupportsMimeType(const nsACString& aMimeType) {
     return false;
   }
 
-  return java::HardwareCodecCapabilityUtils::FindDecoderCodecInfoForMimeType(
-      TranslateMimeType(aMimeType));
+  if (sSupportedMimeTypes) {
+    return sSupportedMimeTypes->Contains(TranslateMimeType(aMimeType));
+  }
+
+  return false;
+}
+
+nsTArray<nsCString> AndroidDecoderModule::GetSupportedMimeTypes() {
+  mozilla::jni::ObjectArray::LocalRef supportedTypes = mozilla::java::
+      HardwareCodecCapabilityUtils::GetDecoderSupportedMimeTypes();
+
+  nsTArray<nsCString> st = nsTArray<nsCString>();
+  for (size_t i = 0; i < supportedTypes->Length(); i++) {
+    st.AppendElement(
+        jni::String::LocalRef(supportedTypes->GetElement(i))->ToCString());
+  }
+
+  return st;
+}
+
+void AndroidDecoderModule::SetSupportedMimeTypes(
+    nsTArray<nsCString>&& aSupportedTypes) {
+  if (!sSupportedMimeTypes) {
+    sSupportedMimeTypes = new nsTArray<nsCString>(std::move(aSupportedTypes));
+    ClearOnShutdown(&sSupportedMimeTypes);
+  }
 }
 
 bool AndroidDecoderModule::SupportsMimeType(
@@ -157,6 +185,12 @@ already_AddRefed<MediaDataDecoder> AndroidDecoderModule::CreateAudioDecoder(
   RefPtr<MediaDataDecoder> decoder =
       RemoteDataDecoder::CreateAudioDecoder(aParams, drmStubId, mProxy);
   return decoder.forget();
+}
+
+/* static */
+already_AddRefed<PlatformDecoderModule> AndroidDecoderModule::Create(
+    CDMProxy* aProxy) {
+  return MakeAndAddRef<AndroidDecoderModule>(aProxy);
 }
 
 }  // namespace mozilla

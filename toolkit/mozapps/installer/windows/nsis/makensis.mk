@@ -36,6 +36,7 @@ CUSTOM_NSIS_PLUGINS = \
 	CertCheck.dll \
 	CityHash.dll \
 	ExecInExplorer.dll \
+	HttpPostFile.dll \
 	InetBgDL.dll \
 	InvokeShellVerb.dll \
 	liteFirewallW.dll \
@@ -54,16 +55,16 @@ $(CONFIG_DIR)/setup.exe::
 	$(INSTALL) $(addprefix $(MOZILLA_DIR)/toolkit/mozapps/installer/windows/nsis/,$(TOOLKIT_NSIS_FILES)) $(CONFIG_DIR)
 	$(INSTALL) $(addprefix $(MOZILLA_DIR)/other-licenses/nsis/Plugins/,$(CUSTOM_NSIS_PLUGINS)) $(CONFIG_DIR)
 	$(INSTALL) $(addprefix $(MOZILLA_DIR)/other-licenses/nsis/,$(CUSTOM_UI)) $(CONFIG_DIR)
-	cd $(CONFIG_DIR) && $(call WINEWRAP,$(MAKENSISU)) $(MAKENSISU_FLAGS) installer.nsi
+	cd $(CONFIG_DIR) && $(MAKENSISU) $(MAKENSISU_FLAGS) installer.nsi
 ifdef MOZ_STUB_INSTALLER
-	cd $(CONFIG_DIR) && $(call WINEWRAP,$(MAKENSISU)) $(MAKENSISU_FLAGS) stub.nsi
+	cd $(CONFIG_DIR) && $(MAKENSISU) $(MAKENSISU_FLAGS) stub.nsi
 endif
 
 ifdef ZIP_IN
 installer:: $(CONFIG_DIR)/setup.exe $(ZIP_IN)
 	@echo 'Packaging $(WIN32_INSTALLER_OUT).'
 	$(NSINSTALL) -D '$(ABS_DIST)/$(PKG_INST_PATH)'
-	$(MOZILLA_DIR)/mach repackage installer \
+	$(PYTHON3) $(MOZILLA_DIR)/mach repackage installer \
 	  -o '$(ABS_DIST)/$(PKG_INST_PATH)$(PKG_INST_BASENAME).exe' \
 	  --package-name '$(MOZ_PKG_DIR)' \
 	  --package '$(ZIP_IN)' \
@@ -72,7 +73,7 @@ installer:: $(CONFIG_DIR)/setup.exe $(ZIP_IN)
 	  --sfx-stub $(SFX_MODULE) \
 	  $(USE_UPX)
 ifdef MOZ_STUB_INSTALLER
-	$(MOZILLA_DIR)/mach repackage installer \
+	$(PYTHON3) $(MOZILLA_DIR)/mach repackage installer \
 	  -o '$(ABS_DIST)/$(PKG_INST_PATH)$(PKG_STUB_BASENAME).exe' \
 	  --tag $(topsrcdir)/browser/installer/windows/stub.tag \
 	  --setupexe $(CONFIG_DIR)/setup-stub.exe \
@@ -106,7 +107,7 @@ $(CONFIG_DIR)/helper.exe: $(HELPER_DEPS)
 	  $(PPL_LOCALE_ARGS) $(AB_CD) $(CONFIG_DIR)
 	$(INSTALL) $(addprefix $(MOZILLA_DIR)/toolkit/mozapps/installer/windows/nsis/,$(TOOLKIT_NSIS_FILES)) $(CONFIG_DIR)
 	$(INSTALL) $(addprefix $(MOZILLA_DIR)/other-licenses/nsis/Plugins/,$(CUSTOM_NSIS_PLUGINS)) $(CONFIG_DIR)
-	cd $(CONFIG_DIR) && $(call WINEWRAP,$(MAKENSISU)) $(MAKENSISU_FLAGS) uninstaller.nsi
+	cd $(CONFIG_DIR) && $(MAKENSISU) $(MAKENSISU_FLAGS) uninstaller.nsi
 
 uninstaller:: $(CONFIG_DIR)/helper.exe
 	$(NSINSTALL) -D $(DIST)/bin/uninstall
@@ -125,7 +126,7 @@ maintenanceservice_installer::
 	  $(PPL_LOCALE_ARGS) $(AB_CD) $(CONFIG_DIR)
 	$(INSTALL) $(addprefix $(MOZILLA_DIR)/toolkit/mozapps/installer/windows/nsis/,$(TOOLKIT_NSIS_FILES)) $(CONFIG_DIR)
 	$(INSTALL) $(addprefix $(MOZILLA_DIR)/other-licenses/nsis/Plugins/,$(CUSTOM_NSIS_PLUGINS)) $(CONFIG_DIR)
-	cd $(CONFIG_DIR) && $(call WINEWRAP,$(MAKENSISU)) $(MAKENSISU_FLAGS) maintenanceservice_installer.nsi
+	cd $(CONFIG_DIR) && $(MAKENSISU) $(MAKENSISU_FLAGS) maintenanceservice_installer.nsi
 	$(NSINSTALL) -D $(DIST)/bin/
 	cp $(CONFIG_DIR)/maintenanceservice_installer.exe $(DIST)/bin
 endif

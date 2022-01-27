@@ -9,11 +9,10 @@
 #include <algorithm>
 #include <utility>
 
-#include "debugger/DebugAPI.h"
-#include "jit/JitFrames.h"
+#include "jit/Bailouts.h"
+#include "js/friend/DumpFunctions.h"  // js::DumpValue
 #include "vm/ArgumentsObject.h"
 
-#include "jit/JitFrames-inl.h"
 #include "vm/EnvironmentObject-inl.h"
 #include "vm/JSScript-inl.h"
 

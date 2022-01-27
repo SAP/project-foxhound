@@ -9,9 +9,53 @@
 interface nsIArray;
 interface nsIX509Cert;
 
+[ref] native const_OriginAttributesRef(const mozilla::OriginAttributes);
+
 %{C++
 #define NS_CERTOVERRIDE_CONTRACTID "@mozilla.org/security/certoverride;1"
+
+namespace mozilla {
+class OriginAttributes;
+}
 %}
+
+[scriptable, builtinclass, uuid(ed735e24-fa55-4163-906d-17fb78851fe1)]
+interface nsICertOverride : nsISupports {
+
+  /**
+  *   The hostname of the server the override is used for.
+  */
+  readonly attribute ACString asciiHost;
+
+  /**
+  *   The port of the server the override is used for.
+  */
+  readonly attribute int32_t port;
+
+  /**
+  *   Whether or not the override is only used for this
+  *   session (true) or stored persistently (false)
+  */
+  readonly attribute boolean isTemporary;
+
+  /**
+  *   The database key for the associated certificate.
+  */
+  readonly attribute ACString dbKey;
+
+  /**
+  *   A combination of hostname and port in the form host:port.
+  *   Since the port can be -1 which is equivalent to port 433 we use an
+  *   existing function of nsCertOverrideService to create this property.
+  */
+  readonly attribute ACString hostPort;
+
+  /**
+  *   The origin attributes associated with this override.
+  */
+  [implicit_jscontext]
+  readonly attribute jsval originAttributes;
+};
 
 /**
  * This represents the global list of triples
@@ -53,9 +97,17 @@ interface nsICertOverrideService : nsISupports {
    *  @param aCert The cert that should always be accepted
    *  @param aOverrideBits The precise set of errors we want to be overriden
    */
-  [must_use]
+  [binaryname(RememberValidityOverride), noscript, must_use]
+  void rememberValidityOverrideNative(in AUTF8String aHostName,
+                                in int32_t aPort,
+                                in const_OriginAttributesRef aOriginAttributes,
+                                in nsIX509Cert aCert,
+                                in uint32_t aOverrideBits,
+                                in boolean aTemporary);
+  [binaryname(RememberValidityOverrideScriptable), implicit_jscontext, must_use]
   void rememberValidityOverride(in AUTF8String aHostName,
                                 in int32_t aPort,
+                                in jsval aOriginAttributes,
                                 in nsIX509Cert aCert,
                                 in uint32_t aOverrideBits,
                                 in boolean aTemporary);
@@ -73,10 +125,18 @@ interface nsICertOverrideService : nsISupports {
    *          the format 'AA:BB:...' (colon-separated upper-case hex bytes).
    *  @param aOverrideBits The errors we want to be overriden
    */
-  [must_use]
+  [binaryname(RememberTemporaryValidityOverrideUsingFingerprint), noscript, must_use]
+  void rememberTemporaryValidityOverrideUsingFingerprintNative(
+      in AUTF8String aHostName,
+      in int32_t aPort,
+      in const_OriginAttributesRef aOriginAttributes,
+      in AUTF8String aCertFingerprint,
+      in uint32_t aOverrideBits);
+  [binaryname(RememberTemporaryValidityOverrideUsingFingerprintScriptable), implicit_jscontext, must_use]
   void rememberTemporaryValidityOverrideUsingFingerprint(
       in AUTF8String aHostName,
       in int32_t aPort,
+      in jsval aOriginAttributes,
       in AUTF8String aCertFingerprint,
       in uint32_t aOverrideBits);
 
@@ -95,9 +155,17 @@ interface nsICertOverrideService : nsISupports {
    *         or permanent
    *  @return Whether an override has been stored for this host+port+cert
    */
-  [must_use]
+  [binaryname(HasMatchingOverride), noscript, must_use]
+  boolean hasMatchingOverrideNative(in AUTF8String aHostName,
+                              in int32_t aPort,
+                              in const_OriginAttributesRef aOriginAttributes,
+                              in nsIX509Cert aCert,
+                              out uint32_t aOverrideBits,
+                              out boolean aIsTemporary);
+  [binaryname(HasMatchingOverrideScriptable), implicit_jscontext, must_use]
   boolean hasMatchingOverride(in AUTF8String aHostName,
                               in int32_t aPort,
+                              in jsval aOriginAttributes,
                               in nsIX509Cert aCert,
                               out uint32_t aOverrideBits,
                               out boolean aIsTemporary);
@@ -111,25 +179,21 @@ interface nsICertOverrideService : nsISupports {
    *               If it is 0 and aHostName is "all:temporary-certificates",
    *               then all temporary certificates should be cleared.
    */
+  [binaryname(ClearValidityOverride), noscript]
+  void clearValidityOverrideNative(in AUTF8String aHostName,
+                             in int32_t aPort,
+                             in const_OriginAttributesRef aOriginAttributes);
+  [binaryname(ClearValidityOverrideScriptable), implicit_jscontext]
   void clearValidityOverride(in AUTF8String aHostName,
-                             in int32_t aPort);
+                             in int32_t aPort,
+                             in jsval aOriginAttributes);
 
   /**
    *  Remove all overrides.
    */
   void clearAllOverrides();
 
-  /**
-   *  Is the given cert used in rules?
-   *
-   *  @param aCert The cert we're looking for
-   *  @return how many override entries are currently on file
-   *          for the given certificate
-   */
-  [must_use]
-  uint32_t isCertUsedForOverrides(in nsIX509Cert aCert,
-                                  in boolean aCheckTemporaries,
-                                  in boolean aCheckPermanents);
+  Array<nsICertOverride> getOverrides();
 
   /**
    *  NOTE: This function is used only for testing!
@@ -138,4 +202,6 @@ interface nsICertOverrideService : nsISupports {
    *                  hasMatchingOverride always return true.
    */
   void setDisableAllSecurityChecksAndLetAttackersInterceptMyData(in boolean aDisable);
+
+  readonly attribute boolean securityCheckDisabled;
 };

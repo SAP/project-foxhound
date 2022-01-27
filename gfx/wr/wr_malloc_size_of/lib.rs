@@ -17,6 +17,7 @@ use std::hash::{BuildHasher, Hash};
 use std::mem::size_of;
 use std::ops::Range;
 use std::os::raw::c_void;
+use std::path::PathBuf;
 
 /// A C function that takes a pointer to a heap allocation and returns its size.
 type VoidPtrToSizeFn = unsafe extern "C" fn(ptr: *const c_void) -> usize;
@@ -310,6 +311,15 @@ impl<T> MallocSizeOf for std::marker::PhantomData<T> {
     }
 }
 
+impl MallocSizeOf for PathBuf {
+    fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
+        match self.to_str() {
+            Some(s) => unsafe { ops.malloc_size_of(s.as_ptr()) },
+            None => self.as_os_str().len(),
+        }
+    }
+}
+
 impl<T: MallocSizeOf, Unit> MallocSizeOf for euclid::Length<T, Unit> {
     fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
         self.0.size_of(ops)
@@ -331,6 +341,12 @@ impl<T: MallocSizeOf, U> MallocSizeOf for euclid::Point2D<T, U> {
 impl<T: MallocSizeOf, U> MallocSizeOf for euclid::Rect<T, U> {
     fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
         self.origin.size_of(ops) + self.size.size_of(ops)
+    }
+}
+
+impl<T: MallocSizeOf, U> MallocSizeOf for euclid::Box2D<T, U> {
+    fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
+        self.min.size_of(ops) + self.max.size_of(ops)
     }
 }
 

@@ -4,12 +4,13 @@
 
 "use strict";
 
-const promise = require("promise");
 const Services = require("Services");
 const flags = require("devtools/shared/flags");
 const { l10n } = require("devtools/shared/inspector/css-logic");
+const {
+  style: { ELEMENT_STYLE },
+} = require("devtools/shared/constants");
 const { PSEUDO_CLASSES } = require("devtools/shared/css/constants");
-const { ELEMENT_STYLE } = require("devtools/shared/specs/styles");
 const OutputParser = require("devtools/client/shared/output-parser");
 const { PrefObserver } = require("devtools/client/shared/prefs");
 const ElementStyle = require("devtools/client/inspector/rules/models/element-style");
@@ -21,16 +22,11 @@ const {
 } = require("devtools/client/inspector/shared/utils");
 const { debounce } = require("devtools/shared/debounce");
 const EventEmitter = require("devtools/shared/event-emitter");
+const DOUBLESPACE = "  ";
 
 loader.lazyRequireGetter(
   this,
-  "flashElementOn",
-  "devtools/client/inspector/markup/utils",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "flashElementOff",
+  ["flashElementOn", "flashElementOff"],
   "devtools/client/inspector/markup/utils",
   true
 );
@@ -47,8 +43,8 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "COLOR_SCHEMES",
-  "devtools/client/inspector/rules/constants",
+  "getNodeCompatibilityInfo",
+  "devtools/client/inspector/rules/utils/utils",
   true
 );
 loader.lazyRequireGetter(
@@ -155,7 +151,10 @@ function CssRuleView(inspector, document, store) {
   this._onTogglePseudoClassPanel = this._onTogglePseudoClassPanel.bind(this);
   this._onTogglePseudoClass = this._onTogglePseudoClass.bind(this);
   this._onToggleClassPanel = this._onToggleClassPanel.bind(this);
-  this._onToggleColorSchemeSimulation = this._onToggleColorSchemeSimulation.bind(
+  this._onToggleLightColorSchemeSimulation = this._onToggleLightColorSchemeSimulation.bind(
+    this
+  );
+  this._onToggleDarkColorSchemeSimulation = this._onToggleDarkColorSchemeSimulation.bind(
     this
   );
   this._onTogglePrintSimulation = this._onTogglePrintSimulation.bind(this);
@@ -164,6 +163,11 @@ function CssRuleView(inspector, document, store) {
   this.refreshPanel = this.refreshPanel.bind(this);
 
   const doc = this.styleDocument;
+  // Delegate bulk handling of events happening within the DOM tree of the Rules view
+  // to this.handleEvent(). Listening on the capture phase of the event bubbling to be
+  // able to stop event propagation on a case-by-case basis and prevent event target
+  // ancestor nodes from handling them.
+  this.styleDocument.addEventListener("click", this, { capture: true });
   this.element = doc.getElementById("ruleview-container-focusable");
   this.addRuleButton = doc.getElementById("ruleview-add-rule-button");
   this.searchField = doc.getElementById("ruleview-searchbox");
@@ -172,14 +176,27 @@ function CssRuleView(inspector, document, store) {
   this.pseudoClassToggle = doc.getElementById("pseudo-class-panel-toggle");
   this.classPanel = doc.getElementById("ruleview-class-panel");
   this.classToggle = doc.getElementById("class-panel-toggle");
-  this.colorSchemeSimulationButton = doc.getElementById(
-    "color-scheme-simulation-toggle"
+  this.colorSchemeLightSimulationButton = doc.getElementById(
+    "color-scheme-simulation-light-toggle"
+  );
+  this.colorSchemeDarkSimulationButton = doc.getElementById(
+    "color-scheme-simulation-dark-toggle"
   );
   this.printSimulationButton = doc.getElementById("print-simulation-toggle");
 
   this._initSimulationFeatures();
 
   this.searchClearButton.hidden = true;
+
+  this.onHighlighterShown = data =>
+    this.handleHighlighterEvent("highlighter-shown", data);
+  this.onHighlighterHidden = data =>
+    this.handleHighlighterEvent("highlighter-hidden", data);
+  this.inspector.highlighters.on("highlighter-shown", this.onHighlighterShown);
+  this.inspector.highlighters.on(
+    "highlighter-hidden",
+    this.onHighlighterHidden
+  );
 
   this.shortcuts = new KeyShortcuts({ window: this.styleWindow });
   this._onShortcut = this._onShortcut.bind(this);
@@ -305,35 +322,7 @@ CssRuleView.prototype = {
   },
 
   /**
-   * Get an instance of SelectorHighlighter (used to highlight nodes that match
-   * selectors in the rule-view). A new instance is only created the first time
-   * this function is called. The same instance will then be returned.
-   *
-   * @return {Promise} Resolves to the instance of the highlighter.
-   */
-  async getSelectorHighlighter() {
-    if (!this.inspector) {
-      return null;
-    }
-
-    if (this.selectorHighlighter) {
-      return this.selectorHighlighter;
-    }
-
-    try {
-      const front = this.inspector.inspectorFront;
-      const h = await front.getHighlighterByType("SelectorHighlighter");
-      this.selectorHighlighter = h;
-      return h;
-    } catch (e) {
-      // The SelectorHighlighter type could not be created in the
-      // current target.  It could be an older server, or a XUL page.
-      return null;
-    }
-  },
-
-  /**
-   * Highlight/unhighlight all the nodes that match a given set of selectors
+   * Highlight/unhighlight all the nodes that match a given selector
    * inside the document of the current selected node.
    * Only one selector can be highlighted at a time, so calling the method a
    * second time with a different selector will first unhighlight the previously
@@ -341,43 +330,24 @@ CssRuleView.prototype = {
    * Calling the method a second time with the same selector will just
    * unhighlight the highlighted nodes.
    *
-   * @param {DOMNode} selectorIcon
-   *        The icon that was clicked to toggle the selector. The
-   *        class 'highlighted' will be added when the selector is
-   *        highlighted.
    * @param {String} selector
-   *        The selector used to find nodes in the page.
+   *        Elements matching this selector will be highlighted on the page.
    */
-  async toggleSelectorHighlighter(selectorIcon, selector) {
-    if (this.lastSelectorIcon) {
-      this.lastSelectorIcon.classList.remove("highlighted");
-    }
-    selectorIcon.classList.remove("highlighted");
-
-    const highlighter = await this.getSelectorHighlighter();
-    if (!highlighter) {
-      return;
-    }
-
-    await highlighter.hide();
-
-    if (selector !== this.highlighters.selectorHighlighterShown) {
-      this.highlighters.selectorHighlighterShown = selector;
-      selectorIcon.classList.add("highlighted");
-      this.lastSelectorIcon = selectorIcon;
-
-      const node = this.inspector.selection.nodeFront;
-
-      await highlighter.show(node, {
-        hideInfoBar: true,
-        hideGuides: true,
-        selector,
-      });
-
-      this.emit("ruleview-selectorhighlighter-toggled", true);
+  async toggleSelectorHighlighter(selector) {
+    if (this.isSelectorHighlighted(selector)) {
+      await this.inspector.highlighters.hideHighlighterType(
+        this.inspector.highlighters.TYPES.SELECTOR
+      );
     } else {
-      this.highlighters.selectorHighlighterShown = null;
-      this.emit("ruleview-selectorhighlighter-toggled", false);
+      await this.inspector.highlighters.showHighlighterTypeForNode(
+        this.inspector.highlighters.TYPES.SELECTOR,
+        this.inspector.selection.nodeFront,
+        {
+          hideInfoBar: true,
+          hideGuides: true,
+          selector,
+        }
+      );
     }
   },
 
@@ -394,44 +364,164 @@ CssRuleView.prototype = {
   },
 
   /**
-   * Initializes the content-viewer front and enable the print and color scheme simulation
-   * if they are supported in the current target.
+   * Check whether a SelectorHighlighter is active for the given selector text.
+   *
+   * @param {String} selector
+   * @return {Boolean}
    */
-  async _initSimulationFeatures() {
-    // In order to query if the content-viewer actor's print and color simulation methods are
-    // supported, we have to call the content-viewer front so that the actor is lazily loaded.
-    // This allows us to use `actorHasMethod`. Please see `getActorDescription` for more
-    // information.
-    this.contentViewerFront = await this.currentTarget.getFront(
-      "contentViewer"
+  isSelectorHighlighted(selector) {
+    const options = this.inspector.highlighters.getOptionsForActiveHighlighter(
+      this.inspector.highlighters.TYPES.SELECTOR
     );
 
+    return options?.selector === selector;
+  },
+
+  /**
+   * Delegate handler for events happening within the DOM tree of the Rules view.
+   * Itself delegates to specific handlers by event type.
+   *
+   * Use this instead of attaching specific event handlers when:
+   * - there are many elements with the same event handler (eases memory pressure)
+   * - you want to avoid having to remove event handlers manually
+   * - elements are added/removed from the DOM tree arbitrarily over time
+   *
+   * @param {MouseEvent|UIEvent} event
+   */
+  handleEvent(event) {
+    switch (event.type) {
+      case "click":
+        this.handleClickEvent(event);
+        break;
+      default:
+    }
+  },
+
+  /**
+   * Delegate handler for click events happening within the DOM tree of the Rules view.
+   * Stop propagation of click event wrapping a CSS rule or CSS declaration to avoid
+   * triggering the prompt to add a new CSS declaration or to edit the existing one.
+   *
+   * @param {MouseEvent} event
+   */
+  handleClickEvent(event) {
+    const target = event.target;
+
+    // Handle click on the icon next to a CSS selector.
+    if (target.classList.contains("js-toggle-selector-highlighter")) {
+      this.toggleSelectorHighlighter(target.dataset.selector);
+      event.stopPropagation();
+    }
+
+    // Handle click on swatches next to flex and inline-flex CSS properties
+    if (target.classList.contains("js-toggle-flexbox-highlighter")) {
+      this.inspector.highlighters.toggleFlexboxHighlighter(
+        this.inspector.selection.nodeFront,
+        "rule"
+      );
+      event.stopPropagation();
+    }
+
+    // Handle click on swatches next to grid CSS properties
+    if (target.classList.contains("js-toggle-grid-highlighter")) {
+      this.inspector.highlighters.toggleGridHighlighter(
+        this.inspector.selection.nodeFront,
+        "rule"
+      );
+      event.stopPropagation();
+    }
+  },
+
+  /**
+   * Delegate handler for highlighter events.
+   *
+   * This is the place to observe for highlighter events, check the highlighter type and
+   * event name, then react to specific events, for example by modifying the DOM.
+   *
+   * @param {String} eventName
+   *        Highlighter event name. One of: "highlighter-hidden", "highlighter-shown"
+   * @param {Object} data
+   *        Object with data associated with the highlighter event.
+   */
+  handleHighlighterEvent(eventName, data) {
+    switch (data.type) {
+      // Toggle the "highlighted" class on selector icons in the Rules view when
+      // the SelectorHighlighter is shown/hidden for a certain CSS selector.
+      case this.inspector.highlighters.TYPES.SELECTOR:
+        {
+          const selector = data?.options?.selector;
+          if (!selector) {
+            return;
+          }
+
+          const query = `.js-toggle-selector-highlighter[data-selector='${selector}']`;
+          for (const node of this.styleDocument.querySelectorAll(query)) {
+            node.classList.toggle(
+              "highlighted",
+              eventName == "highlighter-shown"
+            );
+          }
+        }
+        break;
+
+      // Toggle the "active" class on swatches next to flex and inline-flex CSS properties
+      // when the FlexboxHighlighter is shown/hidden for the currently selected node.
+      case this.inspector.highlighters.TYPES.FLEXBOX:
+        {
+          const query = ".js-toggle-flexbox-highlighter";
+          for (const node of this.styleDocument.querySelectorAll(query)) {
+            node.classList.toggle("active", eventName == "highlighter-shown");
+          }
+        }
+        break;
+
+      // Toggle the "active" class on swatches next to grid CSS properties
+      // when the GridHighlighter is shown/hidden for the currently selected node.
+      case this.inspector.highlighters.TYPES.GRID:
+        {
+          const query = ".js-toggle-grid-highlighter";
+          for (const node of this.styleDocument.querySelectorAll(query)) {
+            // From the Layout panel, we can toggle grid highlighters for nodes which are
+            // not currently selected. The Rules view shows `display: grid` declarations
+            // only for the selected node. Avoid mistakenly marking them as "active".
+            if (data.nodeFront === this.inspector.selection.nodeFront) {
+              node.classList.toggle("active", eventName == "highlighter-shown");
+            }
+
+            // When the max limit of grid highlighters is reached (default 3),
+            // mark inactive grid swatches as disabled.
+            node.toggleAttribute(
+              "disabled",
+              !this.inspector.highlighters.canGridHighlighterToggle(
+                this.inspector.selection.nodeFront
+              )
+            );
+          }
+        }
+        break;
+    }
+  },
+
+  /**
+   * Enables the print and color scheme simulation if they are supported in the
+   * current target.
+   */
+  async _initSimulationFeatures() {
     if (!this.currentTarget.chrome) {
+      this.colorSchemeLightSimulationButton.removeAttribute("hidden");
+      this.colorSchemeDarkSimulationButton.removeAttribute("hidden");
       this.printSimulationButton.removeAttribute("hidden");
       this.printSimulationButton.addEventListener(
         "click",
         this._onTogglePrintSimulation
       );
-    }
-
-    // Show the color scheme simulation toggle button if:
-    // - The feature pref is enabled.
-    // - Color scheme simulation is supported for the current target.
-    const isEmulateColorSchemeSupported = await this.currentTarget.actorHasMethod(
-      "contentViewer",
-      "getEmulatedColorScheme"
-    );
-
-    if (
-      Services.prefs.getBoolPref(
-        "devtools.inspector.color-scheme-simulation.enabled"
-      ) &&
-      isEmulateColorSchemeSupported
-    ) {
-      this.colorSchemeSimulationButton.removeAttribute("hidden");
-      this.colorSchemeSimulationButton.addEventListener(
+      this.colorSchemeLightSimulationButton.addEventListener(
         "click",
-        this._onToggleColorSchemeSimulation
+        this._onToggleLightColorSchemeSimulation
+      );
+      this.colorSchemeDarkSimulationButton.addEventListener(
+        "click",
+        this._onToggleDarkColorSchemeSimulation
       );
     }
   },
@@ -450,6 +540,30 @@ CssRuleView.prototype = {
    */
   getNodeInfo: function(node) {
     return getNodeInfo(node, this._elementStyle);
+  },
+
+  /**
+   * Get the node's compatibility issues
+   *
+   * @param {DOMNode} node
+   *        The node which we want information about
+   * @return {Object|null} containing the following props:
+   * - type {String} Compatibility issue type.
+   * - property {string} The incompatible rule
+   * - alias {Array} The browser specific alias of rule
+   * - url {string} Link to MDN documentation
+   * - deprecated {bool} True if the rule is deprecated
+   * - experimental {bool} True if rule is experimental
+   * - unsupportedBrowsers {Array} Array of unsupported browser
+   * Otherwise, returns null if the node has cross-browser compatible CSS
+   */
+  getNodeCompatibilityInfo: async function(node) {
+    const compatibilityInfo = await getNodeCompatibilityInfo(
+      node,
+      this._elementStyle
+    );
+
+    return compatibilityInfo;
   },
 
   /**
@@ -496,7 +610,13 @@ CssRuleView.prototype = {
       let text = "";
 
       const nodeName = target?.nodeName;
-      if (nodeName === "input" || nodeName == "textarea") {
+      const targetType = target?.type;
+
+      if (
+        // The target can be the enable/disable rule checkbox here (See Bug 1680893).
+        (nodeName === "input" && targetType !== "checkbox") ||
+        nodeName == "textarea"
+      ) {
         const start = Math.min(target.selectionStart, target.selectionEnd);
         const end = Math.max(target.selectionStart, target.selectionEnd);
         const count = end - start;
@@ -506,6 +626,9 @@ CssRuleView.prototype = {
 
         // Remove any double newlines.
         text = text.replace(/(\r?\n)\r?\n/g, "$1");
+
+        // Replace 4 space indentation with 2 Spaces.
+        text = text.replace(/\ {4}/g, DOUBLESPACE);
       }
 
       clipboardHelper.copyString(text);
@@ -528,7 +651,7 @@ CssRuleView.prototype = {
     // request to complete, and then focus the new rule's selector.
     const eventPromise = this.once("ruleview-refreshed");
     const newRulePromise = this.pageStyle.addNewRule(element, pseudoClasses);
-    promise.all([eventPromise, newRulePromise]).then(values => {
+    Promise.all([eventPromise, newRulePromise]).then(values => {
       const options = values[1];
       // Be sure the reference the correct |rules| here.
       for (const rule of this._elementStyle.rules) {
@@ -710,28 +833,29 @@ CssRuleView.prototype = {
       this._highlighters = null;
     }
 
-    // Clean-up for print simulation.
-    if (this.contentViewerFront) {
-      this.colorSchemeSimulationButton.removeEventListener(
-        "click",
-        this._onToggleColorSchemeSimulation
-      );
-      this.printSimulationButton.removeEventListener(
-        "click",
-        this._onTogglePrintSimulation
-      );
+    // Clean-up for simulations.
+    this.colorSchemeLightSimulationButton.removeEventListener(
+      "click",
+      this._onToggleLightColorSchemeSimulation
+    );
+    this.colorSchemeDarkSimulationButton.removeEventListener(
+      "click",
+      this._onToggleDarkColorSchemeSimulation
+    );
+    this.printSimulationButton.removeEventListener(
+      "click",
+      this._onTogglePrintSimulation
+    );
 
-      this.contentViewerFront.destroy();
-
-      this.colorSchemeSimulationButton = null;
-      this.printSimulationButton = null;
-      this.contentViewerFront = null;
-    }
+    this.colorSchemeLightSimulationButton = null;
+    this.colorSchemeDarkSimulationButton = null;
+    this.printSimulationButton = null;
 
     this.tooltips.destroy();
 
     // Remove bound listeners
     this.shortcuts.destroy();
+    this.styleDocument.removeEventListener("click", this, { capture: true });
     this.element.removeEventListener("copy", this._onCopy);
     this.element.removeEventListener("contextmenu", this._onContextMenu);
     this.addRuleButton.removeEventListener("click", this._onAddRule);
@@ -746,6 +870,14 @@ CssRuleView.prototype = {
       this._onTogglePseudoClassPanel
     );
     this.classToggle.removeEventListener("click", this._onToggleClassPanel);
+    this.inspector.highlighters.off(
+      "highlighter-shown",
+      this.onHighlighterShown
+    );
+    this.inspector.highlighters.off(
+      "highlighter-hidden",
+      this.onHighlighterHidden
+    );
 
     this.searchField = null;
     this.searchClearButton = null;
@@ -800,7 +932,7 @@ CssRuleView.prototype = {
   selectElement: function(element, allowRefresh = false) {
     const refresh = this._viewedElement === element;
     if (refresh && !allowRefresh) {
-      return promise.resolve(undefined);
+      return Promise.resolve(undefined);
     }
 
     if (this._popup && this.popup.isOpen) {
@@ -822,7 +954,7 @@ CssRuleView.prototype = {
         this.pageStyle.off("stylesheet-updated", this.refreshPanel);
         this.pageStyle = null;
       }
-      return promise.resolve(undefined);
+      return Promise.resolve(undefined);
     }
 
     this.pageStyle = element.inspectorFront.pageStyle;
@@ -831,8 +963,7 @@ CssRuleView.prototype = {
     // To figure out how shorthand properties are interpreted by the
     // engine, we will set properties on a dummy element and observe
     // how their .style attribute reflects them as computed values.
-    const dummyElementPromise = promise
-      .resolve(this.styleDocument)
+    const dummyElementPromise = Promise.resolve(this.styleDocument)
       .then(document => {
         // ::before and ::after do not have a namespaceURI
         const namespaceURI =
@@ -888,7 +1019,7 @@ CssRuleView.prototype = {
   refreshPanel: function() {
     // Ignore refreshes when the panel is hidden, or during editing or when no element is selected.
     if (!this.isPanelVisible() || this.isEditing || !this._elementStyle) {
-      return promise.resolve(undefined);
+      return Promise.resolve(undefined);
     }
 
     // Repopulate the element style once the current modifications are done.
@@ -899,7 +1030,7 @@ CssRuleView.prototype = {
       }
     }
 
-    return promise.all(promises).then(() => {
+    return Promise.all(promises).then(() => {
       return this._populate();
     });
   },
@@ -1009,8 +1140,6 @@ CssRuleView.prototype = {
    * Clear the rule view.
    */
   clear: function(clearDom = true) {
-    this.lastSelectorIcon = null;
-
     if (clearDom) {
       this._clearRules();
     }
@@ -1183,7 +1312,7 @@ CssRuleView.prototype = {
     let container = null;
 
     if (!this._elementStyle.rules) {
-      return promise.resolve();
+      return Promise.resolve();
     }
 
     const editorReadyPromises = [];
@@ -1256,7 +1385,7 @@ CssRuleView.prototype = {
       this.searchValue && !seenSearchTerm
     );
 
-    return promise.all(editorReadyPromises);
+    return Promise.all(editorReadyPromises);
   },
 
   /**
@@ -1611,32 +1740,55 @@ CssRuleView.prototype = {
     }
   },
 
-  async _onToggleColorSchemeSimulation() {
-    const currentState = await this.contentViewerFront.getEmulatedColorScheme();
-    const index = COLOR_SCHEMES.indexOf(currentState);
-    const nextState = COLOR_SCHEMES[(index + 1) % COLOR_SCHEMES.length];
+  async _onToggleLightColorSchemeSimulation() {
+    const shouldSimulateLightScheme = this.colorSchemeLightSimulationButton.classList.toggle(
+      "checked"
+    );
 
-    if (nextState) {
-      this.colorSchemeSimulationButton.setAttribute("state", nextState);
-    } else {
-      this.colorSchemeSimulationButton.removeAttribute("state");
+    const darkColorSchemeEnabled = this.colorSchemeDarkSimulationButton.classList.contains(
+      "checked"
+    );
+    if (shouldSimulateLightScheme && darkColorSchemeEnabled) {
+      this.colorSchemeDarkSimulationButton.classList.toggle("checked");
     }
 
-    await this.contentViewerFront.setEmulatedColorScheme(nextState);
+    await this.inspector.commands.targetConfigurationCommand.updateConfiguration(
+      {
+        colorSchemeSimulation: shouldSimulateLightScheme ? "light" : null,
+      }
+    );
+    // Refresh the current element's rules in the panel.
+    this.refreshPanel();
+  },
+
+  async _onToggleDarkColorSchemeSimulation() {
+    const shouldSimulateDarkScheme = this.colorSchemeDarkSimulationButton.classList.toggle(
+      "checked"
+    );
+
+    const lightColorSchemeEnabled = this.colorSchemeLightSimulationButton.classList.contains(
+      "checked"
+    );
+    if (shouldSimulateDarkScheme && lightColorSchemeEnabled) {
+      this.colorSchemeLightSimulationButton.classList.toggle("checked");
+    }
+
+    await this.inspector.commands.targetConfigurationCommand.updateConfiguration(
+      {
+        colorSchemeSimulation: shouldSimulateDarkScheme ? "dark" : null,
+      }
+    );
+    // Refresh the current element's rules in the panel.
     this.refreshPanel();
   },
 
   async _onTogglePrintSimulation() {
-    const enabled = await this.contentViewerFront.getIsPrintSimulationEnabled();
-
-    if (!enabled) {
-      this.printSimulationButton.classList.add("checked");
-      await this.contentViewerFront.startPrintMediaSimulation();
-    } else {
-      this.printSimulationButton.classList.remove("checked");
-      await this.contentViewerFront.stopPrintMediaSimulation(false);
-    }
-
+    const enabled = this.printSimulationButton.classList.toggle("checked");
+    await this.inspector.commands.targetConfigurationCommand.updateConfiguration(
+      {
+        printSimulationEnabled: enabled,
+      }
+    );
     // Refresh the current element's rules in the panel.
     this.refreshPanel();
   },
@@ -1843,7 +1995,7 @@ function RuleViewTool(inspector, window) {
 
   this.view = new CssRuleView(this.inspector, this.document);
 
-  this.clearUserProperties = this.clearUserProperties.bind(this);
+  this._onResourceAvailable = this._onResourceAvailable.bind(this);
   this.refresh = this.refresh.bind(this);
   this.onDetachedFront = this.onDetachedFront.bind(this);
   this.onPanelSelected = this.onPanelSelected.bind(this);
@@ -1855,10 +2007,17 @@ function RuleViewTool(inspector, window) {
   this.inspector.selection.on("detached-front", this.onDetachedFront);
   this.inspector.selection.on("new-node-front", this.onSelected);
   this.inspector.selection.on("pseudoclass", this.refresh);
-  this.inspector.currentTarget.on("navigate", this.clearUserProperties);
   this.inspector.ruleViewSideBar.on("ruleview-selected", this.onPanelSelected);
   this.inspector.sidebar.on("ruleview-selected", this.onPanelSelected);
   this.inspector.styleChangeTracker.on("style-changed", this.refresh);
+
+  this.inspector.commands.resourceCommand.watchResources(
+    [this.inspector.commands.resourceCommand.TYPES.DOCUMENT_EVENT],
+    {
+      onAvailable: this._onResourceAvailable,
+      ignoreExistingResources: true,
+    }
+  );
 
   this.onSelected();
 }
@@ -1912,6 +2071,19 @@ RuleViewTool.prototype = {
     }
   },
 
+  _onResourceAvailable: function(resources) {
+    for (const resource of resources) {
+      if (
+        resource.resourceType ===
+          this.inspector.commands.resourceCommand.TYPES.DOCUMENT_EVENT &&
+        resource.name === "will-navigate" &&
+        resource.targetFront.isTopLevel
+      ) {
+        this.clearUserProperties();
+      }
+    }
+  },
+
   clearUserProperties: function() {
     if (this.view && this.view.store && this.view.store.userProperties) {
       this.view.store.userProperties.clear();
@@ -1937,6 +2109,13 @@ RuleViewTool.prototype = {
     this.inspector.selection.off("new-node-front", this.onSelected);
     this.inspector.currentTarget.off("navigate", this.clearUserProperties);
     this.inspector.sidebar.off("ruleview-selected", this.onPanelSelected);
+
+    this.inspector.commands.resourceCommand.unwatchResources(
+      [this.inspector.commands.resourceCommand.TYPES.DOCUMENT_EVENT],
+      {
+        onAvailable: this._onResourceAvailable,
+      }
+    );
 
     this.view.off("ruleview-refreshed", this.onViewRefreshed);
 

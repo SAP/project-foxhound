@@ -1,6 +1,7 @@
 # cubeb-coreaudio-rs
 
-[![Build Status](https://travis-ci.com/ChunMinChang/cubeb-coreaudio-rs.svg?branch=trailblazer)](https://travis-ci.com/ChunMinChang/cubeb-coreaudio-rs)
+[![CircleCI](https://circleci.com/gh/mozilla/cubeb-coreaudio-rs.svg?style=svg)](https://circleci.com/gh/mozilla/cubeb-coreaudio-rs)
+[![Build & Test](https://github.com/mozilla/cubeb-coreaudio-rs/actions/workflows/test.yml/badge.svg)](https://github.com/mozilla/cubeb-coreaudio-rs/actions/workflows/test.yml)
 
 *Rust* implementation of [Cubeb][cubeb] on [the MacOS platform][cubeb-au].
 
@@ -12,6 +13,19 @@
 ## Status
 
 This is now the _Firefox_'s default audio backend on *Mac OS*.
+
+## Install
+
+### Install cubeb-coreaudio within cubeb
+
+Run the following command:
+```sh
+curl https://raw.githubusercontent.com/mozilla/cubeb-coreaudio-rs/trailblazer/build-audiounit-rust-in-cubeb.sh | sh
+```
+
+### Other
+
+Just clone this repo
 
 ## Test
 
@@ -68,9 +82,6 @@ It's used to verify our callbacks for minitoring the system devices work.
   - `$ cargo test test_switch_output_device -- --ignored --nocapture`
   - Enter `s` to switch output devices
   - Enter `q` to finish test
-- Device change events listener
-  - `$ cargo test test_add_then_remove_listeners -- --ignored --nocapture`
-  - Plug/Unplug devices or switch input/output devices to see events log.
 - Device collection change
   - `cargo test test_device_collection_change -- --ignored --nocapture`
   - Plug/Unplug devices to see events log.
@@ -80,6 +91,8 @@ It's used to verify our callbacks for minitoring the system devices work.
     - `d` to destroy a stream
     - `s` to start the created stream
     - `t` to stop the created stream
+    - `r` to register a device changed callback to the created stream
+    - `v` to set volume to the created stream
     - `q` to quit the test
   - It's useful to simulate the stream bahavior to reproduce the bug we found,
     with some modified code.
@@ -113,8 +126,8 @@ See [todo list][todo]
 - [plain-translation-from-c][from-c]: The code is rewritten from C code on a line-by-line basis
 - [ocs-disposal][ocs-disposal]: The first version that replace our custom mutex by Rust Mutex
 
-[cubeb]: https://github.com/kinetiknz/cubeb "Cross platform audio library"
-[cubeb-au]: https://github.com/kinetiknz/cubeb/blob/master/src/cubeb_audiounit.cpp "Cubeb AudioUnit"
+[cubeb]: https://github.com/mozilla/cubeb "Cross platform audio library"
+[cubeb-au]: https://github.com/mozilla/cubeb/blob/master/src/cubeb_audiounit.cpp "Cubeb AudioUnit"
 
 [chg-buf-sz]: https://cs.chromium.org/chromium/src/media/audio/mac/audio_manager_mac.cc?l=982-989&rcl=0207eefb445f9855c2ed46280cb835b6f08bdb30 "issue on changing buffer size"
 
@@ -123,6 +136,6 @@ See [todo list][todo]
 [bmo1572273]: https://bugzilla.mozilla.org/show_bug.cgi?id=1572273
 [bmo1572273-c13]: https://bugzilla.mozilla.org/show_bug.cgi?id=1572273#c13
 
-[from-c]: https://github.com/ChunMinChang/cubeb-coreaudio-rs/tree/plain-translation-from-c
-[ocs-disposal]: https://github.com/ChunMinChang/cubeb-coreaudio-rs/tree/ocs-disposal
-[trailblazer]: https://github.com/ChunMinChang/cubeb-coreaudio-rs/tree/trailblazer
+[from-c]: https://github.com/mozilla/cubeb-coreaudio-rs/tree/plain-translation-from-c
+[ocs-disposal]: https://github.com/mozilla/cubeb-coreaudio-rs/tree/ocs-disposal
+[trailblazer]: https://github.com/mozilla/cubeb-coreaudio-rs/tree/trailblazer

@@ -6,6 +6,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/JSONWriter.h"
 
 #include "Database.h"
@@ -65,18 +66,6 @@
 #define PREF_DISABLE_DURABILITY "places.database.disableDurability"
 #define ENV_ALLOW_CORRUPTION \
   "ALLOW_PLACES_DATABASE_TO_LOSE_DATA_AND_BECOME_CORRUPT"
-
-// The maximum url length we can store in history.
-// We do not add to history URLs longer than this value.
-#define PREF_HISTORY_MAXURLLEN "places.history.maxUrlLength"
-// This number is mostly a guess based on various facts:
-// * IE didn't support urls longer than 2083 chars
-// * Sitemaps protocol used to support a maximum of 2048 chars
-// * Various SEO guides suggest to not go over 2000 chars
-// * Various apps/services are known to have issues over 2000 chars
-// * RFC 2616 - HTTP/1.1 suggests being cautious about depending
-//   on URI lengths above 255 bytes
-#define PREF_HISTORY_MAXURLLEN_DEFAULT 2000
 
 #define PREF_MIGRATE_V52_ORIGIN_FRECENCIES \
   "places.database.migrateV52OriginFrecencies"
@@ -309,7 +298,7 @@ nsresult SetupDurability(nsCOMPtr<mozIStorageConnection>& aDBConn,
       Preferences::GetInt(PREF_GROWTH_INCREMENT_KIB, 5 * BYTES_PER_KIBIBYTE);
   if (growthIncrementKiB > 0) {
     (void)aDBConn->SetGrowthIncrement(growthIncrementKiB * BYTES_PER_KIBIBYTE,
-                                      EmptyCString());
+                                      ""_ns);
   }
   return NS_OK;
 }
@@ -350,8 +339,6 @@ Database::Database()
       mDBPageSize(0),
       mDatabaseStatus(nsINavHistoryService::DATABASE_STATUS_OK),
       mClosed(false),
-      mShouldConvertIconPayloads(false),
-      mShouldVacuumIcons(false),
       mClientsShutdown(new ClientsShutdownBlocker()),
       mConnectionShutdown(new ConnectionShutdownBlocker(this)),
       mMaxUrlLength(0),
@@ -405,18 +392,9 @@ Database::GetProfileBeforeChangePhase() {
 
 Database::~Database() = default;
 
-bool Database::IsShutdownStarted() const {
-  if (!mConnectionShutdown) {
-    // We have already broken the cycle between `this` and
-    // `mConnectionShutdown`.
-    return true;
-  }
-  return mConnectionShutdown->IsStarted();
-}
-
 already_AddRefed<mozIStorageAsyncStatement> Database::GetAsyncStatement(
     const nsACString& aQuery) {
-  if (IsShutdownStarted() || NS_FAILED(EnsureConnection())) {
+  if (PlacesShutdownBlocker::sIsStarted || NS_FAILED(EnsureConnection())) {
     return nullptr;
   }
 
@@ -426,7 +404,7 @@ already_AddRefed<mozIStorageAsyncStatement> Database::GetAsyncStatement(
 
 already_AddRefed<mozIStorageStatement> Database::GetStatement(
     const nsACString& aQuery) {
-  if (IsShutdownStarted()) {
+  if (PlacesShutdownBlocker::sIsStarted) {
     return nullptr;
   }
   if (NS_IsMainThread()) {
@@ -453,7 +431,7 @@ already_AddRefed<nsIAsyncShutdownClient> Database::GetConnectionShutdown() {
 
 // static
 already_AddRefed<Database> Database::GetDatabase() {
-  if (PlacesShutdownBlocker::IsStarted()) {
+  if (PlacesShutdownBlocker::sIsStarted) {
     return nullptr;
   }
   return GetSingleton();
@@ -506,7 +484,7 @@ nsresult Database::EnsureConnection() {
     return NS_OK;
   }
   // Don't try to create a database too late.
-  if (IsShutdownStarted()) {
+  if (PlacesShutdownBlocker::sIsStarted) {
     return NS_ERROR_FAILURE;
   }
 
@@ -722,6 +700,8 @@ nsresult Database::EnsureFaviconsDatabaseAttached(
     // We are going to update the database, so everything from now on should be
     // in a transaction for performances.
     mozStorageTransaction transaction(conn, false);
+    // XXX Handle the error, bug 1696133.
+    Unused << NS_WARN_IF(NS_FAILED(transaction.Start()));
     rv = conn->ExecuteSimpleSQL(CREATE_MOZ_ICONS);
     NS_ENSURE_SUCCESS(rv, rv);
     rv = conn->ExecuteSimpleSQL(CREATE_IDX_MOZ_ICONS_ICONURLHASH);
@@ -914,6 +894,9 @@ nsresult Database::TryToCloneTablesFromCorruptDatabase(
 
   mozStorageTransaction transaction(conn, false);
 
+  // XXX Handle the error, bug 1696133.
+  Unused << NS_WARN_IF(NS_FAILED(transaction.Start()));
+
   // Copy the schema version.
   nsCOMPtr<mozIStorageStatement> stmt;
   (void)conn->CreateStatement("PRAGMA corrupt.user_version"_ns,
@@ -1096,22 +1079,17 @@ nsresult Database::InitSchema(bool* aDatabaseMigrated) {
   }
 
   auto guard = MakeScopeExit([&]() {
-    // This runs at the end of the migration, out of the transaction,
+    // These run at the end of the migration, out of the transaction,
     // regardless of its success.
-    if (mShouldVacuumIcons) {
-      mShouldVacuumIcons = false;
-      MOZ_ALWAYS_SUCCEEDS(mMainConn->ExecuteSimpleSQL("VACUUM favicons"_ns));
-    }
-    if (mShouldConvertIconPayloads) {
-      mShouldConvertIconPayloads = false;
-      nsFaviconService::ConvertUnsupportedPayloads(mMainConn);
-    }
     MigrateV52OriginFrecencies();
   });
 
   // We are going to update the database, so everything from now on should be in
   // a transaction for performances.
   mozStorageTransaction transaction(mMainConn, false);
+
+  // XXX Handle the error, bug 1696133.
+  Unused << NS_WARN_IF(NS_FAILED(transaction.Start()));
 
   if (databaseInitialized) {
     // Migration How-to:
@@ -1128,60 +1106,10 @@ nsresult Database::InitSchema(bool* aDatabaseMigrated) {
     if (currentSchemaVersion < DATABASE_SCHEMA_VERSION) {
       *aDatabaseMigrated = true;
 
-      if (currentSchemaVersion < 35) {
-        // These are versions older than Firefox 52 ESR that are not supported
+      if (currentSchemaVersion < 43) {
+        // These are versions older than Firefox 60 ESR that are not supported
         // anymore.  In this case it's safer to just replace the database.
         return NS_ERROR_FILE_CORRUPTED;
-      }
-
-      // Firefox 52 ESR uses schema version 35.
-
-      if (currentSchemaVersion < 36) {
-        rv = MigrateV36Up();
-        NS_ENSURE_SUCCESS(rv, rv);
-      }
-
-      if (currentSchemaVersion < 37) {
-        rv = MigrateV37Up();
-        NS_ENSURE_SUCCESS(rv, rv);
-      }
-
-      // Firefox 55 uses schema version 37.
-
-      if (currentSchemaVersion < 38) {
-        rv = MigrateV38Up();
-        NS_ENSURE_SUCCESS(rv, rv);
-      }
-
-      // Firefox 56 uses schema version 38.
-
-      if (currentSchemaVersion < 39) {
-        rv = MigrateV39Up();
-        NS_ENSURE_SUCCESS(rv, rv);
-      }
-
-      // Firefox 57 uses schema version 39. - This is a watershed version.
-
-      if (currentSchemaVersion < 40) {
-        rv = MigrateV40Up();
-        NS_ENSURE_SUCCESS(rv, rv);
-      }
-
-      if (currentSchemaVersion < 41) {
-        rv = MigrateV41Up();
-        NS_ENSURE_SUCCESS(rv, rv);
-      }
-
-      // Firefox 58 uses schema version 41.
-
-      if (currentSchemaVersion < 42) {
-        rv = MigrateV42Up();
-        NS_ENSURE_SUCCESS(rv, rv);
-      }
-
-      if (currentSchemaVersion < 43) {
-        rv = MigrateV43Up();
-        NS_ENSURE_SUCCESS(rv, rv);
       }
 
       // Firefox 60 uses schema version 43. - This is an ESR.
@@ -1234,6 +1162,7 @@ nsresult Database::InitSchema(bool* aDatabaseMigrated) {
       }
 
       // Firefox 62 uses schema version 52.
+      // Firefox 68 uses schema version 52. - This is an ESR.
 
       if (currentSchemaVersion < 53) {
         rv = MigrateV53Up();
@@ -1241,6 +1170,52 @@ nsresult Database::InitSchema(bool* aDatabaseMigrated) {
       }
 
       // Firefox 69 uses schema version 53
+      // Firefox 78 uses schema version 53 - This is an ESR.
+
+      if (currentSchemaVersion < 54) {
+        rv = MigrateV54Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 81 uses schema version 54
+
+      if (currentSchemaVersion < 55) {
+        rv = MigrateV55Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      if (currentSchemaVersion < 56) {
+        rv = MigrateV56Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      if (currentSchemaVersion < 57) {
+        rv = MigrateV57Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 91 uses schema version 57
+
+      if (currentSchemaVersion < 58) {
+        rv = MigrateV58Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 92 uses schema version 58
+
+      if (currentSchemaVersion < 59) {
+        rv = MigrateV59Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 94 uses schema version 59
+
+      if (currentSchemaVersion < 60) {
+        rv = MigrateV60Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 96 uses schema version 60
 
       // Schema Upgrades must add migration code here.
       // >>> IMPORTANT! <<<
@@ -1331,6 +1306,43 @@ nsresult Database::InitSchema(bool* aDatabaseMigrated) {
     rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_META);
     NS_ENSURE_SUCCESS(rv, rv);
 
+    // moz_places_metadata
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_PLACES_METADATA);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = mMainConn->ExecuteSimpleSQL(
+        CREATE_IDX_MOZ_PLACES_METADATA_PLACECREATED);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // moz_places_metadata_search_queries
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_PLACES_METADATA_SEARCH_QUERIES);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // moz_places_metadata_snapshots
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_PLACES_METADATA_SNAPSHOTS);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // moz_places_metadata_snapshots_extra
+    rv =
+        mMainConn->ExecuteSimpleSQL(CREATE_MOZ_PLACES_METADATA_SNAPSHOTS_EXTRA);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // moz_places_metadata_snapshots_groups
+    rv = mMainConn->ExecuteSimpleSQL(
+        CREATE_MOZ_PLACES_METADATA_SNAPSHOTS_GROUPS);
+    NS_ENSURE_SUCCESS(rv, rv);
+    // moz_places_metadata_groups_to_snapshots
+    rv = mMainConn->ExecuteSimpleSQL(
+        CREATE_MOZ_PLACES_METADATA_GROUPS_TO_SNAPSHOTS);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // moz_session_metadata
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_SESSION_METADATA);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // moz_session_to_places
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_SESSION_TO_PLACES);
+    NS_ENSURE_SUCCESS(rv, rv);
+
     // The bookmarks roots get initialized in CheckRoots().
   }
 
@@ -1414,8 +1426,8 @@ nsresult Database::EnsureBookmarkRoots(const int32_t startPosition,
 
   if (mRootId < 1) {
     // The first root's title is an empty string.
-    rv = CreateRoot(mMainConn, "places"_ns, "root________"_ns, EmptyCString(),
-                    0, mRootId);
+    rv = CreateRoot(mMainConn, "places"_ns, "root________"_ns, ""_ns, 0,
+                    mRootId);
 
     if (NS_FAILED(rv)) return rv;
   }
@@ -1555,8 +1567,6 @@ nsresult Database::InitFunctions() {
   NS_ENSURE_SUCCESS(rv, rv);
   rv = FixupURLFunction::create(mMainConn);
   NS_ENSURE_SUCCESS(rv, rv);
-  rv = FrecencyNotificationFunction::create(mMainConn);
-  NS_ENSURE_SUCCESS(rv, rv);
   rv = StoreLastInsertedIdFunction::create(mMainConn);
   NS_ENSURE_SUCCESS(rv, rv);
   rv = HashFunction::create(mMainConn);
@@ -1571,9 +1581,9 @@ nsresult Database::InitFunctions() {
   NS_ENSURE_SUCCESS(rv, rv);
   rv = IsFrecencyDecayingFunction::create(mMainConn);
   NS_ENSURE_SUCCESS(rv, rv);
-  rv = SqrtFunction::create(mMainConn);
-  NS_ENSURE_SUCCESS(rv, rv);
   rv = NoteSyncChangeFunction::create(mMainConn);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = InvalidateDaysOfHistoryFunction::create(mMainConn);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1637,228 +1647,9 @@ nsresult Database::InitTempEntities() {
       mMainConn->ExecuteSimpleSQL(CREATE_BOOKMARKS_DELETED_AFTERDELETE_TRIGGER);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return NS_OK;
-}
-
-nsresult Database::MigrateV36Up() {
-  // Add sync status and change counter tracking columns for bookmarks.
-  nsCOMPtr<mozIStorageStatement> syncStatusStmt;
-  nsresult rv =
-      mMainConn->CreateStatement("SELECT syncStatus FROM moz_bookmarks"_ns,
-                                 getter_AddRefs(syncStatusStmt));
-  if (NS_FAILED(rv)) {
-    // We default to SYNC_STATUS_UNKNOWN = 0 for existing bookmarks, matching
-    // the bookmark restore behavior. If Sync is set up, we'll update the status
-    // to SYNC_STATUS_NORMAL = 2 before the first post-migration sync.
-    rv = mMainConn->ExecuteSimpleSQL(
-        nsLiteralCString("ALTER TABLE moz_bookmarks "
-                         "ADD COLUMN syncStatus INTEGER DEFAULT 0 NOT NULL"));
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  nsCOMPtr<mozIStorageStatement> syncChangeCounterStmt;
-  rv = mMainConn->CreateStatement(
-      "SELECT syncChangeCounter FROM moz_bookmarks"_ns,
-      getter_AddRefs(syncChangeCounterStmt));
-  if (NS_FAILED(rv)) {
-    // The change counter starts at 1 for all local bookmarks. It's incremented
-    // for each modification that should trigger a sync, and decremented after
-    // the modified bookmark is uploaded to the server.
-    rv = mMainConn->ExecuteSimpleSQL(nsLiteralCString(
-        "ALTER TABLE moz_bookmarks "
-        "ADD COLUMN syncChangeCounter INTEGER DEFAULT 1 NOT NULL"));
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  nsCOMPtr<mozIStorageStatement> tombstoneTableStmt;
-  rv = mMainConn->CreateStatement("SELECT 1 FROM moz_bookmarks_deleted"_ns,
-                                  getter_AddRefs(tombstoneTableStmt));
-  if (NS_FAILED(rv)) {
-    rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_BOOKMARKS_DELETED);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  return NS_OK;
-}
-
-nsresult Database::MigrateV37Up() {
-  // Move favicons to the new database.
-  // For now we retain the old moz_favicons table, but we empty it.
-  // This allows for a "safer" downgrade, even if icons will be lost in the
-  // process. In a couple versions we shall drop moz_favicons completely.
-
-  // First, check if the old favicons table still exists.
-  nsCOMPtr<mozIStorageStatement> stmt;
-  nsresult rv = mMainConn->CreateStatement("SELECT url FROM moz_favicons"_ns,
-                                           getter_AddRefs(stmt));
-  if (NS_FAILED(rv)) {
-    // The table has already been removed, nothing to do.
-    return NS_OK;
-  }
-
-  // The new table accepts only png or svg payloads, so we set a valid width
-  // only for them, the mime-type for the others.  Later we will asynchronously
-  // try to convert the unsupported payloads, or remove them.
-
-  // Add pages.
-  rv = mMainConn->ExecuteSimpleSQL(nsLiteralCString(
-      "INSERT INTO moz_pages_w_icons (page_url, page_url_hash) "
-      "SELECT h.url, hash(h.url) "
-      "FROM moz_places h "
-      "JOIN moz_favicons f ON f.id = h.favicon_id"));
+  rv = mMainConn->ExecuteSimpleSQL(CREATE_PLACES_METADATA_AFTERINSERT_TRIGGER);
   NS_ENSURE_SUCCESS(rv, rv);
-  // Set icons as expired, so we will replace them with proper versions at the
-  // first load.
-  // Note: we use a peculiarity of Sqlite here, where the column affinity
-  // is not enforced, thanks to that we can store a string in an integer column.
-  rv = mMainConn->ExecuteSimpleSQL(nsLiteralCString(
-      "INSERT INTO moz_icons (icon_url, fixed_icon_url_hash, width, data) "
-      "SELECT url, hash(fixup_url(url)), "
-      "(CASE WHEN mime_type = 'image/png' THEN 16 "
-      "WHEN mime_type = 'image/svg+xml' THEN 65535 "
-      "ELSE mime_type END), "
-      "data FROM moz_favicons "
-      "WHERE LENGTH(data) > 0 "));
-  NS_ENSURE_SUCCESS(rv, rv);
-  // Create relations.
-  rv = mMainConn->ExecuteSimpleSQL(nsLiteralCString(
-      "INSERT OR IGNORE INTO moz_icons_to_pages (page_id, icon_id) "
-      "SELECT (SELECT id FROM moz_pages_w_icons "
-      "WHERE page_url_hash = h.url_hash "
-      "AND page_url = h.url), "
-      "(SELECT id FROM moz_icons "
-      "WHERE fixed_icon_url_hash = hash(fixup_url(f.url)) "
-      "AND icon_url = f.url) "
-      "FROM moz_favicons f "
-      "JOIN moz_places h on f.id = h.favicon_id"));
-  NS_ENSURE_SUCCESS(rv, rv);
-  // Remove old favicons and relations.
-  rv = mMainConn->ExecuteSimpleSQL("DELETE FROM moz_favicons"_ns);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv =
-      mMainConn->ExecuteSimpleSQL("UPDATE moz_places SET favicon_id = NULL"_ns);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // The async favicons conversion will happen at the end of the normal schema
-  // migration.
-  mShouldConvertIconPayloads = true;
-
-  return NS_OK;
-}
-
-nsresult Database::MigrateV38Up() {
-  nsCOMPtr<mozIStorageStatement> stmt;
-  nsresult rv = mMainConn->CreateStatement(
-      "SELECT description, preview_image_url FROM moz_places"_ns,
-      getter_AddRefs(stmt));
-  if (NS_FAILED(rv)) {
-    rv = mMainConn->ExecuteSimpleSQL(
-        "ALTER TABLE moz_places ADD COLUMN description TEXT"_ns);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = mMainConn->ExecuteSimpleSQL(nsLiteralCString(
-        "ALTER TABLE moz_places ADD COLUMN preview_image_url TEXT"));
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  return NS_OK;
-}
-
-nsresult Database::MigrateV39Up() {
-  // Create an index on dateAdded.
-  nsresult rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_BOOKMARKS_DATEADDED);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return NS_OK;
-}
-
-nsresult Database::MigrateV40Up() {
-  // We are changing the hashing function to crop the hashed text to a maximum
-  // length, thus we must recalculate the hashes.
-  // Due to this, on downgrade some of these may not match, it should be limited
-  // to unicode and very long urls though.
-  nsresult rv = mMainConn->ExecuteSimpleSQL(
-      nsLiteralCString("UPDATE moz_places "
-                       "SET url_hash = hash(url) "
-                       "WHERE url_hash <> hash(url)"));
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = mMainConn->ExecuteSimpleSQL(nsLiteralCString(
-      "UPDATE moz_icons "
-      "SET fixed_icon_url_hash = hash(fixup_url(icon_url)) "
-      "WHERE fixed_icon_url_hash <> hash(fixup_url(icon_url))"));
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = mMainConn->ExecuteSimpleSQL(
-      nsLiteralCString("UPDATE moz_pages_w_icons "
-                       "SET page_url_hash = hash(page_url) "
-                       "WHERE page_url_hash <> hash(page_url)"));
-  NS_ENSURE_SUCCESS(rv, rv);
-  return NS_OK;
-}
-
-nsresult Database::MigrateV41Up() {
-  // Remove old favicons entities.
-  nsresult rv = mMainConn->ExecuteSimpleSQL(
-      "DROP INDEX IF EXISTS moz_places_faviconindex"_ns);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = mMainConn->ExecuteSimpleSQL("DROP TABLE IF EXISTS moz_favicons"_ns);
-  NS_ENSURE_SUCCESS(rv, rv);
-  return NS_OK;
-}
-
-nsresult Database::MigrateV42Up() {
-  // auto_vacuum of the favicons database was broken, we may have to set it
-  // again.
-  int32_t vacuum = 0;
-  {
-    nsCOMPtr<mozIStorageStatement> stmt;
-    nsresult rv = mMainConn->CreateStatement("PRAGMA favicons.auto_vacuum"_ns,
-                                             getter_AddRefs(stmt));
-    NS_ENSURE_SUCCESS(rv, rv);
-    bool hasResult = false;
-    if (NS_SUCCEEDED(stmt->ExecuteStep(&hasResult)) && hasResult) {
-      vacuum = stmt->AsInt32(0);
-    }
-  }
-  if (vacuum != 2) {
-    nsresult rv = mMainConn->ExecuteSimpleSQL(
-        "PRAGMA favicons.auto_vacuum = INCREMENTAL"_ns);
-    NS_ENSURE_SUCCESS(rv, rv);
-    // For the change to be effective, we must vacuum the database.
-    mShouldVacuumIcons = true;
-  }
-  return NS_OK;
-}
-
-nsresult Database::MigrateV43Up() {
-  // moz_keywords doesn't properly disallow multiple keyword for the same URI
-  // because for postData NULL != NULL. We should use an empty string instead.
-
-  // To avoid constraint failures, we must first remove duplicate keywords.
-  // This may cause a dataloss, but the only alternative would be to modify the
-  // related url, and that's far more complex.
-  nsresult rv =
-      mMainConn->ExecuteSimpleSQL(nsLiteralCString("DELETE FROM moz_keywords "
-                                                   "WHERE post_data ISNULL "
-                                                   "AND id NOT IN ( "
-                                                   "SELECT MAX(id) "
-                                                   "FROM moz_keywords "
-                                                   "WHERE post_data ISNULL "
-                                                   "GROUP BY place_id "
-                                                   ")"));
-  NS_ENSURE_SUCCESS(rv, rv);
-  // We must recalculate foreign_count for all the touched places.
-  rv = mMainConn->ExecuteSimpleSQL(nsLiteralCString(
-      "UPDATE moz_places "
-      "SET foreign_count = (SELECT count(*) FROM moz_bookmarks WHERE fk = "
-      "moz_places.id) + "
-      "(SELECT count(*) FROM moz_keywords WHERE place_id = moz_places.id) "
-      "WHERE id IN (SELECT DISTINCT place_id FROM moz_keywords) "));
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv =
-      mMainConn->ExecuteSimpleSQL(nsLiteralCString("UPDATE moz_keywords "
-                                                   "SET post_data = '' "
-                                                   "WHERE post_data ISNULL "));
+  rv = mMainConn->ExecuteSimpleSQL(CREATE_PLACES_METADATA_AFTERDELETE_TRIGGER);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -2090,8 +1881,9 @@ nsresult Database::MigrateV48Up() {
   // From this point on, nobody should use moz_hosts again.  Empty it so that we
   // don't leak the user's history, but don't remove it yet so that the user can
   // downgrade.
-  rv = mMainConn->ExecuteSimpleSQL("DELETE FROM moz_hosts; "_ns);
-  NS_ENSURE_SUCCESS(rv, rv);
+  // This can fail, if moz_hosts doesn't exist anymore, that is what happens in
+  // case of downgrade+upgrade.
+  Unused << mMainConn->ExecuteSimpleSQL("DELETE FROM moz_hosts; "_ns);
 
   return NS_OK;
 }
@@ -2187,10 +1979,7 @@ nsresult Database::MigrateV50Up() {
 struct StringWriteFunc : public JSONWriteFunc {
   nsCString& mCString;
   explicit StringWriteFunc(nsCString& aCString) : mCString(aCString) {}
-  void Write(const char* aStr) override { mCString.Append(aStr); }
-  void Write(const char* aStr, size_t aLen) override {
-    mCString.Append(aStr, aLen);
-  }
+  void Write(const Span<const char>& aStr) override { mCString.Append(aStr); }
 };
 
 nsresult Database::MigrateV51Up() {
@@ -2219,7 +2008,8 @@ nsresult Database::MigrateV51Up() {
   uint32_t length;
   while (NS_SUCCEEDED(stmt->ExecuteStep(&hasMore)) && hasMore) {
     hasAtLeastOne = true;
-    jw.StringElement(stmt->AsSharedUTF8String(0, &length));
+    const char* stmtString = stmt->AsSharedUTF8String(0, &length);
+    jw.StringElement(Span<const char>(stmtString, length));
   }
   jw.EndArray();
 
@@ -2417,6 +2207,126 @@ nsresult Database::MigrateV53Up() {
       ")"));
   NS_ENSURE_SUCCESS(rv, rv);
 
+  return NS_OK;
+}
+
+nsresult Database::MigrateV54Up() {
+  // Add an expiration column to moz_icons_to_pages.
+  nsCOMPtr<mozIStorageStatement> stmt;
+  nsresult rv = mMainConn->CreateStatement(
+      "SELECT expire_ms FROM moz_icons_to_pages"_ns, getter_AddRefs(stmt));
+  if (NS_FAILED(rv)) {
+    rv = mMainConn->ExecuteSimpleSQL(
+        "ALTER TABLE moz_icons_to_pages "
+        "ADD COLUMN expire_ms INTEGER NOT NULL DEFAULT 0 "_ns);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  // Set all the zero-ed entries as expired today, they won't be removed until
+  // the next related page load.
+  rv = mMainConn->ExecuteSimpleSQL(
+      "UPDATE moz_icons_to_pages "
+      "SET expire_ms = strftime('%s','now','localtime','start "
+      "of day','utc') * 1000 "
+      "WHERE expire_ms = 0 "_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+nsresult Database::MigrateV55Up() {
+  // Add places metadata tables.
+  nsCOMPtr<mozIStorageStatement> stmt;
+  nsresult rv = mMainConn->CreateStatement(
+      "SELECT id FROM moz_places_metadata"_ns, getter_AddRefs(stmt));
+  if (NS_FAILED(rv)) {
+    // Create the tables.
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_PLACES_METADATA);
+    NS_ENSURE_SUCCESS(rv, rv);
+    // moz_places_metadata_search_queries.
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_PLACES_METADATA_SEARCH_QUERIES);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  return NS_OK;
+}
+
+nsresult Database::MigrateV56Up() {
+  // Add places metadata (place_id, created_at) index.
+  return mMainConn->ExecuteSimpleSQL(
+      CREATE_IDX_MOZ_PLACES_METADATA_PLACECREATED);
+}
+
+nsresult Database::MigrateV57Up() {
+  // Add the scrolling columns to the metadata.
+  nsCOMPtr<mozIStorageStatement> stmt;
+  nsresult rv = mMainConn->CreateStatement(
+      "SELECT scrolling_time FROM moz_places_metadata"_ns,
+      getter_AddRefs(stmt));
+  if (NS_FAILED(rv)) {
+    rv = mMainConn->ExecuteSimpleSQL(
+        "ALTER TABLE moz_places_metadata "
+        "ADD COLUMN scrolling_time INTEGER NOT NULL DEFAULT 0 "_ns);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  rv = mMainConn->CreateStatement(
+      "SELECT scrolling_distance FROM moz_places_metadata"_ns,
+      getter_AddRefs(stmt));
+  if (NS_FAILED(rv)) {
+    rv = mMainConn->ExecuteSimpleSQL(
+        "ALTER TABLE moz_places_metadata "
+        "ADD COLUMN scrolling_distance INTEGER NOT NULL DEFAULT 0 "_ns);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+  return NS_OK;
+}
+
+nsresult Database::MigrateV58Up() {
+  // Add metadata snapshots tables if necessary.
+  nsCOMPtr<mozIStorageStatement> stmt;
+  nsresult rv = mMainConn->CreateStatement(
+      "SELECT id FROM moz_places_metadata_snapshots"_ns, getter_AddRefs(stmt));
+  if (NS_FAILED(rv)) {
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_PLACES_METADATA_SNAPSHOTS);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv =
+        mMainConn->ExecuteSimpleSQL(CREATE_MOZ_PLACES_METADATA_SNAPSHOTS_EXTRA);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = mMainConn->ExecuteSimpleSQL(
+        CREATE_MOZ_PLACES_METADATA_SNAPSHOTS_GROUPS);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = mMainConn->ExecuteSimpleSQL(
+        CREATE_MOZ_PLACES_METADATA_GROUPS_TO_SNAPSHOTS);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+  return NS_OK;
+}
+
+nsresult Database::MigrateV59Up() {
+  // Add metadata snapshots tables if necessary.
+  nsCOMPtr<mozIStorageStatement> stmt;
+  nsresult rv = mMainConn->CreateStatement(
+      "SELECT id FROM moz_session_metadata"_ns, getter_AddRefs(stmt));
+  if (NS_FAILED(rv)) {
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_SESSION_METADATA);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_SESSION_TO_PLACES);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+  return NS_OK;
+}
+
+nsresult Database::MigrateV60Up() {
+  // Add the site_name column to moz_places.
+  nsCOMPtr<mozIStorageStatement> stmt;
+  nsresult rv = mMainConn->CreateStatement(
+      "SELECT site_name FROM moz_places"_ns, getter_AddRefs(stmt));
+  if (NS_FAILED(rv)) {
+    rv = mMainConn->ExecuteSimpleSQL(
+        "ALTER TABLE moz_places ADD COLUMN site_name TEXT"_ns);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
   return NS_OK;
 }
 
@@ -2661,7 +2571,7 @@ Database::Observe(nsISupports* aSubject, const char* aTopic,
   MOZ_ASSERT(NS_IsMainThread());
   if (strcmp(aTopic, TOPIC_PROFILE_CHANGE_TEARDOWN) == 0) {
     // Tests simulating shutdown may cause multiple notifications.
-    if (IsShutdownStarted()) {
+    if (PlacesShutdownBlocker::sIsStarted) {
       return NS_OK;
     }
 
@@ -2695,7 +2605,7 @@ Database::Observe(nsISupports* aSubject, const char* aTopic,
     // to simulate Places shutdown out of the normal shutdown path.
 
     // Tests simulating shutdown may cause re-entrance.
-    if (IsShutdownStarted()) {
+    if (PlacesShutdownBlocker::sIsStarted) {
       return NS_OK;
     }
 
@@ -2714,10 +2624,11 @@ Database::Observe(nsISupports* aSubject, const char* aTopic,
 
     // Spin the events loop until the clients are done.
     // Note, this is just for tests, specifically test_clearHistory_shutdown.js
-    SpinEventLoopUntil([&]() {
-      return mClientsShutdown->State() ==
-             PlacesShutdownBlocker::States::RECEIVED_DONE;
-    });
+    SpinEventLoopUntil("places:Database::Observe(SIMULATE_PLACES_SHUTDOWN)"_ns,
+                       [&]() {
+                         return mClientsShutdown->State() ==
+                                PlacesShutdownBlocker::States::RECEIVED_DONE;
+                       });
 
     {
       nsCOMPtr<nsIAsyncShutdownClient> shutdownPhase =
@@ -2729,18 +2640,6 @@ Database::Observe(nsISupports* aSubject, const char* aTopic,
     }
   }
   return NS_OK;
-}
-
-uint32_t Database::MaxUrlLength() {
-  MOZ_ASSERT(NS_IsMainThread());
-  if (!mMaxUrlLength) {
-    mMaxUrlLength = Preferences::GetInt(PREF_HISTORY_MAXURLLEN,
-                                        PREF_HISTORY_MAXURLLEN_DEFAULT);
-    if (mMaxUrlLength < 255 || mMaxUrlLength > INT32_MAX) {
-      mMaxUrlLength = PREF_HISTORY_MAXURLLEN_DEFAULT;
-    }
-  }
-  return mMaxUrlLength;
 }
 
 }  // namespace places

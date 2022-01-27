@@ -10,12 +10,11 @@
 #include "nsIObserver.h"
 #include "nsITimer.h"
 #include "nsIThread.h"
-#include "nsRefPtrHashtable.h"
 #include "nsString.h"
-#include "gfxFont.h"
+#include "gfxFontEntry.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/TimeStamp.h"
-#include "nsISupportsImpl.h"
+#include "nsISupports.h"
 
 // data retrieved for a given face
 
@@ -86,7 +85,7 @@ class FontInfoData {
   // fetches localized family name data from cached font data
   const nsTArray<nsCString>* GetOtherFamilyNames(
       const nsACString& aFamilyName) {
-    return mOtherFamilyNames.GetValue(aFamilyName);
+    return mOtherFamilyNames.Lookup(aFamilyName).DataPtrOrNull();
   }
 
   nsTArray<nsCString> mFontFamiliesToLoad;
@@ -113,11 +112,10 @@ class FontInfoData {
   bool mLoadCmaps;
 
   // face name ==> per-face data
-  nsDataHashtable<nsCStringHashKey, FontFaceData> mFontFaceData;
+  nsTHashMap<nsCStringHashKey, FontFaceData> mFontFaceData;
 
   // canonical family name ==> array of localized family names
-  nsDataHashtable<nsCStringHashKey, CopyableTArray<nsCString> >
-      mOtherFamilyNames;
+  nsTHashMap<nsCStringHashKey, CopyableTArray<nsCString> > mOtherFamilyNames;
 };
 
 // gfxFontInfoLoader - helper class for loading font info on async thread
@@ -125,46 +123,43 @@ class FontInfoData {
 // (e.g. localized names, face names, cmaps) are loaded async.
 
 // helper class for loading in font info on a separate async thread
-// once async thread completes, completion process is run on regular
-// intervals to prevent tying up the main thread
+// once async thread completes, completion process is run on the main
+// thread's idle queue in short slices
 
 class gfxFontInfoLoader {
  public:
   // state transitions:
   //   initial ---StartLoader with delay---> timer on delay
-  //   initial ---StartLoader without delay---> timer on interval
-  //   timer on delay ---LoaderTimerFire---> timer on interval
+  //   initial ---StartLoader without delay---> timer off
+  //   timer on delay ---LoaderTimerFire---> timer off
   //   timer on delay ---CancelLoader---> timer off
-  //   timer on interval ---CancelLoader---> timer off
   //   timer off ---StartLoader with delay---> timer on delay
-  //   timer off ---StartLoader without delay---> timer on interval
+  //   timer off ---StartLoader without delay---> timer off
   typedef enum {
     stateInitial,
     stateTimerOnDelay,
     stateAsyncLoad,
-    stateTimerOnInterval,
     stateTimerOff
   } TimerState;
 
-  gfxFontInfoLoader() : mInterval(0), mState(stateInitial) {
+  gfxFontInfoLoader() : mState(stateInitial) {
     MOZ_COUNT_CTOR(gfxFontInfoLoader);
   }
 
   virtual ~gfxFontInfoLoader();
 
-  // start timer with an initial delay, then call Run method at regular
-  // intervals
-  void StartLoader(uint32_t aDelay, uint32_t aInterval);
+  // start timer with an initial delay
+  void StartLoader(uint32_t aDelay);
 
-  // Finalize - async load complete, transfer data (on intervals if necessary)
+  // Finalize - async load complete, transfer data (on idle)
   virtual void FinalizeLoader(FontInfoData* aFontInfo);
 
   // cancel the timer and cleanup
   void CancelLoader();
 
-  uint32_t GetInterval() { return mInterval; }
-
  protected:
+  friend class FinalizeLoaderRunnable;
+
   class ShutdownObserver : public nsIObserver {
    public:
     NS_DECL_ISUPPORTS
@@ -194,15 +189,9 @@ class gfxFontInfoLoader {
   // Cleanup - finish and cleanup after done, including possible reflows
   virtual void CleanupLoader() { mFontInfo = nullptr; }
 
-  // Timer interval callbacks
-  static void LoadFontInfoCallback(nsITimer* aTimer, void* aThis) {
-    gfxFontInfoLoader* loader = static_cast<gfxFontInfoLoader*>(aThis);
-    loader->LoadFontInfoTimerFire();
-  }
-
   static void DelayedStartCallback(nsITimer* aTimer, void* aThis) {
     gfxFontInfoLoader* loader = static_cast<gfxFontInfoLoader*>(aThis);
-    loader->StartLoader(0, loader->GetInterval());
+    loader->StartLoader(0);
   }
 
   void LoadFontInfoTimerFire();
@@ -213,7 +202,6 @@ class gfxFontInfoLoader {
   nsCOMPtr<nsITimer> mTimer;
   nsCOMPtr<nsIObserver> mObserver;
   nsCOMPtr<nsIThread> mFontLoaderThread;
-  uint32_t mInterval;
   TimerState mState;
 
   // after async font loader completes, data is stored here

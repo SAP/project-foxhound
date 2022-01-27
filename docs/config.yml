@@ -8,9 +8,12 @@ categories:
     contributing_doc:
         - contributing
         - bug-mgmt
+    user_guide:
+        - devtools-user
     source_doc:
         - browser
         - dom
+        - editor
         - layout
         - gfx
         - devtools
@@ -19,12 +22,18 @@ categories:
         - mobile/android/geckoview
         - dom/bindings/webidl
         - modules/libpref
+        - networking
         - remote
-        - services/common/services
+        - services
         - uriloader
         - widget/cocoa
+        - accessible
         - code-quality
         - writing-rust-code
+        - tools/profiler
+        - performance
+        - xpcom
+        - security/nss
     build_doc:
         - mach
         - tools/try
@@ -32,9 +41,11 @@ categories:
         - taskcluster
         - tools/moztreedocs
     testing_doc:
+        - testing/testing-policy
+        - testing/ci-configs
         - testing/marionette
         - testing/geckodriver
-        - web-platform
+        - gtest
         - tools/fuzzing
         - tools/sanitizer
         - testing/perfdocs
@@ -48,6 +59,8 @@ categories:
         - python
     fennec_doc:
         - mobile/android
+    metrics_doc:
+        - metrics
 
 redirects:
     browser/browser: browser
@@ -64,6 +77,7 @@ redirects:
     modules/libpref/libpref: modules/libpref
     python/mach: mach
     python/python: python
+    setup/getting_set_up.html: contributing/contributing_to_mozilla.html
     taskcluster/taskcluster: taskcluster
     testing/geckodriver/geckodriver: testing/geckodriver
     testing/marionette/marionette: testing/marionette
@@ -75,3 +89,5 @@ redirects:
     tools/lint: code-quality/lint
     tools/lint/coding-style: code-quality/coding-style
     tools/static-analysis/index.html: code-quality/static-analysis.html
+    xpcom/xpcom: xpcom
+

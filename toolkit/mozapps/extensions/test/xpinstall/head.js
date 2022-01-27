@@ -3,13 +3,16 @@
 const { PermissionTestUtils } = ChromeUtils.import(
   "resource://testing-common/PermissionTestUtils.jsm"
 );
+const { PromptTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PromptTestUtils.jsm"
+);
 
 const RELATIVE_DIR = "toolkit/mozapps/extensions/test/xpinstall/";
 
 const TESTROOT = "http://example.com/browser/" + RELATIVE_DIR;
 const TESTROOT2 = "http://example.org/browser/" + RELATIVE_DIR;
 const PROMPT_URL = "chrome://global/content/commonDialog.xhtml";
-const ADDONS_URL = "chrome://mozapps/content/extensions/extensions.xhtml";
+const ADDONS_URL = "chrome://mozapps/content/extensions/aboutaddons.html";
 const PREF_LOGGING_ENABLED = "extensions.logging.enabled";
 const PREF_INSTALL_REQUIREBUILTINCERTS =
   "extensions.install.requireBuiltInCerts";
@@ -111,18 +114,18 @@ var Harness = {
 
       Services.obs.addObserver(this, "addon-install-started");
       Services.obs.addObserver(this, "addon-install-disabled");
-      // XXX this breaks a bunch of stuff, see comment in onInstallCancelled
-      // Services.obs.addObserver(this, "addon-install-cancelled", false);
       Services.obs.addObserver(this, "addon-install-origin-blocked");
       Services.obs.addObserver(this, "addon-install-blocked");
       Services.obs.addObserver(this, "addon-install-failed");
       Services.obs.addObserver(this, "addon-install-complete");
 
+      // For browser_auth tests which trigger auth dialogs.
+      Services.obs.addObserver(this, "tabmodal-dialog-loaded");
+      Services.obs.addObserver(this, "common-dialog-loaded");
+
       this._boundWin = Cu.getWeakReference(win); // need this so our addon manager listener knows which window to use.
       AddonManager.addInstallListener(this);
       AddonManager.addAddonListener(this);
-
-      Services.wm.addListener(this);
 
       win.addEventListener("popupshown", this);
       win.PanelUI.notificationPanel.addEventListener("popupshown", this);
@@ -137,16 +140,16 @@ var Harness = {
 
         Services.obs.removeObserver(self, "addon-install-started");
         Services.obs.removeObserver(self, "addon-install-disabled");
-        // Services.obs.removeObserver(self, "addon-install-cancelled");
         Services.obs.removeObserver(self, "addon-install-origin-blocked");
         Services.obs.removeObserver(self, "addon-install-blocked");
         Services.obs.removeObserver(self, "addon-install-failed");
         Services.obs.removeObserver(self, "addon-install-complete");
 
+        Services.obs.removeObserver(self, "tabmodal-dialog-loaded");
+        Services.obs.removeObserver(self, "common-dialog-loaded");
+
         AddonManager.removeInstallListener(self);
         AddonManager.removeAddonListener(self);
-
-        Services.wm.removeListener(self);
 
         win.removeEventListener("popupshown", self);
         win.PanelUI.notificationPanel.removeEventListener("popupshown", self);
@@ -223,40 +226,38 @@ var Harness = {
     }
   },
 
-  // Window open handling
-  windowReady(window) {
-    if (window.document.location.href == PROMPT_URL) {
-      var promptType = window.args.promptType;
-      let dialog = window.document.getElementById("commonDialog");
-      switch (promptType) {
-        case "alert":
-        case "alertCheck":
-        case "confirmCheck":
-        case "confirm":
-        case "confirmEx":
-          dialog.acceptDialog();
-          break;
-        case "promptUserAndPass":
-          // This is a login dialog, hopefully an authentication prompt
-          // for the xpi.
-          if (this.authenticationCallback) {
-            var auth = this.authenticationCallback();
-            if (auth && auth.length == 2) {
-              window.document.getElementById("loginTextbox").value = auth[0];
-              window.document.getElementById("password1Textbox").value =
-                auth[1];
-              dialog.acceptDialog();
-            } else {
-              dialog.cancelDialog();
-            }
+  promptReady(dialog) {
+    let promptType = dialog.args.promptType;
+
+    switch (promptType) {
+      case "alert":
+      case "alertCheck":
+      case "confirmCheck":
+      case "confirm":
+      case "confirmEx":
+        PromptTestUtils.handlePrompt(dialog, { buttonNumClick: 0 });
+        break;
+      case "promptUserAndPass":
+        // This is a login dialog, hopefully an authentication prompt
+        // for the xpi.
+        if (this.authenticationCallback) {
+          var auth = this.authenticationCallback();
+          if (auth && auth.length == 2) {
+            PromptTestUtils.handlePrompt(dialog, {
+              loginInput: auth[0],
+              passwordInput: auth[1],
+              buttonNumClick: 0,
+            });
           } else {
-            dialog.cancelDialog();
+            PromptTestUtils.handlePrompt(dialog, { buttonNumClick: 1 });
           }
-          break;
-        default:
-          ok(false, "prompt type " + promptType + " not handled in test.");
-          break;
-      }
+        } else {
+          PromptTestUtils.handlePrompt(dialog, { buttonNumClick: 1 });
+        }
+        break;
+      default:
+        ok(false, "prompt type " + promptType + " not handled in test.");
+        break;
     }
   },
 
@@ -357,18 +358,6 @@ var Harness = {
     }
   },
 
-  // nsIWindowMediatorListener
-
-  onOpenWindow(xulWin) {
-    var domwindow = xulWin.docShell.domWindow;
-    var self = this;
-    waitForFocus(function() {
-      self.windowReady(domwindow);
-    }, domwindow);
-  },
-
-  onCloseWindow(window) {},
-
   // Addon Install Listener
 
   onNewInstall(install) {
@@ -420,8 +409,11 @@ var Harness = {
     );
     this.runningInstalls.splice(this.runningInstalls.indexOf(install), 1);
 
-    if (this.downloadCancelledCallback) {
-      this.downloadCancelledCallback(install);
+    if (
+      this.downloadCancelledCallback &&
+      this.downloadCancelledCallback(install) === false
+    ) {
+      return;
     }
     this.checkTestEnded();
   },
@@ -464,9 +456,7 @@ var Harness = {
 
   onInstallCancelled(install) {
     // This is ugly.  We have a bunch of tests that cancel installs
-    // but don't expect this event to be raised (they also don't
-    // expecte addon-install-cancelled to be raised but even though
-    // we have code to handle that, it is never attached, see setup() above)
+    // but don't expect this event to be raised.
     // For at least one test (browser_whitelist3.js), we used to generate
     // onDownloadCancelled when the user cancelled the installation at the
     // confirmation prompt.  We're now generating onInstallCancelled instead
@@ -556,11 +546,16 @@ var Harness = {
           );
         }, this);
         break;
+      case "tabmodal-dialog-loaded":
+        let browser = subject.ownerGlobal.gBrowser.selectedBrowser;
+        let prompt = browser.tabModalPromptBox.getPrompt(subject);
+        this.promptReady(prompt.Dialog);
+        break;
+      case "common-dialog-loaded":
+        this.promptReady(subject.Dialog);
+        break;
     }
   },
 
-  QueryInterface: ChromeUtils.generateQI([
-    "nsIObserver",
-    "nsIWindowMediatorListener",
-  ]),
+  QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
 };

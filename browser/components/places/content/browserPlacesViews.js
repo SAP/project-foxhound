@@ -7,6 +7,11 @@
 /**
  * The base view implements everything that's common to the toolbar and
  * menu views.
+ *
+ * @param {string} aPlace
+ *   The query string associated with the view.
+ * @param {object} aOptions
+ *   Associated options for the view.
  */
 function PlacesViewBase(aPlace, aOptions = {}) {
   if ("rootElt" in aOptions) {
@@ -63,7 +68,6 @@ PlacesViewBase.prototype = {
     history.queryStringToQuery(val, query, options);
     let result = history.executeQuery(query.value, options.value);
     result.addObserver(this);
-    return val;
   },
 
   _result: null,
@@ -72,7 +76,7 @@ PlacesViewBase.prototype = {
   },
   set result(val) {
     if (this._result == val) {
-      return val;
+      return;
     }
 
     if (this._result) {
@@ -97,8 +101,6 @@ PlacesViewBase.prototype = {
       this._resultNode = null;
       delete this._domNodes;
     }
-
-    return val;
   },
 
   _options: null,
@@ -114,17 +116,16 @@ PlacesViewBase.prototype = {
       val.extraClasses = {};
     }
     this._options = val;
-
-    return val;
   },
 
   /**
    * Gets the DOM node used for the given places node.
    *
-   * @param aPlacesNode
+   * @param {object} aPlacesNode
    *        a places result node.
-   * @param aAllowMissing
+   * @param {boolean} aAllowMissing
    *        whether the node may be missing
+   * @returns {object|null} The associated DOM node.
    * @throws if there is no DOM node set for aPlacesNode.
    */
   _getDOMNodeForPlacesNode: function PVB__getDOMNodeForPlacesNode(
@@ -179,14 +180,16 @@ PlacesViewBase.prototype = {
     return selectedNode ? [selectedNode] : [];
   },
 
+  get singleClickOpens() {
+    return true;
+  },
+
   get removableSelectionRanges() {
     // On static content the current selectedNode would be the selection's
     // parent node. We don't want to allow removing a node when the
     // selection is not explicit.
-    if (
-      document.popupNode &&
-      (document.popupNode == "menupopup" || !document.popupNode._placesNode)
-    ) {
+    let popupNode = PlacesUIUtils.lastContextMenuTriggerNode;
+    if (popupNode && (popupNode == "menupopup" || !popupNode._placesNode)) {
       return [];
     }
 
@@ -217,11 +220,11 @@ PlacesViewBase.prototype = {
 
     let selectedNode = this.selectedNode;
     if (selectedNode) {
-      let popup = document.popupNode;
+      let popupNode = PlacesUIUtils.lastContextMenuTriggerNode;
       if (
-        !popup._placesNode ||
-        popup._placesNode == this._resultNode ||
-        popup._placesNode.itemId == -1 ||
+        !popupNode._placesNode ||
+        popupNode._placesNode == this._resultNode ||
+        popupNode._placesNode.itemId == -1 ||
         !selectedNode.parent
       ) {
         // If a static menuitem is selected, or if the root node is selected,
@@ -254,6 +257,44 @@ PlacesViewBase.prototype = {
   buildContextMenu: function PVB_buildContextMenu(aPopup) {
     this._contextMenuShown = aPopup;
     window.updateCommands("places");
+
+    // Ensure that an existing "Show Other Bookmarks" item is removed before adding it
+    // again.
+    let existingOtherBookmarksItem = aPopup.querySelector(
+      "#show-other-bookmarks_PersonalToolbar"
+    );
+    existingOtherBookmarksItem?.remove();
+
+    let manageBookmarksMenu = aPopup.querySelector(
+      "#placesContext_showAllBookmarks"
+    );
+    // Add the View menu for the Bookmarks Toolbar and "Show Other Bookmarks" menu item
+    // if the click originated from the Bookmarks Toolbar.
+    let existingSubmenu = aPopup.querySelector("#toggle_PersonalToolbar");
+    existingSubmenu?.remove();
+    let bookmarksToolbar = document.getElementById("PersonalToolbar");
+    if (bookmarksToolbar?.contains(aPopup.triggerNode)) {
+      manageBookmarksMenu.removeAttribute("hidden");
+
+      let menu = BookmarkingUI.buildBookmarksToolbarSubmenu(bookmarksToolbar);
+      aPopup.insertBefore(menu, manageBookmarksMenu);
+
+      if (
+        aPopup.triggerNode.id === "OtherBookmarks" ||
+        aPopup.triggerNode.id === "PlacesChevron" ||
+        aPopup.triggerNode.id === "PlacesToolbarItems" ||
+        aPopup.triggerNode.parentNode.id === "PlacesToolbarItems"
+      ) {
+        let otherBookmarksMenuItem = BookmarkingUI.buildShowOtherBookmarksMenuItem();
+
+        if (otherBookmarksMenuItem) {
+          aPopup.insertBefore(otherBookmarksMenuItem, menu.nextElementSibling);
+        }
+      }
+    } else {
+      manageBookmarksMenu.setAttribute("hidden", "true");
+    }
+
     return this.controller.buildContextMenu(aPopup);
   },
 
@@ -322,13 +363,6 @@ PlacesViewBase.prototype = {
   },
 
   _removeChild: function PVB__removeChild(aChild) {
-    // If document.popupNode pointed to this child, null it out,
-    // otherwise controller's command-updating may rely on the removed
-    // item still being "selected".
-    if (document.popupNode == aChild) {
-      document.popupNode = null;
-    }
-
     aChild.remove();
   },
 
@@ -543,6 +577,9 @@ PlacesViewBase.prototype = {
     }
   },
 
+  // Opt-out of history details updates, since all the views derived from this
+  // are not showing them.
+  observeHistoryDetails: false,
   nodeHistoryDetailsChanged() {},
   nodeTagsChanged() {},
   nodeDateAddedChanged() {},
@@ -630,7 +667,7 @@ PlacesViewBase.prototype = {
    * This method may be overridden by classes that extend this base class.
    *
    * @param  {Element} elt
-   * @return {Boolean}
+   * @returns {boolean}
    */
   _isPopupOpen(elt) {
     return !!elt.parentNode.open;
@@ -686,7 +723,7 @@ PlacesViewBase.prototype = {
 
   /**
    * Adds an "Open All in Tabs" menuitem to the bottom of the popup.
-   * @param aPopup
+   * @param {object} aPopup
    *        a Places popup.
    */
   _mayAddCommandsItems: function PVB__mayAddCommandsItems(aPopup) {
@@ -754,10 +791,6 @@ PlacesViewBase.prototype = {
         "oncommand",
         "PlacesUIUtils.openMultipleLinksInTabs(this.parentNode._placesNode, event, " +
           "PlacesUIUtils.getViewForNode(this));"
-      );
-      aPopup._endOptOpenAllInTabs.setAttribute(
-        "onclick",
-        "checkForMiddleClick(this, event); event.stopPropagation();"
       );
       aPopup._endOptOpenAllInTabs.setAttribute(
         "label",
@@ -883,7 +916,10 @@ function PlacesToolbar(aPlace) {
 
   this._viewElt._placesView = this;
 
-  this._addEventListeners(this._viewElt, this._cbEvents, false);
+  this._dragRoot = BookmarkingUI.toolbar.contains(this._viewElt)
+    ? BookmarkingUI.toolbar
+    : this._viewElt;
+  this._addEventListeners(this._dragRoot, this._cbEvents, false);
   this._addEventListeners(this._rootElt, ["popupshowing", "popuphidden"], true);
   this._addEventListeners(this._rootElt, ["overflow", "underflow"], true);
   this._addEventListeners(window, ["resize", "unload"], false);
@@ -918,7 +954,7 @@ PlacesToolbar.prototype = {
   _cbEvents: [
     "dragstart",
     "dragover",
-    "dragexit",
+    "dragleave",
     "dragend",
     "drop",
     "mousemove",
@@ -933,7 +969,9 @@ PlacesToolbar.prototype = {
   ]),
 
   uninit: function PT_uninit() {
-    this._removeEventListeners(this._viewElt, this._cbEvents, false);
+    if (this._dragRoot) {
+      this._removeEventListeners(this._dragRoot, this._cbEvents, false);
+    }
     this._removeEventListeners(
       this._rootElt,
       ["popupshowing", "popuphidden"],
@@ -951,6 +989,10 @@ PlacesToolbar.prototype = {
       this._chevron._placesView.uninit();
     }
 
+    if (this._otherBookmarks?._placesView) {
+      this._otherBookmarks._placesView.uninit();
+    }
+
     PlacesViewBase.prototype.uninit.apply(this, arguments);
   },
 
@@ -959,6 +1001,18 @@ PlacesToolbar.prototype = {
 
   get _isAlive() {
     return this._resultNode && this._rootElt;
+  },
+
+  _runBeforeFrameRender(callback) {
+    return new Promise((resolve, reject) => {
+      window.requestAnimationFrame(() => {
+        try {
+          resolve(callback());
+        } catch (err) {
+          reject(err);
+        }
+      });
+    });
   },
 
   async _rebuild() {
@@ -981,37 +1035,35 @@ PlacesToolbar.prototype = {
       // calculate a precise number of visible items, thus we guess a size from
       // the first non-separator node (because separators have flexible size).
       let startIndex = 0;
-      let limit = await new Promise(resolve =>
-        window.requestAnimationFrame(() => {
-          if (!this._isAlive) {
-            return resolve(cc);
-          }
+      let limit = await this._runBeforeFrameRender(() => {
+        if (!this._isAlive) {
+          return cc;
+        }
 
-          // Look for the first non-separator node.
-          let elt;
-          while (startIndex < cc) {
-            elt = this._insertNewItem(
-              this._resultNode.getChild(startIndex),
-              this._rootElt
-            );
-            ++startIndex;
-            if (elt.localName != "toolbarseparator") {
-              break;
-            }
+        // Look for the first non-separator node.
+        let elt;
+        while (startIndex < cc) {
+          elt = this._insertNewItem(
+            this._resultNode.getChild(startIndex),
+            this._rootElt
+          );
+          ++startIndex;
+          if (elt.localName != "toolbarseparator") {
+            break;
           }
-          if (!elt) {
-            return resolve(cc);
-          }
+        }
+        if (!elt) {
+          return cc;
+        }
 
-          return window.promiseDocumentFlushed(() => {
-            // We assume a button with just the icon will be more or less a square,
-            // then compensate the measurement error by considering a larger screen
-            // width. Moreover the window could be bigger than the screen.
-            let size = elt.clientHeight || 1; // Sanity fallback.
-            resolve(Math.min(cc, parseInt((window.screen.width * 1.5) / size)));
-          });
-        })
-      );
+        return window.promiseDocumentFlushed(() => {
+          // We assume a button with just the icon will be more or less a square,
+          // then compensate the measurement error by considering a larger screen
+          // width. Moreover the window could be bigger than the screen.
+          let size = elt.clientHeight || 1; // Sanity fallback.
+          return Math.min(cc, parseInt((window.screen.width * 1.5) / size));
+        });
+      });
 
       if (!this._isAlive) {
         return;
@@ -1035,6 +1087,12 @@ PlacesToolbar.prototype = {
       // Otherwise, it will be initialized when the toolbar overflows.
       this._chevronPopup.place = this.place;
     }
+
+    // Rebuild the "Other Bookmarks" folder if it already exists.
+    let otherBookmarks = document.getElementById("OtherBookmarks");
+    otherBookmarks?.remove();
+
+    BookmarkingUI.maybeShowOtherBookmarksFolder();
   },
 
   _insertNewItem: function PT__insertNewItem(
@@ -1082,6 +1140,10 @@ PlacesToolbar.prototype = {
     }
 
     button._placesNode = aChild;
+    let { icon } = button._placesNode;
+    if (icon) {
+      button.setAttribute("image", icon);
+    }
     if (!this._domNodes.has(aChild)) {
       this._domNodes.set(aChild, button);
     }
@@ -1118,6 +1180,21 @@ PlacesToolbar.prototype = {
     }
 
     this._updateChevronPopupNodesVisibility();
+  },
+
+  _onOtherBookmarksPopupShowing: function PT__onOtherBookmarksPopupShowing(
+    aEvent
+  ) {
+    if (aEvent.target != this._otherBookmarksPopup) {
+      return;
+    }
+
+    if (!this._otherBookmarks._placesView) {
+      this._otherBookmarks._placesView = new PlacesMenu(
+        aEvent,
+        "place:parent=" + PlacesUtils.bookmarks.unfiledGuid
+      );
+    }
   },
 
   handleEvent: function PT_handleEvent(aEvent) {
@@ -1159,8 +1236,8 @@ PlacesToolbar.prototype = {
       case "dragover":
         this._onDragOver(aEvent);
         break;
-      case "dragexit":
-        this._onDragExit(aEvent);
+      case "dragleave":
+        this._onDragLeave(aEvent);
         break;
       case "dragend":
         this._onDragEnd(aEvent);
@@ -1274,9 +1351,8 @@ PlacesToolbar.prototype = {
         bubbles: true,
       });
       this._viewElt.dispatchEvent(event);
+      this._updatingNodesVisibility = false;
     });
-
-    this._updatingNodesVisibility = false;
   },
 
   nodeInserted: function PT_nodeInserted(
@@ -1493,10 +1569,14 @@ PlacesToolbar.prototype = {
 
   /**
    * This function returns information about where to drop when dragging over
-   * the toolbar.  The returned object has the following properties:
-   * - ip: the insertion point for the bookmarks service.
-   * - beforeIndex: child index to drop before, for the drop indicator.
-   * - folderElt: the folder to drop into, if applicable.
+   * the toolbar.
+   *
+   * @param {object} aEvent
+   *   The associated event.
+   * @returns {object}
+   *   - ip: the insertion point for the bookmarks service.
+   *   - beforeIndex: child index to drop before, for the drop indicator.
+   *   - folderElt: the folder to drop into, if applicable.
    */
   _getDropPoint: function PT__getDropPoint(aEvent) {
     if (!PlacesUtils.nodeIsFolder(this._resultNode)) {
@@ -1616,10 +1696,6 @@ PlacesToolbar.prototype = {
     if (aTimer == this._updateNodesVisibilityTimer) {
       this._updateNodesVisibilityTimer = null;
       this._updateNodesVisibilityTimerCallback();
-    } else if (aTimer == this._ibTimer) {
-      // * Timer to turn off indicator bar.
-      this._dropIndicator.collapsed = true;
-      this._ibTimer = null;
     } else if (aTimer == this._overFolder.openTimer) {
       // * Timer to open a menubutton that's being dragged over.
       // Set the autoopen attribute on the folder's menupopup so that
@@ -1687,10 +1763,6 @@ PlacesToolbar.prototype = {
     // Called on dragend and drop.
     PlacesControllerDragHelper.currentDropTarget = null;
     this._draggedElt = null;
-    if (this._ibTimer) {
-      this._ibTimer.cancel();
-    }
-
     this._dropIndicator.collapsed = true;
   },
 
@@ -1746,11 +1818,6 @@ PlacesToolbar.prototype = {
       this._dropIndicator.collapsed = true;
       aEvent.stopPropagation();
       return;
-    }
-
-    if (this._ibTimer) {
-      this._ibTimer.cancel();
-      this._ibTimer = null;
     }
 
     if (dropPoint.folderElt || aEvent.originalTarget == this._chevron) {
@@ -1830,16 +1897,10 @@ PlacesToolbar.prototype = {
     aEvent.stopPropagation();
   },
 
-  _onDragExit: function PT__onDragExit(aEvent) {
+  _onDragLeave(aEvent) {
     PlacesControllerDragHelper.currentDropTarget = null;
 
-    // Set timer to turn off indicator bar (if we turn it off
-    // here, dragenter might be called immediately after, creating
-    // flicker).
-    if (this._ibTimer) {
-      this._ibTimer.cancel();
-    }
-    this._ibTimer = this._setTimer(10);
+    this._dropIndicator.collapsed = true;
 
     // If we hovered over a folder, close it now.
     if (this._overFolder.elt) {
@@ -1918,6 +1979,13 @@ PlacesToolbar.prototype = {
 /**
  * View for Places menus.  This object should be created during the first
  * popupshowing that's dispatched on the menu.
+ *
+ * @param {object} aPopupShowingEvent
+ *   The event associated with opening the menu.
+ * @param {string} aPlace
+ *   The query associated with the view on the menu.
+ * @param {object} aOptions
+ *   Options associated with the view.
  */
 function PlacesMenu(aPopupShowingEvent, aPlace, aOptions) {
   this._rootElt = aPopupShowingEvent.target; // <menupopup>

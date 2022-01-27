@@ -20,11 +20,7 @@
 
 //! A crate used for calculating offsets of struct members and their spans.
 //!
-//! Some of the funcationality of the crate makes no sense when used along with structs that
-//! are not `#[repr(C, packed)]`, but it is up to the user to make sure that they are.
-//!
-//! This functionality should work for `const`s but presently doesn't work on `const fn`. Storing a
-//! value in a const and then returning it from a `const fn` should workaround most cases.
+//! This functionality currently can not be used in compile time code such as `const` or `const fn` definitions.
 //!
 //! ## Examples
 //! ```
@@ -61,15 +57,41 @@
 //! ```
 
 #![no_std]
+#![cfg_attr(
+    feature = "unstable_const",
+    feature(
+        const_ptr_offset_from,
+        const_maybe_uninit_as_ptr,
+        const_raw_ptr_deref,
+        const_refs_to_cell,
+    )
+)]
 
-// This `use` statement enables the macros to use `$crate::mem`.
-// Doing this enables this crate to function under both std and no-std crates.
+#[macro_use]
+#[cfg(doctests)]
+#[cfg(doctest)]
+extern crate doc_comment;
+#[cfg(doctests)]
+#[cfg(doctest)]
+doctest!("../README.md");
+
+/// Hiden module for things the macros need to access.
 #[doc(hidden)]
-pub use core::mem;
+pub mod __priv {
+    #[doc(hidden)]
+    pub use core::mem;
+    #[doc(hidden)]
+    pub use core::ptr;
 
-#[doc(hidden)]
-pub use core::ptr;
+    /// Use type inference to obtain the size of the pointee (without actually using the pointer).
+    #[doc(hidden)]
+    pub fn size_of_pointee<T>(_ptr: *const T) -> usize {
+        mem::size_of::<T>()
+    }
+}
 
+#[macro_use]
+mod raw_field;
 #[macro_use]
 mod offset_of;
 #[macro_use]

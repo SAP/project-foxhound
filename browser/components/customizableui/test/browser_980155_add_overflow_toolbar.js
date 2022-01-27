@@ -11,6 +11,16 @@ add_task(async function addOverflowingToolbar() {
   let originalWindowWidth = window.outerWidth;
 
   let widgetIds = [];
+  registerCleanupFunction(() => {
+    try {
+      for (let id of widgetIds) {
+        CustomizableUI.destroyWidget(id);
+      }
+    } catch (ex) {
+      Cu.reportError(ex);
+    }
+  });
+
   for (let i = 0; i < 10; i++) {
     let id = kTestWidgetPrefix + i;
     widgetIds.push(id);
@@ -60,7 +70,9 @@ add_task(async function addOverflowingToolbar() {
   isnot(oldChildCount, 0, "Toolbar should have non-overflowing widgets");
 
   window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
-  await waitForCondition(() => toolbarNode.hasAttribute("overflowing"));
+  await TestUtils.waitForCondition(() =>
+    toolbarNode.hasAttribute("overflowing")
+  );
   ok(
     toolbarNode.hasAttribute("overflowing"),
     "Should have an overflowing toolbar."

@@ -10,7 +10,11 @@
 #include "mozilla/dom/nsMixedContentBlocker.h"
 #include "nsIMutableArray.h"
 #include "nsTPriorityQueue.h"
+#include "nsIScriptError.h"
+#include "nsServiceManagerUtils.h"
+#include "nsComponentManagerUtils.h"
 #include "prprf.h"
+#include "nsIPrefService.h"
 
 #undef ADD_TEN_PERCENT
 #define ADD_TEN_PERCENT(i) static_cast<uint32_t>((i) + (i) / 10)
@@ -48,7 +52,6 @@ class CompareCookiesByAge {
 // Other non-expired cookies are sorted by their age.
 class CookieIterComparator {
  private:
-  CompareCookiesByAge mAgeComparator;
   int64_t mCurrentTime;
 
  public:
@@ -65,7 +68,7 @@ class CookieIterComparator {
       return false;
     }
 
-    return mAgeComparator.LessThan(lhs, rhs);
+    return mozilla::net::CompareCookiesByAge::LessThan(lhs, rhs);
   }
 };
 
@@ -109,16 +112,6 @@ size_t CookieEntry::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
 
 NS_IMPL_ISUPPORTS(CookieStorage, nsIObserver, nsISupportsWeakReference)
 
-CookieStorage::CookieStorage()
-    : mCookieCount(0),
-      mCookieOldestTime(INT64_MAX),
-      mMaxNumberOfCookies(kMaxNumberOfCookies),
-      mMaxCookiesPerHost(kMaxCookiesPerHost),
-      mCookieQuotaPerHost(kCookieQuotaPerHost),
-      mCookiePurgeAge(kCookiePurgeAge) {}
-
-CookieStorage::~CookieStorage() = default;
-
 void CookieStorage::Init() {
   // init our pref and observer
   nsCOMPtr<nsIPrefBranch> prefBranch = do_GetService(NS_PREFSERVICE_CONTRACTID);
@@ -141,8 +134,8 @@ size_t CookieStorage::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
 
 void CookieStorage::GetCookies(nsTArray<RefPtr<nsICookie>>& aCookies) const {
   aCookies.SetCapacity(mCookieCount);
-  for (auto iter = mHostTable.ConstIter(); !iter.Done(); iter.Next()) {
-    const CookieEntry::ArrayType& cookies = iter.Get()->GetCookies();
+  for (const auto& entry : mHostTable) {
+    const CookieEntry::ArrayType& cookies = entry.GetCookies();
     for (CookieEntry::IndexType i = 0; i < cookies.Length(); ++i) {
       aCookies.AppendElement(cookies[i]);
     }
@@ -152,8 +145,8 @@ void CookieStorage::GetCookies(nsTArray<RefPtr<nsICookie>>& aCookies) const {
 void CookieStorage::GetSessionCookies(
     nsTArray<RefPtr<nsICookie>>& aCookies) const {
   aCookies.SetCapacity(mCookieCount);
-  for (auto iter = mHostTable.ConstIter(); !iter.Done(); iter.Next()) {
-    const CookieEntry::ArrayType& cookies = iter.Get()->GetCookies();
+  for (const auto& entry : mHostTable) {
+    const CookieEntry::ArrayType& cookies = entry.GetCookies();
     for (CookieEntry::IndexType i = 0; i < cookies.Length(); ++i) {
       Cookie* cookie = cookies[i];
       // Filter out non-session cookies.
@@ -236,8 +229,8 @@ uint32_t CookieStorage::CountCookiesFromHost(const nsACString& aBaseDomain,
 void CookieStorage::GetAll(nsTArray<RefPtr<nsICookie>>& aResult) const {
   aResult.SetCapacity(mCookieCount);
 
-  for (auto iter = mHostTable.ConstIter(); !iter.Done(); iter.Next()) {
-    const CookieEntry::ArrayType& cookies = iter.Get()->GetCookies();
+  for (const auto& entry : mHostTable) {
+    const CookieEntry::ArrayType& cookies = entry.GetCookies();
     for (CookieEntry::IndexType i = 0; i < cookies.Length(); ++i) {
       aResult.AppendElement(cookies[i]);
     }
@@ -278,7 +271,7 @@ void CookieStorage::RemoveCookie(const nsACString& aBaseDomain,
                                  const nsACString& aHost,
                                  const nsACString& aName,
                                  const nsACString& aPath) {
-  CookieListIter matchIter;
+  CookieListIter matchIter{};
   RefPtr<Cookie> cookie;
   if (FindCookie(aBaseDomain, aOriginAttributes, aHost, aName, aPath,
                  matchIter)) {
@@ -403,7 +396,7 @@ void CookieStorage::AddCookie(nsIConsoleReportCollector* aCRC,
                               bool aFromHttp) {
   int64_t currentTime = aCurrentTimeInUsec / PR_USEC_PER_SEC;
 
-  CookieListIter exactIter;
+  CookieListIter exactIter{};
   bool foundCookie = false;
   foundCookie = FindCookie(aBaseDomain, aOriginAttributes, aCookie->Host(),
                            aCookie->Name(), aCookie->Path(), exactIter);
@@ -413,6 +406,7 @@ void CookieStorage::AddCookie(nsIConsoleReportCollector* aCRC,
     potentiallyTrustworthy =
         nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(aHostURI);
   }
+  constexpr auto CONSOLE_REJECTION_CATEGORY = "cookiesRejection"_ns;
   bool oldCookieIsSession = false;
   // Step1, call FindSecureCookie(). FindSecureCookie() would
   // find the existing cookie with the security flag and has

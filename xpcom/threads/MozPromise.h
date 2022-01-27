@@ -15,7 +15,6 @@
 #  include "mozilla/Monitor.h"
 #  include "mozilla/Mutex.h"
 #  include "mozilla/RefPtr.h"
-#  include "mozilla/Tuple.h"
 #  include "mozilla/UniquePtr.h"
 #  include "mozilla/Variant.h"
 #  include "nsIDirectTaskDispatcher.h"
@@ -292,6 +291,9 @@ class MozPromise : public MozPromiseBase {
                      IsExclusive>
       AllPromiseType;
 
+  typedef MozPromise<CopyableTArray<ResolveOrRejectValue>, bool, IsExclusive>
+      AllSettledPromiseType;
+
  private:
   class AllPromiseHolder : public MozPromiseRefcountable {
    public:
@@ -302,13 +304,15 @@ class MozPromise : public MozPromiseBase {
       mResolveValues.SetLength(aDependentPromises);
     }
 
-    void Resolve(size_t aIndex, ResolveValueType&& aResolveValue) {
+    template <typename ResolveValueType_>
+    void Resolve(size_t aIndex, ResolveValueType_&& aResolveValue) {
       if (!mPromise) {
         // Already rejected.
         return;
       }
 
-      mResolveValues[aIndex].emplace(std::move(aResolveValue));
+      mResolveValues[aIndex].emplace(
+          std::forward<ResolveValueType_>(aResolveValue));
       if (--mOutstandingPromises == 0) {
         nsTArray<ResolveValueType> resolveValues;
         resolveValues.SetCapacity(mResolveValues.Length());
@@ -322,13 +326,14 @@ class MozPromise : public MozPromiseBase {
       }
     }
 
-    void Reject(RejectValueType&& aRejectValue) {
+    template <typename RejectValueType_>
+    void Reject(RejectValueType_&& aRejectValue) {
       if (!mPromise) {
         // Already rejected.
         return;
       }
 
-      mPromise->Reject(std::move(aRejectValue), __func__);
+      mPromise->Reject(std::forward<RejectValueType_>(aRejectValue), __func__);
       mPromise = nullptr;
       mResolveValues.Clear();
     }
@@ -338,6 +343,58 @@ class MozPromise : public MozPromiseBase {
    private:
     nsTArray<Maybe<ResolveValueType>> mResolveValues;
     RefPtr<typename AllPromiseType::Private> mPromise;
+    size_t mOutstandingPromises;
+  };
+
+  // Trying to pass ResolveOrRejectValue by value fails static analysis checks,
+  // so we need to use either a const& or an rvalue reference, depending on
+  // whether IsExclusive is true or not.
+  typedef std::conditional_t<IsExclusive, ResolveOrRejectValue&&,
+                             const ResolveOrRejectValue&>
+      ResolveOrRejectValueParam;
+
+  typedef std::conditional_t<IsExclusive, ResolveValueType&&,
+                             const ResolveValueType&>
+      ResolveValueTypeParam;
+
+  typedef std::conditional_t<IsExclusive, RejectValueType&&,
+                             const RejectValueType&>
+      RejectValueTypeParam;
+
+  class AllSettledPromiseHolder : public MozPromiseRefcountable {
+   public:
+    explicit AllSettledPromiseHolder(size_t aDependentPromises)
+        : mPromise(new typename AllSettledPromiseType::Private(__func__)),
+          mOutstandingPromises(aDependentPromises) {
+      MOZ_ASSERT(aDependentPromises > 0);
+      mValues.SetLength(aDependentPromises);
+    }
+
+    void Settle(size_t aIndex, ResolveOrRejectValueParam aValue) {
+      if (!mPromise) {
+        // Already rejected.
+        return;
+      }
+
+      mValues[aIndex].emplace(MaybeMove(aValue));
+      if (--mOutstandingPromises == 0) {
+        nsTArray<ResolveOrRejectValue> values;
+        values.SetCapacity(mValues.Length());
+        for (auto&& value : mValues) {
+          values.AppendElement(std::move(value.ref()));
+        }
+
+        mPromise->Resolve(std::move(values), __func__);
+        mPromise = nullptr;
+        mValues.Clear();
+      }
+    }
+
+    AllSettledPromiseType* Promise() { return mPromise; }
+
+   private:
+    nsTArray<Maybe<ResolveOrRejectValue>> mValues;
+    RefPtr<typename AllSettledPromiseType::Private> mPromise;
     size_t mOutstandingPromises;
   };
 
@@ -355,12 +412,32 @@ class MozPromise : public MozPromiseBase {
     for (size_t i = 0; i < aPromises.Length(); ++i) {
       aPromises[i]->Then(
           aProcessingTarget, __func__,
-          [holder, i](ResolveValueType aResolveValue) -> void {
-            holder->Resolve(i, std::move(aResolveValue));
+          [holder, i](ResolveValueTypeParam aResolveValue) -> void {
+            holder->Resolve(i, MaybeMove(aResolveValue));
           },
-          [holder](RejectValueType aRejectValue) -> void {
-            holder->Reject(std::move(aRejectValue));
+          [holder](RejectValueTypeParam aRejectValue) -> void {
+            holder->Reject(MaybeMove(aRejectValue));
           });
+    }
+    return promise;
+  }
+
+  [[nodiscard]] static RefPtr<AllSettledPromiseType> AllSettled(
+      nsISerialEventTarget* aProcessingTarget,
+      nsTArray<RefPtr<MozPromise>>& aPromises) {
+    if (aPromises.Length() == 0) {
+      return AllSettledPromiseType::CreateAndResolve(
+          CopyableTArray<ResolveOrRejectValue>(), __func__);
+    }
+
+    RefPtr<AllSettledPromiseHolder> holder =
+        new AllSettledPromiseHolder(aPromises.Length());
+    RefPtr<AllSettledPromiseType> promise = holder->Promise();
+    for (size_t i = 0; i < aPromises.Length(); ++i) {
+      aPromises[i]->Then(aProcessingTarget, __func__,
+                         [holder, i](ResolveOrRejectValueParam aValue) -> void {
+                           holder->Settle(i, MaybeMove(aValue));
+                         });
     }
     return promise;
   }
@@ -459,9 +536,9 @@ class MozPromise : public MozPromiseBase {
           "%s dispatch",
           aPromise->mValue.IsResolve() ? "Resolving" : "Rejecting", mCallSite,
           r.get(), aPromise, this,
-          aPromise->mUseSynchronousTaskDispatch
-              ? "synchronous"
-              : aPromise->mUseDirectTaskDispatch ? "directtask" : "normal");
+          aPromise->mUseSynchronousTaskDispatch ? "synchronous"
+          : aPromise->mUseDirectTaskDispatch    ? "directtask"
+                                                : "normal");
 
       if (aPromise->mUseSynchronousTaskDispatch &&
           mResponseTarget->IsOnCurrentThread()) {
@@ -927,8 +1004,8 @@ class MozPromise : public MozPromiseBase {
     }
 
     template <typename... Ts>
-    auto Then(Ts&&... aArgs) -> decltype(
-        std::declval<PromiseType>().Then(std::forward<Ts>(aArgs)...)) {
+    auto Then(Ts&&... aArgs) -> decltype(std::declval<PromiseType>().Then(
+        std::forward<Ts>(aArgs)...)) {
       return static_cast<RefPtr<PromiseType>>(*this)->Then(
           std::forward<Ts>(aArgs)...);
     }
@@ -1039,6 +1116,8 @@ class MozPromise : public MozPromiseBase {
       chained->AssertIsDead();
     }
   }
+
+  bool IsResolved() const { return mValue.IsResolve(); }
 
  protected:
   bool IsPending() const { return mValue.IsNothing(); }

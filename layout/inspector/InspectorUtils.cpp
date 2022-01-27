@@ -13,6 +13,7 @@
 #include "nsArray.h"
 #include "nsString.h"
 #include "nsIContentInlines.h"
+#include "nsIScrollableFrame.h"
 #include "mozilla/dom/Document.h"
 #include "ChildIterator.h"
 #include "nsComputedDOMStyle.h"
@@ -34,6 +35,7 @@
 #include "nsColor.h"
 #include "mozilla/ServoStyleSet.h"
 #include "nsLayoutUtils.h"
+#include "nsNameSpaceManager.h"
 #include "nsStyleUtil.h"
 #include "nsQueryObject.h"
 #include "mozilla/ServoBindings.h"
@@ -50,6 +52,30 @@ using namespace mozilla::dom;
 
 namespace mozilla {
 namespace dom {
+
+static already_AddRefed<ComputedStyle> GetCleanComputedStyleForElement(
+    dom::Element* aElement, PseudoStyleType aPseudo) {
+  MOZ_ASSERT(aElement);
+
+  Document* doc = aElement->GetComposedDoc();
+  if (!doc) {
+    return nullptr;
+  }
+
+  PresShell* presShell = doc->GetPresShell();
+  if (!presShell) {
+    return nullptr;
+  }
+
+  nsPresContext* presContext = presShell->GetPresContext();
+  if (!presContext) {
+    return nullptr;
+  }
+
+  presContext->EnsureSafeToHandOutCSSRules();
+
+  return nsComputedDOMStyle::GetComputedStyle(aElement, aPseudo);
+}
 
 /* static */
 void InspectorUtils::GetAllStyleSheets(GlobalObject& aGlobalObject,
@@ -77,7 +103,7 @@ void InspectorUtils::GetAllStyleSheets(GlobalObject& aGlobalObject,
 
     // The non-document stylesheet array can't have duplicates right now, but it
     // could once we include adopted stylesheets.
-    nsTHashtable<nsPtrHashKey<StyleSheet>> sheetSet;
+    nsTHashSet<StyleSheet*> sheetSet;
     for (StyleSheet* sheet : nonDocumentSheets) {
       if (sheetSet.EnsureInserted(sheet)) {
         aResult.AppendElement(sheet);
@@ -154,13 +180,14 @@ already_AddRefed<nsINodeList> InspectorUtils::GetChildrenForNode(
 void InspectorUtils::GetCSSStyleRules(
     GlobalObject& aGlobalObject, Element& aElement, const nsAString& aPseudo,
     bool aIncludeVisitedStyle, nsTArray<RefPtr<BindingStyleRule>>& aResult) {
-  RefPtr<nsAtom> pseudoElt;
-  if (!aPseudo.IsEmpty()) {
-    pseudoElt = NS_Atomize(aPseudo);
+  Maybe<PseudoStyleType> type = nsCSSPseudoElements::GetPseudoType(
+      aPseudo, CSSEnabledState::ForAllContent);
+  if (!type) {
+    return;
   }
 
   RefPtr<ComputedStyle> computedStyle =
-      GetCleanComputedStyleForElement(&aElement, pseudoElt);
+      GetCleanComputedStyleForElement(&aElement, *type);
   if (!computedStyle) {
     // This can fail for elements that are not in the document or
     // if the document they're in doesn't have a presshell.  Bail out.
@@ -299,7 +326,7 @@ uint32_t InspectorUtils::GetSelectorCount(GlobalObject& aGlobal,
 /* static */
 void InspectorUtils::GetSelectorText(GlobalObject& aGlobal,
                                      BindingStyleRule& aRule,
-                                     uint32_t aSelectorIndex, nsString& aText,
+                                     uint32_t aSelectorIndex, nsACString& aText,
                                      ErrorResult& aRv) {
   aRv = aRule.GetSelectorText(aSelectorIndex, aText);
 }
@@ -442,6 +469,12 @@ static uint8_t ToServoCssType(InspectorPropertyType aType) {
   }
 }
 
+bool InspectorUtils::Supports(GlobalObject&, const nsACString& aDeclaration,
+                              const SupportsOptions& aOptions) {
+  return Servo_CSSSupports(&aDeclaration, aOptions.mUserAgent, aOptions.mChrome,
+                           aOptions.mQuirks);
+}
+
 bool InspectorUtils::CssPropertySupportsType(GlobalObject& aGlobalObject,
                                              const nsACString& aProperty,
                                              InspectorPropertyType aType,
@@ -483,12 +516,19 @@ void InspectorUtils::RgbToColorName(GlobalObject& aGlobalObject, uint8_t aR,
 }
 
 /* static */
-void InspectorUtils::ColorToRGBA(GlobalObject& aGlobalObject,
-                                 const nsACString& aColorString,
+void InspectorUtils::ColorToRGBA(GlobalObject&, const nsACString& aColorString,
+                                 const Document* aDoc,
                                  Nullable<InspectorRGBATuple>& aResult) {
   nscolor color = NS_RGB(0, 0, 0);
 
-  if (!ServoCSSParser::ComputeColor(nullptr, NS_RGB(0, 0, 0), aColorString,
+  ServoStyleSet* styleSet = nullptr;
+  if (aDoc) {
+    if (PresShell* ps = aDoc->GetPresShell()) {
+      styleSet = ps->StyleSet();
+    }
+  }
+
+  if (!ServoCSSParser::ComputeColor(styleSet, NS_RGB(0, 0, 0), aColorString,
                                     &color)) {
     aResult.SetNull();
     return;
@@ -556,31 +596,6 @@ uint64_t InspectorUtils::GetContentState(GlobalObject& aGlobalObject,
 }
 
 /* static */
-already_AddRefed<ComputedStyle> InspectorUtils::GetCleanComputedStyleForElement(
-    dom::Element* aElement, nsAtom* aPseudo) {
-  MOZ_ASSERT(aElement);
-
-  Document* doc = aElement->GetComposedDoc();
-  if (!doc) {
-    return nullptr;
-  }
-
-  PresShell* presShell = doc->GetPresShell();
-  if (!presShell) {
-    return nullptr;
-  }
-
-  nsPresContext* presContext = presShell->GetPresContext();
-  if (!presContext) {
-    return nullptr;
-  }
-
-  presContext->EnsureSafeToHandOutCSSRules();
-
-  return nsComputedDOMStyle::GetComputedStyle(aElement, aPseudo);
-}
-
-/* static */
 void InspectorUtils::GetUsedFontFaces(GlobalObject& aGlobalObject,
                                       nsRange& aRange, uint32_t aMaxRanges,
                                       bool aSkipCollapsedWhitespace,
@@ -609,10 +624,14 @@ void InspectorUtils::GetCSSPseudoElementNames(GlobalObject& aGlobalObject,
       static_cast<size_t>(PseudoStyleType::CSSPseudoElementsEnd);
   for (size_t i = 0; i < kPseudoCount; ++i) {
     PseudoStyleType type = static_cast<PseudoStyleType>(i);
-    if (nsCSSPseudoElements::IsEnabled(type, CSSEnabledState::ForAllContent)) {
-      nsAtom* atom = nsCSSPseudoElements::GetPseudoAtom(type);
-      aResult.AppendElement(nsDependentAtomString(atom));
+    if (!nsCSSPseudoElements::IsEnabled(type, CSSEnabledState::ForAllContent)) {
+      continue;
     }
+    auto& string = *aResult.AppendElement();
+    // Use two semi-colons (though internally we use one).
+    string.Append(u':');
+    nsAtom* atom = nsCSSPseudoElements::GetPseudoAtom(type);
+    string.Append(nsDependentAtomString(atom));
   }
 }
 
@@ -675,8 +694,8 @@ bool InspectorUtils::IsCustomElementName(GlobalObject&, const nsAString& aName,
   }
 
   int32_t namespaceID;
-  nsContentUtils::NameSpaceManager()->RegisterNameSpace(aNamespaceURI,
-                                                        namespaceID);
+  nsNameSpaceManager::GetInstance()->RegisterNameSpace(aNamespaceURI,
+                                                       namespaceID);
 
   RefPtr<nsAtom> nameElt = NS_Atomize(aName);
   return nsContentUtils::IsCustomElementName(nameElt, namespaceID);
@@ -755,7 +774,7 @@ static void AddOverflowingChildrenOfElement(const nsIFrame* aFrame,
 
       if (FrameHasSpecifiedSize(child) &&
           IsFrameOutsideOfAncestor(child, aAncestorFrame, aRect)) {
-        aList.AppendElement(child->GetContent());
+        aList.MaybeAppendElement(child->GetContent());
         continue;
       }
 
@@ -766,7 +785,7 @@ static void AddOverflowingChildrenOfElement(const nsIFrame* aFrame,
       // calling AddOverflowingChildrenOfElement on it.
       if (currListLength == aList.Length() &&
           IsFrameOutsideOfAncestor(child, aAncestorFrame, aRect)) {
-        aList.AppendElement(child->GetContent());
+        aList.MaybeAppendElement(child->GetContent());
       }
     }
   }
@@ -775,17 +794,17 @@ static void AddOverflowingChildrenOfElement(const nsIFrame* aFrame,
 already_AddRefed<nsINodeList> InspectorUtils::GetOverflowingChildrenOfElement(
     GlobalObject& aGlobal, Element& aElement) {
   RefPtr<nsSimpleContentList> list = new nsSimpleContentList(&aElement);
-  nsIFrame* primaryFrame = aElement.GetPrimaryFrame(FlushType::Frames);
-
-  const nsIScrollableFrame* scrollFrame = do_QueryFrame(primaryFrame);
-  // primaryFrame must be nsIScrollableFrame
+  const nsIScrollableFrame* scrollFrame = aElement.GetScrollFrame();
+  // Element must have a nsIScrollableFrame
   if (!scrollFrame) {
     return list.forget();
   }
 
   auto scrollPortRect = scrollFrame->GetScrollPortRect();
-  AddOverflowingChildrenOfElement(scrollFrame->GetScrolledFrame(), primaryFrame,
-                                  scrollPortRect, *list);
+  const nsIFrame* outerFrame = do_QueryFrame(scrollFrame);
+  const nsIFrame* scrolledFrame = scrollFrame->GetScrolledFrame();
+  AddOverflowingChildrenOfElement(scrolledFrame, outerFrame, scrollPortRect,
+                                  *list);
   return list.forget();
 }
 

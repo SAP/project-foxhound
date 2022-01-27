@@ -4,6 +4,7 @@ if (!window.opener && window.arguments) {
 /**
  * Import common SimpleTest methods so that they're usable in this window.
  */
+/* globals SimpleTest, is, isnot, ok, onerror, todo, todo_is, todo_isnot */
 var imports = [
   "SimpleTest",
   "is",
@@ -448,8 +449,17 @@ function pageEventListener(event) {
  */
 function finish() {
   // Work around bug 467960.
-  var history = TestWindow.getBrowser().webNavigation.sessionHistory;
-  history.legacySHistory.PurgeHistory(history.count);
+  let history;
+  if (SpecialPowers.Services.appinfo.sessionHistoryInParent) {
+    history = TestWindow.getBrowser().browsingContext?.sessionHistory;
+  } else {
+    history = TestWindow.getBrowser().webNavigation.sessionHistory
+      .legacySHistory;
+  }
+
+  if (history) {
+    history.purgeHistory(history.count);
+  }
 
   // If the test changed the value of max_total_viewers via a call to
   // enableBFCache(), then restore it now.

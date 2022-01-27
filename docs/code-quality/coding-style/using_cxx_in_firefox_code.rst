@@ -402,10 +402,6 @@ Data structures
      - ``nsInterfaceHashtable.h``
      - ``std::unordered_map``
      - Adaptation of ``nsTHashtable``, see `XPCOM hashtable guide <https://developer.mozilla.org/docs/Mozilla/Tech/XPCOM/Guide/Hashtables>`__
-   * - ``nsJSThingHashtable``
-     - ``nsJSThingHashtable.h``
-     -
-     - Adaptation of ``nsTHashtable``, see `XPCOM hashtable guide <https://developer.mozilla.org/docs/Mozilla/Tech/XPCOM/Guide/Hashtables>`__
    * - ``mozilla::LinkedList``
      - ``mozilla/LinkedList.h``
      - ``std::list``
@@ -459,7 +455,7 @@ Safety utilities
      - Header
      - STL equivalent
      - Notes
-   * - ``mo- zilla::Array``
+   * - ``mozilla::Array``
      - ``mfbt/Array.h``
      -
      - safe array index
@@ -601,7 +597,7 @@ Miscellaneous
    * - ``mozilla::MaybeOneOf``
      - mfbt/MaybeOneOf.h
      - ``std::optional<std::variant<T1, T2>>``
-     - ~``mozilla::Maybe<union {T1, T2}>``   * -
+     - ~ ``mozilla::Maybe<union {T1, T2}>``
    * - ``mozilla::Pair``
      - mfbt/Pair.h
      - ``std::tuple<T1, T2>``

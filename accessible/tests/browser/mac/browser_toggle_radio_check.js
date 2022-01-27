@@ -23,10 +23,14 @@ addAccessibleTask(
     let actions = checkbox.actionNames;
     ok(actions.includes("AXPress"), "Has press action");
 
+    let evt = waitForMacEvent("AXValueChanged", "vehicle");
     checkbox.performAction("AXPress");
+    await evt;
     is(checkbox.getAttributeValue("AXValue"), 1, "Correct checked value");
 
+    evt = waitForMacEvent("AXValueChanged", "vehicle");
     checkbox.performAction("AXPress");
+    await evt;
     is(checkbox.getAttributeValue("AXValue"), 0, "Correct checked value");
   }
 );
@@ -52,10 +56,14 @@ addAccessibleTask(
     let actions = toggle.actionNames;
     ok(actions.includes("AXPress"), "Has press action");
 
+    let evt = waitForMacEvent("AXValueChanged", "toggle");
     toggle.performAction("AXPress");
+    await evt;
     is(toggle.getAttributeValue("AXValue"), 1, "Correct checked value");
 
+    evt = waitForMacEvent("AXValueChanged", "toggle");
     toggle.performAction("AXPress");
+    await evt;
     is(toggle.getAttributeValue("AXValue"), 0, "Correct checked value");
   }
 );
@@ -82,10 +90,14 @@ addAccessibleTask(
     let actions = checkbox.actionNames;
     ok(actions.includes("AXPress"), "Has press action");
 
+    let evt = waitForMacEvent("AXValueChanged", "checkbox");
     checkbox.performAction("AXPress");
+    await evt;
     is(checkbox.getAttributeValue("AXValue"), 1, "Correct checked value");
 
+    evt = waitForMacEvent("AXValueChanged", "checkbox");
     checkbox.performAction("AXPress");
+    await evt;
     is(checkbox.getAttributeValue("AXValue"), 2, "Correct checked value");
   }
 );
@@ -112,14 +124,46 @@ addAccessibleTask(
     let actions = dewey.actionNames;
     ok(actions.includes("AXPress"), "Has press action");
 
-    let stateChanged = waitForEvent(EVENT_STATE_CHANGE, "huey");
+    let evt = Promise.all([
+      waitForMacEvent("AXValueChanged", "huey"),
+      waitForMacEvent("AXValueChanged", "dewey"),
+    ]);
     dewey.performAction("AXPress");
-    await stateChanged;
+    await evt;
     is(
       dewey.getAttributeValue("AXValue"),
       1,
       "Correct checked value for dewey"
     );
     is(huey.getAttributeValue("AXValue"), 0, "Correct checked value for huey");
+  }
+);
+
+/**
+ * Test role=switch
+ */
+addAccessibleTask(
+  `<div role="switch" aria-checked="false" id="sw">hello</div>`,
+  async (browser, accDoc) => {
+    let sw = getNativeInterface(accDoc, "sw");
+    is(sw.getAttributeValue("AXValue"), 0, "Initially, switch is off");
+    is(sw.getAttributeValue("AXRole"), "AXCheckBox", "Has correct role");
+    is(sw.getAttributeValue("AXSubrole"), "AXSwitch", "Has correct subrole");
+
+    let stateChanged = Promise.all([
+      waitForMacEvent("AXValueChanged", "sw"),
+      waitForStateChange("sw", STATE_CHECKED, true),
+    ]);
+
+    // We should get a state change event, and a value change.
+    await SpecialPowers.spawn(browser, [], () => {
+      content.document
+        .getElementById("sw")
+        .setAttribute("aria-checked", "true");
+    });
+
+    await stateChanged;
+
+    is(sw.getAttributeValue("AXValue"), 1, "Switch is now on");
   }
 );

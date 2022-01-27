@@ -4,12 +4,14 @@
 
 "use strict";
 
+// Keep this synchronized with the value of the same name in
+// toolkit/xre/nsAppRunner.cpp.
 const BROWSER_TOOLBOX_WINDOW_URL =
   "chrome://devtools/content/framework/browser-toolbox/window.html";
 const CHROME_DEBUGGER_PROFILE_NAME = "chrome_debugger_profile";
 
 const { require, DevToolsLoader } = ChromeUtils.import(
-  "resource://devtools/shared/Loader.jsm"
+  "resource://devtools/shared/loader/Loader.jsm"
 );
 const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
 
@@ -163,6 +165,7 @@ BrowserToolboxLauncher.prototype = {
       "devtools.debugger.chrome-debugging-websocket"
     );
     const socketOptions = {
+      fromBrowserToolbox: true,
       portOrPath: -1,
       webSocket: chromeDebuggingWebSocket,
     };
@@ -268,6 +271,7 @@ BrowserToolboxLauncher.prototype = {
       // keyboard shortcut.
       MOZ_DISABLE_SAFE_MODE_KEY: "1",
       MOZ_BROWSER_TOOLBOX_PORT: String(this.port),
+      MOZ_HEADLESS: null,
     };
 
     // During local development, incremental builds can trigger the main process
@@ -303,7 +307,7 @@ BrowserToolboxLauncher.prototype = {
         const dumpPipe = async pipe => {
           let data = await pipe.readString();
           while (data) {
-            dump(data);
+            dump("> " + data);
             data = await pipe.readString();
           }
         };

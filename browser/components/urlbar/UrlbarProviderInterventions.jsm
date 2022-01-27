@@ -21,6 +21,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
   UrlbarProvider: "resource:///modules/UrlbarUtils.jsm",
   UrlbarResult: "resource:///modules/UrlbarResult.jsm",
+  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.jsm",
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
 
@@ -488,6 +489,8 @@ class ProviderInterventions extends UrlbarProvider {
   isActive(queryContext) {
     if (
       !queryContext.searchString ||
+      queryContext.searchString.length > UrlbarUtils.MAX_TEXT_LENGTH ||
+      UrlbarTokenizer.REGEXP_LIKE_PROTOCOL.test(queryContext.searchString) ||
       !EN_LOCALE_MATCH.test(Services.locale.appLocaleAsBCP47) ||
       !Services.policies.isAllowed("urlbarinterventions")
     ) {
@@ -566,6 +569,12 @@ class ProviderInterventions extends UrlbarProvider {
         // This will be the case the first time we check.  See startQuery for
         // how this special tip is handled.
         this.currentTip = TIPS.UPDATE_CHECKING;
+        break;
+      case AppUpdater.STATUS.NO_UPDATER:
+      case AppUpdater.STATUS.UPDATE_DISABLED_BY_POLICY:
+        // If the updater is disabled at build time or at runtime, either by
+        // policy or because we're in a package, do not select any update tips.
+        this.currentTip = TIPS.NONE;
         break;
       default:
         // Give up and ask the user to download the latest version from the
@@ -697,7 +706,7 @@ class ProviderInterventions extends UrlbarProvider {
     }
   }
 
-  onEngagement(isPrivate, state) {
+  onEngagement(isPrivate, state, queryContext, details) {
     if (["engagement", "abandonment"].includes(state)) {
       for (let tip of this.tipsShownInCurrentEngagement) {
         Services.telemetry.keyedScalarAdd("urlbar.tips", `${tip}-shown`, 1);

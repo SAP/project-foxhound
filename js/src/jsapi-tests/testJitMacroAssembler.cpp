@@ -14,6 +14,7 @@
 #include "js/Value.h"
 
 #include "jsapi-tests/tests.h"
+#include "jsapi-tests/testsJit.h"
 
 #include "jit/MacroAssembler-inl.h"
 
@@ -25,47 +26,11 @@ using mozilla::PositiveInfinity;
 
 #if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
 
-typedef void (*EnterTest)();
-
-static bool Prepare(MacroAssembler& masm) {
-  AllocatableRegisterSet regs(RegisterSet::All());
-  LiveRegisterSet save(regs.asLiveSet());
-  masm.PushRegsInMask(save);
-  return true;
-}
-
-static bool Execute(JSContext* cx, MacroAssembler& masm) {
-  AllocatableRegisterSet regs(RegisterSet::All());
-  LiveRegisterSet save(regs.asLiveSet());
-  masm.PopRegsInMask(save);
-  masm.ret();  // Add return statement to be sure.
-
-  if (masm.oom()) {
-    return false;
-  }
-
-  Linker linker(masm);
-  JitCode* code = linker.newCode(cx, CodeKind::Other);
-  if (!code) {
-    return false;
-  }
-  if (!ExecutableAllocator::makeExecutableAndFlushICache(code->raw(),
-                                                         code->bufferSize())) {
-    return false;
-  }
-
-  JS::AutoSuppressGCAnalysis suppress;
-  EnterTest test = code->as<EnterTest>();
-  test();
-  return true;
-}
-
 BEGIN_TEST(testJitMacroAssembler_flexibleDivMod) {
   StackMacroAssembler masm(cx);
+  AutoCreatedBy acb(masm, __func__);
 
-  if (!Prepare(masm)) {
-    return false;
-  }
+  PrepareJit(masm);
 
   // Test case divides 9/2;
   const uintptr_t quotient_result = 4;
@@ -114,16 +79,15 @@ BEGIN_TEST(testJitMacroAssembler_flexibleDivMod) {
     }
   }
 
-  return Execute(cx, masm);
+  return ExecuteJit(cx, masm);
 }
 END_TEST(testJitMacroAssembler_flexibleDivMod)
 
 BEGIN_TEST(testJitMacroAssembler_flexibleRemainder) {
   StackMacroAssembler masm(cx);
+  AutoCreatedBy acb(masm, __func__);
 
-  if (!Prepare(masm)) {
-    return false;
-  }
+  PrepareJit(masm);
 
   // Test case divides 9/2;
   const uintptr_t dividend = 9;
@@ -163,16 +127,15 @@ BEGIN_TEST(testJitMacroAssembler_flexibleRemainder) {
     }
   }
 
-  return Execute(cx, masm);
+  return ExecuteJit(cx, masm);
 }
 END_TEST(testJitMacroAssembler_flexibleRemainder)
 
 BEGIN_TEST(testJitMacroAssembler_flexibleQuotient) {
   StackMacroAssembler masm(cx);
+  AutoCreatedBy acb(masm, __func__);
 
-  if (!Prepare(masm)) {
-    return false;
-  }
+  PrepareJit(masm);
 
   // Test case divides 9/2;
   const uintptr_t dividend = 9;
@@ -212,7 +175,7 @@ BEGIN_TEST(testJitMacroAssembler_flexibleQuotient) {
     }
   }
 
-  return Execute(cx, masm);
+  return ExecuteJit(cx, masm);
 }
 END_TEST(testJitMacroAssembler_flexibleQuotient)
 
@@ -225,10 +188,9 @@ bool shiftTest(JSContext* cx, const char* name,
                const uintptr_t* lhsInput, const uintptr_t* rhsInput,
                const uintptr_t* result) {
   StackMacroAssembler masm(cx);
+  AutoCreatedBy acb(masm, __func__);
 
-  if (!Prepare(masm)) {
-    return false;
-  }
+  PrepareJit(masm);
 
   JS::AutoSuppressGCAnalysis suppress;
   AllocatableGeneralRegisterSet leftOutputHandSides(GeneralRegisterSet::All());
@@ -297,7 +259,7 @@ bool shiftTest(JSContext* cx, const char* name,
     }
   }
 
-  return Execute(cx, masm);
+  return ExecuteJit(cx, masm);
 }
 
 BEGIN_TEST(testJitMacroAssembler_flexibleRshift) {
@@ -420,10 +382,9 @@ END_TEST(testJitMacroAssembler_flexibleLshift)
 
 BEGIN_TEST(testJitMacroAssembler_truncateDoubleToInt64) {
   StackMacroAssembler masm(cx);
+  AutoCreatedBy acb(masm, __func__);
 
-  if (!Prepare(masm)) {
-    return false;
-  }
+  PrepareJit(masm);
 
   AllocatableGeneralRegisterSet allRegs(GeneralRegisterSet::All());
   AllocatableFloatRegisterSet allFloatRegs(FloatRegisterSet::All());
@@ -462,16 +423,15 @@ BEGIN_TEST(testJitMacroAssembler_truncateDoubleToInt64) {
 
   masm.freeStack(sizeof(int32_t));
 
-  return Execute(cx, masm);
+  return ExecuteJit(cx, masm);
 }
 END_TEST(testJitMacroAssembler_truncateDoubleToInt64)
 
 BEGIN_TEST(testJitMacroAssembler_truncateDoubleToUInt64) {
   StackMacroAssembler masm(cx);
+  AutoCreatedBy acb(masm, __func__);
 
-  if (!Prepare(masm)) {
-    return false;
-  }
+  PrepareJit(masm);
 
   AllocatableGeneralRegisterSet allRegs(GeneralRegisterSet::All());
   AllocatableFloatRegisterSet allFloatRegs(FloatRegisterSet::All());
@@ -515,16 +475,15 @@ BEGIN_TEST(testJitMacroAssembler_truncateDoubleToUInt64) {
 
   masm.freeStack(sizeof(int32_t));
 
-  return Execute(cx, masm);
+  return ExecuteJit(cx, masm);
 }
 END_TEST(testJitMacroAssembler_truncateDoubleToUInt64)
 
 BEGIN_TEST(testJitMacroAssembler_branchDoubleNotInInt64Range) {
   StackMacroAssembler masm(cx);
+  AutoCreatedBy acb(masm, __func__);
 
-  if (!Prepare(masm)) {
-    return false;
-  }
+  PrepareJit(masm);
 
   AllocatableGeneralRegisterSet allRegs(GeneralRegisterSet::All());
   AllocatableFloatRegisterSet allFloatRegs(FloatRegisterSet::All());
@@ -569,16 +528,15 @@ BEGIN_TEST(testJitMacroAssembler_branchDoubleNotInInt64Range) {
 
   masm.freeStack(sizeof(int32_t));
 
-  return Execute(cx, masm);
+  return ExecuteJit(cx, masm);
 }
 END_TEST(testJitMacroAssembler_branchDoubleNotInInt64Range)
 
 BEGIN_TEST(testJitMacroAssembler_branchDoubleNotInUInt64Range) {
   StackMacroAssembler masm(cx);
+  AutoCreatedBy acb(masm, __func__);
 
-  if (!Prepare(masm)) {
-    return false;
-  }
+  PrepareJit(masm);
 
   AllocatableGeneralRegisterSet allRegs(GeneralRegisterSet::All());
   AllocatableFloatRegisterSet allFloatRegs(FloatRegisterSet::All());
@@ -626,16 +584,15 @@ BEGIN_TEST(testJitMacroAssembler_branchDoubleNotInUInt64Range) {
 
   masm.freeStack(sizeof(int32_t));
 
-  return Execute(cx, masm);
+  return ExecuteJit(cx, masm);
 }
 END_TEST(testJitMacroAssembler_branchDoubleNotInUInt64Range)
 
 BEGIN_TEST(testJitMacroAssembler_lshift64) {
   StackMacroAssembler masm(cx);
+  AutoCreatedBy acb(masm, __func__);
 
-  if (!Prepare(masm)) {
-    return false;
-  }
+  PrepareJit(masm);
 
   AllocatableGeneralRegisterSet allRegs(GeneralRegisterSet::All());
   AllocatableFloatRegisterSet allFloatRegs(FloatRegisterSet::All());
@@ -695,16 +652,15 @@ BEGIN_TEST(testJitMacroAssembler_lshift64) {
 
   masm.freeStack(sizeof(int32_t));
 
-  return Execute(cx, masm);
+  return ExecuteJit(cx, masm);
 }
 END_TEST(testJitMacroAssembler_lshift64)
 
 BEGIN_TEST(testJitMacroAssembler_rshift64Arithmetic) {
   StackMacroAssembler masm(cx);
+  AutoCreatedBy acb(masm, __func__);
 
-  if (!Prepare(masm)) {
-    return false;
-  }
+  PrepareJit(masm);
 
   AllocatableGeneralRegisterSet allRegs(GeneralRegisterSet::All());
   AllocatableFloatRegisterSet allFloatRegs(FloatRegisterSet::All());
@@ -764,16 +720,15 @@ BEGIN_TEST(testJitMacroAssembler_rshift64Arithmetic) {
 
   masm.freeStack(sizeof(int32_t));
 
-  return Execute(cx, masm);
+  return ExecuteJit(cx, masm);
 }
 END_TEST(testJitMacroAssembler_rshift64Arithmetic)
 
 BEGIN_TEST(testJitMacroAssembler_rshift64) {
   StackMacroAssembler masm(cx);
+  AutoCreatedBy acb(masm, __func__);
 
-  if (!Prepare(masm)) {
-    return false;
-  }
+  PrepareJit(masm);
 
   AllocatableGeneralRegisterSet allRegs(GeneralRegisterSet::All());
   AllocatableFloatRegisterSet allFloatRegs(FloatRegisterSet::All());
@@ -832,7 +787,7 @@ BEGIN_TEST(testJitMacroAssembler_rshift64) {
 
   masm.freeStack(sizeof(int32_t));
 
-  return Execute(cx, masm);
+  return ExecuteJit(cx, masm);
 }
 END_TEST(testJitMacroAssembler_rshift64)
 

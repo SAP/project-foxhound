@@ -9,10 +9,14 @@ ChromeUtils.defineModuleGetter(
 const TP_PREF = "privacy.trackingprotection.enabled";
 const TP_PBM_PREF = "privacy.trackingprotection.pbmode.enabled";
 const NCB_PREF = "network.cookie.cookieBehavior";
+const NCBP_PREF = "network.cookie.cookieBehavior.pbmode";
 const CAT_PREF = "browser.contentblocking.category";
 const FP_PREF = "privacy.trackingprotection.fingerprinting.enabled";
 const STP_PREF = "privacy.trackingprotection.socialtracking.enabled";
 const CM_PREF = "privacy.trackingprotection.cryptomining.enabled";
+const LEVEL2_PREF = "privacy.annotate_channels.strict_list.enabled";
+const REFERRER_PREF = "network.http.referer.disallowCrossSiteRelaxingDefault";
+const OCSP_PREF = "privacy.partition.network_state.ocsp_cache";
 const PREF_TEST_NOTIFICATIONS =
   "browser.safebrowsing.test-notifications.enabled";
 const STRICT_PREF = "browser.contentblocking.features.strict";
@@ -22,8 +26,7 @@ const ISOLATE_UI_PREF =
 const FPI_PREF = "privacy.firstparty.isolate";
 
 const { EnterprisePolicyTesting, PoliciesPrefTracker } = ChromeUtils.import(
-  "resource://testing-common/EnterprisePolicyTesting.jsm",
-  null
+  "resource://testing-common/EnterprisePolicyTesting.jsm"
 );
 
 requestLongerTimeout(2);
@@ -72,6 +75,10 @@ add_task(async function testContentBlockingMainCategory() {
     [TP_PBM_PREF, true],
     [STP_PREF, false],
     [NCB_PREF, Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER],
+    [
+      NCBP_PREF,
+      Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+    ],
     [ISOLATE_UI_PREF, true],
     [FPI_PREF, false],
   ];
@@ -192,6 +199,11 @@ add_task(async function testContentBlockingMainCategory() {
     Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
     `${NCB_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER}`
   );
+  is(
+    Services.prefs.getIntPref(NCBP_PREF),
+    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+    `${NCBP_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN}`
+  );
   // Select block trackers and isolate
   cookieMenuTrackersPlusIsolate.click();
   ok(
@@ -203,6 +215,11 @@ add_task(async function testContentBlockingMainCategory() {
     Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
     `${NCB_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN}`
   );
+  is(
+    Services.prefs.getIntPref(NCBP_PREF),
+    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+    `${NCBP_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN}`
+  );
   // Select block unvisited
   cookieMenuUnvisited.click();
   ok(cookieMenuUnvisited.selected, "The unvisited item should be selected");
@@ -210,6 +227,11 @@ add_task(async function testContentBlockingMainCategory() {
     Services.prefs.getIntPref(NCB_PREF),
     Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN,
     `${NCB_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN}`
+  );
+  is(
+    Services.prefs.getIntPref(NCBP_PREF),
+    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+    `${NCBP_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN}`
   );
   // Select block all third party
   cookieMenuAllThirdParties.click();
@@ -222,6 +244,11 @@ add_task(async function testContentBlockingMainCategory() {
     Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN,
     `${NCB_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN}`
   );
+  is(
+    Services.prefs.getIntPref(NCBP_PREF),
+    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+    `${NCBP_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN}`
+  );
   // Select block all third party
   cookieMenuAll.click();
   ok(cookieMenuAll.selected, "The all cookies item should be selected");
@@ -229,6 +256,11 @@ add_task(async function testContentBlockingMainCategory() {
     Services.prefs.getIntPref(NCB_PREF),
     Ci.nsICookieService.BEHAVIOR_REJECT,
     `${NCB_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_REJECT}`
+  );
+  is(
+    Services.prefs.getIntPref(NCBP_PREF),
+    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+    `${NCBP_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN}`
   );
 
   gBrowser.removeCurrentTab();
@@ -280,9 +312,13 @@ add_task(async function testContentBlockingStandardCategory() {
     [TP_PREF]: null,
     [TP_PBM_PREF]: null,
     [NCB_PREF]: null,
+    [NCBP_PREF]: null,
     [FP_PREF]: null,
     [STP_PREF]: null,
     [CM_PREF]: null,
+    [LEVEL2_PREF]: null,
+    [REFERRER_PREF]: null,
+    [OCSP_PREF]: null,
   };
 
   for (let pref in prefs) {
@@ -308,9 +344,22 @@ add_task(async function testContentBlockingStandardCategory() {
     NCB_PREF,
     Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER
   );
+  Services.prefs.setIntPref(
+    NCBP_PREF,
+    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER
+  );
   Services.prefs.setBoolPref(STP_PREF, !Services.prefs.getBoolPref(STP_PREF));
   Services.prefs.setBoolPref(FP_PREF, !Services.prefs.getBoolPref(FP_PREF));
   Services.prefs.setBoolPref(CM_PREF, !Services.prefs.getBoolPref(CM_PREF));
+  Services.prefs.setBoolPref(
+    LEVEL2_PREF,
+    !Services.prefs.getBoolPref(LEVEL2_PREF)
+  );
+  Services.prefs.setBoolPref(
+    REFERRER_PREF,
+    !Services.prefs.getBoolPref(REFERRER_PREF)
+  );
+  Services.prefs.setBoolPref(OCSP_PREF, !Services.prefs.getBoolPref(OCSP_PREF));
 
   for (let pref in prefs) {
     switch (Services.prefs.getPrefType(pref)) {
@@ -371,8 +420,15 @@ add_task(async function testContentBlockingStandardCategory() {
 add_task(async function testContentBlockingStrictCategory() {
   Services.prefs.setBoolPref(TP_PREF, false);
   Services.prefs.setBoolPref(TP_PBM_PREF, false);
+  Services.prefs.setBoolPref(LEVEL2_PREF, false);
+  Services.prefs.setBoolPref(REFERRER_PREF, false);
+  Services.prefs.setBoolPref(OCSP_PREF, false);
   Services.prefs.setIntPref(
     NCB_PREF,
+    Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN
+  );
+  Services.prefs.setIntPref(
+    NCBP_PREF,
     Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN
   );
   let strict_pref = Services.prefs.getStringPref(STRICT_PREF).split(",");
@@ -461,6 +517,48 @@ add_task(async function testContentBlockingStrictCategory() {
           `${CM_PREF} has been set to false`
         );
         break;
+      case "lvl2":
+        is(
+          Services.prefs.getBoolPref(LEVEL2_PREF),
+          true,
+          `${CM_PREF} has been set to true`
+        );
+        break;
+      case "-lvl2":
+        is(
+          Services.prefs.getBoolPref(LEVEL2_PREF),
+          false,
+          `${CM_PREF} has been set to false`
+        );
+        break;
+      case "rp":
+        is(
+          Services.prefs.getBoolPref(REFERRER_PREF),
+          true,
+          `${REFERRER_PREF} has been set to true`
+        );
+        break;
+      case "-rp":
+        is(
+          Services.prefs.getBoolPref(REFERRER_PREF),
+          false,
+          `${REFERRER_PREF} has been set to false`
+        );
+        break;
+      case "ocsp":
+        is(
+          Services.prefs.getBoolPref(OCSP_PREF),
+          true,
+          `${OCSP_PREF} has been set to true`
+        );
+        break;
+      case "-ocsp":
+        is(
+          Services.prefs.getBoolPref(OCSP_PREF),
+          false,
+          `${OCSP_PREF} has been set to false`
+        );
+        break;
       case "cookieBehavior0":
         is(
           Services.prefs.getIntPref(NCB_PREF),
@@ -503,6 +601,48 @@ add_task(async function testContentBlockingStrictCategory() {
           `${NCB_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN}`
         );
         break;
+      case "cookieBehaviorPBM0":
+        is(
+          Services.prefs.getIntPref(NCBP_PREF),
+          Ci.nsICookieService.BEHAVIOR_ACCEPT,
+          `${NCBP_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_ACCEPT}`
+        );
+        break;
+      case "cookieBehaviorPBM1":
+        is(
+          Services.prefs.getIntPref(NCBP_PREF),
+          Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN,
+          `${NCBP_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN}`
+        );
+        break;
+      case "cookieBehaviorPBM2":
+        is(
+          Services.prefs.getIntPref(NCBP_PREF),
+          Ci.nsICookieService.BEHAVIOR_REJECT,
+          `${NCBP_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_REJECT}`
+        );
+        break;
+      case "cookieBehaviorPBM3":
+        is(
+          Services.prefs.getIntPref(NCBP_PREF),
+          Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN,
+          `${NCBP_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN}`
+        );
+        break;
+      case "cookieBehaviorPBM4":
+        is(
+          Services.prefs.getIntPref(NCBP_PREF),
+          Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
+          `${NCBP_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER}`
+        );
+        break;
+      case "cookieBehaviorPBM5":
+        is(
+          Services.prefs.getIntPref(NCBP_PREF),
+          Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+          `${NCBP_PREF} has been set to ${Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN}`
+        );
+        break;
       default:
         ok(false, "unknown option was added to the strict pref");
         break;
@@ -514,7 +654,17 @@ add_task(async function testContentBlockingStrictCategory() {
 
 // Tests that the content blocking "Custom" category behaves as expected.
 add_task(async function testContentBlockingCustomCategory() {
-  let prefs = [TP_PREF, TP_PBM_PREF, NCB_PREF, FP_PREF, STP_PREF, CM_PREF];
+  let untouchedPrefs = [
+    TP_PREF,
+    TP_PBM_PREF,
+    NCB_PREF,
+    NCBP_PREF,
+    FP_PREF,
+    STP_PREF,
+    CM_PREF,
+    REFERRER_PREF,
+    OCSP_PREF,
+  ];
 
   await openPreferencesViaOpenPreferencesAPI("privacy", { leaveOpen: true });
   let doc = gBrowser.contentDocument;
@@ -532,13 +682,16 @@ add_task(async function testContentBlockingCustomCategory() {
   await TestUtils.waitForCondition(
     () => Services.prefs.getStringPref(CAT_PREF) == "custom"
   );
-  // The custom option does not force changes of any prefs, other than CAT_PREF, all other TP prefs should remain as they were for standard.
-  for (let pref of prefs) {
+
+  // The custom option will only force change of some prefs, like CAT_PREF and
+  // REFERRER_PREF. All other prefs should remain as they were for standard.
+  for (let pref of untouchedPrefs) {
     ok(
       !Services.prefs.prefHasUserValue(pref),
       `the pref ${pref} remains as default value`
     );
   }
+
   is(
     Services.prefs.getStringPref(CAT_PREF),
     "custom",
@@ -550,8 +703,16 @@ add_task(async function testContentBlockingCustomCategory() {
     () => Services.prefs.getStringPref(CAT_PREF) == "strict"
   );
 
-  // Changing the FP_PREF, STP_PREF, CM_PREF, TP_PREF, or TP_PBM_PREF should necessarily set CAT_PREF to "custom"
-  for (let pref of [FP_PREF, STP_PREF, CM_PREF, TP_PREF, TP_PBM_PREF]) {
+  // Changing the following prefs should necessarily set CAT_PREF to "custom"
+  for (let pref of [
+    FP_PREF,
+    STP_PREF,
+    CM_PREF,
+    TP_PREF,
+    TP_PBM_PREF,
+    REFERRER_PREF,
+    OCSP_PREF,
+  ]) {
     Services.prefs.setBoolPref(pref, !Services.prefs.getBoolPref(pref));
     await TestUtils.waitForCondition(
       () => Services.prefs.getStringPref(CAT_PREF) == "custom"
@@ -596,7 +757,40 @@ add_task(async function testContentBlockingCustomCategory() {
     `${CAT_PREF} has been set to custom`
   );
 
-  for (let pref of prefs) {
+  strictRadioOption.click();
+  await TestUtils.waitForCondition(
+    () => Services.prefs.getStringPref(CAT_PREF) == "strict"
+  );
+
+  // Changing the NCBP_PREF should necessarily set CAT_PREF to "custom"
+  let defaultNCBP = defaults.get(NCBP_PREF);
+  let nonDefaultNCBP;
+  switch (defaultNCBP) {
+    case Ci.nsICookieService.BEHAVIOR_ACCEPT:
+      nonDefaultNCBP = Ci.nsICookieService.BEHAVIOR_REJECT;
+      break;
+    case Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER:
+    case Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN:
+      nonDefaultNCBP = Ci.nsICookieService.BEHAVIOR_ACCEPT;
+      break;
+    default:
+      ok(
+        false,
+        "Unexpected default value found for " + NCBP_PREF + ": " + defaultNCBP
+      );
+      break;
+  }
+  Services.prefs.setIntPref(NCBP_PREF, nonDefaultNCBP);
+  await TestUtils.waitForCondition(() =>
+    Services.prefs.prefHasUserValue(NCBP_PREF)
+  );
+  is(
+    Services.prefs.getStringPref(CAT_PREF),
+    "custom",
+    `${CAT_PREF} has been set to custom`
+  );
+
+  for (let pref of untouchedPrefs) {
     SpecialPowers.clearUserPref(pref);
   }
 
@@ -785,6 +979,10 @@ add_task(async function testPolicyCategorization() {
     !Services.prefs.prefHasUserValue(NCB_PREF),
     `${NCB_PREF} starts with the default value`
   );
+  ok(
+    !Services.prefs.prefHasUserValue(NCBP_PREF),
+    `${NCBP_PREF} starts with the default value`
+  );
 
   let uiUpdatedPromise = TestUtils.topicObserved("privacy-pane-tp-ui-updated");
   await EnterprisePolicyTesting.setupPolicyEngineWithJson({
@@ -800,6 +998,11 @@ add_task(async function testPolicyCategorization() {
 
   EnterprisePolicyTesting.checkPolicyPref(
     NCB_PREF,
+    Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN,
+    true
+  );
+  EnterprisePolicyTesting.checkPolicyPref(
+    NCBP_PREF,
     Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN,
     true
   );
@@ -868,13 +1071,19 @@ add_task(async function testContentBlockingReloadWarning() {
 // if it is the only tab.
 add_task(async function testContentBlockingReloadWarningSingleTab() {
   Services.prefs.setStringPref(CAT_PREF, "standard");
-  await BrowserTestUtils.loadURI(gBrowser.selectedBrowser, PRIVACY_PAGE);
+  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, PRIVACY_PAGE);
+  await BrowserTestUtils.browserLoaded(
+    gBrowser.selectedBrowser,
+    false,
+    PRIVACY_PAGE
+  );
 
   let reloadWarnings = [
     ...gBrowser.contentDocument.querySelectorAll(
       ".content-blocking-warning.reload-tabs"
     ),
   ];
+  ok(reloadWarnings.length, "must have at least one reload warning");
   ok(
     reloadWarnings.every(el => el.hidden),
     "all of the warnings to reload tabs are initially hidden"
@@ -889,7 +1098,8 @@ add_task(async function testContentBlockingReloadWarningSingleTab() {
     "all of the warnings to reload tabs are still hidden"
   );
   Services.prefs.setStringPref(CAT_PREF, "standard");
-  await BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:newtab");
+  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:newtab");
+  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 });
 
 // Checks that the reload tabs message reloads all tabs except the active tab.

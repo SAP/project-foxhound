@@ -8,7 +8,6 @@ const {
   MESSAGES_ADD,
   MESSAGES_CLEAR,
   PRIVATE_MESSAGES_CLEAR,
-  MESSAGES_CLEAR_LOGPOINT,
   FRONTS_TO_RELEASE_CLEAR,
 } = require("devtools/client/webconsole/constants");
 
@@ -25,12 +24,7 @@ function enableActorReleaser(webConsoleUI) {
       const { type } = action;
       if (
         webConsoleUI &&
-        [
-          MESSAGES_ADD,
-          MESSAGES_CLEAR,
-          PRIVATE_MESSAGES_CLEAR,
-          MESSAGES_CLEAR_LOGPOINT,
-        ].includes(type)
+        [MESSAGES_ADD, MESSAGES_CLEAR, PRIVATE_MESSAGES_CLEAR].includes(type)
       ) {
         const promises = [];
         state.messages.frontsToRelease.forEach(front => {
@@ -39,7 +33,7 @@ function enableActorReleaser(webConsoleUI) {
           if (
             front &&
             typeof front.release === "function" &&
-            front.actorID &&
+            !front.isDestroyed() &&
             (!state.ui.frontInSidebar ||
               state.ui.frontInSidebar.actorID !== front.actorID)
           ) {

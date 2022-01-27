@@ -7,6 +7,7 @@
   <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Security-Policy" content="default-src chrome: blob:; object-src 'none'">
+    <meta name="color-scheme" content="light dark">
     <link rel="localization" href="browser/branding/brandings.ftl"/>
     <link rel="localization" href="branding/brand.ftl"/>
     <link rel="localization" href="browser/branding/sync-brand.ftl">
@@ -20,10 +21,25 @@
     <script type="module" src="chrome://browser/content/lockwise-card.js"></script>
     <script type="module" src="chrome://browser/content/monitor-card.js"></script>
     <script type="module" src="chrome://browser/content/proxy-card.js"></script>
+    <script type="module" src="chrome://browser/content/vpn-card.js"></script>
     <title data-l10n-id="protection-report-webpage-title"></title>
   </head>
 
   <body>
+    <div class="new-banner vpn-banner hidden">
+      <div class=banner-wrapper>
+        <img class="icon light" src="chrome://browser/content/logos/vpn-light.svg"/>
+        <img class="icon dark" src="chrome://browser/content/logos/vpn-dark.svg"/>
+        <div class="wrapper">
+          <div>
+            <h3 class="banner-title" data-l10n-id="vpn-banner-header"></h3>
+            <span class="content" data-l10n-id="vpn-banner-content"></span>
+          </div>
+          <a target="_blank" id="vpn-banner-link" data-l10n-id="get-vpn-link"></a>
+          <button class="exit-icon" data-l10n-id="protections-close-button2"></button>
+        </div>
+      </div>
+    </div>
     <div id="report-content">
       <h1 id="report-title" data-l10n-id="protection-report-page-content-title"></h1>
       <p id="report-summary" data-l10n-id="protection-report-page-summary-default"></p>
@@ -63,13 +79,13 @@
 
                 <input id="tab-tracker" data-type="tracker" type="radio" name="tabs" aria-labelledby="trackerLabel trackerTitle" aria-describedby="trackerContent">
                 <label id="trackerLabel" for="tab-tracker" data-type="tracker">
-                  <img class="icon-small" src="chrome://browser/skin/controlcenter/tracker-image.svg" data-type="tracker"/>
+                  <img class="icon-small" src="chrome://browser/skin/canvas.svg" data-type="tracker"/>
                   <span data-type="tracker"></span>
                 </label>
 
                 <input id="tab-fingerprinter" data-type="fingerprinter" type="radio" name="tabs" aria-labelledby="fingerprinterLabel fingerprinterTitle" aria-describedby="fingerprinterContent">
                 <label id="fingerprinterLabel" for="tab-fingerprinter" data-type="fingerprinter">
-                  <img class="icon-small" src="chrome://browser/skin/controlcenter/fingerprinters.svg" data-type="fingerprinter"/>
+                  <img class="icon-small" src="chrome://browser/skin/fingerprint.svg" data-type="fingerprinter"/>
                   <span data-type="fingerprinter"></span>
                 </label>
 
@@ -148,7 +164,7 @@
                   <a target="_blank" href="" id="monitor-link" data-l10n-id="monitor-link"></a>
                 </p>
                 <div class="monitor-scanned-wrapper">
-                  <img class="icon-small" src="chrome://browser/skin/reload.svg"/>
+                  <img class="icon-small" src="chrome://global/skin/icons/reload.svg"/>
                   <span class="monitor-scanned-text" data-l10n-id="auto-scan"></span>
                 </div>
               </div>
@@ -228,10 +244,10 @@
             </div>
           </div>
       </section>
-      <!-- Markup for Lockwise card. -->
+      <!-- Markup for passwords card. -->
       <section class="card card-no-hover lockwise-card hidden">
         <div class="card-header">
-          <img class="icon" src="chrome://browser/content/logos/lockwise.svg"/>
+          <span></span>
           <div class="wrapper">
             <div>
               <h2 id="lockwise-title" class="card-title">
@@ -244,45 +260,55 @@
                 <a target="_blank" id="lockwise-how-it-works" data-l10n-id="lockwise-how-it-works-link" href=""></a>
               </p>
             </div>
-            <button id="save-passwords-button" class="primary" data-l10n-id="protection-report-save-passwords-button"></button>
+            <button id="save-passwords-button" class="primary" data-l10n-id="protection-report-passwords-save-passwords-button"></button>
             <div class="lockwise-scanned-wrapper">
                 <img id="lockwise-scanned-icon" />
                 <span id="lockwise-scanned-text" class="content">
                   <!-- Display message for stored logins here. -->
                 </span>
               </div>
-            <button id="manage-passwords-button" class="primary" data-l10n-id="protection-report-manage-passwords-button"></button>
+            <button id="manage-passwords-button" class="primary" data-l10n-id="protection-report-passwords-manage-passwords-button"></button>
           </div>
         </div>
-        <div class="card-body hidden">
+        <!-- <div class="card-body hidden">
           <div id="lockwise-body-content" class="body-wrapper">
             <div class="no-logins hidden">
-              <button class="exit-icon" data-l10n-id="protections-close-button2"></button>
-              <img class="mobile-app-icon" src="chrome://browser/content/logos/lockwise-mobile.svg"/>
-              <span>
-                <h2 class="card-title" data-l10n-id="lockwise-mobile-app-title"></h2>
-                <p class="content">
-                  <span data-l10n-id="lockwise-no-logins-card-content"></span>
-                  <span target="_blank" id="lockwise-app-links" data-l10n-id="lockwise-app-links" href="">
-                    <a id="lockwise-android-inline-link" target="_blank" data-l10n-name="lockwise-android-inline-link"></a>
-                    <a id="lockwise-ios-inline-link" target="_blank" data-l10n-name="lockwise-ios-inline-link"></a>
-                  </span>
-                </p>
-              </span>
             </div>
           </div>
-        </div>
+        </div> -->
       </section>
       <!-- Markup for Proxy card -->
       <section class="card card-no-hover proxy-card hidden">
         <div class="card-header">
-          <img class="icon" src="chrome://browser/content/logos/proxy.svg" />
+          <img class="icon light" src="chrome://browser/content/logos/proxy-light.svg"/>
+          <img class="icon dark" src="chrome://browser/content/logos/proxy-dark.svg"/>
           <div class="wrapper">
             <div>
               <h3 class="card-title" data-l10n-id="proxy-title"></h3>
               <p class="content" data-l10n-id="proxy-header-content"></p>
             </div>
             <a target="_blank" id="get-proxy-extension-link" data-l10n-id="get-proxy-extension-link"></a>
+          </div>
+         </div>
+       </section>
+
+       <section class="card card-no-hover vpn-card hidden">
+        <div class="card-header">
+          <img class="icon light" src="chrome://browser/content/logos/vpn-light.svg"/>
+          <img class="icon dark" src="chrome://browser/content/logos/vpn-dark.svg"/>
+          <div class="wrapper">
+            <div>
+              <div class="title-wrapper">
+                <img id="check-icon" src="chrome://browser/skin/protections/resolved-breach.svg">
+                <h3 class="card-title" data-l10n-id="vpn-title"></h3>
+              </div>
+              <p class="content" data-l10n-id="vpn-header-content"></p>
+              <p class="content subscribed" data-l10n-id="vpn-header-content-subscribed">
+                <a target="_blank" id="vpn-google-playstore-link" data-l10n-name="vpn-google-playstore-link"></a>
+                <a target="_blank" id="vpn-app-store-link" data-l10n-name="vpn-app-store-link"></a>
+              </p>
+            </div>
+            <a target="_blank" id="get-vpn-link" data-l10n-id="get-vpn-link"></a>
           </div>
          </div>
        </section>

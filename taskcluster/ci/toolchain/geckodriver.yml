@@ -54,22 +54,31 @@ macosx64-geckodriver:
     treeherder:
         symbol: TM(gd)
         platform: macosx64/opt
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/macosx64/cross-releng.manifest"
     run:
         arguments: ['x86_64-apple-darwin']
-        resources:
-            - taskcluster/scripts/misc/tooltool-download.sh
-        tooltool-downloads: internal
     attributes:
         build_platform: macosx64-geckodriver
     fetches:
         toolchain:
             - linux64-cctools-port
             - linux64-clang
-            - linux64-llvm-dsymutil
             - linux64-rust-macos
+            - macosx64-sdk-11.0
+
+macosx64-aarch64-geckodriver:
+    treeherder:
+        symbol: TM(gd)
+        platform: macosx64-aarch64/opt
+    run:
+        arguments: ['aarch64-apple-darwin']
+    attributes:
+        build_platform: macosx64-aarch64-geckodriver
+    fetches:
+        toolchain:
+            - linux64-cctools-port
+            - linux64-clang
+            - linux64-rust-macos
+            - macosx64-sdk-11.0
 
 win32-geckodriver:
     treeherder:
@@ -77,7 +86,7 @@ win32-geckodriver:
         platform: win32/opt
     worker:
         env:
-            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/vs2017.manifest"
+            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/vs2017-15.9.manifest"
     run:
         arguments: ['i686-pc-windows-msvc']
         resources:
@@ -89,6 +98,7 @@ win32-geckodriver:
     fetches:
         toolchain:
             - linux64-clang
+            - linux64-liblowercase
             - linux64-rust-windows
 
 win64-geckodriver:
@@ -97,7 +107,7 @@ win64-geckodriver:
         platform: win64/opt
     worker:
         env:
-            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/vs2017.manifest"
+            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/vs2017-15.9.manifest"
     run:
         arguments: ['x86_64-pc-windows-msvc']
         resources:
@@ -109,4 +119,5 @@ win64-geckodriver:
     fetches:
         toolchain:
             - linux64-clang
+            - linux64-liblowercase
             - linux64-rust-windows

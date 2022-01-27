@@ -27,12 +27,12 @@
 #include "mozilla/dom/ButtonInputTypes.h"
 #include "mozilla/dom/DateTimeInputTypes.h"
 #include "mozilla/dom/ColorInputType.h"
+#include "mozilla/dom/ConstraintValidation.h"
 #include "mozilla/dom/FileInputType.h"
 #include "mozilla/dom/HiddenInputType.h"
 #include "nsGenericHTMLElement.h"
 #include "nsImageLoadingContent.h"
 #include "nsCOMPtr.h"
-#include "nsIConstraintValidation.h"
 #include "nsIFilePicker.h"
 #include "nsIContentPrefService2.h"
 #include "nsContentUtils.h"
@@ -53,6 +53,7 @@ class DispatchChangeEventCallback;
 class File;
 class FileList;
 class FileSystemEntry;
+class FormData;
 class GetFilesHelper;
 class InputType;
 
@@ -111,75 +112,76 @@ class UploadLastDir final : public nsIObserver, public nsSupportsWeakReference {
 
 class HTMLInputElement final : public TextControlElement,
                                public nsImageLoadingContent,
-                               public nsIConstraintValidation {
+                               public ConstraintValidation {
   friend class AfterSetFilesOrDirectoriesCallback;
   friend class DispatchChangeEventCallback;
   friend class InputType;
 
  public:
-  using nsGenericHTMLFormElementWithState::GetForm;
-  using nsGenericHTMLFormElementWithState::GetFormAction;
-  using nsIConstraintValidation::GetValidationMessage;
+  using ConstraintValidation::GetValidationMessage;
+  using nsGenericHTMLFormControlElementWithState::GetForm;
+  using nsGenericHTMLFormControlElementWithState::GetFormAction;
+  using ValueSetterOption = TextControlState::ValueSetterOption;
+  using ValueSetterOptions = TextControlState::ValueSetterOptions;
 
-  enum class FromClone { no, yes };
+  enum class FromClone { No, Yes };
 
-  HTMLInputElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
-                   mozilla::dom::FromParser aFromParser,
-                   FromClone aFromClone = FromClone::no);
+  HTMLInputElement(already_AddRefed<dom::NodeInfo>&& aNodeInfo,
+                   FromParser aFromParser,
+                   FromClone aFromClone = FromClone::No);
 
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLInputElement, input)
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
-  virtual int32_t TabIndexDefault() override;
+  int32_t TabIndexDefault() override;
   using nsGenericHTMLElement::Focus;
-  virtual void Blur(ErrorResult& aError) override;
-  virtual void Focus(const FocusOptions& aOptions, const CallerType aCallerType,
-                     ErrorResult& aError) override;
 
   // nsINode
 #if !defined(ANDROID) && !defined(XP_MACOSX)
-  virtual bool IsNodeApzAwareInternal() const override;
+  bool IsNodeApzAwareInternal() const override;
 #endif
 
   // Element
-  virtual bool IsInteractiveHTMLContent() const override;
+  bool IsInteractiveHTMLContent() const override;
+
+  // nsGenericHTMLElement
+  bool IsDisabledForEvents(WidgetEvent* aEvent) override;
+
+  // nsGenericHTMLFormElement
+  void SaveState() override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool RestoreState(PresState* aState) override;
 
   // EventTarget
-  virtual void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
+  void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
 
   // Overriden nsIFormControl methods
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   NS_IMETHOD Reset() override;
-  NS_IMETHOD SubmitNamesValues(HTMLFormSubmission* aFormSubmission) override;
-  NS_IMETHOD SaveState() override;
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  virtual bool RestoreState(PresState* aState) override;
-  virtual bool AllowDrop() override;
-  virtual bool IsDisabledForEvents(WidgetEvent* aEvent) override;
+  NS_IMETHOD SubmitNamesValues(FormData* aFormData) override;
+  bool AllowDrop() override;
 
-  virtual void FieldSetDisabledChanged(bool aNotify) override;
+  void FieldSetDisabledChanged(bool aNotify) override;
 
   // nsIContent
-  virtual bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
-                               int32_t* aTabIndex) override;
+  bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
+                       int32_t* aTabIndex) override;
 
-  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
-                              const nsAString& aValue,
-                              nsIPrincipal* aMaybeScriptedPrincipal,
-                              nsAttrValue& aResult) override;
-  virtual nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
-                                              int32_t aModType) const override;
+  bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                      const nsAString& aValue,
+                      nsIPrincipal* aMaybeScriptedPrincipal,
+                      nsAttrValue& aResult) override;
+  nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
+                                      int32_t aModType) const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
-  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction()
-      const override;
+  nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
 
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  virtual nsresult PreHandleEvent(EventChainVisitor& aVisitor) override;
+  nsresult PreHandleEvent(EventChainVisitor& aVisitor) override;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  virtual nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
+  nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void PostHandleEventForRangeThumb(EventChainPostVisitor& aVisitor);
   MOZ_CAN_RUN_SCRIPT
@@ -191,53 +193,51 @@ class HTMLInputElement final : public TextControlElement,
   MOZ_CAN_RUN_SCRIPT
   void SetValueOfRangeForUserEvent(Decimal aValue);
 
-  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  virtual void UnbindFromTree(bool aNullParent = true) override;
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  void UnbindFromTree(bool aNullParent = true) override;
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  virtual void DoneCreatingElement() override;
+  void DoneCreatingElement() override;
 
-  virtual void DestroyContent() override;
+  void DestroyContent() override;
 
-  virtual EventStates IntrinsicState() const override;
+  EventStates IntrinsicState() const override;
 
- public:
+  void SetLastValueChangeWasInteractive(bool);
+
   // TextControlElement
-  virtual nsresult SetValueChanged(bool aValueChanged) override;
-  virtual bool IsSingleLineTextControl() const override;
-  virtual bool IsTextArea() const override;
-  virtual bool IsPasswordTextControl() const override;
-  virtual int32_t GetCols() override;
-  virtual int32_t GetWrapCols() override;
-  virtual int32_t GetRows() override;
-  virtual void GetDefaultValueFromContent(nsAString& aValue) override;
-  virtual bool ValueChanged() const override;
-  virtual void GetTextEditorValue(nsAString& aValue,
-                                  bool aIgnoreWrap) const override;
+  nsresult SetValueChanged(bool aValueChanged) override;
+  bool IsSingleLineTextControl() const override;
+  bool IsTextArea() const override;
+  bool IsPasswordTextControl() const override;
+  int32_t GetCols() override;
+  int32_t GetWrapCols() override;
+  int32_t GetRows() override;
+  void GetDefaultValueFromContent(nsAString& aValue) override;
+  bool ValueChanged() const override;
+  void GetTextEditorValue(nsAString& aValue, bool aIgnoreWrap) const override;
   MOZ_CAN_RUN_SCRIPT TextEditor* GetTextEditor() override;
-  virtual TextEditor* GetTextEditorWithoutCreation() override;
-  virtual nsISelectionController* GetSelectionController() override;
-  virtual nsFrameSelection* GetConstFrameSelection() override;
-  virtual TextControlState* GetTextControlState() const override {
+  TextEditor* GetTextEditorWithoutCreation() override;
+  nsISelectionController* GetSelectionController() override;
+  nsFrameSelection* GetConstFrameSelection() override;
+  TextControlState* GetTextControlState() const override {
     return GetEditorState();
   }
-  virtual nsresult BindToFrame(nsTextControlFrame* aFrame) override;
-  MOZ_CAN_RUN_SCRIPT virtual void UnbindFromFrame(
-      nsTextControlFrame* aFrame) override;
-  MOZ_CAN_RUN_SCRIPT virtual nsresult CreateEditor() override;
-  virtual void UpdateOverlayTextVisibility(bool aNotify) override;
-  virtual void SetPreviewValue(const nsAString& aValue) override;
-  virtual void GetPreviewValue(nsAString& aValue) override;
-  virtual void EnablePreview() override;
-  virtual bool IsPreviewEnabled() override;
-  virtual bool GetPlaceholderVisibility() override;
-  virtual bool GetPreviewVisibility() override;
-  virtual void InitializeKeyboardEventListeners() override;
-  virtual void OnValueChanged(ValueChangeKind) override;
-  virtual void GetValueFromSetRangeText(nsAString& aValue) override;
-  MOZ_CAN_RUN_SCRIPT virtual nsresult SetValueFromSetRangeText(
-      const nsAString& aValue) override;
-  virtual bool HasCachedSelection() override;
+  nsresult BindToFrame(nsTextControlFrame* aFrame) override;
+  MOZ_CAN_RUN_SCRIPT void UnbindFromFrame(nsTextControlFrame* aFrame) override;
+  MOZ_CAN_RUN_SCRIPT nsresult CreateEditor() override;
+  void SetPreviewValue(const nsAString& aValue) override;
+  void GetPreviewValue(nsAString& aValue) override;
+  void EnablePreview() override;
+  bool IsPreviewEnabled() override;
+  void InitializeKeyboardEventListeners() override;
+  void OnValueChanged(ValueChangeKind) override;
+  void GetValueFromSetRangeText(nsAString& aValue) override;
+  MOZ_CAN_RUN_SCRIPT nsresult
+  SetValueFromSetRangeText(const nsAString& aValue) override;
+  bool HasCachedSelection() override;
+  void SetShowPassword(bool aValue);
+  bool ShowPassword() const;
 
   /**
    * TextEditorValueEquals() is designed for internal use so that aValue
@@ -283,7 +283,7 @@ class HTMLInputElement final : public TextControlElement,
   HTMLInputElement* GetSelectedRadioButton() const;
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLInputElement, TextControlElement)
 
@@ -327,7 +327,7 @@ class HTMLInputElement final : public TextControlElement,
   void MaybeUpdateAllValidityStates(bool aNotify) {
     // If you need to add new type which supports validationMessage, you should
     // add test cases into test_MozEditableElement_setUserInput.html.
-    if (mType == NS_FORM_INPUT_EMAIL) {
+    if (mType == FormControlType::InputEmail) {
       UpdateAllValidityStates(aNotify);
     }
   }
@@ -619,7 +619,7 @@ class HTMLInputElement final : public TextControlElement,
     SetHTMLAttr(nsGkAtoms::step, aValue, aRv);
   }
 
-  void GetType(nsAString& aValue);
+  void GetType(nsAString& aValue) const;
   void SetType(const nsAString& aValue, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::type, aValue, aRv);
   }
@@ -673,7 +673,7 @@ class HTMLInputElement final : public TextControlElement,
 
   already_AddRefed<nsINodeList> GetLabels();
 
-  void Select();
+  MOZ_CAN_RUN_SCRIPT void Select();
 
   Nullable<uint32_t> GetSelectionStart(ErrorResult& aRv);
   MOZ_CAN_RUN_SCRIPT void SetSelectionStart(const Nullable<uint32_t>& aValue,
@@ -849,17 +849,25 @@ class HTMLInputElement final : public TextControlElement,
    */
   bool IsRequired() const { return State().HasState(NS_EVENT_STATE_REQUIRED); }
 
-  bool HasBeenTypePassword() { return mHasBeenTypePassword; }
+  bool HasBeenTypePassword() const { return mHasBeenTypePassword; }
+
+  /**
+   * Returns whether the current value is the empty string.  This only makes
+   * sense for some input types; does NOT make sense for file inputs.
+   *
+   * @return whether the current value is the empty string.
+   */
+  bool IsValueEmpty() const;
 
  protected:
   MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual ~HTMLInputElement();
 
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* aCx,
+                     JS::Handle<JSObject*> aGivenProto) override;
 
   // Pull IsSingleLineTextControl into our scope, otherwise it'd be hidden
   // by the TextControlElement version.
-  using nsGenericHTMLFormElementWithState::IsSingleLineTextControl;
+  using nsGenericHTMLFormControlElementWithState::IsSingleLineTextControl;
 
   /**
    * The ValueModeType specifies how the value IDL attribute should behave.
@@ -909,15 +917,14 @@ class HTMLInputElement final : public TextControlElement,
    * @param aValue      String to set.
    * @param aOldValue   Previous value before setting aValue.
                         If previous value is unknown, aOldValue can be nullptr.
-   * @param aFlags      See TextControlState::SetValueFlags.
+   * @param aOptions    See TextControlState::ValueSetterOption.
    */
-  MOZ_CAN_RUN_SCRIPT
-  nsresult SetValueInternal(const nsAString& aValue, const nsAString* aOldValue,
-                            uint32_t aFlags);
-
-  MOZ_CAN_RUN_SCRIPT
-  nsresult SetValueInternal(const nsAString& aValue, uint32_t aFlags) {
-    return SetValueInternal(aValue, nullptr, aFlags);
+  MOZ_CAN_RUN_SCRIPT nsresult
+  SetValueInternal(const nsAString& aValue, const nsAString* aOldValue,
+                   const ValueSetterOptions& aOptions);
+  MOZ_CAN_RUN_SCRIPT nsresult SetValueInternal(
+      const nsAString& aValue, const ValueSetterOptions& aOptions) {
+    return SetValueInternal(aValue, nullptr, aOptions);
   }
 
   // Generic getter for the value that doesn't do experimental control type
@@ -927,19 +934,6 @@ class HTMLInputElement final : public TextControlElement,
   // A getter for callers that know we're not dealing with a file input, so they
   // don't have to think about the caller type.
   void GetNonFileValueInternal(nsAString& aValue) const;
-
-  /**
-   * Returns whether the current value is the empty string.  This only makes
-   * sense for some input types; does NOT make sense for file inputs.
-   *
-   * @return whether the current value is the empty string.
-   */
-  bool IsValueEmpty() const;
-
-  /**
-   * Returns whether the current placeholder value should be shown.
-   */
-  bool ShouldShowPlaceholder() const;
 
   void ClearFiles(bool aSetValueChanged);
 
@@ -956,29 +950,27 @@ class HTMLInputElement final : public TextControlElement,
   /**
    * Called when an attribute is about to be changed
    */
-  virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                 const nsAttrValueOrString* aValue,
-                                 bool aNotify) override;
+  nsresult BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                         const nsAttrValueOrString* aValue,
+                         bool aNotify) override;
   /**
    * Called when an attribute has just been changed
    */
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                const nsAttrValue* aValue,
-                                const nsAttrValue* aOldValue,
-                                nsIPrincipal* aSubjectPrincipal,
-                                bool aNotify) override;
+  nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                        const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                        nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
 
-  virtual void BeforeSetForm(bool aBindToTree) override;
+  void BeforeSetForm(bool aBindToTree) override;
 
-  virtual void AfterClearForm(bool aUnbindOrDelete) override;
+  void AfterClearForm(bool aUnbindOrDelete) override;
 
-  virtual void ResultForDialogSubmit(nsAString& aResult) override;
+  void ResultForDialogSubmit(nsAString& aResult) override;
 
   /**
-   * Dispatch a select event. Returns true if the event was not cancelled.
+   * Dispatch a select event.
    */
-  bool DispatchSelectEvent(nsPresContext* aPresContext);
+  void DispatchSelectEvent(nsPresContext* aPresContext);
 
   void SelectAll(nsPresContext* aPresContext);
   bool IsImage() const {
@@ -990,7 +982,7 @@ class HTMLInputElement final : public TextControlElement,
    * Visit the group of radio buttons this radio belongs to
    * @param aVisitor the visitor to visit with
    */
-  nsresult VisitGroup(nsIRadioVisitor* aVisitor, bool aFlushContent);
+  nsresult VisitGroup(nsIRadioVisitor* aVisitor);
 
   /**
    * Do all the work that |SetChecked| does (radio button handling, etc.), but
@@ -1091,7 +1083,7 @@ class HTMLInputElement final : public TextControlElement,
    * Manages the internal data storage across type changes.
    */
   MOZ_CAN_RUN_SCRIPT
-  void HandleTypeChange(uint8_t aNewType, bool aNotify);
+  void HandleTypeChange(FormControlType aNewType, bool aNotify);
 
   enum class ForValueGetter { No, Yes };
 
@@ -1375,13 +1367,13 @@ class HTMLInputElement final : public TextControlElement,
   /**
    * Returns if the current type is an experimental mobile type.
    */
-  static bool IsExperimentalMobileType(uint8_t aType);
+  static bool IsExperimentalMobileType(FormControlType);
 
   /*
    * Returns if the current type is one of the date/time input types: date,
-   * time and month. TODO: week and datetime-local.
+   * time, month, week and datetime-local.
    */
-  static bool IsDateTimeInputType(uint8_t aType);
+  static bool IsDateTimeInputType(FormControlType);
 
   /**
    * Returns whether getting `.value` as a string should sanitize the value.
@@ -1407,15 +1399,6 @@ class HTMLInputElement final : public TextControlElement,
   enum FilePickerType { FILE_PICKER_FILE, FILE_PICKER_DIRECTORY };
   nsresult InitFilePicker(FilePickerType aType);
   nsresult InitColorPicker();
-
-  /**
-   * Use this function before trying to open a picker.
-   * It checks if the page is allowed to open a new pop-up.
-   * If it returns true, you should not create the picker.
-   *
-   * @return true if popup should be blocked, false otherwise
-   */
-  bool IsPopupBlocked() const;
 
   GetFilesHelper* GetOrCreateGetFilesHelper(bool aRecursiveFlag,
                                             ErrorResult& aRv);
@@ -1588,22 +1571,44 @@ class HTMLInputElement final : public TextControlElement,
    * Returns true if selection methods can be called on element
    */
   bool SupportsTextSelection() const {
-    return mType == NS_FORM_INPUT_TEXT || mType == NS_FORM_INPUT_SEARCH ||
-           mType == NS_FORM_INPUT_URL || mType == NS_FORM_INPUT_TEL ||
-           mType == NS_FORM_INPUT_PASSWORD;
+    switch (mType) {
+      case FormControlType::InputText:
+      case FormControlType::InputSearch:
+      case FormControlType::InputUrl:
+      case FormControlType::InputTel:
+      case FormControlType::InputPassword:
+        return true;
+      default:
+        return false;
+    }
   }
 
-  static bool MayFireChangeOnBlur(uint8_t aType) {
+  static bool CreatesDateTimeWidget(FormControlType aType) {
+    return aType == FormControlType::InputDate ||
+           aType == FormControlType::InputTime ||
+           (aType == FormControlType::InputDatetimeLocal &&
+            StaticPrefs::dom_forms_datetime_local_widget());
+  }
+
+  bool CreatesDateTimeWidget() const { return CreatesDateTimeWidget(mType); }
+
+  static bool MayFireChangeOnBlur(FormControlType aType) {
     return IsSingleLineTextControl(false, aType) ||
-           aType == NS_FORM_INPUT_RANGE || aType == NS_FORM_INPUT_NUMBER ||
-           aType == NS_FORM_INPUT_TIME || aType == NS_FORM_INPUT_DATE;
+           CreatesDateTimeWidget(aType) ||
+           aType == FormControlType::InputRange ||
+           aType == FormControlType::InputNumber;
   }
 
   /**
-   * Checks if aDateTimeInputType should be supported based on
-   * "dom.forms.datetime", and "dom.experimental_forms".
+   * Fire an event when the password input field is removed from the DOM tree.
+   * This is now only used by the password manager.
    */
-  static bool IsDateTimeTypeSupported(uint8_t aDateTimeInputType);
+  void MaybeFireInputPasswordRemoved();
+
+  /**
+   * Checks if aDateTimeInputType should be supported.
+   */
+  static bool IsDateTimeTypeSupported(FormControlType);
 
   struct nsFilePickerFilter {
     nsFilePickerFilter() : mFilterMask(0) {}
@@ -1648,7 +1653,7 @@ class HTMLInputElement final : public TextControlElement,
 
    private:
     nsCOMPtr<nsIFilePicker> mFilePicker;
-    RefPtr<HTMLInputElement> mInput;
+    const RefPtr<HTMLInputElement> mInput;
   };
 };
 

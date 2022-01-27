@@ -64,15 +64,18 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Styles related to the Accordion items in the MessagePayload component */
+/* Styles related to the data items in the MessagePayload component */
 
 #messages-view .message-payload {
   width: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 #messages-view .message-rawData-payload {
   display: block;
   width: 100%;
+  height: 100%;
   overflow: auto;
   white-space: pre;
   padding: 4px 8px;
@@ -84,6 +87,8 @@
   direction: ltr;
   text-align: left;
   resize: none;
+  color: var(--theme-body-color);
+  background-color: var(--theme-sidebar-background);
 }
 
 /* Styles related to JSONPreview */
@@ -145,7 +150,7 @@
   width: 12px;
   height: 12px;
   margin-inline-end: 8px;
-  background-image: url(chrome://global/skin/icons/info.svg);
+  background-image: url(chrome://devtools/skin/images/info.svg);
   background-repeat: no-repeat;
   -moz-context-properties: fill;
   fill: inherit;

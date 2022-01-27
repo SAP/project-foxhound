@@ -16,6 +16,11 @@
 #include "nsIObserver.h"
 #include "nsISupportsImpl.h"
 #include "nsTArray.h"
+#include "nsIWeakReferenceUtils.h"
+#include "nsTHashMap.h"
+
+class nsIWebSocketImpl;
+class nsIEventTarget;
 
 namespace mozilla {
 namespace net {
@@ -62,6 +67,9 @@ class WebSocketEventService final : public nsIWebSocketEventService,
                  already_AddRefed<WebSocketFrame> aFrame,
                  nsIEventTarget* aTarget = nullptr);
 
+  void AssociateWebSocketImplWithSerialID(nsIWebSocketImpl* aWebSocketImpl,
+                                          uint32_t aWebSocketSerialID);
+
   already_AddRefed<WebSocketFrame> CreateFrameIfNeeded(
       bool aFinBit, bool aRsvBit1, bool aRsvBit2, bool aRsvBit3,
       uint8_t aOpCode, bool aMaskBit, uint32_t aMask,
@@ -84,7 +92,9 @@ class WebSocketEventService final : public nsIWebSocketEventService,
   bool HasListeners() const;
   void Shutdown();
 
-  typedef nsTArray<nsCOMPtr<nsIWebSocketEventListener>> WindowListeners;
+  using WindowListeners = nsTArray<nsCOMPtr<nsIWebSocketEventListener>>;
+
+  nsTHashMap<nsUint32HashKey, nsWeakPtr> mWebSocketImplMap;
 
   struct WindowListener {
     WindowListeners mListeners;

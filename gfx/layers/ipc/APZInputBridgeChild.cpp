@@ -7,34 +7,89 @@
 #include "mozilla/layers/APZInputBridgeChild.h"
 
 #include "InputData.h"  // for InputData, etc
+#include "mozilla/gfx/GPUProcessManager.h"
+#include "mozilla/ipc/Endpoint.h"
+#include "mozilla/layers/APZThreadUtils.h"
 
 namespace mozilla {
 namespace layers {
 
-APZInputBridgeChild::APZInputBridgeChild() : mDestroyed(false) {
+/* static */
+RefPtr<APZInputBridgeChild> APZInputBridgeChild::Create(
+    const uint64_t& aProcessToken, Endpoint<PAPZInputBridgeChild>&& aEndpoint) {
+  RefPtr<APZInputBridgeChild> child = new APZInputBridgeChild(aProcessToken);
+
+  MOZ_ASSERT(APZThreadUtils::IsControllerThreadAlive());
+
+  APZThreadUtils::RunOnControllerThread(
+      NewRunnableMethod<Endpoint<PAPZInputBridgeChild>&&>(
+          "layers::APZInputBridgeChild::Open", child,
+          &APZInputBridgeChild::Open, std::move(aEndpoint)));
+
+  return child;
+}
+
+APZInputBridgeChild::APZInputBridgeChild(const uint64_t& aProcessToken)
+    : mIsOpen(false), mProcessToken(aProcessToken) {
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(NS_IsMainThread());
 }
 
 APZInputBridgeChild::~APZInputBridgeChild() = default;
 
+void APZInputBridgeChild::Open(Endpoint<PAPZInputBridgeChild>&& aEndpoint) {
+  APZThreadUtils::AssertOnControllerThread();
+
+  mIsOpen = aEndpoint.Bind(this);
+
+  if (!mIsOpen) {
+    // The GPU Process Manager might be gone if we receive ActorDestroy very
+    // late in shutdown.
+    if (gfx::GPUProcessManager* gpm = gfx::GPUProcessManager::Get()) {
+      gpm->NotifyRemoteActorDestroyed(mProcessToken);
+    }
+    return;
+  }
+}
+
 void APZInputBridgeChild::Destroy() {
   MOZ_ASSERT(XRE_IsParentProcess());
-  MOZ_ASSERT(NS_IsMainThread());
 
-  if (mDestroyed) {
+  // Destroy will get called from the main thread, so we must synchronously
+  // dispatch to the controller thread to close the bridge.
+  if (!APZThreadUtils::IsControllerThread()) {
+    APZThreadUtils::RunOnControllerThread(
+        NewRunnableMethod("layers::APZInputBridgeChild::Destroy", this,
+                          &APZInputBridgeChild::Destroy),
+        nsIThread::DISPATCH_SYNC);
     return;
   }
 
-  Send__delete__(this);
-  mDestroyed = true;
+  APZThreadUtils::AssertOnControllerThread();
+
+  // Clear the process token so that we don't notify the GPUProcessManager
+  // about an abnormal shutdown, thereby tearing down the GPU process.
+  mProcessToken = 0;
+
+  if (mIsOpen) {
+    PAPZInputBridgeChild::Close();
+    mIsOpen = false;
+  }
 }
 
 void APZInputBridgeChild::ActorDestroy(ActorDestroyReason aWhy) {
-  mDestroyed = true;
+  mIsOpen = false;
+
+  if (mProcessToken) {
+    gfx::GPUProcessManager::Get()->NotifyRemoteActorDestroyed(mProcessToken);
+    mProcessToken = 0;
+  }
 }
 
 APZEventResult APZInputBridgeChild::ReceiveInputEvent(InputData& aEvent) {
+  MOZ_ASSERT(mIsOpen);
+  APZThreadUtils::AssertOnControllerThread();
+
   APZEventResult res;
   switch (aEvent.mInputType) {
     case MULTITOUCH_INPUT: {
@@ -102,7 +157,7 @@ APZEventResult APZInputBridgeChild::ReceiveInputEvent(InputData& aEvent) {
     }
     default: {
       MOZ_ASSERT_UNREACHABLE("Invalid InputData type.");
-      res.mStatus = nsEventStatus_eConsumeNoDefault;
+      res.SetStatusAsConsumeNoDefault();
       return res;
     }
   }
@@ -111,13 +166,20 @@ APZEventResult APZInputBridgeChild::ReceiveInputEvent(InputData& aEvent) {
 void APZInputBridgeChild::ProcessUnhandledEvent(
     LayoutDeviceIntPoint* aRefPoint, ScrollableLayerGuid* aOutTargetGuid,
     uint64_t* aOutFocusSequenceNumber, LayersId* aOutLayersId) {
+  MOZ_ASSERT(mIsOpen);
+  APZThreadUtils::AssertOnControllerThread();
+
   SendProcessUnhandledEvent(*aRefPoint, aRefPoint, aOutTargetGuid,
                             aOutFocusSequenceNumber, aOutLayersId);
 }
 
-void APZInputBridgeChild::UpdateWheelTransaction(LayoutDeviceIntPoint aRefPoint,
-                                                 EventMessage aEventMessage) {
-  SendUpdateWheelTransaction(aRefPoint, aEventMessage);
+void APZInputBridgeChild::UpdateWheelTransaction(
+    LayoutDeviceIntPoint aRefPoint, EventMessage aEventMessage,
+    const Maybe<ScrollableLayerGuid>& aTargetGuid) {
+  MOZ_ASSERT(mIsOpen);
+  APZThreadUtils::AssertOnControllerThread();
+
+  SendUpdateWheelTransaction(aRefPoint, aEventMessage, aTargetGuid);
 }
 
 }  // namespace layers

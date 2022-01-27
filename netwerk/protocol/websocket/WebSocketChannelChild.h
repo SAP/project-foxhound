@@ -25,15 +25,21 @@ class WebSocketChannelChild final : public BaseWebSocketChannel,
   friend class PWebSocketChild;
 
  public:
-  explicit WebSocketChannelChild(bool aSecure);
+  explicit WebSocketChannelChild(bool aEncrypted);
 
   NS_DECL_THREADSAFE_ISUPPORTS
 
   // nsIWebSocketChannel methods BaseWebSocketChannel didn't implement for us
   //
   NS_IMETHOD AsyncOpen(nsIURI* aURI, const nsACString& aOrigin,
+                       JS::HandleValue aOriginAttributes,
                        uint64_t aInnerWindowID, nsIWebSocketListener* aListener,
-                       nsISupports* aContext) override;
+                       nsISupports* aContext, JSContext* aCx) override;
+  NS_IMETHOD AsyncOpenNative(nsIURI* aURI, const nsACString& aOrigin,
+                             const OriginAttributes& aOriginAttributes,
+                             uint64_t aInnerWindowID,
+                             nsIWebSocketListener* aListener,
+                             nsISupports* aContext) override;
   NS_IMETHOD Close(uint16_t code, const nsACString& reason) override;
   NS_IMETHOD SendMsg(const nsACString& aMsg) override;
   NS_IMETHOD SendBinaryMsg(const nsACString& aMsg) override;
@@ -54,17 +60,19 @@ class WebSocketChannelChild final : public BaseWebSocketChannel,
   mozilla::ipc::IPCResult RecvOnStart(const nsCString& aProtocol,
                                       const nsCString& aExtensions,
                                       const nsString& aEffectiveURL,
-                                      const bool& aSecure,
+                                      const bool& aEncrypted,
                                       const uint64_t& aHttpChannelId);
   mozilla::ipc::IPCResult RecvOnStop(const nsresult& aStatusCode);
-  mozilla::ipc::IPCResult RecvOnMessageAvailable(const nsCString& aMsg);
-  mozilla::ipc::IPCResult RecvOnBinaryMessageAvailable(const nsCString& aMsg);
+  mozilla::ipc::IPCResult RecvOnMessageAvailable(
+      const nsDependentCSubstring& aMsg, const bool& aMoreData);
+  mozilla::ipc::IPCResult RecvOnBinaryMessageAvailable(
+      const nsDependentCSubstring& aMsg, const bool& aMoreData);
   mozilla::ipc::IPCResult RecvOnAcknowledge(const uint32_t& aSize);
   mozilla::ipc::IPCResult RecvOnServerClose(const uint16_t& aCode,
                                             const nsCString& aReason);
 
   void OnStart(const nsCString& aProtocol, const nsCString& aExtensions,
-               const nsString& aEffectiveURL, const bool& aSecure,
+               const nsString& aEffectiveURL, const bool& aEncrypted,
                const uint64_t& aHttpChannelId);
   void OnStop(const nsresult& aStatusCode);
   void OnMessageAvailable(const nsCString& aMsg);
@@ -80,8 +88,14 @@ class WebSocketChannelChild final : public BaseWebSocketChannel,
   // This function tries to get a labeled event target for |mNeckoTarget|.
   void SetupNeckoTarget();
 
+  bool RecvOnMessageAvailableInternal(const nsDependentCSubstring& aMsg,
+                                      bool aMoreData, bool aBinary);
+
+  void OnError();
+
   RefPtr<ChannelEventQueue> mEventQ;
   nsString mEffectiveURL;
+  nsCString mReceivedMsgBuffer;
 
   // This variable is protected by mutex.
   enum { Opened, Closing, Closed } mIPCState;
@@ -94,6 +108,7 @@ class WebSocketChannelChild final : public BaseWebSocketChannel,
   friend class AcknowledgeEvent;
   friend class ServerCloseEvent;
   friend class AsyncOpenFailedEvent;
+  friend class OnErrorEvent;
 };
 
 }  // namespace net

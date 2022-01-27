@@ -21,6 +21,7 @@
 #  endif
 #endif
 
+#include "MOZIconHelper.h"
 #include "mozilla/dom/Document.h"
 #include "nsCocoaUtils.h"
 #include "nsComputedDOMStyle.h"
@@ -36,184 +37,149 @@
 using namespace mozilla;
 
 using mozilla::dom::Element;
+using mozilla::widget::IconLoader;
 
 static const uint32_t kIconSize = 16;
 
-nsMenuItemIconX::nsMenuItemIconX(nsMenuObjectX* aMenuItem, nsIContent* aContent,
-                                 NSMenuItem* aNativeMenuItem)
-    : mContent(aContent),
-      mContentType(nsIContentPolicy::TYPE_INTERNAL_IMAGE),
-      mMenuObject(aMenuItem),
-      mSetIcon(false),
-      mNativeMenuItem(aNativeMenuItem) {
+nsMenuItemIconX::nsMenuItemIconX(Listener* aListener) : mListener(aListener) {
   MOZ_COUNT_CTOR(nsMenuItemIconX);
 }
 
 nsMenuItemIconX::~nsMenuItemIconX() {
-  Destroy();
+  if (mIconLoader) {
+    mIconLoader->Destroy();
+  }
+  if (mIconImage) {
+    [mIconImage release];
+    mIconImage = nil;
+  }
   MOZ_COUNT_DTOR(nsMenuItemIconX);
 }
 
-// Called from mMenuObjectX's destructor, to prevent us from outliving it
-// (as might otherwise happen if calls to our imgINotificationObserver methods
-// are still outstanding).  mMenuObjectX owns our mNativeMenuItem.
-void nsMenuItemIconX::Destroy() {
-  if (mIconLoader) {
-    mIconLoader->Destroy();
-    mIconLoader = nullptr;
-  }
-  mMenuObject = nullptr;
-  mNativeMenuItem = nil;
-}
+void nsMenuItemIconX::SetupIcon(nsIContent* aContent) {
+  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
-nsresult nsMenuItemIconX::SetupIcon() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
-
-  // Still don't have one, then something is wrong, get out of here.
-  if (!mNativeMenuItem) {
-    NS_ERROR("No native menu item");
-    return NS_ERROR_FAILURE;
-  }
-
-  nsCOMPtr<nsIURI> iconURI;
-  nsresult rv = GetIconURI(getter_AddRefs(iconURI));
-  if (NS_FAILED(rv)) {
-    // There is no icon for this menu item. An icon might have been set
-    // earlier.  Clear it.
-    [mNativeMenuItem setImage:nil];
-
-    return NS_OK;
-  }
-
-  if (!mIconLoader) {
-    mIconLoader = new nsIconLoaderService(mContent, &mImageRegionRect, this, kIconSize, kIconSize);
-    if (!mIconLoader) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-  }
-  if (!mSetIcon) {
-    // Load placeholder icon.
-    [mNativeMenuItem setImage:mIconLoader->GetNativeIconImage()];
-  }
-
-  rv = mIconLoader->LoadIcon(iconURI);
-  if (NS_FAILED(rv)) {
+  bool shouldHaveIcon = StartIconLoad(aContent);
+  if (!shouldHaveIcon) {
     // There is no icon for this menu item, as an error occurred while loading it.
     // An icon might have been set earlier or the place holder icon may have
     // been set.  Clear it.
-    [mNativeMenuItem setImage:nil];
+    if (mIconImage) {
+      [mIconImage release];
+      mIconImage = nil;
+    }
+    return;
   }
 
-  mSetIcon = true;
+  if (!mIconImage) {
+    // Set a placeholder icon, so that the menuitem reserves space for the icon during the load and
+    // there is no sudden shift once the icon finishes loading.
+    NSSize iconSize = NSMakeSize(kIconSize, kIconSize);
+    mIconImage = [[MOZIconHelper placeholderIconWithSize:iconSize] retain];
+  }
 
-  return rv;
-
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
-nsresult nsMenuItemIconX::GetIconURI(nsIURI** aIconURI) {
-  if (!mMenuObject) return NS_ERROR_FAILURE;
-
-  // Mac native menu items support having both a checkmark and an icon
-  // simultaneously, but this is unheard of in the cross-platform toolkit,
-  // seemingly because the win32 theme is unable to cope with both at once.
-  // The downside is that it's possible to get a menu item marked with a
-  // native checkmark and a checkmark for an icon.  Head off that possibility
-  // by pretending that no icon exists if this is a checkable menu item.
-  if (mMenuObject->MenuObjectType() == eMenuItemObjectType) {
-    nsMenuItemX* menuItem = static_cast<nsMenuItemX*>(mMenuObject);
-    if (menuItem->GetMenuItemType() != eRegularMenuItemType) return NS_ERROR_FAILURE;
+bool nsMenuItemIconX::StartIconLoad(nsIContent* aContent) {
+  RefPtr<nsIURI> iconURI = GetIconURI(aContent);
+  if (!iconURI) {
+    return false;
   }
 
-  if (!mContent) return NS_ERROR_FAILURE;
+  if (!mIconLoader) {
+    mIconLoader = new IconLoader(this);
+  }
 
+  nsresult rv = mIconLoader->LoadIcon(iconURI, aContent);
+  return NS_SUCCEEDED(rv);
+}
+
+already_AddRefed<nsIURI> nsMenuItemIconX::GetIconURI(nsIContent* aContent) {
   // First, look at the content node's "image" attribute.
   nsAutoString imageURIString;
   bool hasImageAttr =
-      mContent->IsElement() &&
-      mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::image, imageURIString);
+      aContent->IsElement() &&
+      aContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::image, imageURIString);
 
-  nsresult rv;
-  RefPtr<ComputedStyle> sc;
-  nsCOMPtr<nsIURI> iconURI;
-  if (!hasImageAttr) {
-    // If the content node has no "image" attribute, get the
-    // "list-style-image" property from CSS.
-    RefPtr<mozilla::dom::Document> document = mContent->GetComposedDoc();
-    if (!document || !mContent->IsElement()) {
-      return NS_ERROR_FAILURE;
-    }
-
-    sc = nsComputedDOMStyle::GetComputedStyle(mContent->AsElement(), nullptr);
-    if (!sc) {
-      return NS_ERROR_FAILURE;
-    }
-
-    iconURI = sc->StyleList()->GetListStyleImageURI();
-    if (!iconURI) {
-      return NS_ERROR_FAILURE;
-    }
-  } else {
-    uint64_t dummy = 0;
-    nsCOMPtr<nsIPrincipal> triggeringPrincipal = mContent->NodePrincipal();
-    nsContentUtils::GetContentPolicyTypeForUIImageLoading(
-        mContent, getter_AddRefs(triggeringPrincipal), mContentType, &dummy);
-
+  if (hasImageAttr) {
+    // Use the URL from the image attribute.
     // If this menu item shouldn't have an icon, the string will be empty,
     // and NS_NewURI will fail.
-    rv = NS_NewURI(getter_AddRefs(iconURI), imageURIString);
-    if (NS_FAILED(rv)) return rv;
+    RefPtr<nsIURI> iconURI;
+    nsresult rv = NS_NewURI(getter_AddRefs(iconURI), imageURIString);
+    if (NS_FAILED(rv)) {
+      return nullptr;
+    }
+    mImageRegionRect.SetEmpty();
+    return iconURI.forget();
   }
 
-  // Empty the mImageRegionRect initially as the image region CSS could
-  // have been changed and now have an error or have been removed since the
-  // last GetIconURI call.
-  mImageRegionRect.SetEmpty();
-
-  iconURI.forget(aIconURI);
-
-  if (!hasImageAttr) {
-    // Check if the icon has a specified image region so that it can be
-    // cropped appropriately before being displayed.
-    const nsRect r = sc->StyleList()->GetImageRegion();
-
-    // Return NS_ERROR_FAILURE if the image region is invalid so the image
-    // is not drawn, and behavior is similar to XUL menus.
-    if (r.X() < 0 || r.Y() < 0 || r.Width() < 0 || r.Height() < 0) {
-      return NS_ERROR_FAILURE;
-    }
-
-    // 'auto' is represented by a [0, 0, 0, 0] rect. Only set mImageRegionRect
-    // if we have some other value.
-    if (!r.IsEmpty()) {
-      mImageRegionRect = r.ToNearestPixels(mozilla::AppUnitsPerCSSPixel());
-    }
+  // If the content node has no "image" attribute, get the
+  // "list-style-image" property from CSS.
+  RefPtr<mozilla::dom::Document> document = aContent->GetComposedDoc();
+  if (!document || !aContent->IsElement()) {
+    return nullptr;
   }
 
-  return NS_OK;
+  RefPtr<ComputedStyle> sc = nsComputedDOMStyle::GetComputedStyle(aContent->AsElement());
+  if (!sc) {
+    return nullptr;
+  }
+
+  RefPtr<nsIURI> iconURI = sc->StyleList()->GetListStyleImageURI();
+  if (!iconURI) {
+    return nullptr;
+  }
+
+  // Check if the icon has a specified image region so that it can be
+  // cropped appropriately before being displayed.
+  const nsRect r = sc->StyleList()->GetImageRegion();
+
+  // Return nullptr if the image region is invalid so the image
+  // is not drawn, and behavior is similar to XUL menus.
+  if (r.X() < 0 || r.Y() < 0 || r.Width() < 0 || r.Height() < 0) {
+    return nullptr;
+  }
+
+  // 'auto' is represented by a [0, 0, 0, 0] rect. Only set mImageRegionRect
+  // if we have some other value.
+  if (r.IsEmpty()) {
+    mImageRegionRect.SetEmpty();
+  } else {
+    mImageRegionRect = r.ToNearestPixels(mozilla::AppUnitsPerCSSPixel());
+  }
+  mComputedStyle = std::move(sc);
+
+  return iconURI.forget();
 }
 
 //
-// nsIconLoaderObserver
+// mozilla::widget::IconLoader::Listener
 //
 
-nsresult nsMenuItemIconX::OnComplete(NSImage* aImage) {
-  if (!mNativeMenuItem) {
-    if (aImage) {
-      [aImage release];
-    }
-    return NS_ERROR_FAILURE;
+nsresult nsMenuItemIconX::OnComplete(imgIContainer* aImage) {
+  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+
+  if (mIconImage) {
+    [mIconImage release];
+    mIconImage = nil;
   }
 
-  if (!aImage) {
-    [mNativeMenuItem setImage:nil];
-    return NS_OK;
+  mIconImage = [[MOZIconHelper iconImageFromImageContainer:aImage
+                                                  withSize:NSMakeSize(kIconSize, kIconSize)
+                                             computedStyle:mComputedStyle
+                                                   subrect:mImageRegionRect
+                                               scaleFactor:0.0f] retain];
+  mComputedStyle = nullptr;
+
+  if (mListener) {
+    mListener->IconUpdated();
   }
 
-  [mNativeMenuItem setImage:aImage];
-  if (mMenuObject) {
-    mMenuObject->IconUpdated();
-  }
-  [aImage release];
+  mIconLoader->Destroy();
+
   return NS_OK;
+
+  NS_OBJC_END_TRY_ABORT_BLOCK;
 }

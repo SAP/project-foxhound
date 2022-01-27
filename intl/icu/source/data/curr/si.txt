@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 si{
     Currencies{
         AED{
@@ -334,6 +335,10 @@ si{
             "LRD",
             "ලයිබේරියානු ඩොලර්",
         }
+        LSL{
+            "LSL",
+            "ලෙසෝතෝ ලොටි",
+        }
         LTL{
             "LTL",
             "ලිතුවේනියානු",
@@ -656,9 +661,12 @@ si{
         }
     }
     Currencies%narrow{
+        AFN{"؋"}
+        AMD{"֏"}
         AOA{"Kz"}
         ARS{"$"}
         AUD{"$"}
+        AZN{"₼"}
         BAM{"KM"}
         BBD{"$"}
         BDT{"৳"}
@@ -686,6 +694,7 @@ si{
         FKP{"£"}
         GBP{"£"}
         GEL{"₾"}
+        GHS{"GH₵"}
         GIP{"£"}
         GNF{"FG"}
         GTQ{"Q"}
@@ -1089,6 +1098,10 @@ si{
             one{"ලයිබේරියානු ඩොලර්"}
             other{"ලයිබේරියානු ඩොලර්"}
         }
+        LSL{
+            one{"ලෙසෝතෝ ලොටි"}
+            other{"ලෙසෝතෝ ලොටිස්"}
+        }
         LTL{
             one{"ලිතුවේනියානු"}
             other{"ලිතුවේනියානු"}
@@ -1406,5 +1419,4 @@ si{
         one{"{1}{0}"}
         other{"{1}{0}"}
     }
-    Version{"37"}
 }

@@ -4,18 +4,46 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "CryptoKey.h"
+#include "mozilla/dom/CryptoKey.h"
 
-#include "cryptohi.h"
+#include <cstddef>
+#include <cstring>
+#include <memory>
+#include <new>
+#include <utility>
+#include "blapit.h"
+#include "certt.h"
+#include "js/StructuredClone.h"
+#include "js/TypeDecls.h"
+#include "keyhi.h"
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/MacroForEach.h"
+#include "mozilla/dom/KeyAlgorithmBinding.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/SubtleCryptoBinding.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "mozilla/dom/WebCryptoCommon.h"
+#include "nsDebug.h"
+#include "nsError.h"
+#include "nsLiteralString.h"
 #include "nsNSSComponent.h"
+#include "nsStringFlags.h"
+#include "nsTArray.h"
 #include "pk11pub.h"
+#include "pkcs11t.h"
+#include "plarena.h"
+#include "prtypes.h"
+#include "secasn1.h"
+#include "secasn1t.h"
+#include "seccomon.h"
+#include "secdert.h"
+#include "secitem.h"
+#include "secmodt.h"
+#include "secoid.h"
+#include "secoidt.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(CryptoKey, mGlobal)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(CryptoKey)
@@ -1106,5 +1134,4 @@ already_AddRefed<CryptoKey> CryptoKey::ReadStructuredClone(
   return key.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

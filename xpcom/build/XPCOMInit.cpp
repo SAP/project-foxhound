@@ -12,7 +12,6 @@
 #include "mozilla/AppShutdown.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Poison.h"
-#include "mozilla/RemoteDecoderManagerChild.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/TaskController.h"
 #include "mozilla/XPCOM.h"
@@ -100,6 +99,7 @@
 
 #include "jsapi.h"
 #include "js/Initialization.h"
+#include "XPCSelfHostedShmem.h"
 
 #include "gfxPlatform.h"
 
@@ -149,7 +149,8 @@ nsresult nsLocalFileConstructor(nsISupports* aOuter, const nsIID& aIID,
 
 nsComponentManagerImpl* nsComponentManagerImpl::gComponentManager = nullptr;
 bool gXPCOMShuttingDown = false;
-bool gXPCOMThreadsShutDown = false;
+mozilla::Atomic<bool, mozilla::SequentiallyConsistent> gXPCOMThreadsShutDown(
+    false);
 bool gXPCOMMainThreadEventsAreDoomed = false;
 char16_t* gGREBinPath = nullptr;
 
@@ -259,8 +260,6 @@ NS_InitXPCOM(nsIServiceManager** aResult, nsIFile* aBinDirectory,
   }
 
   sInitialized = true;
-
-  mozPoisonValueInit();
 
   NS_LogInit();
 
@@ -475,6 +474,7 @@ NS_InitXPCOM(nsIServiceManager** aResult, nsIFile* aBinDirectory,
   // The memory reporter manager is up and running -- register our reporters.
   RegisterStrongMemoryReporter(new ICUReporter());
   RegisterStrongMemoryReporter(new OggReporter());
+  xpc::SelfHostedShmem::GetSingleton().InitMemoryReporter();
 
   mozilla::Telemetry::Init();
 
@@ -496,7 +496,6 @@ NS_InitXPCOM(nsIServiceManager** aResult, nsIFile* aBinDirectory,
 
 EXPORT_XPCOM_API(nsresult)
 NS_InitMinimalXPCOM() {
-  mozPoisonValueInit();
   NS_SetMainThread();
   mozilla::TimeStamp::Startup();
   NS_LogInit();
@@ -601,46 +600,30 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
       return NS_ERROR_UNEXPECTED;
     }
 
-    RefPtr<nsObserverService> observerService;
-    CallGetService("@mozilla.org/observer-service;1",
-                   (nsObserverService**)getter_AddRefs(observerService));
+    mozilla::AppShutdown::AdvanceShutdownPhase(
+        mozilla::ShutdownPhase::XPCOMWillShutdown);
 
-    if (observerService) {
-      mozilla::KillClearOnShutdown(ShutdownPhase::WillShutdown);
-      mozilla::AppShutdown::MaybeFastShutdown(
-          mozilla::ShutdownPhase::WillShutdown);
-      observerService->NotifyObservers(
-          nullptr, NS_XPCOM_WILL_SHUTDOWN_OBSERVER_ID, nullptr);
-
-      nsCOMPtr<nsIServiceManager> mgr;
-      rv = NS_GetServiceManager(getter_AddRefs(mgr));
-      if (NS_SUCCEEDED(rv)) {
-        mozilla::KillClearOnShutdown(ShutdownPhase::Shutdown);
-        mozilla::AppShutdown::MaybeFastShutdown(
-            mozilla::ShutdownPhase::Shutdown);
-        observerService->NotifyObservers(mgr, NS_XPCOM_SHUTDOWN_OBSERVER_ID,
-                                         nullptr);
-      }
+    nsCOMPtr<nsIServiceManager> mgr;
+    rv = NS_GetServiceManager(getter_AddRefs(mgr));
+    if (NS_SUCCEEDED(rv)) {
+      // We want the service manager to be the subject of notifications
+      mozilla::AppShutdown::AdvanceShutdownPhase(
+          mozilla::ShutdownPhase::XPCOMShutdown, nullptr,
+          do_QueryInterface(mgr));
+    }
 
 #ifndef ANDROID
-      mozilla::XPCOMShutdownNotified();
+    mozilla::XPCOMShutdownNotified();
 #endif
-    }
 
     // This must happen after the shutdown of media and widgets, which
     // are triggered by the NS_XPCOM_SHUTDOWN_OBSERVER_ID notification.
     NS_ProcessPendingEvents(thread);
     gfxPlatform::ShutdownLayersIPC();
-    mozilla::RemoteDecoderManagerChild::Shutdown();
 
-    if (observerService) {
-      mozilla::KillClearOnShutdown(ShutdownPhase::ShutdownThreads);
-      mozilla::AppShutdown::MaybeFastShutdown(
-          mozilla::ShutdownPhase::ShutdownThreads);
-      observerService->NotifyObservers(
-          nullptr, NS_XPCOM_SHUTDOWN_THREADS_OBSERVER_ID, nullptr);
-    }
-
+    mozilla::AppShutdown::AdvanceShutdownPhase(
+        mozilla::ShutdownPhase::XPCOMShutdownThreads);
+    nsThreadManager::get().CancelBackgroundDelayedRunnables();
     gXPCOMThreadsShutDown = true;
     NS_ProcessPendingEvents(thread);
 
@@ -650,8 +633,13 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
 
     NS_ProcessPendingEvents(thread);
 
+    mozilla::KillClearOnShutdown(ShutdownPhase::XPCOMShutdownLoaders);
+    // XXX: Why don't we try a MaybeFastShutdown for XPCOMShutdownLoaders ?
+
+    RefPtr<nsObserverService> observerService;
+    CallGetService("@mozilla.org/observer-service;1",
+                   (nsObserverService**)getter_AddRefs(observerService));
     if (observerService) {
-      mozilla::KillClearOnShutdown(ShutdownPhase::ShutdownLoaders);
       observerService->Shutdown();
     }
 
@@ -659,7 +647,7 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
     // we've finished notifying observers of XPCOM shutdown, because shutdown
     // observers themselves might call ClearOnShutdown().
     // Some destructors may fire extra runnables that will be processed below.
-    mozilla::KillClearOnShutdown(ShutdownPhase::ShutdownFinal);
+    mozilla::KillClearOnShutdown(ShutdownPhase::XPCOMShutdownFinal);
 
     // Shutdown all remaining threads.  This method does not return until
     // all threads created using the thread manager (with the exception of
@@ -679,7 +667,7 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
   AbstractThread::ShutdownMainThread();
 
   mozilla::AppShutdown::MaybeFastShutdown(
-      mozilla::ShutdownPhase::ShutdownFinal);
+      mozilla::ShutdownPhase::XPCOMShutdownFinal);
 
   // XPCOM is officially in shutdown mode NOW
   // Set this only after the observers have been notified as this
@@ -722,13 +710,14 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
 
   // There can be code trying to refer to global objects during the final cc
   // shutdown. This is the phase for such global objects to correctly release.
-  mozilla::KillClearOnShutdown(ShutdownPhase::ShutdownPostLastCycleCollection);
+  mozilla::KillClearOnShutdown(ShutdownPhase::CCPostLastCycleCollection);
   mozilla::AppShutdown::MaybeFastShutdown(
-      mozilla::ShutdownPhase::ShutdownPostLastCycleCollection);
+      mozilla::ShutdownPhase::CCPostLastCycleCollection);
 
   mozilla::scache::StartupCache::DeleteSingleton();
+  mozilla::ScriptPreloader::DeleteSingleton();
 
-  PROFILER_ADD_MARKER("Shutdown xpcom", OTHER);
+  PROFILER_MARKER_UNTYPED("Shutdown xpcom", OTHER);
 
   // Shutdown xpcom. This will release all loaders and cause others holding
   // a refcount to the component manager to release it.
@@ -744,6 +733,11 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
     JS_ShutDown();
     sInitializedJS = false;
   }
+
+  mozilla::ScriptPreloader::DeleteCacheDataSingleton();
+
+  // Release shared memory which might be borrowed by the JS engine.
+  xpc::SelfHostedShmem::Shutdown();
 
   // After all threads have been joined and the component manager has been shut
   // down, any remaining objects that could be holding NSS resources (should)

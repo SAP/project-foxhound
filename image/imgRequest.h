@@ -25,7 +25,6 @@ class imgCacheValidator;
 class imgLoader;
 class imgRequestProxy;
 class imgCacheEntry;
-class nsIApplicationCache;
 class nsIProperties;
 class nsIRequest;
 class nsITimedChannel;
@@ -33,6 +32,7 @@ class nsIURI;
 class nsIReferrerInfo;
 
 namespace mozilla {
+enum CORSMode : uint8_t;
 namespace image {
 class Image;
 class ProgressTracker;
@@ -62,12 +62,13 @@ class imgRequest final : public nsIStreamListener,
   NS_DECL_NSIINTERFACEREQUESTOR
   NS_DECL_NSIASYNCVERIFYREDIRECTCALLBACK
 
-      [[nodiscard]] nsresult
-      Init(nsIURI* aURI, nsIURI* aFinalURI, bool aHadInsecureRedirect,
-           nsIRequest* aRequest, nsIChannel* aChannel,
-           imgCacheEntry* aCacheEntry, mozilla::dom::Document* aLoadingDocument,
-           nsIPrincipal* aTriggeringPrincipal, int32_t aCORSMode,
-           nsIReferrerInfo* aReferrerInfo);
+  [[nodiscard]] nsresult Init(nsIURI* aURI, nsIURI* aFinalURI,
+                              bool aHadInsecureRedirect, nsIRequest* aRequest,
+                              nsIChannel* aChannel, imgCacheEntry* aCacheEntry,
+                              mozilla::dom::Document* aLoadingDocument,
+                              nsIPrincipal* aTriggeringPrincipal,
+                              mozilla::CORSMode aCORSMode,
+                              nsIReferrerInfo* aReferrerInfo);
 
   void ClearLoader();
 
@@ -105,12 +106,6 @@ class imgRequest final : public nsIStreamListener,
   // wins.
   static void SetCacheValidation(imgCacheEntry* aEntry, nsIRequest* aRequest);
 
-  // Check if application cache of the original load is different from
-  // application cache of the new load.  Also lack of application cache
-  // on one of the loads is considered a change of a loading cache since
-  // HTTP cache may contain a different data then app cache.
-  bool CacheChanged(nsIRequest* aNewRequest);
-
   bool GetMultipart() const;
 
   // Returns whether we went through an insecure (non-HTTPS) redirect at some
@@ -118,7 +113,7 @@ class imgRequest final : public nsIStreamListener,
   bool HadInsecureRedirect() const;
 
   // The CORS mode for which we loaded this image.
-  int32_t GetCORSMode() const { return mCORSMode; }
+  mozilla::CORSMode GetCORSMode() const { return mCORSMode; }
 
   // The ReferrerInfo in effect when loading this image.
   nsIReferrerInfo* GetReferrerInfo() const { return mReferrerInfo; }
@@ -247,7 +242,6 @@ class imgRequest final : public nsIStreamListener,
   nsCOMPtr<nsIProperties> mProperties;
   nsCOMPtr<nsIChannel> mChannel;
   nsCOMPtr<nsIInterfaceRequestor> mPrevChannelSink;
-  nsCOMPtr<nsIApplicationCache> mApplicationCache;
 
   nsCOMPtr<nsITimedChannel> mTimedChannel;
 
@@ -273,8 +267,8 @@ class imgRequest final : public nsIStreamListener,
   uint64_t mInnerWindowId;
 
   // The CORS mode (defined in imgIRequest) this image was loaded with. By
-  // default, imgIRequest::CORS_NONE.
-  int32_t mCORSMode;
+  // default, CORS_NONE.
+  mozilla::CORSMode mCORSMode;
 
   // The ReferrerInfo used for this image.
   nsCOMPtr<nsIReferrerInfo> mReferrerInfo;

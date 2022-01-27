@@ -41,15 +41,21 @@ let extData = {
 };
 
 let contextMenuItems = {
-  "context-navigation": "hidden",
   "context-sep-navigation": "hidden",
   "context-viewsource": "",
-  "context-viewinfo": "disabled",
   "inspect-separator": "hidden",
   "context-inspect": "hidden",
   "context-inspect-a11y": "hidden",
   "context-bookmarkpage": "hidden",
 };
+if (AppConstants.platform == "macosx") {
+  contextMenuItems["context-back"] = "hidden";
+  contextMenuItems["context-forward"] = "hidden";
+  contextMenuItems["context-reload"] = "hidden";
+  contextMenuItems["context-stop"] = "hidden";
+} else {
+  contextMenuItems["context-navigation"] = "hidden";
+}
 
 add_task(async function pageaction_popup_contextmenu() {
   let extension = ExtensionTestUtils.loadExtension(extData);
@@ -112,9 +118,9 @@ add_task(async function pageaction_popup_image_contextmenu() {
     "#testimg"
   );
 
-  let item = contentAreaContextMenu.querySelector("#context-viewimageinfo");
+  let item = contentAreaContextMenu.querySelector("#context-copyimage");
   ok(!item.hidden);
-  ok(item.disabled);
+  ok(!item.disabled);
 
   await closeContextMenu(contentAreaContextMenu);
 

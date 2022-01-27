@@ -11,7 +11,7 @@ body {
   overflow-x: hidden;
 }
 #dispatch-table {
-  -moz-user-select: none;
+  user-select: none;
   font-size: 1em;
   border-spacing: 0;
   background-color: var(--in-content-box-background);
@@ -55,69 +55,49 @@ td:nth-child(4) {
   text-align: end;
 }
 td:nth-child(5) {
-  width: 20px;
+  width: 24px;
+  padding: 2px 4px;
 }
 
 /* Show action icons on selected or hovered rows */
-tr:-moz-any([selected], :hover) > td > .action-icon {
-  padding: 1px 10px;
+tr:is([selected], :hover) > td > .action-icon {
   opacity: 1;
 }
-/* The action icons have a relative position, so that we can use
- * absolutely positioned ::before and ::after pseudo elements.
- * ::before is used to display the square background on hover/active
- * ::after is used to display the icons as a background that can be
- * flipped using a CSS transform in RTL mode. */
-.action-icon {
-  position: relative;
-  opacity: 0;
-}
-/* Ensure both pseudo elements have the same size and position. */
-.action-icon::before, .action-icon::after {
-  height: 200%;
-  position: absolute;
-  top: -50%;
-  inset-inline-start: -3px;
-  padding-inline: 13px;
-}
 
-/* square background */
+.action-icon {
+  opacity: 0;
+  display: flex;
+  align-items: center;
+}
 .action-icon::before {
   content: "";
-  background-color: currentColor;
-  opacity: 0;
+  display: inline-block;
+  -moz-context-properties: fill;
+  fill: currentColor;
+  width: 24px;
+  height: 24px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 16px;
+  border-radius: 4px;
 }
 .action-icon:hover::before {
-  opacity: 0.1;
+  background-color: color-mix(in srgb, currentColor 15%, transparent);
 }
 .action-icon:hover:active::before {
-  opacity: 0.2;
+  background-color: color-mix(in srgb, currentColor 30%, transparent);
 }
 
 /* icons */
-.action-icon::after {
-  -moz-context-properties: fill, fill-opacity;
-  fill: currentColor;
-  fill-opacity: 0;
-  background-repeat: no-repeat;
-  background-position: center;
-  line-height: 100%;
+
+.addon-icon::before {
+  background-image: url("chrome://global/skin/icons/shortcut.svg");
 }
-.addon-icon::after {
-  content: url("chrome://global/skin/icons/shortcut.svg");
-  top: 2px;
-  inset-inline-start: -11px;
-  width: 16px;
-}
-.addon-icon:dir(rtl)::after {
+.addon-icon:dir(rtl)::before {
   transform: scaleX(-1);
 }
-.close-icon::after {
-  content: url("chrome://global/skin/icons/close.svg");
-  height: 100%;
-  top: 0;
-  inset-inline-start: -13px;
-  transform: scale(1.2);
+.close-icon::before {
+  background-image: url("chrome://global/skin/icons/close.svg");
 }
 
 #dispatch-thead > tr {
@@ -126,7 +106,6 @@ tr:-moz-any([selected], :hover) > td > .action-icon {
 
 #dispatch-thead > tr > td {
   border: none;
-  background-color: var(--in-content-button-background);
 }
 #dispatch-thead > tr > td:not(:first-child) {
   border-inline-start-width: 1px;
@@ -137,7 +116,6 @@ tr:-moz-any([selected], :hover) > td > .action-icon {
 td {
   padding: 5px 10px;
   min-height: 2em;
-  color: var(--in-content-text-color);
   max-width: 70vw;
   overflow: hidden;
   white-space: nowrap;
@@ -166,7 +144,7 @@ td {
 /* Putting the background image in a positioned pseudo element lets us
  * use CSS transforms on the background image, which we need for rtl. */
 .twisty::before {
-  content: url("chrome://global/skin/icons/twisty-collapsed.svg");
+  content: url("chrome://global/skin/icons/arrow-right-12.svg");
   position: absolute;
   display: block;
   line-height: 50%;
@@ -178,10 +156,10 @@ td {
   fill: currentColor;
 }
 .twisty:dir(rtl)::before {
-  transform: scaleX(-1);
+  content: url("chrome://global/skin/icons/arrow-left-12.svg");
 }
 .twisty.open::before {
-  content: url("chrome://global/skin/icons/twisty-expanded.svg");
+  content: url("chrome://global/skin/icons/arrow-down-12.svg");
 }
 #dispatch-tbody > tr > td.indent {
   padding-inline-start: 88px;
@@ -191,7 +169,7 @@ td {
   background-position-x: right 62px;
 }
 #dispatch-tbody > tr > td.tracker {
-  background-image: url("chrome://browser/skin/controlcenter/trackers.svg");
+  background-image: url("chrome://global/skin/icons/trackers.svg");
   -moz-context-properties: fill;
   fill: rgb(224, 41, 29);
 }
@@ -201,12 +179,13 @@ td {
   fill: #808080;
 }
 
-#dispatch-tbody > tr[selected] > td {
-  background-color: var(--in-content-item-selected);
-  color: var(--in-content-selected-text);
-}
 #dispatch-tbody > tr:hover {
   background-color: var(--in-content-item-hover);
+  color: var(--in-content-item-hover-text);
+}
+#dispatch-tbody > tr[selected] {
+  background-color: var(--in-content-item-selected);
+  color: var(--in-content-item-selected-text);
 }
 
 .clickable {
@@ -222,15 +201,17 @@ td {
   fill: currentColor;
 }
 .desc {
-  background-image: url(chrome://global/skin/icons/arrow-dropdown-12.svg);
+  background-image: url(chrome://global/skin/icons/arrow-down-12.svg);
   -moz-context-properties: fill;
   fill: currentColor;
 }
 #dispatch-thead > tr > td.clickable:hover {
   background-color: var(--in-content-button-background-hover);
+  color: var(--in-content-button-text-color-hover);
 }
-#dispatch-thead > tr > td.clickable:active {
+#dispatch-thead > tr > td.clickable:hover:active {
   background-color: var(--in-content-button-background-active);
+  color: var(--in-content-button-text-color-hover);
 }
 
 .energy-impact {

@@ -25,14 +25,20 @@ class FuzzingFunctions final {
  public:
   static void GarbageCollect(const GlobalObject&);
 
+  static void GarbageCollectCompacting(const GlobalObject&);
+
+  static void Crash(const GlobalObject& aGlobalObject,
+                    const nsAString& aKeyValue);
+
   static void CycleCollect(const GlobalObject&);
+
+  static void MemoryPressure(const GlobalObject&);
 
   static void EnableAccessibility(const GlobalObject&, ErrorResult& aRv);
 
-  static void SynthesizeKeyboardEvents(const GlobalObject& aGlobalObject,
-                                       const nsAString& aKeyValue,
-                                       const KeyboardEventInit& aKeyboardEvent,
-                                       ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY static void SynthesizeKeyboardEvents(
+      const GlobalObject& aGlobalObject, const nsAString& aKeyValue,
+      const KeyboardEventInit& aKeyboardEvent, ErrorResult& aRv);
 
  private:
   /**
@@ -46,9 +52,9 @@ class FuzzingFunctions final {
    *                            dispatch a modifier key event.
    * @return                    Modifiers which are activated by the call.
    */
-  static Modifiers ActivateModifiers(TextInputProcessor* aTextInputProcessor,
-                                     Modifiers aModifiers, nsIWidget* aWidget,
-                                     ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT static Modifiers ActivateModifiers(
+      TextInputProcessor* aTextInputProcessor, Modifiers aModifiers,
+      nsIWidget* aWidget, ErrorResult& aRv);
 
   /**
    * InactivateModifiers() inactivates aModifiers in the TextInputProcessor.
@@ -61,9 +67,9 @@ class FuzzingFunctions final {
    *                            dispatch a modifier key event.
    * @return                    Modifiers which are inactivated by the call.
    */
-  static Modifiers InactivateModifiers(TextInputProcessor* aTextInputProcessor,
-                                       Modifiers aModifiers, nsIWidget* aWidget,
-                                       ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT static Modifiers InactivateModifiers(
+      TextInputProcessor* aTextInputProcessor, Modifiers aModifiers,
+      nsIWidget* aWidget, ErrorResult& aRv);
 };
 
 }  // namespace dom

@@ -13,6 +13,40 @@ const { AppConstants } = ChromeUtils.import(
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
+ * Elides the middle of a string by replacing it with an elipsis if it is
+ * longer than `threshold` characters. Does its best to not break up grapheme
+ * clusters.
+ */
+function elideMiddleOfString(str, threshold) {
+  const searchDistance = 5;
+  const stubLength = threshold / 2 - searchDistance;
+  if (str.length <= threshold || stubLength < searchDistance) {
+    return str;
+  }
+
+  function searchElisionPoint(position) {
+    let unsplittableCharacter = c => /[\p{M}\uDC00-\uDFFF]/u.test(c);
+    for (let i = 0; i < searchDistance; i++) {
+      if (!unsplittableCharacter(str[position + i])) {
+        return position + i;
+      }
+
+      if (!unsplittableCharacter(str[position - i])) {
+        return position - i;
+      }
+    }
+    return position;
+  }
+
+  let elisionStart = searchElisionPoint(stubLength);
+  let elisionEnd = searchElisionPoint(str.length - stubLength);
+  if (elisionStart < elisionEnd) {
+    str = str.slice(0, elisionStart) + "\u2026" + str.slice(elisionEnd);
+  }
+  return str;
+}
+
+/**
  * This JSM is responsible for observing content process hang reports
  * and asking the user what to do about them. See nsIHangReport for
  * the platform interface.
@@ -77,14 +111,6 @@ var ProcessHangMonitor = {
   },
 
   /**
-   * Terminate Sandbox globals associated with the hang being reported
-   * for the selected browser in |win|.
-   */
-  terminateGlobal(win) {
-    this.handleUserInput(win, report => report.terminateGlobal());
-  },
-
-  /**
    * Start devtools debugger for JavaScript associated with the hang
    * being reported for the selected browser in |win|.
    */
@@ -106,15 +132,6 @@ var ProcessHangMonitor = {
   },
 
   /**
-   * Terminate the plugin process associated with a hang being reported
-   * for the selected browser in |win|. Will attempt to generate a combined
-   * crash report for all processes.
-   */
-  terminatePlugin(win) {
-    this.handleUserInput(win, report => report.terminatePlugin());
-  },
-
-  /**
    * Dismiss the browser notification and invoke an appropriate action based on
    * the hang type.
    */
@@ -124,55 +141,17 @@ var ProcessHangMonitor = {
       return;
     }
 
-    switch (report.hangType) {
-      case report.SLOW_SCRIPT:
-        this._recordTelemetryForReport(report, "user-aborted");
-        this.terminateScript(win);
-        break;
-      case report.PLUGIN_HANG:
-        this.terminatePlugin(win);
-        break;
-    }
+    this._recordTelemetryForReport(report, "user-aborted");
+    this.terminateScript(win);
   },
 
   /**
-   * Stop all scripts from running in the Sandbox global attached to
-   * this window.
-   */
-  stopGlobal(win) {
-    let report = this.findActiveReport(win.gBrowser.selectedBrowser);
-    if (!report) {
-      return;
-    }
-
-    switch (report.hangType) {
-      case report.SLOW_SCRIPT:
-        this._recordTelemetryForReport(report, "user-aborted");
-        this.terminateGlobal(win);
-        break;
-    }
-  },
-
-  /**
-   * Terminate whatever is causing this report, be it an add-on, page script,
-   * or plug-in. This is done without updating any report notifications.
+   * Terminate the script causing this report. This is done without
+   * updating any report notifications.
    */
   stopHang(report, endReason, backupInfo) {
-    switch (report.hangType) {
-      case report.SLOW_SCRIPT: {
-        this._recordTelemetryForReport(report, endReason, backupInfo);
-        if (report.addonId) {
-          report.terminateGlobal();
-        } else {
-          report.terminateScript();
-        }
-        break;
-      }
-      case report.PLUGIN_HANG: {
-        report.terminatePlugin();
-        break;
-      }
-    }
+    this._recordTelemetryForReport(report, endReason, backupInfo);
+    report.terminateScript();
   },
 
   /**
@@ -298,24 +277,17 @@ var ProcessHangMonitor = {
 
   onWindowClosed(win) {
     let maybeStopHang = report => {
-      if (report.hangType == report.SLOW_SCRIPT) {
-        let hungBrowserWindow = null;
-        try {
-          hungBrowserWindow = report.scriptBrowser.ownerGlobal;
-        } catch (e) {
-          // Ignore failures to get the script browser - we'll be
-          // conservative, and assume that if we cannot access the
-          // window that belongs to this report that we should stop
-          // the hang.
-        }
-        if (!hungBrowserWindow || hungBrowserWindow == win) {
-          this.stopHang(report, "window-closed");
-          return true;
-        }
-      } else if (report.hangType == report.PLUGIN_HANG) {
-        // If any window has closed during a plug-in hang, we'll
-        // do the conservative thing and terminate the plug-in.
-        this.stopHang(report);
+      let hungBrowserWindow = null;
+      try {
+        hungBrowserWindow = report.scriptBrowser.ownerGlobal;
+      } catch (e) {
+        // Ignore failures to get the script browser - we'll be
+        // conservative, and assume that if we cannot access the
+        // window that belongs to this report that we should stop
+        // the hang.
+      }
+      if (!hungBrowserWindow || hungBrowserWindow == win) {
+        this.stopHang(report, "window-closed");
         return true;
       }
       return false;
@@ -357,7 +329,7 @@ var ProcessHangMonitor = {
   findActiveReport(browser) {
     let frameLoader = browser.frameLoader;
     for (let report of this._activeReports.keys()) {
-      if (report.isReportForBrowser(frameLoader)) {
+      if (report.isReportForBrowserOrChildren(frameLoader)) {
         return report;
       }
     }
@@ -370,7 +342,7 @@ var ProcessHangMonitor = {
   findPausedReport(browser) {
     let frameLoader = browser.frameLoader;
     for (let [report] of this._pausedReports) {
-      if (report.isReportForBrowser(frameLoader)) {
+      if (report.isReportForBrowserOrChildren(frameLoader)) {
         return report;
       }
     }
@@ -389,10 +361,6 @@ var ProcessHangMonitor = {
       return;
     }
     try {
-      // Only report slow script hangs.
-      if (report.hangType != report.SLOW_SCRIPT) {
-        return;
-      }
       let uri_type;
       if (report.addonId) {
         uri_type = "extension";
@@ -512,76 +480,85 @@ var ProcessHangMonitor = {
    * Show the notification for a hang.
    */
   showNotification(win, report) {
-    let notification = win.gHighPriorityNotificationBox.getNotificationWithValue(
-      "process-hang"
-    );
-    if (notification) {
-      return;
-    }
-
     let bundle = win.gNavigatorBundle;
 
     let buttons = [
       {
-        label: bundle.getString("processHang.button_stop.label"),
-        accessKey: bundle.getString("processHang.button_stop.accessKey"),
+        label: bundle.getString("processHang.button_stop2.label"),
+        accessKey: bundle.getString("processHang.button_stop2.accessKey"),
         callback() {
           ProcessHangMonitor.stopIt(win);
         },
       },
-      {
-        label: bundle.getString("processHang.button_wait.label"),
-        accessKey: bundle.getString("processHang.button_wait.accessKey"),
-        callback() {
-          ProcessHangMonitor.waitLonger(win);
-        },
-      },
     ];
 
-    let message = bundle.getString("processHang.label");
+    let message;
+    let doc = win.document;
+    let brandShortName = doc
+      .getElementById("bundle_brand")
+      .getString("brandShortName");
+    let notificationTag;
     if (report.addonId) {
+      notificationTag = report.addonId;
       let aps = Cc["@mozilla.org/addons/policy-service;1"].getService(
         Ci.nsIAddonPolicyService
       );
 
-      let doc = win.document;
-      let brandBundle = doc.getElementById("bundle_brand");
-
       let addonName = aps.getExtensionName(report.addonId);
 
-      let label = bundle.getFormattedString("processHang.add-on.label", [
+      message = bundle.getFormattedString("processHang.add-on.label2", [
         addonName,
-        brandBundle.getString("brandShortName"),
+        brandShortName,
       ]);
 
-      let linkText = bundle.getString("processHang.add-on.learn-more.text");
-      let linkURL =
-        "https://support.mozilla.org/kb/warning-unresponsive-script#w_other-causes";
-
-      let link = doc.createXULElement("label", { is: "text-link" });
-      link.setAttribute("role", "link");
-      link.setAttribute(
-        "onclick",
-        `openTrustedLinkIn(${JSON.stringify(linkURL)}, "tab")`
-      );
-      link.setAttribute("value", linkText);
-
-      message = doc.createDocumentFragment();
-      message.appendChild(doc.createTextNode(label + " "));
-      message.appendChild(link);
-
       buttons.unshift({
-        label: bundle.getString("processHang.button_stop_sandbox.label"),
-        accessKey: bundle.getString(
-          "processHang.button_stop_sandbox.accessKey"
-        ),
-        callback() {
-          ProcessHangMonitor.stopGlobal(win);
-        },
+        label: bundle.getString("processHang.add-on.learn-more.text"),
+        link:
+          "https://support.mozilla.org/kb/warning-unresponsive-script#w_other-causes",
       });
+    } else {
+      let scriptBrowser = report.scriptBrowser;
+      if (scriptBrowser == win.gBrowser?.selectedBrowser) {
+        notificationTag = "selected-tab";
+        message = bundle.getFormattedString("processHang.selected_tab.label", [
+          brandShortName,
+        ]);
+      } else {
+        let tab = scriptBrowser?.ownerGlobal.gBrowser?.getTabForBrowser(
+          scriptBrowser
+        );
+        if (!tab) {
+          notificationTag = "nonspecific_tab";
+          message = bundle.getFormattedString(
+            "processHang.nonspecific_tab.label",
+            [brandShortName]
+          );
+        } else {
+          notificationTag = scriptBrowser.browserId.toString();
+          let title = tab.getAttribute("label");
+          title = elideMiddleOfString(title, 60);
+          message = bundle.getFormattedString(
+            "processHang.specific_tab.label",
+            [title, brandShortName]
+          );
+        }
+      }
     }
 
-    if (AppConstants.MOZ_DEV_EDITION && report.hangType == report.SLOW_SCRIPT) {
+    let notification = win.gNotificationBox.getNotificationWithValue(
+      "process-hang"
+    );
+    if (notificationTag == notification?.getAttribute("notification-tag")) {
+      return;
+    }
+
+    if (notification) {
+      notification.label = message;
+      notification.setAttribute("notification-tag", notificationTag);
+      return;
+    }
+
+    if (AppConstants.MOZ_DEV_EDITION) {
       buttons.push({
         label: bundle.getString("processHang.button_debug.label"),
         accessKey: bundle.getString("processHang.button_debug.accessKey"),
@@ -591,24 +568,33 @@ var ProcessHangMonitor = {
       });
     }
 
-    win.gHighPriorityNotificationBox.appendNotification(
-      message,
-      "process-hang",
-      "chrome://browser/content/aboutRobots-icon.png",
-      win.gHighPriorityNotificationBox.PRIORITY_WARNING_HIGH,
-      buttons
-    );
+    win.gNotificationBox
+      .appendNotification(
+        "process-hang",
+        {
+          label: message,
+          image: "chrome://browser/content/aboutRobots-icon.png",
+          priority: win.gNotificationBox.PRIORITY_INFO_HIGH,
+          eventCallback: event => {
+            if (event == "dismissed") {
+              ProcessHangMonitor.waitLonger(win);
+            }
+          },
+        },
+        buttons
+      )
+      .setAttribute("notification-tag", notificationTag);
   },
 
   /**
    * Ensure that no hang notifications are visible in |win|.
    */
   hideNotification(win) {
-    let notification = win.gHighPriorityNotificationBox.getNotificationWithValue(
+    let notification = win.gNotificationBox.getNotificationWithValue(
       "process-hang"
     );
     if (notification) {
-      win.gHighPriorityNotificationBox.removeNotification(notification);
+      win.gNotificationBox.removeNotification(notification);
     }
   },
 
@@ -664,6 +650,8 @@ var ProcessHangMonitor = {
     if (this._shuttingDown) {
       this.stopHang(report, "shutdown-in-progress", {
         lastReportFromChild: now,
+        waitCount: 0,
+        deselectCount: 0,
       });
       return;
     }
@@ -683,16 +671,9 @@ var ProcessHangMonitor = {
       return;
     }
 
-    // On e10s this counts slow-script/hanged-plugin notice only once.
+    // On e10s this counts slow-script notice only once.
     // This code is not reached on non-e10s.
-    if (report.hangType == report.SLOW_SCRIPT) {
-      // On non-e10s, SLOW_SCRIPT_NOTICE_COUNT is probed at nsGlobalWindow.cpp
-      Services.telemetry.getHistogramById("SLOW_SCRIPT_NOTICE_COUNT").add();
-    } else if (report.hangType == report.PLUGIN_HANG) {
-      // On non-e10s we have sufficient plugin telemetry probes,
-      // so PLUGIN_HANG_NOTICE_COUNT is only probed on e10s.
-      Services.telemetry.getHistogramById("PLUGIN_HANG_NOTICE_COUNT").add();
-    }
+    Services.telemetry.getHistogramById("SLOW_SCRIPT_NOTICE_COUNT").add();
 
     this._activeReports.set(report, {
       deselectCount: 0,

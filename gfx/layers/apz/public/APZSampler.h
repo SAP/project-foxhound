@@ -9,12 +9,14 @@
 
 #include <unordered_map>
 
-#include "base/platform_thread.h"                    // for PlatformThreadId
-#include "mozilla/layers/AsyncCompositionManager.h"  // for AsyncTransform
+#include "base/platform_thread.h"  // for PlatformThreadId
 #include "mozilla/layers/APZUtils.h"
+#include "mozilla/layers/SampleTime.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/webrender/WebRenderTypes.h"
 #include "Units.h"
+#include "VsyncSource.h"
 
 namespace mozilla {
 
@@ -29,7 +31,6 @@ struct WrWindowId;
 namespace layers {
 
 class APZCTreeManager;
-class LayerMetricsWrapper;
 struct ScrollbarData;
 
 /**
@@ -56,47 +57,13 @@ class APZSampler {
    * which thread it is.
    */
   static void SetSamplerThread(const wr::WrWindowId& aWindowId);
-  static void SampleForWebRender(
-      const wr::WrWindowId& aWindowId, wr::Transaction* aTxn,
-      const wr::WrPipelineIdEpochs* aEpochsBeingRendered);
+  static void SampleForWebRender(const wr::WrWindowId& aWindowId,
+                                 const uint64_t* aGeneratedFrameId,
+                                 wr::Transaction* aTransaction);
 
-  void SetSampleTime(const TimeStamp& aSampleTime);
-  void SampleForWebRender(wr::TransactionWrapper& aTxn,
-                          const wr::WrPipelineIdEpochs* aEpochsBeingRendered);
-
-  bool AdvanceAnimations(const TimeStamp& aSampleTime);
-
-  /**
-   * Compute the updated shadow transform for a scroll thumb layer that
-   * reflects async scrolling of the associated scroll frame.
-   *
-   * Refer to APZCTreeManager::ComputeTransformForScrollThumb for the
-   * description of parameters. The only difference is that this function takes
-   * |aContent| instead of |aApzc| and |aMetrics|; aContent is the
-   * LayerMetricsWrapper corresponding to the scroll frame that is scrolled by
-   * the scroll thumb, and so the APZC and metrics can be obtained from
-   * |aContent|.
-   */
-  LayerToParentLayerMatrix4x4 ComputeTransformForScrollThumb(
-      const LayerToParentLayerMatrix4x4& aCurrentTransform,
-      const LayerMetricsWrapper& aContent, const ScrollbarData& aThumbData,
-      bool aScrollbarIsDescendant,
-      AsyncTransformComponentMatrix* aOutClipTransform);
-
-  CSSRect GetCurrentAsyncLayoutViewport(const LayerMetricsWrapper& aLayer);
-  ParentLayerPoint GetCurrentAsyncScrollOffset(
-      const LayerMetricsWrapper& aLayer);
-  AsyncTransform GetCurrentAsyncTransform(const LayerMetricsWrapper& aLayer,
-                                          AsyncTransformComponents aComponents);
-  AsyncTransformComponentMatrix GetOverscrollTransform(
-      const LayerMetricsWrapper& aLayer);
-  AsyncTransformComponentMatrix GetCurrentAsyncTransformWithOverscroll(
-      const LayerMetricsWrapper& aLayer);
-  Maybe<CompositionPayload> NotifyScrollSampling(
-      const LayerMetricsWrapper& aLayer);
-
-  void MarkAsyncTransformAppliedToContent(const LayerMetricsWrapper& aLayer);
-  bool HasUnusedAsyncTransform(const LayerMetricsWrapper& aLayer);
+  void SetSampleTime(const SampleTime& aSampleTime);
+  void SampleForWebRender(const Maybe<VsyncId>& aGeneratedFrameId,
+                          wr::TransactionWrapper& aTxn);
 
   /**
    * Similar to above GetCurrentAsyncTransform, but get the current transform
@@ -114,8 +81,6 @@ class APZSampler {
   ParentLayerRect GetCompositionBounds(
       const LayersId& aLayersId,
       const ScrollableLayerGuid::ViewID& aScrollId) const;
-
-  ScrollableLayerGuid GetGuid(const LayerMetricsWrapper& aLayer);
 
   ScreenMargin GetGeckoFixedLayerMargins() const;
 
@@ -161,7 +126,7 @@ class APZSampler {
 
   Mutex mSampleTimeLock;
   // Can only be accessed or modified while holding mSampleTimeLock.
-  TimeStamp mSampleTime;
+  SampleTime mSampleTime;
 };
 
 }  // namespace layers

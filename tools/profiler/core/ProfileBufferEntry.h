@@ -7,96 +7,35 @@
 #ifndef ProfileBufferEntry_h
 #define ProfileBufferEntry_h
 
-#include "ProfileJSONWriter.h"
-
+#include <cstdint>
+#include <cstdlib>
+#include <functional>
+#include <utility>
 #include "gtest/MozGtestFriend.h"
 #include "js/ProfilingCategory.h"
-#include "js/ProfilingFrameIterator.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/HashTable.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/ProfileBufferEntryKinds.h"
+#include "mozilla/ProfileJSONWriter.h"
+#include "mozilla/ProfilerUtils.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Variant.h"
 #include "mozilla/Vector.h"
 #include "nsString.h"
 
 class ProfilerCodeAddressService;
-
-// NOTE!  If you add entries, you need to verify if they need to be added to the
-// switch statement in DuplicateLastSample!
-// This will evaluate the MACRO with (KIND, TYPE, SIZE)
-#define FOR_EACH_PROFILE_BUFFER_ENTRY_KIND(MACRO)                    \
-  MACRO(CategoryPair, int, sizeof(int))                              \
-  MACRO(CollectionStart, double, sizeof(double))                     \
-  MACRO(CollectionEnd, double, sizeof(double))                       \
-  MACRO(Label, const char*, sizeof(const char*))                     \
-  MACRO(FrameFlags, uint64_t, sizeof(uint64_t))                      \
-  MACRO(DynamicStringFragment, char*, ProfileBufferEntry::kNumChars) \
-  MACRO(JitReturnAddr, void*, sizeof(void*))                         \
-  MACRO(InnerWindowID, uint64_t, sizeof(uint64_t))                   \
-  MACRO(LineNumber, int, sizeof(int))                                \
-  MACRO(ColumnNumber, int, sizeof(int))                              \
-  MACRO(NativeLeafAddr, void*, sizeof(void*))                        \
-  MACRO(Pause, double, sizeof(double))                               \
-  MACRO(Resume, double, sizeof(double))                              \
-  MACRO(PauseSampling, double, sizeof(double))                       \
-  MACRO(ResumeSampling, double, sizeof(double))                      \
-  MACRO(ThreadId, int, sizeof(int))                                  \
-  MACRO(Time, double, sizeof(double))                                \
-  MACRO(TimeBeforeCompactStack, double, sizeof(double))              \
-  MACRO(CounterId, void*, sizeof(void*))                             \
-  MACRO(CounterKey, uint64_t, sizeof(uint64_t))                      \
-  MACRO(Number, uint64_t, sizeof(uint64_t))                          \
-  MACRO(Count, int64_t, sizeof(int64_t))                             \
-  MACRO(ProfilerOverheadTime, double, sizeof(double))                \
-  MACRO(ProfilerOverheadDuration, double, sizeof(double))
+struct JSContext;
 
 class ProfileBufferEntry {
  public:
-  // The `Kind` is a single byte identifying the type of data that is actually
-  // stored in a `ProfileBufferEntry`, as per the list in
-  // `FOR_EACH_PROFILE_BUFFER_ENTRY_KIND`.
-  //
-  // This byte is also used to identify entries in ProfileChunkedBuffer blocks,
-  // for both "legacy" entries that do contain a `ProfileBufferEntry`, and for
-  // new types of entries that may carry more data of different types.
-  // TODO: Eventually each type of "legacy" entry should be replaced with newer,
-  // more efficient kinds of entries (e.g., stack frames could be stored in one
-  // bigger entry, instead of multiple `ProfileBufferEntry`s); then we could
-  // discard `ProfileBufferEntry` and move this enum to a more appropriate spot.
-  using KindUnderlyingType = uint8_t;
-  enum class Kind : KindUnderlyingType {
-    INVALID = 0,
-#define KIND(KIND, TYPE, SIZE) KIND,
-    FOR_EACH_PROFILE_BUFFER_ENTRY_KIND(KIND)
-#undef KIND
-
-    // Any value under `LEGACY_LIMIT` represents a `ProfileBufferEntry`.
-    LEGACY_LIMIT,
-
-    // Any value starting here does *not* represent a `ProfileBufferEntry` and
-    // requires separate decoding and handling.
-
-    // Marker data, including payload.
-    MarkerData = LEGACY_LIMIT,
-
-    // Optional between TimeBeforeCompactStack and CompactStack.
-    UnresponsiveDurationMs,
-
-    // Collection of legacy stack entries, must follow a ThreadId and
-    // TimeBeforeCompactStack (which are not included in the CompactStack;
-    // TimeBeforeCompactStack is equivalent to Time, but indicates that a
-    // CompactStack follows shortly afterwards).
-    CompactStack,
-
-    MODERN_LIMIT
-  };
+  using KindUnderlyingType = mozilla::ProfileBufferEntryKindUnderlyingType;
+  using Kind = mozilla::ProfileBufferEntryKind;
 
   ProfileBufferEntry();
 
-  // This is equal to sizeof(double), which is the largest non-char variant in
-  // |u|.
-  static const size_t kNumChars = 8;
+  static constexpr size_t kNumChars = mozilla::ProfileBufferEntryNumChars;
 
  private:
   // aString must be a static string.
@@ -107,6 +46,7 @@ class ProfileBufferEntry {
   ProfileBufferEntry(Kind aKind, int64_t aInt64);
   ProfileBufferEntry(Kind aKind, uint64_t aUint64);
   ProfileBufferEntry(Kind aKind, int aInt);
+  ProfileBufferEntry(Kind aKind, ProfilerThreadId aThreadId);
 
  public:
 #define CTOR(KIND, TYPE, SIZE)                   \
@@ -140,36 +80,12 @@ class ProfileBufferEntry {
   int GetInt() const;
   int64_t GetInt64() const;
   uint64_t GetUint64() const;
+  ProfilerThreadId GetThreadId() const;
   void CopyCharsInto(char (&aOutArray)[kNumChars]) const;
 };
 
 // Packed layout: 1 byte for the tag + 8 bytes for the value.
 static_assert(sizeof(ProfileBufferEntry) == 9, "bad ProfileBufferEntry size");
-
-class UniqueJSONStrings {
- public:
-  UniqueJSONStrings();
-  explicit UniqueJSONStrings(const UniqueJSONStrings& aOther);
-
-  void SpliceStringTableElements(SpliceableJSONWriter& aWriter) {
-    aWriter.TakeAndSplice(mStringTableWriter.WriteFunc());
-  }
-
-  void WriteProperty(mozilla::JSONWriter& aWriter, const char* aName,
-                     const char* aStr) {
-    aWriter.IntProperty(aName, GetOrAddIndex(aStr));
-  }
-
-  void WriteElement(mozilla::JSONWriter& aWriter, const char* aStr) {
-    aWriter.IntElement(GetOrAddIndex(aStr));
-  }
-
-  uint32_t GetOrAddIndex(const char* aStr);
-
- private:
-  SpliceableChunkedJSONWriter mStringTableWriter;
-  mozilla::HashMap<mozilla::HashNumber, uint32_t> mStringHashToIndexMap;
-};
 
 // Contains all the information about JIT frames that is needed to stream stack
 // frames for JitReturnAddr entries in the profiler buffer.
@@ -395,7 +311,9 @@ class UniqueStacks {
     }
   };
 
-  explicit UniqueStacks(JITFrameInfo&& aJITFrameInfo);
+  explicit UniqueStacks(
+      JITFrameInfo&& aJITFrameInfo,
+      ProfilerCodeAddressService* aCodeAddressService = nullptr);
 
   // Return a StackKey for aFrame as the stack's root frame (no prefix).
   [[nodiscard]] StackKey BeginStack(const FrameKey& aFrame);
@@ -465,6 +383,7 @@ class UniqueStacks {
 //       "stack": 0,          /* index into stackTable */
 //       "time": 1,           /* number */
 //       "eventDelay": 2,     /* number */
+//       "ThreadCPUDelta": 3, /* optional number */
 //     },
 //     "data":
 //     [

@@ -6,55 +6,51 @@
 #define SINEWAVEGENERATOR_H_
 
 #include "MediaSegment.h"
+#include "prtime.h"
 
 namespace mozilla {
 
 // generate 1k sine wave per second
+template <typename Sample>
 class SineWaveGenerator {
- public:
-  static const int bytesPerSample = 2;
-  static const int millisecondsPerSecond = PR_MSEC_PER_SEC;
+  static_assert(std::is_same<Sample, int16_t>::value ||
+                std::is_same<Sample, float>::value);
 
-  explicit SineWaveGenerator(uint32_t aSampleRate, uint32_t aFrequency)
-      : mTotalLength(aSampleRate / aFrequency), mReadLength(0) {
-    // If we allow arbitrary frequencies, there's no guarantee we won't get
-    // rounded here We could include an error term and adjust for it in
-    // generation; not worth the trouble
-    // MOZ_ASSERT(mTotalLength * aFrequency == aSampleRate);
-    mAudioBuffer = MakeUnique<int16_t[]>(mTotalLength);
-    for (int i = 0; i < mTotalLength; i++) {
-      // Set volume to -20db. It's from 32768.0 * 10^(-20/20) = 3276.8
-      mAudioBuffer[i] = (3276.8f * sin(2 * M_PI * i / mTotalLength));
+ public:
+  static const int bytesPerSample = sizeof(Sample);
+  static const int millisecondsPerSecond = PR_MSEC_PER_SEC;
+  static constexpr float twopi = 2 * M_PI;
+
+  /* If more than 1 channel, generated samples are interleaved. */
+  SineWaveGenerator(uint32_t aSampleRate, uint32_t aFrequency)
+      : mPhase(0.), mPhaseIncrement(twopi * aFrequency / aSampleRate) {}
+
+  // NOTE: only safely called from a single thread (MTG callback)
+  void generate(Sample* aBuffer, TrackTicks aFrameCount,
+                uint32_t aChannelCount = 1) {
+    while (aFrameCount--) {
+      Sample value = sin(mPhase) * Amplitude();
+      for (uint32_t channel = 0; channel < aChannelCount; channel++) {
+        *aBuffer++ = value;
+      }
+      mPhase += mPhaseIncrement;
+      if (mPhase > twopi) {
+        mPhase -= twopi;
+      }
     }
   }
 
-  // NOTE: only safely called from a single thread (MTG callback)
-  void generate(int16_t* aBuffer, TrackTicks aLengthInSamples) {
-    TrackTicks remaining = aLengthInSamples;
-
-    while (remaining) {
-      TrackTicks processSamples = 0;
-
-      if (mTotalLength - mReadLength >= remaining) {
-        processSamples = remaining;
-      } else {
-        processSamples = mTotalLength - mReadLength;
-      }
-      memcpy(aBuffer, &mAudioBuffer[mReadLength],
-             processSamples * bytesPerSample);
-      aBuffer += processSamples;
-      mReadLength += processSamples;
-      remaining -= processSamples;
-      if (mReadLength == mTotalLength) {
-        mReadLength = 0;
-      }
+  static float Amplitude() {
+    // Set volume to -20db.
+    if (std::is_same<Sample, int16_t>::value) {
+      return 3276.8;  // 32768.0 * 10^(-20/20) = 3276.8
     }
+    return 0.1f;  // 1.0 * 10^(-20/20) = 0.1
   }
 
  private:
-  UniquePtr<int16_t[]> mAudioBuffer;
-  TrackTicks mTotalLength;
-  TrackTicks mReadLength;
+  double mPhase;
+  const double mPhaseIncrement;
 };
 
 }  // namespace mozilla

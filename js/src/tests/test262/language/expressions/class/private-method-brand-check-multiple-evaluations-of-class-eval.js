@@ -1,4 +1,3 @@
-// |reftest| skip -- class-methods-private is not supported
 // Copyright (C) 2019 Jaideep Bhoosreddy (Bloomberg LP). All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 

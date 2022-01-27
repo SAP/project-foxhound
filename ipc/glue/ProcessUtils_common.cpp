@@ -7,8 +7,12 @@
 #include "ProcessUtils.h"
 
 #include "mozilla/Preferences.h"
+#include "mozilla/GeckoArgs.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/UniquePtrExtensions.h"
+#include "nsPrintfCString.h"
+
+#include "XPCSelfHostedShmem.h"
 
 namespace mozilla {
 namespace ipc {
@@ -60,21 +64,14 @@ bool SharedPreferenceSerializer::SerializeToSharedMemory() {
 void SharedPreferenceSerializer::AddSharedPrefCmdLineArgs(
     mozilla::ipc::GeckoChildProcessHost& procHost,
     std::vector<std::string>& aExtraOpts) const {
-  // Formats a pointer or pointer-sized-integer as a string suitable for passing
-  // in an arguments list.
-  auto formatPtrArg = [](auto arg) {
-    return nsPrintfCString("%zu", uintptr_t(arg));
-  };
-
 #if defined(XP_WIN)
   // Record the handle as to-be-shared, and pass it via a command flag. This
   // works because Windows handles are system-wide.
   procHost.AddHandleToShare(GetPrefsHandle().get());
   procHost.AddHandleToShare(GetPrefMapHandle().get());
-  aExtraOpts.push_back("-prefsHandle");
-  aExtraOpts.push_back(formatPtrArg(GetPrefsHandle().get()).get());
-  aExtraOpts.push_back("-prefMapHandle");
-  aExtraOpts.push_back(formatPtrArg(GetPrefMapHandle().get()).get());
+  geckoargs::sPrefsHandle.Put((uintptr_t)(GetPrefsHandle().get()), aExtraOpts);
+  geckoargs::sPrefMapHandle.Put((uintptr_t)(GetPrefMapHandle().get()),
+                                aExtraOpts);
 #else
   // In contrast, Unix fds are per-process. So remap the fd to a fixed one that
   // will be used in the child.
@@ -88,10 +85,8 @@ void SharedPreferenceSerializer::AddSharedPrefCmdLineArgs(
 #endif
 
   // Pass the lengths via command line flags.
-  aExtraOpts.push_back("-prefsLen");
-  aExtraOpts.push_back(formatPtrArg(GetPrefsLength()).get());
-  aExtraOpts.push_back("-prefMapSize");
-  aExtraOpts.push_back(formatPtrArg(GetPrefMapSize()).get());
+  geckoargs::sPrefsLen.Put((uintptr_t)(GetPrefsLength()), aExtraOpts);
+  geckoargs::sPrefMapSize.Put((uintptr_t)(GetPrefMapSize()), aExtraOpts);
 }
 
 #ifdef ANDROID
@@ -112,64 +107,48 @@ SharedPreferenceDeserializer::~SharedPreferenceDeserializer() {
 }
 
 bool SharedPreferenceDeserializer::DeserializeFromSharedMemory(
-    char* aPrefsHandleStr, char* aPrefMapHandleStr, char* aPrefsLenStr,
-    char* aPrefMapSizeStr) {
-#ifdef XP_WIN
-  MOZ_ASSERT(aPrefsHandleStr && aPrefMapHandleStr, "Can't be null");
-#endif
-  MOZ_ASSERT(aPrefsLenStr && aPrefMapSizeStr, "Can't be null");
-
-  // Parses an arg containing a pointer-sized-integer.
-  auto parseUIntPtrArg = [](char*& aArg) {
-    // ContentParent uses %zu to print a word-sized unsigned integer. So
-    // even though strtoull() returns a long long int, it will fit in a
-    // uintptr_t.
-    return uintptr_t(strtoull(aArg, &aArg, 10));
-  };
+    uint64_t aPrefsHandle, uint64_t aPrefMapHandle, uint64_t aPrefsLen,
+    uint64_t aPrefMapSize) {
+  Maybe<base::SharedMemoryHandle> prefsHandle;
 
 #ifdef XP_WIN
-  auto parseHandleArg = [&](char*& aArg) {
-    return HANDLE(parseUIntPtrArg(aArg));
-  };
-
-  mPrefsHandle = Some(parseHandleArg(aPrefsHandleStr));
-  if (!aPrefsHandleStr || aPrefsHandleStr[0] != '\0') {
+  prefsHandle = Some(UniqueFileHandle(HANDLE((uintptr_t)(aPrefsHandle))));
+  if (!aPrefsHandle) {
     return false;
   }
 
   FileDescriptor::UniquePlatformHandle handle(
-      parseHandleArg(aPrefMapHandleStr));
-  if (!aPrefMapHandleStr || aPrefMapHandleStr[0] != '\0') {
+      HANDLE((uintptr_t)(aPrefMapHandle)));
+  if (!aPrefMapHandle) {
     return false;
   }
 
   mPrefMapHandle.emplace(std::move(handle));
 #endif
 
-  mPrefsLen = Some(parseUIntPtrArg(aPrefsLenStr));
-  if (!aPrefsLenStr || aPrefsLenStr[0] != '\0') {
+  mPrefsLen = Some((uintptr_t)(aPrefsLen));
+  if (!aPrefsLen) {
     return false;
   }
 
-  mPrefMapSize = Some(parseUIntPtrArg(aPrefMapSizeStr));
-  if (!aPrefMapSizeStr || aPrefMapSizeStr[0] != '\0') {
+  mPrefMapSize = Some((uintptr_t)(aPrefMapSize));
+  if (!aPrefMapSize) {
     return false;
   }
 
 #ifdef ANDROID
   // Android is different; get the FD via gPrefsFd instead of a fixed fd.
   MOZ_RELEASE_ASSERT(gPrefsFd != -1);
-  mPrefsHandle = Some(base::FileDescriptor(gPrefsFd, /* auto_close */ true));
+  prefsHandle = Some(UniqueFileHandle(gPrefsFd));
 
   mPrefMapHandle.emplace(UniqueFileHandle(gPrefMapFd));
 #elif XP_UNIX
-  mPrefsHandle = Some(base::FileDescriptor(kPrefsFileDescriptor,
-                                           /* auto_close */ true));
+  prefsHandle = Some(UniqueFileHandle(kPrefsFileDescriptor));
 
   mPrefMapHandle.emplace(UniqueFileHandle(kPrefMapFileDescriptor));
 #endif
 
-  if (mPrefsHandle.isNothing() || mPrefsLen.isNothing() ||
+  if (prefsHandle.isNothing() || mPrefsLen.isNothing() ||
       mPrefMapHandle.isNothing() || mPrefMapSize.isNothing()) {
     return false;
   }
@@ -179,7 +158,7 @@ bool SharedPreferenceDeserializer::DeserializeFromSharedMemory(
   Preferences::InitSnapshot(mPrefMapHandle.ref(), *mPrefMapSize);
 
   // Set up early prefs from the shared memory.
-  if (!mShmem.SetHandle(*mPrefsHandle, /* read_only */ true)) {
+  if (!mShmem.SetHandle(std::move(*prefsHandle), /* read_only */ true)) {
     NS_ERROR("failed to open shared memory in the child");
     return false;
   }
@@ -193,17 +172,94 @@ bool SharedPreferenceDeserializer::DeserializeFromSharedMemory(
   return true;
 }
 
-const base::SharedMemoryHandle& SharedPreferenceDeserializer::GetPrefsHandle()
-    const {
-  MOZ_ASSERT(mPrefsHandle.isSome());
-
-  return mPrefsHandle.ref();
-}
-
 const FileDescriptor& SharedPreferenceDeserializer::GetPrefMapHandle() const {
   MOZ_ASSERT(mPrefMapHandle.isSome());
 
   return mPrefMapHandle.ref();
+}
+
+#ifdef XP_UNIX
+// On Unix, file descriptors are per-process. This value is used when mapping
+// a parent process handle to a content process handle.
+static const int kJSInitFileDescriptor = 11;
+#endif
+
+void ExportSharedJSInit(mozilla::ipc::GeckoChildProcessHost& procHost,
+                        std::vector<std::string>& aExtraOpts) {
+#ifdef ANDROID
+  // The code to support Android is added in a follow-up patch.
+  return;
+#else
+  auto& shmem = xpc::SelfHostedShmem::GetSingleton();
+  const mozilla::UniqueFileHandle& uniqHandle = shmem.Handle();
+  size_t len = shmem.Content().Length();
+
+  // If the file is not found or the content is empty, then we would start the
+  // content process without this optimization.
+  if (!uniqHandle || !len) {
+    return;
+  }
+
+  mozilla::detail::FileHandleType handle = uniqHandle.get();
+  // command line: [-jsInitHandle handle] -jsInitLen length
+#  if defined(XP_WIN)
+  // Record the handle as to-be-shared, and pass it via a command flag.
+  procHost.AddHandleToShare(HANDLE(handle));
+  geckoargs::sJsInitHandle.Put((uintptr_t)(HANDLE(handle)), aExtraOpts);
+#  else
+  // In contrast, Unix fds are per-process. So remap the fd to a fixed one that
+  // will be used in the child.
+  // XXX: bug 1440207 is about improving how fixed fds are used.
+  //
+  // Note: on Android, AddFdToRemap() sets up the fd to be passed via a Parcel,
+  // and the fixed fd isn't used. However, we still need to mark it for
+  // remapping so it doesn't get closed in the child.
+  procHost.AddFdToRemap(handle, kJSInitFileDescriptor);
+#  endif
+
+  // Pass the lengths via command line flags.
+  geckoargs::sJsInitLen.Put((uintptr_t)(len), aExtraOpts);
+#endif
+}
+
+bool ImportSharedJSInit(uint64_t aJsInitHandle, uint64_t aJsInitLen) {
+  // This is an optimization, and as such we can safely recover if the command
+  // line argument are not provided.
+  if (!aJsInitLen) {
+    return true;
+  }
+
+#ifdef XP_WIN
+  if (!aJsInitHandle) {
+    return true;
+  }
+#endif
+
+#ifdef XP_WIN
+  base::SharedMemoryHandle handle(HANDLE((uintptr_t)(aJsInitHandle)));
+  if (!aJsInitHandle) {
+    return false;
+  }
+#endif
+
+  size_t len = (uintptr_t)(aJsInitLen);
+  if (!aJsInitLen) {
+    return false;
+  }
+
+#ifdef XP_UNIX
+  auto handle = UniqueFileHandle(kJSInitFileDescriptor);
+#endif
+
+  // Initialize the shared memory with the file handle and size of the content
+  // of the self-hosted Xdr.
+  auto& shmem = xpc::SelfHostedShmem::GetSingleton();
+  if (!shmem.InitFromChild(std::move(handle), len)) {
+    NS_ERROR("failed to open shared memory in the child");
+    return false;
+  }
+
+  return true;
 }
 
 }  // namespace ipc

@@ -157,6 +157,15 @@ function Tester(aTests, structuredLogger, aCallback) {
     this.EventUtils
   );
 
+  this._scriptLoader.loadSubScript(
+    "chrome://mochikit/content/tests/SimpleTest/AccessibilityUtils.js",
+    // AccessibilityUtils are integrated with EventUtils to perform additional
+    // accessibility checks for certain user interactions (clicks, etc). Load
+    // them into the EventUtils scope here.
+    this.EventUtils
+  );
+  this.AccessibilityUtils = this.EventUtils.AccessibilityUtils;
+
   // Make sure our SpecialPowers actor is instantiated, in case it was
   // registered after our DOMWindowCreated event was fired (which it
   // most likely was).
@@ -204,9 +213,6 @@ function Tester(aTests, structuredLogger, aCallback) {
   this.TestUtils = ChromeUtils.import(
     "resource://testing-common/TestUtils.jsm"
   ).TestUtils;
-  this.Promise = ChromeUtils.import(
-    "resource://gre/modules/Promise.jsm"
-  ).Promise;
   this.PromiseTestUtils = ChromeUtils.import(
     "resource://testing-common/PromiseTestUtils.jsm"
   ).PromiseTestUtils;
@@ -226,50 +232,45 @@ function Tester(aTests, structuredLogger, aCallback) {
 
   this._coverageCollector = null;
 
-  const XPCOMUtilsMod = ChromeUtils.import(
-    "resource://gre/modules/XPCOMUtils.jsm",
-    null
+  const { XPCOMUtils } = ChromeUtils.import(
+    "resource://gre/modules/XPCOMUtils.jsm"
   );
 
   // Avoid failing tests when XPCOMUtils.defineLazyScriptGetter is used.
-  XPCOMUtilsMod.Services = Object.create(Services, {
-    scriptloader: {
-      configurable: true,
-      writable: true,
-      value: {
-        loadSubScript: (url, obj) => {
-          let before = Object.keys(window);
-          try {
-            return this._scriptLoader.loadSubScript(url, obj);
-          } finally {
-            for (let property of Object.keys(window)) {
-              if (
-                !before.includes(property) &&
-                !this._globalProperties.includes(property)
-              ) {
-                this._globalProperties.push(property);
-                this.SimpleTest.info(
-                  "Global property added while loading " + url + ": " + property
-                );
-              }
-            }
+  XPCOMUtils.overrideScriptLoaderForTests({
+    loadSubScript: (url, obj) => {
+      let before = Object.keys(window);
+      try {
+        return this._scriptLoader.loadSubScript(url, obj);
+      } finally {
+        for (let property of Object.keys(window)) {
+          if (
+            !before.includes(property) &&
+            !this._globalProperties.includes(property)
+          ) {
+            this._globalProperties.push(property);
+            this.SimpleTest.info(
+              `Global property added while loading ${url}: ${property}`
+            );
           }
-        },
-        loadSubScriptWithOptions: this._scriptLoader.loadSubScriptWithOptions.bind(
-          this._scriptLoader
-        ),
-      },
+        }
+      }
     },
+    loadSubScriptWithOptions: this._scriptLoader.loadSubScriptWithOptions.bind(
+      this._scriptLoader
+    ),
   });
 }
 Tester.prototype = {
   EventUtils: {},
+  AccessibilityUtils: {},
   SimpleTest: {},
   ContentTask: null,
   ExtensionTestUtils: null,
   Assert: null,
 
   repeat: 0,
+  a11y_checks: false,
   runUntilFailure: false,
   checker: null,
   currentTestIndex: -1,
@@ -295,6 +296,10 @@ Tester.prototype = {
 
     if (gConfig.runUntilFailure) {
       this.runUntilFailure = true;
+    }
+
+    if (gConfig.a11y_checks != undefined) {
+      this.a11y_checks = gConfig.a11y_checks;
     }
 
     if (gConfig.repeat) {
@@ -383,7 +388,12 @@ Tester.prototype = {
       : "Found an unexpected {elt}";
 
     // Remove stale tabs
-    if (this.currentTest && window.gBrowser && gBrowser.tabs.length > 1) {
+    if (
+      this.currentTest &&
+      window.gBrowser &&
+      AppConstants.MOZ_APP_NAME != "thunderbird" &&
+      gBrowser.tabs.length > 1
+    ) {
       while (gBrowser.tabs.length > 1) {
         let lastTab = gBrowser.tabs[gBrowser.tabs.length - 1];
         if (!lastTab.closing) {
@@ -404,7 +414,7 @@ Tester.prototype = {
     }
 
     // Replace the last tab with a fresh one
-    if (window.gBrowser) {
+    if (window.gBrowser && AppConstants.MOZ_APP_NAME != "thunderbird") {
       gBrowser.addTab("about:blank", {
         skipAnimation: true,
         triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
@@ -496,6 +506,7 @@ Tester.prototype = {
 
     // Tests complete, notify the callback and return
     this.callback(this.tests);
+    this.accService = null;
     this.callback = null;
     this.tests = null;
   },
@@ -606,6 +617,10 @@ Tester.prototype = {
         );
       }
 
+      this.resolveFinishTestPromise();
+      this.resolveFinishTestPromise = null;
+      this.TestUtils.promiseTestFinished = null;
+
       this.PromiseTestUtils.ensureDOMPromiseRejectionsProcessed();
       this.PromiseTestUtils.assertNoUncaughtRejections();
       this.PromiseTestUtils.assertNoMoreExpectedRejections();
@@ -630,11 +645,6 @@ Tester.prototype = {
           }
         }
       }, this);
-
-      // Clear document.popupNode.  The test could have set it to a custom value
-      // for its own purposes, nulling it out it will go back to the default
-      // behavior of returning the last opened popup.
-      document.popupNode = null;
 
       // eslint-disable-next-line no-undef
       await new Promise(resolve => SpecialPowers.flushPrefEnv(resolve));
@@ -759,6 +769,7 @@ Tester.prototype = {
                 "We expect at least one assertion to fail because this" +
                 " test file is marked as fail-if in the manifest.",
               todo: true,
+              knownFailure: this.currentTest.allowFailure,
             })
           );
         }
@@ -782,10 +793,11 @@ Tester.prototype = {
       name = name.slice(name.lastIndexOf("/") + 1);
       ChromeUtils.addProfilerMarker(
         "browser-test",
-        this.lastStartTimestamp,
+        { category: "Test", startTime: this.lastStartTimestamp },
         name
       );
       let time = Date.now() - this.lastStartTime;
+
       this.structuredLogger.testEnd(
         this.currentTest.path,
         "OK",
@@ -933,6 +945,8 @@ Tester.prototype = {
     this.structuredLogger.testStart(this.currentTest.path);
 
     this.SimpleTest.reset();
+    // Reset accessibility environment.
+    this.AccessibilityUtils.reset(this.a11y_checks);
 
     // Load the tests into a testscope
     let currentScope = (this.currentTest.scope = new testScope(
@@ -942,9 +956,19 @@ Tester.prototype = {
     ));
     let currentTest = this.currentTest;
 
+    // HTTPS-First (Bug 1704453) TODO: in case a test is annoated
+    // with https_first_disabled then we explicitly flip the pref
+    // dom.security.https_first to false for the duration of the test.
+    if (currentTest.https_first_disabled) {
+      window.SpecialPowers.pushPrefEnv({
+        set: [["dom.security.https_first", false]],
+      });
+    }
+
     // Import utils in the test scope.
     let { scope } = this.currentTest;
     scope.EventUtils = this.EventUtils;
+    scope.AccessibilityUtils = this.AccessibilityUtils;
     scope.SimpleTest = this.SimpleTest;
     scope.gTestPath = this.currentTest.path;
     scope.ContentTask = this.ContentTask;
@@ -1025,6 +1049,9 @@ Tester.prototype = {
     // Import the test script.
     try {
       this.lastStartTimestamp = performance.now();
+      this.TestUtils.promiseTestFinished = new Promise(resolve => {
+        this.resolveFinishTestPromise = resolve;
+      });
       this._scriptLoader.loadSubScript(this.currentTest.path, scope);
       // Run the test
       this.lastStartTime = Date.now();
@@ -1094,9 +1121,9 @@ Tester.prototype = {
             }
             PromiseTestUtils.assertNoUncaughtRejections();
             ChromeUtils.addProfilerMarker(
-              "browser-test",
-              startTimestamp,
-              task.name.replace(/^bound /, "") || "task"
+              "task",
+              { category: "Test", startTime: startTimestamp },
+              task.name.replace(/^bound /, "") || undefined
             );
             this.SimpleTest.info("Leaving test " + task.name);
           }
@@ -1182,8 +1209,15 @@ Tester.prototype = {
               return;
             }
 
+            let knownFailure = false;
+            if (gConfig.timeoutAsPass) {
+              knownFailure = true;
+            }
             self.currentTest.addResult(
-              new testResult({ name: "Test timed out" })
+              new testResult({
+                name: "Test timed out",
+                allowFailure: knownFailure,
+              })
             );
             self.currentTest.timedOut = true;
             self.currentTest.scope.__waitTimer = null;
@@ -1227,7 +1261,10 @@ function testResult({ name, pass, todo, ex, stack, allowFailure }) {
   if (allowFailure && !pass) {
     this.allowedFailure = true;
     this.pass = true;
-    this.todo = true;
+    this.todo = false;
+  } else if (allowFailure && pass) {
+    this.pass = true;
+    this.todo = false;
   } else {
     this.pass = !!pass;
     this.todo = todo;
@@ -1325,18 +1362,29 @@ function testScope(aTester, aTest, expected) {
   };
   this.is = function test_is(a, b, name) {
     self.record(
-      a == b,
+      Object.is(a, b),
       name,
-      "Got " + a + ", expected " + b,
+      `Got ${self.repr(a)}, expected ${self.repr(b)}`,
+      false,
+      Components.stack.caller
+    );
+  };
+  this.isfuzzy = function test_isfuzzy(a, b, epsilon, name) {
+    self.record(
+      a >= b - epsilon && a <= b + epsilon,
+      name,
+      `Got ${self.repr(a)}, expected ${self.repr(b)} epsilon: +/- ${self.repr(
+        epsilon
+      )}`,
       false,
       Components.stack.caller
     );
   };
   this.isnot = function test_isnot(a, b, name) {
     self.record(
-      a != b,
+      !Object.is(a, b),
       name,
-      "Didn't expect " + a + ", but got it",
+      `Didn't expect ${self.repr(a)}, but got it`,
       false,
       Components.stack.caller
     );
@@ -1355,22 +1403,65 @@ function testScope(aTester, aTest, expected) {
   };
   this.todo_is = function test_todo_is(a, b, name) {
     self.todo(
-      a == b,
+      Object.is(a, b),
       name,
-      "Got " + a + ", expected " + b,
+      `Got ${self.repr(a)}, expected ${self.repr(b)}`,
       Components.stack.caller
     );
   };
   this.todo_isnot = function test_todo_isnot(a, b, name) {
     self.todo(
-      a != b,
+      !Object.is(a, b),
       name,
-      "Didn't expect " + a + ", but got it",
+      `Didn't expect ${self.repr(a)}, but got it`,
       Components.stack.caller
     );
   };
   this.info = function test_info(name) {
     aTest.addResult(new testMessage(name));
+  };
+  this.repr = function repr(o) {
+    if (typeof o == "undefined") {
+      return "undefined";
+    } else if (o === null) {
+      return "null";
+    }
+    try {
+      if (typeof o.__repr__ == "function") {
+        return o.__repr__();
+      } else if (typeof o.repr == "function" && o.repr != repr) {
+        return o.repr();
+      }
+    } catch (e) {}
+    try {
+      if (
+        typeof o.NAME == "string" &&
+        (o.toString == Function.prototype.toString ||
+          o.toString == Object.prototype.toString)
+      ) {
+        return o.NAME;
+      }
+    } catch (e) {}
+    var ostring;
+    try {
+      if (Object.is(o, +0)) {
+        ostring = "+0";
+      } else if (Object.is(o, -0)) {
+        ostring = "-0";
+      } else if (typeof o === "string") {
+        ostring = JSON.stringify(o);
+      } else if (Array.isArray(o)) {
+        ostring = "[" + o.map(val => repr(val)).join(", ") + "]";
+      } else {
+        ostring = String(o);
+      }
+    } catch (e) {
+      return `[${Object.prototype.toString.call(o)}]`;
+    }
+    if (typeof o == "function") {
+      ostring = ostring.replace(/\) \{[^]*/, ") { ... }");
+    }
+    return ostring;
   };
 
   this.executeSoon = function test_executeSoon(func) {
@@ -1479,7 +1570,7 @@ function testScope(aTester, aTest, expected) {
 
 function decorateTaskFn(fn) {
   fn = fn.bind(this);
-  fn.skip = () => (fn.__skipMe = true);
+  fn.skip = (val = true) => (fn.__skipMe = val);
   fn.only = () => (this.__runOnlyThisTask = fn);
   return fn;
 }
@@ -1495,6 +1586,7 @@ testScope.prototype = {
   __expectedMaxAsserts: 0,
 
   EventUtils: {},
+  AccessibilityUtils: {},
   SimpleTest: {},
   ContentTask: null,
   BrowserTestUtils: null,
@@ -1514,7 +1606,7 @@ testScope.prototype = {
    * Example usage:
    *
    * add_task(async function test() {
-   *   let result = yield Promise.resolve(true);
+   *   let result = await Promise.resolve(true);
    *
    *   ok(result);
    *

@@ -6,8 +6,7 @@
 
 use crate::err::secstatus_to_res;
 use crate::p11::{
-    CERTCertList, CERTCertListNode, CERT_GetCertificateDer, CertList, PRCList, SECItem,
-    SECItemArray, SECItemType,
+    CERTCertListNode, CERT_GetCertificateDer, CertList, Item, PRCList, SECItem, SECItemArray,
 };
 use crate::ssl::{
     PRFileDesc, SSL_PeerCertificateChain, SSL_PeerSignedCertTimestamps,
@@ -16,7 +15,7 @@ use crate::ssl::{
 use neqo_common::qerror;
 
 use std::convert::TryFrom;
-use std::ptr::{null_mut, NonNull};
+use std::ptr::NonNull;
 
 use std::slice;
 
@@ -32,12 +31,10 @@ pub struct CertificateInfo {
 
 fn peer_certificate_chain(fd: *mut PRFileDesc) -> Option<(CertList, *const CERTCertListNode)> {
     let chain = unsafe { SSL_PeerCertificateChain(fd) };
-    let certs = match NonNull::new(chain as *mut CERTCertList) {
-        Some(certs_ptr) => CertList::new(certs_ptr),
-        None => return None,
-    };
-    let cursor = CertificateInfo::head(&certs);
-    Some((certs, cursor))
+    CertList::from_ptr(chain.cast()).ok().map(|certs| {
+        let cursor = CertificateInfo::head(&certs);
+        (certs, cursor)
+    })
 }
 
 // As explained in rfc6961, an OCSPResponseList can have at most
@@ -54,7 +51,7 @@ fn stapled_ocsp_responses(fd: *mut PRFileDesc) -> Option<Vec<Vec<u8>>> {
                 return None;
             };
             for idx in 0..len {
-                let itemp = unsafe { ocsp_ptr.as_ref().items.offset(idx) as *const SECItem };
+                let itemp: *const SECItem = unsafe { ocsp_ptr.as_ref().items.offset(idx).cast() };
                 let item = unsafe { slice::from_raw_parts((*itemp).data, (*itemp).len as usize) };
                 ocsp_helper.push(item.to_owned());
             }
@@ -68,10 +65,14 @@ fn signed_cert_timestamp(fd: *mut PRFileDesc) -> Option<Vec<u8>> {
     let sct_nss = unsafe { SSL_PeerSignedCertTimestamps(fd) };
     match NonNull::new(sct_nss as *mut SECItem) {
         Some(sct_ptr) => {
-            let sct_slice = unsafe {
-                slice::from_raw_parts(sct_ptr.as_ref().data, sct_ptr.as_ref().len as usize)
-            };
-            Some(sct_slice.to_owned())
+            if unsafe { sct_ptr.as_ref().len == 0 || sct_ptr.as_ref().data.is_null() } {
+                Some(Vec::new())
+            } else {
+                let sct_slice = unsafe {
+                    slice::from_raw_parts(sct_ptr.as_ref().data, sct_ptr.as_ref().len as usize)
+                };
+                Some(sct_slice.to_owned())
+            }
         }
         None => None,
     }
@@ -79,35 +80,28 @@ fn signed_cert_timestamp(fd: *mut PRFileDesc) -> Option<Vec<u8>> {
 
 impl CertificateInfo {
     pub(crate) fn new(fd: *mut PRFileDesc) -> Option<Self> {
-        match peer_certificate_chain(fd) {
-            Some((certs, cursor)) => Some(Self {
-                certs,
-                cursor,
-                stapled_ocsp_responses: stapled_ocsp_responses(fd),
-                signed_cert_timestamp: signed_cert_timestamp(fd),
-            }),
-            None => None,
-        }
+        peer_certificate_chain(fd).map(|(certs, cursor)| Self {
+            certs,
+            cursor,
+            stapled_ocsp_responses: stapled_ocsp_responses(fd),
+            signed_cert_timestamp: signed_cert_timestamp(fd),
+        })
     }
 
     fn head(certs: &CertList) -> *const CERTCertListNode {
         // Three stars: one for the reference, one for the wrapper, one to deference the pointer.
-        unsafe { &(***certs).list as *const PRCList as *const CERTCertListNode }
+        unsafe { (&(***certs).list as *const PRCList).cast() }
     }
 }
 
 impl<'a> Iterator for &'a mut CertificateInfo {
     type Item = &'a [u8];
     fn next(&mut self) -> Option<&'a [u8]> {
-        self.cursor = unsafe { *self.cursor }.links.next as *const CERTCertListNode;
+        self.cursor = unsafe { *self.cursor }.links.next.cast();
         if self.cursor == CertificateInfo::head(&self.certs) {
             return None;
         }
-        let mut item = SECItem {
-            type_: SECItemType::siBuffer,
-            data: null_mut(),
-            len: 0,
-        };
+        let mut item = Item::make_empty();
         let cert = unsafe { *self.cursor }.cert;
         secstatus_to_res(unsafe { CERT_GetCertificateDer(cert, &mut item) })
             .expect("getting DER from certificate should work");

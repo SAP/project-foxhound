@@ -38,12 +38,10 @@ add_task(async function test_remove_many() {
       hasBookmark,
       // `true` once `onResult` has been called for this page
       onResultCalled: false,
-      // `true` once `onDeleteVisits` has been called for this page
-      onDeleteVisitsCalled: false,
-      // `true` once `onFrecencyChangedCalled` has been called for this page
-      onFrecencyChangedCalled: false,
-      // `true` once `onDeleteURI` has been called for this page
-      onDeleteURICalled: false,
+      // `true` once page-removed for store has been fired for this page
+      pageRemovedFromStore: false,
+      // `true` once page-removed for all visits has been fired for this page
+      pageRemovedAllVisits: false,
     };
     info("Pushing: " + uri.spec);
     pages.push(page);
@@ -78,60 +76,61 @@ add_task(async function test_remove_many() {
     }
   }
 
-  let observer = {
-    onBeginUpdateBatch() {},
-    onEndUpdateBatch() {},
-    onVisits(aVisits) {
-      Assert.ok(false, "Unexpected call to onVisits " + aVisits.length);
-    },
-    onTitleChanged(aURI) {
-      Assert.ok(false, "Unexpected call to onTitleChanged " + aURI.spec);
-    },
-    onClearHistory() {
-      Assert.ok(false, "Unexpected call to onClearHistory");
-    },
-    onPageChanged(aURI) {
-      Assert.ok(false, "Unexpected call to onPageChanged " + aURI.spec);
-    },
-    onFrecencyChanged(aURI) {
-      let origin = pages.find(x => x.uri.spec == aURI.spec);
-      Assert.ok(origin);
-      Assert.ok(
-        origin.hasBookmark,
-        "Observing onFrecencyChanged on a page with a bookmark"
-      );
-      origin.onFrecencyChangedCalled = true;
-    },
-    onManyFrecenciesChanged() {
-      Assert.ok(
-        false,
-        "Observing onManyFrecenciesChanges, this is most likely correct but not covered by this test"
-      );
-    },
-    onDeleteURI(aURI) {
-      let origin = pages.find(x => x.uri.spec == aURI.spec);
-      Assert.ok(origin);
-      Assert.ok(
-        !origin.hasBookmark,
-        "Observing onDeleteURI on a page without a bookmark"
-      );
-      Assert.ok(
-        !origin.onDeleteURICalled,
-        "Observing onDeleteURI for the first time"
-      );
-      origin.onDeleteURICalled = true;
-    },
-    onDeleteVisits(aURI) {
-      let origin = pages.find(x => x.uri.spec == aURI.spec);
-      Assert.ok(origin);
-      Assert.ok(
-        !origin.onDeleteVisitsCalled,
-        "Observing onDeleteVisits for the first time"
-      );
-      origin.onDeleteVisitsCalled = true;
-    },
+  let onPageRankingChanged = false;
+  const placesEventListener = events => {
+    for (const event of events) {
+      switch (event.type) {
+        case "page-title-changed": {
+          Assert.ok(
+            false,
+            "Unexpected page-title-changed event happens on " + event.url
+          );
+          break;
+        }
+        case "history-cleared": {
+          Assert.ok(false, "Unexpected history-cleared event happens");
+          break;
+        }
+        case "pages-rank-changed": {
+          onPageRankingChanged = true;
+          break;
+        }
+        case "page-removed": {
+          const origin = pages.find(x => x.uri.spec === event.url);
+          Assert.ok(origin);
+
+          if (event.isRemovedFromStore) {
+            Assert.ok(
+              !origin.hasBookmark,
+              "Observing page-removed event on a page without a bookmark"
+            );
+            Assert.ok(
+              !origin.pageRemovedFromStore,
+              "Observing page-removed for store for the first time"
+            );
+            origin.pageRemovedFromStore = true;
+          } else {
+            Assert.ok(
+              !origin.pageRemovedAllVisits,
+              "Observing page-removed for all visits for the first time"
+            );
+            origin.pageRemovedAllVisits = true;
+          }
+          break;
+        }
+      }
+    }
   };
-  PlacesUtils.history.addObserver(observer);
+
+  PlacesObservers.addListener(
+    [
+      "page-title-changed",
+      "history-cleared",
+      "pages-rank-changed",
+      "page-removed",
+    ],
+    placesEventListener
+  );
 
   info("Removing the pages and checking the callbacks");
 
@@ -147,7 +146,15 @@ add_task(async function test_remove_many() {
 
   Assert.ok(removed, "Something was removed");
 
-  PlacesUtils.history.removeObserver(observer);
+  PlacesObservers.removeListener(
+    [
+      "page-title-changed",
+      "history-cleared",
+      "pages-rank-changed",
+      "page-removed",
+    ],
+    placesEventListener
+  );
 
   info("Checking out results");
   // By now the observers should have been called.
@@ -166,16 +173,18 @@ add_task(async function test_remove_many() {
       page.hasBookmark,
       "Page is present only if it also has bookmarks"
     );
-    Assert.equal(
-      page.onFrecencyChangedCalled,
-      page.onDeleteVisitsCalled,
-      "onDeleteVisits was called iff onFrecencyChanged was called"
-    );
-    Assert.ok(
-      page.onFrecencyChangedCalled ^ page.onDeleteURICalled,
-      "Either onFrecencyChanged or onDeleteURI was called"
+    Assert.notEqual(
+      page.pageRemovedFromStore,
+      page.pageRemovedAllVisits,
+      "Either only page-removed event for store or all visits should be called"
     );
   }
+
+  Assert.equal(
+    onPageRankingChanged,
+    pages.some(p => p.pageRemovedFromStore || p.pageRemovedAllVisits),
+    "page-rank-changed was fired if page-removed was fired"
+  );
 
   Assert.notEqual(
     visits_in_database(WITNESS_URI),

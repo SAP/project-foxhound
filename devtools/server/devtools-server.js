@@ -4,7 +4,7 @@
 
 "use strict";
 
-var { Ci, Cc } = require("chrome");
+var { Ci } = require("chrome");
 var Services = require("Services");
 var { ActorRegistry } = require("devtools/server/actors/utils/actor-registry");
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
@@ -45,14 +45,6 @@ loader.lazyRequireGetter(
   "devtools/shared/transport/worker-transport",
   true
 );
-
-loader.lazyGetter(this, "generateUUID", () => {
-  // eslint-disable-next-line no-shadow
-  const { generateUUID } = Cc["@mozilla.org/uuid-generator;1"].getService(
-    Ci.nsIUUIDGenerator
-  );
-  return generateUUID;
-});
 
 const CONTENT_PROCESS_SERVER_STARTUP_SCRIPT =
   "resource://devtools/server/startup/content-process.js";
@@ -110,7 +102,7 @@ var DevToolsServer = {
 
   /**
    * We run a special server in child process whose main actor is an instance
-   * of FrameTargetActor, but that isn't a root actor. Instead there is no root
+   * of WindowGlobalTargetActor, but that isn't a root actor. Instead there is no root
    * actor registered on DevToolsServer.
    */
   get rootlessServer() {
@@ -134,7 +126,7 @@ var DevToolsServer = {
 
     if (!isWorker) {
       // Mochitests watch this observable in order to register the custom actor
-      // test-actor.js.
+      // highlighter-test-actor.js.
       // Services.obs is not available in workers.
       const subject = { wrappedJSObject: ActorRegistry };
       Services.obs.notifyObservers(subject, "devtools-server-initialized");
@@ -153,6 +145,9 @@ var DevToolsServer = {
     return this._connections && Object.keys(this._connections).length > 0;
   },
 
+  hasConnectionForPrefix(prefix) {
+    return this._connections && !!this._connections[prefix + "/"];
+  },
   /**
    * Performs cleanup tasks before shutting down the devtools server. Such tasks
    * include clearing any actor constructors added at runtime. This method
@@ -165,14 +160,17 @@ var DevToolsServer = {
       return;
     }
 
-    for (const connID of Object.getOwnPropertyNames(this._connections)) {
-      this._connections[connID].close();
+    for (const connection of Object.values(this._connections)) {
+      connection.close();
     }
 
     ActorRegistry.destroy();
 
     this.closeAllSocketListeners();
     this._initialized = false;
+
+    // Unregister all listeners
+    this.off("connectionchange");
 
     dumpn("DevTools server is shut down.");
   },
@@ -345,10 +343,10 @@ var DevToolsServer = {
     return this._onConnection(transport, prefix, true);
   },
 
-  connectToParentWindowActor(devtoolsFrameActor, forwardingPrefix) {
+  connectToParentWindowActor(jsWindowChildActor, forwardingPrefix) {
     this._checkInit();
     const transport = new JsWindowActorTransport(
-      devtoolsFrameActor,
+      jsWindowChildActor,
       forwardingPrefix
     );
 
@@ -363,68 +361,6 @@ var DevToolsServer = {
       Services.appinfo.processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT
     );
   },
-
-  /**
-   * In a chrome parent process, ask all content child processes
-   * to execute a given module setup helper.
-   *
-   * @param module
-   *        The module to be required
-   * @param setupChild
-   *        The name of the setup helper exported by the above module
-   *        (setup helper signature: function ({mm}) { ... })
-   * @param waitForEval (optional)
-   *        If true, the returned promise only resolves once code in child
-   *        is evaluated
-   */
-  setupInChild({ module, setupChild, args, waitForEval }) {
-    if (this._childMessageManagers.size == 0) {
-      return Promise.resolve();
-    }
-    return new Promise(done => {
-      // If waitForEval is set, pass a unique id and expect child.js to send
-      // a message back once the code in child is evaluated.
-      if (typeof waitForEval != "boolean") {
-        waitForEval = false;
-      }
-      let count = this._childMessageManagers.size;
-      const id = waitForEval ? generateUUID().toString() : null;
-
-      this._childMessageManagers.forEach(mm => {
-        if (waitForEval) {
-          // Listen for the end of each child execution
-          const evalListener = msg => {
-            if (msg.data.id !== id) {
-              return;
-            }
-            mm.removeMessageListener(
-              "debug:setup-in-child-response",
-              evalListener
-            );
-            if (--count === 0) {
-              done();
-            }
-          };
-          mm.addMessageListener("debug:setup-in-child-response", evalListener);
-        }
-        mm.sendAsyncMessage("debug:setup-in-child", {
-          module: module,
-          setupChild: setupChild,
-          args: args,
-          id: id,
-        });
-      });
-
-      if (!waitForEval) {
-        done();
-      }
-    });
-  },
-
-  /**
-   * Live list of all currently attached child's message managers.
-   */
-  _childMessageManagers: new Set(),
 
   /**
    * Create a new debugger connection for the given transport. Called after

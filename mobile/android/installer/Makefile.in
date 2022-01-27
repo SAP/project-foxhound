@@ -42,12 +42,7 @@ ifdef MOZ_ARTIFACT_BUILDS
 DEFINES += -DMOZ_ARTIFACT_BUILDS=1
 endif
 
-ifdef MOZ_GECKOVIEW_JAR
-# Generate a GeckoView-specific omni.ja under dist/geckoview/omni.ja,
-# alongside the full omni.ja used by Fennec under dist/fennec/omni.ja.
-DEFINES += -DMOZ_GECKOVIEW_JAR=1
 MOZ_PKG_DIR = geckoview
-endif
 
 ifdef MOZ_ANDROID_FAT_AAR_ARCHITECTURES
 DEFINES += -DMOZ_ANDROID_FAT_AAR_ARCHITECTURES=1
@@ -63,9 +58,7 @@ include $(topsrcdir)/toolkit/mozapps/installer/packager.mk
 ifneq (,$(JS_BINARY))
 ifndef MOZ_DEBUG
 ifndef NIGHTLY_BUILD
-ifndef FENNEC_NIGHTLY
 MOZ_PACKAGER_MINIFY_JS=1
-endif
 endif
 endif
 endif
@@ -79,8 +72,8 @@ BINPATH = bin
 endif
 DEFINES += -DBINPATH=$(BINPATH)
 
-ifdef ENABLE_MARIONETTE
-DEFINES += -DENABLE_MARIONETTE=1
+ifdef ENABLE_WEBDRIVER
+DEFINES += -DENABLE_WEBDRIVER=1
 endif
 
 ifdef MOZ_CLANG_RT_ASAN_LIB_PATH

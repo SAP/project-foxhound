@@ -4,10 +4,11 @@ set -e -v
 # This script is for building GN.
 
 WORKSPACE=$HOME/workspace
-COMPRESS_EXT=xz
+COMPRESS_EXT=zst
 
 CROSS_CCTOOLS_PATH=$MOZ_FETCHES_DIR/cctools
-CROSS_SYSROOT=$MOZ_FETCHES_DIR/MacOSX10.11.sdk
+CROSS_SYSROOT=$MOZ_FETCHES_DIR/MacOSX11.0.sdk
+export MACOSX_DEPLOYMENT_TARGET=10.12
 
 export CC=$MOZ_FETCHES_DIR/clang/bin/clang
 export CXX=$MOZ_FETCHES_DIR/clang/bin/clang++
@@ -27,8 +28,6 @@ ln -s /usr/bin/python2.7 $WORKSPACE/python_bin/python
 export PATH=$WORKSPACE/python_bin:$PATH
 
 cd $GECKO_PATH
-
-. taskcluster/scripts/misc/tooltool-download.sh
 
 # The ninja templates used to bootstrap gn have hard-coded references to
 # 'libtool', make sure we find the right one.

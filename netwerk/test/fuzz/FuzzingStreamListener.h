@@ -1,12 +1,12 @@
 #ifndef FuzzingStreamListener_h__
 #define FuzzingStreamListener_h__
 
+#include "mozilla/SpinEventLoopUntil.h"
 #include "nsCOMPtr.h"
 #include "nsNetCID.h"
 #include "nsString.h"
 #include "nsNetUtil.h"
 #include "nsIStreamListener.h"
-#include "nsThreadUtils.h"
 
 namespace mozilla {
 namespace net {
@@ -20,7 +20,8 @@ class FuzzingStreamListener final : public nsIStreamListener {
   FuzzingStreamListener() = default;
 
   void waitUntilDone() {
-    SpinEventLoopUntil([&]() { return mChannelDone; });
+    SpinEventLoopUntil("net::FuzzingStreamListener::waitUntilDone"_ns,
+                       [&]() { return mChannelDone; });
   }
 
   bool isDone() { return mChannelDone; }

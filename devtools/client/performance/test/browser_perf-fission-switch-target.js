@@ -26,10 +26,6 @@ const {
 } = require("devtools/client/performance/test/helpers/actions");
 
 add_task(async function() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["devtools.target-switching.enabled", true]],
-  });
-
   info("Open a page running on content process");
   const tab = await addTab({
     url: CONTENT_PROCESS_URL,
@@ -45,11 +41,11 @@ add_task(async function() {
   await PerformanceView.once(EVENTS.UI_RECORDING_PROFILER_STATUS_RENDERED);
 
   info("Navigate to a page running on main process");
-  await BrowserTestUtils.loadURI(tab.linkedBrowser, MAIN_PROCESS_URL);
+  BrowserTestUtils.loadURI(tab.linkedBrowser, MAIN_PROCESS_URL);
   await PerformanceView.once(EVENTS.UI_RECORDING_PROFILER_STATUS_RENDERED);
 
   info("Return to a page running on content process again");
-  await BrowserTestUtils.loadURI(tab.linkedBrowser, CONTENT_PROCESS_URL);
+  BrowserTestUtils.loadURI(tab.linkedBrowser, CONTENT_PROCESS_URL);
   await PerformanceView.once(EVENTS.UI_RECORDING_PROFILER_STATUS_RENDERED);
 
   info("Stop recording");

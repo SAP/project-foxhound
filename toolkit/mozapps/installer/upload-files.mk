@@ -273,6 +273,7 @@ NO_PKG_FILES += \
 	pk12util* \
 	BadCertAndPinningServer* \
 	DelegatedCredentialsServer* \
+	EncryptedClientHelloServer* \
 	OCSPStaplingServer* \
 	SanctionsTestServer* \
 	GenerateOCSPResponse* \
@@ -307,8 +308,6 @@ endif
 ifdef MOZ_FOLD_LIBS
   DEFINES += -DMOZ_FOLD_LIBS=1
 endif
-
-GARBAGE		+= $(DIST)/$(PACKAGE) $(PACKAGE)
 
 # The following target stages files into two directories: one directory for
 # core files, and one for optional extensions based on the information in
@@ -380,7 +379,7 @@ UPLOAD_FILES= \
   $(call QUOTED_WILDCARD,$(MOZ_MOZINFO_FILE)) \
   $(call QUOTED_WILDCARD,$(MOZ_TEST_PACKAGES_FILE)) \
   $(call QUOTED_WILDCARD,$(PKG_JSSHELL)) \
-  $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).zip) \
+  $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).tar.zst) \
   $(call QUOTED_WILDCARD,$(topobjdir)/$(MOZ_BUILD_APP)/installer/windows/instgen/setup.exe) \
   $(call QUOTED_WILDCARD,$(topobjdir)/$(MOZ_BUILD_APP)/installer/windows/instgen/setup-stub.exe) \
   $(call QUOTED_WILDCARD,$(topsrcdir)/toolchains.json) \

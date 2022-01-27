@@ -17,10 +17,9 @@ const {
 
 const {
   MESSAGES_ADD,
-  NETWORK_MESSAGE_UPDATE,
-  NETWORK_UPDATE_REQUEST,
+  NETWORK_MESSAGES_UPDATE,
+  NETWORK_UPDATES_REQUEST,
   MESSAGES_CLEAR,
-  MESSAGES_CLEAR_LOGPOINT,
   MESSAGE_OPEN,
   MESSAGE_CLOSE,
   MESSAGE_TYPE,
@@ -64,13 +63,6 @@ function messagesClear() {
   };
 }
 
-function messagesClearLogpoint(logpointId) {
-  return {
-    type: MESSAGES_CLEAR_LOGPOINT,
-    logpointId,
-  };
-}
-
 function privateMessagesClear() {
   return {
     type: PRIVATE_MESSAGES_CLEAR,
@@ -102,14 +94,14 @@ function messageClose(id) {
  * @return {[type]} [description]
  */
 function messageGetMatchingElements(id, cssSelectors) {
-  return async ({ dispatch, client, getState }) => {
+  return async ({ dispatch, commands, getState }) => {
     try {
       // We need to do the querySelectorAll using the target the message is coming from,
       // as well as with the window the warning message was emitted from.
       const message = getState().messages.messagesById.get(id);
       const selectedTargetFront = message?.targetFront;
 
-      const response = await client.evaluateJSAsync(
+      const response = await commands.scriptCommand.execute(
         `document.querySelectorAll('${cssSelectors}')`,
         {
           selectedTargetFront,
@@ -146,37 +138,35 @@ function messageRemove(id) {
   };
 }
 
-function networkMessageUpdate(packet, idGenerator = null) {
+function networkMessageUpdates(packets, idGenerator = null) {
   if (idGenerator == null) {
     idGenerator = defaultIdGenerator;
   }
 
-  const message = prepareMessage(packet, idGenerator);
+  const messages = packets.map(packet => prepareMessage(packet, idGenerator));
 
   return {
-    type: NETWORK_MESSAGE_UPDATE,
-    message,
+    type: NETWORK_MESSAGES_UPDATE,
+    messages,
   };
 }
 
-function networkUpdateRequest(id, data) {
+function networkUpdateRequests(updates) {
   return {
-    type: NETWORK_UPDATE_REQUEST,
-    id,
-    data,
+    type: NETWORK_UPDATES_REQUEST,
+    updates,
   };
 }
 
 module.exports = {
   messagesAdd,
   messagesClear,
-  messagesClearLogpoint,
   messageOpen,
   messageClose,
   messageRemove,
   messageGetMatchingElements,
   messageUpdatePayload,
-  networkMessageUpdate,
-  networkUpdateRequest,
+  networkMessageUpdates,
+  networkUpdateRequests,
   privateMessagesClear,
 };

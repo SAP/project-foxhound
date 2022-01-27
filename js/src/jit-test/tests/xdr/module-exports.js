@@ -1,16 +1,15 @@
-load(libdir + "dummyModuleResolveHook.js");
 const count = 10;
 
 let s = "";
 for (let i = 0; i < count; i++)
     s += "export let e" + i + " = " + (i * i) + ";\n";
-let og = parseModule(s);
-let bc = codeModule(og);
-let a = moduleRepo['a'] = decodeModule(bc);
+let stencil = compileToStencilXDR(s, {module: true});
+let m = instantiateModuleStencilXDR(stencil);
+let a = registerModule('a', m);
 
-og = parseModule("import * as ns from 'a'");
-bc = codeModule(og);
-let b = moduleRepo['b'] = decodeModule(bc);
+stencil = compileToStencilXDR("import * as ns from 'a'", {module: true});
+m = instantiateModuleStencilXDR(stencil);
+let b = registerModule('b', m);
 
 b.declarationInstantiation();
 b.evaluation();

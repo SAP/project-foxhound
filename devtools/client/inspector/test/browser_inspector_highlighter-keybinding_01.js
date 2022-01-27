@@ -9,66 +9,66 @@
 const TEST_URL = URL_ROOT + "doc_inspector_highlighter_dom.html";
 
 add_task(async function() {
-  const { toolbox, testActor } = await openInspectorForURL(TEST_URL);
+  const {
+    inspector,
+    toolbox,
+    highlighterTestFront,
+  } = await openInspectorForURL(TEST_URL);
+  const { waitForHighlighterTypeShown } = getHighlighterTestHelpers(inspector);
 
   await startPicker(toolbox);
 
   info("Selecting the simple-div1 DIV");
-  await moveMouseOver("#simple-div1");
+  await hoverElement(inspector, "#simple-div1");
 
   ok(
-    await testActor.assertHighlightedNode("#simple-div1"),
+    await highlighterTestFront.assertHighlightedNode("#simple-div1"),
     "The highlighter shows #simple-div1. OK."
   );
 
   // First Child selection
   info("Testing first-child selection.");
 
-  await doKeyHover({ key: "VK_RIGHT", options: {} });
+  await doKeyHover("VK_RIGHT");
   ok(
-    await testActor.assertHighlightedNode("#useless-para"),
+    await highlighterTestFront.assertHighlightedNode("#useless-para"),
     "The highlighter shows #useless-para. OK."
   );
 
   info("Selecting the useful-para paragraph DIV");
-  await moveMouseOver("#useful-para");
+  await hoverElement(inspector, "#useful-para");
   ok(
-    await testActor.assertHighlightedNode("#useful-para"),
+    await highlighterTestFront.assertHighlightedNode("#useful-para"),
     "The highlighter shows #useful-para. OK."
   );
 
-  await doKeyHover({ key: "VK_RIGHT", options: {} });
+  await doKeyHover("VK_RIGHT");
   ok(
-    await testActor.assertHighlightedNode("#bold"),
+    await highlighterTestFront.assertHighlightedNode("#bold"),
     "The highlighter shows #bold. OK."
   );
 
   info("Going back up to the simple-div1 DIV");
-  await doKeyHover({ key: "VK_LEFT", options: {} });
-  await doKeyHover({ key: "VK_LEFT", options: {} });
+  await doKeyHover("VK_LEFT");
+  await doKeyHover("VK_LEFT");
   ok(
-    await testActor.assertHighlightedNode("#simple-div1"),
+    await highlighterTestFront.assertHighlightedNode("#simple-div1"),
     "The highlighter shows #simple-div1. OK."
   );
 
   info("First child selection test Passed.");
 
   info("Stopping the picker");
-  await toolbox.nodePicker.stop();
+  await toolbox.nodePicker.stop({ canceled: true });
 
-  function doKeyHover(args) {
+  function doKeyHover(key) {
     info("Key pressed. Waiting for element to be highlighted/hovered");
-    testActor.synthesizeKey(args);
-    return toolbox.nodePicker.once("picker-node-hovered");
-  }
+    const onPickerHovered = toolbox.nodePicker.once("picker-node-hovered");
+    const onHighlighterShown = waitForHighlighterTypeShown(
+      inspector.highlighters.TYPES.BOXMODEL
+    );
+    BrowserTestUtils.synthesizeKey(key, {}, gBrowser.selectedBrowser);
 
-  function moveMouseOver(selector) {
-    info("Waiting for element " + selector + " to be highlighted");
-    testActor.synthesizeMouse({
-      options: { type: "mousemove" },
-      center: true,
-      selector: selector,
-    });
-    return toolbox.nodePicker.once("picker-node-hovered");
+    return Promise.all([onPickerHovered, onHighlighterShown]);
   }
 });

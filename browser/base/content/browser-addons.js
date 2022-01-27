@@ -588,6 +588,17 @@ var gXPInstallObserver = {
         break;
       }
       case "addon-install-blocked": {
+        // Dismiss the progress notification.  Note that this is bad if
+        // there are multiple simultaneous installs happening, see
+        // bug 1329884 for a longer explanation.
+        let progressNotification = PopupNotifications.getNotification(
+          "addon-progress",
+          browser
+        );
+        if (progressNotification) {
+          progressNotification.remove();
+        }
+
         let hasHost = !!options.displayURI;
         if (hasHost) {
           messageString = gNavigatorBundle.getFormattedString(
@@ -620,7 +631,7 @@ var gXPInstallObserver = {
             );
             let b = doc.createElementNS("http://www.w3.org/1999/xhtml", "b");
             b.textContent = options.name;
-            let fragment = BrowserUtils.getLocalizedFragment(doc, text, b);
+            let fragment = BrowserUIUtils.getLocalizedFragment(doc, text, b);
             message.appendChild(fragment);
           } else {
             message.textContent = gNavigatorBundle.getString(
@@ -663,6 +674,9 @@ var gXPInstallObserver = {
                 install.cancel();
               }
             }
+            if (installInfo.cancel) {
+              installInfo.cancel();
+            }
           },
         };
         let neverAllowAction = {
@@ -682,6 +696,9 @@ var gXPInstallObserver = {
               if (install.state != AddonManager.STATE_CANCELLED) {
                 install.cancel();
               }
+            }
+            if (installInfo.cancel) {
+              installInfo.cancel();
             }
           },
         };
@@ -949,6 +966,7 @@ var gExtensionsNotifications = {
 
   _createAddonButton(text, icon, callback) {
     let button = document.createXULElement("toolbarbutton");
+    button.setAttribute("wrap", "true");
     button.setAttribute("label", text);
     button.setAttribute("tooltiptext", text);
     const DEFAULT_EXTENSION_ICON =
@@ -1010,17 +1028,12 @@ var gExtensionsNotifications = {
 };
 
 var BrowserAddonUI = {
-  promptRemoveExtension(addon) {
+  async promptRemoveExtension(addon) {
     let { name } = addon;
-    let brand = document
-      .getElementById("bundle_brand")
-      .getString("brandShorterName");
-    let { getFormattedString, getString } = gNavigatorBundle;
-    let title = getFormattedString("webext.remove.confirmation.title", [name]);
-    let message = getFormattedString("webext.remove.confirmation.message", [
+    let title = await document.l10n.formatValue("addon-removal-title", {
       name,
-      brand,
-    ]);
+    });
+    let { getFormattedString, getString } = gNavigatorBundle;
     let btnTitle = getString("webext.remove.confirmation.button");
     let {
       BUTTON_TITLE_IS_STRING: titleString,
@@ -1040,22 +1053,32 @@ var BrowserAddonUI = {
       gAddonAbuseReportEnabled &&
       ["extension", "theme"].includes(addon.type)
     ) {
-      checkboxMessage = getFormattedString(
-        "webext.remove.abuseReportCheckbox.message",
-        [document.getElementById("bundle_brand").getString("vendorShortName")]
+      checkboxMessage = await document.l10n.formatValue(
+        "addon-removal-abuse-report-checkbox"
       );
     }
-    const result = confirmEx(
-      null,
+
+    let message = null;
+
+    if (!Services.prefs.getBoolPref("prompts.windowPromptSubDialog", false)) {
+      message = getFormattedString("webext.remove.confirmation.message", [
+        name,
+        document.getElementById("bundle_brand").getString("brandShorterName"),
+      ]);
+    }
+
+    let result = confirmEx(
+      window,
       title,
       message,
       btnFlags,
       btnTitle,
-      null,
-      null,
+      /* button1 */ null,
+      /* button2 */ null,
       checkboxMessage,
       checkboxState
     );
+
     return { remove: result === 0, report: checkboxState.value };
   },
 
@@ -1071,7 +1094,7 @@ var BrowserAddonUI = {
       return;
     }
 
-    let { remove, report } = this.promptRemoveExtension(addon);
+    let { remove, report } = await this.promptRemoveExtension(addon);
 
     AMTelemetry.recordActionEvent({
       object: eventObject,

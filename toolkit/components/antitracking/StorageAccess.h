@@ -7,7 +7,12 @@
 #ifndef mozilla_StorageAccess_h
 #define mozilla_StorageAccess_h
 
-#include "mozilla/dom/Document.h"
+#include <cstdint>
+
+#include "mozilla/MozPromise.h"
+#include "mozilla/RefPtr.h"
+
+#include "mozilla/dom/BrowsingContext.h"
 
 class nsIChannel;
 class nsICookieJarSettings;
@@ -16,6 +21,9 @@ class nsIURI;
 class nsPIDOMWindowInner;
 
 namespace mozilla {
+namespace dom {
+class Document;
+}
 
 // The order of these entries matters, as we use std::min for total ordering
 // of permissions. Private Browsing is considered to be more limiting
@@ -99,16 +107,19 @@ bool StorageDisabledByAntiTracking(nsPIDOMWindowInner* aWindow,
  * Returns true if this document should disable storages because of the
  * anti-tracking feature.
  */
-inline bool StorageDisabledByAntiTracking(dom::Document* aDocument,
-                                          nsIURI* aURI) {
-  uint32_t rejectedReason = 0;
-  // Note that GetChannel() below may return null, but that's OK, since the
-  // callee is able to deal with a null channel argument, and if passed null,
-  // will only fail to notify the UI in case storage gets blocked.
-  return StorageDisabledByAntiTracking(
-      aDocument->GetInnerWindow(), aDocument->GetChannel(),
-      aDocument->NodePrincipal(), aURI, rejectedReason);
-}
+bool StorageDisabledByAntiTracking(dom::Document* aDocument, nsIURI* aURI,
+                                   uint32_t& aRejectedReason);
+
+/*
+ * Returns true if the principal in the browsing context should disable storages
+ * because of the anti-tracking feature. Note that this has to be async because
+ * the aPrincipal is a cross-origin principal.
+ */
+using AsyncStorageDisabledByAntiTrackingPromise =
+    MozPromise<uint32_t, nsresult, true>;
+[[nodiscard]] RefPtr<AsyncStorageDisabledByAntiTrackingPromise>
+AsyncStorageDisabledByAntiTracking(dom::BrowsingContext* aContext,
+                                   nsIPrincipal* aPrincipal);
 
 bool ShouldPartitionStorage(StorageAccess aAccess);
 

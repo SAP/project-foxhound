@@ -30,6 +30,8 @@ class nsILoadGroup;
 class nsIPrincipal;
 
 namespace mozilla {
+class PreloaderBase;
+
 namespace dom {
 
 class Document;
@@ -49,10 +51,10 @@ class FetchDriverObserver {
       : mReporter(new ConsoleReportCollector()), mGotResponseAvailable(false) {}
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FetchDriverObserver);
-  void OnResponseAvailable(InternalResponse* aResponse) {
+  void OnResponseAvailable(SafeRefPtr<InternalResponse> aResponse) {
     MOZ_ASSERT(!mGotResponseAvailable);
     mGotResponseAvailable = true;
-    OnResponseAvailableInternal(aResponse);
+    OnResponseAvailableInternal(std::move(aResponse));
   }
 
   enum EndReason {
@@ -78,7 +80,8 @@ class FetchDriverObserver {
  protected:
   virtual ~FetchDriverObserver() = default;
 
-  virtual void OnResponseAvailableInternal(InternalResponse* aResponse) = 0;
+  virtual void OnResponseAvailableInternal(
+      SafeRefPtr<InternalResponse> aResponse) = 0;
 
   nsCOMPtr<nsIConsoleReportCollector> mReporter;
 
@@ -126,13 +129,13 @@ class FetchDriver final : public nsIStreamListener,
   }
 
   // AbortFollower
-  void Abort() override;
+  void RunAbortAlgorithm() override;
 
  private:
   nsCOMPtr<nsIPrincipal> mPrincipal;
   nsCOMPtr<nsILoadGroup> mLoadGroup;
   SafeRefPtr<InternalRequest> mRequest;
-  RefPtr<InternalResponse> mResponse;
+  SafeRefPtr<InternalResponse> mResponse;
   nsCOMPtr<nsIOutputStream> mPipeOutputStream;
   RefPtr<FetchDriverObserver> mObserver;
   RefPtr<Document> mDocument;
@@ -188,11 +191,10 @@ class FetchDriver final : public nsIStreamListener,
 
   void UpdateReferrerInfoFromNewChannel(nsIChannel* aChannel);
 
-  nsresult HttpFetch(
-      const nsACString& aPreferredAlternativeDataType = EmptyCString());
+  nsresult HttpFetch(const nsACString& aPreferredAlternativeDataType = ""_ns);
   // Returns the filtered response sent to the observer.
-  already_AddRefed<InternalResponse> BeginAndGetFilteredResponse(
-      InternalResponse* aResponse, bool aFoundOpaqueRedirect);
+  SafeRefPtr<InternalResponse> BeginAndGetFilteredResponse(
+      SafeRefPtr<InternalResponse> aResponse, bool aFoundOpaqueRedirect);
   // Utility since not all cases need to do any post processing of the filtered
   // response.
   void FailWithNetworkError(nsresult rv);

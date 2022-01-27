@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 numberingSystems:table(nofallback){
     numberingSystems{
         adlm{
@@ -410,6 +411,11 @@ numberingSystems:table(nofallback){
         tirh{
             algorithmic:int{0}
             desc{"𑓐𑓑𑓒𑓓𑓔𑓕𑓖𑓗𑓘𑓙"}
+            radix:int{10}
+        }
+        tnsa{
+            algorithmic:int{0}
+            desc{"𖫀𖫁𖫂𖫃𖫄𖫅𖫆𖫇𖫈𖫉"}
             radix:int{10}
         }
         vaii{

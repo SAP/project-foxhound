@@ -103,6 +103,9 @@ HistoryDownloadElementShell.prototype = {
   downloadsCmd_unblock() {
     this.confirmUnblock(window, "unblock");
   },
+  downloadsCmd_unblockAndSave() {
+    this.confirmUnblock(window, "unblock");
+  },
 
   downloadsCmd_chooseUnblock() {
     this.confirmUnblock(window, "chooseUnblock");
@@ -265,7 +268,6 @@ DownloadsPlacesView.prototype = {
     if (this._active) {
       this._ensureVisibleElementsAreActive(true);
     }
-    return this._active;
   },
 
   /**
@@ -394,12 +396,16 @@ DownloadsPlacesView.prototype = {
   },
   set searchTerm(aValue) {
     if (this._searchTerm != aValue) {
+      // Always clear selection on a new search, since the user is starting a
+      // different workflow. This also solves the fact we could end up
+      // retaining selection on hidden elements.
+      this._richlistbox.clearSelection();
       for (let element of this._richlistbox.childNodes) {
         element.hidden = !element._shell.matchesSearchTerm(aValue);
       }
       this._ensureVisibleElementsAreActive();
     }
-    return (this._searchTerm = aValue);
+    this._searchTerm = aValue;
   },
 
   /**
@@ -675,7 +681,23 @@ DownloadsPlacesView.prototype = {
   },
 
   cmd_selectAll() {
-    this._richlistbox.selectAll();
+    if (!this.searchTerm) {
+      this._richlistbox.selectAll();
+      return;
+    }
+    // If there is a filtering search term, some rows are hidden and should not
+    // be selected.
+    let oldSuppressOnSelect = this._richlistbox.suppressOnSelect;
+    this._richlistbox.suppressOnSelect = true;
+    this._richlistbox.clearSelection();
+    var item = this._richlistbox.getItemAtIndex(0);
+    while (item) {
+      if (!item.hidden) {
+        this._richlistbox.addItemToSelection(item);
+      }
+      item = this._richlistbox.getNextItem(item, 1);
+    }
+    this._richlistbox.suppressOnSelect = oldSuppressOnSelect;
   },
 
   cmd_paste() {
@@ -702,44 +724,11 @@ DownloadsPlacesView.prototype = {
       return false;
     }
 
-    // Set the state attribute so that only the appropriate items are displayed.
-    let contextMenu = document.getElementById("downloadsContextMenu");
-    let download = element._shell.download;
-    let mimeInfo = DownloadsCommon.getMimeInfo(download);
-    let { preferredAction, useSystemDefault } = mimeInfo ? mimeInfo : {};
-
-    contextMenu.setAttribute(
-      "state",
-      DownloadsCommon.stateOfDownload(download)
+    DownloadsViewUI.updateContextMenuForElement(
+      document.getElementById("downloadsContextMenu"),
+      element
     );
-    contextMenu.setAttribute("exists", "true");
-    contextMenu.classList.toggle("temporary-block", !!download.hasBlockedData);
-
-    if (element.hasAttribute("is-pdf")) {
-      contextMenu.setAttribute("is-pdf", "true");
-      let alwaysUseSystemViewerItem = contextMenu.querySelector(
-        ".downloadAlwaysUseSystemDefaultMenuItem"
-      );
-      if (preferredAction === useSystemDefault) {
-        alwaysUseSystemViewerItem.setAttribute("checked", "true");
-      } else {
-        alwaysUseSystemViewerItem.removeAttribute("checked");
-      }
-      alwaysUseSystemViewerItem.toggleAttribute(
-        "enabled",
-        DownloadsCommon.alwaysOpenInSystemViewerItemEnabled
-      );
-      let useSystemViewerItem = contextMenu.querySelector(
-        ".downloadUseSystemDefaultMenuItem"
-      );
-      useSystemViewerItem.toggleAttribute(
-        "enabled",
-        DownloadsCommon.openInSystemViewerItemEnabled
-      );
-    } else {
-      contextMenu.removeAttribute("is-pdf");
-    }
-
+    let download = element._shell.download;
     if (!download.stopped) {
       // The hasPartialData property of a download may change at any time after
       // it has started, so ensure we update the related command now.
@@ -762,11 +751,17 @@ DownloadsPlacesView.prototype = {
         }
       }
     } else if (aEvent.charCode == " ".charCodeAt(0)) {
+      let atLeastOneDownloadToggled = false;
       // Pause/Resume every selected download
       for (let element of selectedElements) {
         if (element._shell.isCommandEnabled("downloadsCmd_pauseResume")) {
           element._shell.doCommand("downloadsCmd_pauseResume");
+          atLeastOneDownloadToggled = true;
         }
+      }
+
+      if (atLeastOneDownloadToggled) {
+        aEvent.preventDefault();
       }
     }
   },

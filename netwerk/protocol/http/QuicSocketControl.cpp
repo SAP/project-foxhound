@@ -8,6 +8,7 @@
 
 #include "Http3Session.h"
 #include "SharedCertVerifier.h"
+#include "nsISocketProvider.h"
 #include "nsIWebProgressListener.h"
 #include "nsNSSComponent.h"
 #include "nsWeakReference.h"
@@ -22,8 +23,14 @@ namespace net {
 NS_IMPL_ISUPPORTS_INHERITED(QuicSocketControl, TransportSecurityInfo,
                             nsISSLSocketControl, QuicSocketControl)
 
-QuicSocketControl::QuicSocketControl(uint32_t aProviderFlags)
-    : CommonSocketControl(aProviderFlags) {}
+QuicSocketControl::QuicSocketControl(uint32_t aProviderFlags,
+                                     Http3Session* aHttp3Session)
+    : CommonSocketControl(aProviderFlags) {
+  MOZ_ASSERT(OnSocketThread());
+  mHttp3Session = do_GetWeakReference(
+      static_cast<nsISupportsWeakReference*>(aHttp3Session));
+  mSocketThread = NS_GetCurrentThread();
+}
 
 void QuicSocketControl::SetCertVerificationResult(PRErrorCode errorCode) {
   if (errorCode) {
@@ -41,6 +48,11 @@ void QuicSocketControl::SetCertVerificationResult(PRErrorCode errorCode) {
   }
 }
 
+QuicSocketControl::~QuicSocketControl() {
+  NS_ProxyRelease("QuicSocketControl::~QuicSocketControl", mSocketThread,
+                  mHttp3Session.forget());
+}
+
 NS_IMETHODIMP
 QuicSocketControl::GetSSLVersionOffered(int16_t* aSSLVersionOffered) {
   *aSSLVersionOffered = nsISSLSocketControl::TLS_VERSION_1_3;
@@ -52,12 +64,6 @@ void QuicSocketControl::CallAuthenticated() {
   if (http3Session) {
     http3Session->Authenticated(GetErrorCode());
   }
-  mHttp3Session = nullptr;
-}
-
-void QuicSocketControl::SetAuthenticationCallback(Http3Session* aHttp3Session) {
-  mHttp3Session = do_GetWeakReference(
-      static_cast<nsISupportsWeakReference*>(aHttp3Session));
 }
 
 void QuicSocketControl::HandshakeCompleted() {
@@ -65,14 +71,7 @@ void QuicSocketControl::HandshakeCompleted() {
 
   uint32_t state = nsIWebProgressListener::STATE_IS_SECURE;
 
-  bool distrustImminent;
-
-  nsresult rv =
-      IsCertificateDistrustImminent(mSucceededCertChain, distrustImminent);
-
-  if (NS_SUCCEEDED(rv) && distrustImminent) {
-    state |= nsIWebProgressListener::STATE_CERT_DISTRUST_IMMINENT;
-  }
+  MutexAutoLock lock(mMutex);
 
   // If we're here, the TLS handshake has succeeded. Thus if any of these
   // booleans are true, the user has added an override for a certificate error.
@@ -85,22 +84,79 @@ void QuicSocketControl::HandshakeCompleted() {
 }
 
 void QuicSocketControl::SetNegotiatedNPN(const nsACString& aValue) {
+  MutexAutoLock lock(mMutex);
   mNegotiatedNPN = aValue;
   mNPNCompleted = true;
 }
 
 void QuicSocketControl::SetInfo(uint16_t aCipherSuite,
                                 uint16_t aProtocolVersion, uint16_t aKeaGroup,
-                                uint16_t aSignatureScheme) {
+                                uint16_t aSignatureScheme, bool aEchAccepted) {
   SSLCipherSuiteInfo cipherInfo;
   if (SSL_GetCipherSuiteInfo(aCipherSuite, &cipherInfo, sizeof cipherInfo) ==
       SECSuccess) {
+    MutexAutoLock lock(mMutex);
     mHaveCipherSuiteAndProtocol = true;
     mCipherSuite = aCipherSuite;
     mProtocolVersion = aProtocolVersion & 0xFF;
     mKeaGroup = getKeaGroupName(aKeaGroup);
     mSignatureSchemeName = getSignatureName(aSignatureScheme);
+    mIsAcceptedEch = aEchAccepted;
   }
+}
+
+NS_IMETHODIMP QuicSocketControl::GetPeerId(nsACString& aResult) {
+  if (!mPeerId.IsEmpty()) {
+    aResult.Assign(mPeerId);
+    return NS_OK;
+  }
+
+  if (mProviderFlags &
+      nsISocketProvider::ANONYMOUS_CONNECT) {  // See bug 466080
+    mPeerId.AppendLiteral("anon:");
+  }
+  if (mProviderFlags & nsISocketProvider::NO_PERMANENT_STORAGE) {
+    mPeerId.AppendLiteral("private:");
+  }
+  if (mProviderFlags & nsISocketProvider::BE_CONSERVATIVE) {
+    mPeerId.AppendLiteral("beConservative:");
+  }
+
+  mPeerId.Append(GetHostName());
+  mPeerId.Append(':');
+  mPeerId.AppendInt(GetPort());
+  nsAutoCString suffix;
+  GetOriginAttributes().CreateSuffix(suffix);
+  mPeerId.Append(suffix);
+
+  aResult.Assign(mPeerId);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+QuicSocketControl::GetEchConfig(nsACString& aEchConfig) {
+  aEchConfig = mEchConfig;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+QuicSocketControl::SetEchConfig(const nsACString& aEchConfig) {
+  mEchConfig = aEchConfig;
+  RefPtr<Http3Session> http3Session = do_QueryReferent(mHttp3Session);
+  if (http3Session) {
+    http3Session->DoSetEchConfig(mEchConfig);
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+QuicSocketControl::GetRetryEchConfig(nsACString& aEchConfig) {
+  aEchConfig = mRetryEchConfig;
+  return NS_OK;
+}
+
+void QuicSocketControl::SetRetryEchConfig(const nsACString& aEchConfig) {
+  mRetryEchConfig = aEchConfig;
 }
 
 }  // namespace net

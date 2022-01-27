@@ -5,12 +5,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "jsapi.h"
-
+#include "js/GlobalObject.h"  // JS_NewGlobalObject
+#include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_GetProperty, JS_SetProperty
 #include "js/RootingAPI.h"
 #include "js/SliceBudget.h"
 #include "jsapi-tests/tests.h"
 #include "vm/Realm.h"
+
+using namespace js;
 
 static bool ConstructCCW(JSContext* cx, const JSClass* globalClasp,
                          JS::HandleObject global1,
@@ -72,7 +74,7 @@ static bool ConstructCCW(JSContext* cx, const JSClass* globalClasp,
 }
 
 class CCWTestTracer final : public JS::CallbackTracer {
-  bool onChild(const JS::GCCellPtr& thing) override {
+  void onChild(JS::GCCellPtr thing) override {
     numberOfThingsTraced++;
 
     printf("*thingp         = %p\n", thing.asCell());
@@ -84,7 +86,6 @@ class CCWTestTracer final : public JS::CallbackTracer {
     if (thing.asCell() != *expectedThingp || thing.kind() != expectedKind) {
       okay = false;
     }
-    return true;
   }
 
  public:
@@ -130,7 +131,7 @@ BEGIN_TEST(testTracingIncomingCCWs) {
 
   void* thing = wrappee.get();
   CCWTestTracer trc(cx, &thing, JS::TraceKind::Object);
-  JS::TraceIncomingCCWs(&trc, compartments);
+  js::gc::TraceIncomingCCWs(&trc, compartments);
   CHECK(trc.numberOfThingsTraced == 1);
   CHECK(trc.okay);
 
@@ -373,8 +374,11 @@ BEGIN_TEST(testIncrementalRoots) {
   // descendants. It shouldn't make it all the way through (it gets a budget
   // of 1000, and the graph is about 3000 objects deep).
   js::SliceBudget budget(js::WorkBudget(1000));
-  JS_SetGCParameter(cx, JSGC_MODE, JSGC_MODE_ZONE_INCREMENTAL);
-  rt->gc.startDebugGC(GC_NORMAL, budget);
+  AutoGCParameter param(cx, JSGC_INCREMENTAL_GC_ENABLED, true);
+  rt->gc.startDebugGC(JS::GCOptions::Normal, budget);
+  while (rt->gc.state() != gc::State::Mark) {
+    rt->gc.debugGCSlice(budget);
+  }
 
   // We'd better be between iGC slices now. There's always a risk that
   // something will decide that we need to do a full GC (such as gczeal, but

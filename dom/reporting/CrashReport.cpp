@@ -20,10 +20,7 @@ namespace dom {
 struct StringWriteFunc : public JSONWriteFunc {
   nsCString& mCString;
   explicit StringWriteFunc(nsCString& aCString) : mCString(aCString) {}
-  void Write(const char* aStr) override { mCString.Append(aStr); }
-  void Write(const char* aStr, size_t aLen) override {
-    mCString.Append(aStr, aLen);
-  }
+  void Write(const Span<const char>& aStr) override { mCString.Append(aStr); }
 };
 
 /* static */
@@ -43,7 +40,7 @@ bool CrashReport::Deliver(nsIPrincipal* aPrincipal, bool aIsOOM) {
   ReportDeliver::ReportData data;
   data.mType = u"crash"_ns;
   data.mGroupName = u"default"_ns;
-  data.mURL = NS_ConvertUTF8toUTF16(safe_origin_spec);
+  CopyUTF8toUTF16(safe_origin_spec, data.mURL);
   data.mCreationTime = TimeStamp::Now();
 
   Navigator::GetUserAgent(nullptr, aPrincipal, false, data.mUserAgent);

@@ -19,19 +19,78 @@
 #ifndef wasm_code_h
 #define wasm_code_h
 
-#include "jit/shared/Assembler-shared.h"
-#include "js/HashTable.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/EnumeratedArray.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/PodOperations.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtr.h"
+
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+#include <utility>
+
+#include "jstypes.h"
+
+#include "gc/Memory.h"
+#include "js/AllocPolicy.h"
+#include "js/UniquePtr.h"
+#include "js/Utility.h"
+#include "js/Vector.h"
 #include "threading/ExclusiveData.h"
 #include "util/Memory.h"
 #include "vm/MutexIDs.h"
+#include "wasm/WasmBuiltins.h"
+#include "wasm/WasmCodegenTypes.h"
+#include "wasm/WasmCompileArgs.h"
+#include "wasm/WasmConstants.h"
+#include "wasm/WasmExprType.h"
 #include "wasm/WasmGC.h"
-#include "wasm/WasmTypes.h"
+#include "wasm/WasmLog.h"
+#include "wasm/WasmModuleTypes.h"
+#include "wasm/WasmSerialize.h"
+#include "wasm/WasmShareable.h"
+#include "wasm/WasmTypeDecls.h"
+#include "wasm/WasmTypeDef.h"
+#include "wasm/WasmValType.h"
+
+struct JS_PUBLIC_API JSContext;
+class JSFunction;
 
 namespace js {
 
 struct AsmJSMetadata;
+class ScriptSource;
+
+namespace jit {
+class MacroAssembler;
+};
 
 namespace wasm {
+
+struct IndirectStubTarget {
+  uint32_t functionIdx;
+  void* checkedCallEntryAddress;
+  TlsData* tls;
+
+  bool operator==(const IndirectStubTarget& other) const {
+    bool result = functionIdx == other.functionIdx && tls == other.tls;
+    // Code pointers must be equal if function index and tls are equal.  Note
+    // it's possible for code pointers to be equal even if index and tls do not
+    // match, as the code pointer and function index are per-module but the tls
+    // is per-instance.
+    MOZ_ASSERT_IF(result,
+                  (checkedCallEntryAddress == other.checkedCallEntryAddress));
+    return result;
+  }
+};
+
+using VectorOfIndirectStubTarget =
+    Vector<IndirectStubTarget, 8, SystemAllocPolicy>;
 
 struct MetadataTier;
 struct Metadata;
@@ -64,7 +123,7 @@ struct LinkData : LinkDataCacheablePod {
     uint32_t mode;
 #endif
   };
-  typedef Vector<InternalLink, 0, SystemAllocPolicy> InternalLinkVector;
+  using InternalLinkVector = Vector<InternalLink, 0, SystemAllocPolicy>;
 
   struct SymbolicLinkArray
       : EnumeratedArray<SymbolicAddress, SymbolicAddress::Limit, Uint32Vector> {
@@ -162,6 +221,8 @@ class CodeSegment {
 
 using UniqueModuleSegment = UniquePtr<ModuleSegment>;
 
+enum IsTier2 { Tier2, NotTier2 };
+
 class ModuleSegment : public CodeSegment {
   const Tier tier_;
   uint8_t* const trapCode_;
@@ -175,8 +236,9 @@ class ModuleSegment : public CodeSegment {
   static UniqueModuleSegment create(Tier tier, const Bytes& unlinkedBytes,
                                     const LinkData& linkData);
 
-  bool initialize(const CodeTier& codeTier, const LinkData& linkData,
-                  const Metadata& metadata, const MetadataTier& metadataTier);
+  bool initialize(IsTier2 isTier2, const CodeTier& codeTier,
+                  const LinkData& linkData, const Metadata& metadata,
+                  const MetadataTier& metadataTier);
 
   Tier tier() const { return tier_; }
 
@@ -237,15 +299,7 @@ class FuncExport {
     return pod.eagerInterpEntryOffset_;
   }
 
-  bool canHaveJitEntry() const {
-    return
-#ifdef ENABLE_WASM_SIMD
-        !funcType_.hasV128ArgOrRet() &&
-#endif
-        !funcType_.temporarilyUnsupportedReftypeForEntry() &&
-        !funcType_.temporarilyUnsupportedResultCountForJitEntry() &&
-        JitOptions.enableWasmJitEntry;
-  }
+  bool canHaveJitEntry() const { return funcType_.canHaveJitEntry(); }
 
   bool clone(const FuncExport& src) {
     mozilla::PodAssign(&pod, &src.pod);
@@ -255,7 +309,7 @@ class FuncExport {
   WASM_DECLARE_SERIALIZABLE(FuncExport)
 };
 
-typedef Vector<FuncExport, 0, SystemAllocPolicy> FuncExportVector;
+using FuncExportVector = Vector<FuncExport, 0, SystemAllocPolicy>;
 
 // An FuncImport contains the runtime metadata needed to implement a call to an
 // imported function. Each function import has two call stubs: an optimized path
@@ -300,10 +354,12 @@ class FuncImport {
     return funcType_.clone(src.funcType_);
   }
 
+  bool canHaveJitExit() const { return funcType_.canHaveJitExit(); }
+
   WASM_DECLARE_SERIALIZABLE(FuncImport)
 };
 
-typedef Vector<FuncImport, 0, SystemAllocPolicy> FuncImportVector;
+using FuncImportVector = Vector<FuncImport, 0, SystemAllocPolicy>;
 
 // Metadata holds all the data that is needed to describe compiled wasm code
 // at runtime (as opposed to data that is only used to statically link or
@@ -319,34 +375,32 @@ typedef Vector<FuncImport, 0, SystemAllocPolicy> FuncImportVector;
 
 struct MetadataCacheablePod {
   ModuleKind kind;
-  MemoryUsage memoryUsage;
-  uint64_t minMemoryLength;
+  Maybe<MemoryDesc> memory;
   uint32_t globalDataLength;
-  Maybe<uint64_t> maxMemoryLength;
   Maybe<uint32_t> startFuncIndex;
   Maybe<uint32_t> nameCustomSectionIndex;
   bool filenameIsURL;
-  bool v128Enabled;
   bool omitsBoundsChecks;
 
   explicit MetadataCacheablePod(ModuleKind kind)
       : kind(kind),
-        memoryUsage(MemoryUsage::None),
-        minMemoryLength(0),
         globalDataLength(0),
         filenameIsURL(false),
-        v128Enabled(false),
         omitsBoundsChecks(false) {}
 };
 
 typedef uint8_t ModuleHash[8];
-typedef Vector<ValTypeVector, 0, SystemAllocPolicy> FuncArgTypesVector;
-typedef Vector<ValTypeVector, 0, SystemAllocPolicy> FuncReturnTypesVector;
+using FuncArgTypesVector = Vector<ValTypeVector, 0, SystemAllocPolicy>;
+using FuncReturnTypesVector = Vector<ValTypeVector, 0, SystemAllocPolicy>;
 
 struct Metadata : public ShareableBase<Metadata>, public MetadataCacheablePod {
-  FuncTypeWithIdVector funcTypeIds;
+  TypeDefWithIdVector types;
+  RenumberVector typesRenumbering;
   GlobalDescVector globals;
   TableDescVector tables;
+#ifdef ENABLE_WASM_EXCEPTIONS
+  TagDescVector tags;
+#endif
   CacheableChars filename;
   CacheableChars sourceMapURL;
 
@@ -370,8 +424,10 @@ struct Metadata : public ShareableBase<Metadata>, public MetadataCacheablePod {
   MetadataCacheablePod& pod() { return *this; }
   const MetadataCacheablePod& pod() const { return *this; }
 
-  bool usesMemory() const { return memoryUsage != MemoryUsage::None; }
-  bool usesSharedMemory() const { return memoryUsage == MemoryUsage::Shared; }
+  bool usesMemory() const { return memory.isSome(); }
+  bool usesSharedMemory() const {
+    return memory.isSome() && memory->isShared();
+  }
 
   // Invariant: The result of getFuncResultType can only be used as long as
   // MetaData is live, because the returned ResultType may encode a pointer to
@@ -429,6 +485,9 @@ struct MetadataTier {
   FuncImportVector funcImports;
   FuncExportVector funcExports;
   StackMaps stackMaps;
+#ifdef ENABLE_WASM_EXCEPTIONS
+  WasmTryNoteVector tryNotes;
+#endif
 
   // Debug information, not serialized.
   Uint32Vector debugTrapFarJumpOffsets;
@@ -450,7 +509,7 @@ struct MetadataTier {
 using UniqueMetadataTier = UniquePtr<MetadataTier>;
 
 // LazyStubSegment is a code segment lazily generated for function entry stubs
-// (both interpreter and jit ones).
+// (both interpreter and jit ones) and for indirect stubs.
 //
 // Because a stub is usually small (a few KiB) and an executable code segment
 // isn't (64KiB), a given stub segment can contain entry stubs of many
@@ -477,13 +536,21 @@ class LazyStubSegment : public CodeSegment {
   }
 
   bool hasSpace(size_t bytes) const;
-  bool addStubs(size_t codeLength, const Uint32Vector& funcExportIndices,
-                const FuncExportVector& funcExports,
-                const CodeRangeVector& codeRanges, uint8_t** codePtr,
-                size_t* indexFirstInsertedCodeRange);
+  [[nodiscard]] bool addStubs(size_t codeLength,
+                              const Uint32Vector& funcExportIndices,
+                              const FuncExportVector& funcExports,
+                              const CodeRangeVector& codeRanges,
+                              uint8_t** codePtr,
+                              size_t* indexFirstInsertedCodeRange);
+
+  [[nodiscard]] bool addIndirectStubs(size_t codeLength,
+                                      const VectorOfIndirectStubTarget& targets,
+                                      const CodeRangeVector& codeRanges,
+                                      uint8_t** codePtr,
+                                      size_t* indexFirstInsertedCodeRange);
 
   const CodeRangeVector& codeRanges() const { return codeRanges_; }
-  const CodeRange* lookupRange(const void* pc) const;
+  [[nodiscard]] const CodeRange* lookupRange(const void* pc) const;
 
   void addSizeOfMisc(MallocSizeOf mallocSizeOf, size_t* code,
                      size_t* data) const;
@@ -506,8 +573,31 @@ struct LazyFuncExport {
 
 using LazyFuncExportVector = Vector<LazyFuncExport, 0, SystemAllocPolicy>;
 
+// IndirectStub provides a mapping between function indices and
+// indirect stubs code ranges.
+
+// The function index is the index of the function *within a specific module*,
+// not necessarily in the module that owns the stub.  That module's and
+// function's instance is provided by the tls field.
+
+struct IndirectStub {
+  size_t funcIndex;
+  size_t segmentIndex;
+  size_t codeRangeIndex;
+  void* tls;
+  IndirectStub(size_t funcIndex, size_t segmentIndex, size_t codeRangeIndex,
+               TlsData* tls)
+      : funcIndex(funcIndex),
+        segmentIndex(segmentIndex),
+        codeRangeIndex(codeRangeIndex),
+        tls(tls) {}
+};
+
+using IndirectStubVector = Vector<IndirectStub, 0, SystemAllocPolicy>;
+
 // LazyStubTier contains all the necessary information for lazy function entry
-// stubs that are generated at runtime. None of its data is ever serialized.
+// stubs and indirect stubs that are generated at runtime.
+// None of its data are ever serialized.
 //
 // It must be protected by a lock, because the main thread can both read and
 // write lazy stubs at any time while a background thread can regenerate lazy
@@ -516,31 +606,53 @@ using LazyFuncExportVector = Vector<LazyFuncExport, 0, SystemAllocPolicy>;
 class LazyStubTier {
   LazyStubSegmentVector stubSegments_;
   LazyFuncExportVector exports_;
+  // The indirectStubVector_ is totally ordered by IndirectStubComparator (in
+  // WasmCode.cpp): the primary index is the funcIndex, the secondary index the
+  // pointer value of the tls.  The vector is binary-searched by that predicate
+  // when an entry is needed.
+  //
+  // Creating an indirect stub is not an idempotent operation!  There must be NO
+  // duplicate entries in the table, which is another way of saying that an
+  // entry that is in the table must always be found by a lookup.
+  IndirectStubVector indirectStubVector_;
   size_t lastStubSegmentIndex_;
 
-  bool createMany(const Uint32Vector& funcExportIndices,
-                  const CodeTier& codeTier, size_t* stubSegmentIndex);
+  [[nodiscard]] bool createManyEntryStubs(const Uint32Vector& funcExportIndices,
+                                          const CodeTier& codeTier,
+                                          bool flushAllThreadsIcaches,
+                                          size_t* stubSegmentIndex);
 
  public:
   LazyStubTier() : lastStubSegmentIndex_(0) {}
 
-  bool empty() const { return stubSegments_.empty(); }
-  bool hasStub(uint32_t funcIndex) const;
-
-  // Returns a pointer to the raw interpreter entry of a given function which
-  // stubs have been lazily generated.
-  void* lookupInterpEntry(uint32_t funcIndex) const;
-
   // Creates one lazy stub for the exported function, for which the jit entry
   // will be set to the lazily-generated one.
-  bool createOne(uint32_t funcExportIndex, const CodeTier& codeTier);
+  [[nodiscard]] bool createOneEntryStub(uint32_t funcExportIndex,
+                                        const CodeTier& codeTier);
+
+  bool entryStubsEmpty() const { return stubSegments_.empty(); }
+  bool hasEntryStub(uint32_t funcIndex) const;
+
+  // Returns a pointer to the raw interpreter entry of a given function for
+  // which stubs have been lazily generated.
+  [[nodiscard]] void* lookupInterpEntry(uint32_t funcIndex) const;
+
+  // Creates many indirect stubs.
+  [[nodiscard]] bool createManyIndirectStubs(
+      const VectorOfIndirectStubTarget& targets, const CodeTier& codeTier);
+
+  // Returns a pointer to the indirect stub of a given function.
+  [[nodiscard]] void* lookupIndirectStub(uint32_t funcIndex, void* tls) const;
+
+  [[nodiscard]] const CodeRange* lookupRange(const void* pc) const;
 
   // Create one lazy stub for all the functions in funcExportIndices, putting
   // them in a single stub. Jit entries won't be used until
   // setJitEntries() is actually called, after the Code owner has committed
   // tier2.
-  bool createTier2(const Uint32Vector& funcExportIndices,
-                   const CodeTier& codeTier, Maybe<size_t>* stubSegmentIndex);
+  [[nodiscard]] bool createTier2(const Uint32Vector& funcExportIndices,
+                                 const CodeTier& codeTier,
+                                 Maybe<size_t>* stubSegmentIndex);
   void setJitEntries(const Maybe<size_t>& stubSegmentIndex, const Code& code);
 
   void addSizeOfMisc(MallocSizeOf mallocSizeOf, size_t* code,
@@ -579,7 +691,7 @@ class CodeTier {
         lazyStubs_(mutexForTier(segment_->tier())) {}
 
   bool initialized() const { return !!code_ && segment_->initialized(); }
-  bool initialize(const Code& code, const LinkData& linkData,
+  bool initialize(IsTier2 isTier2, const Code& code, const LinkData& linkData,
                   const Metadata& metadata);
 
   Tier tier() const { return segment_->tier(); }
@@ -592,6 +704,9 @@ class CodeTier {
   }
 
   const CodeRange* lookupRange(const void* pc) const;
+#ifdef ENABLE_WASM_EXCEPTIONS
+  const WasmTryNote* lookupWasmTryNote(const void* pc) const;
+#endif
 
   size_t serializedSize() const;
   uint8_t* serialize(uint8_t* cursor, const LinkData& linkData) const;
@@ -602,8 +717,37 @@ class CodeTier {
                      size_t* data) const;
 };
 
-// Jump tables to take tiering into account, when calling either from wasm to
-// wasm (through rabaldr) or from jit to wasm (jit entry).
+// Jump tables that implement function tiering and fast js-to-wasm calls.
+//
+// There is one JumpTable object per Code object, holding two jump tables: the
+// tiering jump table and the jit-entry jump table.  The JumpTable is not
+// serialized with its Code, but is a run-time entity only.  At run-time it is
+// shared across threads with its owning Code (and the Module that owns the
+// Code).  Values in the JumpTable /must/ /always/ be JSContext-agnostic and
+// Instance-agnostic, because of this sharing.
+//
+// Both jump tables have a number of entries equal to the number of functions in
+// their Module, including imports.  In the tiering table, the elements
+// corresponding to the Module's imported functions are unused; in the jit-entry
+// table, the elements corresponding to the Module's non-exported functions are
+// unused.  (Functions can be exported explicitly via the exports section or
+// implicitly via a mention of their indices outside function bodies.)  See
+// comments at JumpTables::init() and WasmInstanceObject::getExportedFunction().
+// The entries are void*.  Unused entries are null.
+//
+// The tiering jump table.
+//
+// This table holds code pointers that are used by baseline functions to enter
+// optimized code.  See the large comment block in WasmCompile.cpp for
+// information about how tiering works.
+//
+// The jit-entry jump table.
+//
+// The jit-entry jump table entry for a function holds a stub that allows Jitted
+// JS code to call wasm using the JS JIT ABI.  See large comment block at
+// WasmInstanceObject::getExportedFunction() for more about exported functions
+// and stubs and the lifecycle of the entries in the jit-entry table - there are
+// complex invariants.
 
 class JumpTables {
   using TablePointer = mozilla::UniquePtr<void*[], JS::FreePolicy>;
@@ -622,6 +766,15 @@ class JumpTables {
     // to that effect.
     MOZ_ASSERT(i < numFuncs_);
     jit_.get()[i] = target;
+  }
+  void setJitEntryIfNull(size_t i, void* target) const {
+    // Make sure that compare-and-write is atomic; see comment in
+    // wasm::Module::finishTier2 to that effect.
+    MOZ_ASSERT(i < numFuncs_);
+    void* expected = nullptr;
+    (void)__atomic_compare_exchange_n(&jit_.get()[i], &expected, target,
+                                      /*weak=*/false, __ATOMIC_RELAXED,
+                                      __ATOMIC_RELAXED);
   }
   void** getAddressOfJitEntry(size_t i) const {
     MOZ_ASSERT(i < numFuncs_);
@@ -660,16 +813,34 @@ using MutableCode = RefPtr<Code>;
 
 class Code : public ShareableBase<Code> {
   UniqueCodeTier tier1_;
-  mutable UniqueConstCodeTier tier2_;  // Access only when hasTier2() is true
+
+  // [SMDOC] Tier-2 data
+  //
+  // hasTier2_ and tier2_ implement a three-state protocol for broadcasting
+  // tier-2 data; this also amounts to a single-writer/multiple-reader setup.
+  //
+  // Initially hasTier2_ is false and tier2_ is null.
+  //
+  // While hasTier2_ is false, *no* thread may read tier2_, but one thread may
+  // make tier2_ non-null (this will be the tier-2 compiler thread).  That same
+  // thread must then later set hasTier2_ to true to broadcast the tier2_ value
+  // and its availability.  Note that the writing thread may not itself read
+  // tier2_ before setting hasTier2_, in order to simplify reasoning about
+  // global invariants.
+  //
+  // Once hasTier2_ is true, *no* thread may write tier2_ and *no* thread may
+  // read tier2_ without having observed hasTier2_ as true first.  Once
+  // hasTier2_ is true, it stays true.
+  mutable UniqueConstCodeTier tier2_;
   mutable Atomic<bool> hasTier2_;
+
   SharedMetadata metadata_;
   ExclusiveData<CacheableCharsVector> profilingLabels_;
   JumpTables jumpTables_;
-  StructTypeVector structTypes_;
 
  public:
   Code(UniqueCodeTier tier1, const Metadata& metadata,
-       JumpTables&& maybeJumpTables, StructTypeVector&& structTypes);
+       JumpTables&& maybeJumpTables);
   bool initialized() const { return tier1_->initialized(); }
 
   bool initialize(const LinkData& linkData);
@@ -682,12 +853,20 @@ class Code : public ShareableBase<Code> {
   void setJitEntry(size_t i, void* target) const {
     jumpTables_.setJitEntry(i, target);
   }
+  void setJitEntryIfNull(size_t i, void* target) const {
+    jumpTables_.setJitEntryIfNull(i, target);
+  }
   void** getAddressOfJitEntry(size_t i) const {
     return jumpTables_.getAddressOfJitEntry(i);
   }
   uint32_t getFuncIndex(JSFunction* fun) const;
 
-  bool setTier2(UniqueCodeTier tier2, const LinkData& linkData) const;
+  // Install the tier2 code without committing it.  To maintain the invariant
+  // that tier2_ is never accessed without the tier having been committed, this
+  // returns a pointer to the installed tier that the caller can use for
+  // subsequent operations.
+  bool setAndBorrowTier2(UniqueCodeTier tier2, const LinkData& linkData,
+                         const CodeTier** borrowedTier) const;
   void commitTier2() const;
 
   bool hasTier2() const { return hasTier2_; }
@@ -700,7 +879,6 @@ class Code : public ShareableBase<Code> {
 
   const CodeTier& codeTier(Tier tier) const;
   const Metadata& metadata() const { return *metadata_; }
-  const StructTypeVector& structTypes() const { return structTypes_; }
 
   const ModuleSegment& segment(Tier iter) const {
     return codeTier(iter).segment();
@@ -713,7 +891,11 @@ class Code : public ShareableBase<Code> {
 
   const CallSite* lookupCallSite(void* returnAddress) const;
   const CodeRange* lookupFuncRange(void* pc) const;
+  const CodeRange* lookupIndirectStubRange(void* pc) const;
   const StackMap* lookupStackMap(uint8_t* nextPC) const;
+#ifdef ENABLE_WASM_EXCEPTIONS
+  const WasmTryNote* lookupWasmTryNote(void* pc, Tier* tier) const;
+#endif
   bool containsCodePC(const void* pc) const;
   bool lookupTrap(void* pc, Trap* trap, BytecodeOffset* bytecode) const;
 
@@ -722,6 +904,11 @@ class Code : public ShareableBase<Code> {
 
   void ensureProfilingLabels(bool profilingEnabled) const;
   const char* profilingLabel(uint32_t funcIndex) const;
+
+  // Wasm disassembly support
+
+  void disassemble(JSContext* cx, Tier tier, int kindSelection,
+                   PrintCallback printString) const;
 
   // about:memory reporting:
 
@@ -738,7 +925,7 @@ class Code : public ShareableBase<Code> {
   uint8_t* serialize(uint8_t* cursor, const LinkData& linkData) const;
   static const uint8_t* deserialize(const uint8_t* cursor,
                                     const LinkData& linkData,
-                                    Metadata& metadata, SharedCode* code);
+                                    Metadata& metadata, SharedCode* out);
 };
 
 void PatchDebugSymbolicAccesses(uint8_t* codeBase, jit::MacroAssembler& masm);

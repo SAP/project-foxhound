@@ -8,20 +8,27 @@
            noautofocus="true"
            role="alert"/>
 
-    <popupnotification id="webRTC-shareDevices-notification" hidden="true">
+    <popupnotification id="webRTC-shareDevices-notification" hidden="true" 
+                       descriptionid="webRTC-shareDevices-notification-description">
       <popupnotificationcontent id="webRTC-selectCamera" orient="vertical">
-        <label data-l10n-id="popup-select-camera"
+        <label id="webRTC-selectCamera-label"
+               data-l10n-id="popup-select-camera-device"
                control="webRTC-selectCamera-menulist"/>
-        <menulist id="webRTC-selectCamera-menulist">
-          <menupopup id="webRTC-selectCamera-menupopup"/>
-        </menulist>
+        <html:div class="webRTC-selectDevice-selector-container">
+          <xul:image id="webRTC-selectCamera-icon" class="webRTC-selectDevice-icon" data-l10n-id="popup-select-camera-icon"/>
+          <menulist id="webRTC-selectCamera-menulist" aria-labelledby="webRTC-selectCamera-icon" size="large">
+            <menupopup id="webRTC-selectCamera-menupopup"/>
+          </menulist>
+          <label id="webRTC-selectCamera-single-device-label" class="webRTC-selectDevice-label"></label>
+        </html:div>
       </popupnotificationcontent>
 
       <popupnotificationcontent id="webRTC-selectWindowOrScreen" orient="vertical">
         <label id="webRTC-selectWindow-label"
                control="webRTC-selectWindow-menulist"/>
         <menulist id="webRTC-selectWindow-menulist"
-                  oncommand="webrtcUI.updateWarningLabel(this);">
+                  oncommand="webrtcUI.updateWarningLabel(this);"
+                  size="large">
           <menupopup id="webRTC-selectWindow-menupopup"/>
         </menulist>
         <description id="webRTC-all-windows-shared" hidden="true" data-l10n-id="popup-all-windows-shared"></description>
@@ -30,17 +37,34 @@
       <popupnotificationcontent id="webRTC-preview" hidden="true">
         <html:video id="webRTC-previewVideo" tabindex="-1"/>
         <vbox id="webRTC-previewWarningBox">
-          <spacer flex="1"/>
           <description id="webRTC-previewWarning"/>
+          <hbox>
+            <label id="webRTC-previewWarning-learnMore" is="text-link" class="popup-notification-learnmore-link"/>
+          </hbox>
         </vbox>
       </popupnotificationcontent>
 
       <popupnotificationcontent id="webRTC-selectMicrophone" orient="vertical">
-        <label data-l10n-id="popup-select-microphone"
+        <label id="webRTC-selectMicrophone-label"
+               data-l10n-id="popup-select-microphone-device"
                control="webRTC-selectMicrophone-menulist"/>
-        <menulist id="webRTC-selectMicrophone-menulist">
-          <menupopup id="webRTC-selectMicrophone-menupopup"/>
-        </menulist>
+        <html:div class="webRTC-selectDevice-selector-container">
+          <xul:image id="webRTC-selectMicrophone-icon" data-l10n-id="popup-select-microphone-icon" class="webRTC-selectDevice-icon"/>
+          <menulist id="webRTC-selectMicrophone-menulist" aria-labelledby="webRTC-selectMicrophone-icon" size="large">
+            <menupopup id="webRTC-selectMicrophone-menupopup"/>
+          </menulist>
+          <label id="webRTC-selectMicrophone-single-device-label" class="webRTC-selectDevice-label"></label>
+        </html:div>
+      </popupnotificationcontent>
+
+      <popupnotificationcontent id="webRTC-selectSpeaker" orient="vertical">
+        <html:div class="webRTC-selectDevice-selector-container">
+          <xul:image id="webRTC-selectSpeaker-icon" data-l10n-id="popup-select-speaker-icon" class="webRTC-selectDevice-icon"/>
+          <menulist id="webRTC-selectSpeaker-menulist" aria-labelledby="webRTC-selectSpeaker-icon" size="large">
+            <menupopup id="webRTC-selectSpeaker-menupopup"/>
+          </menulist>
+          <label id="webRTC-selectSpeaker-single-device-label" class="webRTC-selectDevice-label"></label>
+        </html:div>
       </popupnotificationcontent>
     </popupnotification>
 
@@ -52,8 +76,10 @@
 
     <popupnotification id="password-notification" hidden="true">
       <popupnotificationcontent orient="vertical">
+        <label data-l10n-id="panel-save-update-username" control="password-notification-username" class="password-notification-label"></label>
         <stack>
           <html:input id="password-notification-username" 
+                      type="text"
                       class="ac-has-end-icon"
                       autocompletesearch="login-doorhanger-username"
                       autocompletepopup="PopupAutoComplete"
@@ -63,6 +89,7 @@
           <dropmarker id="password-notification-username-dropmarker"
                       class="ac-dropmarker"/>
         </stack>
+        <label data-l10n-id="panel-save-update-password" control="password-notification-password" class="password-notification-label"></label>
         <stack>
           <html:input id="password-notification-password" type="password"/>
           <dropmarker id="password-notification-password-dropmarker"
@@ -88,6 +115,7 @@
       <popupnotificationcontent class="addon-webext-perm-notification-content" orient="vertical">
         <description id="addon-webext-perm-text" class="addon-webext-perm-text"/>
         <label id="addon-webext-perm-intro" class="addon-webext-perm-text"/>
+        <label id="addon-webext-perm-single-entry" class="addon-webext-perm-single-entry"/>
         <html:ul id="addon-webext-perm-list" class="addon-webext-perm-list"/>
         <hbox>
           <label id="addon-webext-perm-info" is="text-link" class="popup-notification-learnmore-link"/>
@@ -104,7 +132,16 @@
       </popupnotificationcontent>
     </popupnotification>
 
-    <popupnotification id="contextual-feature-recommendation-notification" hidden="true">
+    <popupnotification id="canvas-permissions-prompt-notification" hidden="true">
+      <popupnotificationcontent orient="vertical">
+        <description class="popup-notification-description"/>
+        <label id="canvas-permissions-prompt-warning"/>
+      </popupnotificationcontent>
+    </popupnotification>
+
+    <popupnotification id="contextual-feature-recommendation-notification"
+                       buttonhighlight="true"
+                       hidden="true">
       <popupnotificationheader id="cfr-notification-header">
         <stack id="cfr-notification-header-stack">
           <description id="cfr-notification-header-label"></description>

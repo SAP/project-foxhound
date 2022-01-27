@@ -18,6 +18,9 @@
 #include "UrlClassifierFeatureSocialTrackingProtection.h"
 #include "UrlClassifierFeatureTrackingProtection.h"
 
+#include "mozilla/StaticPtr.h"
+#include "nsIChannel.h"
+
 namespace mozilla {
 namespace net {
 
@@ -137,10 +140,19 @@ UrlClassifierBlockedChannel::GetIsPrivateBrowsing(bool* aIsPrivateBrowsing) {
 }
 
 NS_IMETHODIMP
-UrlClassifierBlockedChannel::Unblock() {
-  UC_LOG(("ChannelClassifierService: unblock channel %p", mChannel.get()));
+UrlClassifierBlockedChannel::Allow() {
+  UC_LOG(("ChannelClassifierService: allow loading the channel %p",
+          mChannel.get()));
 
-  mDecision = ChannelBlockDecision::Unblocked;
+  mDecision = ChannelBlockDecision::Allowed;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+UrlClassifierBlockedChannel::Replace() {
+  UC_LOG(("ChannelClassifierService: replace channel %p", mChannel.get()));
+
+  mDecision = ChannelBlockDecision::Replaced;
   return NS_OK;
 }
 
@@ -249,9 +261,7 @@ nsresult ChannelClassifierService::OnBeforeBlockChannel(
         NS_ISUPPORTS_CAST(nsIUrlClassifierBlockedChannel*, channel),
         "urlclassifier-before-block-channel", nullptr);
 
-    if (channel->IsUnblocked()) {
-      aDecision = ChannelBlockDecision::Unblocked;
-    }
+    aDecision = channel->GetDecision();
   }
 
   return NS_OK;

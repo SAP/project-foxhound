@@ -15,6 +15,8 @@ interface TestInterfaceMaplike {
   void clearInternal();
   boolean deleteInternal(DOMString aKey);
   boolean hasInternal(DOMString aKey);
+  [Throws]
+  long getInternal(DOMString aKey);
 };
 
 [Pref="dom.expose_test_interfaces",
@@ -28,19 +30,23 @@ interface TestInterfaceMaplikeObject {
   void clearInternal();
   boolean deleteInternal(DOMString aKey);
   boolean hasInternal(DOMString aKey);
+  [Throws]
+  TestInterfaceMaplike? getInternal(DOMString aKey);
 };
 
 [Pref="dom.expose_test_interfaces",
- JSImplementation="@mozilla.org/dom/test-interface-js-maplike;1",
  Exposed=Window]
-interface TestInterfaceJSMaplike {
+interface TestInterfaceMaplikeJSObject {
   [Throws]
   constructor();
 
-  readonly maplike<DOMString, long>;
-  void setInternal(DOMString aKey, long aValue);
+  readonly maplike<DOMString, object>;
+  void setInternal(DOMString aKey, object aObject);
   void clearInternal();
   boolean deleteInternal(DOMString aKey);
+  boolean hasInternal(DOMString aKey);
+  [Throws]
+  object? getInternal(DOMString aKey);
 };
 
 [Pref="dom.expose_test_interfaces",

@@ -1,6 +1,6 @@
 add_task(async function() {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.ctrlTab.recentlyUsedOrder", true]],
+    set: [["browser.ctrlTab.sortByRecentlyUsed", true]],
   });
 
   BrowserTestUtils.addTab(gBrowser);
@@ -185,7 +185,7 @@ add_task(async function() {
 
   function canOpen() {
     return (
-      Services.prefs.getBoolPref("browser.ctrlTab.recentlyUsedOrder") &&
+      Services.prefs.getBoolPref("browser.ctrlTab.sortByRecentlyUsed") &&
       gBrowser.tabs.length > 2
     );
   }
@@ -210,6 +210,17 @@ add_task(async function() {
       normalized == 1
         ? "back to the previously selected tab"
         : normalized + " tabs back in most-recently-selected order";
+
+    // Add keyup listener to all content documents.
+    await Promise.all(
+      gBrowser.tabs.map(tab =>
+        SpecialPowers.spawn(tab.linkedBrowser, [], () => {
+          content.window.addEventListener("keyup", () => {
+            content.window._ctrlTabTestKeyupHappend = true;
+          });
+        })
+      )
+    );
 
     for (let i = 0; i < tabTimes; i++) {
       await pressCtrlTab();
@@ -252,6 +263,20 @@ add_task(async function() {
         tabTimes +
         " goes " +
         where
+    );
+
+    const keyupEvents = await Promise.all(
+      gBrowser.tabs.map(tab =>
+        SpecialPowers.spawn(
+          tab.linkedBrowser,
+          [],
+          () => !!content.window._ctrlTabTestKeyupHappend
+        )
+      )
+    );
+    ok(
+      keyupEvents.every(isKeyupHappned => !isKeyupHappned),
+      "Content document doesn't capture Keyup event during cycling tabs"
     );
   }
 });

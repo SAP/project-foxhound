@@ -6,20 +6,19 @@
 
 #include "BodyStream.h"
 #include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/Unused.h"
 #include "nsProxyRelease.h"
 #include "nsStreamUtils.h"
 
-static NS_DEFINE_CID(kStreamTransportServiceCID, NS_STREAMTRANSPORTSERVICE_CID);
-
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // BodyStreamHolder
 // ---------------------------------------------------------------------------
@@ -573,5 +572,4 @@ BodyStream::Observe(nsISupports* aSubject, const char* aTopic,
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

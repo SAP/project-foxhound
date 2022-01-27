@@ -16,6 +16,8 @@
 #include "mozilla/UniquePtr.h"
 #include "nsTArray.h"
 
+#include <unordered_map>
+
 namespace mozilla {
 
 class InputData;
@@ -35,6 +37,8 @@ class PinchGestureBlockState;
 class KeyboardBlockState;
 class AsyncDragMetrics;
 class QueuedInput;
+struct APZEventResult;
+struct APZHandledResult;
 
 /**
  * This class stores incoming input events, associated with "input blocks",
@@ -50,12 +54,11 @@ class InputQueue {
    * Notifies the InputQueue of a new incoming input event. The APZC that the
    * input event was targeted to should be provided in the |aTarget| parameter.
    * See the documentation on APZCTreeManager::ReceiveInputEvent for info on
-   * return values from this function, including |aOutInputBlockId|.
+   * return values from this function.
    */
-  nsEventStatus ReceiveInputEvent(
+  APZEventResult ReceiveInputEvent(
       const RefPtr<AsyncPanZoomController>& aTarget,
-      TargetConfirmationFlags aFlags, const InputData& aEvent,
-      uint64_t* aOutInputBlockId,
+      TargetConfirmationFlags aFlags, InputData& aEvent,
       const Maybe<nsTArray<TouchBehaviorFlags>>& aTouchBehaviors = Nothing());
   /**
    * This function should be invoked to notify the InputQueue when web content
@@ -144,6 +147,11 @@ class InputQueue {
 
   InputBlockState* GetBlockForId(uint64_t aInputBlockId);
 
+  using InputBlockCallback = std::function<void(
+      uint64_t aInputBlockId, APZHandledResult aHandledResult)>;
+  void AddInputBlockCallback(uint64_t aInputBlockId,
+                             InputBlockCallback&& aCallback);
+
  private:
   ~InputQueue();
 
@@ -170,36 +178,32 @@ class InputQueue {
                                    CancelAnimationFlags aExtraFlags = Default);
 
   /**
-   * If we need to wait for a content response, schedule that now.
+   * If we need to wait for a content response, schedule that now. Returns true
+   * if the timeout was scheduled, false otherwise.
    */
-  void MaybeRequestContentResponse(
+  bool MaybeRequestContentResponse(
       const RefPtr<AsyncPanZoomController>& aTarget,
       CancelableBlockState* aBlock);
 
-  nsEventStatus ReceiveTouchInput(
+  APZEventResult ReceiveTouchInput(
       const RefPtr<AsyncPanZoomController>& aTarget,
       TargetConfirmationFlags aFlags, const MultiTouchInput& aEvent,
-      uint64_t* aOutInputBlockId,
       const Maybe<nsTArray<TouchBehaviorFlags>>& aTouchBehaviors);
-  nsEventStatus ReceiveMouseInput(const RefPtr<AsyncPanZoomController>& aTarget,
-                                  TargetConfirmationFlags aFlags,
-                                  const MouseInput& aEvent,
-                                  uint64_t* aOutInputBlockId);
-  nsEventStatus ReceiveScrollWheelInput(
+  APZEventResult ReceiveMouseInput(
       const RefPtr<AsyncPanZoomController>& aTarget,
-      TargetConfirmationFlags aFlags, const ScrollWheelInput& aEvent,
-      uint64_t* aOutInputBlockId);
-  nsEventStatus ReceivePanGestureInput(
+      TargetConfirmationFlags aFlags, MouseInput& aEvent);
+  APZEventResult ReceiveScrollWheelInput(
       const RefPtr<AsyncPanZoomController>& aTarget,
-      TargetConfirmationFlags aFlags, const PanGestureInput& aEvent,
-      uint64_t* aOutInputBlockId);
-  nsEventStatus ReceivePinchGestureInput(
+      TargetConfirmationFlags aFlags, const ScrollWheelInput& aEvent);
+  APZEventResult ReceivePanGestureInput(
       const RefPtr<AsyncPanZoomController>& aTarget,
-      TargetConfirmationFlags aFlags, const PinchGestureInput& aEvent,
-      uint64_t* aOutInputBlockId);
-  nsEventStatus ReceiveKeyboardInput(
+      TargetConfirmationFlags aFlags, const PanGestureInput& aEvent);
+  APZEventResult ReceivePinchGestureInput(
       const RefPtr<AsyncPanZoomController>& aTarget,
-      const KeyboardInput& aEvent, uint64_t* aOutInputBlockId);
+      TargetConfirmationFlags aFlags, const PinchGestureInput& aEvent);
+  APZEventResult ReceiveKeyboardInput(
+      const RefPtr<AsyncPanZoomController>& aTarget,
+      TargetConfirmationFlags aFlags, const KeyboardInput& aEvent);
 
   /**
    * Helper function that searches mQueuedInputs for the first block matching
@@ -215,6 +219,7 @@ class InputQueue {
   void ScheduleMainThreadTimeout(const RefPtr<AsyncPanZoomController>& aTarget,
                                  CancelableBlockState* aBlock);
   void MainThreadTimeout(uint64_t aInputBlockId);
+  void MaybeLongTapTimeout(uint64_t aInputBlockId);
   void ProcessQueue();
   bool CanDiscardBlock(InputBlockState* aBlock);
   void UpdateActiveApzc(const RefPtr<AsyncPanZoomController>& aNewActive);
@@ -248,6 +253,12 @@ class InputQueue {
   // Temporarily stores a timeout task that needs to be run as soon as
   // as the event that triggered it has been queued.
   RefPtr<Runnable> mImmediateTimeout;
+
+  // Maps input block ids to callbacks that will be invoked when the input block
+  // is ready for handling.
+  using InputBlockCallbackMap =
+      std::unordered_map<uint64_t, InputBlockCallback>;
+  InputBlockCallbackMap mInputBlockCallbacks;
 };
 
 }  // namespace layers

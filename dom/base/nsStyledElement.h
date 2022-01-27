@@ -17,11 +17,12 @@
 #define __NS_STYLEDELEMENT_H_
 
 #include "mozilla/Attributes.h"
-#include "nsString.h"
 #include "mozilla/dom/Element.h"
+#include "nsString.h"
 
 namespace mozilla {
 class DeclarationBlock;
+struct MutationClosureData;
 }  // namespace mozilla
 
 // IID for nsStyledElement interface
@@ -32,7 +33,7 @@ class DeclarationBlock;
     }                                                \
   }
 
-typedef mozilla::dom::Element nsStyledElementBase;
+using nsStyledElementBase = mozilla::dom::Element;
 
 class nsStyledElement : public nsStyledElementBase {
  protected:
@@ -56,6 +57,9 @@ class nsStyledElement : public nsStyledElementBase {
   nsICSSDeclaration* Style();
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_STYLED_ELEMENT_IID)
+  NS_IMPL_FROMNODE_HELPER(nsStyledElement, IsStyledElement());
+
+  bool IsStyledElement() const final { return true; }
 
  protected:
   nsICSSDeclaration* GetExistingStyle();

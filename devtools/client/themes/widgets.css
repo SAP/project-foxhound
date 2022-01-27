@@ -140,7 +140,7 @@
 /* Generic variables traits */
 
 .variables-view-variable:not(:last-child) {
-  border-bottom: 1px solid rgba(128, 128, 128, .15);
+  border-bottom: 1px solid var(--theme-splitter-color);
 }
 
 .variables-view-variable > .title > .name {
@@ -206,7 +206,7 @@
 /* Custom configurable/enumerable/writable or frozen/sealed/extensible
  * variables and properties */
 
-.variable-or-property[non-enumerable]:not([self]):not([pseudo-item]) > .title > .name {
+.variable-or-property[non-enumerable]:not([self], [pseudo-item]) > .title > .name {
   opacity: 0.6;
 }
 

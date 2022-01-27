@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2005-2007 Henri Sivonen
- * Copyright (c) 2007-2015 Mozilla Foundation
+ * Copyright (c) 2007-2017 Mozilla Foundation
  * Portions of comments Copyright 2004-2010 Apple Computer, Inc., Mozilla
  * Foundation, and Opera Software ASA.
  *
@@ -31,21 +31,21 @@
 #ifndef nsHtml5Tokenizer_h
 #define nsHtml5Tokenizer_h
 
-#include "nsAtom.h"
-#include "nsHtml5AtomTable.h"
-#include "nsHtml5String.h"
-#include "nsIContent.h"
-#include "nsTraceRefcnt.h"
 #include "jArray.h"
-#include "nsHtml5DocumentMode.h"
+#include "nsAHtml5TreeBuilderState.h"
+#include "nsAtom.h"
+#include "nsGkAtoms.h"
 #include "nsHtml5ArrayCopy.h"
+#include "nsHtml5AtomTable.h"
+#include "nsHtml5DocumentMode.h"
+#include "nsHtml5Highlighter.h"
+#include "nsHtml5Macros.h"
 #include "nsHtml5NamedCharacters.h"
 #include "nsHtml5NamedCharactersAccel.h"
-#include "nsGkAtoms.h"
-#include "nsAHtml5TreeBuilderState.h"
-#include "nsHtml5Macros.h"
-#include "nsHtml5Highlighter.h"
+#include "nsHtml5String.h"
 #include "nsHtml5TokenizerLoopPolicies.h"
+#include "nsIContent.h"
+#include "nsTraceRefcnt.h"
 
 class nsHtml5StreamParser;
 
@@ -212,6 +212,14 @@ class nsHtml5Tokenizer {
 
   static const int32_t PROCESSING_INSTRUCTION_QUESTION_MARK = 74;
 
+  static const int32_t COMMENT_LESSTHAN = 76;
+
+  static const int32_t COMMENT_LESSTHAN_BANG = 77;
+
+  static const int32_t COMMENT_LESSTHAN_BANG_DASH = 78;
+
+  static const int32_t COMMENT_LESSTHAN_BANG_DASH_DASH = 79;
+
  private:
   static const int32_t LEAD_OFFSET = (0xD800 - (0x10000 >> 10));
 
@@ -371,8 +379,8 @@ class nsHtml5Tokenizer {
   void emitStrBuf();
   inline void appendSecondHyphenToBogusComment() { appendStrBuf('-'); }
 
-  inline void adjustDoubleHyphenAndAppendToStrBufAndErr(char16_t c) {
-    errConsecutiveHyphens();
+  inline void adjustDoubleHyphenAndAppendToStrBufAndErr(
+      char16_t c, bool reportedConsecutiveHyphens) {
     appendStrBuf(c);
   }
 
@@ -405,12 +413,12 @@ class nsHtml5Tokenizer {
   void initDoctypeFields();
   inline void adjustDoubleHyphenAndAppendToStrBufCarriageReturn() {
     silentCarriageReturn();
-    adjustDoubleHyphenAndAppendToStrBufAndErr('\n');
+    adjustDoubleHyphenAndAppendToStrBufAndErr('\n', false);
   }
 
   inline void adjustDoubleHyphenAndAppendToStrBufLineFeed() {
     silentLineFeed();
-    adjustDoubleHyphenAndAppendToStrBufAndErr('\n');
+    adjustDoubleHyphenAndAppendToStrBufAndErr('\n', false);
   }
 
   inline void appendStrBufLineFeed() {
@@ -434,8 +442,8 @@ class nsHtml5Tokenizer {
  private:
   void emitCarriageReturn(char16_t* buf, const StringTaint& taint, int32_t pos);
   void emitReplacementCharacter(char16_t* buf, const StringTaint& taint, int32_t pos);
+  void maybeEmitReplacementCharacter(char16_t* buf, const StringTaint& taint, int32_t pos);
   void emitPlaintextReplacementCharacter(char16_t* buf, const StringTaint& taint, int32_t pos);
-
   void setAdditionalAndRememberAmpersandLocation(char16_t add);
   void bogusDoctype();
   void bogusDoctypeWithoutQuirks();

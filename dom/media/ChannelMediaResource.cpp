@@ -5,10 +5,13 @@
 
 #include "ChannelMediaResource.h"
 
+#include "mozilla/Preferences.h"
 #include "mozilla/dom/HTMLMediaElement.h"
+#include "mozilla/net/OpaqueResponseUtils.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsICachingChannel.h"
 #include "nsIClassOfService.h"
+#include "nsIHttpChannel.h"
 #include "nsIInputStream.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsITimedChannel.h"
@@ -307,32 +310,12 @@ nsresult ChannelMediaResource::ParseContentRangeHeader(
   NS_ENSURE_SUCCESS(rv, rv);
   NS_ENSURE_FALSE(rangeStr.IsEmpty(), NS_ERROR_ILLEGAL_VALUE);
 
-  // Parse the range header: e.g. Content-Range: bytes 7000-7999/8000.
-  int32_t spacePos = rangeStr.Find(" "_ns);
-  int32_t dashPos = rangeStr.Find("-"_ns, true, spacePos);
-  int32_t slashPos = rangeStr.Find("/"_ns, true, dashPos);
+  auto rangeOrErr = net::ParseContentRangeHeaderString(rangeStr);
+  NS_ENSURE_FALSE(rangeOrErr.isErr(), rangeOrErr.unwrapErr());
 
-  nsAutoCString aRangeStartText;
-  rangeStr.Mid(aRangeStartText, spacePos + 1, dashPos - (spacePos + 1));
-  aRangeStart = aRangeStartText.ToInteger64(&rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-  NS_ENSURE_TRUE(0 <= aRangeStart, NS_ERROR_ILLEGAL_VALUE);
-
-  nsAutoCString aRangeEndText;
-  rangeStr.Mid(aRangeEndText, dashPos + 1, slashPos - (dashPos + 1));
-  aRangeEnd = aRangeEndText.ToInteger64(&rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-  NS_ENSURE_TRUE(aRangeStart < aRangeEnd, NS_ERROR_ILLEGAL_VALUE);
-
-  nsAutoCString aRangeTotalText;
-  rangeStr.Right(aRangeTotalText, rangeStr.Length() - (slashPos + 1));
-  if (aRangeTotalText[0] == '*') {
-    aRangeTotal = -1;
-  } else {
-    aRangeTotal = aRangeTotalText.ToInteger64(&rv);
-    NS_ENSURE_TRUE(aRangeEnd < aRangeTotal, NS_ERROR_ILLEGAL_VALUE);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
+  aRangeStart = std::get<0>(rangeOrErr.inspect());
+  aRangeEnd = std::get<1>(rangeOrErr.inspect());
+  aRangeTotal = std::get<2>(rangeOrErr.inspect());
 
   LOG("Received bytes [%" PRId64 "] to [%" PRId64 "] of [%" PRId64
       "] for decoder[%p]",
@@ -636,6 +619,15 @@ already_AddRefed<BaseMediaResource> ChannelMediaResource::CloneData(
 void ChannelMediaResource::CloseChannel() {
   NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
 
+  // Revoking listener should be done before canceling the channel, because
+  // canceling the channel might cause the input stream to release its buffer.
+  // If we don't do revoke first, it's possible that `OnDataAvailable` would be
+  // called later and then incorrectly access that released buffer.
+  if (mListener) {
+    mListener->Revoke();
+    mListener = nullptr;
+  }
+
   if (mChannel) {
     mSuspendAgent.Revoke();
     // The status we use here won't be passed to the decoder, since
@@ -647,11 +639,6 @@ void ChannelMediaResource::CloseChannel() {
     // at the moment.
     mChannel->Cancel(NS_ERROR_PARSED_DATA_CACHED);
     mChannel = nullptr;
-  }
-
-  if (mListener) {
-    mListener->Revoke();
-    mListener = nullptr;
   }
 }
 
@@ -767,12 +754,14 @@ nsresult ChannelMediaResource::RecreateChannel() {
       loadFlags);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  nsCOMPtr<nsILoadInfo> loadInfo = mChannel->LoadInfo();
   if (setAttrs) {
-    nsCOMPtr<nsILoadInfo> loadInfo = mChannel->LoadInfo();
     // The function simply returns NS_OK, so we ignore the return value.
     Unused << loadInfo->SetOriginAttributes(
         triggeringPrincipal->OriginAttributesRef());
   }
+
+  Unused << loadInfo->SetIsMediaRequest(true);
 
   nsCOMPtr<nsIClassOfService> cos(do_QueryInterface(mChannel));
   if (cos) {

@@ -14,8 +14,15 @@ import tokenize
 
 from six.moves.configparser import SafeConfigParser as ConfigParser
 from six import StringIO, string_types
+import six
 
-__all__ = ('PreferencesReadError', 'Preferences')
+if six.PY3:
+
+    def unicode(input):
+        return input
+
+
+__all__ = ("PreferencesReadError", "Preferences")
 
 
 class PreferencesReadError(Exception):
@@ -68,9 +75,9 @@ class Preferences(object):
         if not isinstance(value, string_types):
             return value  # no op
         quote = "'"
-        if value == 'true':
+        if value == "true":
             return True
-        if value == 'false':
+        if value == "false":
             return False
         try:
             return int(value)
@@ -86,9 +93,9 @@ class Preferences(object):
 
         section = None  # for .ini files
         basename = os.path.basename(path)
-        if ':' in basename:
+        if ":" in basename:
             # section of INI file
-            path, section = path.rsplit(':', 1)
+            path, section = path.rsplit(":", 1)
 
         if not os.path.exists(path) and not mozfile.is_url(path):
             raise PreferencesReadError("'%s' does not exist" % path)
@@ -153,7 +160,7 @@ class Preferences(object):
         return prefs
 
     @classmethod
-    def read_prefs(cls, path, pref_setter='user_pref', interpolation=None):
+    def read_prefs(cls, path, pref_setter="user_pref", interpolation=None):
         """
         Read preferences from (e.g.) prefs.js
 
@@ -164,7 +171,7 @@ class Preferences(object):
                               to str.format to interpolate preference values.
         """
 
-        marker = '##//'  # magical marker
+        marker = "##//"  # magical marker
         lines = [i.strip() for i in mozfile.load(path).readlines()]
         _lines = []
         for line in lines:
@@ -173,10 +180,10 @@ class Preferences(object):
                 line = line.decode()
             if not line.startswith(pref_setter):
                 continue
-            if '//' in line:
-                line = line.replace('//', marker)
+            if "//" in line:
+                line = line.replace("//", marker)
             _lines.append(line)
-        string = '\n'.join(_lines)
+        string = "\n".join(_lines)
 
         # skip trailing comments
         processed_tokens = []
@@ -184,7 +191,9 @@ class Preferences(object):
         for token in tokenize.generate_tokens(f_obj.readline):
             if token[0] == tokenize.COMMENT:
                 continue
-            processed_tokens.append(token[:2])  # [:2] gets around http://bugs.python.org/issue9974
+            processed_tokens.append(
+                token[:2]
+            )  # [:2] gets around http://bugs.python.org/issue9974
         string = tokenize.untokenize(processed_tokens)
 
         retval = []
@@ -193,9 +202,10 @@ class Preferences(object):
             if interpolation and isinstance(b, string_types):
                 b = b.format(**interpolation)
             retval.append((a, b))
-        lines = [i.strip().rstrip(';') for i in string.split('\n') if i.strip()]
 
-        _globals = {'retval': retval, 'true': True, 'false': False}
+        lines = [i.strip().rstrip(";") for i in string.split("\n") if i.strip()]
+
+        _globals = {"retval": retval, "true": True, "false": False}
         _globals[pref_setter] = pref
         for line in lines:
             try:
@@ -207,16 +217,16 @@ class Preferences(object):
         # de-magic the marker
         for index, (key, value) in enumerate(retval):
             if isinstance(value, string_types) and marker in value:
-                retval[index] = (key, value.replace(marker, '//'))
+                retval[index] = (key, value.replace(marker, "//"))
 
         return retval
 
     @classmethod
-    def write(cls, _file, prefs, pref_string='user_pref(%s, %s);'):
+    def write(cls, _file, prefs, pref_string="user_pref(%s, %s);"):
         """write preferences to a file"""
 
         if isinstance(_file, string_types):
-            f = open(_file, 'a')
+            f = open(_file, "a")
         else:
             f = _file
 
@@ -225,12 +235,11 @@ class Preferences(object):
             prefs = prefs.items()
 
         # serialize -> JSON
-        _prefs = [(json.dumps(k), json.dumps(v))
-                  for k, v in prefs]
+        _prefs = [(json.dumps(k), json.dumps(v)) for k, v in prefs]
 
         # write the preferences
         for _pref in _prefs:
-            print(pref_string % _pref, file=f)
+            print(unicode(pref_string % _pref), file=f)
 
         # close the file if opened internally
         if isinstance(_file, string_types):

@@ -20,8 +20,11 @@
 #include "nsIStringBundle.h"
 #include "nsIPrintSettingsService.h"
 #include "nsPIDOMWindow.h"
+#include "nsPrintfCString.h"
 #include "nsIGIOService.h"
+#include "nsServiceManagerUtils.h"
 #include "WidgetUtils.h"
+#include "WidgetUtilsGtk.h"
 #include "nsIObserverService.h"
 
 // for gdk_x11_window_get_xid
@@ -30,7 +33,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <gio/gunixfdlist.h>
-#include "gfxPlatformGtk.h"
 
 // for dlsym
 #include <dlfcn.h>
@@ -175,9 +177,9 @@ nsPrintDialogWidgetGTK::nsPrintDialogWidgetGTK(nsPIDOMWindowOuter* aParent,
   gtk_print_unix_dialog_set_manual_capabilities(
       GTK_PRINT_UNIX_DIALOG(dialog),
       GtkPrintCapabilities(
-          GTK_PRINT_CAPABILITY_PAGE_SET | GTK_PRINT_CAPABILITY_COPIES |
-          GTK_PRINT_CAPABILITY_COLLATE | GTK_PRINT_CAPABILITY_REVERSE |
-          GTK_PRINT_CAPABILITY_SCALE | GTK_PRINT_CAPABILITY_GENERATE_PDF));
+          GTK_PRINT_CAPABILITY_COPIES | GTK_PRINT_CAPABILITY_COLLATE |
+          GTK_PRINT_CAPABILITY_REVERSE | GTK_PRINT_CAPABILITY_SCALE |
+          GTK_PRINT_CAPABILITY_GENERATE_PDF));
 
   // The vast majority of magic numbers in this widget construction are padding.
   // e.g. for the set_border_width below, 12px matches that of just about every
@@ -197,9 +199,7 @@ nsPrintDialogWidgetGTK::nsPrintDialogWidgetGTK(nsPIDOMWindowOuter* aParent,
   // GTK+2.18 and above allow us to add a "Selection" option to the main
   // settings screen, rather than adding an option on a custom tab like we must
   // do on older versions.
-  bool canSelectText;
-  aSettings->GetPrintOptions(nsIPrintSettings::kEnableSelectionRB,
-                             &canSelectText);
+  bool canSelectText = aSettings->GetIsPrintSelectionRBEnabled();
   if (gtk_major_version > 2 ||
       (gtk_major_version == 2 && gtk_minor_version >= 18)) {
     useNativeSelection = true;
@@ -333,8 +333,7 @@ const char* nsPrintDialogWidgetGTK::OptionWidgetToString(GtkWidget* dropdown) {
 
   if (index == CUSTOM_VALUE_INDEX)
     return (const char*)g_object_get_data(G_OBJECT(dropdown), "custom-text");
-  else
-    return header_footer_tags[index];
+  return header_footer_tags[index];
 }
 
 gint nsPrintDialogWidgetGTK::Run() {
@@ -379,13 +378,11 @@ nsresult nsPrintDialogWidgetGTK::ImportSettings(nsIPrintSettings* aNSSettings) {
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(shrink_to_fit_toggle),
                                geckoBool);
 
-  aNSSettings->GetPrintBGColors(&geckoBool);
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(print_bg_colors_toggle),
-                               geckoBool);
+                               aNSSettings->GetPrintBGColors());
 
-  aNSSettings->GetPrintBGImages(&geckoBool);
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(print_bg_images_toggle),
-                               geckoBool);
+                               aNSSettings->GetPrintBGImages());
 
   gtk_print_unix_dialog_set_settings(GTK_PRINT_UNIX_DIALOG(dialog), settings);
   gtk_print_unix_dialog_set_page_setup(GTK_PRINT_UNIX_DIALOG(dialog), setup);
@@ -437,7 +434,7 @@ nsresult nsPrintDialogWidgetGTK::ExportSettings(nsIPrintSettings* aNSSettings) {
         printSelectionOnly = gtk_toggle_button_get_active(
             GTK_TOGGLE_BUTTON(selection_only_toggle));
       }
-      aNSSettingsGTK->SetForcePrintSelectionOnly(printSelectionOnly);
+      aNSSettingsGTK->SetPrintSelectionOnly(printSelectionOnly);
     }
   }
 
@@ -530,7 +527,7 @@ static void wayland_window_handle_exported(GdkWindow* window,
 static gboolean window_export_handle(GtkWindow* window,
                                      GtkWindowHandleExported callback,
                                      gpointer user_data) {
-  if (gfxPlatformGtk::GetPlatform()->IsX11Display()) {
+  if (GdkIsX11Display()) {
     GdkWindow* gdk_window = gtk_widget_get_window(GTK_WIDGET(window));
     char* handle_str;
     guint32 xid = (guint32)gdk_x11_window_get_xid(gdk_window);
@@ -541,7 +538,7 @@ static gboolean window_export_handle(GtkWindow* window,
     return true;
   }
 #ifdef MOZ_WAYLAND
-  else {
+  else if (GdkIsWaylandDisplay()) {
     GdkWindow* gdk_window = gtk_widget_get_window(GTK_WIDGET(window));
     WaylandWindowHandleExportedData* data;
 
@@ -559,9 +556,8 @@ static gboolean window_export_handle(GtkWindow* window,
             gdk_window, wayland_window_handle_exported, data, g_free)) {
       g_free(data);
       return false;
-    } else {
-      return true;
     }
+    return true;
   }
 #endif
 
@@ -685,7 +681,7 @@ void nsFlatpakPrintPortal::PreparePrint(GtkWindow* aWindow,
 
   // We need to remember GtkWindow to unexport window handle after it is
   // no longer needed by the portal dialog (apply only on non-X11 sessions).
-  if (gfxPlatformGtk::GetPlatform()->IsWaylandDisplay()) {
+  if (GdkIsWaylandDisplay()) {
     mParentWindow = aWindow;
   }
 
@@ -784,11 +780,8 @@ void nsFlatpakPrintPortal::FinishPrintDialog(GVariant* parameters) {
   g_variant_get(parameters, "(u@a{sv})", &response, &options);
   mResult = GTK_PRINT_OPERATION_RESULT_CANCEL;
   if (response == 0) {
-    GVariant* v;
-
-    char* filename;
-    char* uri;
-    v = g_variant_lookup_value(options, "settings", G_VARIANT_TYPE_VARDICT);
+    GVariant* v =
+        g_variant_lookup_value(options, "settings", G_VARIANT_TYPE_VARDICT);
     static auto s_gtk_print_settings_new_from_gvariant =
         reinterpret_cast<GtkPrintSettings* (*)(GVariant*)>(
             dlsym(RTLD_DEFAULT, "gtk_print_settings_new_from_gvariant"));
@@ -804,14 +797,6 @@ void nsFlatpakPrintPortal::FinishPrintDialog(GVariant* parameters) {
     g_variant_unref(v);
 
     g_variant_lookup(options, "token", "u", &mToken);
-
-    // Force printing to file because only filedescriptor of the file
-    // can be passed to portal
-    int fd = g_file_open_tmp("gtkprintXXXXXX", &filename, NULL);
-    uri = g_filename_to_uri(filename, NULL, NULL);
-    gtk_print_settings_set(printSettings, GTK_PRINT_SETTINGS_OUTPUT_URI, uri);
-    g_free(uri);
-    close(fd);
 
     // Save native settings in the session object
     mPrintAndPageSettings->SetGtkPrintSettings(printSettings);
@@ -1022,11 +1007,35 @@ nsPrintDialogServiceGTK::ShowPageSetup(nsPIDOMWindowOuter* aParent,
                                           nsIPrintSettings::kInitSaveAll);
   }
 
+  // Frustratingly, gtk_print_run_page_setup_dialog doesn't tell us whether
+  // the user cancelled or confirmed the dialog! So to avoid needlessly
+  // refreshing the preview when Page Setup was cancelled, we compare the
+  // serializations of old and new settings; if they're the same, bail out.
   GtkPrintSettings* gtkSettings = aNSSettingsGTK->GetGtkPrintSettings();
   GtkPageSetup* oldPageSetup = aNSSettingsGTK->GetGtkPageSetup();
+  GKeyFile* oldKeyFile = g_key_file_new();
+  gtk_page_setup_to_key_file(oldPageSetup, oldKeyFile, nullptr);
+  gsize oldLength;
+  gchar* oldData = g_key_file_to_data(oldKeyFile, &oldLength, nullptr);
+  g_key_file_free(oldKeyFile);
 
   GtkPageSetup* newPageSetup =
       gtk_print_run_page_setup_dialog(gtkParent, oldPageSetup, gtkSettings);
+
+  GKeyFile* newKeyFile = g_key_file_new();
+  gtk_page_setup_to_key_file(newPageSetup, newKeyFile, nullptr);
+  gsize newLength;
+  gchar* newData = g_key_file_to_data(newKeyFile, &newLength, nullptr);
+  g_key_file_free(newKeyFile);
+
+  bool unchanged =
+      (oldLength == newLength && !memcmp(oldData, newData, oldLength));
+  g_free(oldData);
+  g_free(newData);
+  if (unchanged) {
+    g_object_unref(newPageSetup);
+    return NS_ERROR_ABORT;
+  }
 
   aNSSettingsGTK->SetGtkPageSetup(newPageSetup);
 

@@ -37,6 +37,30 @@ add_task(async function() {
       fields: [["length", "0"]],
     },
   ]);
+
+  await previews(dbg, "classPreview", [
+    { line: 50, column: 20, expression: "this.x", result: 1 },
+    { line: 50, column: 29, expression: "this.#privateVar", result: 2 },
+    {
+      line: 50,
+      column: 47,
+      expression: "Foo.#privateStatic",
+      fields: [
+        ["first", `"a"`],
+        ["second", `"b"`],
+      ],
+    },
+    {
+      line: 51,
+      column: 26,
+      expression: "this",
+      fields: [
+        ["x", "1"],
+        ["#privateVar", "2"],
+      ],
+    },
+    { line: 51, column: 39, expression: "this.#privateVar", result: 2 },
+  ]);
 });
 
 async function previews(dbg, fnName, previews) {
@@ -52,7 +76,8 @@ async function previews(dbg, fnName, previews) {
 async function testBucketedArray(dbg) {
   const invokeResult = invokeInTab("largeArray");
   await waitForPaused(dbg);
-  const preview = await hoverOnToken(dbg, 34, 10, "popup");
+  await tryHovering(dbg, 34, 10, "popup");
+  const preview = dbg.selectors.getPreview();
 
   is(
     preview.properties.map(p => p.name).join(" "),

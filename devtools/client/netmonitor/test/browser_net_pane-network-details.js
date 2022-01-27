@@ -86,7 +86,7 @@ add_task(async function() {
     );
   }
 
-  async function testDetailsPanel(shouldPanelOpen, selectedItemIndex = 0) {
+  function testDetailsPanel(shouldPanelOpen, selectedItemIndex = 0) {
     // Expected default state should be panel closed
     ok(
       !document.querySelector(".sidebar-toggle"),

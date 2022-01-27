@@ -49,6 +49,8 @@ void CallStack::Clear() {
     delete *iterator;
   }
   tid_ = 0;
+  last_error_ = 0;
+  name_ = "";
 }
 
 }  // namespace google_breakpad

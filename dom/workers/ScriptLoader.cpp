@@ -35,9 +35,11 @@
 #include "js/Exception.h"
 #include "js/SourceText.h"
 #include "nsError.h"
+#include "nsComponentManagerUtils.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
 #include "nsDocShellCID.h"
+#include "nsJSEnvironment.h"
 #include "nsNetUtil.h"
 #include "nsIPipe.h"
 #include "nsIOutputStream.h"
@@ -49,6 +51,7 @@
 #include "nsXPCOM.h"
 #include "xpcpublic.h"
 
+#include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/ArrayAlgorithm.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/LoadContext.h"
@@ -72,7 +75,9 @@
 #include "mozilla/dom/Response.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/SerializedStackHolder.h"
 #include "mozilla/dom/SRILogHelper.h"
+#include "mozilla/dom/SerializedStackHolder.h"
 #include "mozilla/dom/ServiceWorkerBinding.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
 #include "mozilla/Result.h"
@@ -166,9 +171,7 @@ nsresult ChannelFromScriptURL(
       false /* aForceInherit */);
 
   bool isData = uri->SchemeIs("data");
-  bool isURIUniqueOrigin =
-      StaticPrefs::security_data_uri_unique_opaque_origin() && isData;
-  if (inheritAttrs && !isURIUniqueOrigin) {
+  if (inheritAttrs && !isData) {
     secFlags |= nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL;
   }
 
@@ -811,8 +814,8 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
     aLoadInfo.mChannel = channel;
 
     // We synthesize the result code, but its never exposed to content.
-    RefPtr<mozilla::dom::InternalResponse> ir =
-        new mozilla::dom::InternalResponse(200, "OK"_ns);
+    SafeRefPtr<mozilla::dom::InternalResponse> ir =
+        MakeSafeRefPtr<mozilla::dom::InternalResponse>(200, "OK"_ns);
     ir->SetBody(aLoadInfo.mCacheReadStream,
                 InternalResponse::UNKNOWN_BODY_SIZE);
 
@@ -839,8 +842,8 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
     ir->SetPrincipalInfo(std::move(principalInfo));
     ir->Headers()->FillResponseHeaders(aLoadInfo.mChannel);
 
-    RefPtr<mozilla::dom::Response> response =
-        new mozilla::dom::Response(mCacheCreator->Global(), ir, nullptr);
+    RefPtr<mozilla::dom::Response> response = new mozilla::dom::Response(
+        mCacheCreator->Global(), std::move(ir), nullptr);
 
     mozilla::dom::RequestOrUSVString request;
 
@@ -1101,6 +1104,15 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
 
     if (IsMainWorkerScript()) {
       MOZ_DIAGNOSTIC_ASSERT(aLoadInfo.mReservedClientInfo.isSome());
+
+      // In order to get the correct foreign partitioned prinicpal, we need to
+      // set the `IsThirdPartyContextToTopWindow` to the channel's loadInfo.
+      // This flag reflects the fact that if the worker is created under a
+      // third-party context.
+      nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+      loadInfo->SetIsThirdPartyContextToTopWindow(
+          mWorkerPrivate->IsThirdPartyContextToTopWindow());
+
       rv = AddClientChannelHelper(
           channel, std::move(aLoadInfo.mReservedClientInfo),
           Maybe<ClientInfo>(), mWorkerPrivate->HybridEventTarget());
@@ -1117,11 +1129,7 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
         respectedCOEP = mWorkerPrivate->GetOwnerEmbedderPolicy();
       }
 
-      nsCOMPtr<nsILoadInfo> channelLoadInfo;
-      rv = channel->GetLoadInfo(getter_AddRefs(channelLoadInfo));
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
+      nsCOMPtr<nsILoadInfo> channelLoadInfo = channel->LoadInfo();
       channelLoadInfo->SetLoadingEmbedderPolicy(respectedCOEP);
     }
 
@@ -1904,7 +1912,7 @@ void CacheScriptLoader::ResolvedCallback(JSContext* aCx,
     return;
   }
 
-  rv = mPump->AsyncRead(loader, nullptr);
+  rv = mPump->AsyncRead(loader);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     mPump = nullptr;
     Fail(rv);

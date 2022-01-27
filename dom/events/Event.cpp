@@ -17,6 +17,7 @@
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/PointerLockManager.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/TextEvents.h"
@@ -26,6 +27,9 @@
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/ShadowRoot.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/SVGUtils.h"
+#include "mozilla/SVGOuterSVGFrame.h"
 #include "nsContentUtils.h"
 #include "nsCOMPtr.h"
 #include "nsDeviceContext.h"
@@ -40,8 +44,7 @@
 #include "nsPIWindowRoot.h"
 #include "nsRFPService.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 Event::Event(EventTarget* aOwner, nsPresContext* aPresContext,
              WidgetEvent* aEvent) {
@@ -410,16 +413,19 @@ void Event::PreventDefaultInternal(bool aCalledByDefaultHandler,
     return;
   }
 
-  nsCOMPtr<nsINode> node = do_QueryInterface(mEvent->mCurrentTarget);
-  if (!node) {
-    nsCOMPtr<nsPIDOMWindowOuter> win =
+  nsIPrincipal* principal = nullptr;
+  nsCOMPtr<nsINode> node =
+      nsINode::FromEventTargetOrNull(mEvent->mCurrentTarget);
+  if (node) {
+    principal = node->NodePrincipal();
+  } else {
+    nsCOMPtr<nsIScriptObjectPrincipal> sop =
         do_QueryInterface(mEvent->mCurrentTarget);
-    if (!win) {
-      return;
+    if (sop) {
+      principal = sop->GetPrincipal();
     }
-    node = win->GetExtantDoc();
   }
-  if (!nsContentUtils::IsChromeDoc(node->OwnerDoc())) {
+  if (principal && !principal->IsSystemPrincipal()) {
     dragEvent->mDefaultPreventedOnContent = true;
   }
 }
@@ -442,8 +448,7 @@ already_AddRefed<EventTarget> Event::EnsureWebAccessibleRelatedTarget(
     EventTarget* aRelatedTarget) {
   nsCOMPtr<EventTarget> relatedTarget = aRelatedTarget;
   if (relatedTarget) {
-    nsCOMPtr<nsIContent> content = do_QueryInterface(relatedTarget);
-
+    nsIContent* content = nsIContent::FromEventTarget(relatedTarget);
     if (content && content->ChromeOnlyAccess() &&
         !nsContentUtils::CanAccessNativeAnon()) {
       content = content->FindFirstNonChromeOnlyAccessContent();
@@ -513,7 +518,7 @@ WidgetEvent* Event::WidgetEventPtr() { return mEvent; }
 CSSIntPoint Event::GetScreenCoords(nsPresContext* aPresContext,
                                    WidgetEvent* aEvent,
                                    LayoutDeviceIntPoint aPoint) {
-  if (EventStateManager::sIsPointerLocked) {
+  if (PointerLockManager::IsLocked()) {
     return EventStateManager::sLastScreenPoint;
   }
 
@@ -583,7 +588,7 @@ CSSIntPoint Event::GetClientCoords(nsPresContext* aPresContext,
                                    WidgetEvent* aEvent,
                                    LayoutDeviceIntPoint aPoint,
                                    CSSIntPoint aDefaultPoint) {
-  if (EventStateManager::sIsPointerLocked) {
+  if (PointerLockManager::IsLocked()) {
     return EventStateManager::sLastClientPoint;
   }
 
@@ -621,22 +626,32 @@ CSSIntPoint Event::GetOffsetCoords(nsPresContext* aPresContext,
   if (!aEvent->mTarget) {
     return GetPageCoords(aPresContext, aEvent, aPoint, aDefaultPoint);
   }
-  nsCOMPtr<nsIContent> content = do_QueryInterface(aEvent->mTarget);
+  nsCOMPtr<nsIContent> content = nsIContent::FromEventTarget(aEvent->mTarget);
   if (!content || !aPresContext) {
-    return CSSIntPoint(0, 0);
+    return CSSIntPoint();
   }
   RefPtr<PresShell> presShell = aPresContext->GetPresShell();
   if (!presShell) {
-    return CSSIntPoint(0, 0);
+    return CSSIntPoint();
   }
   presShell->FlushPendingNotifications(FlushType::Layout);
   nsIFrame* frame = content->GetPrimaryFrame();
   if (!frame) {
-    return CSSIntPoint(0, 0);
+    return CSSIntPoint();
+  }
+  // For compat, see https://github.com/w3c/csswg-drafts/issues/1508. In SVG we
+  // just return the coordinates of the outer SVG box. This is all kinda
+  // unfortunate.
+  if (frame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT) &&
+      StaticPrefs::dom_events_offset_in_svg_relative_to_svg_root()) {
+    frame = SVGUtils::GetOuterSVGFrame(frame);
+    if (!frame) {
+      return CSSIntPoint();
+    }
   }
   nsIFrame* rootFrame = presShell->GetRootFrame();
   if (!rootFrame) {
-    return CSSIntPoint(0, 0);
+    return CSSIntPoint();
   }
   CSSIntPoint clientCoords =
       GetClientCoords(aPresContext, aEvent, aPoint, aDefaultPoint);
@@ -646,17 +661,17 @@ CSSIntPoint Event::GetOffsetCoords(nsPresContext* aPresContext,
     pt -= frame->GetPaddingRectRelativeToSelf().TopLeft();
     return CSSPixel::FromAppUnitsRounded(pt);
   }
-  return CSSIntPoint(0, 0);
+  return CSSIntPoint();
 }
 
 // To be called ONLY by Event::GetType (which has the additional
 // logic for handling user-defined events).
 // static
-const char* Event::GetEventName(EventMessage aEventType) {
+const char16_t* Event::GetEventName(EventMessage aEventType) {
   switch (aEventType) {
 #define MESSAGE_TO_EVENT(name_, _message, _type, _struct) \
   case _message:                                          \
-    return #name_;
+    return u"" #name_;
 #include "mozilla/EventNameList.h"
 #undef MESSAGE_TO_EVENT
     default:
@@ -813,10 +828,10 @@ void Event::GetWidgetEventType(WidgetEvent* aEvent, nsAString& aType) {
     return;
   }
 
-  const char* name = GetEventName(aEvent->mMessage);
+  const char16_t* name = GetEventName(aEvent->mMessage);
 
   if (name) {
-    CopyASCIItoUTF16(mozilla::MakeStringSpan(name), aType);
+    aType.Assign(name);
     return;
   } else if (aEvent->mMessage == eUnidentifiedEvent &&
              aEvent->mSpecifiedEventType) {
@@ -829,8 +844,12 @@ void Event::GetWidgetEventType(WidgetEvent* aEvent, nsAString& aType) {
   aType.Truncate();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+bool Event::IsDragExitEnabled(JSContext* aCx, JSObject* aGlobal) {
+  return StaticPrefs::dom_event_dragexit_enabled() ||
+         nsContentUtils::IsSystemCaller(aCx);
+}
+
+}  // namespace mozilla::dom
 
 using namespace mozilla;
 using namespace mozilla::dom;

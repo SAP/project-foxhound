@@ -42,10 +42,13 @@ class SandboxPolicyBase : public sandbox::bpf_dsl::Policy {
     return Nothing();
   }
 
-#ifndef ANDROID
   // Android doesn't use SysV IPC (and doesn't define the selector
   // constants in its headers), so this isn't implemented there.
-  virtual Maybe<ResultExpr> EvaluateIpcCall(int aCall) const {
+#ifndef ANDROID
+  // aArgShift is the offset to add the argument index when
+  // constructing `Arg` objects: it's 0 for separate syscalls and 1
+  // for ipc().
+  virtual Maybe<ResultExpr> EvaluateIpcCall(int aCall, int aArgShift) const {
     return Nothing();
   }
 #endif
@@ -156,10 +159,84 @@ class SandboxPolicyBase : public sandbox::bpf_dsl::Policy {
 #  define CASES_FOR_sigreturn case __NR_rt_sigreturn
 #endif
 
-#ifdef __NR__newselect
-#  define CASES_FOR_select case __NR__newselect
+#ifdef __NR_clock_gettime64
+#  define CASES_FOR_clock_gettime \
+    case __NR_clock_gettime:      \
+    case __NR_clock_gettime64
+#  define CASES_FOR_clock_getres \
+    case __NR_clock_getres:      \
+    case __NR_clock_getres_time64
+#  define CASES_FOR_clock_nanosleep \
+    case __NR_clock_nanosleep:      \
+    case __NR_clock_nanosleep_time64
+#  define CASES_FOR_pselect6 \
+    case __NR_pselect6:      \
+    case __NR_pselect6_time64
+#  define CASES_FOR_ppoll \
+    case __NR_ppoll:      \
+    case __NR_ppoll_time64
+#  define CASES_FOR_futex \
+    case __NR_futex:      \
+    case __NR_futex_time64
 #else
-#  define CASES_FOR_select case __NR_select
+#  define CASES_FOR_clock_gettime case __NR_clock_gettime
+#  define CASES_FOR_clock_getres case __NR_clock_getres
+#  define CASES_FOR_clock_nanosleep case __NR_clock_nanosleep
+#  define CASES_FOR_pselect6 case __NR_pselect6
+#  define CASES_FOR_ppoll case __NR_ppoll
+#  define CASES_FOR_futex case __NR_futex
+#endif
+
+#if defined(__NR__newselect)
+#  define CASES_FOR_select \
+    case __NR__newselect:  \
+      CASES_FOR_pselect6
+#elif defined(__NR_select)
+#  define CASES_FOR_select \
+    case __NR_select:      \
+      CASES_FOR_pselect6
+#else
+#  define CASES_FOR_select CASES_FOR_pselect6
+#endif
+
+#ifdef __NR_poll
+#  define CASES_FOR_poll \
+    case __NR_poll:      \
+      CASES_FOR_ppoll
+#else
+#  define CASES_FOR_poll CASES_FOR_ppoll
+#endif
+
+#ifdef __NR_epoll_create
+#  define CASES_FOR_epoll_create \
+    case __NR_epoll_create:      \
+    case __NR_epoll_create1
+#else
+#  define CASES_FOR_epoll_create case __NR_epoll_create1
+#endif
+
+#ifdef __NR_epoll_wait
+#  define CASES_FOR_epoll_wait \
+    case __NR_epoll_wait:      \
+    case __NR_epoll_pwait
+#else
+#  define CASES_FOR_epoll_wait case __NR_epoll_pwait
+#endif
+
+#ifdef __NR_pipe
+#  define CASES_FOR_pipe \
+    case __NR_pipe:      \
+    case __NR_pipe2
+#else
+#  define CASES_FOR_pipe case __NR_pipe2
+#endif
+
+#ifdef __NR_dup2
+#  define CASES_FOR_dup2 \
+    case __NR_dup2:      \
+    case __NR_dup3
+#else
+#  define CASES_FOR_dup2 case __NR_dup3
 #endif
 
 #ifdef __NR_ugetrlimit

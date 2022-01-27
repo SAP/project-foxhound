@@ -17,8 +17,8 @@ add_task(async function test_load_start() {
   const PAGE = "http://example.com/";
 
   // Load a new URI.
-  let historyReplacePromise = promiseOnHistoryReplaceEntryInChild(browser);
-  await BrowserTestUtils.loadURI(browser, PAGE);
+  let historyReplacePromise = promiseOnHistoryReplaceEntry(browser);
+  BrowserTestUtils.loadURI(browser, PAGE);
 
   // Remove the tab before it has finished loading.
   await historyReplacePromise;
@@ -61,8 +61,12 @@ add_task(async function test_hashchange() {
     "hashchange",
     true
   );
-  await BrowserTestUtils.synthesizeMouseAtCenter("#a", {}, browser);
+  await SpecialPowers.spawn(browser, [], async function() {
+    content.document.querySelector("#a").click();
+  });
+  info("About to watch for a hash change event");
   await eventPromise;
+  info("Got a hash change event");
 
   // Check that we now have two shistory entries.
   await TabStateFlusher.flush(browser);
@@ -90,9 +94,11 @@ add_task(async function test_pageshow() {
   await promiseBrowserLoaded(browser);
 
   // Wait until shistory changes.
-  let pageShowPromise = ContentTask.spawn(browser, null, async () => {
-    await ContentTaskUtils.waitForEvent(this, "pageshow", true);
-  });
+  let pageShowPromise = BrowserTestUtils.waitForContentEvent(
+    browser,
+    "pageshow",
+    true
+  );
 
   // Go back to the previous url which is loaded from the bfcache.
   browser.goBack();
@@ -130,8 +136,14 @@ add_task(async function test_subframes() {
   is(entries[0].children.length, 1, "the entry has one child");
 
   // Navigate the subframe.
-  await BrowserTestUtils.synthesizeMouseAtCenter("#a1", {}, browser);
-  await promiseBrowserLoaded(browser, false /* don't ignore subframes */);
+  await SpecialPowers.spawn(browser, [], async function() {
+    content.document.querySelector("#a1").click();
+  });
+  await promiseBrowserLoaded(
+    browser,
+    false /* wait for subframe load only */,
+    "http://example.com/1"
+  );
 
   // Check shistory.
   await TabStateFlusher.flush(browser);
@@ -140,8 +152,14 @@ add_task(async function test_subframes() {
   is(entries[1].children.length, 1, "the second entry has one child");
 
   // Go back in history.
+  let goneBack = promiseBrowserLoaded(
+    browser,
+    false /* wait for subframe load only */,
+    "http://example.com/"
+  );
+  info("About to go back in history");
   browser.goBack();
-  await promiseBrowserLoaded(browser, false /* don't ignore subframes */);
+  await goneBack;
 
   // Navigate the subframe again.
   let eventPromise = BrowserTestUtils.waitForContentEvent(
@@ -149,7 +167,9 @@ add_task(async function test_subframes() {
     "hashchange",
     true
   );
-  await BrowserTestUtils.synthesizeMouseAtCenter("#a2", {}, browser);
+  await SpecialPowers.spawn(browser, [], async function() {
+    content.document.querySelector("#a2").click();
+  });
   await eventPromise;
 
   // Check shistory.

@@ -11,6 +11,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/FloatingPoint.h"
 #include "mozilla/Likely.h"
 #include "mozilla/SMILTypes.h"
 #include "mozilla/SVGContentUtils.h"
@@ -66,6 +67,10 @@ already_AddRefed<SVGAnimatedRect> SVGViewportElement::ViewBox() {
 already_AddRefed<DOMSVGAnimatedPreserveAspectRatio>
 SVGViewportElement::PreserveAspectRatio() {
   return mPreserveAspectRatio.ToDOMAnimatedPreserveAspectRatio(this);
+}
+
+bool SVGViewportElement::IsNodeOfType(uint32_t aFlags) const {
+  return !(aFlags & ~eUSE_TARGET);
 }
 
 //----------------------------------------------------------------------
@@ -129,8 +134,8 @@ inline float ComputeSynthesizedViewBoxDimension(
 void SVGViewportElement::UpdateHasChildrenOnlyTransform() {
   bool hasChildrenOnlyTransform =
       HasViewBoxOrSyntheticViewBox() ||
-      (IsRoot() && (GetCurrentTranslate() != SVGPoint(0.0f, 0.0f) ||
-                    GetCurrentScale() != 1.0f));
+      (IsRootSVGSVGElement() &&
+       static_cast<SVGSVGElement*>(this)->IsScaledOrTranslated());
   mHasChildrenOnlyTransform = hasChildrenOnlyTransform;
 }
 
@@ -177,13 +182,15 @@ gfx::Matrix SVGViewportElement::GetViewBoxTransform() const {
     viewportHeight = mViewportHeight;
   }
 
-  if (viewportWidth <= 0.0f || viewportHeight <= 0.0f) {
+  if (!IsFinite(viewportWidth) || viewportWidth <= 0.0f ||
+      !IsFinite(viewportHeight) || viewportHeight <= 0.0f) {
     return gfx::Matrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);  // singular
   }
 
   SVGViewBox viewBox = GetViewBoxWithSynthesis(viewportWidth, viewportHeight);
 
-  if (viewBox.width <= 0.0f || viewBox.height <= 0.0f) {
+  if (!IsFinite(viewBox.width) || viewBox.width <= 0.0f ||
+      !IsFinite(viewBox.height) || viewBox.height <= 0.0f) {
     return gfx::Matrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);  // singular
   }
 
@@ -271,9 +278,10 @@ gfxMatrix SVGViewportElement::PrependLocalTransformsTo(
     const_cast<SVGViewportElement*>(this)->GetAnimatedLengthValues(&x, &y,
                                                                    nullptr);
     childToUser = ThebesMatrix(GetViewBoxTransform().PostTranslate(x, y));
-  } else if (IsRoot()) {
-    SVGPoint translate = GetCurrentTranslate();
-    float scale = GetCurrentScale();
+  } else if (IsRootSVGSVGElement()) {
+    const SVGSVGElement* svg = static_cast<const SVGSVGElement*>(this);
+    const SVGPoint& translate = svg->GetCurrentTranslate();
+    float scale = svg->CurrentScale();
     childToUser =
         ThebesMatrix(GetViewBoxTransform()
                          .PostScale(scale, scale)
@@ -320,7 +328,7 @@ SVGViewportElement::GetAnimatedPreserveAspectRatio() {
 bool SVGViewportElement::ShouldSynthesizeViewBox() const {
   MOZ_ASSERT(!HasViewBox(), "Should only be called if we lack a viewBox");
 
-  return IsRoot() && OwnerDoc()->IsBeingUsedAsImage();
+  return IsRootSVGSVGElement() && OwnerDoc()->IsBeingUsedAsImage();
 }
 
 //----------------------------------------------------------------------

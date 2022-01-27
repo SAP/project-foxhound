@@ -7,9 +7,17 @@
 #ifndef mozilla_dom_MIDIMessageQueue_h
 #define mozilla_dom_MIDIMessageQueue_h
 
+#include "mozilla/Mutex.h"
 #include "nsTArray.h"
 
+// XXX Avoid including this here by moving function implementations to the cpp
+// file.
+#include "mozilla/dom/MIDITypes.h"
+
 namespace mozilla {
+
+class TimeStamp;
+
 namespace dom {
 
 class MIDIMessage;
@@ -27,9 +35,9 @@ class MIDIMessageQueue {
   void Add(nsTArray<MIDIMessage>& aMsg);
   // Retrieve all pending messages before the time specified.
   void GetMessagesBefore(TimeStamp aTimestamp,
-                         nsTArray<MIDIMessage>& aMsgArray);
+                         nsTArray<MIDIMessage>& aMsgQueue);
   // Get all pending messages.
-  void GetMessages(nsTArray<MIDIMessage>& aMsgArray);
+  void GetMessages(nsTArray<MIDIMessage>& aMsgQueue);
   // Erase all pending messages.
   void Clear();
   // Erase all pending messages that would be sent in the future. Useful for

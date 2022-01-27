@@ -15,7 +15,7 @@ function test() {
     Services.prefs.setIntPref("network.proxy.type", oldNetworkProxyType);
     Services.prefs.clearUserPref("browser.preferences.instantApply");
     Services.prefs.clearUserPref("network.proxy.share_proxy_settings");
-    for (let proxyType of ["http", "ssl", "ftp", "socks"]) {
+    for (let proxyType of ["http", "ssl", "socks"]) {
       Services.prefs.clearUserPref("network.proxy." + proxyType);
       Services.prefs.clearUserPref("network.proxy." + proxyType + "_port");
       if (proxyType == "http") {
@@ -26,6 +26,10 @@ function test() {
         "network.proxy.backup." + proxyType + "_port"
       );
     }
+    // On accepting the dialog, we also write TRR values, so we need to clear
+    // them. They are tested separately in browser_connect_dnsoverhttps.js.
+    Services.prefs.clearUserPref("network.trr.mode");
+    Services.prefs.clearUserPref("network.trr.uri");
   });
 
   let connectionURL =

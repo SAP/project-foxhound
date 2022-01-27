@@ -16,8 +16,7 @@
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(TableRow)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 HTMLTableRowElement::~HTMLTableRowElement() = default;
 
@@ -26,12 +25,8 @@ JSObject* HTMLTableRowElement::WrapNode(JSContext* aCx,
   return HTMLTableRowElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLTableRowElement)
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLTableRowElement,
-                                                  nsGenericHTMLElement)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCells)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+NS_IMPL_CYCLE_COLLECTION_INHERITED(HTMLTableRowElement, nsGenericHTMLElement,
+                                   mCells)
 
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(HTMLTableRowElement,
                                                nsGenericHTMLElement)
@@ -252,5 +247,4 @@ nsMapRuleToAttributesFunc HTMLTableRowElement::GetAttributeMappingFunction()
   return &MapAttributesIntoRule;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

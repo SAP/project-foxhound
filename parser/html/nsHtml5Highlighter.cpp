@@ -71,8 +71,7 @@ nsHtml5Highlighter::~nsHtml5Highlighter() {
 
 void nsHtml5Highlighter::Start(const nsAutoString& aTitle) {
   // Doctype
-  opAppendDoctypeToDocument operation(nsGkAtoms::html, EmptyString(),
-                                      EmptyString());
+  opAppendDoctypeToDocument operation(nsGkAtoms::html, u""_ns, u""_ns);
   mOpQueue.AppendElement()->Init(mozilla::AsVariant(operation));
 
   mOpQueue.AppendElement()->Init(mozilla::AsVariant(STANDARDS_MODE));
@@ -293,6 +292,7 @@ int32_t nsHtml5Highlighter::Transition(int32_t aState, bool aReconsume,
     case nsHtml5Tokenizer::COMMENT_START_DASH:
     case nsHtml5Tokenizer::BOGUS_COMMENT:
     case nsHtml5Tokenizer::BOGUS_COMMENT_HYPHEN:
+    case nsHtml5Tokenizer::COMMENT_LESSTHAN_BANG_DASH_DASH:
       if (aState == nsHtml5Tokenizer::DATA) {
         AddClass(sComment);
         FinishTag();
@@ -655,7 +655,7 @@ void nsHtml5Highlighter::Push(
   MOZ_ASSERT(mStack.Length() >= 1, "Pushing without root.");
   nsIContent** elt = CreateElement(aName, aAttributes, CurrentNode(),
                                    aCreator);  // Don't inline below!
-  opAppend operation(elt, CurrentNode());
+  opAppend operation(elt, CurrentNode(), mozilla::dom::FROM_PARSER_NETWORK);
   mOpQueue.AppendElement()->Init(mozilla::AsVariant(operation));
   mStack.AppendElement(elt);
 }

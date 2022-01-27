@@ -44,6 +44,9 @@ const { FxAccounts } = ChromeUtils.import(
 const { FxAccountsClient } = ChromeUtils.import(
   "resource://gre/modules/FxAccountsClient.jsm"
 );
+const { SCOPE_OLD_SYNC, LEGACY_SCOPE_WEBEXT_SYNC } = ChromeUtils.import(
+  "resource://gre/modules/FxAccountsCommon.js"
+);
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // and grab non-exported stuff via a backstage pass.
@@ -147,12 +150,25 @@ var makeIdentityConfig = function(overrides) {
     // fxaccount specific credentials.
     fxaccount: {
       user: {
-        assertion: "assertion",
         email: "foo",
         kSync: "a".repeat(128),
-        kXCS: "a".repeat(32),
-        kExtSync: "a".repeat(128),
-        kExtKbHash: "a".repeat(32),
+        kXCS: "b".repeat(32),
+        kExtSync: "c".repeat(128),
+        kExtKbHash: "d".repeat(64),
+        scopedKeys: {
+          [SCOPE_OLD_SYNC]: {
+            kid: "1234567890123-u7u7u7u7u7u7u7u7u7u7uw",
+            k:
+              "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqg",
+            kty: "oct",
+          },
+          [LEGACY_SCOPE_WEBEXT_SYNC]: {
+            kid: "1234567890123-3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d0",
+            k:
+              "zMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzA",
+            kty: "oct",
+          },
+        },
         sessionToken: "sessionToken",
         uid: "a".repeat(32),
         verified: true,
@@ -197,10 +213,8 @@ var makeFxAccountsInternalMock = function(config) {
       let accountState = new AccountState(storageManager);
       return accountState;
     },
-    _getAssertion(audience) {
-      return Promise.resolve(config.fxaccount.user.assertion);
-    },
     getOAuthToken: () => Promise.resolve("some-access-token"),
+    _destroyOAuthToken: () => Promise.resolve(),
     keys: {
       getScopedKeys: () =>
         Promise.resolve({
@@ -247,16 +261,7 @@ var configureFxAccountIdentity = function(
 
   let mockTSC = {
     // TokenServerClient
-    async getTokenFromBrowserIDAssertion(uri, assertion) {
-      Assert.equal(
-        uri,
-        Services.prefs.getStringPref("identity.sync.tokenserver.uri")
-      );
-      Assert.equal(assertion, config.fxaccount.user.assertion);
-      config.fxaccount.token.uid = config.username;
-      return config.fxaccount.token;
-    },
-    async getTokenFromOAuthToken(url, oauthToken) {
+    async getTokenUsingOAuth(url, oauthToken) {
       Assert.equal(
         url,
         Services.prefs.getStringPref("identity.sync.tokenserver.uri")
@@ -268,7 +273,7 @@ var configureFxAccountIdentity = function(
   };
   authService._fxaService = fxa;
   authService._tokenServerClient = mockTSC;
-  // Set the "account" of the browserId manager to be the "email" of the
+  // Set the "account" of the sync auth manager to be the "email" of the
   // logged in user of the mockFXA service.
   authService._signedInUser = config.fxaccount.user;
   authService._account = config.fxaccount.user.email;

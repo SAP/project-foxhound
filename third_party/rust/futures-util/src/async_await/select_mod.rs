@@ -1,9 +1,5 @@
 //! The `select` macro.
 
-use proc_macro_hack::proc_macro_hack;
-
-#[doc(hidden)]
-#[macro_export]
 macro_rules! document_select_macro {
     // This branch is required for `futures 0.3.1`, from before select_biased was introduced
     ($select:item) => {
@@ -16,7 +12,7 @@ macro_rules! document_select_macro {
         /// (e.g. an `async fn` call) instead of a `Future` by name the `Unpin`
         /// requirement is relaxed, since the macro will pin the resulting `Future`
         /// on the stack. However the `Future` returned by the expression must
-        /// still implement `FusedFuture`. This difference is presented
+        /// still implement `FusedFuture`.
         ///
         /// Futures and streams which are not already fused can be fused using the
         /// `.fuse()` method. Note, though, that fusing a future or stream directly
@@ -86,7 +82,7 @@ macro_rules! document_select_macro {
         ///     a_res = async_identity_fn(62).fuse() => a_res + 1,
         ///     b_res = async_identity_fn(13).fuse() => b_res,
         /// };
-        /// assert!(res == 63 || res == 12);
+        /// assert!(res == 63 || res == 13);
         /// # });
         /// ```
         ///
@@ -158,7 +154,7 @@ macro_rules! document_select_macro {
     };
 
     ($select:item $select_biased:item) => {
-        $crate::document_select_macro!($select);
+        document_select_macro!($select);
 
         /// Polls multiple futures and streams simultaneously, executing the branch
         /// for the future that finishes first. Unlike [`select!`], if multiple futures are ready,
@@ -169,7 +165,7 @@ macro_rules! document_select_macro {
         /// (e.g. an `async fn` call) instead of a `Future` by name the `Unpin`
         /// requirement is relaxed, since the macro will pin the resulting `Future`
         /// on the stack. However the `Future` returned by the expression must
-        /// still implement `FusedFuture`. This difference is presented
+        /// still implement `FusedFuture`.
         ///
         /// Futures and streams which are not already fused can be fused using the
         /// `.fuse()` method. Note, though, that fusing a future or stream directly
@@ -310,11 +306,36 @@ macro_rules! document_select_macro {
     };
 }
 
+#[cfg(feature = "std")]
+#[allow(unreachable_pub)]
+#[doc(hidden)]
+#[cfg_attr(not(fn_like_proc_macro), proc_macro_hack::proc_macro_hack(support_nested))]
+pub use futures_macro::select_internal;
+
+#[allow(unreachable_pub)]
+#[doc(hidden)]
+#[cfg_attr(not(fn_like_proc_macro), proc_macro_hack::proc_macro_hack(support_nested))]
+pub use futures_macro::select_biased_internal;
+
 document_select_macro! {
     #[cfg(feature = "std")]
-    #[proc_macro_hack(support_nested)]
-    pub use futures_macro::select;
+    #[macro_export]
+    macro_rules! select {
+        ($($tokens:tt)*) => {{
+            use $crate::__private as __futures_crate;
+            $crate::select_internal! {
+                $( $tokens )*
+            }
+        }}
+    }
 
-    #[proc_macro_hack(support_nested)]
-    pub use futures_macro::select_biased;
+    #[macro_export]
+    macro_rules! select_biased {
+        ($($tokens:tt)*) => {{
+            use $crate::__private as __futures_crate;
+            $crate::select_biased_internal! {
+                $( $tokens )*
+            }
+        }}
+    }
 }

@@ -37,14 +37,14 @@ pub struct Pacer {
 }
 
 impl Pacer {
-    /// Create a new `Pacer`.  This takes the current time and the
-    /// initial congestion window.
+    /// Create a new `Pacer`.  This takes the current time, the maximum burst size,
+    /// and the packet size.
     ///
-    /// The value of `m` is the maximum capacity.  `m` primes the pacer
+    /// The value of `m` is the maximum capacity in bytes.  `m` primes the pacer
     /// with credit and determines the burst size.  `m` must not exceed
     /// the initial congestion window, but it should probably be lower.
     ///
-    /// The value of `p` is the packet size, which determines the minimum
+    /// The value of `p` is the packet size in bytes, which determines the minimum
     /// credit needed before a packet is sent.  This should be a substantial
     /// fraction of the maximum packet size, if not the packet size.
     pub fn new(now: Instant, m: usize, p: usize) -> Self {
@@ -58,7 +58,7 @@ impl Pacer {
     /// the current time is).
     pub fn next(&self, rtt: Duration, cwnd: usize) -> Instant {
         if self.c >= self.p {
-            qtrace!([self], "next {}/{:?} no wait: {:?}", cwnd, rtt, self.t);
+            qtrace!([self], "next {}/{:?} no wait = {:?}", cwnd, rtt, self.t);
             self.t
         } else {
             // This is the inverse of the function in `spend`:
@@ -66,16 +66,10 @@ impl Pacer {
             let r = rtt.as_nanos();
             let d = r.saturating_mul(u128::try_from(self.p - self.c).unwrap());
             let add = d / u128::try_from(cwnd * PACER_SPEEDUP).unwrap();
-            let dt = u64::try_from(add).map(Duration::from_nanos).unwrap_or(rtt);
-            qtrace!(
-                [self],
-                "next {}/{:?} wait {:?}: {:?}",
-                cwnd,
-                rtt,
-                dt,
-                self.t + dt
-            );
-            self.t + dt
+            let w = u64::try_from(add).map(Duration::from_nanos).unwrap_or(rtt);
+            let nxt = self.t + w;
+            qtrace!([self], "next {}/{:?} wait {:?} = {:?}", cwnd, rtt, w, nxt);
+            nxt
         }
     }
 

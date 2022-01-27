@@ -8,11 +8,12 @@ dictionary of values, and returns a new iterable of test objects. It is
 possible to define custom filters if the built-in ones are not enough.
 """
 
-from __future__ import absolute_import
+from __future__ import absolute_import, division
 
 import itertools
 import os
-from collections import defaultdict, MutableSequence
+from collections import defaultdict
+from collections.abc import MutableSequence
 
 import six
 from six import string_types
@@ -26,26 +27,34 @@ from .util import normsep
 logger = None
 
 
-def log(msg, level='info'):
+def log(msg, level="info"):
     from mozlog import get_default_logger
+
     global logger
     if not logger:
-        logger = get_default_logger(component='manifestparser')
+        logger = get_default_logger(component="manifestparser")
     if logger:
         getattr(logger, level)(msg)
 
 
 # built-in filters
 
+
+def _match(exprs, **values):
+    if any(parse(e, **values) for e in exprs.splitlines() if e):
+        return True
+    return False
+
+
 def skip_if(tests, values):
     """
     Sets disabled on all tests containing the `skip-if` tag and whose condition
     is True. This filter is added by default.
     """
-    tag = 'skip-if'
+    tag = "skip-if"
     for test in tests:
-        if tag in test and parse(test[tag], **values):
-            test.setdefault('disabled', '{}: {}'.format(tag, test[tag]))
+        if tag in test and _match(test[tag], **values):
+            test.setdefault("disabled", "{}: {}".format(tag, test[tag]))
         yield test
 
 
@@ -54,10 +63,10 @@ def run_if(tests, values):
     Sets disabled on all tests containing the `run-if` tag and whose condition
     is False. This filter is added by default.
     """
-    tag = 'run-if'
+    tag = "run-if"
     for test in tests:
-        if tag in test and not parse(test[tag], **values):
-            test.setdefault('disabled', '{}: {}'.format(tag, test[tag]))
+        if tag in test and not _match(test[tag], **values):
+            test.setdefault("disabled", "{}: {}".format(tag, test[tag]))
         yield test
 
 
@@ -66,10 +75,10 @@ def fail_if(tests, values):
     Sets expected to 'fail' on all tests containing the `fail-if` tag and whose
     condition is True. This filter is added by default.
     """
-    tag = 'fail-if'
+    tag = "fail-if"
     for test in tests:
-        if tag in test and parse(test[tag], **values):
-            test['expected'] = 'fail'
+        if tag in test and _match(test[tag], **values):
+            test["expected"] = "fail"
         yield test
 
 
@@ -79,7 +88,7 @@ def enabled(tests, values):
     added by passing `disabled=False` into `active_tests`.
     """
     for test in tests:
-        if 'disabled' not in test:
+        if "disabled" not in test:
             yield test
 
 
@@ -90,11 +99,12 @@ def exists(tests, values):
     `active_tests`.
     """
     for test in tests:
-        if os.path.exists(test['path']):
+        if os.path.exists(test["path"]):
             yield test
 
 
 # built-in instance filters
+
 
 class InstanceFilter(object):
     """
@@ -104,14 +114,18 @@ class InstanceFilter(object):
     `filterlist`. This class also formats filters' __str__ method for easier
     debugging.
     """
+
     unique = True
 
     __hash__ = super.__hash__
 
     def __init__(self, *args, **kwargs):
-        self.fmt_args = ', '.join(itertools.chain(
-            [str(a) for a in args],
-            ['{}={}'.format(k, v) for k, v in six.iteritems(kwargs)]))
+        self.fmt_args = ", ".join(
+            itertools.chain(
+                [str(a) for a in args],
+                ["{}={}".format(k, v) for k, v in six.iteritems(kwargs)],
+            )
+        )
 
     def __eq__(self, other):
         if self.unique:
@@ -145,24 +159,24 @@ class subsuite(InstanceFilter):
         # Look for conditional subsuites, and replace them with the subsuite
         # itself (if the condition is true), or nothing.
         for test in tests:
-            subsuite = test.get('subsuite', '')
-            if ',' in subsuite:
+            subsuite = test.get("subsuite", "")
+            if "," in subsuite:
                 try:
-                    subsuite, cond = subsuite.split(',')
+                    subsuite, cond = subsuite.split(",")
                 except ValueError:
                     raise ParseError("subsuite condition can't contain commas")
                 matched = parse(cond, **values)
                 if matched:
-                    test['subsuite'] = subsuite
+                    test["subsuite"] = subsuite
                 else:
-                    test['subsuite'] = ''
+                    test["subsuite"] = ""
 
             # Filter on current subsuite
             if self.name is None:
-                if not test.get('subsuite'):
+                if not test.get("subsuite"):
                     yield test
             else:
-                if test.get('subsuite', '') == self.name:
+                if test.get("subsuite", "") == self.name:
                     yield test
 
 
@@ -180,8 +194,7 @@ class chunk_by_slice(InstanceFilter):
 
     def __init__(self, this_chunk, total_chunks, disabled=False):
         assert 1 <= this_chunk <= total_chunks
-        InstanceFilter.__init__(self, this_chunk, total_chunks,
-                                disabled=disabled)
+        InstanceFilter.__init__(self, this_chunk, total_chunks, disabled=disabled)
         self.this_chunk = this_chunk
         self.total_chunks = total_chunks
         self.disabled = disabled
@@ -191,9 +204,10 @@ class chunk_by_slice(InstanceFilter):
         if self.disabled:
             chunk_tests = tests[:]
         else:
-            chunk_tests = [t for t in tests if 'disabled' not in t]
+            chunk_tests = [t for t in tests if "disabled" not in t]
 
         tests_per_chunk = float(len(chunk_tests)) / self.total_chunks
+        # pylint: disable=W1633
         start = int(round((self.this_chunk - 1) * tests_per_chunk))
         end = int(round(self.this_chunk * tests_per_chunk))
 
@@ -241,21 +255,22 @@ class chunk_by_dir(InstanceFilter):
         tests_by_dir = defaultdict(list)
         ordered_dirs = []
         for test in tests:
-            path = test['relpath']
+            path = test["relpath"]
 
             if path.startswith(os.sep):
                 path = path[1:]
 
             dirs = path.split(os.sep)
-            dirs = dirs[:min(self.depth, len(dirs) - 1)]
+            dirs = dirs[: min(self.depth, len(dirs) - 1)]
             path = os.sep.join(dirs)
 
             # don't count directories that only have disabled tests in them,
             # but still yield disabled tests that are alongside enabled tests
-            if path not in ordered_dirs and 'disabled' not in test:
+            if path not in ordered_dirs and "disabled" not in test:
                 ordered_dirs.append(path)
             tests_by_dir[path].append(test)
 
+        # pylint: disable=W1633
         tests_per_chunk = float(len(ordered_dirs)) / self.total_chunks
         start = int(round((self.this_chunk - 1) * tests_per_chunk))
         end = int(round(self.this_chunk * tests_per_chunk))
@@ -268,8 +283,9 @@ class chunk_by_dir(InstanceFilter):
         # be yielded for reporting purposes. Put them all in chunk 1 for
         # simplicity.
         if self.this_chunk == 1:
-            disabled_dirs = [v for k, v in six.iteritems(tests_by_dir)
-                             if k not in ordered_dirs]
+            disabled_dirs = [
+                v for k, v in six.iteritems(tests_by_dir) if k not in ordered_dirs
+            ]
             for disabled_test in itertools.chain(*disabled_dirs):
                 yield disabled_test
 
@@ -282,6 +298,7 @@ class chunk_by_manifest(InstanceFilter):
     :param this_chunk: the current chunk, 1 <= this_chunk <= total_chunks
     :param total_chunks: the total number of chunks
     """
+
     def __init__(self, this_chunk, total_chunks, *args, **kwargs):
         InstanceFilter.__init__(self, this_chunk, total_chunks, *args, **kwargs)
         self.this_chunk = this_chunk
@@ -289,22 +306,24 @@ class chunk_by_manifest(InstanceFilter):
 
     def __call__(self, tests, values):
         tests = list(tests)
-        manifests = set(t['manifest'] for t in tests)
+        manifests = set(t["manifest"] for t in tests)
 
         tests_by_manifest = []
         for manifest in manifests:
-            mtests = [t for t in tests if t['manifest'] == manifest]
+            mtests = [t for t in tests if t["manifest"] == manifest]
             tests_by_manifest.append(mtests)
         # Sort tests_by_manifest from largest manifest to shortest; include
         # manifest name as secondary key to ensure consistent order across
         # multiple runs.
-        tests_by_manifest.sort(reverse=True, key=lambda x: (len(x), x[0]['manifest']))
+        tests_by_manifest.sort(reverse=True, key=lambda x: (len(x), x[0]["manifest"]))
 
         tests_by_chunk = [[] for i in range(self.total_chunks)]
         for batch in tests_by_manifest:
             # Sort to guarantee the chunk with the lowest score will always
             # get the next batch of tests.
-            tests_by_chunk.sort(key=lambda x: (len(x), x[0]['manifest'] if len(x) else ""))
+            tests_by_chunk.sort(
+                key=lambda x: (len(x), x[0]["manifest"] if len(x) else "")
+            )
             tests_by_chunk[0].extend(batch)
 
         return (t for t in tests_by_chunk[self.this_chunk - 1])
@@ -330,14 +349,14 @@ class chunk_by_runtime(InstanceFilter):
 
     @classmethod
     def get_manifest(cls, test):
-        manifest = normsep(test.get('ancestor_manifest', ''))
+        manifest = normsep(test.get("ancestor_manifest", ""))
 
         # Ignore ancestor_manifests that live at the root (e.g, don't have a
         # path separator). The only time this should happen is when they are
         # generated by the build system and we shouldn't count generated
         # manifests for chunking purposes.
-        if not manifest or '/' not in manifest:
-            manifest = normsep(test['manifest_relpath'])
+        if not manifest or "/" not in manifest:
+            manifest = normsep(test["manifest_relpath"])
         return manifest
 
     def get_chunked_manifests(self, manifests):
@@ -346,10 +365,15 @@ class chunk_by_runtime(InstanceFilter):
 
         # Compute the average to use as a default for manifests that don't exist.
         times = [r[0] for r in runtimes]
+        # pylint --py3k W1619
+        # pylint: disable=W1633
         avg = round(sum(times) / len(times), 2) if times else 0
         missing = sorted([m for m in manifests if m not in self.runtimes])
-        log("Applying average runtime of {}s to the following missing manifests:\n{}".format(
-            avg, '  ' + '\n  '.join(missing)))
+        log(
+            "Applying average runtime of {}s to the following missing manifests:\n{}".format(
+                avg, "  " + "\n  ".join(missing)
+            )
+        )
         runtimes.extend([(avg, m) for m in missing])
 
         # Each chunk is of the form [<runtime>, <manifests>].
@@ -373,8 +397,14 @@ class chunk_by_runtime(InstanceFilter):
         manifests = set(self.get_manifest(t) for t in tests)
         chunks = self.get_chunked_manifests(manifests)
         runtime, this_manifests = chunks[self.this_chunk - 1]
-        log("Cumulative test runtime is around {} minutes (average is {} minutes)".format(
-            round(runtime / 60), round(sum([c[0] for c in chunks]) / (60 * len(chunks)))))
+        # pylint --py3k W1619
+        # pylint: disable=W1633
+        log(
+            "Cumulative test runtime is around {} minutes (average is {} minutes)".format(
+                round(runtime / 60),
+                round(sum([c[0] for c in chunks]) / (60 * len(chunks))),
+            )
+        )
         return (t for t in tests if self.get_manifest(t) in this_manifests)
 
 
@@ -393,6 +423,7 @@ class tags(InstanceFilter):
 
     :param tags: A tag or list of tags to filter tests on
     """
+
     unique = False
 
     def __init__(self, tags):
@@ -403,12 +434,41 @@ class tags(InstanceFilter):
 
     def __call__(self, tests, values):
         for test in tests:
-            if 'tags' not in test:
+            if "tags" not in test:
                 continue
 
-            test_tags = [t.strip() for t in test['tags'].split()]
+            test_tags = [t.strip() for t in test["tags"].split()]
             if any(t in self.tags for t in test_tags):
                 yield test
+
+
+class failures(InstanceFilter):
+    """
+    [test_foobar.html]
+    fail-if =
+      keyword # <comment>
+
+    :param keywords: A keyword to filter tests on
+    """
+
+    def __init__(self, keyword):
+        InstanceFilter.__init__(self, keyword)
+        self.keyword = keyword
+
+    def __call__(self, tests, values):
+        for test in tests:
+            for key in ["skip-if", "fail-if"]:
+                if key not in test:
+                    continue
+
+                matched = [
+                    self.keyword in e and parse(e, **values)
+                    for e in test[key].splitlines()
+                    if e
+                ]
+                if any(matched):
+                    test["expected"] = "fail"
+                    yield test
 
 
 class pathprefix(InstanceFilter):
@@ -423,19 +483,21 @@ class pathprefix(InstanceFilter):
         if isinstance(paths, string_types):
             paths = [paths]
         self.paths = paths
+        self.missing = set()
 
     def __call__(self, tests, values):
+        seen = set()
         for test in tests:
             for tp in self.paths:
                 tp = os.path.normpath(tp)
 
-                if tp.endswith('.ini'):
-                    mpaths = [test['manifest_relpath']]
-                    if 'ancestor_manifest' in test:
-                        mpaths.append(test['ancestor_manifest'])
+                if tp.endswith(".ini"):
+                    mpaths = [test["manifest_relpath"]]
+                    if "ancestor_manifest" in test:
+                        mpaths.append(test["ancestor_manifest"])
 
                     if os.path.isabs(tp):
-                        root = test['manifest'][:-len(test['manifest_relpath'])-1]
+                        root = test["manifest"][: -len(test["manifest_relpath"]) - 1]
                         mpaths = [os.path.join(root, m) for m in mpaths]
 
                     # only return tests that are in this manifest
@@ -443,19 +505,23 @@ class pathprefix(InstanceFilter):
                         continue
                 else:
                     # only return tests that start with this path
-                    path = test['relpath']
+                    path = test["relpath"]
                     if os.path.isabs(tp):
-                        path = test['path']
+                        path = test["path"]
 
                     if not os.path.normpath(path).startswith(tp):
                         continue
 
                 # any test path that points to a single file will be run no
                 # matter what, even if it's disabled
-                if 'disabled' in test and os.path.normpath(test['relpath']) == tp:
-                    del test['disabled']
+                if "disabled" in test and os.path.normpath(test["relpath"]) == tp:
+                    del test["disabled"]
+
+                seen.add(tp)
                 yield test
                 break
+
+        self.missing = set(self.paths) - seen
 
 
 # filter container

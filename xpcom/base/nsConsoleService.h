@@ -11,14 +11,26 @@
 #ifndef __nsconsoleservice_h__
 #define __nsconsoleservice_h__
 
-#include "mozilla/Attributes.h"
+#include <cstdint>
+#include <utility>
+
+#include "mozilla/Assertions.h"
+#include "mozilla/LinkedList.h"
 #include "mozilla/Mutex.h"
 
+#include "MainThreadUtils.h"
+#include "nsCOMPtr.h"
 #include "nsInterfaceHashtable.h"
 #include "nsHashKeys.h"
 
+#include "nsIConsoleListener.h"
+#include "nsIConsoleMessage.h"
 #include "nsIConsoleService.h"
 #include "nsIObserver.h"
+#include "nsISupports.h"
+
+template <class T>
+class nsCOMArray;
 
 class nsConsoleService final : public nsIConsoleService, public nsIObserver {
  public:
@@ -40,14 +52,6 @@ class nsConsoleService final : public nsIConsoleService, public nsIObserver {
     MOZ_ASSERT(mDeliveringMessage);
     mDeliveringMessage = false;
   }
-
-  // This is a variant of LogMessage which allows the caller to determine
-  // if the message should be output to an OS-specific log. This is used on
-  // B2G to control whether the message is logged to the android log or not.
-
-  enum OutputMode { SuppressLog, OutputToLog };
-  virtual nsresult LogMessageWithMode(nsIConsoleMessage* aMessage,
-                                      OutputMode aOutputMode);
 
   typedef nsInterfaceHashtable<nsISupportsHashKey, nsIConsoleListener>
       ListenerHash;

@@ -6,8 +6,10 @@
 
 #include "WorkerDebugger.h"
 
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/MessageEvent.h"
 #include "mozilla/dom/MessageEventBinding.h"
+#include "mozilla/dom/WindowContext.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/PerformanceUtils.h"
 #include "nsProxyRelease.h"
@@ -55,8 +57,7 @@ class DebuggerMessageEventRunnable : public WorkerDebuggerRunnable {
     RefPtr<MessageEvent> event =
         new MessageEvent(globalScope, nullptr, nullptr);
     event->InitMessageEvent(nullptr, u"message"_ns, CanBubble::eNo,
-                            Cancelable::eYes, data, EmptyString(),
-                            EmptyString(), nullptr,
+                            Cancelable::eYes, data, u""_ns, u""_ns, nullptr,
                             Sequence<OwningNonNull<MessagePort>>());
     event->SetTrusted(true);
 
@@ -244,7 +245,7 @@ WorkerDebugger::GetType(uint32_t* aResult) {
     return NS_ERROR_UNEXPECTED;
   }
 
-  *aResult = mWorkerPrivate->Type();
+  *aResult = mWorkerPrivate->Kind();
   return NS_OK;
 }
 
@@ -268,19 +269,46 @@ WorkerDebugger::GetWindow(mozIDOMWindow** aResult) {
     return NS_ERROR_UNEXPECTED;
   }
 
+  nsCOMPtr<nsPIDOMWindowInner> window = DedicatedWorkerWindow();
+  window.forget(aResult);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+WorkerDebugger::GetWindowIDs(nsTArray<uint64_t>& aResult) {
+  AssertIsOnMainThread();
+
+  if (!mWorkerPrivate) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  if (mWorkerPrivate->IsDedicatedWorker()) {
+    if (const auto window = DedicatedWorkerWindow()) {
+      aResult.AppendElement(window->WindowID());
+    }
+  } else if (mWorkerPrivate->IsSharedWorker()) {
+    const RemoteWorkerChild* const controller =
+        mWorkerPrivate->GetRemoteWorkerController();
+    MOZ_ASSERT(controller);
+    aResult = controller->WindowIDs().Clone();
+  }
+
+  return NS_OK;
+}
+
+nsCOMPtr<nsPIDOMWindowInner> WorkerDebugger::DedicatedWorkerWindow() {
+  MOZ_ASSERT(mWorkerPrivate);
+
   WorkerPrivate* worker = mWorkerPrivate;
   while (worker->GetParent()) {
     worker = worker->GetParent();
   }
 
   if (!worker->IsDedicatedWorker()) {
-    *aResult = nullptr;
-    return NS_OK;
+    return nullptr;
   }
 
-  nsCOMPtr<nsPIDOMWindowInner> window = worker->GetWindow();
-  window.forget(aResult);
-  return NS_OK;
+  return worker->GetWindow();
 }
 
 NS_IMETHODIMP
@@ -458,7 +486,7 @@ void WorkerDebugger::ReportErrorToDebuggerOnMainThread(
 
 RefPtr<PerformanceInfoPromise> WorkerDebugger::ReportPerformanceInfo() {
   AssertIsOnMainThread();
-  nsCOMPtr<nsPIDOMWindowOuter> top;
+  RefPtr<BrowsingContext> top;
   RefPtr<WorkerDebugger> self = this;
 
 #if defined(XP_WIN)
@@ -477,12 +505,12 @@ RefPtr<PerformanceInfoPromise> WorkerDebugger::ReportPerformanceInfo() {
   }
   nsPIDOMWindowInner* win = wp->GetWindow();
   if (win) {
-    nsPIDOMWindowOuter* outer = win->GetOuterWindow();
-    if (outer) {
-      top = outer->GetInProcessTop();
-      if (top) {
-        windowID = top->WindowID();
-        isTopLevel = outer->GetBrowsingContext()->IsTop();
+    BrowsingContext* context = win->GetBrowsingContext();
+    if (context) {
+      top = context->Top();
+      if (top && top->GetCurrentWindowContext()) {
+        windowID = top->GetCurrentWindowContext()->OuterWindowId();
+        isTopLevel = context->IsTop();
       }
     }
   }

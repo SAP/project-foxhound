@@ -10,6 +10,7 @@
 #include "CachePushChecker.h"
 #include "HttpTransactionParent.h"
 #include "SocketProcessHost.h"
+#include "mozilla/Components.h"
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/ipc/FileDescriptorSetParent.h"
 #include "mozilla/ipc/IPCStreamAlloc.h"
@@ -21,8 +22,13 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryIPC.h"
 #include "nsIAppStartup.h"
+#include "nsIConsoleService.h"
 #include "nsIHttpActivityObserver.h"
+#include "nsIObserverService.h"
 #include "nsNSSIOLayer.h"
+#include "nsIOService.h"
+#include "nsHttpHandler.h"
+#include "nsHttpConnectionInfo.h"
 #include "PSMIPCCommon.h"
 #include "secerr.h"
 #ifdef MOZ_WEBRTC
@@ -75,7 +81,7 @@ void SocketProcessParent::ActorDestroy(ActorDestroyReason aWhy) {
   launcherThread->Dispatch(NS_NewRunnableFunction(
       "SocketProcessParent::ActorDestroy",
       [selector = java::GeckoProcessManager::Selector::GlobalRef(selector)]() {
-        java::GeckoProcessManager::MarkAsDead(selector);
+        java::GeckoProcessManager::ShutdownProcess(selector);
       }));
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
@@ -88,7 +94,7 @@ void SocketProcessParent::ActorDestroy(ActorDestroyReason aWhy) {
           do_GetService("@mozilla.org/toolkit/app-startup;1");
       if (appService) {
         bool userAllowedQuit = true;
-        appService->Quit(nsIAppStartup::eForceQuit, &userAllowedQuit);
+        appService->Quit(nsIAppStartup::eForceQuit, 1, &userAllowedQuit);
       }
     }
   }
@@ -103,8 +109,35 @@ bool SocketProcessParent::SendRequestMemoryReport(
     const bool& aMinimizeMemoryUsage,
     const Maybe<ipc::FileDescriptor>& aDMDFile) {
   mMemoryReportRequest = MakeUnique<dom::MemoryReportRequestHost>(aGeneration);
-  Unused << PSocketProcessParent::SendRequestMemoryReport(
-      aGeneration, aAnonymize, aMinimizeMemoryUsage, aDMDFile);
+
+  PSocketProcessParent::SendRequestMemoryReport(
+      aGeneration, aAnonymize, aMinimizeMemoryUsage, aDMDFile,
+      [&](const uint32_t& aGeneration2) {
+        MOZ_ASSERT(gIOService);
+        if (!gIOService->SocketProcess()) {
+          return;
+        }
+        SocketProcessParent* actor = gIOService->SocketProcess()->GetActor();
+        if (!actor) {
+          return;
+        }
+        if (actor->mMemoryReportRequest) {
+          actor->mMemoryReportRequest->Finish(aGeneration2);
+          actor->mMemoryReportRequest = nullptr;
+        }
+      },
+      [&](mozilla::ipc::ResponseRejectReason) {
+        MOZ_ASSERT(gIOService);
+        if (!gIOService->SocketProcess()) {
+          return;
+        }
+        SocketProcessParent* actor = gIOService->SocketProcess()->GetActor();
+        if (!actor) {
+          return;
+        }
+        actor->mMemoryReportRequest = nullptr;
+      });
+
   return true;
 }
 
@@ -112,15 +145,6 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvAddMemoryReport(
     const MemoryReport& aReport) {
   if (mMemoryReportRequest) {
     mMemoryReportRequest->RecvReport(aReport);
-  }
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult SocketProcessParent::RecvFinishMemoryReport(
-    const uint32_t& aGeneration) {
-  if (mMemoryReportRequest) {
-    mMemoryReportRequest->Finish(aGeneration);
-    mMemoryReportRequest = nullptr;
   }
   return IPC_OK();
 }
@@ -257,7 +281,7 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvObserveHttpActivity(
     const uint32_t& aActivitySubtype, const PRTime& aTimestamp,
     const uint64_t& aExtraSizeData, const nsCString& aExtraStringData) {
   nsCOMPtr<nsIHttpActivityDistributor> activityDistributor =
-      services::GetHttpActivityDistributor();
+      components::HttpActivityDistributor::Service();
   MOZ_ASSERT(activityDistributor);
 
   Unused << activityDistributor->ObserveActivityWithArgs(
@@ -404,6 +428,45 @@ SocketProcessParent::RecvPRemoteLazyInputStreamConstructor(
     return IPC_FAIL_NO_REASON(this);
   }
 
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult SocketProcessParent::RecvODoHServiceActivated(
+    const bool& aActivated) {
+  nsCOMPtr<nsIObserverService> observerService =
+      mozilla::services::GetObserverService();
+
+  if (observerService) {
+    observerService->NotifyObservers(nullptr, "odoh-service-activated",
+                                     aActivated ? u"true" : u"false");
+  }
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult SocketProcessParent::RecvExcludeHttp2OrHttp3(
+    const HttpConnectionInfoCloneArgs& aArgs) {
+  RefPtr<nsHttpConnectionInfo> cinfo =
+      nsHttpConnectionInfo::DeserializeHttpConnectionInfoCloneArgs(aArgs);
+  if (!cinfo) {
+    MOZ_ASSERT(false, "failed to deserizlize http connection info");
+    return IPC_OK();
+  }
+
+  if (cinfo->IsHttp3()) {
+    gHttpHandler->ExcludeHttp3(cinfo);
+  } else {
+    gHttpHandler->ExcludeHttp2(cinfo);
+  }
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult SocketProcessParent::RecvOnConsoleMessage(
+    const nsString& aMessage) {
+  nsCOMPtr<nsIConsoleService> consoleService =
+      do_GetService(NS_CONSOLESERVICE_CONTRACTID);
+  if (consoleService) {
+    consoleService->LogStringMessage(aMessage.get());
+  }
   return IPC_OK();
 }
 

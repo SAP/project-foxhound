@@ -8,6 +8,8 @@
 #include "mozilla/dom/Document.h"
 #include "nsIContent.h"
 #include "nsIFrame.h"
+#include "nsIScrollableFrame.h"
+#include "nsLayoutUtils.h"
 #include "nsNumberControlFrame.h"
 #include "nsPresContext.h"
 #include "nsString.h"
@@ -19,6 +21,7 @@
 #include "nsMenuFrame.h"
 #include "nsRangeFrame.h"
 #include "nsCSSRendering.h"
+#include "ImageContainer.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/dom/Element.h"
@@ -28,6 +31,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/RelativeLuminanceUtils.h"
 #include <algorithm>
 
 using namespace mozilla;
@@ -37,38 +41,92 @@ nsNativeTheme::nsNativeTheme() : mAnimatedContentTimeout(UINT32_MAX) {}
 
 NS_IMPL_ISUPPORTS(nsNativeTheme, nsITimerCallback, nsINamed)
 
-EventStates nsNativeTheme::GetContentState(nsIFrame* aFrame,
-                                           StyleAppearance aAppearance) {
-  if (!aFrame) return EventStates();
-
-  bool isXULCheckboxRadio = (aAppearance == StyleAppearance::Checkbox ||
-                             aAppearance == StyleAppearance::Radio) &&
-                            aFrame->GetContent()->IsXULElement();
-  if (isXULCheckboxRadio) aFrame = aFrame->GetParent();
-
-  if (!aFrame->GetContent()) return EventStates();
-
-  nsIContent* frameContent = aFrame->GetContent();
-  EventStates flags;
-  if (frameContent->IsElement()) {
-    flags = frameContent->AsElement()->State();
-
-    nsNumberControlFrame* numberControlFrame =
-        nsNumberControlFrame::GetNumberControlFrameForSpinButton(aFrame);
-    if (numberControlFrame &&
-        numberControlFrame->GetContent()->AsElement()->State().HasState(
-            NS_EVENT_STATE_DISABLED)) {
-      flags |= NS_EVENT_STATE_DISABLED;
-    }
+/* static */ EventStates nsNativeTheme::GetContentState(
+    nsIFrame* aFrame, StyleAppearance aAppearance) {
+  if (!aFrame) {
+    return EventStates();
   }
 
-  if (isXULCheckboxRadio && aAppearance == StyleAppearance::Radio &&
-      IsFocused(aFrame)) {
-    flags |= NS_EVENT_STATE_FOCUS;
-    nsPIDOMWindowOuter* window = aFrame->GetContent()->OwnerDoc()->GetWindow();
-    if (window && window->ShouldShowFocusRing()) {
-      flags |= NS_EVENT_STATE_FOCUSRING;
+  nsIContent* frameContent = aFrame->GetContent();
+  if (!frameContent || !frameContent->IsElement()) {
+    return EventStates();
+  }
+
+  const bool isXULElement = frameContent->IsXULElement();
+  if (isXULElement) {
+    if (aAppearance == StyleAppearance::CheckboxLabel ||
+        aAppearance == StyleAppearance::RadioLabel) {
+      aFrame = aFrame->GetParent()->GetParent();
+      frameContent = aFrame->GetContent();
+    } else if (aAppearance == StyleAppearance::Checkbox ||
+               aAppearance == StyleAppearance::Radio ||
+               aAppearance == StyleAppearance::ToolbarbuttonDropdown ||
+               aAppearance == StyleAppearance::Treeheadersortarrow ||
+               aAppearance == StyleAppearance::ButtonArrowPrevious ||
+               aAppearance == StyleAppearance::ButtonArrowNext ||
+               aAppearance == StyleAppearance::ButtonArrowUp ||
+               aAppearance == StyleAppearance::ButtonArrowDown) {
+      aFrame = aFrame->GetParent();
+      frameContent = aFrame->GetContent();
     }
+    MOZ_ASSERT(frameContent && frameContent->IsElement());
+  }
+
+  EventStates flags = frameContent->AsElement()->State();
+  nsNumberControlFrame* numberControlFrame =
+      nsNumberControlFrame::GetNumberControlFrameForSpinButton(aFrame);
+  if (numberControlFrame &&
+      numberControlFrame->GetContent()->AsElement()->State().HasState(
+          NS_EVENT_STATE_DISABLED)) {
+    flags |= NS_EVENT_STATE_DISABLED;
+  }
+
+  if (!isXULElement) {
+    return flags;
+  }
+
+  if (CheckBooleanAttr(aFrame, nsGkAtoms::disabled)) {
+    flags |= NS_EVENT_STATE_DISABLED;
+  }
+
+  switch (aAppearance) {
+    case StyleAppearance::RadioLabel:
+    case StyleAppearance::Radio: {
+      if (CheckBooleanAttr(aFrame, nsGkAtoms::focused)) {
+        flags |= NS_EVENT_STATE_FOCUS;
+        nsPIDOMWindowOuter* window =
+            aFrame->GetContent()->OwnerDoc()->GetWindow();
+        if (window && window->ShouldShowFocusRing()) {
+          flags |= NS_EVENT_STATE_FOCUSRING;
+        }
+      }
+      if (CheckBooleanAttr(aFrame, nsGkAtoms::selected)) {
+        flags |= NS_EVENT_STATE_CHECKED;
+      }
+      break;
+    }
+    case StyleAppearance::CheckboxLabel:
+    case StyleAppearance::Checkbox: {
+      if (CheckBooleanAttr(aFrame, nsGkAtoms::checked)) {
+        flags |= NS_EVENT_STATE_CHECKED;
+      } else if (CheckBooleanAttr(aFrame, nsGkAtoms::indeterminate)) {
+        flags |= NS_EVENT_STATE_INDETERMINATE;
+      }
+      break;
+    }
+    case StyleAppearance::MenulistButton:
+    case StyleAppearance::Menulist:
+    case StyleAppearance::NumberInput:
+    case StyleAppearance::Textfield:
+    case StyleAppearance::Searchfield:
+    case StyleAppearance::Textarea: {
+      if (CheckBooleanAttr(aFrame, nsGkAtoms::focused)) {
+        flags |= NS_EVENT_STATE_FOCUS | NS_EVENT_STATE_FOCUSRING;
+      }
+      break;
+    }
+    default:
+      break;
   }
 
   return flags;
@@ -126,28 +184,6 @@ double nsNativeTheme::GetProgressMaxValue(nsIFrame* aFrame) {
   return static_cast<HTMLProgressElement*>(aFrame->GetContent())->Max();
 }
 
-bool nsNativeTheme::GetCheckedOrSelected(nsIFrame* aFrame,
-                                         bool aCheckSelected) {
-  if (!aFrame) return false;
-
-  nsIContent* content = aFrame->GetContent();
-
-  if (content->IsXULElement()) {
-    // For a XUL checkbox or radio button, the state of the parent determines
-    // the checked state
-    aFrame = aFrame->GetParent();
-  } else {
-    // Check for an HTML input element
-    HTMLInputElement* inputElt = HTMLInputElement::FromNode(content);
-    if (inputElt) {
-      return inputElt->Checked();
-    }
-  }
-
-  return CheckBooleanAttr(
-      aFrame, aCheckSelected ? nsGkAtoms::selected : nsGkAtoms::checked);
-}
-
 bool nsNativeTheme::IsButtonTypeMenu(nsIFrame* aFrame) {
   if (!aFrame) return false;
 
@@ -160,37 +196,19 @@ bool nsNativeTheme::IsButtonTypeMenu(nsIFrame* aFrame) {
 bool nsNativeTheme::IsPressedButton(nsIFrame* aFrame) {
   EventStates eventState =
       GetContentState(aFrame, StyleAppearance::Toolbarbutton);
-  if (IsDisabled(aFrame, eventState)) return false;
+  if (eventState.HasState(NS_EVENT_STATE_DISABLED)) return false;
 
   return IsOpenButton(aFrame) ||
          eventState.HasAllStates(NS_EVENT_STATE_ACTIVE | NS_EVENT_STATE_HOVER);
-}
-
-bool nsNativeTheme::GetIndeterminate(nsIFrame* aFrame) {
-  if (!aFrame) return false;
-
-  nsIContent* content = aFrame->GetContent();
-
-  if (content->IsXULElement()) {
-    // For a XUL checkbox or radio button, the state of the parent determines
-    // the state
-    return CheckBooleanAttr(aFrame->GetParent(), nsGkAtoms::indeterminate);
-  }
-
-  // Check for an HTML input element
-  HTMLInputElement* inputElt = HTMLInputElement::FromNode(content);
-  if (inputElt) {
-    return inputElt->Indeterminate();
-  }
-
-  return false;
 }
 
 bool nsNativeTheme::IsWidgetStyled(nsPresContext* aPresContext,
                                    nsIFrame* aFrame,
                                    StyleAppearance aAppearance) {
   // Check for specific widgets to see if HTML has overridden the style.
-  if (!aFrame) return false;
+  if (!aFrame) {
+    return false;
+  }
 
   // Resizers have some special handling, dependent on whether in a scrollable
   // container or not. If so, use the scrollable container's to determine
@@ -202,12 +220,18 @@ bool nsNativeTheme::IsWidgetStyled(nsPresContext* aPresContext,
     if (parentFrame && parentFrame->IsScrollFrame()) {
       // if the parent is a scrollframe, the resizer should be native themed
       // only if the scrollable area doesn't override the widget style.
+      //
+      // note that the condition below looks a bit suspect but it's the right
+      // one. If there's no valid appearance, then we should return true, it's
+      // effectively the same as if it had overridden the appearance.
       parentFrame = parentFrame->GetParent();
-      if (parentFrame) {
-        return IsWidgetStyled(
-            aPresContext, parentFrame,
-            parentFrame->StyleDisplay()->EffectiveAppearance());
+      if (!parentFrame) {
+        return false;
       }
+      auto parentAppearance =
+          parentFrame->StyleDisplay()->EffectiveAppearance();
+      return parentAppearance == StyleAppearance::None ||
+             IsWidgetStyled(aPresContext, parentFrame, parentAppearance);
     }
   }
 
@@ -254,46 +278,10 @@ bool nsNativeTheme::IsWidgetStyled(nsPresContext* aPresContext,
     }
   }
 
-  if (aAppearance == StyleAppearance::SpinnerUpbutton ||
-      aAppearance == StyleAppearance::SpinnerDownbutton) {
-    nsNumberControlFrame* numberControlFrame =
-        nsNumberControlFrame::GetNumberControlFrameForSpinButton(aFrame);
-    if (numberControlFrame) {
-      return !numberControlFrame->ShouldUseNativeStyleForSpinner();
-    }
-  }
-
-  return (aAppearance == StyleAppearance::NumberInput ||
-          aAppearance == StyleAppearance::Button ||
-          aAppearance == StyleAppearance::Textfield ||
-          aAppearance == StyleAppearance::Textarea ||
-          aAppearance == StyleAppearance::Listbox ||
-          aAppearance == StyleAppearance::Menulist ||
-          aAppearance == StyleAppearance::MenulistButton) &&
+  return nsLayoutUtils::AuthorSpecifiedBorderBackgroundDisablesTheming(
+             aAppearance) &&
          aFrame->GetContent()->IsHTMLElement() &&
-         aPresContext->HasAuthorSpecifiedRules(
-             aFrame, NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND);
-}
-
-bool nsNativeTheme::IsDisabled(nsIFrame* aFrame, EventStates aEventStates) {
-  if (!aFrame) {
-    return false;
-  }
-
-  nsIContent* content = aFrame->GetContent();
-  if (!content || !content->IsElement()) {
-    return false;
-  }
-
-  if (content->IsHTMLElement()) {
-    return aEventStates.HasState(NS_EVENT_STATE_DISABLED);
-  }
-
-  // For XML/XUL elements, an attribute must be equal to the literal
-  // string "true" to be counted as true.  An empty string should _not_
-  // be counted as true.
-  return content->AsElement()->AttrValueIs(
-      kNameSpaceID_None, nsGkAtoms::disabled, u"true"_ns, eCaseMatters);
+         aFrame->Style()->HasAuthorSpecifiedBorderOrBackground();
 }
 
 /* static */
@@ -438,16 +426,6 @@ bool nsNativeTheme::IsNextToSelectedTab(nsIFrame* aFrame, int32_t aOffset) {
   if (thisTabIndex == -1 || selectedTabIndex == -1) return false;
 
   return (thisTabIndex - selectedTabIndex == aOffset);
-}
-
-bool nsNativeTheme::IsIndeterminateProgress(nsIFrame* aFrame,
-                                            EventStates aEventStates) {
-  if (!aFrame || !aFrame->GetContent() ||
-      !aFrame->GetContent()->IsHTMLElement(nsGkAtoms::progress)) {
-    return false;
-  }
-
-  return aEventStates.HasState(NS_EVENT_STATE_INDETERMINATE);
 }
 
 bool nsNativeTheme::IsVerticalProgress(nsIFrame* aFrame) {
@@ -605,59 +583,82 @@ bool nsNativeTheme::IsRangeHorizontal(nsIFrame* aFrame) {
 }
 
 static nsIFrame* GetBodyFrame(nsIFrame* aCanvasFrame) {
-  nsIContent* content = aCanvasFrame->GetContent();
-  if (!content) {
-    return nullptr;
-  }
-  nsIContent* body = content->OwnerDoc()->GetBodyElement();
+  nsIContent* body = aCanvasFrame->PresContext()->Document()->GetBodyElement();
   if (!body) {
     return nullptr;
   }
   return body->GetPrimaryFrame();
 }
 
+bool nsNativeTheme::IsDarkColor(nscolor aColor) {
+  // Given https://www.w3.org/TR/WCAG20/#contrast-ratiodef, this is the
+  // threshold that tells us whether contrast is better against white or black.
+  //
+  // Contrast ratio against black is: (L + 0.05) / 0.05
+  // Contrast ratio against white is: 1.05 / (L + 0.05)
+  //
+  // So the intersection is:
+  //
+  //   (L + 0.05) / 0.05 = 1.05 / (L + 0.05)
+  //
+  // And the solution to that equation is:
+  //
+  //   sqrt(1.05 * 0.05) - 0.05
+  //
+  // So we consider a color dark if the contrast is below this threshold, and
+  // it's at least half-opaque.
+  constexpr float kThreshold = 0.179129;
+  return NS_GET_A(aColor) > 127 &&
+         RelativeLuminanceUtils::Compute(aColor) < kThreshold;
+}
+
 /* static */
 bool nsNativeTheme::IsDarkBackground(nsIFrame* aFrame) {
-  nsIScrollableFrame* scrollFrame = nullptr;
-  while (!scrollFrame && aFrame) {
-    scrollFrame = aFrame->GetScrollTargetFrame();
-    aFrame = aFrame->GetParent();
+  // Try to find the scrolled frame. Note that for stuff like xul <tree> there
+  // might be none.
+  {
+    nsIFrame* frame = aFrame;
+    nsIScrollableFrame* scrollFrame = nullptr;
+    while (!scrollFrame && frame) {
+      scrollFrame = frame->GetScrollTargetFrame();
+      frame = frame->GetParent();
+    }
+    if (scrollFrame) {
+      aFrame = scrollFrame->GetScrolledFrame();
+    } else {
+      // Leave aFrame untouched.
+    }
   }
-  if (!scrollFrame) return false;
 
-  nsIFrame* frame = scrollFrame->GetScrolledFrame();
-  if (nsCSSRendering::IsCanvasFrame(frame)) {
+  auto backgroundFrame = nsCSSRendering::FindNonTransparentBackgroundFrame(
+      aFrame, /* aStopAtThemed = */ false);
+  if (!backgroundFrame.mFrame) {
+    return false;
+  }
+
+  nscolor color = backgroundFrame.mFrame->StyleBackground()->BackgroundColor(
+      backgroundFrame.mFrame);
+
+  if (backgroundFrame.mIsForCanvas) {
     // For canvas frames, prefer to look at the body first, because the body
     // background color is most likely what will be visible as the background
     // color of the page, even if the html element has a different background
     // color which prevents that of the body frame to propagate to the viewport.
-    nsIFrame* bodyFrame = GetBodyFrame(frame);
-    if (bodyFrame) {
-      frame = bodyFrame;
+    if (nsIFrame* bodyFrame = GetBodyFrame(aFrame)) {
+      nscolor bodyColor =
+          bodyFrame->StyleBackground()->BackgroundColor(bodyFrame);
+      if (NS_GET_A(bodyColor)) {
+        color = bodyColor;
+      }
     }
   }
-  ComputedStyle* bgSC = nullptr;
-  if (!nsCSSRendering::FindBackground(frame, &bgSC) ||
-      bgSC->StyleBackground()->IsTransparent(bgSC)) {
-    nsIFrame* backgroundFrame =
-        nsCSSRendering::FindNonTransparentBackgroundFrame(frame, true);
-    nsCSSRendering::FindBackground(backgroundFrame, &bgSC);
-  }
-  if (bgSC) {
-    nscolor bgColor = bgSC->StyleBackground()->BackgroundColor(bgSC);
-    // Consider the background color dark if the sum of the r, g and b values is
-    // less than 384 in a semi-transparent document.  This heuristic matches
-    // what WebKit does, and we can improve it later if needed.
-    return NS_GET_A(bgColor) > 127 &&
-           NS_GET_R(bgColor) + NS_GET_G(bgColor) + NS_GET_B(bgColor) < 384;
-  }
-  return false;
+
+  return IsDarkColor(color);
 }
 
+/*static*/
 bool nsNativeTheme::IsWidgetScrollbarPart(StyleAppearance aAppearance) {
   switch (aAppearance) {
-    case StyleAppearance::Scrollbar:
-    case StyleAppearance::ScrollbarSmall:
     case StyleAppearance::ScrollbarVertical:
     case StyleAppearance::ScrollbarHorizontal:
     case StyleAppearance::ScrollbarbuttonUp:

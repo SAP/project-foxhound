@@ -2,18 +2,18 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-loader: taskgraph.loader.transform:loader
+loader: gecko_taskgraph.loader.transform:loader
 
 transforms:
-    - taskgraph.transforms.release:run_on_releases
-    - taskgraph.transforms.update_verify_config:transforms
-    - taskgraph.transforms.job:transforms
-    - taskgraph.transforms.task:transforms
+    - gecko_taskgraph.transforms.release:run_on_releases
+    - gecko_taskgraph.transforms.update_verify_config:transforms
+    - gecko_taskgraph.transforms.job:transforms
+    - gecko_taskgraph.transforms.task:transforms
 
 job-defaults:
     name: update-verify-config-next
     run-on-projects: []  # to make sure this never runs as part of CI
-    run-on-releases: [esr68, esr78]
+    run-on-releases: [esr91]
     shipping-phase: promote
     worker-type: b-linux
     worker:
@@ -52,7 +52,7 @@ job-defaults:
         updater-platform: linux-x86_64
         product: firefox
         channel: "esr-localtest-next"
-        include-version: esr78-next
+        include-version: esr91-next
         last-watershed: "68.0esr"
 
 jobs:

@@ -7,7 +7,7 @@
  * Tests if Request-Cookies and Response-Cookies are sorted in Cookies tab.
  */
 add_task(async function() {
-  const { tab, monitor } = await initNetMonitor(SIMPLE_UNSORTED_COOKIES_SJS, {
+  const { monitor } = await initNetMonitor(SIMPLE_UNSORTED_COOKIES_SJS, {
     requestCount: 1,
   });
   info("Starting test... ");
@@ -17,9 +17,8 @@ add_task(async function() {
 
   store.dispatch(Actions.batchEnable(false));
 
-  tab.linkedBrowser.reload();
-
   let wait = waitForNetworkEvents(monitor, 1);
+  await reloadBrowser();
   await wait;
 
   wait = waitForDOM(document, ".headers-overview");
@@ -33,10 +32,7 @@ add_task(async function() {
     { type: "mousedown" },
     document.querySelectorAll(".request-list-item")[0]
   );
-  EventUtils.sendMouseEvent(
-    { type: "click" },
-    document.querySelector("#cookies-tab")
-  );
+  clickOnSidebarTab(document, "cookies");
 
   info("Check if Request-Cookies and Response-Cookies are sorted");
   const expectedLabelValues = [

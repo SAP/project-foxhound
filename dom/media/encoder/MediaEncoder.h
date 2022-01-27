@@ -13,6 +13,7 @@
 #include "MediaTrackListener.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/UniquePtr.h"
 #include "nsIMemoryReporter.h"
 #include "TrackEncoder.h"
@@ -27,31 +28,20 @@ class TaskQueue;
 namespace dom {
 class AudioNode;
 class AudioStreamTrack;
+class BlobImpl;
 class MediaStreamTrack;
+class MutableBlobStorage;
 class VideoStreamTrack;
 }  // namespace dom
 
 class DriftCompensator;
-class MediaEncoder;
-
-class MediaEncoderListener {
- public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaEncoderListener)
-  virtual void Initialized() = 0;
-  virtual void DataAvailable() = 0;
-  virtual void Error() = 0;
-  virtual void Shutdown() = 0;
-
- protected:
-  virtual ~MediaEncoderListener() = default;
-};
 
 /**
  * MediaEncoder is the framework of encoding module, it controls and manages
- * procedures between ContainerWriter and TrackEncoder. ContainerWriter packs
- * the encoded track data with a specific container (e.g. ogg, webm).
+ * procedures between Muxer, ContainerWriter and TrackEncoder. ContainerWriter
+ * writes the encoded track data into a specific container (e.g. ogg, webm).
  * AudioTrackEncoder and VideoTrackEncoder are subclasses of TrackEncoder, and
- * are responsible for encoding raw data coming from MediaTrackGraph.
+ * are responsible for encoding raw data coming from MediaStreamTracks.
  *
  * MediaEncoder solves threading issues by doing message passing to a TaskQueue
  * (the "encoder thread") as passed in to the constructor. Each
@@ -63,20 +53,25 @@ class MediaEncoderListener {
  *
  * The MediaEncoder listens to events from all TrackEncoders, and in turn
  * signals events to interested parties. Typically a MediaRecorder::Session.
- * The event that there's data available in the TrackEncoders is what typically
- * drives the extraction and muxing of data.
+ * The MediaEncoder automatically encodes incoming data, muxes it, writes it
+ * into a container and stores the container data into a MutableBlobStorage.
+ * It is timeslice-aware so that it can notify listeners when it's time to
+ * expose a blob due to filling the timeslice.
  *
  * MediaEncoder is designed to be a passive component, neither does it own or is
  * in charge of managing threads. Instead this is done by its owner.
  *
  * For example, usage from MediaRecorder of this component would be:
- * 1) Create an encoder with a valid MIME type.
+ * 1) Create an encoder with a valid MIME type. Note that there are more
+ *    configuration options, see the docs on MediaEncoder::CreateEncoder.
  *    => encoder = MediaEncoder::CreateEncoder(aMIMEType);
- *    It then creates a ContainerWriter according to the MIME type
+ *    It then creates track encoders and the appropriate ContainerWriter
+ *    according to the MIME type
  *
- * 2) Connect a MediaEncoderListener to be notified when the MediaEncoder has
- *    been initialized and when there's data available.
- *    => encoder->RegisterListener(listener);
+ * 2) Connect handlers through MediaEventListeners to the MediaEncoder's
+ *    MediaEventSources, StartedEvent(), DataAvailableEvent(), ErrorEvent() and
+ *    ShutdownEvent().
+ *    => listener = encoder->DataAvailableEvent().Connect(mainThread, &OnBlob);
  *
  * 3) Connect the sources to be recorded. Either through:
  *    => encoder->ConnectAudioNode(node);
@@ -85,10 +80,13 @@ class MediaEncoderListener {
  *    These should not be mixed. When connecting MediaStreamTracks there is
  *    support for at most one of each kind.
  *
- * 4) When the MediaEncoderListener is notified that the MediaEncoder has
- *    data available, we can encode data. This also encodes metadata on its
- *    first invocation.
- *    => encoder->GetEncodedData(...);
+ * 4) MediaEncoder automatically encodes data from the connected tracks, muxes
+ *    them and writes it all into a blob, including metadata. When the blob
+ *    contains at least `timeslice` worth of data it notifies the
+ *    DataAvailableEvent that was connected in step 2.
+ *    => void OnBlob(RefPtr<BlobImpl> aBlob) {
+ *    =>   DispatchBlobEvent(Blob::Create(GetOwnerGlobal(), aBlob));
+ *    => };
  *
  * 5) To stop encoding, there are multiple options:
  *
@@ -109,14 +107,21 @@ class MediaEncoder {
   class EncoderListener;
 
  public:
+  using BlobPromise =
+      MozPromise<RefPtr<dom::BlobImpl>, nsresult, false /* IsExclusive */>;
+  using SizeOfPromise = MozPromise<size_t, size_t, true /* IsExclusive */>;
+
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaEncoder)
 
-  MediaEncoder(TaskQueue* aEncoderThread,
+  MediaEncoder(RefPtr<TaskQueue> aEncoderThread,
                RefPtr<DriftCompensator> aDriftCompensator,
                UniquePtr<ContainerWriter> aWriter,
-               AudioTrackEncoder* aAudioEncoder,
-               VideoTrackEncoder* aVideoEncoder, TrackRate aTrackRate,
-               const nsAString& aMIMEType);
+               UniquePtr<AudioTrackEncoder> aAudioEncoder,
+               UniquePtr<VideoTrackEncoder> aVideoEncoder,
+               UniquePtr<MediaQueue<EncodedFrame>> aEncodedAudioQueue,
+               UniquePtr<MediaQueue<EncodedFrame>> aEncodedVideoQueue,
+               TrackRate aTrackRate, const nsAString& aMIMEType,
+               uint64_t aMaxMemory, TimeDuration aTimeslice);
 
   /**
    * Called on main thread from MediaRecorder::Pause.
@@ -129,9 +134,9 @@ class MediaEncoder {
   void Resume();
 
   /**
-   * Stops the current encoding, and disconnects the input tracks.
+   * Disconnects the input tracks, causing the encoding to stop.
    */
-  void Stop();
+  void DisconnectTracks();
 
   /**
    * Connects an AudioNode with the appropriate encoder.
@@ -149,14 +154,19 @@ class MediaEncoder {
   void RemoveMediaStreamTrack(dom::MediaStreamTrack* aTrack);
 
   /**
-   * Creates an encoder with a given MIME type. Returns null if we are unable
-   * to create the encoder. For now, default aMIMEType to "audio/ogg" and use
-   * Ogg+Opus if it is empty.
+   * Creates an encoder with the given MIME type. This must be a valid MIME type
+   * or we will crash hard.
+   * Bitrates are given either explicit, or with 0 for defaults.
+   * aTrackRate is the rate in which data will be fed to the TrackEncoders.
+   * aMaxMemory is the maximum number of bytes of muxed data allowed in memory.
+   * Beyond that the blob is moved to a temporary file.
+   * aTimeslice is the minimum duration of muxed data we gather before
+   * automatically issuing a dataavailable event.
    */
   static already_AddRefed<MediaEncoder> CreateEncoder(
-      TaskQueue* aEncoderThread, const nsAString& aMIMEType,
+      RefPtr<TaskQueue> aEncoderThread, const nsAString& aMimeType,
       uint32_t aAudioBitrate, uint32_t aVideoBitrate, uint8_t aTrackTypes,
-      TrackRate aTrackRate);
+      TrackRate aTrackRate, uint64_t aMaxMemory, TimeDuration aTimeslice);
 
   /**
    * Encodes raw data for all tracks to aOutputBufs. The buffer of container
@@ -174,50 +184,58 @@ class MediaEncoder {
   void AssertShutdownCalled() { MOZ_ASSERT(mShutdownPromise); }
 
   /**
-   * Cancels the encoding and shuts down the encoder using Shutdown().
+   * Stops (encoding any data currently buffered) the encoding and shuts down
+   * the encoder using Shutdown().
    */
-  RefPtr<GenericNonExclusivePromise::AllPromiseType> Cancel();
+  RefPtr<GenericNonExclusivePromise> Stop();
+
+  /**
+   * Cancels (discarding any data currently buffered) the encoding and shuts
+   * down the encoder using Shutdown().
+   */
+  RefPtr<GenericNonExclusivePromise> Cancel();
 
   bool HasError();
 
   static bool IsWebMEncoderEnabled();
 
-  const nsString& MimeType() const;
+  /**
+   * Updates internal state when track encoders are all initialized.
+   */
+  void UpdateInitialized();
 
   /**
-   * Notifies listeners that this MediaEncoder has been initialized.
+   * Updates internal state when track encoders are all initialized, and
+   * notifies listeners that this MediaEncoder has been started.
    */
-  void NotifyInitialized();
-
-  /**
-   * Notifies listeners that this MediaEncoder has data available in some
-   * TrackEncoders.
-   */
-  void NotifyDataAvailable();
-
-  /**
-   * Registers a listener to events from this MediaEncoder.
-   * We hold a strong reference to the listener.
-   */
-  void RegisterListener(MediaEncoderListener* aListener);
-
-  /**
-   * Unregisters a listener from events from this MediaEncoder.
-   * The listener will stop receiving events synchronously.
-   */
-  bool UnregisterListener(MediaEncoderListener* aListener);
+  void UpdateStarted();
 
   MOZ_DEFINE_MALLOC_SIZE_OF(MallocSizeOf)
   /*
    * Measure the size of the buffer, and heap memory in bytes occupied by
    * mAudioEncoder and mVideoEncoder.
    */
-  size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf);
+  RefPtr<SizeOfPromise> SizeOfExcludingThis(
+      mozilla::MallocSizeOf aMallocSizeOf);
 
   /**
-   * Set desired video keyframe interval defined in milliseconds.
+   * Encode, mux and store into blob storage what has been buffered until now,
+   * then return the blob backed by that storage.
    */
-  void SetVideoKeyFrameInterval(uint32_t aVideoKeyFrameInterval);
+  RefPtr<BlobPromise> RequestData();
+
+  // Event that gets notified when all track encoders have received data.
+  MediaEventSource<void>& StartedEvent() { return mStartedEvent; }
+  // Event that gets notified when there was an error preventing continued
+  // recording somewhere in the MediaEncoder stack.
+  MediaEventSource<void>& ErrorEvent() { return mErrorEvent; }
+  // Event that gets notified when the MediaEncoder stack has been shut down.
+  MediaEventSource<void>& ShutdownEvent() { return mShutdownEvent; }
+  // Event that gets notified after we have muxed at least mTimeslice worth of
+  // data into the current blob storage.
+  MediaEventSource<RefPtr<dom::BlobImpl>>& DataAvailableEvent() {
+    return mDataAvailableEvent;
+  }
 
  protected:
   ~MediaEncoder();
@@ -236,10 +254,15 @@ class MediaEncoder {
   void RunOnGraph(already_AddRefed<Runnable> aRunnable);
 
   /**
-   * Shuts down the MediaEncoder and cleans up track encoders.
-   * Listeners will be notified of the shutdown unless we were Cancel()ed first.
+   * Shuts down gracefully if there is no remaining live track encoder.
    */
-  RefPtr<GenericNonExclusivePromise::AllPromiseType> Shutdown();
+  void MaybeShutdown();
+
+  /**
+   * Waits for TrackEncoders to shut down, then shuts down the MediaEncoder and
+   * cleans up track encoders.
+   */
+  RefPtr<GenericNonExclusivePromise> Shutdown();
 
   /**
    * Sets mError to true, notifies listeners of the error if mError changed,
@@ -247,16 +270,76 @@ class MediaEncoder {
    */
   void SetError();
 
+  /**
+   * Creates a new MutableBlobStorage if one doesn't exist.
+   */
+  void MaybeCreateMutableBlobStorage();
+
+  /**
+   * Called when an encoded audio frame has been pushed by the audio encoder.
+   */
+  void OnEncodedAudioPushed(const RefPtr<EncodedFrame>& aFrame);
+
+  /**
+   * Called when an encoded video frame has been pushed by the video encoder.
+   */
+  void OnEncodedVideoPushed(const RefPtr<EncodedFrame>& aFrame);
+
+  /**
+   * If enough data has been pushed to the muxer, extract it into the current
+   * blob storage. If more than mTimeslice data has been pushed to the muxer
+   * since the last DataAvailableEvent was notified, also gather the blob and
+   * notify MediaRecorder.
+   */
+  void MaybeExtractOrGatherBlob();
+
+  // Extracts encoded and muxed data into the current blob storage, creating one
+  // if it doesn't exist. The returned promise resolves when data has been
+  // stored into the blob.
+  RefPtr<GenericPromise> Extract();
+
+  // Stops gathering data into the current blob and resolves when the current
+  // blob is available. Future data will be stored in a new blob.
+  // Should a previous async GatherBlob() operation still be in progress, we'll
+  // wait for it to finish before starting this one.
+  RefPtr<BlobPromise> GatherBlob();
+
+  RefPtr<BlobPromise> GatherBlobImpl();
+
+  const RefPtr<nsISerialEventTarget> mMainThread;
   const RefPtr<TaskQueue> mEncoderThread;
   const RefPtr<DriftCompensator> mDriftCompensator;
 
-  UniquePtr<Muxer> mMuxer;
-  RefPtr<AudioTrackEncoder> mAudioEncoder;
-  RefPtr<AudioTrackListener> mAudioListener;
-  RefPtr<VideoTrackEncoder> mVideoEncoder;
-  RefPtr<VideoTrackListener> mVideoListener;
-  RefPtr<EncoderListener> mEncoderListener;
-  nsTArray<RefPtr<MediaEncoderListener>> mListeners;
+  const UniquePtr<MediaQueue<EncodedFrame>> mEncodedAudioQueue;
+  const UniquePtr<MediaQueue<EncodedFrame>> mEncodedVideoQueue;
+
+  const UniquePtr<Muxer> mMuxer;
+  const UniquePtr<AudioTrackEncoder> mAudioEncoder;
+  const RefPtr<AudioTrackListener> mAudioListener;
+  const UniquePtr<VideoTrackEncoder> mVideoEncoder;
+  const RefPtr<VideoTrackListener> mVideoListener;
+  const RefPtr<EncoderListener> mEncoderListener;
+
+ public:
+  const nsString mMimeType;
+
+  // Max memory to use for the MutableBlobStorage.
+  const uint64_t mMaxMemory;
+
+  // The interval of passing encoded data from MutableBlobStorage to
+  // onDataAvailable handler.
+  const TimeDuration mTimeslice;
+
+ private:
+  MediaEventListener mAudioPushListener;
+  MediaEventListener mAudioFinishListener;
+  MediaEventListener mVideoPushListener;
+  MediaEventListener mVideoFinishListener;
+
+  MediaEventProducer<void> mStartedEvent;
+  MediaEventProducer<void> mErrorEvent;
+  MediaEventProducer<void> mShutdownEvent;
+  MediaEventProducer<RefPtr<dom::BlobImpl>> mDataAvailableEvent;
 
   // The AudioNode we are encoding.
   // Will be null when input is media stream or destination node.
@@ -277,13 +360,33 @@ class MediaEncoder {
   // A stream to keep the MediaTrackGraph alive while we're recording.
   RefPtr<SharedDummyTrack> mGraphTrack;
 
+  // A buffer to cache muxed encoded data.
+  RefPtr<dom::MutableBlobStorage> mMutableBlobStorage;
+  // If set, is a promise for the latest GatherBlob() operation. Allows
+  // GatherBlob() operations to be serialized in order to avoid races.
+  RefPtr<BlobPromise> mBlobPromise;
+  // The end time of the muxed data in the last gathered blob. If more than one
+  // track is present, this is the end time of the track that ends the earliest
+  // in the last blob. Encoder thread only.
+  media::TimeUnit mLastBlobTime;
+  // The end time of the muxed data in the current blob storage. If more than
+  // one track is present, this is the end time of the track that ends the
+  // earliest in the current blob storage. Encoder thread only.
+  media::TimeUnit mLastExtractTime;
+  // The end time of encoded audio data sent to the muxer. Positive infinity if
+  // there is no audio encoder. Encoder thread only.
+  media::TimeUnit mMuxedAudioEndTime;
+  // The end time of encoded video data sent to the muxer. Positive infinity if
+  // there is no video encoder. Encoder thread only.
+  media::TimeUnit mMuxedVideoEndTime;
+
   TimeStamp mStartTime;
-  const nsString mMIMEType;
   bool mInitialized;
+  bool mStarted;
   bool mCompleted;
   bool mError;
   // Set when shutdown starts.
-  RefPtr<GenericNonExclusivePromise::AllPromiseType> mShutdownPromise;
+  RefPtr<GenericNonExclusivePromise> mShutdownPromise;
   // Get duration from create encoder, for logging purpose
   double GetEncodeTimeStamp() {
     TimeDuration decodeTime;

@@ -113,7 +113,7 @@ bool nsMediaFragmentURIParser::ParseNPTSec(nsDependentSubstring& aString,
 
   nsDependentSubstring n(aString, 0, index);
   nsresult ec;
-  int32_t s = PromiseFlatString(n).ToInteger(&ec);
+  int32_t s = n.ToInteger(&ec);
   if (NS_FAILED(ec)) {
     return false;
   }
@@ -218,7 +218,7 @@ bool nsMediaFragmentURIParser::ParseNPTHH(nsDependentSubstring& aString,
 
   nsDependentSubstring n(aString, 0, index);
   nsresult ec;
-  int32_t u = PromiseFlatString(n).ToInteger(&ec);
+  int32_t u = n.ToInteger(&ec);
   if (NS_FAILED(ec)) {
     return false;
   }
@@ -242,7 +242,7 @@ bool nsMediaFragmentURIParser::ParseNPTSS(nsDependentSubstring& aString,
   if (IsDigit(aString[0]) && IsDigit(aString[1])) {
     nsDependentSubstring n(aString, 0, 2);
     nsresult ec;
-    int32_t u = PromiseFlatString(n).ToInteger(&ec);
+    int32_t u = n.ToInteger(&ec);
     if (NS_FAILED(ec)) {
       return false;
     }
@@ -265,7 +265,7 @@ static bool ParseInteger(nsDependentSubstring& aString, int32_t& aResult) {
 
   nsDependentSubstring n(aString, 0, index);
   nsresult ec;
-  int32_t s = PromiseFlatString(n).ToInteger(&ec);
+  int32_t s = n.ToInteger(&ec);
   if (NS_FAILED(ec)) {
     return false;
   }
@@ -320,10 +320,8 @@ bool nsMediaFragmentURIParser::ParseXYWH(nsDependentSubstring aString) {
 void nsMediaFragmentURIParser::Parse(nsACString& aRef) {
   // Create an array of possibly-invalid media fragments.
   nsTArray<std::pair<nsCString, nsCString> > fragments;
-  nsCCharSeparatedTokenizer tokenizer(aRef, '&');
 
-  while (tokenizer.hasMoreTokens()) {
-    const nsACString& nv = tokenizer.nextToken();
+  for (const nsACString& nv : nsCCharSeparatedTokenizer(aRef, '&').ToRange()) {
     int32_t index = nv.FindChar('=');
     if (index >= 0) {
       nsAutoCString name;
@@ -341,7 +339,8 @@ void nsMediaFragmentURIParser::Parse(nsACString& aRef) {
     if (gotTemporal && gotSpatial) {
       // We've got one of each possible type. No need to look at the rest.
       break;
-    } else if (!gotTemporal && fragments[i].first.EqualsLiteral("t")) {
+    }
+    if (!gotTemporal && fragments[i].first.EqualsLiteral("t")) {
       nsAutoString value = NS_ConvertUTF8toUTF16(fragments[i].second);
       gotTemporal = ParseNPT(nsDependentSubstring(value, 0));
     } else if (!gotSpatial && fragments[i].first.EqualsLiteral("xywh")) {

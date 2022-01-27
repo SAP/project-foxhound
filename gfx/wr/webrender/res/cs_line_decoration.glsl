@@ -15,7 +15,9 @@
 // being decorated.
 varying vec2 vLocalPos;
 
-flat varying int vStyle;
+// Line style. Packed in to a vector to work around bug 1630356.
+flat varying ivec2 vStyle;
+
 flat varying vec4 vParams;
 
 #ifdef WR_VERTEX_SHADER
@@ -40,9 +42,9 @@ PER_INSTANCE in float aWavyLineThickness;
 
 void main(void) {
     vec2 size = mix(aLocalSize, aLocalSize.yx, aAxisSelect);
-    vStyle = aStyle;
+    vStyle.x = aStyle;
 
-    switch (vStyle) {
+    switch (vStyle.x) {
         case LINE_STYLE_SOLID: {
             break;
         }
@@ -84,7 +86,7 @@ void main(void) {
 
     vLocalPos = mix(aPosition.xy, aPosition.yx, aAxisSelect) * size;
 
-    gl_Position = uTransform * vec4(aTaskRect.xy + aTaskRect.zw * aPosition.xy, 0.0, 1.0);
+    gl_Position = uTransform * vec4(mix(aTaskRect.xy, aTaskRect.zw, aPosition.xy), 0.0, 1.0);
 }
 #endif
 
@@ -98,7 +100,7 @@ void main(void) {
     float aa_range = compute_aa_range(pos);
     float alpha = 1.0;
 
-    switch (vStyle) {
+    switch (vStyle.x) {
         case LINE_STYLE_SOLID: {
             break;
         }

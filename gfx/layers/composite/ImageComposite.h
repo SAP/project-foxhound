@@ -53,8 +53,6 @@ class ImageComposite {
   };
 
  protected:
-  void UpdateBias(size_t aImageIndex);
-
   virtual TimeStamp GetCompositionTime() const = 0;
   virtual CompositionOpportunityId GetCompositionOpportunityId() const = 0;
   virtual void AppendImageCompositeNotification(
@@ -92,8 +90,6 @@ class ImageComposite {
 
   int32_t mLastFrameID = -1;
   int32_t mLastProducerID = -1;
-  CompositionOpportunityId mLastChooseImageIndexComposition;
-  CompositionOpportunityId mLastFrameUpdateComposition;
 
  private:
   nsTArray<TimedImage> mImages;
@@ -106,8 +102,11 @@ class ImageComposite {
   void CountSkippedFrames(const TimedImage* aImage);
 
   // Update mLastFrameID and mLastProducerID, and report dropped frames.
-  void UpdateCompositedFrame(int aImageIndex,
+  // Returns whether the frame changed.
+  bool UpdateCompositedFrame(int aImageIndex,
                              bool aWasVisibleAtPreviousComposition);
+
+  void UpdateBias(size_t aImageIndex, bool aFrameUpdated);
 
   // Emit a profiler marker about video frame timestamp jitter.
   void DetectTimeStampJitter(const TimedImage* aNewImage);
@@ -127,6 +126,11 @@ class ImageComposite {
   // tabs are expected to skip frames, and those skipped frames are not counted
   // as dropped frames.
   uint32_t mDroppedFrames = 0;
+
+  // The composition opportunity IDs of the last calls to ChooseImageIndex and
+  // UpdateCompositedFrame, respectively.
+  CompositionOpportunityId mLastChooseImageIndexComposition;
+  CompositionOpportunityId mLastFrameUpdateComposition;
 };
 
 }  // namespace layers

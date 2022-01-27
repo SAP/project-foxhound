@@ -17,7 +17,7 @@ interface MediaDevices : EventTarget {
   attribute EventHandler ondevicechange;
   MediaTrackSupportedConstraints getSupportedConstraints();
 
-  [Throws, NeedsCallerType, UseCounter]
+  [Throws, UseCounter]
   Promise<sequence<MediaDeviceInfo>> enumerateDevices();
 
   [Throws, NeedsCallerType, UseCounter]
@@ -27,4 +27,14 @@ interface MediaDevices : EventTarget {
   // because we don't want that legacy pref to expose this newer method.
   [SecureContext, Pref="media.getdisplaymedia.enabled", Throws, NeedsCallerType, UseCounter]
   Promise<MediaStream> getDisplayMedia(optional DisplayMediaStreamConstraints constraints = {});
+};
+
+// https://w3c.github.io/mediacapture-output/#audiooutputoptions-dictionary
+dictionary AudioOutputOptions {
+  DOMString deviceId = "";
+};
+// https://w3c.github.io/mediacapture-output/#mediadevices-extensions
+partial interface MediaDevices {
+  [SecureContext, Pref="media.setsinkid.enabled", Throws, NeedsCallerType]
+  Promise<MediaDeviceInfo> selectAudioOutput(optional AudioOutputOptions options = {});
 };

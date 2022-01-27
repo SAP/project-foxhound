@@ -44,38 +44,6 @@ function isPrivateTab(nativeTab) {
   return PrivateBrowsingUtils.isBrowserPrivate(nativeTab.linkedBrowser);
 }
 
-function isPrivateWindow(window) {
-  return PrivateBrowsingUtils.isContentWindowPrivate(window);
-}
-
-// This function is pretty tightly tied to Extension.jsm.
-// Its job is to fill in the |tab| property of the sender.
-const getSender = (extension, target, sender) => {
-  let tabId;
-  if ("tabId" in sender) {
-    // The message came from a privileged extension page running in a tab. In
-    // that case, it should include a tabId property (which is filled in by the
-    // page-open listener below).
-    tabId = sender.tabId;
-    delete sender.tabId;
-  } else if (
-    ExtensionCommon.instanceOf(target, "XULFrameElement") ||
-    ExtensionCommon.instanceOf(target, "HTMLIFrameElement")
-  ) {
-    tabId = tabTracker.getBrowserData(target).tabId;
-  }
-
-  if (tabId) {
-    let tab = extension.tabManager.get(tabId, null);
-    if (tab) {
-      sender.tab = tab.convert();
-    }
-  }
-};
-
-// Used by Extension.jsm
-global.tabGetSender = getSender;
-
 /* eslint-disable mozilla/balanced-listeners */
 extensions.on("uninstalling", (msg, extension) => {
   if (extension.uninstallURL) {
@@ -397,6 +365,10 @@ class TabTracker extends TabTrackerBase {
     if (!nativeTab.parentNode) {
       throw new Error("Cannot attach ID to a destroyed tab.");
     }
+    if (nativeTab.ownerGlobal.closed) {
+      throw new Error("Cannot attach ID to a tab in a closed window.");
+    }
+
     this._tabs.set(nativeTab, id);
     if (nativeTab.linkedBrowser) {
       this._browsers.set(nativeTab.linkedBrowser, id);
@@ -425,7 +397,6 @@ class TabTracker extends TabTrackerBase {
     this.emit("tab-adopted", adoptingTab, adoptedTab);
     if (this.has("tab-detached")) {
       let nativeTab = adoptedTab;
-      let isPrivate = isPrivateTab(nativeTab);
       let adoptedBy = adoptingTab;
       let oldWindowId = windowTracker.getId(nativeTab.ownerGlobal);
       let oldPosition = nativeTab._tPos;
@@ -435,12 +406,10 @@ class TabTracker extends TabTrackerBase {
         tabId,
         oldWindowId,
         oldPosition,
-        isPrivate,
       });
     }
     if (this.has("tab-attached")) {
       let nativeTab = adoptingTab;
-      let isPrivate = isPrivateTab(nativeTab);
       let newWindowId = windowTracker.getId(nativeTab.ownerGlobal);
       let newPosition = nativeTab._tPos;
       this.emit("tab-attached", {
@@ -448,7 +417,6 @@ class TabTracker extends TabTrackerBase {
         tabId,
         newWindowId,
         newPosition,
-        isPrivate,
       });
     }
   }
@@ -532,14 +500,6 @@ class TabTracker extends TabTrackerBase {
           // This tab is being created to adopt a tab from a different window.
           // Handle the adoption.
           this.adopt(nativeTab, adoptedTab);
-          if (adoptedTab.linkedPanel) {
-            adoptedTab.linkedBrowser.messageManager.sendAsyncMessage(
-              "Extension:SetFrameData",
-              {
-                windowId: windowTracker.getId(nativeTab.ownerGlobal),
-              }
-            );
-          }
         } else {
           // Save the size of the current tab, since the newly-created tab will
           // likely be active by the time the promise below resolves and the
@@ -682,11 +642,11 @@ class TabTracker extends TabTrackerBase {
       previousTabIsPrivate = isPrivateTab(previousTab);
     }
     this.emit("tab-activated", {
-      isPrivate: isPrivateTab(nativeTab),
       tabId: this.getId(nativeTab),
       previousTabId,
       previousTabIsPrivate,
       windowId: windowTracker.getId(nativeTab.ownerGlobal),
+      nativeTab,
     });
   }
 
@@ -703,7 +663,6 @@ class TabTracker extends TabTrackerBase {
     this.emit("tabs-highlighted", {
       tabIds,
       windowId,
-      isPrivate: isPrivateWindow(window),
     });
   }
 
@@ -720,7 +679,6 @@ class TabTracker extends TabTrackerBase {
     this.emit("tab-created", {
       nativeTab,
       currentTabSize,
-      isPrivate: isPrivateTab(nativeTab),
     });
   }
 
@@ -743,7 +701,6 @@ class TabTracker extends TabTrackerBase {
       tabId,
       windowId,
       isWindowClosing,
-      isPrivate: isPrivateTab(nativeTab),
     });
   }
 
@@ -949,16 +906,20 @@ class Tab extends TabBase {
         : tabData.lastAccessed,
     };
 
+    let entries = tabData.state ? tabData.state.entries : tabData.entries;
+    let lastTabIndex = tabData.state ? tabData.state.index : tabData.index;
+    // We need to take lastTabIndex - 1 because the index in the tab data is
+    // 1-based rather than 0-based.
+    let entry = entries[lastTabIndex - 1];
+
     // tabData is a representation of a tab, as stored in the session data,
     // and given that is not a real nativeTab, we only need to check if the extension
-    // has the "tabs" permission (because tabData represents a closed tab, and so we
-    // already know that it can't be the activeTab).
-    if (extension.hasPermission("tabs")) {
-      let entries = tabData.state ? tabData.state.entries : tabData.entries;
-      let lastTabIndex = tabData.state ? tabData.state.index : tabData.index;
-      // We need to take lastTabIndex - 1 because the index in the tab data is
-      // 1-based rather than 0-based.
-      let entry = entries[lastTabIndex - 1];
+    // has the "tabs" or host permission (because tabData represents a closed tab,
+    // and so we already know that it can't be the activeTab).
+    if (
+      extension.hasPermission("tabs") ||
+      extension.allowedOrigins.matches(entry.url)
+    ) {
       result.url = entry.url;
       result.title = entry.title;
       if (tabData.image) {
@@ -1115,14 +1076,20 @@ class Window extends WindowBase {
     let { tabManager } = this.extension;
 
     for (let nativeTab of this.window.gBrowser.tabs) {
-      yield tabManager.getWrapper(nativeTab);
+      let tab = tabManager.getWrapper(nativeTab);
+      if (tab) {
+        yield tab;
+      }
     }
   }
 
   *getHighlightedTabs() {
     let { tabManager } = this.extension;
-    for (let tab of this.window.gBrowser.selectedTabs) {
-      yield tabManager.getWrapper(tab);
+    for (let nativeTab of this.window.gBrowser.selectedTabs) {
+      let tab = tabManager.getWrapper(nativeTab);
+      if (tab) {
+        yield tab;
+      }
     }
   }
 
@@ -1187,7 +1154,7 @@ class TabManager extends TabManagerBase {
     let nativeTab = tabTracker.getTab(tabId, default_);
 
     if (nativeTab) {
-      if (!this.extension.canAccessWindow(nativeTab.ownerGlobal)) {
+      if (!this.canAccessTab(nativeTab)) {
         throw new ExtensionError(`Invalid tab ID: ${tabId}`);
       }
       return this.getWrapper(nativeTab);
@@ -1204,10 +1171,17 @@ class TabManager extends TabManagerBase {
   }
 
   canAccessTab(nativeTab) {
-    return (
-      this.extension.privateBrowsingAllowed ||
-      !PrivateBrowsingUtils.isBrowserPrivate(nativeTab.linkedBrowser)
-    );
+    // Check private browsing access at browser window level.
+    if (!this.extension.canAccessWindow(nativeTab.ownerGlobal)) {
+      return false;
+    }
+    if (
+      this.extension.userContextIsolation &&
+      !this.extension.canAccessContainer(nativeTab.userContextId)
+    ) {
+      return false;
+    }
+    return true;
   }
 
   wrapTab(nativeTab) {

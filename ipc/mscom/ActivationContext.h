@@ -10,9 +10,10 @@
 #include <utility>
 
 #include "mozilla/Attributes.h"
-#include "mozilla/Result.h"
+#include "mozilla/mscom/ActCtxResource.h"
 
 #if defined(MOZILLA_INTERNAL_API)
+#  include "mozilla/ResultVariant.h"
 #  include "nsString.h"
 #endif  // defined(MOZILLA_INTERNAL_API)
 
@@ -23,10 +24,15 @@ namespace mscom {
 
 class ActivationContext final {
  public:
+  // This is the default resource ID that the Windows dynamic linker searches
+  // for when seeking a manifest while loading a DLL.
+  static constexpr WORD kDllManifestDefaultResourceId = 2;
+
   ActivationContext() : mActCtx(INVALID_HANDLE_VALUE) {}
 
-  explicit ActivationContext(WORD aResourceId);
-  explicit ActivationContext(HMODULE aLoadFromModule, WORD aResourceId = 2);
+  explicit ActivationContext(ActCtxResource aResource);
+  explicit ActivationContext(HMODULE aLoadFromModule,
+                             WORD aResourceId = kDllManifestDefaultResourceId);
 
   ActivationContext(ActivationContext&& aOther);
   ActivationContext& operator=(ActivationContext&& aOther);
@@ -44,7 +50,7 @@ class ActivationContext final {
 #endif  // defined(MOZILLA_INTERNAL_API)
 
  private:
-  void Init(ACTCTX& aActCtx);
+  void Init(ACTCTXW& aActCtx);
   void AddRef();
   void Release();
 

@@ -49,7 +49,6 @@ add_task(async function checkTelemetryClickEvents() {
     let recordedObjects = [
       "advanced_button",
       "learn_more_link",
-      "auto_report_cb",
       "error_code_link",
       "clipboard_button_top",
       "clipboard_button_bot",
@@ -144,7 +143,11 @@ add_task(async function checkTelemetryClickEvents() {
         let certOverrideService = Cc[
           "@mozilla.org/security/certoverride;1"
         ].getService(Ci.nsICertOverrideService);
-        certOverrideService.clearValidityOverride("expired.example.com", -1);
+        certOverrideService.clearValidityOverride(
+          "expired.example.com",
+          -1,
+          {}
+        );
       }
 
       BrowserTestUtils.removeTab(gBrowser.selectedTab);

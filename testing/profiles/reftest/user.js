@@ -57,33 +57,24 @@ user_pref("layout.interruptible-reflow.enabled", false);
 // can't guarantee taking both reftest snapshots at the same point
 // during the fade.
 user_pref("layout.testing.overlay-scrollbars.always-visible", true);
-// Disable all recommended Marionette preferences for Gecko tests.
-// The prefs recommended by Marionette are typically geared towards
-// consumer automation; not vendor testing.
-user_pref("marionette.prefs.recommended", false);
 user_pref("media.gmp-manager.url.override", "http://localhost/dummy-gmp-manager.xml");
 user_pref("media.openUnsupportedTypeWithExternalApp", false);
 // Reftests load a lot of URLs very quickly. This puts avoidable and
 // unnecessary I/O pressure on the Places DB (measured to be in the
 // gigabytes).
 user_pref("places.history.enabled", false);
-// For Firefox 52 only, ESR will support non-Flash plugins while release will
-// not, so we keep testing the non-Flash pathways
-user_pref("plugin.load_flash_only", false);
-// Likewise for lists served from the Mozilla server.
-user_pref("plugins.flashBlock.enabled", false);
-user_pref("plugins.show_infobar", false);
 user_pref("privacy.trackingprotection.annotate_channels", false);
 user_pref("privacy.trackingprotection.enabled", false);
 user_pref("privacy.trackingprotection.pbmode.enabled", false);
+// Disable all recommended Remote Protocol preferences for Gecko tests.
+// The prefs recommended by Remote Protocol are typically geared towards
+// consumer automation; not vendor testing.
+user_pref("remote.prefs.recommended", false);
 // Checking whether two files are the same is slow on Windows.
 // Setting this pref makes tests run much faster there. Reftests also
 // rely on this to load downloadable fonts (which are restricted to same
 // origin policy by default) from outside their directory.
 user_pref("security.fileuri.strict_origin_policy", false);
-// Allow view-source URIs to be opened from URIs that share
-// their protocol with the inner URI of the view-source URI
-user_pref("security.view-source.reachable-from-inner-protocol", true);
 user_pref("startup.homepage_override_url", "");
 user_pref("startup.homepage_welcome_url", "");
 user_pref("startup.homepage_welcome_url.additional", "");
@@ -93,13 +84,23 @@ user_pref("testing.supports.moz-bool-pref", false);
 // server in the middle of the tests.
 user_pref("toolkit.telemetry.enabled", false);
 user_pref("toolkit.telemetry.server", "https://%(server)s/telemetry-dummy/");
+user_pref("telemetry.fog.test.localhost_port", -1);
 user_pref("ui.caretBlinkTime", -1);
 user_pref("ui.caretWidth", 1);
 user_pref("ui.prefersReducedMotion", 0);
 user_pref("ui.systemUsesDarkTheme", 0);
+user_pref("ui.useAccessibilityTheme", 0);
+user_pref("ui.windowForeground", "");
+user_pref("ui.windowBackground", "");
 // Turn off the Push service.
 user_pref("dom.push.serverURL", "");
 // Disable intermittent telemetry collection
 user_pref("toolkit.telemetry.initDelay", 99999999);
 // Setting this pref to true for usercss reftests, since it relies on userContent.css
 user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
+// Use a light color-scheme unless explicitly overriden.
+user_pref("layout.css.prefers-color-scheme.content-override", 1);
+// Explicitly turn off fission so we don't accidentally use the wrong default
+// value. This can be removed once harnesses and tasks assume fission by
+// default.
+user_pref("fission.autostart", false);

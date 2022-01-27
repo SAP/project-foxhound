@@ -77,6 +77,7 @@ for (let [key, val] of Object.entries({
     // Are we using <iframe mozbrowser>?
     browserIsIframe: undefined,        // bool
     browserMessageManager: undefined,  // bool
+    useDrawSnapshot: undefined,        // bool
     canvas1: undefined,
     canvas2: undefined,
     // gCurrentCanvas is non-null between InitCurrentCanvasWithSnapshot and the next
@@ -143,8 +144,6 @@ for (let [key, val] of Object.entries({
     suiteStarted: false,
     manageSuite: false,
 
-    // The enabled-state of the test-plugins, stored so they can be reset later
-    testPluginEnabledStates: null,
     prefsToRestore: [],
     httpServerPort: -1,
 

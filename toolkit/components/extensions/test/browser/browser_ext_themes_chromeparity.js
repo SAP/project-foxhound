@@ -36,18 +36,33 @@ add_task(async function test_support_theme_frame() {
     "LWT text color attribute should be set"
   );
 
-  let style = window.getComputedStyle(docEl);
-  Assert.ok(
-    style.backgroundImage.includes("face.png"),
-    `The backgroundImage should use face.png. Actual value is: ${style.backgroundImage}`
-  );
+  let toolbox = document.querySelector("#navigator-toolbox");
+  let toolboxCS = window.getComputedStyle(toolbox);
+
+  if (backgroundColorSetOnRoot()) {
+    let rootCS = window.getComputedStyle(docEl);
+    Assert.ok(
+      rootCS.backgroundImage.includes("face.png"),
+      `The backgroundImage should use face.png. Actual value is: ${toolboxCS.backgroundImage}`
+    );
+    Assert.equal(
+      rootCS.backgroundColor,
+      "rgb(" + FRAME_COLOR.join(", ") + ")",
+      "Expected correct background color"
+    );
+  } else {
+    Assert.ok(
+      toolboxCS.backgroundImage.includes("face.png"),
+      `The backgroundImage should use face.png. Actual value is: ${toolboxCS.backgroundImage}`
+    );
+    Assert.equal(
+      toolboxCS.backgroundColor,
+      "rgb(" + FRAME_COLOR.join(", ") + ")",
+      "Expected correct background color"
+    );
+  }
   Assert.equal(
-    style.backgroundColor,
-    "rgb(" + FRAME_COLOR.join(", ") + ")",
-    "Expected correct background color"
-  );
-  Assert.equal(
-    style.color,
+    toolboxCS.color,
     "rgb(" + TAB_TEXT_COLOR.join(", ") + ")",
     "Expected correct text color"
   );
@@ -92,21 +107,40 @@ add_task(async function test_support_theme_frame_inactive() {
   await extension.startup();
 
   let docEl = window.document.documentElement;
-  let style = window.getComputedStyle(docEl);
+  let toolbox = document.querySelector("#navigator-toolbox");
+  let toolboxCS = window.getComputedStyle(toolbox);
 
-  Assert.equal(
-    style.backgroundColor,
-    "rgb(" + FRAME_COLOR.join(", ") + ")",
-    "Window background is set to the colors.frame property"
-  );
+  if (backgroundColorSetOnRoot()) {
+    let rootCS = window.getComputedStyle(docEl);
+    Assert.equal(
+      rootCS.backgroundColor,
+      "rgb(" + FRAME_COLOR.join(", ") + ")",
+      "Window background is set to the colors.frame property"
+    );
+  } else {
+    Assert.equal(
+      toolboxCS.backgroundColor,
+      "rgb(" + FRAME_COLOR.join(", ") + ")",
+      "Window background is set to the colors.frame property"
+    );
+  }
 
   // Now we'll open a new window to see if the inactive browser accent color changed
   let window2 = await BrowserTestUtils.openNewBrowserWindow();
-  Assert.equal(
-    style.backgroundColor,
-    "rgb(" + FRAME_COLOR_INACTIVE.join(", ") + ")",
-    `Inactive window background color should be ${FRAME_COLOR_INACTIVE}`
-  );
+  if (backgroundColorSetOnRoot()) {
+    let rootCS = window.getComputedStyle(docEl);
+    Assert.equal(
+      rootCS.backgroundColor,
+      "rgb(" + FRAME_COLOR_INACTIVE.join(", ") + ")",
+      `Inactive window root background color should be ${FRAME_COLOR_INACTIVE}`
+    );
+  } else {
+    Assert.equal(
+      toolboxCS.backgroundColor,
+      "rgb(" + FRAME_COLOR_INACTIVE.join(", ") + ")",
+      `Inactive window background color should be ${FRAME_COLOR_INACTIVE}`
+    );
+  }
 
   await BrowserTestUtils.closeWindow(window2);
   await extension.unload();
@@ -137,22 +171,40 @@ add_task(async function test_lack_of_theme_frame_inactive() {
   await extension.startup();
 
   let docEl = window.document.documentElement;
-  let style = window.getComputedStyle(docEl);
+  let toolbox = document.querySelector("#navigator-toolbox");
+  let toolboxCS = window.getComputedStyle(toolbox);
 
-  Assert.equal(
-    style.backgroundColor,
-    "rgb(" + FRAME_COLOR.join(", ") + ")",
-    "Window background is set to the colors.frame property"
-  );
+  if (backgroundColorSetOnRoot()) {
+    let rootCS = window.getComputedStyle(docEl);
+    Assert.equal(
+      rootCS.backgroundColor,
+      "rgb(" + FRAME_COLOR.join(", ") + ")",
+      "Window background is set to the colors.frame property"
+    );
+  } else {
+    Assert.equal(
+      toolboxCS.backgroundColor,
+      "rgb(" + FRAME_COLOR.join(", ") + ")",
+      "Window background is set to the colors.frame property"
+    );
+  }
 
   // Now we'll open a new window to make sure the inactive browser accent color stayed the same
   let window2 = await BrowserTestUtils.openNewBrowserWindow();
-
-  Assert.equal(
-    style.backgroundColor,
-    "rgb(" + FRAME_COLOR.join(", ") + ")",
-    "Inactive window background should not change if colors.frame_inactive isn't set"
-  );
+  if (backgroundColorSetOnRoot()) {
+    let rootCS = window.getComputedStyle(docEl);
+    Assert.equal(
+      rootCS.backgroundColor,
+      "rgb(" + FRAME_COLOR.join(", ") + ")",
+      "Inactive window background should not change if colors.frame_inactive isn't set"
+    );
+  } else {
+    Assert.equal(
+      toolboxCS.backgroundColor,
+      "rgb(" + FRAME_COLOR.join(", ") + ")",
+      "Inactive window background should not change if colors.frame_inactive isn't set"
+    );
+  }
 
   await BrowserTestUtils.closeWindow(window2);
   await extension.unload();

@@ -1,4 +1,3 @@
-// |reftest| skip -- class-methods-private is not supported
 // This file was procedurally generated from the following sources:
 // - src/accessor-names/private-name-ZWJ.case
 // - src/accessor-names/private/cls-private-decl-inst.template

@@ -183,7 +183,7 @@ void errStartSelectWhereEndSelectExpected();
 
 void errStartTagWithSelectOpen(nsAtom* aName);
 
-void errBadStartTagInHead(nsAtom* aName);
+void errBadStartTagInNoscriptInHead(nsAtom* aName);
 
 void errImage();
 
@@ -219,8 +219,6 @@ void errNoElementToCloseButEndTagSeen(nsAtom* aName);
 
 void errHtmlStartTagInForeignContext(nsAtom* aName);
 
-void errTableClosedWhileCaptionOpen();
-
 void errNoTableRowToClose();
 
 void errNonSpaceInTable();
@@ -238,6 +236,8 @@ void errEndTagDidNotMatchCurrentOpenElement(nsAtom* aName, nsAtom* aOther);
 void errEndTagViolatesNestingRules(nsAtom* aName);
 
 void errEndWithUnclosedElements(nsAtom* aName);
+
+void errListUnclosedStartTags(int32_t aIgnored);
 
 void MarkAsBroken(nsresult aRv);
 

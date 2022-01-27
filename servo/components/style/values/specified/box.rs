@@ -6,14 +6,14 @@
 
 use crate::custom_properties::Name as CustomPropertyName;
 use crate::parser::{Parse, ParserContext};
-use crate::properties::{LonghandId, PropertyDeclarationId, PropertyFlags};
+use crate::properties::{LonghandId, PropertyDeclarationId};
 use crate::properties::{PropertyId, ShorthandId};
 use crate::values::generics::box_::AnimationIterationCount as GenericAnimationIterationCount;
 use crate::values::generics::box_::Perspective as GenericPerspective;
 use crate::values::generics::box_::{GenericVerticalAlign, VerticalAlignKeyword};
 use crate::values::specified::length::{LengthPercentage, NonNegativeLength};
 use crate::values::specified::{AllowQuirks, Number};
-use crate::values::{CustomIdent, KeyframesName};
+use crate::values::{CustomIdent, KeyframesName, TimelineName};
 use crate::Atom;
 use cssparser::Parser;
 use num_traits::FromPrimitive;
@@ -34,16 +34,17 @@ fn moz_box_display_values_enabled(context: &ParserContext) -> bool {
         static_prefs::pref!("layout.css.xul-box-display-values.content.enabled")
 }
 
+#[cfg(not(feature = "servo-layout-2020"))]
 fn flexbox_enabled() -> bool {
-    #[cfg(feature = "servo-layout-2020")]
-    {
-        return servo_config::prefs::pref_map()
-            .get("layout.flexbox.enabled")
-            .as_bool()
-            .unwrap_or(false)
-    }
-
     true
+}
+
+#[cfg(feature = "servo-layout-2020")]
+fn flexbox_enabled() -> bool {
+    servo_config::prefs::pref_map()
+        .get("layout.flexbox.enabled")
+        .as_bool()
+        .unwrap_or(false)
 }
 
 /// Defines an element’s display type, which consists of
@@ -108,14 +109,6 @@ pub enum DisplayInside {
     WebkitBox,
     #[cfg(feature = "gecko")]
     MozBox,
-    #[cfg(feature = "gecko")]
-    MozGrid,
-    #[cfg(feature = "gecko")]
-    MozGridGroup,
-    #[cfg(feature = "gecko")]
-    MozGridLine,
-    #[cfg(feature = "gecko")]
-    MozStack,
     #[cfg(feature = "gecko")]
     MozDeck,
     #[cfg(feature = "gecko")]
@@ -232,14 +225,6 @@ impl Display {
     #[cfg(feature = "gecko")]
     pub const MozInlineBox: Self = Self::new(DisplayOutside::Inline, DisplayInside::MozBox);
     #[cfg(feature = "gecko")]
-    pub const MozGrid: Self = Self::new(DisplayOutside::XUL, DisplayInside::MozGrid);
-    #[cfg(feature = "gecko")]
-    pub const MozGridGroup: Self = Self::new(DisplayOutside::XUL, DisplayInside::MozGridGroup);
-    #[cfg(feature = "gecko")]
-    pub const MozGridLine: Self = Self::new(DisplayOutside::XUL, DisplayInside::MozGridLine);
-    #[cfg(feature = "gecko")]
-    pub const MozStack: Self = Self::new(DisplayOutside::XUL, DisplayInside::MozStack);
-    #[cfg(feature = "gecko")]
     pub const MozDeck: Self = Self::new(DisplayOutside::XUL, DisplayInside::MozDeck);
     #[cfg(feature = "gecko")]
     pub const MozPopup: Self = Self::new(DisplayOutside::XUL, DisplayInside::MozPopup);
@@ -275,6 +260,12 @@ impl Display {
             (self.0 >> Self::DISPLAY_INSIDE_BITS) & ((1 << Self::DISPLAY_OUTSIDE_BITS) - 1),
         )
         .unwrap()
+    }
+
+    /// Returns the raw underlying u16 value.
+    #[inline]
+    pub const fn to_u16(&self) -> u16 {
+        self.0
     }
 
     /// Whether this is `display: inline` (or `inline list-item`).
@@ -519,9 +510,7 @@ fn is_valid_inside_for_list_item<'i>(inside: &Result<DisplayInside, ParseError<'
 
 /// Parse `list-item`.
 fn parse_list_item<'i, 't>(input: &mut Parser<'i, 't>) -> Result<(), ParseError<'i>> {
-    Ok(try_match_ident_ignore_ascii_case! { input,
-        "list-item" => (),
-    })
+    Ok(input.expect_ident_matching("list-item")?)
 }
 
 impl Parse for Display {
@@ -615,14 +604,6 @@ impl Parse for Display {
             "-moz-box" if moz_box_display_values_enabled(context) => Display::MozBox,
             #[cfg(feature = "gecko")]
             "-moz-inline-box" if moz_box_display_values_enabled(context) => Display::MozInlineBox,
-            #[cfg(feature = "gecko")]
-            "-moz-grid" if moz_display_values_enabled(context) => Display::MozGrid,
-            #[cfg(feature = "gecko")]
-            "-moz-grid-group" if moz_display_values_enabled(context) => Display::MozGridGroup,
-            #[cfg(feature = "gecko")]
-            "-moz-grid-line" if moz_display_values_enabled(context) => Display::MozGridLine,
-            #[cfg(feature = "gecko")]
-            "-moz-stack" if moz_display_values_enabled(context) => Display::MozStack,
             #[cfg(feature = "gecko")]
             "-moz-deck" if moz_display_values_enabled(context) => Display::MozDeck,
             #[cfg(feature = "gecko")]
@@ -769,6 +750,67 @@ impl Parse for AnimationName {
 
         input.expect_ident_matching("none")?;
         Ok(AnimationName(None))
+    }
+}
+
+/// A value for the <single-animation-timeline>.
+///
+/// https://drafts.csswg.org/css-animations-2/#typedef-single-animation-timeline
+/// cbindgen:private-default-tagged-enum-constructor=false
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(C, u8)]
+pub enum AnimationTimeline {
+    /// Use default timeline. The animation’s timeline is a DocumentTimeline.
+    Auto,
+    /// The animation is not associated with a timeline.
+    None,
+    /// The scroll-timeline name
+    Timeline(TimelineName),
+}
+
+impl AnimationTimeline {
+    /// Returns the `auto` value.
+    pub fn auto() -> Self {
+        Self::Auto
+    }
+
+    /// Returns true if it is auto (i.e. the default value).
+    pub fn is_auto(&self) -> bool {
+        matches!(self, Self::Auto)
+    }
+}
+
+impl Parse for AnimationTimeline {
+    fn parse<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        // We are using the same parser for TimelineName and KeyframesName, but animation-timeline
+        // accepts "auto", so need to manually parse this. (We can not derive Parse because
+        // TimelineName excludes only "none" keyword.)
+        // FIXME: Bug 1733260: we may drop None based on the spec issue:
+        // Note: https://github.com/w3c/csswg-drafts/issues/6674.
+        if input.try_parse(|i| i.expect_ident_matching("auto")).is_ok() {
+            return Ok(Self::Auto);
+        }
+
+        if input.try_parse(|i| i.expect_ident_matching("none")).is_ok() {
+            return Ok(Self::None);
+        }
+
+        TimelineName::parse(context, input).map(AnimationTimeline::Timeline)
     }
 }
 
@@ -1090,44 +1132,54 @@ bitflags! {
     /// The change bits that we care about.
     #[derive(Default, MallocSizeOf, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem)]
     #[repr(C)]
-    pub struct WillChangeBits: u8 {
-        /// Whether the stacking context will change.
-        const STACKING_CONTEXT = 1 << 0;
-        /// Whether `transform` will change.
+    pub struct WillChangeBits: u16 {
+        /// Whether a property which can create a stacking context **on any
+        /// box** will change.
+        const STACKING_CONTEXT_UNCONDITIONAL = 1 << 0;
+        /// Whether `transform` or related properties will change.
         const TRANSFORM = 1 << 1;
         /// Whether `scroll-position` will change.
         const SCROLL = 1 << 2;
+        /// Whether `contain` will change.
+        const CONTAIN = 1 << 3;
         /// Whether `opacity` will change.
-        const OPACITY = 1 << 3;
-        /// Fixed pos containing block.
-        const FIXPOS_CB = 1 << 4;
-        /// Abs pos containing block.
-        const ABSPOS_CB = 1 << 5;
+        const OPACITY = 1 << 4;
+        /// Whether `perspective` will change.
+        const PERSPECTIVE = 1 << 5;
+        /// Whether `z-index` will change.
+        const Z_INDEX = 1 << 6;
+        /// Whether any property which creates a containing block for non-svg
+        /// text frames will change.
+        const FIXPOS_CB_NON_SVG = 1 << 7;
+        /// Whether the position property will change.
+        const POSITION = 1 << 8;
     }
 }
 
 fn change_bits_for_longhand(longhand: LonghandId) -> WillChangeBits {
-    let mut flags = match longhand {
+    match longhand {
         LonghandId::Opacity => WillChangeBits::OPACITY,
-        LonghandId::Transform => WillChangeBits::TRANSFORM,
-        #[cfg(feature = "gecko")]
-        LonghandId::Translate | LonghandId::Rotate | LonghandId::Scale | LonghandId::OffsetPath => {
-            WillChangeBits::TRANSFORM
+        LonghandId::Contain => WillChangeBits::CONTAIN,
+        LonghandId::Perspective => WillChangeBits::PERSPECTIVE,
+        LonghandId::Position => {
+            WillChangeBits::STACKING_CONTEXT_UNCONDITIONAL | WillChangeBits::POSITION
         },
+        LonghandId::ZIndex => WillChangeBits::Z_INDEX,
+        LonghandId::Transform |
+        LonghandId::TransformStyle |
+        LonghandId::Translate |
+        LonghandId::Rotate |
+        LonghandId::Scale |
+        LonghandId::OffsetPath => WillChangeBits::TRANSFORM,
+        LonghandId::BackdropFilter | LonghandId::Filter => {
+            WillChangeBits::STACKING_CONTEXT_UNCONDITIONAL | WillChangeBits::FIXPOS_CB_NON_SVG
+        },
+        LonghandId::MixBlendMode |
+        LonghandId::Isolation |
+        LonghandId::MaskImage |
+        LonghandId::ClipPath => WillChangeBits::STACKING_CONTEXT_UNCONDITIONAL,
         _ => WillChangeBits::empty(),
-    };
-
-    let property_flags = longhand.flags();
-    if property_flags.contains(PropertyFlags::CREATES_STACKING_CONTEXT) {
-        flags |= WillChangeBits::STACKING_CONTEXT;
     }
-    if property_flags.contains(PropertyFlags::FIXPOS_CB) {
-        flags |= WillChangeBits::FIXPOS_CB;
-    }
-    if property_flags.contains(PropertyFlags::ABSPOS_CB) {
-        flags |= WillChangeBits::ABSPOS_CB;
-    }
-    flags
 }
 
 fn change_bits_for_maybe_property(ident: &str, context: &ParserContext) -> WillChangeBits {
@@ -1189,7 +1241,7 @@ bitflags! {
     /// Values for the `touch-action` property.
     #[derive(MallocSizeOf, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem)]
     /// These constants match Gecko's `NS_STYLE_TOUCH_ACTION_*` constants.
-    #[value_info(other_values = "auto,none,manipulation,pan-x,pan-y")]
+    #[value_info(other_values = "auto,none,manipulation,pan-x,pan-y,pinch-zoom")]
     #[repr(C)]
     pub struct TouchAction: u8 {
         /// `none` variant
@@ -1202,6 +1254,8 @@ bitflags! {
         const PAN_Y = 1 << 3;
         /// `manipulation` variant
         const MANIPULATION = 1 << 4;
+        /// `pinch-zoom` variant
+        const PINCH_ZOOM = 1 << 5;
     }
 }
 
@@ -1218,43 +1272,70 @@ impl ToCss for TouchAction {
     where
         W: Write,
     {
-        match *self {
-            TouchAction::NONE => dest.write_str("none"),
-            TouchAction::AUTO => dest.write_str("auto"),
-            TouchAction::MANIPULATION => dest.write_str("manipulation"),
-            _ if self.contains(TouchAction::PAN_X | TouchAction::PAN_Y) => {
-                dest.write_str("pan-x pan-y")
-            },
-            _ if self.contains(TouchAction::PAN_X) => dest.write_str("pan-x"),
-            _ if self.contains(TouchAction::PAN_Y) => dest.write_str("pan-y"),
-            _ => panic!("invalid touch-action value"),
+        if self.contains(TouchAction::AUTO) {
+            return dest.write_str("auto");
         }
+        if self.contains(TouchAction::NONE) {
+            return dest.write_str("none");
+        }
+        if self.contains(TouchAction::MANIPULATION) {
+            return dest.write_str("manipulation");
+        }
+
+        let mut has_any = false;
+        macro_rules! maybe_write_value {
+            ($ident:path => $str:expr) => {
+                if self.contains($ident) {
+                    if has_any {
+                        dest.write_str(" ")?;
+                    }
+                    has_any = true;
+                    dest.write_str($str)?;
+                }
+            };
+        }
+        maybe_write_value!(TouchAction::PAN_X => "pan-x");
+        maybe_write_value!(TouchAction::PAN_Y => "pan-y");
+        maybe_write_value!(TouchAction::PINCH_ZOOM => "pinch-zoom");
+
+        debug_assert!(has_any);
+        Ok(())
     }
 }
 
 impl Parse for TouchAction {
+    /// auto | none | [ pan-x || pan-y || pinch-zoom ] | manipulation
     fn parse<'i, 't>(
         _context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<TouchAction, ParseError<'i>> {
-        try_match_ident_ignore_ascii_case! { input,
-            "auto" => Ok(TouchAction::AUTO),
-            "none" => Ok(TouchAction::NONE),
-            "manipulation" => Ok(TouchAction::MANIPULATION),
-            "pan-x" => {
-                if input.try_parse(|i| i.expect_ident_matching("pan-y")).is_ok() {
-                    Ok(TouchAction::PAN_X | TouchAction::PAN_Y)
-                } else {
-                    Ok(TouchAction::PAN_X)
-                }
-            },
-            "pan-y" => {
-                if input.try_parse(|i| i.expect_ident_matching("pan-x")).is_ok() {
-                    Ok(TouchAction::PAN_X | TouchAction::PAN_Y)
-                } else {
-                    Ok(TouchAction::PAN_Y)
-                }
-            },
+        let mut result = TouchAction::empty();
+        while let Ok(name) = input.try_parse(|i| i.expect_ident_cloned()) {
+            let flag = match_ignore_ascii_case! { &name,
+                "pan-x" => Some(TouchAction::PAN_X),
+                "pan-y" => Some(TouchAction::PAN_Y),
+                "pinch-zoom" => Some(TouchAction::PINCH_ZOOM),
+                "none" if result.is_empty() => return Ok(TouchAction::NONE),
+                "manipulation" if result.is_empty() => return Ok(TouchAction::MANIPULATION),
+                "auto" if result.is_empty() => return Ok(TouchAction::AUTO),
+                _ => None
+            };
+
+            let flag = match flag {
+                Some(flag) if !result.contains(flag) => flag,
+                _ => {
+                    return Err(
+                        input.new_custom_error(SelectorParseErrorKind::UnexpectedIdent(name))
+                    );
+                },
+            };
+            result.insert(flag);
+        }
+
+        if !result.is_empty() {
+            Ok(result)
+        } else {
+            Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
         }
     }
 }
@@ -1565,9 +1646,6 @@ pub enum Appearance {
     ButtonArrowPrevious,
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     ButtonArrowUp,
-    /// The focus outline box inside of a button.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    ButtonFocus,
     /// A dual toolbar button (e.g., a Back button with a dropdown)
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     Dualbutton,
@@ -1641,12 +1719,6 @@ pub enum Appearance {
     /// The resizer itself.
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     Resizer,
-    /// A scrollbar.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    Scrollbar,
-    /// A small scrollbar.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    ScrollbarSmall,
     /// The scrollbar slider
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     ScrollbarHorizontal,
@@ -1778,9 +1850,6 @@ pub enum Appearance {
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     MozWinExcludeGlass,
 
-    /// Titlebar elements on the Mac.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozMacFullscreenButton,
     /// Mac help button.
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     MozMacHelpButton,
@@ -1810,8 +1879,6 @@ pub enum Appearance {
     MozWindowTitlebarMaximized,
 
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozGtkInfoBar,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     MozMacActiveSourceListSelection,
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     MozMacDisclosureButtonClosed,
@@ -1822,17 +1889,9 @@ pub enum Appearance {
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     MozMacSourceListSelection,
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozMacVibrancyDark,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozMacVibrancyLight,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     MozMacVibrantTitlebarDark,
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     MozMacVibrantTitlebarLight,
-
-    /// A non-disappearing scrollbar.
-    #[css(skip)]
-    ScrollbarNonDisappearing,
 
     /// A themed focus outline (for outline:auto).
     ///
@@ -1843,31 +1902,6 @@ pub enum Appearance {
     /// A dummy variant that should be last to let the GTK widget do hackery.
     #[css(skip)]
     Count,
-}
-
-/// The effect of `appearance: button` on an element.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    MallocSizeOf,
-    Parse,
-    PartialEq,
-    SpecifiedValueInfo,
-    ToCss,
-    ToComputedValue,
-    ToResolvedValue,
-    ToShmem,
-)]
-#[repr(u8)]
-pub enum ButtonAppearance {
-    /// `appearance: button` means the element is rendered with button
-    /// appearance.
-    Allow,
-    /// `appearance: button` is treated like `appearance: auto`.
-    Disallow,
 }
 
 /// A kind of break between two boxes.
@@ -1900,28 +1934,22 @@ pub enum BreakBetween {
 }
 
 impl BreakBetween {
-    /// Parse a legacy break-between value for `page-break-*`.
+    /// Parse a legacy break-between value for `page-break-{before,after}`.
     ///
     /// See https://drafts.csswg.org/css-break/#page-break-properties.
     #[inline]
-    pub fn parse_legacy<'i>(input: &mut Parser<'i, '_>) -> Result<Self, ParseError<'i>> {
-        let location = input.current_source_location();
-        let ident = input.expect_ident()?;
-        let break_value = match BreakBetween::from_ident(ident) {
-            Ok(v) => v,
-            Err(()) => {
-                return Err(location
-                    .new_custom_error(SelectorParseErrorKind::UnexpectedIdent(ident.clone())));
-            },
-        };
+    pub(crate) fn parse_legacy<'i>(
+        _: &ParserContext,
+        input: &mut Parser<'i, '_>,
+    ) -> Result<Self, ParseError<'i>> {
+        let break_value = BreakBetween::parse(input)?;
         match break_value {
             BreakBetween::Always => Ok(BreakBetween::Page),
             BreakBetween::Auto | BreakBetween::Avoid | BreakBetween::Left | BreakBetween::Right => {
                 Ok(break_value)
             },
             BreakBetween::Page => {
-                Err(location
-                    .new_custom_error(SelectorParseErrorKind::UnexpectedIdent(ident.clone())))
+                Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
             },
         }
     }
@@ -1929,7 +1957,7 @@ impl BreakBetween {
     /// Serialize a legacy break-between value for `page-break-*`.
     ///
     /// See https://drafts.csswg.org/css-break/#page-break-properties.
-    pub fn to_css_legacy<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    pub(crate) fn to_css_legacy<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where
         W: Write,
     {
@@ -1966,6 +1994,40 @@ impl BreakBetween {
 pub enum BreakWithin {
     Auto,
     Avoid,
+    AvoidPage,
+    AvoidColumn,
+}
+
+impl BreakWithin {
+    /// Parse a legacy break-between value for `page-break-inside`.
+    ///
+    /// See https://drafts.csswg.org/css-break/#page-break-properties.
+    #[inline]
+    pub(crate) fn parse_legacy<'i>(
+        _: &ParserContext,
+        input: &mut Parser<'i, '_>,
+    ) -> Result<Self, ParseError<'i>> {
+        let break_value = BreakWithin::parse(input)?;
+        match break_value {
+            BreakWithin::Auto | BreakWithin::Avoid => Ok(break_value),
+            BreakWithin::AvoidPage | BreakWithin::AvoidColumn => {
+                Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+            },
+        }
+    }
+
+    /// Serialize a legacy break-between value for `page-break-inside`.
+    ///
+    /// See https://drafts.csswg.org/css-break/#page-break-properties.
+    pub(crate) fn to_css_legacy<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        match *self {
+            BreakWithin::Auto | BreakWithin::Avoid => self.to_css(dest),
+            BreakWithin::AvoidPage | BreakWithin::AvoidColumn => Ok(()),
+        }
+    }
 }
 
 /// The value for the `overflow-x` / `overflow-y` properties.
@@ -1992,5 +2054,95 @@ pub enum Overflow {
     Scroll,
     Auto,
     #[cfg(feature = "gecko")]
-    MozHiddenUnscrollable,
+    #[parse(aliases = "-moz-hidden-unscrollable")]
+    Clip,
+}
+
+impl Overflow {
+    /// Return true if the value will create a scrollable box.
+    #[inline]
+    pub fn is_scrollable(&self) -> bool {
+        matches!(*self, Self::Hidden | Self::Scroll | Self::Auto)
+    }
+    /// Convert the value to a scrollable value if it's not already scrollable.
+    /// This maps `visible` to `auto` and `clip` to `hidden`.
+    #[inline]
+    pub fn to_scrollable(&self) -> Self {
+        match *self {
+            Self::Hidden | Self::Scroll | Self::Auto => *self,
+            Self::Visible => Self::Auto,
+            #[cfg(feature = "gecko")]
+            Self::Clip => Self::Hidden,
+        }
+    }
+}
+
+bitflags! {
+    #[derive(MallocSizeOf, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem)]
+    #[value_info(other_values = "auto,stable,both-edges")]
+    #[repr(C)]
+    /// Values for scrollbar-gutter:
+    /// <https://drafts.csswg.org/css-overflow-3/#scrollbar-gutter-property>
+    pub struct ScrollbarGutter: u8 {
+        /// `auto` variant. Just for convenience if there is no flag set.
+        const AUTO = 0;
+        /// `stable` variant.
+        const STABLE = 1 << 0;
+        /// `both-edges` variant.
+        const BOTH_EDGES = 1 << 1;
+    }
+}
+
+impl ToCss for ScrollbarGutter {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        if self.is_empty() {
+            return dest.write_str("auto");
+        }
+
+        debug_assert!(
+            self.contains(ScrollbarGutter::STABLE),
+            "We failed to parse the syntax!"
+        );
+        dest.write_str("stable")?;
+        if self.contains(ScrollbarGutter::BOTH_EDGES) {
+            dest.write_str(" both-edges")?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Parse for ScrollbarGutter {
+    /// auto | stable && both-edges?
+    fn parse<'i, 't>(
+        _context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<ScrollbarGutter, ParseError<'i>> {
+        if input.try_parse(|i| i.expect_ident_matching("auto")).is_ok() {
+            return Ok(ScrollbarGutter::AUTO);
+        }
+
+        let mut result = ScrollbarGutter::empty();
+        while let Ok(ident) = input.try_parse(|i| i.expect_ident_cloned()) {
+            let flag = match_ignore_ascii_case! { &ident,
+                "stable" => Some(ScrollbarGutter::STABLE),
+                "both-edges" => Some(ScrollbarGutter::BOTH_EDGES),
+                _ => None
+            };
+
+            match flag {
+                Some(flag) if !result.contains(flag) => result.insert(flag),
+                _ => return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError)),
+            }
+        }
+
+        if result.contains(ScrollbarGutter::STABLE) {
+            Ok(result)
+        } else {
+            Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+        }
+    }
 }

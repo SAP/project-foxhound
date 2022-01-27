@@ -89,6 +89,17 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/PlacesUtils.jsm"
 );
 
+const { Integration } = ChromeUtils.import(
+  "resource://gre/modules/Integration.jsm"
+);
+
+/* global DownloadIntegration */
+Integration.downloads.defineModuleGetter(
+  this,
+  "DownloadIntegration",
+  "resource://gre/modules/DownloadIntegration.jsm"
+);
+
 // DownloadsPanel
 
 /**
@@ -128,6 +139,20 @@ var DownloadsPanel = {
     DownloadsCommon.log(
       "Attempting to initialize DownloadsPanel for a window."
     );
+
+    // Allow the download spam protection module to notify DownloadsView
+    // if it's been created.
+    if (
+      DownloadIntegration.downloadSpamProtection &&
+      !DownloadIntegration.downloadSpamProtection.spamList._views.has(
+        DownloadsView
+      )
+    ) {
+      DownloadIntegration.downloadSpamProtection.spamList.addView(
+        DownloadsView
+      );
+    }
+
     if (this._state != this.kStateUninitialized) {
       DownloadsCommon.log("DownloadsPanel is already initialized.");
       return;
@@ -150,6 +175,7 @@ var DownloadsPanel = {
     DownloadsCommon.getSummary(window, DownloadsView.kItemCountLimit).addView(
       DownloadsSummary
     );
+
     DownloadsCommon.log(
       "DownloadsView attached - the panel for this window",
       "should now see download items come in."
@@ -184,6 +210,12 @@ var DownloadsPanel = {
       DownloadsView.kItemCountLimit
     ).removeView(DownloadsSummary);
     this._unattachEventListeners();
+
+    if (DownloadIntegration.downloadSpamProtection) {
+      DownloadIntegration.downloadSpamProtection.spamList.removeView(
+        DownloadsView
+      );
+    }
 
     this._state = this.kStateUninitialized;
 
@@ -281,7 +313,6 @@ var DownloadsPanel = {
       this.panel.removeAttribute("keyfocus");
       this.panel.removeEventListener("mousemove", this);
     }
-    return aValue;
   },
 
   /**
@@ -564,15 +595,24 @@ var DownloadsPanel = {
     }
 
     DownloadsCommon.log("Opening downloads panel popup.");
-    PanelMultiView.openPopup(
-      this.panel,
-      anchor,
-      "bottomcenter topright",
-      0,
-      0,
-      false,
-      null
-    ).catch(Cu.reportError);
+
+    // Delay displaying the panel because this function will sometimes be
+    // called while another window is closing (like the window for selecting
+    // whether to save or open the file), and that would cause the panel to
+    // close immediately.
+    setTimeout(
+      () =>
+        PanelMultiView.openPopup(
+          this.panel,
+          anchor,
+          "bottomcenter topright",
+          0,
+          0,
+          false,
+          null
+        ).catch(Cu.reportError),
+      0
+    );
   },
 };
 
@@ -592,11 +632,6 @@ var DownloadsView = {
    * Maximum number of items shown by the list at any given time.
    */
   kItemCountLimit: 5,
-
-  /**
-   * Indicates whether there is an open contextMenu for a download item.
-   */
-  contextMenuOpen: false,
 
   /**
    * Indicates whether there is a DownloadsBlockedSubview open.
@@ -777,6 +812,8 @@ var DownloadsView = {
     );
 
     let element = document.createXULElement("richlistitem");
+    element.setAttribute("align", "center");
+
     let viewItem = new DownloadsViewItem(download, element);
     this._visibleViewItems.set(download, viewItem);
     this._itemsForElements.set(element, viewItem);
@@ -814,14 +851,16 @@ var DownloadsView = {
   // User interface event functions
 
   onDownloadClick(aEvent) {
-    // Handle primary clicks only, and exclude the action button.
-    if (aEvent.button == 0 && aEvent.originalTarget.localName != "button") {
+    // Handle primary clicks in the main area only:
+    if (aEvent.button == 0 && aEvent.target.closest(".downloadMainArea")) {
       let target = aEvent.target;
       while (target.nodeName != "richlistitem") {
         target = target.parentNode;
       }
-      Services.telemetry.scalarAdd("downloads.file_opened", 1);
       let download = DownloadsView.itemForElement(target).download;
+      if (download.succeeded) {
+        download._launchedFromPanel = true;
+      }
       let command = "downloadsCmd_open";
       if (download.hasBlockedData) {
         command = "downloadsCmd_showBlockedInfo";
@@ -833,6 +872,18 @@ var DownloadsView = {
           command += ":" + openWhere;
         }
       }
+      // Toggle opening the file after the download has completed
+      if (
+        !download.stopped &&
+        command.startsWith("downloadsCmd_open") &&
+        Services.prefs.getBoolPref(
+          "browser.download.improvements_to_download_panel"
+        )
+      ) {
+        download.launchWhenSucceeded = !download.launchWhenSucceeded;
+        download._launchedFromPanel = download.launchWhenSucceeded;
+      }
+
       DownloadsCommon.log("onDownloadClick, resolved command: ", command);
       goDoCommand(command);
     }
@@ -857,6 +908,7 @@ var DownloadsView = {
     }
 
     if (aEvent.charCode == " ".charCodeAt(0)) {
+      aEvent.preventDefault();
       goDoCommand("downloadsCmd_pauseResume");
       return;
     }
@@ -866,28 +918,20 @@ var DownloadsView = {
     }
   },
 
-  /**
-   * Event handlers to keep track of context menu state (open/closed) for
-   * download items.
-   */
-  onContextPopupShown(aEvent) {
-    // Ignore events raised by nested popups.
-    if (aEvent.target != aEvent.currentTarget) {
-      return;
+  get contextMenu() {
+    let menu = document.getElementById("downloadsContextMenu");
+    if (menu) {
+      delete this.contextMenu;
+      this.contextMenu = menu;
     }
-
-    DownloadsCommon.log("Context menu has shown.");
-    this.contextMenuOpen = true;
+    return menu;
   },
 
-  onContextPopupHidden(aEvent) {
-    // Ignore events raised by nested popups.
-    if (aEvent.target != aEvent.currentTarget) {
-      return;
-    }
-
-    DownloadsCommon.log("Context menu has hidden.");
-    this.contextMenuOpen = false;
+  /**
+   * Indicates whether there is an open contextMenu for a download item.
+   */
+  get contextMenuOpen() {
+    return this.contextMenu.state != "closed";
   },
 
   /**
@@ -902,6 +946,11 @@ var DownloadsView = {
     if (aEvent.target.classList.contains("downloadButton")) {
       item.classList.add("downloadHoveringButton");
     }
+
+    item.classList.toggle(
+      "hoveringMainArea",
+      aEvent.target.closest(".downloadMainArea")
+    );
 
     if (!this.contextMenuOpen && !this.subViewOpen) {
       this.richListBox.selectedItem = item;
@@ -937,46 +986,7 @@ var DownloadsView = {
 
     DownloadsViewController.updateCommands();
 
-    let download = element._shell.download;
-    let mimeInfo = DownloadsCommon.getMimeInfo(download);
-    let { preferredAction, useSystemDefault } = mimeInfo ? mimeInfo : {};
-
-    // Set the state attribute so that only the appropriate items are displayed.
-    let contextMenu = document.getElementById("downloadsContextMenu");
-    contextMenu.setAttribute("state", element.getAttribute("state"));
-    if (element.hasAttribute("exists")) {
-      contextMenu.setAttribute("exists", "true");
-    } else {
-      contextMenu.removeAttribute("exists");
-    }
-    contextMenu.classList.toggle(
-      "temporary-block",
-      element.classList.contains("temporary-block")
-    );
-    if (element.hasAttribute("is-pdf")) {
-      contextMenu.setAttribute("is-pdf", "true");
-      let alwaysUseSystemViewerItem = contextMenu.querySelector(
-        ".downloadAlwaysUseSystemDefaultMenuItem"
-      );
-      if (preferredAction === useSystemDefault) {
-        alwaysUseSystemViewerItem.setAttribute("checked", "true");
-      } else {
-        alwaysUseSystemViewerItem.removeAttribute("checked");
-      }
-      alwaysUseSystemViewerItem.toggleAttribute(
-        "enabled",
-        DownloadsCommon.alwaysOpenInSystemViewerItemEnabled
-      );
-      let useSystemViewerItem = contextMenu.querySelector(
-        ".downloadUseSystemDefaultMenuItem"
-      );
-      useSystemViewerItem.toggleAttribute(
-        "enabled",
-        DownloadsCommon.openInSystemViewerItemEnabled
-      );
-    } else {
-      contextMenu.removeAttribute("is-pdf");
-    }
+    DownloadsViewUI.updateContextMenuForElement(this.contextMenu, element);
   },
 
   onDownloadDragStart(aEvent) {
@@ -1050,7 +1060,8 @@ class DownloadsViewItem extends DownloadsViewUI.DownloadElementShell {
       case "downloadsCmd_open:current":
       case "downloadsCmd_open:tab":
       case "downloadsCmd_open:tabshifted":
-      case "downloadsCmd_open:window": {
+      case "downloadsCmd_open:window":
+      case "downloadsCmd_alwaysOpenSimilarFiles": {
         if (!this.download.succeeded) {
           return false;
         }
@@ -1109,6 +1120,10 @@ class DownloadsViewItem extends DownloadsViewUI.DownloadElementShell {
     DownloadsPanel.hidePanel();
     this.unblockAndOpenDownload().catch(Cu.reportError);
   }
+  downloadsCmd_unblockAndSave() {
+    DownloadsPanel.hidePanel();
+    this.unblockAndSave();
+  }
 
   downloadsCmd_open(openWhere) {
     super.downloadsCmd_open(openWhere);
@@ -1131,6 +1146,14 @@ class DownloadsViewItem extends DownloadsViewUI.DownloadElementShell {
 
   downloadsCmd_alwaysOpenInSystemViewer() {
     super.downloadsCmd_alwaysOpenInSystemViewer();
+
+    // We explicitly close the panel here to give the user the feedback that
+    // their click has been received, and we're handling the action.
+    DownloadsPanel.hidePanel();
+  }
+
+  downloadsCmd_alwaysOpenSimilarFiles() {
+    super.downloadsCmd_alwaysOpenSimilarFiles();
 
     // We explicitly close the panel here to give the user the feedback that
     // their click has been received, and we're handling the action.
@@ -1209,7 +1232,11 @@ var DownloadsViewController = {
     // The currently supported commands depend on whether the blocked subview is
     // showing.  If it is, then take the following path.
     if (DownloadsView.subViewOpen) {
-      let blockedSubviewCmds = ["downloadsCmd_unblockAndOpen", "cmd_delete"];
+      let blockedSubviewCmds = [
+        "downloadsCmd_unblockAndOpen",
+        "cmd_delete",
+        "downloadsCmd_unblockAndSave",
+      ];
       return blockedSubviewCmds.includes(aCommand);
     }
     // If the blocked subview is not showing, then determine if focus is on a
@@ -1297,7 +1324,7 @@ var DownloadsSummary = {
    */
   set active(aActive) {
     if (aActive == this._active || !this._summaryNode) {
-      return this._active;
+      return;
     }
     if (aActive) {
       DownloadsCommon.getSummary(
@@ -1308,7 +1335,7 @@ var DownloadsSummary = {
       DownloadsFooter.showingSummary = false;
     }
 
-    return (this._active = aActive);
+    this._active = aActive;
   },
 
   /**
@@ -1333,7 +1360,7 @@ var DownloadsSummary = {
       this._summaryNode.removeAttribute("inprogress");
     }
     // If progress isn't being shown, then we simply do not show the summary.
-    return (DownloadsFooter.showingSummary = aShowingProgress);
+    DownloadsFooter.showingSummary = aShowingProgress;
   },
 
   /**
@@ -1347,7 +1374,6 @@ var DownloadsSummary = {
     if (this._progressNode) {
       this._progressNode.setAttribute("value", aValue);
     }
-    return aValue;
   },
 
   /**
@@ -1362,7 +1388,6 @@ var DownloadsSummary = {
       this._descriptionNode.setAttribute("value", aValue);
       this._descriptionNode.setAttribute("tooltiptext", aValue);
     }
-    return aValue;
   },
 
   /**
@@ -1378,7 +1403,6 @@ var DownloadsSummary = {
       this._detailsNode.setAttribute("value", aValue);
       this._detailsNode.setAttribute("tooltiptext", aValue);
     }
-    return aValue;
   },
 
   /**
@@ -1472,19 +1496,19 @@ XPCOMUtils.defineConstant(this, "DownloadsSummary", DownloadsSummary);
 
 /**
  * Manages events sent to to the footer vbox, which contains both the
- * DownloadsSummary as well as the "Show All Downloads" button.
+ * DownloadsSummary as well as the "Show all downloads" button.
  */
 var DownloadsFooter = {
   /**
    * Focuses the appropriate element within the footer. If the summary
-   * is visible, focus it. If not, focus the "Show All Downloads"
+   * is visible, focus it. If not, focus the "Show all downloads"
    * button.
    */
   focus() {
     if (this._showingSummary) {
       DownloadsSummary.focus();
     } else {
-      DownloadsView.downloadsHistory.focus();
+      DownloadsView.downloadsHistory.focus({ preventFocusRing: true });
     }
   },
 
@@ -1492,7 +1516,7 @@ var DownloadsFooter = {
 
   /**
    * Sets whether or not the Downloads Summary should be displayed in the
-   * footer. If not, the "Show All Downloads" button is shown instead.
+   * footer. If not, the "Show all downloads" button is shown instead.
    */
   set showingSummary(aValue) {
     if (this._footerNode) {
@@ -1503,7 +1527,6 @@ var DownloadsFooter = {
       }
       this._showingSummary = aValue;
     }
-    return aValue;
   },
 
   /**
@@ -1535,7 +1558,7 @@ var DownloadsBlockedSubview = {
       "title",
       "details1",
       "details2",
-      "openButton",
+      "unblockButton",
       "deleteButton",
     ];
     let elements = idSuffixes.reduce((memo, s) => {
@@ -1565,13 +1588,33 @@ var DownloadsBlockedSubview = {
   toggle(element, title, details) {
     DownloadsView.subViewOpen = true;
     DownloadsViewController.updateCommands();
+    const { download } = DownloadsView.itemForElement(element);
 
     let e = this.elements;
     let s = DownloadsCommon.strings;
-    e.title.textContent = title;
-    e.details1.textContent = details[0];
+
+    title.l10n
+      ? document.l10n.setAttributes(e.title, title.l10n.id, title.l10n.args)
+      : (e.title.textContent = title);
+
+    details[0].l10n
+      ? document.l10n.setAttributes(
+          e.details1,
+          details[0].l10n.id,
+          details[0].l10n.args
+        )
+      : (e.details1.textContent = details[0]);
+
     e.details2.textContent = details[1];
-    e.openButton.label = s.unblockButtonOpen;
+
+    if (download.launchWhenSucceeded) {
+      e.unblockButton.label = s.unblockButtonOpen;
+      e.unblockButton.command = "downloadsCmd_unblockAndOpen";
+    } else {
+      e.unblockButton.label = s.unblockButtonUnblock;
+      e.unblockButton.command = "downloadsCmd_unblockAndSave";
+    }
+
     e.deleteButton.label = s.unblockButtonConfirmBlock;
 
     let verdict = element.getAttribute("verdict");

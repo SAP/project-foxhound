@@ -45,6 +45,7 @@ namespace {
 using google_breakpad::Minidump;
 using google_breakpad::MinidumpThreadList;
 using google_breakpad::MinidumpModuleList;
+using google_breakpad::MinidumpUnloadedModuleList;
 using google_breakpad::MinidumpMemoryInfoList;
 using google_breakpad::MinidumpMemoryList;
 using google_breakpad::MinidumpException;
@@ -53,6 +54,7 @@ using google_breakpad::MinidumpSystemInfo;
 using google_breakpad::MinidumpMiscInfo;
 using google_breakpad::MinidumpBreakpadInfo;
 using google_breakpad::MinidumpCrashpadInfo;
+using google_breakpad::MinidumpThreadNamesList;
 
 struct Options {
   Options()
@@ -132,6 +134,15 @@ static bool PrintMinidumpDump(const Options& options) {
     module_list->Print();
   }
 
+  MinidumpUnloadedModuleList::set_max_modules(UINT32_MAX);
+  MinidumpUnloadedModuleList *unloaded_module_list = minidump.GetUnloadedModuleList();
+  if (!unloaded_module_list) {
+    ++errors;
+    BPLOG(ERROR) << "minidump.GetUnloadedModuleList() failed";
+  } else {
+    unloaded_module_list->Print();
+  }
+
   MinidumpMemoryList *memory_list = minidump.GetMemoryList();
   if (!memory_list) {
     ++errors;
@@ -190,6 +201,11 @@ static bool PrintMinidumpDump(const Options& options) {
   if (crashpad_info) {
     // Crashpad info is optional, so don't treat absence as an error.
     crashpad_info->Print();
+  }
+
+  MinidumpThreadNamesList *thread_names_list = minidump.GetThreadNamesList();
+  if (thread_names_list) {
+    thread_names_list->Print();
   }
 
   DumpRawStream(&minidump,

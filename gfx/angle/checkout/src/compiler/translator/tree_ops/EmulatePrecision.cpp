@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2002-2014 The ANGLE Project Authors. All rights reserved.
+// Copyright 2002 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -609,7 +609,8 @@ bool EmulatePrecision::visitDeclaration(Visit visit, TIntermDeclaration *node)
     return true;
 }
 
-bool EmulatePrecision::visitInvariantDeclaration(Visit visit, TIntermInvariantDeclaration *node)
+bool EmulatePrecision::visitGlobalQualifierDeclaration(Visit visit,
+                                                       TIntermGlobalQualifierDeclaration *node)
 {
     return false;
 }
@@ -723,8 +724,8 @@ TIntermAggregate *EmulatePrecision::createRoundingFunctionCallNode(TIntermTyped 
     const ImmutableString *roundFunctionName = &kAngleFrmString;
     if (roundedChild->getPrecision() == EbpLow)
         roundFunctionName = &kAngleFrlString;
-    TIntermSequence *arguments = new TIntermSequence();
-    arguments->push_back(roundedChild);
+    TIntermSequence arguments;
+    arguments.push_back(roundedChild);
 
     TVector<const TVariable *> parameters;
     TType *paramType = new TType(roundedChild->getType());
@@ -735,9 +736,9 @@ TIntermAggregate *EmulatePrecision::createRoundingFunctionCallNode(TIntermTyped 
                                        SymbolType::AngleInternal));
 
     return TIntermAggregate::CreateRawFunctionCall(
-        *getInternalFunction(*roundFunctionName, roundedChild->getType(), arguments, parameters,
+        *getInternalFunction(*roundFunctionName, roundedChild->getType(), &arguments, parameters,
                              true),
-        arguments);
+        &arguments);
 }
 
 TIntermAggregate *EmulatePrecision::createCompoundAssignmentFunctionCallNode(TIntermTyped *left,
@@ -750,9 +751,9 @@ TIntermAggregate *EmulatePrecision::createCompoundAssignmentFunctionCallNode(TIn
     else
         strstr << "angle_compound_" << opNameStr << "_frl";
     ImmutableString functionName = ImmutableString(strstr.str());
-    TIntermSequence *arguments   = new TIntermSequence();
-    arguments->push_back(left);
-    arguments->push_back(right);
+    TIntermSequence arguments;
+    arguments.push_back(left);
+    arguments.push_back(right);
 
     TVector<const TVariable *> parameters;
     TType *leftParamType = new TType(left->getType());
@@ -769,8 +770,8 @@ TIntermAggregate *EmulatePrecision::createCompoundAssignmentFunctionCallNode(TIn
                                        SymbolType::AngleInternal));
 
     return TIntermAggregate::CreateRawFunctionCall(
-        *getInternalFunction(functionName, left->getType(), arguments, parameters, false),
-        arguments);
+        *getInternalFunction(functionName, left->getType(), &arguments, parameters, false),
+        &arguments);
 }
 
 }  // namespace sh

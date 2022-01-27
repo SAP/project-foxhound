@@ -8,6 +8,7 @@
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/gfx/PGPUParent.h"
+#include "mozilla/media/MediaUtils.h"
 
 namespace mozilla {
 
@@ -25,21 +26,24 @@ class GPUParent final : public PGPUParent {
 
   static GPUParent* GetSingleton();
 
+  AsyncBlockers& AsyncShutdownService() { return mShutdownBlockers; }
+
   // Gets the name of the GPU process, in the format expected by about:memory.
   // There must be a GPU process active, and the caller must be either in that
   // process or the parent process.
   static void GetGPUProcessName(nsACString& aStr);
 
-  bool Init(base::ProcessId aParentPid, const char* aParentBuildID,
-            MessageLoop* aIOLoop, UniquePtr<IPC::Channel> aChannel);
-  void NotifyDeviceReset();
+  // Check for memory pressure and notify the parent process if necessary.
+  static bool MaybeFlushMemory();
 
-  already_AddRefed<PAPZInputBridgeParent> AllocPAPZInputBridgeParent(
-      const LayersId& aLayersId);
+  bool Init(base::ProcessId aParentPid, const char* aParentBuildID,
+            mozilla::ipc::ScopedPort aPort);
+  void NotifyDeviceReset();
 
   mozilla::ipc::IPCResult RecvInit(nsTArray<GfxVarUpdate>&& vars,
                                    const DevicePrefs& devicePrefs,
-                                   nsTArray<LayerTreeIdMapping>&& mappings);
+                                   nsTArray<LayerTreeIdMapping>&& mappings,
+                                   nsTArray<GfxInfoFeatureStatus>&& features);
   mozilla::ipc::IPCResult RecvInitCompositorManager(
       Endpoint<PCompositorManagerParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvInitVsyncBridge(
@@ -54,6 +58,9 @@ class GPUParent final : public PGPUParent {
   mozilla::ipc::IPCResult RecvInitUiCompositorController(
       const LayersId& aRootLayerTreeId,
       Endpoint<PUiCompositorControllerParent>&& aEndpoint);
+  mozilla::ipc::IPCResult RecvInitAPZInputBridge(
+      const LayersId& aRootLayerTreeId,
+      Endpoint<PAPZInputBridgeParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvInitProfiler(
       Endpoint<PProfilerChild>&& aEndpoint);
   mozilla::ipc::IPCResult RecvUpdateVar(const GfxVarUpdate& pref);
@@ -76,7 +83,8 @@ class GPUParent final : public PGPUParent {
   mozilla::ipc::IPCResult RecvRequestMemoryReport(
       const uint32_t& generation, const bool& anonymize,
       const bool& minimizeMemoryUsage,
-      const Maybe<ipc::FileDescriptor>& DMDFile);
+      const Maybe<ipc::FileDescriptor>& DMDFile,
+      const RequestMemoryReportResolver& aResolver);
   mozilla::ipc::IPCResult RecvShutdownVR();
 
   mozilla::ipc::IPCResult RecvUpdatePerfStatsCollectionMask(
@@ -89,14 +97,17 @@ class GPUParent final : public PGPUParent {
       Endpoint<PSandboxTestingChild>&& aEndpoint);
 #endif
 
+  mozilla::ipc::IPCResult RecvFlushFOGData(FlushFOGDataResolver&& aResolver);
+
+  mozilla::ipc::IPCResult RecvTestTriggerMetrics();
+
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
  private:
   const TimeStamp mLaunchTime;
   RefPtr<VsyncBridgeParent> mVsyncBridge;
-#ifdef MOZ_GECKO_PROFILER
   RefPtr<ChildProfilerController> mProfilerController;
-#endif
+  AsyncBlockers mShutdownBlockers;
 };
 
 }  // namespace gfx

@@ -10,13 +10,13 @@
 #include "js/GCAPI.h"
 #include "jsfriendapi.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/PrimitiveConversions.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/Performance.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(MIDIMessageEvent)
 
@@ -42,10 +42,7 @@ MIDIMessageEvent::MIDIMessageEvent(mozilla::dom::EventTarget* aOwner)
   mozilla::HoldJSObjects(this);
 }
 
-MIDIMessageEvent::~MIDIMessageEvent() {
-  mData = nullptr;
-  mozilla::DropJSObjects(this);
-}
+MIDIMessageEvent::~MIDIMessageEvent() { mozilla::DropJSObjects(this); }
 
 JSObject* MIDIMessageEvent::WrapObjectInternal(
     JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
@@ -103,5 +100,4 @@ void MIDIMessageEvent::GetData(JSContext* cx,
   aData.set(mData);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

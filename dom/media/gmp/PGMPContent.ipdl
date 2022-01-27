@@ -7,9 +7,14 @@ include protocol PGMPVideoDecoder;
 include protocol PGMPVideoEncoder;
 include protocol PChromiumCDM;
 
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+include protocol PSandboxTesting;
+#endif
+
 namespace mozilla {
 namespace gmp {
 
+[RefCounted, NeedsOtherPid]
 intr protocol PGMPContent
 {
   manages PGMPVideoDecoder;
@@ -17,9 +22,13 @@ intr protocol PGMPContent
   manages PChromiumCDM;
 
 child:
-  async PGMPVideoDecoder(uint32_t aDecryptorId);
+  async PGMPVideoDecoder();
   async PGMPVideoEncoder();
-  async PChromiumCDM();
+  async PChromiumCDM(nsCString aKeySystem);
+
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+  async InitSandboxTesting(Endpoint<PSandboxTestingChild> aEndpoint);
+#endif
 };
 
 } // namespace gmp

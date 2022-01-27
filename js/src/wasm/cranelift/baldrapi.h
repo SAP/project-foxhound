@@ -44,7 +44,8 @@ namespace wasm {
 struct FuncCompileInput;
 // wasm/WasmTypes.h
 class GlobalDesc;
-struct FuncTypeWithId;
+class FuncType;
+class TypeIdDesc;
 struct TableDesc;
 // wasm/WasmValidate.h
 struct ModuleEnvironment;
@@ -68,6 +69,8 @@ struct CraneliftStaticEnvironment {
   bool has_lzcnt;
   bool platform_is_windows;
   bool ref_types_enabled;
+  bool threads_enabled;
+  bool v128_enabled;
   size_t static_memory_bound;
   size_t memory_guard_size;
   size_t memory_base_tls_offset;
@@ -167,25 +170,26 @@ struct BD_ConstantValue {
     float f32;
     double f64;
     void* r;
+    uint8_t v128[16];  // Little-endian
   } u;
 };
 
 struct BD_ValType {
-  uint32_t packed;
+  size_t packed;
 };
 
 // A subset of the wasm SymbolicAddress enum. This is converted to wasm using
 // ToSymbolicAddress in WasmCraneliftCompile.
 
 enum class BD_SymbolicAddress : uint32_t {
-  MemoryGrow = 0,
-  MemorySize,
-  MemoryCopy,
-  MemoryCopyShared,
+  MemoryGrow = 0,   /* MemoryGrowM32 */
+  MemorySize,       /* MemorySizeM32 */
+  MemoryCopy,       /* MemoryCopyM32 */
+  MemoryCopyShared, /* MemoryCopySharedM32 */
   DataDrop,
-  MemoryFill,
-  MemoryFillShared,
-  MemoryInit,
+  MemoryFill,       /* MemoryFillM32 */
+  MemoryFillShared, /* MemoryFillSharedM32 */
+  MemoryInit,       /* MemoryInitM32 */
   TableSize,
   TableGrow,
   TableGet,
@@ -205,23 +209,45 @@ enum class BD_SymbolicAddress : uint32_t {
   TruncF64,
   PreBarrier,
   PostBarrier,
+  WaitI32, /* WaitI32M32 */
+  WaitI64, /* WaitI64M32 */
+  Wake,    /* WakeM32 */
   Limit
 };
 
 extern "C" {
 js::wasm::TypeCode env_unpack(BD_ValType type);
 
-bool env_uses_shared_memory(const CraneliftModuleEnvironment* env);
+size_t env_num_tables(const CraneliftModuleEnvironment* env);
+size_t env_num_globals(const CraneliftModuleEnvironment* env);
 size_t env_num_types(const CraneliftModuleEnvironment* env);
-const js::wasm::FuncTypeWithId* env_type(const CraneliftModuleEnvironment* env,
-                                         size_t typeIndex);
-const js::wasm::FuncTypeWithId* env_func_sig(
+size_t env_num_funcs(const CraneliftModuleEnvironment* env);
+size_t env_num_elems(const CraneliftModuleEnvironment* env);
+size_t env_num_datas(const CraneliftModuleEnvironment* env);
+js::wasm::TypeCode env_elem_typecode(const CraneliftModuleEnvironment* env,
+                                     uint32_t index);
+bool env_is_func_valid_for_ref(const CraneliftModuleEnvironment* env,
+                               uint32_t index);
+/// Returns the maximum memory size as an uint32, or UINT32_MAX if not defined.
+uint32_t env_max_memory(const CraneliftModuleEnvironment* env);
+
+bool env_uses_shared_memory(const CraneliftModuleEnvironment* env);
+bool env_has_memory(const CraneliftModuleEnvironment* env);
+const js::wasm::FuncType* env_type(const CraneliftModuleEnvironment* env,
+                                   size_t typeIndex);
+const js::wasm::FuncType* env_func_sig(const CraneliftModuleEnvironment* env,
+                                       size_t funcIndex);
+const js::wasm::TypeIdDesc* env_func_sig_id(
     const CraneliftModuleEnvironment* env, size_t funcIndex);
+size_t env_func_sig_index(const CraneliftModuleEnvironment* env,
+                          size_t funcIndex);
 size_t env_func_import_tls_offset(const CraneliftModuleEnvironment* env,
                                   size_t funcIndex);
 bool env_func_is_import(const CraneliftModuleEnvironment* env,
                         size_t funcIndex);
-const js::wasm::FuncTypeWithId* env_signature(
+const js::wasm::FuncType* env_signature(const CraneliftModuleEnvironment* env,
+                                        size_t sigIndex);
+const js::wasm::TypeIdDesc* env_signature_id(
     const CraneliftModuleEnvironment* env, size_t sigIndex);
 const js::wasm::TableDesc* env_table(const CraneliftModuleEnvironment* env,
                                      size_t tableIndex);
@@ -229,20 +255,26 @@ const js::wasm::GlobalDesc* env_global(const CraneliftModuleEnvironment* env,
                                        size_t globalIndex);
 
 bool global_isConstant(const js::wasm::GlobalDesc*);
+bool global_isMutable(const js::wasm::GlobalDesc*);
 bool global_isIndirect(const js::wasm::GlobalDesc*);
 BD_ConstantValue global_constantValue(const js::wasm::GlobalDesc*);
 js::wasm::TypeCode global_type(const js::wasm::GlobalDesc*);
 size_t global_tlsOffset(const js::wasm::GlobalDesc*);
 
 size_t table_tlsOffset(const js::wasm::TableDesc*);
+uint32_t table_initialLimit(const js::wasm::TableDesc*);
+// Returns the maximum limit as an uint32, or UINT32_MAX if not defined.
+uint32_t table_maximumLimit(const js::wasm::TableDesc*);
+js::wasm::TypeCode table_elementTypeCode(const js::wasm::TableDesc*);
 
-size_t funcType_numArgs(const js::wasm::FuncTypeWithId*);
-const BD_ValType* funcType_args(const js::wasm::FuncTypeWithId*);
-size_t funcType_numResults(const js::wasm::FuncTypeWithId*);
-const BD_ValType* funcType_results(const js::wasm::FuncTypeWithId*);
-js::wasm::FuncTypeIdDescKind funcType_idKind(const js::wasm::FuncTypeWithId*);
-size_t funcType_idImmediate(const js::wasm::FuncTypeWithId*);
-size_t funcType_idTlsOffset(const js::wasm::FuncTypeWithId*);
+size_t funcType_numArgs(const js::wasm::FuncType*);
+const BD_ValType* funcType_args(const js::wasm::FuncType*);
+size_t funcType_numResults(const js::wasm::FuncType*);
+const BD_ValType* funcType_results(const js::wasm::FuncType*);
+
+js::wasm::TypeIdDescKind funcType_idKind(const js::wasm::TypeIdDesc*);
+size_t funcType_idImmediate(const js::wasm::TypeIdDesc*);
+size_t funcType_idTlsOffset(const js::wasm::TypeIdDesc*);
 
 void stackmaps_add(BD_Stackmaps* sink, const uint32_t* bitMap,
                    size_t mappedWords, size_t argsSize, size_t codeOffset);

@@ -7,9 +7,10 @@
 #ifndef mozilla_dom_docshell_message_utils_h__
 #define mozilla_dom_docshell_message_utils_h__
 
-#include "ipc/IPCMessageUtils.h"
+#include "ipc/EnumSerializer.h"
 #include "nsCOMPtr.h"
 #include "nsDocShellLoadState.h"
+#include "nsIContentViewer.h"
 #include "mozilla/ScrollbarPreferences.h"
 
 namespace mozilla {
@@ -33,6 +34,20 @@ struct ParamTraits<mozilla::ScrollbarPreference>
     : public ContiguousEnumSerializerInclusive<
           mozilla::ScrollbarPreference, mozilla::ScrollbarPreference::Auto,
           mozilla::ScrollbarPreference::LAST> {};
+
+template <>
+struct ParamTraits<mozilla::dom::PermitUnloadResult>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::dom::PermitUnloadResult,
+          mozilla::dom::PermitUnloadResult::eAllowNavigation,
+          mozilla::dom::PermitUnloadResult::eRequestBlockNavigation> {};
+
+template <>
+struct ParamTraits<mozilla::dom::XPCOMPermitUnloadAction>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::dom::XPCOMPermitUnloadAction,
+          mozilla::dom::XPCOMPermitUnloadAction::ePrompt,
+          mozilla::dom::XPCOMPermitUnloadAction::eDontPromptAndUnload> {};
 
 }  // namespace IPC
 

@@ -5,7 +5,7 @@
 
 #include "ipc/IPCMessageUtils.h"
 
-#if defined(XP_UNIX) || defined(XP_BEOS)
+#if defined(XP_UNIX)
 #  include <unistd.h>
 #elif defined(XP_WIN)
 #  include <windows.h>
@@ -30,7 +30,7 @@
 #include "nsNetCID.h"
 #include "nsXULAppAPI.h"
 
-typedef mozilla::ipc::FileDescriptor::PlatformHandleType FileHandleType;
+using FileHandleType = mozilla::ipc::FileDescriptor::PlatformHandleType;
 
 using namespace mozilla::ipc;
 using namespace mozilla::net;
@@ -42,12 +42,6 @@ using mozilla::Some;
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsFileStreamBase
-
-nsFileStreamBase::nsFileStreamBase()
-    : mFD(nullptr),
-      mBehaviorFlags(0),
-      mState(eUnitialized),
-      mErrorValue(NS_ERROR_FAILURE) {}
 
 nsFileStreamBase::~nsFileStreamBase() {
   // We don't want to try to rewrind the stream when shutting down.
@@ -94,14 +88,14 @@ nsFileStreamBase::SetEOF() {
   nsresult rv = DoPendingOpen();
   NS_ENSURE_SUCCESS(rv, rv);
 
-#if defined(XP_UNIX) || defined(XP_BEOS)
+#if defined(XP_UNIX)
   // Some system calls require an EOF offset.
   int64_t offset;
   rv = Tell(&offset);
   if (NS_FAILED(rv)) return rv;
 #endif
 
-#if defined(XP_UNIX) || defined(XP_BEOS)
+#if defined(XP_UNIX)
   if (ftruncate(PR_FileDesc2NativeHandle(mFD), offset) != 0) {
     NS_ERROR("ftruncate failed");
     return NS_ERROR_FAILURE;
@@ -522,6 +516,12 @@ nsresult nsFileInputStream::SeekInternal(int32_t aWhence, int64_t aOffset,
         aWhence = NS_SEEK_SET;
         aOffset += mCachedPosition;
       }
+      // If we're trying to seek to the start then we're done, so
+      // return early to avoid Seek from calling DoPendingOpen and
+      // opening the underlying file earlier than necessary.
+      if (aWhence == NS_SEEK_SET && aOffset == 0) {
+        return NS_OK;
+      }
     } else {
       return NS_BASE_STREAM_CLOSED;
     }
@@ -848,8 +848,9 @@ nsAtomicFileOutputStream::Finish() {
       // in writing to the target file), there is nothing more to do.
 #ifdef DEBUG
       bool equal;
-      if (NS_FAILED(mTargetFile->Equals(mTempFile, &equal)) || !equal)
+      if (NS_FAILED(mTargetFile->Equals(mTempFile, &equal)) || !equal) {
         NS_WARNING("mTempFile not equal to mTargetFile");
+      }
 #endif
     } else {
       nsAutoString targetFilename;
@@ -875,13 +876,15 @@ nsAtomicFileOutputStream::Write(const char* buf, uint32_t count,
                                 uint32_t* result) {
   nsresult rv = nsFileOutputStream::Write(buf, count, result);
   if (NS_SUCCEEDED(mWriteResult)) {
-    if (NS_FAILED(rv))
+    if (NS_FAILED(rv)) {
       mWriteResult = rv;
-    else if (count != *result)
+    } else if (count != *result) {
       mWriteResult = NS_ERROR_LOSS_OF_SIGNIFICANT_DATA;
+    }
 
-    if (NS_FAILED(mWriteResult) && count > 0)
+    if (NS_FAILED(mWriteResult) && count > 0) {
       NS_WARNING("writing to output stream failed! data may be lost");
+    }
   }
   return rv;
 }
@@ -897,6 +900,14 @@ nsSafeFileOutputStream::Finish() {
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsFileStream
+
+nsresult nsFileStream::Create(nsISupports* aOuter, REFNSIID aIID,
+                              void** aResult) {
+  NS_ENSURE_NO_AGGREGATION(aOuter);
+
+  RefPtr<nsFileStream> stream = new nsFileStream();
+  return stream->QueryInterface(aIID, aResult);
+}
 
 NS_IMPL_ISUPPORTS_INHERITED(nsFileStream, nsFileStreamBase, nsIInputStream,
                             nsIOutputStream, nsIFileStream)

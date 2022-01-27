@@ -6,6 +6,7 @@
 #ifndef URLPreloader_h
 #define URLPreloader_h
 
+#include "mozilla/DataMutex.h"
 #include "mozilla/FileLocation.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/LinkedList.h"
@@ -21,7 +22,6 @@
 #include "nsIFile.h"
 #include "nsIURI.h"
 #include "nsIMemoryReporter.h"
-#include "nsIObserver.h"
 #include "nsIResProtocolHandler.h"
 #include "nsIThread.h"
 #include "nsReadableUtils.h"
@@ -44,14 +44,13 @@ class ScriptPreloader;
  * read synchronously from disk, and (if startup is not already complete)
  * added to the pre-load list for the next session.
  */
-class URLPreloader final : public nsIObserver, public nsIMemoryReporter {
+class URLPreloader final : public nsIMemoryReporter {
   MOZ_DEFINE_MALLOC_SIZE_OF(MallocSizeOf)
 
   URLPreloader() = default;
 
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
-  NS_DECL_NSIOBSERVER
   NS_DECL_NSIMEMORYREPORTER
 
   static URLPreloader& GetSingleton();
@@ -68,33 +67,34 @@ class URLPreloader final : public nsIObserver, public nsIMemoryReporter {
   // representations. If the preloader has not yet been initialized, or the
   // given location is not supported by the cache, the entries will be read
   // synchronously, and not stored in the cache.
-  static Result<const nsCString, nsresult> Read(FileLocation& location,
-                                                ReadType readType = Forget);
+  static Result<nsCString, nsresult> Read(FileLocation& location,
+                                          ReadType readType = Forget);
 
-  static Result<const nsCString, nsresult> ReadURI(nsIURI* uri,
-                                                   ReadType readType = Forget);
+  static Result<nsCString, nsresult> ReadURI(nsIURI* uri,
+                                             ReadType readType = Forget);
 
-  static Result<const nsCString, nsresult> ReadFile(nsIFile* file,
-                                                    ReadType readType = Forget);
+  static Result<nsCString, nsresult> ReadFile(nsIFile* file,
+                                              ReadType readType = Forget);
 
-  static Result<const nsCString, nsresult> ReadZip(nsZipArchive* archive,
-                                                   const nsACString& path,
-                                                   ReadType readType = Forget);
+  static Result<nsCString, nsresult> ReadZip(nsZipArchive* archive,
+                                             const nsACString& path,
+                                             ReadType readType = Forget);
+
+  void SetStartupFinished() { mStartupFinished = true; }
 
  private:
   struct CacheKey;
 
-  Result<const nsCString, nsresult> ReadInternal(const CacheKey& key,
-                                                 ReadType readType);
+  Result<nsCString, nsresult> ReadInternal(const CacheKey& key,
+                                           ReadType readType);
 
-  Result<const nsCString, nsresult> ReadURIInternal(nsIURI* uri,
-                                                    ReadType readType);
+  Result<nsCString, nsresult> ReadURIInternal(nsIURI* uri, ReadType readType);
 
-  Result<const nsCString, nsresult> ReadFileInternal(nsIFile* file,
-                                                     ReadType readType);
+  Result<nsCString, nsresult> ReadFileInternal(nsIFile* file,
+                                               ReadType readType);
 
-  static Result<const nsCString, nsresult> Read(const CacheKey& key,
-                                                ReadType readType);
+  static Result<nsCString, nsresult> Read(const CacheKey& key,
+                                          ReadType readType);
 
   static bool sInitialized;
 
@@ -185,7 +185,7 @@ class URLPreloader final : public nsIObserver, public nsIMemoryReporter {
       }
     }
 
-    const char* TypeString() {
+    const char* TypeString() const {
       switch (mType) {
         case TypeAppJar:
           return "AppJar";
@@ -241,9 +241,8 @@ class URLPreloader final : public nsIObserver, public nsIMemoryReporter {
       }
     }
 
-    Result<const nsCString, nsresult> Read();
-    static Result<const nsCString, nsresult> ReadLocation(
-        FileLocation& location);
+    Result<nsCString, nsresult> Read();
+    static Result<nsCString, nsresult> ReadLocation(FileLocation& location);
 
     size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
       return (mallocSizeOf(this) +
@@ -254,7 +253,7 @@ class URLPreloader final : public nsIObserver, public nsIMemoryReporter {
     // Reads the contents of the file referenced by this entry, or wait for
     // an off-thread read operation to finish if it is currently pending,
     // and return the file's contents.
-    Result<const nsCString, nsresult> ReadOrWait(ReadType readType);
+    Result<nsCString, nsresult> ReadOrWait(ReadType readType);
 
     nsCString mData;
 
@@ -301,8 +300,9 @@ class URLPreloader final : public nsIObserver, public nsIMemoryReporter {
 
   // Note: We use a RefPtr rather than an nsCOMPtr here because the
   // AssertNoQueryNeeded checks done by getter_AddRefs happen at a time that
-  // violate data access invariants.
-  RefPtr<nsIThread> mReaderThread;
+  // violate data access invariants. It's wrapped in a mutex because
+  // the reader thread needs to be able to null this out to terminate itself.
+  DataMutex<RefPtr<nsIThread>> mReaderThread{"ReaderThread"};
 
   // A map of URL entries which have were either read this session, or read
   // from the last session's cache file.

@@ -41,6 +41,7 @@ template struct StyleStrong<RawServoAnimationValue>;
 template struct StyleStrong<RawServoDeclarationBlock>;
 template struct StyleStrong<RawServoStyleSheetContents>;
 template struct StyleStrong<RawServoKeyframe>;
+template struct StyleStrong<RawServoLayerRule>;
 template struct StyleStrong<RawServoMediaList>;
 template struct StyleStrong<RawServoStyleRule>;
 template struct StyleStrong<RawServoImportRule>;
@@ -53,6 +54,7 @@ template struct StyleStrong<RawServoSupportsRule>;
 template struct StyleStrong<RawServoFontFeatureValuesRule>;
 template struct StyleStrong<RawServoFontFaceRule>;
 template struct StyleStrong<RawServoCounterStyleRule>;
+template struct StyleStrong<RawServoScrollTimelineRule>;
 
 template <typename T>
 inline void StyleOwnedSlice<T>::Clear() {
@@ -217,13 +219,15 @@ inline bool StyleArcSlice<T>::IsEmpty() const {
 template <typename T>
 inline Span<const T> StyleArcSlice<T>::AsSpan() const {
   ASSERT_CANARY
-  return MakeSpan(_0.ptr->data.slice, Length());
+  // Explicitly specify template argument here to avoid instantiating Span<T>
+  // first and then implicitly converting to Span<const T>
+  return Span<const T>{_0.ptr->data.slice, Length()};
 }
 
 template <typename T>
 inline bool StyleArcSlice<T>::operator==(const StyleArcSlice& aOther) const {
   ASSERT_CANARY
-  return AsSpan() == aOther.AsSpan();
+  return _0.ptr == aOther._0.ptr || AsSpan() == aOther.AsSpan();
 }
 
 template <typename T>
@@ -232,15 +236,46 @@ inline bool StyleArcSlice<T>::operator!=(const StyleArcSlice& aOther) const {
 }
 
 template <typename T>
-inline StyleArcSlice<T>::~StyleArcSlice() {
+inline void StyleArcSlice<T>::Release() {
   ASSERT_CANARY
   if (MOZ_LIKELY(!_0.ptr->DecrementRef())) {
     return;
   }
-  for (T& elem : MakeSpan(_0.ptr->data.slice, Length())) {
+  for (T& elem : Span(_0.ptr->data.slice, Length())) {
     elem.~T();
   }
   free(_0.ptr);  // Drop the allocation now.
+}
+
+template <typename T>
+inline StyleArcSlice<T>::~StyleArcSlice() {
+  Release();
+}
+
+template <typename T>
+inline StyleArcSlice<T>& StyleArcSlice<T>::operator=(StyleArcSlice&& aOther) {
+  ASSERT_CANARY
+  std::swap(_0.ptr, aOther._0.ptr);
+  ASSERT_CANARY
+  return *this;
+}
+
+template <typename T>
+inline StyleArcSlice<T>& StyleArcSlice<T>::operator=(
+    const StyleArcSlice& aOther) {
+  ASSERT_CANARY
+
+  if (_0.ptr == aOther._0.ptr) {
+    return *this;
+  }
+
+  Release();
+
+  _0.ptr = aOther._0.ptr;
+  _0.ptr->IncrementRef();
+
+  ASSERT_CANARY
+  return *this;
 }
 
 #undef ASSERT_CANARY
@@ -394,10 +429,19 @@ inline nsIURI* StyleCssUrl::GetURI() const {
   auto& loadData = LoadData();
   if (!(loadData.flags & StyleLoadDataFlags::TRIED_TO_RESOLVE_URI)) {
     loadData.flags |= StyleLoadDataFlags::TRIED_TO_RESOLVE_URI;
-    RefPtr<nsIURI> resolved;
-    NS_NewURI(getter_AddRefs(resolved), SpecifiedSerialization(), nullptr,
-              ExtraData().BaseURI());
-    loadData.resolved_uri = resolved.forget().take();
+    nsDependentCSubstring serialization = SpecifiedSerialization();
+    // https://drafts.csswg.org/css-values-4/#url-empty:
+    //
+    //     If the value of the url() is the empty string (like url("") or
+    //     url()), the url must resolve to an invalid resource (similar to what
+    //     the url about:invalid does).
+    //
+    if (!serialization.IsEmpty()) {
+      RefPtr<nsIURI> resolved;
+      NS_NewURI(getter_AddRefs(resolved), serialization, nullptr,
+                ExtraData().BaseURI());
+      loadData.resolved_uri = resolved.forget().take();
+    }
   }
   return loadData.resolved_uri;
 }
@@ -718,13 +762,17 @@ nscoord LengthPercentage::Resolve(T aPercentageGetter, U aRounder) const {
   return AsCalc().node.Resolve(basis, aRounder);
 }
 
+// Note: the static_cast<> wrappers below are needed to disambiguate between
+// the versions of NSToCoordTruncClamped that take float vs. double as the arg.
 nscoord LengthPercentage::Resolve(nscoord aPercentageBasis) const {
-  return Resolve([=] { return aPercentageBasis; }, NSToCoordFloorClamped);
+  return Resolve([=] { return aPercentageBasis; },
+                 static_cast<nscoord (*)(float)>(NSToCoordTruncClamped));
 }
 
 template <typename T>
 nscoord LengthPercentage::Resolve(T aPercentageGetter) const {
-  return Resolve(aPercentageGetter, NSToCoordFloorClamped);
+  return Resolve(aPercentageGetter,
+                 static_cast<nscoord (*)(float)>(NSToCoordTruncClamped));
 }
 
 template <typename T>
@@ -799,12 +847,12 @@ inline bool StyleFlexBasis::IsAuto() const {
 
 template <>
 inline bool StyleSize::BehavesLikeInitialValueOnBlockAxis() const {
-  return IsAuto() || IsExtremumLength();
+  return IsAuto() || !IsLengthPercentage();
 }
 
 template <>
 inline bool StyleMaxSize::BehavesLikeInitialValueOnBlockAxis() const {
-  return IsNone() || IsExtremumLength();
+  return IsNone() || !IsLengthPercentage();
 }
 
 template <>
@@ -931,18 +979,36 @@ inline bool RestyleHint::DefinitelyRecascadesAllSubtree() const {
 }
 
 template <>
+ImageResolution StyleImage::GetResolution() const;
+
+template <>
+inline const StyleImage& StyleImage::FinalImage() const {
+  if (!IsImageSet()) {
+    return *this;
+  }
+  auto& set = AsImageSet();
+  auto& selectedItem = set->items.AsSpan()[set->selected_index];
+  return selectedItem.image.FinalImage();
+}
+
+template <>
+Maybe<CSSIntSize> StyleImage::GetIntrinsicSize() const;
+
+template <>
 inline bool StyleImage::IsImageRequestType() const {
-  return IsUrl() || IsRect();
+  auto& finalImage = FinalImage();
+  return finalImage.IsUrl() || finalImage.IsRect();
 }
 
 template <>
 inline const StyleComputedImageUrl* StyleImage::GetImageRequestURLValue()
     const {
-  if (IsUrl()) {
-    return &AsUrl();
+  auto& finalImage = FinalImage();
+  if (finalImage.IsUrl()) {
+    return &finalImage.AsUrl();
   }
-  if (IsRect()) {
-    return &AsRect()->url;
+  if (finalImage.IsRect()) {
+    return &finalImage.AsRect()->url;
   }
   return nullptr;
 }
@@ -966,21 +1032,24 @@ bool StyleImage::IsSizeAvailable() const;
 template <>
 bool StyleImage::IsComplete() const;
 template <>
-bool StyleImage::StartDecoding() const;
-template <>
 Maybe<StyleImage::ActualCropRect> StyleImage::ComputeActualCropRect() const;
 template <>
 void StyleImage::ResolveImage(dom::Document&, const StyleImage*);
 
 template <>
-inline AspectRatio StyleRatio<StyleNonNegativeNumber>::ToLayoutRatio() const {
-  // The Ratio may be 0/1 (zero) or 1/0 (infinity). There is a spec issue
-  // related to these special cases:
-  // https://github.com/w3c/csswg-drafts/issues/4572.
-  //
-  // For now, we accept these values, but layout AspectRatio makes these values
-  // 0.0.
-  return AspectRatio::FromSize(_0, _1);
+inline AspectRatio StyleRatio<StyleNonNegativeNumber>::ToLayoutRatio(
+    UseBoxSizing aUseBoxSizing) const {
+  // 0/1, 1/0, and 0/0 are all degenerate ratios (which behave as auto), and we
+  // always return 0.0f.
+  // https://drafts.csswg.org/css-values-4/#degenerate-ratio
+  return AspectRatio::FromSize(_0, _1, aUseBoxSizing);
+}
+
+template <>
+inline AspectRatio StyleAspectRatio::ToLayoutRatio() const {
+  return HasRatio() ? ratio.AsRatio().ToLayoutRatio(auto_ ? UseBoxSizing::No
+                                                          : UseBoxSizing::Yes)
+                    : AspectRatio();
 }
 
 }  // namespace mozilla

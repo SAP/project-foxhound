@@ -20,7 +20,7 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "CustomHighlighterActor",
+  ["CustomHighlighterActor"],
   "devtools/server/actors/highlighters",
   true
 );
@@ -32,29 +32,11 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(this, "events", "devtools/shared/event-emitter");
 loader.lazyRequireGetter(
   this,
-  "getCurrentZoom",
+  ["getCurrentZoom", "isWindowIncluded", "isFrameWithChildTarget"],
   "devtools/shared/layout/utils",
   true
 );
 loader.lazyRequireGetter(this, "InspectorUtils", "InspectorUtils");
-loader.lazyRequireGetter(
-  this,
-  "isDefunct",
-  "devtools/server/actors/utils/accessibility",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "isTypeRegistered",
-  "devtools/server/actors/highlighters",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "isWindowIncluded",
-  "devtools/shared/layout/utils",
-  true
-);
 loader.lazyRequireGetter(
   this,
   "isXUL",
@@ -63,19 +45,11 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "loadSheetForBackgroundCalculation",
-  "devtools/server/actors/utils/accessibility",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "register",
-  "devtools/server/actors/highlighters",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "removeSheetForBackgroundCalculation",
+  [
+    "isDefunct",
+    "loadSheetForBackgroundCalculation",
+    "removeSheetForBackgroundCalculation",
+  ],
   "devtools/server/actors/utils/accessibility",
   true
 );
@@ -83,12 +57,6 @@ loader.lazyRequireGetter(
   this,
   "accessibility",
   "devtools/shared/constants",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "isRemoteFrame",
-  "devtools/shared/layout/utils",
   true
 );
 
@@ -282,36 +250,33 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
     this.onHovered = this.onHovered.bind(this);
     this._preventContentEvent = this._preventContentEvent.bind(this);
     this.onKey = this.onKey.bind(this);
+    this.onFocusIn = this.onFocusIn.bind(this);
+    this.onFocusOut = this.onFocusOut.bind(this);
     this.onHighlighterEvent = this.onHighlighterEvent.bind(this);
   },
 
   get highlighter() {
     if (!this._highlighter) {
-      if (isXUL(this.rootWin)) {
-        if (!isTypeRegistered("XULWindowAccessibleHighlighter")) {
-          register("XULWindowAccessibleHighlighter", "xul-accessible");
-        }
-
-        this._highlighter = CustomHighlighterActor(
-          this,
-          "XULWindowAccessibleHighlighter"
-        );
-      } else {
-        if (!isTypeRegistered("AccessibleHighlighter")) {
-          register("AccessibleHighlighter", "accessible");
-        }
-
-        this._highlighter = CustomHighlighterActor(
-          this,
-          "AccessibleHighlighter"
-        );
-      }
+      this._highlighter = CustomHighlighterActor(this, "AccessibleHighlighter");
 
       this.manage(this._highlighter);
       this._highlighter.on("highlighter-event", this.onHighlighterEvent);
     }
 
     return this._highlighter;
+  },
+
+  get tabbingOrderHighlighter() {
+    if (!this._tabbingOrderHighlighter) {
+      this._tabbingOrderHighlighter = CustomHighlighterActor(
+        this,
+        "TabbingOrderHighlighter"
+      );
+
+      this.manage(this._tabbingOrderHighlighter);
+    }
+
+    return this._tabbingOrderHighlighter;
   },
 
   setA11yServiceGetter() {
@@ -329,6 +294,10 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
 
   get rootDoc() {
     return this.targetActor && this.targetActor.window.document;
+  },
+
+  get isXUL() {
+    return isXUL(this.rootWin);
   },
 
   get colorMatrix() {
@@ -382,6 +351,10 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
     if (this._highlighter) {
       this._highlighter.off("highlighter-event", this.onHighlighterEvent);
       this._highlighter = null;
+    }
+
+    if (this._tabbingOrderHighlighter) {
+      this._tabbingOrderHighlighter = null;
     }
 
     this.targetActor = null;
@@ -468,7 +441,7 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
       return this.once("document-ready").then(docAcc => this.addRef(docAcc));
     }
 
-    if (isXUL(this.rootWin)) {
+    if (this.isXUL) {
       const doc = this.addRef(this.getRawAccessibleFor(this.rootDoc));
       return Promise.resolve(doc);
     }
@@ -758,7 +731,7 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
    * @param  {Object} win
    *         Window where highlighting happens.
    */
-  clearStyles(win) {
+  async clearStyles(win) {
     const requests = this._loadedSheets.get(win);
     if (requests != null) {
       this._loadedSheets.set(win, requests + 1);
@@ -771,7 +744,7 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
     // taking a snapshot for contrast measurement).
     loadSheetForBackgroundCalculation(win);
     this._loadedSheets.set(win, 1);
-    this.hideHighlighter();
+    await this.hideHighlighter();
   },
 
   /**
@@ -782,7 +755,7 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
    * @param  {Object} win
    *         Window where highlighting was happenning.
    */
-  restoreStyles(win) {
+  async restoreStyles(win) {
     const requests = this._loadedSheets.get(win);
     if (!requests) {
       return;
@@ -793,25 +766,27 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
       return;
     }
 
-    this.showHighlighter();
+    await this.showHighlighter();
     removeSheetForBackgroundCalculation(win);
     this._loadedSheets.delete(win);
   },
 
-  hideHighlighter() {
+  async hideHighlighter() {
     // TODO: Fix this workaround that temporarily removes higlighter bounds
     // overlay that can interfere with the contrast ratio calculation.
     if (this._highlighter) {
       const highlighter = this._highlighter.instance;
+      await highlighter.isReady;
       highlighter.hideAccessibleBounds();
     }
   },
 
-  showHighlighter() {
+  async showHighlighter() {
     // TODO: Fix this workaround that temporarily removes higlighter bounds
     // overlay that can interfere with the contrast ratio calculation.
     if (this._highlighter) {
       const highlighter = this._highlighter.instance;
+      await highlighter.isReady;
       highlighter.showAccessibleBounds();
     }
   },
@@ -849,9 +824,15 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
     }
 
     const { name, role } = accessible;
-    const shown = this.highlighter.show(
+    const { highlighter } = this;
+    await highlighter.instance.isReady;
+    if (this._highlightingAccessible !== accessible) {
+      return false;
+    }
+
+    const shown = highlighter.show(
       { rawNode },
-      { ...options, ...bounds, name, role, audit }
+      { ...options, ...bounds, name, role, audit, isXUL: this.isXUL }
     );
     this._highlightingAccessible = null;
 
@@ -899,7 +880,10 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
       // remote frame target should emit RDP events (hovered/picked/...). And
       // all other WalkerActor for intermediate iframe and top level document
       // targets should stay silent.
-      isRemoteFrame(event.originalTarget || event.target)
+      isFrameWithChildTarget(
+        this.targetActor,
+        event.originalTarget || event.target
+      )
     );
   },
 
@@ -1091,19 +1075,7 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
    * highlighter features correctly.
    */
   get pixelRatio() {
-    const { contentViewer } = this.targetActor.docShell;
-    const { windowUtils } = this.rootWin;
-    const overrideDPPX = contentViewer.overrideDPPX;
-    let ratio;
-    if (overrideDPPX) {
-      contentViewer.overrideDPPX = 0;
-      ratio = windowUtils.screenPixelsPerCSSPixel;
-      contentViewer.overrideDPPX = overrideDPPX;
-    } else {
-      ratio = windowUtils.screenPixelsPerCSSPixel;
-    }
-
-    return ratio;
+    return this.rootWin.windowUtils.screenPixelsPerCSSPixelNoOverride;
   },
 
   /**
@@ -1119,7 +1091,8 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
     const target = event.originalTarget || event.target;
     const docAcc = this.getRawAccessibleFor(this.rootDoc);
     const win = target.ownerGlobal;
-    const scale = this.pixelRatio / getCurrentZoom(win);
+    const zoom = this.isXUL ? 1 : getCurrentZoom(win);
+    const scale = this.pixelRatio / zoom;
     const rawAccessible = docAcc.getDeepestChildAtPointInProcess(
       event.screenX * scale,
       event.screenY * scale
@@ -1208,6 +1181,122 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
       this._unsetPickerEnvironment();
       this._isPicking = false;
       this._currentAccessible = null;
+    }
+  },
+
+  /**
+   * Indicates that the tabbing order current active element (focused) is being
+   * tracked.
+   */
+  _isTrackingTabbingOrderFocus: false,
+
+  /**
+   * Current focused element in the tabbing order.
+   */
+  _currentFocusedTabbingOrder: null,
+
+  /**
+   * Focusin event handler for when interacting with tabbing order overlay.
+   *
+   * @param  {Object} event
+   *         Most recent focusin event.
+   */
+  async onFocusIn(event) {
+    if (!this._isTrackingTabbingOrderFocus) {
+      return;
+    }
+
+    const target = event.originalTarget || event.target;
+    if (target === this._currentFocusedTabbingOrder) {
+      return;
+    }
+
+    this._currentFocusedTabbingOrder = target;
+    this.tabbingOrderHighlighter._highlighter.updateFocus({
+      node: target,
+      focused: true,
+    });
+  },
+
+  /**
+   * Focusout event handler for when interacting with tabbing order overlay.
+   *
+   * @param  {Object} event
+   *         Most recent focusout event.
+   */
+  async onFocusOut(event) {
+    if (
+      !this._isTrackingTabbingOrderFocus ||
+      !this._currentFocusedTabbingOrder
+    ) {
+      return;
+    }
+
+    const target = event.originalTarget || event.target;
+    // Sanity check.
+    if (target !== this._currentFocusedTabbingOrder) {
+      console.warn(
+        `focusout target: ${target} does not match current focused element in tabbing order: ${this._currentFocusedTabbingOrder}`
+      );
+    }
+
+    this.tabbingOrderHighlighter._highlighter.updateFocus({
+      node: this._currentFocusedTabbingOrder,
+      focused: false,
+    });
+    this._currentFocusedTabbingOrder = null;
+  },
+
+  /**
+   * Show tabbing order overlay for a given target.
+   *
+   * @param  {Object} elm
+   *         domnode actor to be used as the starting point for generating the
+   *         tabbing order.
+   * @param  {Number} index
+   *         Starting index for the tabbing order.
+   *
+   * @return {JSON}
+   *         Tabbing order information for the last element in the tabbing
+   *         order. It includes a ContentDOMReference for the node and a tabbing
+   *         index. If we are at the end of the tabbing order for the top level
+   *         content document, the ContentDOMReference will be null. If focus
+   *         manager discovered a remote IFRAME, then the ContentDOMReference
+   *         references the IFRAME itself.
+   */
+  showTabbingOrder(elm, index) {
+    // Start track focus related events (only once). `showTabbingOrder` will be
+    // called multiple times for a given target if it contains other remote
+    // targets.
+    if (!this._isTrackingTabbingOrderFocus) {
+      this._isTrackingTabbingOrderFocus = true;
+      const target = this.targetActor.chromeEventHandler;
+      target.addEventListener("focusin", this.onFocusIn, true);
+      target.addEventListener("focusout", this.onFocusOut, true);
+    }
+
+    return this.tabbingOrderHighlighter.show(elm, { index });
+  },
+
+  /**
+   * Hide tabbing order overlay for a given target.
+   */
+  hideTabbingOrder() {
+    if (!this._tabbingOrderHighlighter) {
+      return;
+    }
+
+    this.tabbingOrderHighlighter.hide();
+    if (!this._isTrackingTabbingOrderFocus) {
+      return;
+    }
+
+    this._isTrackingTabbingOrderFocus = false;
+    this._currentFocusedTabbingOrder = null;
+    const target = this.targetActor.chromeEventHandler;
+    if (target) {
+      target.removeEventListener("focusin", this.onFocusIn, true);
+      target.removeEventListener("focusout", this.onFocusOut, true);
     }
   },
 });

@@ -32,6 +32,10 @@ function waitForGeolocationPrompt(win, browser) {
 addRDMTask(
   null,
   async function() {
+    // we want to explicitly tests http and https, hence
+    // disabling https-first mode for this test.
+    await pushPref("dom.security.https_first", false);
+
     const tab = await addTab(DUMMY_URL);
     const browser = tab.linkedBrowser;
     const win = browser.ownerGlobal;
@@ -40,13 +44,13 @@ addRDMTask(
 
     // Checks if a geolocation permission doorhanger appears when openning a page
     // requesting geolocation
-    await load(browser, TEST_SURL);
+    await navigateTo(TEST_SURL);
     await waitPromptPromise;
 
     ok(true, "Permission doorhanger appeared without RDM enabled");
 
     // Lets switch back to the dummy website and enable RDM
-    await load(browser, DUMMY_URL);
+    await navigateTo(DUMMY_URL);
     const { ui } = await openRDM(tab);
     await waitForDeviceAndViewportState(ui);
 
@@ -55,7 +59,8 @@ addRDMTask(
 
     // Checks if the doorhanger appeared again when reloading the geolocation
     // page inside RDM
-    await load(browser, TEST_SURL);
+    await navigateTo(TEST_SURL);
+
     await waitPromptPromise;
 
     ok(true, "Permission doorhanger appeared inside RDM");

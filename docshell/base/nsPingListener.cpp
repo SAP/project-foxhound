@@ -12,11 +12,13 @@
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/Document.h"
 
+#include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIInputStream.h"
 #include "nsIProtocolHandler.h"
 #include "nsIUploadChannel2.h"
 
+#include "nsComponentManagerUtils.h"
 #include "nsNetUtil.h"
 #include "nsStreamUtils.h"
 #include "nsStringStream.h"
@@ -130,11 +132,11 @@ static void SendPing(void* aClosure, nsIContent* aContent, nsIURI* aURI,
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
   // Remove extraneous request headers (to reduce request size)
-  rv = httpChan->SetRequestHeader("accept"_ns, EmptyCString(), false);
+  rv = httpChan->SetRequestHeader("accept"_ns, ""_ns, false);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
-  rv = httpChan->SetRequestHeader("accept-language"_ns, EmptyCString(), false);
+  rv = httpChan->SetRequestHeader("accept-language"_ns, ""_ns, false);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
-  rv = httpChan->SetRequestHeader("accept-encoding"_ns, EmptyCString(), false);
+  rv = httpChan->SetRequestHeader("accept-encoding"_ns, ""_ns, false);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
   // Always send a Ping-To header.

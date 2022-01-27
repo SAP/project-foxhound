@@ -19,6 +19,7 @@ class nsITimer;
 class nsSliderFrame;
 
 namespace mozilla {
+class nsDisplaySliderMarks;
 class PresShell;
 }  // namespace mozilla
 
@@ -47,6 +48,7 @@ class nsSliderFrame final : public nsBoxFrame {
   NS_DECL_QUERYFRAME
 
   friend class nsSliderMediator;
+  friend class mozilla::nsDisplaySliderMarks;
 
   explicit nsSliderFrame(ComputedStyle* aStyle, nsPresContext* aPresContext);
   virtual ~nsSliderFrame();

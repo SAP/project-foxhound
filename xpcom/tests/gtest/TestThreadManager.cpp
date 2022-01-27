@@ -6,6 +6,7 @@
 
 #include "nsIThreadManager.h"
 #include "nsCOMPtr.h"
+#include "nsIThread.h"
 #include "nsXPCOM.h"
 #include "nsThreadUtils.h"
 #include "nsServiceManagerUtils.h"
@@ -44,7 +45,9 @@ class SpinRunnable final : public Runnable {
   NS_IMETHODIMP Run() {
     nsCOMPtr<nsIThreadManager> threadMan =
         do_GetService("@mozilla.org/thread-manager;1");
-    mResult = threadMan->SpinEventLoopUntil(mCondition);
+
+    mResult = threadMan->SpinEventLoopUntil(
+        "xpcom:TestThreadManager.cpp:SpinRunnable->Run()"_ns, mCondition);
     return NS_OK;
   }
 

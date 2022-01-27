@@ -7,6 +7,8 @@
 #ifndef GFX_ZOOMCONSTRAINTS_H
 #define GFX_ZOOMCONSTRAINTS_H
 
+#include <iosfwd>
+
 #include "Units.h"  // for CSSRect, CSSPixel, etc
 #include "mozilla/Maybe.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"  // for ScrollableLayerGuid
@@ -53,9 +55,10 @@ struct ZoomConstraints {
   bool operator!=(const ZoomConstraints& other) const {
     return !(*this == other);
   }
-};
 
-typedef Maybe<ZoomConstraints> MaybeZoomConstraints;
+  friend std::ostream& operator<<(std::ostream& aStream,
+                                  const ZoomConstraints& z);
+};
 
 }  // namespace layers
 }  // namespace mozilla

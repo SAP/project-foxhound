@@ -8,6 +8,7 @@ add_task(async function mainTest() {
     Downloads.Error.BLOCK_VERDICT_UNCOMMON,
     Downloads.Error.BLOCK_VERDICT_MALWARE,
     Downloads.Error.BLOCK_VERDICT_POTENTIALLY_UNWANTED,
+    Downloads.Error.BLOCK_VERDICT_INSECURE,
   ];
   await task_addDownloads(verdicts.map(v => makeDownload(v)));
 
@@ -47,7 +48,7 @@ add_task(async function mainTest() {
     let unblockOpenPromise = promiseUnblockAndOpenDownloadCalled(item);
     let hidePromise = promisePanelHidden();
     EventUtils.synthesizeMouse(
-      DownloadsBlockedSubview.elements.openButton,
+      DownloadsBlockedSubview.elements.unblockButton,
       10,
       10,
       {},

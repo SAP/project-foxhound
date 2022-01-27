@@ -27,9 +27,7 @@ async function testContextmenu(menuitem) {
   });
   await promiseEvent;
   let promiseTabOpened = BrowserTestUtils.waitForNewTab(gBrowser, null);
-  EventUtils.synthesizeKey("KEY_ArrowDown");
-  BrowserTestUtils.waitForEvent(menuitem, "DOMMenuItemActive");
-  EventUtils.sendKey("return");
+  cm.activateItem(doc.getElementById("placesContext_open:newtab"));
   let newTab = await promiseTabOpened;
   return newTab;
 }
@@ -134,18 +132,13 @@ add_task(async function testStayopenBookmarksClicks() {
   );
   appMenu.click();
   await PopupShownPromise;
-  let libraryBtn = document.getElementById("appMenu-library-button");
-  libraryBtn.click();
-  let libView = document.getElementById("appMenu-libraryView");
-  let ViewShownPromise = BrowserTestUtils.waitForEvent(libView, "ViewShown");
-  await ViewShownPromise;
-  info("Library panel shown.");
-  let bookmarks = document.getElementById("appMenu-library-bookmarks-button");
-  bookmarks.click();
-  let BMview = document.getElementById("PanelUI-bookmarks");
-  ViewShownPromise = BrowserTestUtils.waitForEvent(BMview, "ViewShown");
-  await ViewShownPromise;
-  info("Library's bookmarks panel shown.");
+
+  let BMview;
+  document.getElementById("appMenu-bookmarks-button").click();
+  BMview = document.getElementById("PanelUI-bookmarks");
+  let promise = BrowserTestUtils.waitForEvent(BMview, "ViewShown");
+  await promise;
+  info("Bookmarks panel shown.");
 
   // Test App Menu's Bookmarks Library stayopen clicks: Ctrl-click.
   let menu = document.getElementById("panelMenu_bookmarksMenu");

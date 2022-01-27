@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2002-2010 The ANGLE Project Authors. All rights reserved.
+// Copyright 2002 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -55,7 +55,11 @@ bool IsVaryingIn(TQualifier qualifier);
 bool IsVaryingOut(TQualifier qualifier);
 bool IsVarying(TQualifier qualifier);
 bool IsGeometryShaderInput(GLenum shaderType, TQualifier qualifier);
+bool IsTessellationControlShaderInput(GLenum shaderType, TQualifier qualifier);
+bool IsTessellationControlShaderOutput(GLenum shaderType, TQualifier qualifier);
+bool IsTessellationEvaluationShaderInput(GLenum shaderType, TQualifier qualifier);
 InterpolationType GetInterpolationType(TQualifier qualifier);
+InterpolationType GetFieldInterpolationType(TQualifier qualifier);
 
 // Returns array brackets including size with outermost array size first, as specified in GLSL ES
 // 3.10 section 4.1.9.
@@ -76,6 +80,7 @@ bool IsOutputESSL(ShShaderOutput output);
 bool IsOutputGLSL(ShShaderOutput output);
 bool IsOutputHLSL(ShShaderOutput output);
 bool IsOutputVulkan(ShShaderOutput output);
+bool IsOutputMetal(ShShaderOutput output);
 
 bool IsInShaderStorageBlock(TIntermTyped *node);
 
@@ -87,6 +92,8 @@ bool IsSpecWithFunctionBodyNewScope(ShShaderSpec shaderSpec, int shaderVersion);
 ImplicitTypeConversion GetConversion(TBasicType t1, TBasicType t2);
 
 bool IsValidImplicitConversion(ImplicitTypeConversion conversion, TOperator op);
+
+size_t FindFieldIndex(const TFieldList &fieldList, const char *fieldName);
 }  // namespace sh
 
 #endif  // COMPILER_TRANSLATOR_UTIL_H_

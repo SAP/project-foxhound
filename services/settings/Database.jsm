@@ -30,7 +30,7 @@ class Database {
   }
 
   async list(options = {}) {
-    const { filters = {}, sort = "" } = options;
+    const { filters = {}, order = "" } = options;
     let results = [];
     try {
       await executeIDB(
@@ -73,7 +73,7 @@ class Database {
     for (const result of results) {
       delete result._cid;
     }
-    return sort ? Utils.sortObjects(sort, results) : results;
+    return order ? Utils.sortObjects(order, results) : results;
   }
 
   async importChanges(metadata, timestamp, records = [], options = {}) {
@@ -177,7 +177,17 @@ class Database {
         this.identifier
       );
     }
-    return entry ? entry.value : null;
+    if (!entry) {
+      return null;
+    }
+    // Some distributions where released with a modified dump that did not
+    // contain timestamps for last_modified. Work around this here, and return
+    // the timestamp as zero, so that the entries should get updated.
+    if (isNaN(entry.value)) {
+      console.warn(`Local timestamp is NaN for ${this.identifier}`);
+      return 0;
+    }
+    return entry.value;
   }
 
   async getMetadata() {

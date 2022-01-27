@@ -9,6 +9,7 @@
 #include "HashStore.h"
 #include "LookupCacheV4.h"
 #include "mozilla/Components.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/Unused.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsIThread.h"
@@ -76,7 +77,8 @@ nsresult SyncApplyUpdates(TableUpdateArray& aUpdates) {
   // the main thread. As a result we have to keep processing
   // pending event until |done| becomes true. If there's no
   // more pending event, what we only can do is wait.
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return done; }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil("url-classifier:SyncApplyUpdates"_ns,
+                                     [&]() { return done; }));
 
   return ret;
 }
@@ -117,28 +119,28 @@ nsresult PrefixArrayToPrefixStringMap(const _PrefixArray& aPrefixArray,
   // all prefixes of that length.
   nsClassHashtable<nsUint32HashKey, _PrefixArray> table;
   for (const auto& prefix : aPrefixArray) {
-    _PrefixArray* array = table.LookupOrAdd(prefix.Length());
+    _PrefixArray* array = table.GetOrInsertNew(prefix.Length());
     array->AppendElement(prefix);
   }
 
   // The resulting map entries will be a concatenation of all
   // prefix data for the prefixes of a given size.
-  for (auto iter = table.Iter(); !iter.Done(); iter.Next()) {
-    uint32_t size = iter.Key();
-    uint32_t count = iter.Data()->Length();
+  for (const auto& entry : table) {
+    uint32_t size = entry.GetKey();
+    uint32_t count = entry.GetData()->Length();
 
-    _Prefix* str = new _Prefix();
+    auto str = MakeUnique<_Prefix>();
     str->SetLength(size * count);
 
     char* dst = str->BeginWriting();
 
-    iter.Data()->Sort();
+    entry.GetData()->Sort();
     for (uint32_t i = 0; i < count; i++) {
-      memcpy(dst, iter.Data()->ElementAt(i).get(), size);
+      memcpy(dst, entry.GetData()->ElementAt(i).get(), size);
       dst += size;
     }
 
-    aOut.Put(size, str);
+    aOut.InsertOrUpdate(size, std::move(str));
   }
 
   return NS_OK;
@@ -184,9 +186,9 @@ void CheckContent(LookupCacheV4* aCache, const _PrefixArray& aPrefixArray) {
   PrefixStringMap expected;
   PrefixArrayToPrefixStringMap(aPrefixArray, expected);
 
-  for (auto iter = vlPSetMap.Iter(); !iter.Done(); iter.Next()) {
-    nsCString* expectedPrefix = expected.Get(iter.Key());
-    nsCString* resultPrefix = iter.UserData();
+  for (const auto& entry : vlPSetMap) {
+    nsCString* expectedPrefix = expected.Get(entry.GetKey());
+    nsCString* resultPrefix = entry.GetWeak();
 
     ASSERT_TRUE(resultPrefix->Equals(*expectedPrefix));
   }
@@ -214,7 +216,7 @@ static nsresult BuildCache(LookupCacheV4* cache,
 template <typename T>
 RefPtr<T> SetupLookupCache(const _PrefixArray& aPrefixArray,
                            nsCOMPtr<nsIFile>& aFile) {
-  RefPtr<T> cache = new T(GTEST_TABLE_V4, EmptyCString(), aFile);
+  RefPtr<T> cache = new T(GTEST_TABLE_V4, ""_ns, aFile);
 
   nsresult rv = cache->Init();
   EXPECT_EQ(rv, NS_OK);
@@ -232,7 +234,7 @@ RefPtr<T> SetupLookupCache(const _PrefixArray& aPrefixArray) {
 
   file->AppendNative(GTEST_SAFEBROWSING_DIR);
 
-  RefPtr<T> cache = new T(GTEST_TABLE_V4, EmptyCString(), file);
+  RefPtr<T> cache = new T(GTEST_TABLE_V4, ""_ns, file);
   nsresult rv = cache->Init();
   EXPECT_EQ(rv, NS_OK);
 

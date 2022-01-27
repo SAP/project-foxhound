@@ -43,20 +43,13 @@ class ClippedImage : public ImageWrapper {
   GetFrameAtSize(const gfx::IntSize& aSize, uint32_t aWhichFrame,
                  uint32_t aFlags) override;
   NS_IMETHOD_(bool)
-  IsImageContainerAvailable(layers::LayerManager* aManager,
+  IsImageContainerAvailable(WindowRenderer* aRenderer,
                             uint32_t aFlags) override;
-  NS_IMETHOD_(already_AddRefed<layers::ImageContainer>)
-  GetImageContainer(layers::LayerManager* aManager, uint32_t aFlags) override;
-  NS_IMETHOD_(bool)
-  IsImageContainerAvailableAtSize(layers::LayerManager* aManager,
-                                  const gfx::IntSize& aSize,
-                                  uint32_t aFlags) override;
   NS_IMETHOD_(ImgDrawResult)
-  GetImageContainerAtSize(layers::LayerManager* aManager,
-                          const gfx::IntSize& aSize,
-                          const Maybe<SVGImageContext>& aSVGContext,
-                          uint32_t aFlags,
-                          layers::ImageContainer** aOutContainer) override;
+  GetImageProvider(WindowRenderer* aRenderer, const gfx::IntSize& aSize,
+                   const Maybe<SVGImageContext>& aSVGContext,
+                   const Maybe<ImageIntRegion>& aRegion, uint32_t aFlags,
+                   WebRenderImageProvider** aProvider) override;
   NS_IMETHOD_(ImgDrawResult)
   Draw(gfxContext* aContext, const nsIntSize& aSize, const ImageRegion& aRegion,
        uint32_t aWhichFrame, gfx::SamplingFilter aSamplingFilter,
@@ -79,7 +72,8 @@ class ClippedImage : public ImageWrapper {
  private:
   std::pair<ImgDrawResult, RefPtr<SourceSurface>> GetFrameInternal(
       const nsIntSize& aSize, const Maybe<SVGImageContext>& aSVGContext,
-      uint32_t aWhichFrame, uint32_t aFlags, float aOpacity);
+      const Maybe<ImageIntRegion>& aRegion, uint32_t aWhichFrame,
+      uint32_t aFlags, float aOpacity);
   bool ShouldClip();
   ImgDrawResult DrawSingleTile(gfxContext* aContext, const nsIntSize& aSize,
                                const ImageRegion& aRegion, uint32_t aWhichFrame,

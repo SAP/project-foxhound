@@ -7,7 +7,6 @@
 #include "ZoomConstraintsClient.h"
 
 #include <inttypes.h>
-#include "LayersLogging.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
 #include "mozilla/layers/ZoomConstraints.h"
@@ -17,6 +16,7 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
 #include "nsIFrame.h"
+#include "nsIScrollableFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsPoint.h"
 #include "nsView.h"
@@ -40,7 +40,10 @@ using namespace mozilla::dom;
 using namespace mozilla::layers;
 
 ZoomConstraintsClient::ZoomConstraintsClient()
-    : mDocument(nullptr), mPresShell(nullptr) {}
+    : mDocument(nullptr),
+      mPresShell(nullptr),
+      mZoomConstraints(false, false, CSSToParentLayerScale(1.f),
+                       CSSToParentLayerScale(1.f)) {}
 
 ZoomConstraintsClient::~ZoomConstraintsClient() = default;
 
@@ -186,6 +189,9 @@ static mozilla::layers::ZoomConstraints ComputeZoomConstraintsFromViewportInfo(
 }
 
 void ZoomConstraintsClient::RefreshZoomConstraints() {
+  mZoomConstraints = ZoomConstraints(false, false, CSSToParentLayerScale(1.f),
+                                     CSSToParentLayerScale(1.f));
+
   nsIWidget* widget = GetWidget(mPresShell);
   if (!widget) {
     return;
@@ -209,22 +215,42 @@ void ZoomConstraintsClient::RefreshZoomConstraints() {
   nsViewportInfo viewportInfo = mDocument->GetViewportInfo(ViewAs<ScreenPixel>(
       screenSize, PixelCastJustification::LayoutDeviceIsScreenForBounds));
 
-  mozilla::layers::ZoomConstraints zoomConstraints =
+  mZoomConstraints =
       ComputeZoomConstraintsFromViewportInfo(viewportInfo, mDocument);
 
   if (mDocument->Fullscreen()) {
     ZCC_LOG("%p is in fullscreen, disallowing zooming\n", this);
-    zoomConstraints.mAllowZoom = false;
-    zoomConstraints.mAllowDoubleTapZoom = false;
+    mZoomConstraints.mAllowZoom = false;
+    mZoomConstraints.mAllowDoubleTapZoom = false;
   }
 
-  if (zoomConstraints.mAllowDoubleTapZoom) {
+  if (mDocument->IsStaticDocument()) {
+    ZCC_LOG("%p is in print or print preview, disallowing double tap zooming\n",
+            this);
+    mZoomConstraints.mAllowDoubleTapZoom = false;
+  }
+
+  if (nsContentUtils::IsPDFJS(mDocument->GetPrincipal())) {
+    ZCC_LOG("%p is pdf.js viewer, disallowing double tap zooming\n", this);
+    mZoomConstraints.mAllowDoubleTapZoom = false;
+  }
+
+  // On macOS the OS can send us a double tap zoom event from the touchpad and
+  // there are no touch screen macOS devices so we never wait to see if a second
+  // tap is coming so we can always allow double tap zooming on mac. We need
+  // this because otherwise the width check usually disables it.
+  bool allow_double_tap_always = false;
+#ifdef XP_MACOSX
+  allow_double_tap_always =
+      StaticPrefs::apz_mac_enable_double_tap_zoom_touchpad_gesture();
+#endif
+  if (!allow_double_tap_always && mZoomConstraints.mAllowDoubleTapZoom) {
     // If the CSS viewport is narrower than the screen (i.e. width <=
     // device-width) then we disable double-tap-to-zoom behaviour.
     CSSToLayoutDeviceScale scale =
         mPresShell->GetPresContext()->CSSToDevPixelScale();
     if ((viewportInfo.GetSize() * scale).width <= screenSize.width) {
-      zoomConstraints.mAllowDoubleTapZoom = false;
+      mZoomConstraints.mAllowDoubleTapZoom = false;
     }
   }
 
@@ -234,8 +260,8 @@ void ZoomConstraintsClient::RefreshZoomConstraints() {
   if (nsIScrollableFrame* rcdrsf =
           mPresShell->GetRootScrollFrameAsScrollable()) {
     ZCC_LOG("Notifying RCD-RSF that it is zoomable: %d\n",
-            zoomConstraints.mAllowZoom);
-    rcdrsf->SetZoomableByAPZ(zoomConstraints.mAllowZoom);
+            mZoomConstraints.mAllowZoom);
+    rcdrsf->SetZoomableByAPZ(mZoomConstraints.mAllowZoom);
   }
 
   ScrollableLayerGuid newGuid(LayersId{0}, presShellId, viewId);
@@ -248,6 +274,6 @@ void ZoomConstraintsClient::RefreshZoomConstraints() {
   }
   mGuid = Some(newGuid);
   ZCC_LOG("Sending constraints %s in %p for { %u, %" PRIu64 " }\n",
-          Stringify(zoomConstraints).c_str(), this, presShellId, viewId);
-  widget->UpdateZoomConstraints(presShellId, viewId, Some(zoomConstraints));
+          ToString(mZoomConstraints).c_str(), this, presShellId, viewId);
+  widget->UpdateZoomConstraints(presShellId, viewId, Some(mZoomConstraints));
 }

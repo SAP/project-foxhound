@@ -82,8 +82,8 @@ struct KernPair
   }
 
   protected:
-  HBGlyphID	left;
-  HBGlyphID	right;
+  HBGlyphID16	left;
+  HBGlyphID16	right;
   FWORD		value;
   public:
   DEFINE_SIZE_STATIC (6);
@@ -229,9 +229,7 @@ struct KerxSubTableFormat1
 
     bool is_actionable (StateTableDriver<Types, EntryData> *driver HB_UNUSED,
 			const Entry<EntryData> &entry)
-    {
-      return Format1EntryT::performAction (entry);
-    }
+    { return Format1EntryT::performAction (entry); }
     void transition (StateTableDriver<Types, EntryData> *driver,
 		     const Entry<EntryData> &entry)
     {
@@ -484,7 +482,7 @@ struct KerxSubTableFormat4
     };
 
     driver_context_t (const KerxSubTableFormat4 *table,
-			     hb_aat_apply_context_t *c_) :
+		      hb_aat_apply_context_t *c_) :
 	c (c_),
 	action_type ((table->flags & ActionType) >> 30),
 	ankrData ((HBUINT16 *) ((const char *) &table->machine + (table->flags & Offset))),
@@ -493,9 +491,7 @@ struct KerxSubTableFormat4
 
     bool is_actionable (StateTableDriver<Types, EntryData> *driver HB_UNUSED,
 			const Entry<EntryData> &entry)
-    {
-      return entry.data.ankrActionIndex != 0xFFFF;
-    }
+    { return entry.data.ankrActionIndex != 0xFFFF; }
     void transition (StateTableDriver<Types, EntryData> *driver,
 		     const Entry<EntryData> &entry)
     {
@@ -630,7 +626,7 @@ struct KerxSubTableFormat6
   bool is_long () const { return flags & ValuesAreLong; }
 
   int get_kerning (hb_codepoint_t left, hb_codepoint_t right,
-			  hb_aat_apply_context_t *c) const
+		   hb_aat_apply_context_t *c) const
   {
     unsigned int num_glyphs = c->sanitizer.get_num_glyphs ();
     if (is_long ())
@@ -714,18 +710,18 @@ struct KerxSubTableFormat6
   {
     struct Long
     {
-      LNNOffsetTo<Lookup<HBUINT32>>		rowIndexTable;
-      LNNOffsetTo<Lookup<HBUINT32>>		columnIndexTable;
-      LNNOffsetTo<UnsizedArrayOf<FWORD32>>	array;
+      NNOffset32To<Lookup<HBUINT32>>		rowIndexTable;
+      NNOffset32To<Lookup<HBUINT32>>		columnIndexTable;
+      NNOffset32To<UnsizedArrayOf<FWORD32>>	array;
     } l;
     struct Short
     {
-      LNNOffsetTo<Lookup<HBUINT16>>		rowIndexTable;
-      LNNOffsetTo<Lookup<HBUINT16>>		columnIndexTable;
-      LNNOffsetTo<UnsizedArrayOf<FWORD>>	array;
+      NNOffset32To<Lookup<HBUINT16>>		rowIndexTable;
+      NNOffset32To<Lookup<HBUINT16>>		columnIndexTable;
+      NNOffset32To<UnsizedArrayOf<FWORD>>	array;
     } s;
   } u;
-  LNNOffsetTo<UnsizedArrayOf<FWORD>>	vector;
+  NNOffset32To<UnsizedArrayOf<FWORD>>	vector;
   public:
   DEFINE_SIZE_STATIC (KernSubTableHeader::static_size + 24);
 };
@@ -779,11 +775,11 @@ struct KerxSubTable
     unsigned int subtable_type = get_type ();
     TRACE_DISPATCH (this, subtable_type);
     switch (subtable_type) {
-    case 0:	return_trace (c->dispatch (u.format0, hb_forward<Ts> (ds)...));
-    case 1:	return_trace (c->dispatch (u.format1, hb_forward<Ts> (ds)...));
-    case 2:	return_trace (c->dispatch (u.format2, hb_forward<Ts> (ds)...));
-    case 4:	return_trace (c->dispatch (u.format4, hb_forward<Ts> (ds)...));
-    case 6:	return_trace (c->dispatch (u.format6, hb_forward<Ts> (ds)...));
+    case 0:	return_trace (c->dispatch (u.format0, std::forward<Ts> (ds)...));
+    case 1:	return_trace (c->dispatch (u.format1, std::forward<Ts> (ds)...));
+    case 2:	return_trace (c->dispatch (u.format2, std::forward<Ts> (ds)...));
+    case 4:	return_trace (c->dispatch (u.format4, std::forward<Ts> (ds)...));
+    case 6:	return_trace (c->dispatch (u.format6, std::forward<Ts> (ds)...));
     default:	return_trace (c->default_return_value ());
     }
   }

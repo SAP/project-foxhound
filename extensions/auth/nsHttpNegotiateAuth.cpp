@@ -22,11 +22,13 @@
 #include "nsIHttpAuthenticableChannel.h"
 #include "nsIAuthModule.h"
 #include "nsIPrefBranch.h"
+#include "nsIPrefService.h"
 #include "nsIProxyInfo.h"
 #include "nsIURI.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsNetCID.h"
+#include "nsProxyRelease.h"
 #include "plbase64.h"
 #include "plstr.h"
 #include "mozilla/Base64.h"
@@ -47,6 +49,7 @@
 #include "nsUnicharUtils.h"
 #include "mozilla/net/HttpAuthUtils.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/net/DNS.h"
 
 using mozilla::Base64Decode;
 
@@ -145,7 +148,8 @@ nsHttpNegotiateAuth::GetAuthFlags(uint32_t* flags) {
 //
 NS_IMETHODIMP
 nsHttpNegotiateAuth::ChallengeReceived(nsIHttpAuthenticableChannel* authChannel,
-                                       const char* challenge, bool isProxyAuth,
+                                       const nsACString& challenge,
+                                       bool isProxyAuth,
                                        nsISupports** sessionState,
                                        nsISupports** continuationState,
                                        bool* identityInvalid) {
@@ -222,7 +226,7 @@ nsHttpNegotiateAuth::ChallengeReceived(nsIHttpAuthenticableChannel* authChannel,
 
   MOZ_ALWAYS_TRUE(module = nsIAuthModule::CreateInstance(authType));
 
-  rv = module->Init(service.get(), req_flags, nullptr, nullptr, nullptr);
+  rv = module->Init(service, req_flags, u""_ns, u""_ns, u""_ns);
 
   if (NS_FAILED(rv)) {
     return rv;
@@ -247,22 +251,15 @@ namespace {
 //
 class GetNextTokenCompleteEvent final : public nsIRunnable,
                                         public nsICancelable {
-  virtual ~GetNextTokenCompleteEvent() {
-    if (mCreds) {
-      free(mCreds);
-    }
-  };
-
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
 
   explicit GetNextTokenCompleteEvent(nsIHttpAuthenticatorCallback* aCallback)
-      : mCallback(aCallback), mCreds(nullptr), mCancelled(false) {}
+      : mCallback(aCallback) {}
 
-  NS_IMETHODIMP DispatchSuccess(
-      char* aCreds, uint32_t aFlags,
-      already_AddRefed<nsISupports> aSessionState,
-      already_AddRefed<nsISupports> aContinuationState) {
+  nsresult DispatchSuccess(const nsACString& aCreds, uint32_t aFlags,
+                           already_AddRefed<nsISupports> aSessionState,
+                           already_AddRefed<nsISupports> aContinuationState) {
     // Called from worker thread
     MOZ_ASSERT(!NS_IsMainThread());
 
@@ -274,9 +271,8 @@ class GetNextTokenCompleteEvent final : public nsIRunnable,
     return NS_DispatchToMainThread(this, NS_DISPATCH_NORMAL);
   }
 
-  NS_IMETHODIMP DispatchError(
-      already_AddRefed<nsISupports> aSessionState,
-      already_AddRefed<nsISupports> aContinuationState) {
+  nsresult DispatchError(already_AddRefed<nsISupports> aSessionState,
+                         already_AddRefed<nsISupports> aContinuationState) {
     // Called from worker thread
     MOZ_ASSERT(!NS_IsMainThread());
 
@@ -304,15 +300,21 @@ class GetNextTokenCompleteEvent final : public nsIRunnable,
     MOZ_ASSERT(NS_IsMainThread());
 
     mCancelled = true;
+    nsCOMPtr<nsIHttpAuthenticatorCallback> callback = std::move(mCallback);
+    if (callback) {
+      callback->OnCredsGenerated(mCreds, mFlags, aReason, nullptr, nullptr);
+    }
     return NS_OK;
   }
 
  private:
+  virtual ~GetNextTokenCompleteEvent() = default;
+
   nsCOMPtr<nsIHttpAuthenticatorCallback> mCallback;
-  char* mCreds;  // This class owns it, freed in destructor
-  uint32_t mFlags;
-  nsresult mResult;
-  bool mCancelled;
+  nsCString mCreds;
+  uint32_t mFlags = 0;
+  nsresult mResult = NS_OK;
+  bool mCancelled = false;
   nsCOMPtr<nsISupports> mSessionState;
   nsCOMPtr<nsISupports> mContinuationState;
 };
@@ -329,12 +331,12 @@ class GetNextTokenRunnable final : public mozilla::Runnable {
   ~GetNextTokenRunnable() override = default;
 
  public:
-  GetNextTokenRunnable(nsIHttpAuthenticableChannel* authChannel,
-                       const char* challenge, bool isProxyAuth,
-                       const char16_t* domain, const char16_t* username,
-                       const char16_t* password, nsISupports* sessionState,
-                       nsISupports* continuationState,
-                       GetNextTokenCompleteEvent* aCompleteEvent)
+  GetNextTokenRunnable(
+      nsMainThreadPtrHandle<nsIHttpAuthenticableChannel>& authChannel,
+      const nsACString& challenge, bool isProxyAuth, const nsAString& domain,
+      const nsAString& username, const nsAString& password,
+      nsISupports* sessionState, nsISupports* continuationState,
+      GetNextTokenCompleteEvent* aCompleteEvent)
       : mozilla::Runnable("GetNextTokenRunnable"),
         mAuthChannel(authChannel),
         mChallenge(challenge),
@@ -350,9 +352,9 @@ class GetNextTokenRunnable final : public mozilla::Runnable {
     // Runs on worker thread
     MOZ_ASSERT(!NS_IsMainThread());
 
-    char* creds;
+    nsCString creds;
     uint32_t flags;
-    nsresult rv = ObtainCredentialsAndFlags(&creds, &flags);
+    nsresult rv = ObtainCredentialsAndFlags(creds, &flags);
 
     // Passing session and continuation state this way to not touch
     // referencing of the object that may not be thread safe.
@@ -369,7 +371,7 @@ class GetNextTokenRunnable final : public mozilla::Runnable {
                                            mContinuationState.forget());
   }
 
-  NS_IMETHODIMP ObtainCredentialsAndFlags(char** aCreds, uint32_t* aFlags) {
+  NS_IMETHODIMP ObtainCredentialsAndFlags(nsCString& aCreds, uint32_t* aFlags) {
     nsresult rv;
 
     // Use negotiate service to call GenerateCredentials outside of main thread
@@ -391,9 +393,8 @@ class GetNextTokenRunnable final : public mozilla::Runnable {
     // Should any of the session or continuation states change inside
     // this method, they must be threadsafe.
     rv = authenticator->GenerateCredentials(
-        mAuthChannel, mChallenge.get(), mIsProxyAuth, mDomain.get(),
-        mUsername.get(), mPassword.get(), &sessionState, &continuationState,
-        aFlags, aCreds);
+        mAuthChannel, mChallenge, mIsProxyAuth, mDomain, mUsername, mPassword,
+        &sessionState, &continuationState, aFlags, aCreds);
     if (mSessionState != sessionState) {
       mSessionState = sessionState;
     }
@@ -404,7 +405,7 @@ class GetNextTokenRunnable final : public mozilla::Runnable {
   }
 
  private:
-  nsCOMPtr<nsIHttpAuthenticableChannel> mAuthChannel;
+  nsMainThreadPtrHandle<nsIHttpAuthenticableChannel> mAuthChannel;
   nsCString mChallenge;
   bool mIsProxyAuth;
   nsString mDomain;
@@ -420,9 +421,9 @@ class GetNextTokenRunnable final : public mozilla::Runnable {
 NS_IMETHODIMP
 nsHttpNegotiateAuth::GenerateCredentialsAsync(
     nsIHttpAuthenticableChannel* authChannel,
-    nsIHttpAuthenticatorCallback* aCallback, const char* challenge,
-    bool isProxyAuth, const char16_t* domain, const char16_t* username,
-    const char16_t* password, nsISupports* sessionState,
+    nsIHttpAuthenticatorCallback* aCallback, const nsACString& challenge,
+    bool isProxyAuth, const nsAString& domain, const nsAString& username,
+    const nsAString& password, nsISupports* sessionState,
     nsISupports* continuationState, nsICancelable** aCancelable) {
   NS_ENSURE_ARG(aCallback);
   NS_ENSURE_ARG_POINTER(aCancelable);
@@ -430,9 +431,12 @@ nsHttpNegotiateAuth::GenerateCredentialsAsync(
   RefPtr<GetNextTokenCompleteEvent> cancelEvent =
       new GetNextTokenCompleteEvent(aCallback);
 
+  nsMainThreadPtrHandle<nsIHttpAuthenticableChannel> handle(
+      new nsMainThreadPtrHolder<nsIHttpAuthenticableChannel>(
+          "nsIHttpAuthenticableChannel", authChannel, false));
   nsCOMPtr<nsIRunnable> getNextTokenRunnable = new GetNextTokenRunnable(
-      authChannel, challenge, isProxyAuth, domain, username, password,
-      sessionState, continuationState, cancelEvent);
+      handle, challenge, isProxyAuth, domain, username, password, sessionState,
+      continuationState, cancelEvent);
 
   nsresult rv = NS_DispatchBackgroundTask(
       getNextTokenRunnable, nsIEventTarget::DISPATCH_EVENT_MAY_BLOCK);
@@ -450,10 +454,10 @@ nsHttpNegotiateAuth::GenerateCredentialsAsync(
 //
 NS_IMETHODIMP
 nsHttpNegotiateAuth::GenerateCredentials(
-    nsIHttpAuthenticableChannel* authChannel, const char* challenge,
-    bool isProxyAuth, const char16_t* domain, const char16_t* username,
-    const char16_t* password, nsISupports** sessionState,
-    nsISupports** continuationState, uint32_t* flags, char** creds) {
+    nsIHttpAuthenticableChannel* authChannel, const nsACString& aChallenge,
+    bool isProxyAuth, const nsAString& domain, const nsAString& username,
+    const nsAString& password, nsISupports** sessionState,
+    nsISupports** continuationState, uint32_t* flags, nsACString& creds) {
   // ChallengeReceived must have been called previously.
   nsIAuthModule* module = (nsIAuthModule*)*continuationState;
   NS_ENSURE_TRUE(module, NS_ERROR_NOT_INITIALIZED);
@@ -461,12 +465,11 @@ nsHttpNegotiateAuth::GenerateCredentials(
   *flags = USING_INTERNAL_IDENTITY;
 
   LOG(("nsHttpNegotiateAuth::GenerateCredentials() [challenge=%s]\n",
-       challenge));
-
-  NS_ASSERTION(creds, "null param");
+       aChallenge.BeginReading()));
 
 #ifdef DEBUG
-  bool isGssapiAuth = !PL_strncasecmp(challenge, kNegotiate, kNegotiateLen);
+  bool isGssapiAuth = StringBeginsWith(aChallenge, "Negotiate"_ns,
+                                       nsCaseInsensitiveCStringComparator);
   NS_ASSERTION(isGssapiAuth, "Unexpected challenge");
 #endif
 
@@ -479,43 +482,43 @@ nsHttpNegotiateAuth::GenerateCredentials(
   // generally *does* require multiple round-trips.  Don't assume
   // auth can be completed in just 1 call.
   //
-  unsigned int len = strlen(challenge);
 
-  void *inToken = nullptr, *outToken;
-  uint32_t inTokenLen, outTokenLen;
-
-  if (len > kNegotiateLen) {
-    challenge += kNegotiateLen;
-    while (*challenge == ' ') challenge++;
-    len = strlen(challenge);
-
-    if (!len) return NS_ERROR_UNEXPECTED;
+  nsAutoCString inToken;
+  if (aChallenge.Length() > kNegotiateLen) {
+    nsDependentCSubstring challenge(aChallenge, kNegotiateLen);
+    uint32_t startPos = 0;
+    while (startPos < challenge.Length() && challenge[startPos] == ' ') {
+      startPos++;
+    }
+    if (startPos == challenge.Length()) {
+      return NS_ERROR_UNEXPECTED;
+    }
 
     // strip off any padding (see bug 230351)
-    while (len && challenge[len - 1] == '=') len--;
+    uint32_t len = challenge.Length();
+    while (len > startPos && challenge[len - 1] == '=') {
+      len--;
+    }
 
     //
     // Decode the response that followed the "Negotiate" token
     //
-    nsresult rv = Base64Decode(challenge, len, (char**)&inToken, &inTokenLen);
-
-    if (NS_FAILED(rv)) {
-      free(inToken);
-      return rv;
-    }
-  } else {
-    //
-    // Initializing, don't use an input token.
-    //
-    inTokenLen = 0;
+    (void)Base64Decode(
+        nsDependentCSubstring(challenge, startPos, len - startPos), inToken);
   }
 
-  nsresult rv =
-      module->GetNextToken(inToken, inTokenLen, &outToken, &outTokenLen);
-
-  free(inToken);
-
-  if (NS_FAILED(rv)) return rv;
+  void* outToken = nullptr;
+  uint32_t outTokenLen = 0;
+  nsresult rv = module->GetNextToken(inToken.get(), inToken.Length(), &outToken,
+                                     &outTokenLen);
+  if (NS_FAILED(rv)) {
+    if (outToken) {
+      // Technically if the call fails we shouln't have allocated, but
+      // Coverity doesn't know that.
+      free(outToken);
+    }
+    return rv;
+  }
 
   if (outTokenLen == 0) {
     LOG(("  No output token to send, exiting"));
@@ -525,20 +528,17 @@ nsHttpNegotiateAuth::GenerateCredentials(
   //
   // base64 encode the output token.
   //
-  char* encoded_token = PL_Base64Encode((char*)outToken, outTokenLen, nullptr);
-
+  nsAutoCString encodedToken;
+  rv = mozilla::Base64Encode(
+      nsDependentCSubstring((char*)outToken, outTokenLen), encodedToken);
   free(outToken);
-
-  if (!encoded_token) return NS_ERROR_OUT_OF_MEMORY;
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   LOG(("  Sending a token of length %d\n", outTokenLen));
 
-  // allocate a buffer sizeof("Negotiate" + " " + b64output_token + "\0")
-  const int bufsize = kNegotiateLen + 1 + strlen(encoded_token) + 1;
-  *creds = (char*)moz_xmalloc(bufsize);
-  snprintf(*creds, bufsize, "%s %s", kNegotiate, encoded_token);
-
-  PR_Free(encoded_token);  // PL_Base64Encode() uses PR_Malloc().
+  creds = nsPrintfCString("%s %s", kNegotiate, encodedToken.get());
   return rv;
 }
 
@@ -555,13 +555,16 @@ bool nsHttpNegotiateAuth::TestBoolPref(const char* pref) {
 
 bool nsHttpNegotiateAuth::TestNonFqdn(nsIURI* uri) {
   nsAutoCString host;
-  PRNetAddr addr;
 
-  if (!TestBoolPref(kNegotiateAuthAllowNonFqdn)) return false;
+  if (!TestBoolPref(kNegotiateAuthAllowNonFqdn)) {
+    return false;
+  }
 
-  if (NS_FAILED(uri->GetAsciiHost(host))) return false;
+  if (NS_FAILED(uri->GetAsciiHost(host))) {
+    return false;
+  }
 
   // return true if host does not contain a dot and is not an ip address
   return !host.IsEmpty() && !host.Contains('.') &&
-         PR_StringToNetAddr(host.BeginReading(), &addr) != PR_SUCCESS;
+         !mozilla::net::HostIsIPLiteral(host);
 }

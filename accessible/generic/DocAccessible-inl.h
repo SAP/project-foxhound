@@ -22,13 +22,14 @@
 namespace mozilla {
 namespace a11y {
 
-inline Accessible* DocAccessible::AccessibleOrTrueContainer(
+inline LocalAccessible* DocAccessible::AccessibleOrTrueContainer(
     nsINode* aNode, bool aNoContainerIfPruned) const {
   // HTML comboboxes have no-content list accessible as an intermediate
   // containing all options.
-  Accessible* container = GetAccessibleOrContainer(aNode, aNoContainerIfPruned);
+  LocalAccessible* container =
+      GetAccessibleOrContainer(aNode, aNoContainerIfPruned);
   if (container && container->IsHTMLCombobox()) {
-    return container->FirstChild();
+    return container->LocalFirstChild();
   }
   return container;
 }
@@ -41,6 +42,16 @@ inline nsIAccessiblePivot* DocAccessible::VirtualCursor() {
   return mVirtualCursor;
 }
 
+inline bool DocAccessible::IsContentLoaded() const {
+  // eDOMLoaded flag check is used for error pages as workaround to make this
+  // method return correct result since error pages do not receive 'pageshow'
+  // event and as consequence Document::IsShowing() returns false.
+  return mDocumentNode && mDocumentNode->IsVisible() &&
+         (mDocumentNode->IsShowing() || HasLoadState(eDOMLoaded));
+}
+
+inline bool DocAccessible::IsHidden() const { return mDocumentNode->Hidden(); }
+
 inline void DocAccessible::FireDelayedEvent(AccEvent* aEvent) {
 #ifdef A11Y_LOG
   if (logging::IsEnabled(logging::eDocLoad)) logging::DocLoadEventFired(aEvent);
@@ -50,7 +61,7 @@ inline void DocAccessible::FireDelayedEvent(AccEvent* aEvent) {
 }
 
 inline void DocAccessible::FireDelayedEvent(uint32_t aEventType,
-                                            Accessible* aTarget) {
+                                            LocalAccessible* aTarget) {
   RefPtr<AccEvent> event = new AccEvent(aEventType, aTarget);
   FireDelayedEvent(event);
 }
@@ -73,8 +84,9 @@ inline void DocAccessible::UpdateText(nsIContent* aTextNode) {
   NS_ASSERTION(mNotificationController, "The document was shut down!");
 
   // Ignore the notification if initial tree construction hasn't been done yet.
-  if (mNotificationController && HasLoadState(eTreeConstructed))
+  if (mNotificationController && HasLoadState(eTreeConstructed)) {
     mNotificationController->ScheduleTextUpdate(aTextNode);
+  }
 }
 
 inline void DocAccessible::NotifyOfLoad(uint32_t aLoadEventType) {
@@ -90,25 +102,26 @@ inline void DocAccessible::NotifyOfLoad(uint32_t aLoadEventType) {
   }
 }
 
-inline void DocAccessible::MaybeNotifyOfValueChange(Accessible* aAccessible) {
+inline void DocAccessible::MaybeNotifyOfValueChange(
+    LocalAccessible* aAccessible) {
   if (aAccessible->IsCombobox() || aAccessible->Role() == roles::ENTRY ||
       aAccessible->Role() == roles::SPINBUTTON) {
     FireDelayedEvent(nsIAccessibleEvent::EVENT_TEXT_VALUE_CHANGE, aAccessible);
   }
 }
 
-inline Accessible* DocAccessible::GetAccessibleEvenIfNotInMapOrContainer(
+inline LocalAccessible* DocAccessible::GetAccessibleEvenIfNotInMapOrContainer(
     nsINode* aNode) const {
-  Accessible* acc = GetAccessibleEvenIfNotInMap(aNode);
+  LocalAccessible* acc = GetAccessibleEvenIfNotInMap(aNode);
   return acc ? acc : GetContainerAccessible(aNode);
 }
 
-inline void DocAccessible::CreateSubtree(Accessible* aChild) {
+inline void DocAccessible::CreateSubtree(LocalAccessible* aChild) {
   // If a focused node has been shown then it could mean its frame was recreated
   // while the node stays focused and we need to fire focus event on
   // the accessible we just created. If the queue contains a focus event for
   // this node already then it will be suppressed by this one.
-  Accessible* focusedAcc = nullptr;
+  LocalAccessible* focusedAcc = nullptr;
   CacheChildrenInSubtree(aChild, &focusedAcc);
 
 #ifdef A11Y_LOG
@@ -150,18 +163,10 @@ inline DocAccessible::AttrRelProviders* DocAccessible::GetOrCreateRelProviders(
     dom::Element* aElement, const nsAString& aID) {
   dom::DocumentOrShadowRoot* docOrShadowRoot =
       aElement->GetUncomposedDocOrConnectedShadowRoot();
-  DependentIDsHashtable* hash = mDependentIDsHashes.Get(docOrShadowRoot);
-  if (!hash) {
-    hash = new DependentIDsHashtable();
-    mDependentIDsHashes.Put(docOrShadowRoot, hash);
-  }
+  DependentIDsHashtable* hash =
+      mDependentIDsHashes.GetOrInsertNew(docOrShadowRoot);
 
-  AttrRelProviders* providers = hash->Get(aID);
-  if (!providers) {
-    providers = new AttrRelProviders();
-    hash->Put(aID, providers);
-  }
-  return providers;
+  return hash->GetOrInsertNew(aID);
 }
 
 inline void DocAccessible::RemoveRelProvidersIfEmpty(dom::Element* aElement,

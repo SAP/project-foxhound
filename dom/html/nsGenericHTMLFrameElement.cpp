@@ -6,15 +6,16 @@
 
 #include "nsGenericHTMLFrameElement.h"
 
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLIFrameElement.h"
 #include "mozilla/dom/XULFrameElement.h"
 #include "mozilla/dom/BrowserBridgeChild.h"
 #include "mozilla/dom/WindowProxyHolder.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ProfilerLabels.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/ErrorResult.h"
-#include "GeckoProfiler.h"
 #include "nsAttrValueInlines.h"
 #include "nsContentUtils.h"
 #include "nsIDocShell.h"
@@ -243,8 +244,8 @@ nsresult nsGenericHTMLFrameElement::AfterSetAttr(
     if (aName == nsGkAtoms::scrolling) {
       if (mFrameLoader) {
         ScrollbarPreference pref = MapScrollingAttribute(aValue);
-        if (nsIDocShell* docshell = mFrameLoader->GetExistingDocShell()) {
-          nsDocShell::Cast(docshell)->SetScrollbarPreference(pref);
+        if (nsDocShell* docshell = mFrameLoader->GetExistingDocShell()) {
+          docshell->SetScrollbarPreference(pref);
         } else if (auto* child = mFrameLoader->GetBrowserBridgeChild()) {
           // NOTE(emilio): We intentionally don't deal with the
           // GetBrowserParent() case, and only deal with the fission iframe
@@ -279,8 +280,7 @@ void nsGenericHTMLFrameElement::AfterMaybeChangeAttr(
   if (aNamespaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::src) {
       mSrcTriggeringPrincipal = nsContentUtils::GetAttrTriggeringPrincipal(
-          this, aValue ? aValue->String() : EmptyString(),
-          aMaybeScriptedPrincipal);
+          this, aValue ? aValue->String() : u""_ns, aMaybeScriptedPrincipal);
       if (!IsHTMLElement(nsGkAtoms::iframe) ||
           !HasAttr(kNameSpaceID_None, nsGkAtoms::srcdoc)) {
         // Don't propagate error here. The attribute was successfully
@@ -292,11 +292,7 @@ void nsGenericHTMLFrameElement::AfterMaybeChangeAttr(
       RefPtr<BrowsingContext> bc =
           mFrameLoader ? mFrameLoader->GetExtantBrowsingContext() : nullptr;
       if (bc) {
-        if (aValue) {
-          bc->SetName(aValue->String());
-        } else {
-          bc->SetName(EmptyString());
-        }
+        MOZ_ALWAYS_SUCCEEDS(bc->SetName(aValue ? aValue->String() : u""_ns));
       }
     }
   }

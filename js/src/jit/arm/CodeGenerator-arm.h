@@ -9,6 +9,7 @@
 
 #include "jit/arm/Assembler-arm.h"
 #include "jit/shared/CodeGenerator-shared.h"
+#include "js/ScalarType.h"  // js::Scalar::Type
 
 namespace js {
 namespace jit {
@@ -99,6 +100,11 @@ class CodeGeneratorARM : public CodeGeneratorShared {
 
   void emitTableSwitchDispatch(MTableSwitch* mir, Register index,
                                Register base);
+
+  void emitBigIntDiv(LBigIntDiv* ins, Register dividend, Register divisor,
+                     Register output, Label* fail);
+  void emitBigIntMod(LBigIntMod* ins, Register dividend, Register divisor,
+                     Register output, Label* fail);
 
   template <typename T>
   void emitWasmLoad(T* ins);

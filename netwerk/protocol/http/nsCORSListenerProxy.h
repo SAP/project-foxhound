@@ -15,12 +15,12 @@
 #include "nsTArray.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIChannelEventSink.h"
-#include "nsIHttpChannel.h"
 #include "nsIThreadRetargetableStreamListener.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Mutex.h"
 
+class nsIHttpChannel;
 class nsIURI;
 class nsIPrincipal;
 class nsINetworkInterceptController;
@@ -58,6 +58,7 @@ class nsCORSListenerProxy final : public nsIStreamListener,
   NS_DECL_NSITHREADRETARGETABLESTREAMLISTENER
 
   static void Shutdown();
+  static void ClearCache();
 
   [[nodiscard]] nsresult Init(nsIChannel* aChannel,
                               DataURIHandling aAllowDataURI);
@@ -79,11 +80,12 @@ class nsCORSListenerProxy final : public nsIStreamListener,
   // Only nsHttpChannel can invoke CORS preflights
   friend class mozilla::net::nsHttpChannel;
 
-  static void RemoveFromCorsPreflightCache(nsIURI* aURI,
-                                           nsIPrincipal* aRequestingPrincipal);
+  static void RemoveFromCorsPreflightCache(
+      nsIURI* aURI, nsIPrincipal* aRequestingPrincipal,
+      const mozilla::OriginAttributes& aOriginAttributes);
   [[nodiscard]] static nsresult StartCORSPreflight(
       nsIChannel* aRequestChannel, nsICorsPreflightCallback* aCallback,
-      nsTArray<nsCString>& aACUnsafeHeaders, nsIChannel** aPreflightChannel);
+      nsTArray<nsCString>& aUnsafeHeaders, nsIChannel** aPreflightChannel);
 
   ~nsCORSListenerProxy() = default;
 

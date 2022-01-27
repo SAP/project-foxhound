@@ -15,8 +15,7 @@
 #include "mozilla/dom/JSProcessActorChild.h"
 #include "mozilla/dom/JSProcessActorProtocol.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 already_AddRefed<JSActorProtocol> ProcessActor::MatchingJSActorProtocol(
     JSActorService* aActorSvc, const nsACString& aName, ErrorResult& aRv) {
@@ -28,12 +27,12 @@ already_AddRefed<JSActorProtocol> ProcessActor::MatchingJSActorProtocol(
     return nullptr;
   }
 
-  if (!proto->Matches(GetRemoteType())) {
-    aRv.Throw(NS_ERROR_NOT_AVAILABLE);
+  if (!proto->Matches(GetRemoteType(), aRv)) {
+    MOZ_ASSERT(aRv.Failed());
     return nullptr;
   }
+  MOZ_ASSERT(!aRv.Failed());
   return proto.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

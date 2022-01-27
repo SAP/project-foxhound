@@ -19,7 +19,7 @@ add_task(async function testRollback() {
   is(Preferences.get(prefs.BREADCRUMB_PREF), true, "Breadcrumb saved.");
   is(
     Preferences.get(prefs.TRR_SELECT_URI_PREF),
-    "https://dummytrr.com/query",
+    "https://example.com/dns-query",
     "TRR selection complete."
   );
   await checkTRRSelectionTelemetry();
@@ -64,7 +64,7 @@ add_task(async function testRollback() {
   // Rollback!
   setPassingHeuristics();
   Preferences.reset(prefs.ENABLED_PREF);
-  await waitForStateTelemetry(["rollback", "shutdown"]);
+  await waitForStateTelemetry(["shutdown", "rollback"]);
   await ensureTRRMode(undefined);
   ensureNoTRRSelectionTelemetry();
   await ensureNoHeuristicsTelemetry();
@@ -87,7 +87,7 @@ add_task(async function testRollback() {
 
   // Rollback again for good measure! This time with failing heuristics.
   Preferences.reset(prefs.ENABLED_PREF);
-  await waitForStateTelemetry(["rollback", "shutdown"]);
+  await waitForStateTelemetry(["shutdown", "rollback"]);
   await ensureTRRMode(undefined);
   ensureNoTRRSelectionTelemetry();
   await ensureNoHeuristicsTelemetry();
@@ -110,7 +110,7 @@ add_task(async function testRollback() {
 
   // Rollback again, this time with TRR mode set to 2 prior to doing so.
   Preferences.reset(prefs.ENABLED_PREF);
-  await waitForStateTelemetry(["rollback", "shutdown"]);
+  await waitForStateTelemetry(["shutdown", "rollback"]);
   await ensureTRRMode(undefined);
   ensureNoTRRSelectionTelemetry();
   await ensureNoHeuristicsTelemetry();

@@ -1,10 +1,7 @@
-from __future__ import unicode_literals
-
+import io
 import os
 import sys
-
-import mock
-import six
+from unittest import mock
 
 from ...localpaths import repo_root
 from .. import lint as lint_mod
@@ -54,7 +51,7 @@ def test_filter_ignorelist_errors():
 
 
 def test_parse_ignorelist():
-    input_buffer = six.StringIO("""
+    input_buffer = io.StringIO("""
 # Comment
 CR AT EOL: svg/import/*
 CR AT EOL: streams/resources/test-utils.js
@@ -530,7 +527,9 @@ def test_main_with_args():
                                           [os.path.relpath(os.path.join(os.getcwd(), x), repo_root)
                                            for x in ['a', 'b', 'c']],
                                           "normal",
-                                          None)
+                                          None,
+                                          None,
+                                          0)
     finally:
         sys.argv = orig_argv
 
@@ -542,7 +541,7 @@ def test_main_no_args():
         with _mock_lint('lint', return_value=True) as m:
             with _mock_lint('changed_files', return_value=['foo', 'bar']):
                 lint_mod.main(**vars(create_parser().parse_args()))
-                m.assert_called_once_with(repo_root, ['foo', 'bar'], "normal", None)
+                m.assert_called_once_with(repo_root, ['foo', 'bar'], "normal", None, None, 0)
     finally:
         sys.argv = orig_argv
 
@@ -554,6 +553,6 @@ def test_main_all():
         with _mock_lint('lint', return_value=True) as m:
             with _mock_lint('all_filesystem_paths', return_value=['foo', 'bar']):
                 lint_mod.main(**vars(create_parser().parse_args()))
-                m.assert_called_once_with(repo_root, ['foo', 'bar'], "normal", None)
+                m.assert_called_once_with(repo_root, ['foo', 'bar'], "normal", None, None, 0)
     finally:
         sys.argv = orig_argv

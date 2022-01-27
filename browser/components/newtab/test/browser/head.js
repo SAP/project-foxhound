@@ -2,6 +2,11 @@
 
 ChromeUtils.defineModuleGetter(
   this,
+  "ObjectUtils",
+  "resource://gre/modules/ObjectUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "PlacesTestUtils",
   "resource://testing-common/PlacesTestUtils.jsm"
 );
@@ -10,16 +15,109 @@ ChromeUtils.defineModuleGetter(
   "QueryCache",
   "resource://activity-stream/lib/ASRouterTargeting.jsm"
 );
-
+// eslint-disable-next-line no-unused-vars
+const { FxAccounts } = ChromeUtils.import(
+  "resource://gre/modules/FxAccounts.jsm"
+);
 // We import sinon here to make it available across all mochitest test files
 // eslint-disable-next-line no-unused-vars
 const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+// Set the content pref to make it available across tests
+const ABOUT_WELCOME_OVERRIDE_CONTENT_PREF = "browser.aboutwelcome.screens";
+// Test differently for windows 7 as theme screens are removed.
+// eslint-disable-next-line no-unused-vars
+const win7Content = AppConstants.isPlatformAndVersionAtMost("win", "6.1");
 
 function popPrefs() {
   return SpecialPowers.popPrefEnv();
 }
 function pushPrefs(...prefs) {
   return SpecialPowers.pushPrefEnv({ set: prefs });
+}
+// eslint-disable-next-line no-unused-vars
+async function getAboutWelcomeParent(browser) {
+  let windowGlobalParent = browser.browsingContext.currentWindowGlobal;
+  return windowGlobalParent.getActor("AboutWelcome");
+}
+// eslint-disable-next-line no-unused-vars
+async function setAboutWelcomeMultiStage(value = "") {
+  return pushPrefs([ABOUT_WELCOME_OVERRIDE_CONTENT_PREF, value]);
+}
+
+/**
+ * Setup functions to test welcome UI
+ */
+// eslint-disable-next-line no-unused-vars
+async function test_screen_content(
+  browser,
+  experiment,
+  expectedSelectors = [],
+  unexpectedSelectors = []
+) {
+  await ContentTask.spawn(
+    browser,
+    { expectedSelectors, experiment, unexpectedSelectors },
+    async ({
+      expectedSelectors: expected,
+      experiment: experimentName,
+      unexpectedSelectors: unexpected,
+    }) => {
+      for (let selector of expected) {
+        await ContentTaskUtils.waitForCondition(
+          () => content.document.querySelector(selector),
+          `Should render ${selector} in ${experimentName}`
+        );
+      }
+      for (let selector of unexpected) {
+        ok(
+          !content.document.querySelector(selector),
+          `Should not render ${selector} in ${experimentName}`
+        );
+      }
+
+      if (experimentName === "home") {
+        Assert.equal(
+          content.document.location.href,
+          "about:home",
+          "Navigated to about:home"
+        );
+      } else {
+        Assert.equal(
+          content.document.location.href,
+          "about:welcome",
+          "Navigated to a welcome screen"
+        );
+      }
+    }
+  );
+}
+
+// eslint-disable-next-line no-unused-vars
+async function onButtonClick(browser, elementId) {
+  await ContentTask.spawn(
+    browser,
+    { elementId },
+    async ({ elementId: buttonId }) => {
+      await ContentTaskUtils.waitForCondition(
+        () => content.document.querySelector(buttonId),
+        buttonId
+      );
+      let button = content.document.querySelector(buttonId);
+      button.click();
+    }
+  );
+}
+
+// Toggle the feed off and on as a workaround to read the new prefs.
+async function toggleTopsitesPref() {
+  await pushPrefs([
+    "browser.newtabpage.activity-stream.feeds.system.topsites",
+    false,
+  ]);
+  await pushPrefs([
+    "browser.newtabpage.activity-stream.feeds.system.topsites",
+    true,
+  ]);
 }
 
 // eslint-disable-next-line no-unused-vars
@@ -29,19 +127,31 @@ async function setDefaultTopSites() {
     "browser.newtabpage.activity-stream.default.sites",
     "https://www.youtube.com/,https://www.facebook.com/,https://www.amazon.com/,https://www.reddit.com/,https://www.wikipedia.org/,https://twitter.com/",
   ]);
-  // Toggle the feed off and on as a workaround to read the new prefs.
-  await pushPrefs([
-    "browser.newtabpage.activity-stream.feeds.system.topsites",
-    false,
-  ]);
-  await pushPrefs([
-    "browser.newtabpage.activity-stream.feeds.system.topsites",
-    true,
-  ]);
+  await toggleTopsitesPref();
   await pushPrefs([
     "browser.newtabpage.activity-stream.improvesearch.topSiteSearchShortcuts",
     true,
   ]);
+}
+
+// eslint-disable-next-line no-unused-vars
+async function setTestTopSites() {
+  await pushPrefs([
+    "browser.newtabpage.activity-stream.improvesearch.topSiteSearchShortcuts",
+    false,
+  ]);
+  // The pref for TopSites is empty by default.
+  // Using a topsite with example.com allows us to open the topsite without a network request.
+  await pushPrefs([
+    "browser.newtabpage.activity-stream.default.sites",
+    "https://example.com/",
+  ]);
+  await toggleTopsitesPref();
+}
+
+// eslint-disable-next-line no-unused-vars
+async function setAboutWelcomePref(value) {
+  return pushPrefs(["browser.aboutwelcome.enabled", value]);
 }
 
 // eslint-disable-next-line no-unused-vars
@@ -65,6 +175,17 @@ async function waitForPreloaded(browser) {
   if (readyState !== "complete") {
     await BrowserTestUtils.browserLoaded(browser);
   }
+}
+
+/**
+ * Helper function to navigate and wait for page to load
+ * https://searchfox.org/mozilla-central/rev/b2716c233e9b4398fc5923cbe150e7f83c7c6c5b/testing/mochitest/BrowserTestUtils/BrowserTestUtils.jsm#383
+ */
+// eslint-disable-next-line no-unused-vars
+async function waitForUrlLoad(url) {
+  let browser = gBrowser.selectedBrowser;
+  BrowserTestUtils.loadURI(browser, url);
+  await BrowserTestUtils.browserLoaded(browser, false, url);
 }
 
 /**

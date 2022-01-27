@@ -24,7 +24,7 @@ httpServer.registerPathHandler(`/`, function(request, response) {
     </html>`);
 });
 
-const TEST_URI = `data:text/html,<meta charset=utf8>
+const TEST_URI = `data:text/html,<!DOCTYPE html><meta charset=utf8>
   <style>
     button {
       cursor: unknownCursor;
@@ -38,9 +38,6 @@ const TEST_URI = `data:text/html,<meta charset=utf8>
 add_task(async function() {
   // Enable CSS Warnings
   await pushPref("devtools.webconsole.filter.css", true);
-  if (isFissionEnabled()) {
-    await pushPref("devtools.contenttoolbox.fission", true);
-  }
 
   const hud = await openNewTabAndConsole(TEST_URI);
   const toolbox = hud.toolbox;

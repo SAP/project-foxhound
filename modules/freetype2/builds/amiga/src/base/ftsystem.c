@@ -4,8 +4,8 @@
 /*                                                                         */
 /*    Amiga-specific FreeType low-level system interface (body).           */
 /*                                                                         */
-/*  Copyright (C) 1996-2020 by                                             */
-/*  David Turner, Robert Wilhelm, Werner Lemberg and Detlef Würkner.       */
+/*  Copyright (C) 1996-2021 by                                             */
+/*  David Turner, Robert Wilhelm, Werner Lemberg and Detlef WÃ¼rkner.       */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
 /*  modified, and distributed under the terms of the FreeType project      */
@@ -26,7 +26,7 @@
 
   /*************************************************************************/
   /*                                                                       */
-  /* Maintained by Detlef Würkner <TetiSoft@apg.lahn.de>                   */
+  /* Maintained by Detlef WÃ¼rkner <TetiSoft@apg.lahn.de>                   */
   /*                                                                       */
   /* Based on the original ftsystem.c,                                     */
   /* modified to avoid fopen(), fclose(), fread(), fseek(), ftell(),       */
@@ -96,10 +96,10 @@ Free_VecPooled( APTR  poolHeader,
 
 #include <ft2build.h>
 #include FT_CONFIG_CONFIG_H
-#include FT_INTERNAL_DEBUG_H
-#include FT_SYSTEM_H
-#include FT_ERRORS_H
-#include FT_TYPES_H
+#include <freetype/internal/ftdebug.h>
+#include <freetype/ftsystem.h>
+#include <freetype/fterrors.h>
+#include <freetype/fttypes.h>
 
 #include <stdio.h>
 #include <stdlib.h>

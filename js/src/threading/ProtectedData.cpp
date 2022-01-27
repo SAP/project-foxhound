@@ -46,6 +46,10 @@ void CheckThreadLocal::check() const {
 }
 
 void CheckContextLocal::check() const {
+  if (!cx_->isInitialized()) {
+    return;
+  }
+
   JSContext* cx = TlsContext.get();
   MOZ_ASSERT(cx);
   MOZ_ASSERT_IF(cx->isMainThreadContext(),
@@ -73,14 +77,9 @@ void CheckZone<Helper>::check() const {
     return;
   }
 
-  if (zone->usedByHelperThread()) {
-    // This may only be accessed by the helper thread using this zone.
-    MOZ_ASSERT(zone->ownedByCurrentHelperThread());
-  } else {
-    // The main thread is permitted access to all zones. These accesses
-    // are threadsafe if the zone is not in use by a helper thread.
-    MOZ_ASSERT(CurrentThreadCanAccessRuntime(TlsContext.get()->runtime()));
-  }
+  // The main thread is permitted access to all zones. These accesses
+  // are threadsafe if the zone is not in use by a helper thread.
+  MOZ_ASSERT(CurrentThreadCanAccessRuntime(TlsContext.get()->runtime()));
 }
 
 template class CheckZone<AllowedHelperThread::None>;
@@ -96,14 +95,13 @@ void CheckGlobalLock<Lock, Helper>::check() const {
 
   switch (Lock) {
     case GlobalLock::GCLock:
-      MOZ_ASSERT(TlsContext.get()->runtime()->gc.currentThreadHasLockedGC());
+      TlsContext.get()->runtime()->gc.assertCurrentThreadHasLockedGC();
       break;
     case GlobalLock::ScriptDataLock:
-      MOZ_ASSERT(
-          TlsContext.get()->runtime()->currentThreadHasScriptDataAccess());
+      TlsContext.get()->runtime()->assertCurrentThreadHasScriptDataAccess();
       break;
     case GlobalLock::HelperThreadLock:
-      MOZ_ASSERT(HelperThreadState().isLockedByCurrentThread());
+      gHelperThreadLock.assertOwnedByCurrentThread();
       break;
   }
 }
@@ -122,17 +120,7 @@ void CheckArenaListAccess<Helper>::check() const {
     return;
   }
 
-  JSRuntime* rt = TlsContext.get()->runtime();
   if (zone->isAtomsZone()) {
-    // The main thread can access the atoms arenas if it holds all the atoms
-    // table locks.
-    if (rt->currentThreadHasAtomsTableAccess()) {
-      return;
-    }
-
-    // Otherwise we must hold the GC lock if parallel parsing is running.
-    MOZ_ASSERT_IF(rt->isOffThreadParseRunning(),
-                  rt->gc.currentThreadHasLockedGC());
     return;
   }
 

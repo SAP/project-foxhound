@@ -97,7 +97,7 @@ XPCOMUtils.defineLazyGetter(this, "SyncPingSchema", function() {
 
 XPCOMUtils.defineLazyGetter(this, "SyncPingValidator", function() {
   let ns = {};
-  ChromeUtils.import("resource://testing-common/ajv-4.1.1.js", ns);
+  ChromeUtils.import("resource://testing-common/ajv-6.12.6.js", ns);
   let ajv = new ns.Ajv({ async: "co*" });
   return ajv.compile(SyncPingSchema);
 });
@@ -617,9 +617,8 @@ async function promiseVisit(expectedType, expectedURI) {
   return new Promise(resolve => {
     function done(type, uri) {
       if (uri == expectedURI.spec && type == expectedType) {
-        PlacesUtils.history.removeObserver(observer);
         PlacesObservers.removeListener(
-          ["page-visited"],
+          ["page-visited", "page-removed"],
           observer.handlePlacesEvents
         );
         resolve();
@@ -628,23 +627,19 @@ async function promiseVisit(expectedType, expectedURI) {
     let observer = {
       handlePlacesEvents(events) {
         Assert.equal(events.length, 1);
-        Assert.equal(events[0].type, "page-visited");
-        done("added", events[0].url);
+
+        if (events[0].type === "page-visited") {
+          done("added", events[0].url);
+        } else if (events[0].type === "page-removed") {
+          Assert.ok(events[0].isRemovedFromStore);
+          done("removed", events[0].url);
+        }
       },
-      onBeginUpdateBatch() {},
-      onEndUpdateBatch() {},
-      onTitleChanged() {},
-      onFrecencyChanged() {},
-      onManyFrecenciesChanged() {},
-      onDeleteURI(uri) {
-        done("removed", uri.spec);
-      },
-      onClearHistory() {},
-      onPageChanged() {},
-      onDeleteVisits() {},
     };
-    PlacesUtils.history.addObserver(observer, false);
-    PlacesObservers.addListener(["page-visited"], observer.handlePlacesEvents);
+    PlacesObservers.addListener(
+      ["page-visited", "page-removed"],
+      observer.handlePlacesEvents
+    );
   });
 }
 
@@ -678,13 +673,6 @@ function bookmarkNodesToInfos(nodes) {
     if (node.children) {
       info.children = bookmarkNodesToInfos(node.children);
     }
-    // Check orphan parent anno.
-    if (PlacesUtils.annotations.itemHasAnnotation(node.id, "sync/parent")) {
-      info.requestedParent = PlacesUtils.annotations.getItemAnnotation(
-        node.id,
-        "sync/parent"
-      );
-    }
     return info;
   });
 }
@@ -702,9 +690,20 @@ async function assertBookmarksTreeMatches(rootGuid, expected, message) {
   }
 }
 
-function bufferedBookmarksEnabled() {
-  return Services.prefs.getBoolPref(
-    "services.sync.engine.bookmarks.buffer",
-    false
+function add_bookmark_test(task) {
+  const { BookmarksEngine } = ChromeUtils.import(
+    "resource://services-sync/engines/bookmarks.js"
   );
+
+  add_task(async function() {
+    _(`Running bookmarks test ${task.name}`);
+    let engine = new BookmarksEngine(Service);
+    await engine.initialize();
+    await engine._resetClient();
+    try {
+      await task(engine);
+    } finally {
+      await engine.finalize();
+    }
+  });
 }

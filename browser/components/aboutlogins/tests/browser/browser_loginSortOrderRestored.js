@@ -1,8 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-ChromeUtils.import("resource://testing-common/LoginTestUtils.jsm", this);
-
 EXPECTED_BREACH = {
   AddedDate: "2018-12-20T23:56:26Z",
   BreachDate: "2018-12-16",
@@ -25,7 +23,7 @@ add_task(async function setup() {
   TEST_LOGIN3 = await addLogin(TEST_LOGIN3);
   info(`TEST_LOGIN3 added with guid=${TEST_LOGIN3.guid}`);
   registerCleanupFunction(() => {
-    Services.logins.removeAllLogins();
+    Services.logins.removeAllUserFacingLogins();
     Services.prefs.clearUserPref(SORT_PREF_NAME);
   });
 });

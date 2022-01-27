@@ -15,29 +15,31 @@
 #include "nsID.h"
 #include "nsISupports.h"
 #include "nsITimer.h"
+#include "nsTHashSet.h"
+
+class AudioDeviceInfo;
 
 namespace mozilla {
+
+template <typename ResolveValueT, typename RejectValueT, bool IsExclusive>
+class MozPromise;
+
 namespace dom {
 
 class Promise;
 struct MediaStreamConstraints;
 struct DisplayMediaStreamConstraints;
 struct MediaTrackSupportedConstraints;
-
-#define MOZILLA_DOM_MEDIADEVICES_IMPLEMENTATION_IID  \
-  {                                                  \
-    0x2f784d8a, 0x7485, 0x4280, {                    \
-      0x9a, 0x36, 0x74, 0xa4, 0xd6, 0x71, 0xa6, 0xc8 \
-    }                                                \
-  }
+struct AudioOutputOptions;
 
 class MediaDevices final : public DOMEventTargetHelper {
  public:
-  explicit MediaDevices(nsPIDOMWindowInner* aWindow)
-      : DOMEventTargetHelper(aWindow) {}
+  using SinkInfoPromise = MozPromise<RefPtr<AudioDeviceInfo>, nsresult, true>;
+
+  explicit MediaDevices(nsPIDOMWindowInner* aWindow);
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECLARE_STATIC_IID_ACCESSOR(MOZILLA_DOM_MEDIADEVICES_IMPLEMENTATION_IID)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(MediaDevices, DOMEventTargetHelper)
 
   JSObject* WrapObject(JSContext* cx,
                        JS::Handle<JSObject*> aGivenProto) override;
@@ -49,12 +51,23 @@ class MediaDevices final : public DOMEventTargetHelper {
       const MediaStreamConstraints& aConstraints, CallerType aCallerType,
       ErrorResult& aRv);
 
-  already_AddRefed<Promise> EnumerateDevices(CallerType aCallerType,
-                                             ErrorResult& aRv);
+  already_AddRefed<Promise> EnumerateDevices(ErrorResult& aRv);
 
   already_AddRefed<Promise> GetDisplayMedia(
       const DisplayMediaStreamConstraints& aConstraints, CallerType aCallerType,
       ErrorResult& aRv);
+
+  already_AddRefed<Promise> SelectAudioOutput(
+      const AudioOutputOptions& aOptions, CallerType aCallerType,
+      ErrorResult& aRv);
+
+  // Get the sink that corresponds to the given device id.
+  // The returned promise will be resolved with the device
+  // information if the aDeviceId matches a device that would be exposed by
+  // enumerateDevices().
+  // The promise will be rejected with NS_ERROR_NOT_AVAILABLE if aDeviceId
+  // does not match any exposed device.
+  RefPtr<SinkInfoPromise> GetSinkDevice(const nsString& aDeviceId);
 
   // Called when MediaManager encountered a change in its device lists.
   void OnDeviceChange();
@@ -67,23 +80,30 @@ class MediaDevices final : public DOMEventTargetHelper {
   void EventListenerAdded(nsAtom* aType) override;
   using DOMEventTargetHelper::EventListenerAdded;
 
+  void BackgroundStateChanged() { MaybeResumeDeviceExposure(); }
+  void WindowResumed() { MaybeResumeDeviceExposure(); }
+  void BrowserWindowBecameActive() { MaybeResumeDeviceExposure(); }
+
  private:
   class GumResolver;
   class EnumDevResolver;
   class GumRejecter;
 
   virtual ~MediaDevices();
+  void MaybeResumeDeviceExposure();
+  void ResumeEnumerateDevices(RefPtr<Promise> aPromise);
+
+  nsTHashSet<nsString> mExplicitlyGrantedAudioOutputIds;
+  nsTArray<RefPtr<Promise>> mPendingEnumerateDevicesPromises;
   nsCOMPtr<nsITimer> mFuzzTimer;
 
   // Connect/Disconnect on main thread only
   MediaEventListener mDeviceChangeListener;
   bool mIsDeviceChangeListenerSetUp = false;
+  bool mCanExposeMicrophoneInfo = false;
 
   void RecordAccessTelemetry(const UseCounter counter) const;
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(MediaDevices,
-                              MOZILLA_DOM_MEDIADEVICES_IMPLEMENTATION_IID)
 
 }  // namespace dom
 }  // namespace mozilla

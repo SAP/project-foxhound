@@ -2,13 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
+const SplitBox = require("devtools/client/shared/components/splitter/SplitBox");
 
 import React, { Component } from "react";
 import classnames from "classnames";
 import { isGeneratedId } from "devtools-source-map";
 import { connect } from "../../utils/connect";
-import { List } from "immutable";
 
 import actions from "../../actions";
 import {
@@ -36,7 +35,6 @@ import { prefs, features } from "../../utils/prefs";
 
 import Breakpoints from "./Breakpoints";
 import Expressions from "./Expressions";
-import SplitBox from "devtools-splitter";
 import Frames from "./Frames";
 import Threads from "./Threads";
 import Accordion from "../shared/Accordion";
@@ -49,23 +47,6 @@ import WhyPaused from "./WhyPaused";
 import Scopes from "./Scopes";
 
 import "./SecondaryPanes.css";
-
-import type {
-  Expression,
-  Frame,
-  ThreadList,
-  ThreadContext,
-  Source,
-} from "../../types";
-
-type AccordionPaneItem = {
-  header: string,
-  component: any,
-  opened?: boolean,
-  onToggle?: () => void,
-  shouldOpen?: () => boolean,
-  buttons?: any,
-};
 
 function debugBtn(onClick, type, className, tooltip) {
   return (
@@ -80,45 +61,11 @@ function debugBtn(onClick, type, className, tooltip) {
   );
 }
 
-type State = {
-  showExpressionsInput: boolean,
-  showXHRInput: boolean,
-};
-
-type OwnProps = {|
-  horizontal: boolean,
-|};
-type Props = {
-  cx: ThreadContext,
-  expressions: List<Expression>,
-  hasFrames: boolean,
-  horizontal: boolean,
-  breakpoints: Object,
-  selectedFrame: ?Frame,
-  breakpointsDisabled: boolean,
-  isWaitingOnBreak: boolean,
-  renderWhyPauseDelay: number,
-  mapScopesEnabled: boolean,
-  shouldPauseOnExceptions: boolean,
-  shouldPauseOnCaughtExceptions: boolean,
-  workers: ThreadList,
-  skipPausing: boolean,
-  logEventBreakpoints: boolean,
-  source: ?Source,
-  pauseReason: string,
-  toggleAllBreakpoints: typeof actions.toggleAllBreakpoints,
-  toggleMapScopes: typeof actions.toggleMapScopes,
-  evaluateExpressions: typeof actions.evaluateExpressions,
-  pauseOnExceptions: typeof actions.pauseOnExceptions,
-  breakOnNext: typeof actions.breakOnNext,
-  toggleEventLogging: typeof actions.toggleEventLogging,
-};
-
 const mdnLink =
   "https://developer.mozilla.org/docs/Tools/Debugger/Using_the_Debugger_map_scopes_feature?utm_source=devtools&utm_medium=debugger-map-scopes";
 
-class SecondaryPanes extends Component<Props, State> {
-  constructor(props: Props) {
+class SecondaryPanes extends Component {
+  constructor(props) {
     super(props);
 
     this.state = {
@@ -232,7 +179,7 @@ class SecondaryPanes extends Component<Props, State> {
     return buttons;
   }
 
-  getScopeItem(): AccordionPaneItem {
+  getScopeItem() {
     return {
       header: L10N.getStr("scopes.header"),
       className: "scopes-pane",
@@ -304,7 +251,7 @@ class SecondaryPanes extends Component<Props, State> {
     ];
   }
 
-  getWatchItem(): AccordionPaneItem {
+  getWatchItem() {
     return {
       header: L10N.getStr("watchExpressions.header"),
       className: "watch-expressions-pane",
@@ -322,7 +269,7 @@ class SecondaryPanes extends Component<Props, State> {
     };
   }
 
-  getXHRItem(): AccordionPaneItem {
+  getXHRItem() {
     const { pauseReason } = this.props;
 
     return {
@@ -342,7 +289,7 @@ class SecondaryPanes extends Component<Props, State> {
     };
   }
 
-  getCallStackItem(): AccordionPaneItem {
+  getCallStackItem() {
     return {
       header: L10N.getStr("callStack.header"),
       className: "call-stack-pane",
@@ -354,7 +301,7 @@ class SecondaryPanes extends Component<Props, State> {
     };
   }
 
-  getThreadsItem(): AccordionPaneItem {
+  getThreadsItem() {
     return {
       header: L10N.getStr("threadsHeader"),
       className: "threads-pane",
@@ -366,7 +313,7 @@ class SecondaryPanes extends Component<Props, State> {
     };
   }
 
-  getBreakpointsItem(): AccordionPaneItem {
+  getBreakpointsItem() {
     const {
       shouldPauseOnExceptions,
       shouldPauseOnCaughtExceptions,
@@ -395,7 +342,7 @@ class SecondaryPanes extends Component<Props, State> {
     };
   }
 
-  getEventListenersItem(): AccordionPaneItem {
+  getEventListenersItem() {
     const { pauseReason } = this.props;
 
     return {
@@ -410,7 +357,7 @@ class SecondaryPanes extends Component<Props, State> {
     };
   }
 
-  getDOMMutationsItem(): AccordionPaneItem {
+  getDOMMutationsItem() {
     const { pauseReason } = this.props;
 
     return {
@@ -427,8 +374,8 @@ class SecondaryPanes extends Component<Props, State> {
     };
   }
 
-  getStartItems(): AccordionPaneItem[] {
-    const items: AccordionPaneItem[] = [];
+  getStartItems() {
+    const items = [];
     const { horizontal, hasFrames } = this.props;
 
     if (horizontal) {
@@ -463,12 +410,12 @@ class SecondaryPanes extends Component<Props, State> {
     return items;
   }
 
-  getEndItems(): AccordionPaneItem[] {
+  getEndItems() {
     if (this.props.horizontal) {
       return [];
     }
 
-    const items: AccordionPaneItem[] = [];
+    const items = [];
     if (features.workers && this.props.workers.length > 0) {
       items.push(this.getThreadsItem());
     }
@@ -482,7 +429,7 @@ class SecondaryPanes extends Component<Props, State> {
     return items;
   }
 
-  getItems(): AccordionPaneItem[] {
+  getItems() {
     return [...this.getStartItems(), ...this.getEndItems()];
   }
 
@@ -573,7 +520,7 @@ const mapStateToProps = state => {
   };
 };
 
-export default connect<Props, OwnProps, _, _, _, _>(mapStateToProps, {
+export default connect(mapStateToProps, {
   toggleAllBreakpoints: actions.toggleAllBreakpoints,
   evaluateExpressions: actions.evaluateExpressions,
   pauseOnExceptions: actions.pauseOnExceptions,

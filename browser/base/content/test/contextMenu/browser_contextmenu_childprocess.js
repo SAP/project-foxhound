@@ -5,6 +5,10 @@ const gBaseURL =
   "https://example.com/browser/browser/base/content/test/contextMenu/";
 
 add_task(async function() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["dom.menuitem.enabled", true]],
+  });
+
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
     gBaseURL + "subtst_contextmenu.html"
@@ -121,5 +125,9 @@ function checkMenu(contextMenu) {
       ],
     },
   ];
-  checkItems(contextMenu.children[2], items);
+  let startIndex =
+    Array.from(contextMenu.children).findIndex(
+      node => node.id == "context-sep-navigation"
+    ) + 1;
+  checkItems(contextMenu.children[startIndex], items);
 }

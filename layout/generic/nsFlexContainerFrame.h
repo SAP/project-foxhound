@@ -73,6 +73,33 @@ struct ComputedFlexContainerInfo {
 };
 
 /**
+ * Helper class to get the orientation of a flex container's axes.
+ */
+class MOZ_STACK_CLASS FlexboxAxisInfo final {
+ public:
+  explicit FlexboxAxisInfo(const nsIFrame* aFlexContainer);
+
+  // Is our main axis the inline axis? (Are we 'flex-direction:row[-reverse]'?)
+  bool mIsRowOriented = true;
+
+  // Is our main axis in the opposite direction as mWM's corresponding axis?
+  // (e.g. RTL vs LTR)
+  bool mIsMainAxisReversed = false;
+
+  // Is our cross axis in the opposite direction as mWM's corresponding axis?
+  // (e.g. BTT vs TTB)
+  bool mIsCrossAxisReversed = false;
+
+ private:
+  // Helpers for constructor which determine the orientation of our axes, based
+  // on legacy box properties (-webkit-box-orient, -webkit-box-direction) or
+  // modern flexbox properties (flex-direction, flex-wrap) depending on whether
+  // the flex container is a "legacy box" (as determined by IsLegacyBox).
+  void InitAxesFromLegacyProps(const nsIFrame* aFlexContainer);
+  void InitAxesFromModernProps(const nsIFrame* aFlexContainer);
+};
+
+/**
  * This is the rendering object used for laying out elements with
  * "display: flex" or "display: inline-flex".
  *
@@ -146,7 +173,8 @@ class nsFlexContainerFrame final : public nsContainerFrame {
   bool GetNaturalBaselineBOffset(mozilla::WritingMode aWM,
                                  BaselineSharingGroup aBaselineGroup,
                                  nscoord* aBaseline) const override {
-    if (HasAnyStateBits(NS_STATE_FLEX_SYNTHESIZE_BASELINE)) {
+    if (StyleDisplay()->IsContainLayout() ||
+        HasAnyStateBits(NS_STATE_FLEX_SYNTHESIZE_BASELINE)) {
       return false;
     }
     *aBaseline = aBaselineGroup == BaselineSharingGroup::First
@@ -246,8 +274,8 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    * @param aFlexBasis the computed 'flex-basis' for a flex item.
    * @param aMainSize the computed main-size property for a flex item.
    */
-  static bool IsUsedFlexBasisContent(const StyleFlexBasis& aFlexBasis,
-                                     const StyleSize& aMainSize);
+  static bool IsUsedFlexBasisContent(const mozilla::StyleFlexBasis& aFlexBasis,
+                                     const mozilla::StyleSize& aMainSize);
 
   /**
    * Callback for nsIFrame::MarkIntrinsicISizesDirty() on a flex item.
@@ -286,30 +314,15 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    *                             any baseline-aligned flex items in the first
    *                             flex line, if any such items exist. Otherwise,
    *                             nscoord_MIN.
-   * @param aAvailableBSizeForContent the fragmentainer's available block-size
-   *                                  for our content, when we run the flex
-   *                                  layout algorithm. This may be
-   *                                  unconstrained, even in a context where the
-   *                                  flex container is ultimately being
-   *                                  fragmented, because flex container
-   *                                  fragmentation usually starts out by
-   *                                  performing flex layout without regard to
-   *                                  pagination.
-   * @param aColumnWrapThreshold the block-size threshold to wrap to a new line.
-   *                             Used only by multi-line column-oriented flex
-   *                             container if the available block-size is
-   *                             constrained.
    */
-  void DoFlexLayout(const ReflowInput& aReflowInput, nsReflowStatus& aStatus,
+  void DoFlexLayout(const ReflowInput& aReflowInput,
                     nscoord& aContentBoxMainSize, nscoord& aContentBoxCrossSize,
-                    nscoord& aFlexContainerAscent,
-                    nscoord aAvailableBSizeForContent,
-                    nscoord aColumnWrapThreshold, nsTArray<FlexLine>& aLines,
+                    nscoord& aFlexContainerAscent, nsTArray<FlexLine>& aLines,
                     nsTArray<StrutInfo>& aStruts,
                     nsTArray<nsIFrame*>& aPlaceholders,
                     const FlexboxAxisTracker& aAxisTracker,
                     nscoord aMainGapSize, nscoord aCrossGapSize,
-                    bool aHasLineClampEllipsis,
+                    nscoord aConsumedBSize, bool aHasLineClampEllipsis,
                     ComputedFlexContainerInfo* const aContainerInfo);
 
   /**
@@ -370,7 +383,7 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    * This avoids exponential reflows - see the comment above the
    * CachedBAxisMeasurement struct.
    */
-  const CachedBAxisMeasurement& MeasureAscentAndBSizeForFlexItem(
+  const CachedBAxisMeasurement& MeasureBSizeForFlexItem(
       FlexItem& aItem, ReflowInput& aChildReflowInput);
 
   /**
@@ -420,7 +433,6 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    */
   void GenerateFlexLines(const ReflowInput& aReflowInput,
                          nscoord aContentBoxMainSize,
-                         nscoord aColumnWrapThreshold,
                          const nsTArray<StrutInfo>& aStruts,
                          const FlexboxAxisTracker& aAxisTracker,
                          nscoord aMainGapSize, bool aHasLineClampEllipsis,
@@ -436,15 +448,19 @@ class nsFlexContainerFrame final : public nsContainerFrame {
                          nsTArray<FlexLine>& aLines);
 
   nscoord GetMainSizeFromReflowInput(const ReflowInput& aReflowInput,
-                                     const FlexboxAxisTracker& aAxisTracker);
+                                     const FlexboxAxisTracker& aAxisTracker,
+                                     nscoord aConsumedBSize);
 
   /**
    * Resolves the content-box main-size of a flex container frame,
    * primarily based on:
    * - the "tentative" main size, taken from the reflow input ("tentative"
-   *    because it may be unconstrained or may run off the page).
-   * - the available BSize (needed if the main axis is the block axis).
+   *   because it may be unconstrained or may run off the page).
    * - the sizes of our lines of flex items.
+   *
+   * We assume the available block-size is always *unconstrained* because this
+   * is called only in flex algorithm to measure the flex container's size
+   * without regards to pagination.
    *
    * Guaranteed to return a definite length, i.e. not NS_UNCONSTRAINEDSIZE,
    * aside from cases with huge lengths which happen to compute to that value.
@@ -459,15 +475,12 @@ class nsFlexContainerFrame final : public nsContainerFrame {
   nscoord ComputeMainSize(const ReflowInput& aReflowInput,
                           const FlexboxAxisTracker& aAxisTracker,
                           nscoord aTentativeMainSize,
-                          nscoord aAvailableBSizeForContent,
-                          nsTArray<FlexLine>& aLines,
-                          nsReflowStatus& aStatus) const;
+                          nsTArray<FlexLine>& aLines) const;
 
   nscoord ComputeCrossSize(const ReflowInput& aReflowInput,
                            const FlexboxAxisTracker& aAxisTracker,
-                           nscoord aSumLineCrossSizes,
-                           nscoord aAvailableBSizeForContent, bool* aIsDefinite,
-                           nsReflowStatus& aStatus) const;
+                           nscoord aSumLineCrossSizes, nscoord aConsumedBSize,
+                           bool* aIsDefinite) const;
 
   /**
    * Compute the size of the available space that we'll give to our children to
@@ -534,6 +547,8 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    *                            container.
    * @param aContentBoxCrossSize the final content-box cross-size of the flex
    *                             container.
+   * @param aContainerSize this frame's tentative physical border-box size, used
+   *                       only for logical to physical coordinate conversion.
    * @param aAvailableSizeForItems the size of the available space for our
    *                               children to reflow into.
    * @param aBorderPadding the border and padding for this frame (possibly with
@@ -554,7 +569,7 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    */
   std::tuple<nscoord, bool> ReflowChildren(
       const ReflowInput& aReflowInput, const nscoord aContentBoxMainSize,
-      const nscoord aContentBoxCrossSize,
+      const nscoord aContentBoxCrossSize, const nsSize& aContainerSize,
       const mozilla::LogicalSize& aAvailableSizeForItems,
       const mozilla::LogicalMargin& aBorderPadding,
       const nscoord aSumOfPrevInFlowsChildrenBlockSize,
@@ -634,7 +649,7 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    * Helper for GetMinISize / GetPrefISize.
    */
   nscoord IntrinsicISize(gfxContext* aRenderingContext,
-                         nsLayoutUtils::IntrinsicISizeType aType);
+                         mozilla::IntrinsicISizeType aType);
 
   /**
    * Cached values to optimize GetMinISize/GetPrefISize.

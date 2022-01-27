@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 sk{
     AuxExemplarCharacters{"[à ă â å ā æ ç è ĕ ê ë ē ì ĭ î ï ī ñ ò ŏ ö ő ø ō œ ř ù ŭ û ü ű ū ÿ]"}
     Ellipsis{
@@ -261,6 +262,7 @@ sk{
                 }
             }
             symbols{
+                approximatelySign{"~"}
                 decimal{","}
                 exponential{"e"}
                 group{" "}
@@ -276,6 +278,17 @@ sk{
             }
         }
         minimalPairs{
+            case{
+                accusative{"{0}=akuzatív"}
+                genitive{"{0}=genitív"}
+                instrumental{"{0}=inštrumentál"}
+                nominative{"{0}=nominatív"}
+            }
+            gender{
+                feminine{"{0}=ženský rod"}
+                inanimate{"{0}=mužský rod, neživotné"}
+                neuter{"{0}=stredný rod"}
+            }
             ordinal{
                 other{"Na {0}. križovatke odbočte doprava."}
             }
@@ -289,7 +302,6 @@ sk{
         minimumGroupingDigits{"1"}
         native{"latn"}
     }
-    Version{"37"}
     calendar{
         buddhist{
             eras{
@@ -483,6 +495,16 @@ sk{
                 "{1}, {0}",
                 "{1}, {0}",
                 "{1}, {0}",
+            }
+            DateTimeSkeletons{
+                "Hmmsszzzz",
+                "Hmmssz",
+                "Hmmss",
+                "Hmm",
+                "GyMEEEEd",
+                "GyMd",
+                "GyMd",
+                "GGGGGyMd",
             }
             availableFormats{
                 Bh{"h B"}
@@ -703,6 +725,16 @@ sk{
                 "{1}, {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "Hmmsszzzz",
+                "Hmmssz",
+                "Hmmss",
+                "Hmm",
+                "yMMMMEEEEd",
+                "yMMMMd",
+                "yMd",
+                "yMd",
+            }
             appendItems{
                 Timezone{"{0} {1}"}
             }
@@ -723,6 +755,7 @@ sk{
                 GyMMMEd{"E d. M. y G"}
                 GyMMMMd{"d. M. y G"}
                 GyMMMd{"d. M. y G"}
+                GyMd{"d. M. y GGGGG"}
                 H{"H"}
                 Hm{"H:mm"}
                 Hms{"H:mm:ss"}
@@ -2563,10 +2596,10 @@ sk{
             dn{"deň týždňa v mesiaci"}
         }
         weekdayOfMonth-narrow{
-            dn{"d.  týž. v mes."}
+            dn{"d. týž. v mes."}
         }
         weekdayOfMonth-short{
-            dn{"d.  týž. v mes."}
+            dn{"d. týž. v mes."}
         }
         year{
             dn{"rok"}

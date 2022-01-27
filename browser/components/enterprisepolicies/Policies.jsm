@@ -39,6 +39,12 @@ XPCOMUtils.defineLazyGlobalGetters(this, ["File", "FileReader"]);
 
 const PREF_LOGLEVEL = "browser.policies.loglevel";
 const BROWSER_DOCUMENT_URL = AppConstants.BROWSER_CHROME_URL;
+const ABOUT_CONTRACT = "@mozilla.org/network/protocol/about;1?what=";
+
+let env = Cc["@mozilla.org/process/environment;1"].getService(
+  Ci.nsIEnvironment
+);
+const isXpcshell = env.exists("XPCSHELL_TEST_PROFILE_DIR");
 
 XPCOMUtils.defineLazyGetter(this, "log", () => {
   let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
@@ -51,7 +57,12 @@ XPCOMUtils.defineLazyGetter(this, "log", () => {
   });
 });
 
-var EXPORTED_SYMBOLS = ["Policies"];
+var EXPORTED_SYMBOLS = [
+  "Policies",
+  "setAndLockPref",
+  "PoliciesUtils",
+  "runOnce",
+];
 
 /*
  * ============================
@@ -80,9 +91,46 @@ var EXPORTED_SYMBOLS = ["Policies"];
  * The callbacks will be bound to their parent policy object.
  */
 var Policies = {
+  // Used for cleaning up policies.
+  // Use the same timing that you used for setting up the policy.
+  _cleanup: {
+    onBeforeAddons(manager) {
+      if (Cu.isInAutomation || isXpcshell) {
+        console.log("_cleanup from onBeforeAddons");
+        clearBlockedAboutPages();
+      }
+    },
+    onProfileAfterChange(manager) {
+      if (Cu.isInAutomation || isXpcshell) {
+        console.log("_cleanup from onProfileAfterChange");
+      }
+    },
+    onBeforeUIStartup(manager) {
+      if (Cu.isInAutomation || isXpcshell) {
+        console.log("_cleanup from onBeforeUIStartup");
+      }
+    },
+    onAllWindowsRestored(manager) {
+      if (Cu.isInAutomation || isXpcshell) {
+        console.log("_cleanup from onAllWindowsRestored");
+      }
+    },
+  },
+
   "3rdparty": {
     onBeforeAddons(manager, param) {
       manager.setExtensionPolicies(param.Extensions);
+    },
+  },
+
+  AllowedDomainsForApps: {
+    onBeforeAddons(manager, param) {
+      Services.obs.addObserver(function(subject, topic, data) {
+        let channel = subject.QueryInterface(Ci.nsIHttpChannel);
+        if (channel.URI.host.endsWith(".google.com")) {
+          channel.setRequestHeader("X-GoogApps-Allowed-Domains", param, true);
+        }
+      }, "http-on-modify-request");
     },
   },
 
@@ -111,21 +159,21 @@ var Policies = {
       }
 
       if ("SPNEGO" in param) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "network.negotiate-auth.trusted-uris",
           param.SPNEGO.join(", "),
           locked
         );
       }
       if ("Delegated" in param) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "network.negotiate-auth.delegation-uris",
           param.Delegated.join(", "),
           locked
         );
       }
       if ("NTLM" in param) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "network.automatic-ntlm-auth.trusted-uris",
           param.NTLM.join(", "),
           locked
@@ -133,14 +181,14 @@ var Policies = {
       }
       if ("AllowNonFQDN" in param) {
         if ("NTLM" in param.AllowNonFQDN) {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "network.automatic-ntlm-auth.allow-non-fqdn",
             param.AllowNonFQDN.NTLM,
             locked
           );
         }
         if ("SPNEGO" in param.AllowNonFQDN) {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "network.negotiate-auth.allow-non-fqdn",
             param.AllowNonFQDN.SPNEGO,
             locked
@@ -149,14 +197,14 @@ var Policies = {
       }
       if ("AllowProxies" in param) {
         if ("NTLM" in param.AllowProxies) {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "network.automatic-ntlm-auth.allow-proxies",
             param.AllowProxies.NTLM,
             locked
           );
         }
         if ("SPNEGO" in param.AllowProxies) {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "network.negotiate-auth.allow-proxies",
             param.AllowProxies.SPNEGO,
             locked
@@ -164,11 +212,32 @@ var Policies = {
         }
       }
       if ("PrivateBrowsing" in param) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "network.auth.private-browsing-sso",
           param.PrivateBrowsing,
           locked
         );
+      }
+    },
+  },
+
+  AutoLaunchProtocolsFromOrigins: {
+    onBeforeAddons(manager, param) {
+      for (let info of param) {
+        addAllowDenyPermissions(
+          `open-protocol-handler^${info.protocol}`,
+          info.allowed_origins
+        );
+      }
+    },
+  },
+
+  BackgroundAppUpdate: {
+    onBeforeAddons(manager, param) {
+      if (param) {
+        manager.disallowFeature("app-background-update-off");
+      } else {
+        manager.disallowFeature("app-background-update-on");
       }
     },
   },
@@ -359,59 +428,89 @@ var Policies = {
         });
       }
 
-      if (
-        param.Default !== undefined ||
-        param.AcceptThirdParty !== undefined ||
-        param.RejectTracker !== undefined ||
-        param.Locked
-      ) {
-        const ACCEPT_COOKIES = 0;
-        const REJECT_THIRD_PARTY_COOKIES = 1;
-        const REJECT_ALL_COOKIES = 2;
-        const REJECT_UNVISITED_THIRD_PARTY = 3;
-        const REJECT_TRACKER = 4;
-
-        let newCookieBehavior = ACCEPT_COOKIES;
-        if (param.Default !== undefined && !param.Default) {
-          newCookieBehavior = REJECT_ALL_COOKIES;
-        } else if (param.AcceptThirdParty) {
-          if (param.AcceptThirdParty == "never") {
-            newCookieBehavior = REJECT_THIRD_PARTY_COOKIES;
-          } else if (param.AcceptThirdParty == "from-visited") {
-            newCookieBehavior = REJECT_UNVISITED_THIRD_PARTY;
-          }
-        } else if (param.RejectTracker !== undefined && param.RejectTracker) {
-          newCookieBehavior = REJECT_TRACKER;
-        }
-
-        setDefaultPref(
-          "network.cookie.cookieBehavior",
-          newCookieBehavior,
-          param.Locked
-        );
-      }
-
-      const KEEP_COOKIES_UNTIL_EXPIRATION = 0;
-      const KEEP_COOKIES_UNTIL_END_OF_SESSION = 2;
-
       if (param.ExpireAtSessionEnd !== undefined || param.Locked) {
-        let newLifetimePolicy = KEEP_COOKIES_UNTIL_EXPIRATION;
+        let newLifetimePolicy = Ci.nsICookieService.ACCEPT_NORMALLY;
         if (param.ExpireAtSessionEnd) {
-          newLifetimePolicy = KEEP_COOKIES_UNTIL_END_OF_SESSION;
+          newLifetimePolicy = Ci.nsICookieService.ACCEPT_SESSION;
         }
 
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "network.cookie.lifetimePolicy",
           newLifetimePolicy,
           param.Locked
         );
       }
+
+      // New Cookie Behavior option takes precendence
+      let defaultPref = Services.prefs.getDefaultBranch("");
+      let newCookieBehavior = defaultPref.getIntPref(
+        "network.cookie.cookieBehavior"
+      );
+      let newCookieBehaviorPB = defaultPref.getIntPref(
+        "network.cookie.cookieBehavior.pbmode"
+      );
+      if ("Behavior" in param || "BehaviorPrivateBrowsing" in param) {
+        let behaviors = {
+          accept: Ci.nsICookieService.BEHAVIOR_ACCEPT,
+          "reject-foreign": Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN,
+          reject: Ci.nsICookieService.BEHAVIOR_REJECT,
+          "limit-foreign": Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN,
+          "reject-tracker": Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
+          "reject-tracker-and-partition-foreign":
+            Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+        };
+        if ("Behavior" in param) {
+          newCookieBehavior = behaviors[param.Behavior];
+        }
+        if ("BehaviorPrivateBrowsing" in param) {
+          newCookieBehaviorPB = behaviors[param.BehaviorPrivateBrowsing];
+        }
+      } else {
+        // Default, AcceptThirdParty, and RejectTracker are being
+        // deprecated in favor of Behavior. They will continue
+        // to be supported, though.
+        if (
+          param.Default !== undefined ||
+          param.AcceptThirdParty !== undefined ||
+          param.RejectTracker !== undefined ||
+          param.Locked
+        ) {
+          newCookieBehavior = Ci.nsICookieService.BEHAVIOR_ACCEPT;
+          if (param.Default !== undefined && !param.Default) {
+            newCookieBehavior = Ci.nsICookieService.BEHAVIOR_REJECT;
+          } else if (param.AcceptThirdParty) {
+            if (param.AcceptThirdParty == "never") {
+              newCookieBehavior = Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN;
+            } else if (param.AcceptThirdParty == "from-visited") {
+              newCookieBehavior = Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN;
+            }
+          } else if (param.RejectTracker) {
+            newCookieBehavior = Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER;
+          }
+        }
+        // With the old cookie policy, we made private browsing the same.
+        newCookieBehaviorPB = newCookieBehavior;
+      }
+      // We set the values no matter what just in case the policy was only used to lock.
+      PoliciesUtils.setDefaultPref(
+        "network.cookie.cookieBehavior",
+        newCookieBehavior,
+        param.Locked
+      );
+      PoliciesUtils.setDefaultPref(
+        "network.cookie.cookieBehavior.pbmode",
+        newCookieBehaviorPB,
+        param.Locked
+      );
     },
   },
 
   DefaultDownloadDirectory: {
     onBeforeAddons(manager, param) {
-      setDefaultPref("browser.download.dir", replacePathVariables(param));
+      PoliciesUtils.setDefaultPref(
+        "browser.download.dir",
+        replacePathVariables(param)
+      );
       // If a custom download directory is being used, just lock folder list to 2.
       setAndLockPref("browser.download.folderList", 2);
     },
@@ -485,7 +584,7 @@ var Policies = {
       }
       if ("TLS_RSA_WITH_3DES_EDE_CBC_SHA" in param) {
         setAndLockPref(
-          "security.ssl3.rsa_des_ede3_sha",
+          "security.ssl3.deprecated.rsa_des_ede3_sha",
           !param.TLS_RSA_WITH_3DES_EDE_CBC_SHA
         );
       }
@@ -537,7 +636,6 @@ var Policies = {
     onBeforeAddons(manager, param) {
       if (param) {
         setAndLockPref("identity.fxaccounts.enabled", false);
-        setAndLockPref("trailhead.firstrun.branches", "nofirstrun-empty");
         setAndLockPref("browser.aboutwelcome.enabled", false);
       }
     },
@@ -685,6 +783,7 @@ var Policies = {
       if (param) {
         setAndLockPref("datareporting.healthreport.uploadEnabled", false);
         setAndLockPref("datareporting.policy.dataSubmissionEnabled", false);
+        setAndLockPref("toolkit.telemetry.archive.enabled", false);
         blockAboutPage(manager, "about:telemetry");
       }
     },
@@ -697,6 +796,12 @@ var Policies = {
       // If this policy was alreay applied and the user chose to re-hide the
       // bookmarks toolbar, do not show it again.
       runOncePerModification("displayBookmarksToolbar", value, () => {
+        // Set the preference to keep the bookmarks bar open and also
+        // declaratively open the bookmarks toolbar. Otherwise, default
+        // to showing it on the New Tab Page.
+        let visibilityPref = "browser.toolbars.bookmarks.visibility";
+        let visibility = param ? "always" : "newtab";
+        Services.prefs.setCharPref(visibilityPref, visibility);
         gXulStore.setValue(
           BROWSER_DOCUMENT_URL,
           "PersonalToolbar",
@@ -767,13 +872,17 @@ var Policies = {
       }
       if ("Enabled" in param) {
         let mode = param.Enabled ? 2 : 5;
-        setDefaultPref("network.trr.mode", mode, locked);
+        PoliciesUtils.setDefaultPref("network.trr.mode", mode, locked);
       }
       if ("ProviderURL" in param) {
-        setDefaultPref("network.trr.uri", param.ProviderURL.href, locked);
+        PoliciesUtils.setDefaultPref(
+          "network.trr.uri",
+          param.ProviderURL.href,
+          locked
+        );
       }
       if ("ExcludedDomains" in param) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "network.trr.excluded-domains",
           param.ExcludedDomains.join(","),
           locked
@@ -802,12 +911,12 @@ var Policies = {
   EnableTrackingProtection: {
     onBeforeUIStartup(manager, param) {
       if (param.Value) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "privacy.trackingprotection.enabled",
           true,
           param.Locked
         );
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "privacy.trackingprotection.pbmode.enabled",
           true,
           param.Locked
@@ -817,14 +926,14 @@ var Policies = {
         setAndLockPref("privacy.trackingprotection.pbmode.enabled", false);
       }
       if ("Cryptomining" in param) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "privacy.trackingprotection.cryptomining.enabled",
           param.Cryptomining,
           param.Locked
         );
       }
       if ("Fingerprinting" in param) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "privacy.trackingprotection.fingerprinting.enabled",
           param.Fingerprinting,
           param.Locked
@@ -843,7 +952,11 @@ var Policies = {
         locked = param.Locked;
       }
       if ("Enabled" in param) {
-        setDefaultPref("media.eme.enabled", param.Enabled, locked);
+        PoliciesUtils.setDefaultPref(
+          "media.eme.enabled",
+          param.Enabled,
+          locked
+        );
       }
     },
   },
@@ -1031,35 +1144,54 @@ var Policies = {
     onBeforeAddons(manager, param) {
       let locked = param.Locked || false;
       if ("Search" in param) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.showSearch",
           param.Search,
           locked
         );
       }
       if ("TopSites" in param) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.feeds.topsites",
           param.TopSites,
           locked
         );
       }
+      if ("SponsoredTopSites" in param) {
+        PoliciesUtils.setDefaultPref(
+          "browser.newtabpage.activity-stream.showSponsoredTopSites",
+          param.SponsoredTopSites,
+          locked
+        );
+      }
       if ("Highlights" in param) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.feeds.section.highlights",
           param.Highlights,
           locked
         );
       }
       if ("Pocket" in param) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.feeds.system.topstories",
           param.Pocket,
           locked
         );
+        PoliciesUtils.setDefaultPref(
+          "browser.newtabpage.activity-stream.feeds.section.topstories",
+          param.Pocket,
+          locked
+        );
+      }
+      if ("SponsoredPocket" in param) {
+        PoliciesUtils.setDefaultPref(
+          "browser.newtabpage.activity-stream.showSponsored",
+          param.SponsoredPocket,
+          locked
+        );
       }
       if ("Snippets" in param) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.feeds.snippets",
           param.Snippets,
           locked
@@ -1084,7 +1216,7 @@ var Policies = {
       if (param.Locked) {
         setAndLockPref("plugin.state.flash", flashPrefVal);
       } else if (param.Default !== undefined) {
-        setDefaultPref("plugin.state.flash", flashPrefVal);
+        PoliciesUtils.setDefaultPref("plugin.state.flash", flashPrefVal);
       }
     },
   },
@@ -1147,7 +1279,11 @@ var Policies = {
         if (param.Additional && param.Additional.length) {
           homepages += "|" + param.Additional.map(url => url.href).join("|");
         }
-        setDefaultPref("browser.startup.homepage", homepages, param.Locked);
+        PoliciesUtils.setDefaultPref(
+          "browser.startup.homepage",
+          homepages,
+          param.Locked
+        );
         if (param.Locked) {
           setAndLockPref(
             "pref.browser.homepage.disable_button.current_page",
@@ -1165,6 +1301,10 @@ var Policies = {
           // Clear out old run once modification that is no longer used.
           clearRunOnceModification("setHomepage");
         }
+        // If a homepage has been set via policy, show the home button
+        if (param.URL != "about:blank") {
+          manager.disallowFeature("removeHomeButtonByDefault");
+        }
       }
       if (param.StartPage) {
         let prefValue;
@@ -1178,7 +1318,7 @@ var Policies = {
             prefValue = 3;
             break;
         }
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "browser.startup.page",
           prefValue,
           param.StartPage == "homepage-locked"
@@ -1216,13 +1356,16 @@ var Policies = {
 
   LegacySameSiteCookieBehaviorEnabled: {
     onBeforeAddons(manager, param) {
-      setDefaultPref("network.cookie.sameSite.laxByDefault", !param);
+      PoliciesUtils.setDefaultPref(
+        "network.cookie.sameSite.laxByDefault",
+        !param
+      );
     },
   },
 
   LegacySameSiteCookieBehaviorEnabledForDomainList: {
     onBeforeAddons(manager, param) {
-      setDefaultPref(
+      PoliciesUtils.setDefaultPref(
         "network.cookie.sameSite.laxByDefault.disabledHosts",
         param.join(",")
       );
@@ -1245,6 +1388,16 @@ var Policies = {
         "capability.policy.localfilelinks_policy.sites",
         param.join(" ")
       );
+    },
+  },
+
+  ManagedBookmarks: {},
+
+  ManualAppUpdateOnly: {
+    onBeforeAddons(manager, param) {
+      if (param) {
+        manager.disallowFeature("autoAppUpdateChecking");
+      }
     },
   },
 
@@ -1272,20 +1425,27 @@ var Policies = {
   OfferToSaveLogins: {
     onBeforeUIStartup(manager, param) {
       setAndLockPref("signon.rememberSignons", param);
+      setAndLockPref("services.passwordSavingEnabled", param);
     },
   },
 
   OfferToSaveLoginsDefault: {
     onBeforeUIStartup(manager, param) {
-      setDefaultPref("signon.rememberSignons", param);
+      let policies = Services.policies.getActivePolicies();
+      if ("OfferToSaveLogins" in policies) {
+        log.error(
+          `OfferToSaveLoginsDefault ignored because OfferToSaveLogins is present.`
+        );
+      } else {
+        PoliciesUtils.setDefaultPref("signon.rememberSignons", param);
+      }
     },
   },
 
   OverrideFirstRunPage: {
     onProfileAfterChange(manager, param) {
-      let url = param ? param.href : "";
+      let url = param ? param : "";
       setAndLockPref("startup.homepage_welcome_url", url);
-      setAndLockPref("trailhead.firstrun.branches", "nofirstrun-empty");
       setAndLockPref("browser.aboutwelcome.enabled", false);
     },
   },
@@ -1361,7 +1521,7 @@ var Policies = {
               prefValue = 5;
               break;
           }
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "media.autoplay.default",
             prefValue,
             param.Autoplay.Locked
@@ -1401,7 +1561,7 @@ var Policies = {
   PictureInPicture: {
     onBeforeAddons(manager, param) {
       if ("Enabled" in param) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "media.videocontrols.picture-in-picture.video-toggle.enabled",
           param.Enabled
         );
@@ -1425,15 +1585,139 @@ var Policies = {
         }
         setAndLockPref("dom.disable_open_during_load", blockValue);
       } else if (param.Default !== undefined) {
-        setDefaultPref("dom.disable_open_during_load", !!param.Default);
+        PoliciesUtils.setDefaultPref(
+          "dom.disable_open_during_load",
+          !!param.Default
+        );
       }
     },
   },
 
   Preferences: {
     onBeforeAddons(manager, param) {
+      const allowedPrefixes = [
+        "accessibility.",
+        "app.update.",
+        "browser.",
+        "datareporting.policy.",
+        "dom.",
+        "extensions.",
+        "general.autoScroll",
+        "general.smoothScroll",
+        "geo.",
+        "gfx.",
+        "intl.",
+        "keyword.enabled",
+        "layers.",
+        "layout.",
+        "media.",
+        "network.",
+        "pdfjs.",
+        "places.",
+        "print.",
+        "signon.",
+        "spellchecker.",
+        "toolkit.legacyUserProfileCustomizations.stylesheets",
+        "ui.",
+        "widget.",
+      ];
+      const allowedSecurityPrefs = [
+        "security.default_personal_cert",
+        "security.insecure_connection_text.enabled",
+        "security.insecure_connection_text.pbmode.enabled",
+        "security.insecure_field_warning.contextual.enabled",
+        "security.mixed_content.block_active_content",
+        "security.osclientcerts.autoload",
+        "security.ssl.errorReporting.enabled",
+        "security.tls.enable_0rtt_data",
+        "security.tls.hello_downgrade_check",
+        "security.tls.version.enable-deprecated",
+        "security.warn_submit_secure_to_insecure",
+      ];
+      const blockedPrefs = [
+        "app.update.channel",
+        "app.update.lastUpdateTime",
+        "app.update.migrated",
+      ];
+
       for (let preference in param) {
-        setAndLockPref(preference, param[preference]);
+        if (blockedPrefs.includes(preference)) {
+          log.error(
+            `Unable to set preference ${preference}. Preference not allowed for security reasons.`
+          );
+          continue;
+        }
+        if (preference.startsWith("security.")) {
+          if (!allowedSecurityPrefs.includes(preference)) {
+            log.error(
+              `Unable to set preference ${preference}. Preference not allowed for security reasons.`
+            );
+            continue;
+          }
+        } else if (
+          !allowedPrefixes.some(prefix => preference.startsWith(prefix))
+        ) {
+          log.error(
+            `Unable to set preference ${preference}. Preference not allowed for stability reasons.`
+          );
+          continue;
+        }
+        if (typeof param[preference] != "object") {
+          // Legacy policy preferences
+          setAndLockPref(preference, param[preference]);
+        } else {
+          if (param[preference].Status == "clear") {
+            Services.prefs.clearUserPref(preference);
+            continue;
+          }
+
+          if (param[preference].Status == "user") {
+            var prefBranch = Services.prefs;
+          } else {
+            prefBranch = Services.prefs.getDefaultBranch("");
+          }
+
+          try {
+            switch (typeof param[preference].Value) {
+              case "boolean":
+                prefBranch.setBoolPref(preference, param[preference].Value);
+                break;
+
+              case "number":
+                if (!Number.isInteger(param[preference].Value)) {
+                  throw new Error(`Non-integer value for ${preference}`);
+                }
+
+                // This is ugly, but necessary. On Windows GPO and macOS
+                // configs, booleans are converted to 0/1. In the previous
+                // Preferences implementation, the schema took care of
+                // automatically converting these values to booleans.
+                // Since we allow arbitrary prefs now, we have to do
+                // something different. See bug 1666836.
+                if (
+                  prefBranch.getPrefType(preference) == prefBranch.PREF_INT ||
+                  ![0, 1].includes(param[preference].Value)
+                ) {
+                  prefBranch.setIntPref(preference, param[preference].Value);
+                } else {
+                  prefBranch.setBoolPref(preference, !!param[preference].Value);
+                }
+                break;
+
+              case "string":
+                prefBranch.setStringPref(preference, param[preference].Value);
+                break;
+            }
+          } catch (e) {
+            log.error(
+              `Unable to set preference ${preference}. Probable type mismatch.`
+            );
+          }
+
+          if (param[preference].Status == "locked") {
+            Services.prefs.lockPref(preference);
+          }
+        }
       }
     },
   },
@@ -1460,7 +1744,10 @@ var Policies = {
         manager.disallowFeature("changeProxySettings");
         ProxyPolicies.configureProxySettings(param, setAndLockPref);
       } else {
-        ProxyPolicies.configureProxySettings(param, setDefaultPref);
+        ProxyPolicies.configureProxySettings(
+          param,
+          PoliciesUtils.setDefaultPref
+        );
       }
     },
   },
@@ -1489,16 +1776,14 @@ var Policies = {
     onBeforeUIStartup(manager, param) {
       if (typeof param === "boolean") {
         setAndLockPref("privacy.sanitize.sanitizeOnShutdown", param);
-        if (param) {
-          setAndLockPref("privacy.clearOnShutdown.cache", true);
-          setAndLockPref("privacy.clearOnShutdown.cookies", true);
-          setAndLockPref("privacy.clearOnShutdown.downloads", true);
-          setAndLockPref("privacy.clearOnShutdown.formdata", true);
-          setAndLockPref("privacy.clearOnShutdown.history", true);
-          setAndLockPref("privacy.clearOnShutdown.sessions", true);
-          setAndLockPref("privacy.clearOnShutdown.siteSettings", true);
-          setAndLockPref("privacy.clearOnShutdown.offlineApps", true);
-        }
+        setAndLockPref("privacy.clearOnShutdown.cache", param);
+        setAndLockPref("privacy.clearOnShutdown.cookies", param);
+        setAndLockPref("privacy.clearOnShutdown.downloads", param);
+        setAndLockPref("privacy.clearOnShutdown.formdata", param);
+        setAndLockPref("privacy.clearOnShutdown.history", param);
+        setAndLockPref("privacy.clearOnShutdown.sessions", param);
+        setAndLockPref("privacy.clearOnShutdown.siteSettings", param);
+        setAndLockPref("privacy.clearOnShutdown.offlineApps", param);
       } else {
         let locked = true;
         // Needed to preserve original behavior in perpetuity.
@@ -1507,90 +1792,98 @@ var Policies = {
           locked = param.Locked;
           lockDefaultPrefs = false;
         }
-        setDefaultPref("privacy.sanitize.sanitizeOnShutdown", true, locked);
+        PoliciesUtils.setDefaultPref(
+          "privacy.sanitize.sanitizeOnShutdown",
+          true,
+          locked
+        );
         if ("Cache" in param) {
-          setDefaultPref("privacy.clearOnShutdown.cache", param.Cache, locked);
+          PoliciesUtils.setDefaultPref(
+            "privacy.clearOnShutdown.cache",
+            param.Cache,
+            locked
+          );
         } else {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.cache",
             false,
             lockDefaultPrefs
           );
         }
         if ("Cookies" in param) {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.cookies",
             param.Cookies,
             locked
           );
         } else {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.cookies",
             false,
             lockDefaultPrefs
           );
         }
         if ("Downloads" in param) {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.downloads",
             param.Downloads,
             locked
           );
         } else {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.downloads",
             false,
             lockDefaultPrefs
           );
         }
         if ("FormData" in param) {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.formdata",
             param.FormData,
             locked
           );
         } else {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.formdata",
             false,
             lockDefaultPrefs
           );
         }
         if ("History" in param) {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.history",
             param.History,
             locked
           );
         } else {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.history",
             false,
             lockDefaultPrefs
           );
         }
         if ("Sessions" in param) {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.sessions",
             param.Sessions,
             locked
           );
         } else {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.sessions",
             false,
             lockDefaultPrefs
           );
         }
         if ("SiteSettings" in param) {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.siteSettings",
             param.SiteSettings,
             locked
           );
         }
         if ("OfflineApps" in param) {
-          setDefaultPref(
+          PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.offlineApps",
             param.OfflineApps,
             locked
@@ -1647,11 +1940,11 @@ var Policies = {
           );
         }
         if (param.Add) {
-          // Only rerun if the list of engine names has changed.
-          let engineNameList = param.Add.map(engine => engine.Name);
+          // Rerun if any engine info has changed.
+          let engineInfoHash = md5Hash(JSON.stringify(param.Add));
           await runOncePerModification(
             "addSearchEngines",
-            JSON.stringify(engineNameList),
+            engineInfoHash,
             async function() {
               for (let newEngine of param.Add) {
                 let manifest = {
@@ -1660,22 +1953,32 @@ var Policies = {
                   chrome_settings_overrides: {
                     search_provider: {
                       name: newEngine.Name,
-                      // Policies currently only use this encoding, see bug 1649164.
-                      encoding: "windows-1252",
+                      // If the encoding is not specified or is falsy, the
+                      // search service will fall back to the default encoding.
+                      encoding: newEngine.Encoding,
                       search_url: encodeURI(newEngine.URLTemplate),
                       keyword: newEngine.Alias,
                       search_url_post_params:
                         newEngine.Method == "POST"
                           ? newEngine.PostData
                           : undefined,
-                      suggestUrlGetParams: newEngine.SuggestURLTemplate,
+                      suggest_url: newEngine.SuggestURLTemplate,
                     },
                   },
                 };
-                try {
-                  await Services.search.addPolicyEngine(manifest);
-                } catch (ex) {
-                  log.error("Unable to add search engine", ex);
+                let engine = Services.search.getEngineByName(newEngine.Name);
+                if (engine) {
+                  try {
+                    await Services.search.updatePolicyEngine(manifest);
+                  } catch (ex) {
+                    log.error("Unable to update the search engine", ex);
+                  }
+                } else {
+                  try {
+                    await Services.search.addPolicyEngine(manifest);
+                  } catch (ex) {
+                    log.error("Unable to add search engine", ex);
+                  }
                 }
               }
             }
@@ -1783,6 +2086,31 @@ var Policies = {
     },
   },
 
+  ShowHomeButton: {
+    onBeforeAddons(manager, param) {
+      if (param) {
+        manager.disallowFeature("removeHomeButtonByDefault");
+      }
+    },
+    onAllWindowsRestored(manager, param) {
+      if (param) {
+        let homeButtonPlacement = CustomizableUI.getPlacementOfWidget(
+          "home-button"
+        );
+        if (!homeButtonPlacement) {
+          let placement = CustomizableUI.getPlacementOfWidget("forward-button");
+          CustomizableUI.addWidgetToArea(
+            "home-button",
+            CustomizableUI.AREA_NAVBAR,
+            placement.position + 2
+          );
+        }
+      } else {
+        CustomizableUI.removeWidgetFromArea("home-button");
+      }
+    },
+  },
+
   SSLVersionMax: {
     onBeforeAddons(manager, param) {
       let tlsVersion;
@@ -1838,21 +2166,21 @@ var Policies = {
         locked = param.Locked;
       }
       if ("WhatsNew" in param) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "browser.messaging-system.whatsNewPanel.enabled",
           param.WhatsNew,
           locked
         );
       }
       if ("ExtensionRecommendations" in param) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons",
           param.ExtensionRecommendations,
           locked
         );
       }
       if ("FeatureRecommendations" in param) {
-        setDefaultPref(
+        PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features",
           param.FeatureRecommendations,
           locked
@@ -1862,18 +2190,24 @@ var Policies = {
         manager.disallowFeature("urlbarinterventions");
       }
       if ("SkipOnboarding") {
-        setAndLockPref("trailhead.firstrun.branches", "nofirstrun-empty");
-        setAndLockPref("browser.aboutwelcome.enabled", false);
+        PoliciesUtils.setDefaultPref(
+          "browser.aboutwelcome.enabled",
+          !param.SkipOnboarding,
+          locked
+        );
       }
     },
   },
 
   WebsiteFilter: {
     onBeforeUIStartup(manager, param) {
-      this.filter = new WebsiteFilter(
-        param.Block || [],
-        param.Exceptions || []
-      );
+      WebsiteFilter.init(param.Block || [], param.Exceptions || []);
+    },
+  },
+
+  WindowsSSO: {
+    onBeforeAddons(manager, param) {
+      setAndLockPref("network.http.windows-sso.enabled", param);
     },
   },
 };
@@ -1900,7 +2234,7 @@ var Policies = {
  *        The value to set and lock
  */
 function setAndLockPref(prefName, prefValue) {
-  setDefaultPref(prefName, prefValue, true);
+  PoliciesUtils.setDefaultPref(prefName, prefValue, true);
 }
 
 /**
@@ -1916,35 +2250,51 @@ function setAndLockPref(prefName, prefValue) {
  * @param {boolean} locked
  *        Optionally lock the pref
  */
-function setDefaultPref(prefName, prefValue, locked = false) {
-  if (Services.prefs.prefIsLocked(prefName)) {
-    Services.prefs.unlockPref(prefName);
-  }
 
-  let defaults = Services.prefs.getDefaultBranch("");
+var PoliciesUtils = {
+  setDefaultPref(prefName, prefValue, locked = false) {
+    if (Services.prefs.prefIsLocked(prefName)) {
+      Services.prefs.unlockPref(prefName);
+    }
 
-  switch (typeof prefValue) {
-    case "boolean":
-      defaults.setBoolPref(prefName, prefValue);
-      break;
+    let defaults = Services.prefs.getDefaultBranch("");
 
-    case "number":
-      if (!Number.isInteger(prefValue)) {
-        throw new Error(`Non-integer value for ${prefName}`);
-      }
+    switch (typeof prefValue) {
+      case "boolean":
+        defaults.setBoolPref(prefName, prefValue);
+        break;
 
-      defaults.setIntPref(prefName, prefValue);
-      break;
+      case "number":
+        if (!Number.isInteger(prefValue)) {
+          throw new Error(`Non-integer value for ${prefName}`);
+        }
 
-    case "string":
-      defaults.setStringPref(prefName, prefValue);
-      break;
-  }
+        // This is ugly, but necessary. On Windows GPO and macOS
+        // configs, booleans are converted to 0/1. In the previous
+        // Preferences implementation, the schema took care of
+        // automatically converting these values to booleans.
+        // Since we allow arbitrary prefs now, we have to do
+        // something different. See bug 1666836.
+        if (
+          defaults.getPrefType(prefName) == defaults.PREF_INT ||
+          ![0, 1].includes(prefValue)
+        ) {
+          defaults.setIntPref(prefName, prefValue);
+        } else {
+          defaults.setBoolPref(prefName, !!prefValue);
+        }
+        break;
 
-  if (locked) {
-    Services.prefs.lockPref(prefName);
-  }
-}
+      case "string":
+        defaults.setStringPref(prefName, prefValue);
+        break;
+    }
+
+    if (locked) {
+      Services.prefs.lockPref(prefName);
+    }
+  },
+};
 
 /**
  * setDefaultPermission
@@ -1961,9 +2311,9 @@ function setDefaultPermission(policyName, policyParam) {
     let prefName = "permissions.default." + policyName;
 
     if (policyParam.BlockNewRequests) {
-      setDefaultPref(prefName, 2, policyParam.Locked);
+      PoliciesUtils.setDefaultPref(prefName, 2, policyParam.Locked);
     } else {
-      setDefaultPref(prefName, 0, policyParam.Locked);
+      PoliciesUtils.setDefaultPref(prefName, 0, policyParam.Locked);
     }
   }
 }
@@ -2095,6 +2445,7 @@ function replacePathVariables(path) {
 function installAddonFromURL(url, extensionID, addon) {
   if (
     addon &&
+    addon.sourceURI &&
     addon.sourceURI.spec == url &&
     !addon.sourceURI.schemeIs("file")
   ) {
@@ -2105,13 +2456,17 @@ function installAddonFromURL(url, extensionID, addon) {
     telemetryInfo: { source: "enterprise-policy" },
   }).then(install => {
     if (install.addon && install.addon.appDisabled) {
-      log.error(`Incompatible add-on - ${location}`);
+      log.error(`Incompatible add-on - ${install.addon.id}`);
       install.cancel();
       return;
     }
     let listener = {
       /* eslint-disable-next-line no-shadow */
       onDownloadEnded: install => {
+        // Install failed, error will be reported elsewhere.
+        if (!install.addon) {
+          return;
+        }
         if (extensionID && install.addon.id != extensionID) {
           log.error(
             `Add-on downloaded from ${url} had unexpected id (got ${install.addon.id} expected ${extensionID})`
@@ -2119,7 +2474,7 @@ function installAddonFromURL(url, extensionID, addon) {
           install.removeListener(listener);
           install.cancel();
         }
-        if (install.addon && install.addon.appDisabled) {
+        if (install.addon.appDisabled) {
           log.error(`Incompatible add-on - ${url}`);
           install.removeListener(listener);
           install.cancel();
@@ -2150,41 +2505,46 @@ function installAddonFromURL(url, extensionID, addon) {
           )} - {url}`
         );
       },
-      onInstallEnded: () => {
+      /* eslint-disable-next-line no-shadow */
+      onInstallEnded: (install, addon) => {
+        if (addon.type == "theme") {
+          addon.enable();
+        }
         install.removeListener(listener);
         log.debug(`Installation succeeded - ${url}`);
       },
     };
+    // If it's a local file install, onDownloadEnded is never called.
+    // So we call it manually, to handle some error cases.
+    if (url.startsWith("file:")) {
+      listener.onDownloadEnded(install);
+      if (install.state == AddonManager.STATE_CANCELLED) {
+        return;
+      }
+    }
     install.addListener(listener);
     install.install();
   });
 }
 
-let gBlockedChromePages = [];
+let gBlockedAboutPages = [];
+
+function clearBlockedAboutPages() {
+  gBlockedAboutPages = [];
+}
 
 function blockAboutPage(manager, feature, neededOnContentProcess = false) {
-  if (!gBlockedChromePages.length) {
-    addChromeURLBlocker();
-  }
-  manager.disallowFeature(feature, neededOnContentProcess);
-  let splitURL = Services.io
-    .newChannelFromURI(
-      Services.io.newURI(feature),
-      null,
-      Services.scriptSecurityManager.getSystemPrincipal(),
-      null,
-      0,
-      Ci.nsIContentPolicy.TYPE_OTHER
-    )
-    .URI.spec.split("/");
-  // about:debugging uses index.html for a filename, so we need to rely
-  // on more than just the filename.
-  let fileName =
-    splitURL[splitURL.length - 2] + "/" + splitURL[splitURL.length - 1];
-  gBlockedChromePages.push(fileName);
-  if (feature == "about:config") {
-    // Hide old page until it is removed
-    gBlockedChromePages.push("config.xhtml");
+  addChromeURLBlocker();
+  gBlockedAboutPages.push(feature);
+
+  try {
+    let aboutModule = Cc[ABOUT_CONTRACT + feature.split(":")[1]].getService(
+      Ci.nsIAboutModule
+    );
+    let chromeURL = aboutModule.getChromeURI(Services.io.newURI(feature)).spec;
+    gBlockedAboutPages.push(chromeURL);
+  } catch (e) {
+    // Some about pages don't have chrome URLS (compat)
   }
 }
 
@@ -2192,15 +2552,19 @@ let ChromeURLBlockPolicy = {
   shouldLoad(contentLocation, loadInfo, mimeTypeGuess) {
     let contentType = loadInfo.externalContentPolicyType;
     if (
-      contentLocation.scheme == "chrome" &&
-      contentType == Ci.nsIContentPolicy.TYPE_DOCUMENT &&
-      loadInfo.loadingContext &&
-      loadInfo.loadingContext.baseURI == AppConstants.BROWSER_CHROME_URL &&
-      gBlockedChromePages.some(function(fileName) {
-        return contentLocation.filePath.endsWith(fileName);
+      (contentLocation.scheme != "chrome" &&
+        contentLocation.scheme != "about") ||
+      (contentType != Ci.nsIContentPolicy.TYPE_DOCUMENT &&
+        contentType != Ci.nsIContentPolicy.TYPE_SUBDOCUMENT)
+    ) {
+      return Ci.nsIContentPolicy.ACCEPT;
+    }
+    if (
+      gBlockedAboutPages.some(function(aboutPage) {
+        return contentLocation.spec.startsWith(aboutPage);
       })
     ) {
-      return Ci.nsIContentPolicy.REJECT_REQUEST;
+      return Ci.nsIContentPolicy.REJECT_POLICY;
     }
     return Ci.nsIContentPolicy.ACCEPT;
   },
@@ -2217,6 +2581,10 @@ let ChromeURLBlockPolicy = {
 };
 
 function addChromeURLBlocker() {
+  if (Cc[ChromeURLBlockPolicy.contractID]) {
+    return;
+  }
+
   let registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
   registrar.registerFactory(
     ChromeURLBlockPolicy.classID,
@@ -2307,4 +2675,33 @@ function processMIMEInfo(mimeInfo, realMIMEInfo) {
     realMIMEInfo.alwaysAskBeforeHandling = mimeInfo.ask;
   }
   gHandlerService.store(realMIMEInfo);
+}
+
+// Copied from PlacesUIUtils.jsm
+
+// Keep a hasher for repeated hashings
+let gCryptoHash = null;
+
+/**
+ * Run some text through md5 and return the base64 result.
+ * @param {string} data The string to hash.
+ * @returns {string} md5 hash of the input string.
+ */
+function md5Hash(data) {
+  // Lazily create a reusable hasher
+  if (gCryptoHash === null) {
+    gCryptoHash = Cc["@mozilla.org/security/hash;1"].createInstance(
+      Ci.nsICryptoHash
+    );
+  }
+
+  gCryptoHash.init(gCryptoHash.MD5);
+
+  // Convert the data to a byte array for hashing
+  gCryptoHash.update(
+    data.split("").map(c => c.charCodeAt(0)),
+    data.length
+  );
+  // Request the has result as ASCII base64
+  return gCryptoHash.finish(true);
 }

@@ -13,19 +13,16 @@ AddonTestUtils.createAppInfo(
   "42"
 );
 
+// This test doesn't need the test extensions to be detected as privileged,
+// disabling it to avoid having to keep the list of expected "internal:*"
+// permissions that are added automatically to privileged extensions
+// and already covered by other tests.
+AddonTestUtils.usePrivilegedSignatures = false;
+
 Services.prefs.setBoolPref(
   "extensions.webextensions.background-delayed-startup",
   false
 );
-
-const observer = {
-  observe(subject, topic, data) {
-    if (topic == "webextension-optional-permission-prompt") {
-      let { resolve } = subject.wrappedJSObject;
-      resolve(true);
-    }
-  },
-};
 
 // Look up the cached permissions, if any.
 async function getCachedPermissions(extensionId) {
@@ -60,19 +57,12 @@ add_task(async function setup() {
   // storage mode will run in xpcshell-legacy-ep.ini
   await ExtensionPermissions._uninit();
 
-  Services.prefs.setBoolPref(
-    "extensions.webextOptionalPermissionPrompts",
-    true
-  );
-  Services.obs.addObserver(observer, "webextension-optional-permission-prompt");
+  optionalPermissionsPromptHandler.init();
+  optionalPermissionsPromptHandler.acceptPrompt = true;
+
   await AddonTestUtils.promiseStartupManager();
   registerCleanupFunction(async () => {
     await AddonTestUtils.promiseShutdownManager();
-    Services.obs.removeObserver(
-      observer,
-      "webextension-optional-permission-prompt"
-    );
-    Services.prefs.clearUserPref("extensions.webextOptionalPermissionPrompts");
   });
 });
 
@@ -108,7 +98,11 @@ add_task(async function test_permissions_removed() {
 
   let id = extension.id;
   let perms = await ExtensionPermissions.get(id);
-  equal(perms.permissions.length, 1, "optional permission added");
+  equal(
+    perms.permissions.length,
+    1,
+    `optional permission added (${JSON.stringify(perms.permissions)})`
+  );
 
   Assert.deepEqual(
     await getCachedPermissions(id),
@@ -143,8 +137,16 @@ add_task(async function test_permissions_removed() {
   );
 
   perms = await ExtensionPermissions.get(id);
-  equal(perms.permissions.length, 0, "no permissions after uninstall");
-  equal(perms.origins.length, 0, "no origin permissions after uninstall");
+  equal(
+    perms.permissions.length,
+    0,
+    `no permissions after uninstall (${JSON.stringify(perms.permissions)})`
+  );
+  equal(
+    perms.origins.length,
+    0,
+    `no origin permissions after uninstall (${JSON.stringify(perms.origins)})`
+  );
 
   // The public ExtensionPermissions.get method should not store (empty)
   // permissions in the persistent database. Polluting the cache is not ideal,

@@ -17,7 +17,7 @@ namespace net {
 namespace {
 
 void OnPrefsChange(const char* aPrefName, void* aArray) {
-  auto array = static_cast<nsTArray<nsCString>*>(aArray);
+  auto* array = static_cast<nsTArray<nsCString>*>(aArray);
   MOZ_ASSERT(array);
 
   nsAutoCString value;
@@ -166,6 +166,16 @@ NS_IMETHODIMP
 UrlClassifierFeatureBase::GetExceptionHostList(nsACString& aList) {
   aList = mExceptionHosts;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+UrlClassifierFeatureAntiTrackingBase::GetExceptionHostList(nsACString& aList) {
+  if (!StaticPrefs::privacy_antitracking_enableWebcompat()) {
+    aList.Truncate();
+    return NS_OK;
+  }
+
+  return UrlClassifierFeatureBase::GetExceptionHostList(aList);
 }
 
 }  // namespace net

@@ -84,17 +84,15 @@ struct hb_ft_font_t
   bool symbol; /* Whether selected cmap is symbol cmap. */
   bool unref; /* Whether to destroy ft_face when done. */
 
-  mutable hb_atomic_int_t cached_x_scale;
+  mutable int cached_x_scale;
   mutable hb_advance_cache_t advance_cache;
 };
 
 static hb_ft_font_t *
 _hb_ft_font_create (FT_Face ft_face, bool symbol, bool unref)
 {
-  hb_ft_font_t *ft_font = (hb_ft_font_t *) calloc (1, sizeof (hb_ft_font_t));
-
-  if (unlikely (!ft_font))
-    return nullptr;
+  hb_ft_font_t *ft_font = (hb_ft_font_t *) hb_calloc (1, sizeof (hb_ft_font_t));
+  if (unlikely (!ft_font)) return nullptr;
 
   ft_font->lock.init ();
   ft_font->ft_face = ft_face;
@@ -103,7 +101,7 @@ _hb_ft_font_create (FT_Face ft_face, bool symbol, bool unref)
 
   ft_font->load_flags = FT_LOAD_DEFAULT | FT_LOAD_NO_HINTING;
 
-  ft_font->cached_x_scale.set_relaxed (0);
+  ft_font->cached_x_scale = 0;
   ft_font->advance_cache.init ();
 
   return ft_font;
@@ -127,7 +125,7 @@ _hb_ft_font_destroy (void *data)
 
   ft_font->lock.fini ();
 
-  free (ft_font);
+  hb_free (ft_font);
 }
 
 /**
@@ -181,13 +179,13 @@ hb_ft_font_get_load_flags (hb_font_t *font)
 }
 
 /**
- * hb_ft_get_face:
+ * hb_ft_font_get_face:
  * @font: #hb_font_t to work upon
  *
  * Fetches the FT_Face associated with the specified #hb_font_t
  * font object.
  *
- * Return value: the FT_Face found
+ * Return value: (nullable): the FT_Face found or %NULL
  *
  * Since: 0.9.2
  **/
@@ -204,11 +202,12 @@ hb_ft_font_get_face (hb_font_t *font)
 
 /**
  * hb_ft_font_lock_face:
- * @font:
+ * @font: #hb_font_t to work upon
  *
+ * Gets the FT_Face associated with @font, This face will be kept around until
+ * you call hb_ft_font_unlock_face().
  *
- *
- * Return value:
+ * Return value: (nullable): the FT_Face associated with @font or %NULL
  * Since: 2.6.5
  **/
 FT_Face
@@ -226,11 +225,10 @@ hb_ft_font_lock_face (hb_font_t *font)
 
 /**
  * hb_ft_font_unlock_face:
- * @font:
+ * @font: #hb_font_t to work upon
  *
+ * Releases an FT_Face previously obtained with hb_ft_font_lock_face().
  *
- *
- * Return value:
  * Since: 2.6.5
  **/
 void
@@ -337,10 +335,10 @@ hb_ft_get_glyph_h_advances (hb_font_t* font, void* font_data,
   int load_flags = ft_font->load_flags;
   int mult = font->x_scale < 0 ? -1 : +1;
 
-  if (font->x_scale != ft_font->cached_x_scale.get ())
+  if (font->x_scale != ft_font->cached_x_scale)
   {
     ft_font->advance_cache.clear ();
-    ft_font->cached_x_scale.set (font->x_scale);
+    ft_font->cached_x_scale = font->x_scale;
   }
 
   for (unsigned int i = 0; i < count; i++)
@@ -563,9 +561,7 @@ hb_ft_get_font_h_extents (hb_font_t *font HB_UNUSED,
   return true;
 }
 
-#if HB_USE_ATEXIT
-static void free_static_ft_funcs ();
-#endif
+static inline void free_static_ft_funcs ();
 
 static struct hb_ft_font_funcs_lazy_loader_t : hb_font_funcs_lazy_loader_t<hb_ft_font_funcs_lazy_loader_t>
 {
@@ -593,21 +589,17 @@ static struct hb_ft_font_funcs_lazy_loader_t : hb_font_funcs_lazy_loader_t<hb_ft
 
     hb_font_funcs_make_immutable (funcs);
 
-#if HB_USE_ATEXIT
-    atexit (free_static_ft_funcs);
-#endif
+    hb_atexit (free_static_ft_funcs);
 
     return funcs;
   }
 } static_ft_funcs;
 
-#if HB_USE_ATEXIT
-static
+static inline
 void free_static_ft_funcs ()
 {
   static_ft_funcs.free_instance ();
 }
-#endif
 
 static hb_font_funcs_t *
 _hb_ft_get_font_funcs ()
@@ -620,9 +612,12 @@ _hb_ft_font_set_funcs (hb_font_t *font, FT_Face ft_face, bool unref)
 {
   bool symbol = ft_face->charmap && ft_face->charmap->encoding == FT_ENCODING_MS_SYMBOL;
 
+  hb_ft_font_t *ft_font = _hb_ft_font_create (ft_face, symbol, unref);
+  if (unlikely (!ft_font)) return;
+
   hb_font_set_funcs (font,
 		     _hb_ft_get_font_funcs (),
-		     _hb_ft_font_create (ft_face, symbol, unref),
+		     ft_font,
 		     _hb_ft_font_destroy);
 }
 
@@ -641,26 +636,26 @@ _hb_ft_reference_table (hb_face_t *face HB_UNUSED, hb_tag_t tag, void *user_data
   if (error)
     return nullptr;
 
-  buffer = (FT_Byte *) malloc (length);
+  buffer = (FT_Byte *) hb_malloc (length);
   if (!buffer)
     return nullptr;
 
   error = FT_Load_Sfnt_Table (ft_face, tag, 0, buffer, &length);
   if (error)
   {
-    free (buffer);
+    hb_free (buffer);
     return nullptr;
   }
 
   return hb_blob_create ((const char *) buffer, length,
 			 HB_MEMORY_MODE_WRITABLE,
-			 buffer, free);
+			 buffer, hb_free);
 }
 
 /**
  * hb_ft_face_create:
  * @ft_face: (destroy destroy) (scope notified): FT_Face to work upon
- * @destroy: A callback to call when the face object is not needed anymore
+ * @destroy: (nullable): A callback to call when the face object is not needed anymore
  *
  * Creates an #hb_face_t face object from the specified FT_Face.
  *
@@ -770,13 +765,13 @@ hb_ft_face_create_cached (FT_Face ft_face)
 /**
  * hb_ft_font_create:
  * @ft_face: (destroy destroy) (scope notified): FT_Face to work upon
- * @destroy: (optional): A callback to call when the font object is not needed anymore
+ * @destroy: (nullable): A callback to call when the font object is not needed anymore
  *
  * Creates an #hb_font_t font object from the specified FT_Face.
  *
  * <note>Note: You must set the face size on @ft_face before calling
- * hb_ft_font_create() on it. Otherwise, HarfBuzz will not pick up
- * the face size.</note>
+ * hb_ft_font_create() on it. HarfBuzz assumes size is always set and will
+ * access `size` member of FT_Face unconditionally.</note>
  *
  * This variant of the function does not provide any life-cycle management.
  *
@@ -813,7 +808,7 @@ hb_ft_font_create (FT_Face           ft_face,
 }
 
 /**
- * hb_ft_font_has_changed:
+ * hb_ft_font_changed:
  * @font: #hb_font_t to work upon
  *
  * Refreshes the state of @font when the underlying FT_Face has changed.
@@ -829,6 +824,7 @@ hb_ft_font_changed (hb_font_t *font)
     return;
 
   hb_ft_font_t *ft_font = (hb_ft_font_t *) font->user_data;
+
   FT_Face ft_face = ft_font->ft_face;
 
   hb_font_set_scale (font,
@@ -844,8 +840,8 @@ hb_ft_font_changed (hb_font_t *font)
   FT_MM_Var *mm_var = nullptr;
   if (!FT_Get_MM_Var (ft_face, &mm_var))
   {
-    FT_Fixed *ft_coords = (FT_Fixed *) calloc (mm_var->num_axis, sizeof (FT_Fixed));
-    int *coords = (int *) calloc (mm_var->num_axis, sizeof (int));
+    FT_Fixed *ft_coords = (FT_Fixed *) hb_calloc (mm_var->num_axis, sizeof (FT_Fixed));
+    int *coords = (int *) hb_calloc (mm_var->num_axis, sizeof (int));
     if (coords && ft_coords)
     {
       if (!FT_Get_Var_Blend_Coordinates (ft_face, mm_var->num_axis, ft_coords))
@@ -864,12 +860,12 @@ hb_ft_font_changed (hb_font_t *font)
 	  hb_font_set_var_coords_normalized (font, nullptr, 0);
       }
     }
-    free (coords);
-    free (ft_coords);
+    hb_free (coords);
+    hb_free (ft_coords);
 #ifdef HAVE_FT_DONE_MM_VAR
     FT_Done_MM_Var (ft_face->glyph->library, mm_var);
 #else
-    free (mm_var);
+    hb_free (mm_var);
 #endif
   }
 #endif
@@ -882,8 +878,8 @@ hb_ft_font_changed (hb_font_t *font)
  * Creates an #hb_font_t font object from the specified FT_Face.
  *
  * <note>Note: You must set the face size on @ft_face before calling
- * hb_ft_font_create_references() on it. Otherwise, HarfBuzz will not pick up
- * the face size.</note>
+ * hb_ft_font_create_referenced() on it. HarfBuzz assumes size is always set
+ * and will access `size` member of FT_Face unconditionally.</note>
  *
  * This is the preferred variant of the hb_ft_font_create*
  * function family, because it calls FT_Reference_Face() on @ft_face,
@@ -903,9 +899,7 @@ hb_ft_font_create_referenced (FT_Face ft_face)
   return hb_ft_font_create (ft_face, _hb_ft_face_destroy);
 }
 
-#if HB_USE_ATEXIT
-static void free_static_ft_library ();
-#endif
+static inline void free_static_ft_library ();
 
 static struct hb_ft_library_lazy_loader_t : hb_lazy_loader_t<hb_remove_pointer<FT_Library>,
 							     hb_ft_library_lazy_loader_t>
@@ -916,9 +910,7 @@ static struct hb_ft_library_lazy_loader_t : hb_lazy_loader_t<hb_remove_pointer<F
     if (FT_Init_FreeType (&l))
       return nullptr;
 
-#if HB_USE_ATEXIT
-    atexit (free_static_ft_library);
-#endif
+    hb_atexit (free_static_ft_library);
 
     return l;
   }
@@ -932,13 +924,11 @@ static struct hb_ft_library_lazy_loader_t : hb_lazy_loader_t<hb_remove_pointer<F
   }
 } static_ft_library;
 
-#if HB_USE_ATEXIT
-static
+static inline
 void free_static_ft_library ()
 {
   static_ft_library.free_instance ();
 }
-#endif
 
 static FT_Library
 get_ft_library ()
@@ -1018,13 +1008,13 @@ hb_ft_font_set_funcs (hb_font_t *font)
   const int *coords = hb_font_get_var_coords_normalized (font, &num_coords);
   if (num_coords)
   {
-    FT_Fixed *ft_coords = (FT_Fixed *) calloc (num_coords, sizeof (FT_Fixed));
+    FT_Fixed *ft_coords = (FT_Fixed *) hb_calloc (num_coords, sizeof (FT_Fixed));
     if (ft_coords)
     {
       for (unsigned int i = 0; i < num_coords; i++)
 	ft_coords[i] = coords[i] * 4;
       FT_Set_Var_Blend_Coordinates (ft_face, num_coords, ft_coords);
-      free (ft_coords);
+      hb_free (ft_coords);
     }
   }
 #endif

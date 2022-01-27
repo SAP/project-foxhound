@@ -4,6 +4,11 @@
 
 include protocol PQuota;
 
+include "mozilla/dom/quota/SerializationHelpers.h";
+
+using mozilla::dom::quota::FullOriginMetadata
+  from "mozilla/dom/quota/CommonMetadata.h";
+
 namespace mozilla {
 namespace dom {
 namespace quota {
@@ -31,9 +36,19 @@ struct InitTemporaryStorageResponse
 {
 };
 
-struct InitStorageAndOriginResponse
+struct InitializePersistentOriginResponse
 {
   bool created;
+};
+
+struct InitializeTemporaryOriginResponse
+{
+  bool created;
+};
+
+struct GetFullOriginMetadataResponse
+{
+  FullOriginMetadata? maybeFullOriginMetadata;
 };
 
 struct ClearOriginResponse
@@ -84,7 +99,9 @@ union RequestResponse
   TemporaryStorageInitializedResponse;
   InitResponse;
   InitTemporaryStorageResponse;
-  InitStorageAndOriginResponse;
+  InitializePersistentOriginResponse;
+  InitializeTemporaryOriginResponse;
+  GetFullOriginMetadataResponse;
   ClearOriginResponse;
   ResetOriginResponse;
   ClearDataResponse;

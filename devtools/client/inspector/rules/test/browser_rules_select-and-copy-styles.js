@@ -54,20 +54,20 @@ async function checkCopySelection(view) {
     ".ruleview-propertyvaluecontainer"
   );
 
-  const range = contentDoc.createRange();
+  let range = contentDoc.createRange();
   range.setStart(prop, 0);
   range.setEnd(values[4], 2);
   win.getSelection().addRange(range);
   info("Checking that _Copy() returns the correct clipboard value");
 
   const expectedPattern =
-    "    margin: 10em;[\\r\\n]+" +
-    "    font-size: 14pt;[\\r\\n]+" +
-    "    font-family: helvetica, sans-serif;[\\r\\n]+" +
-    "    color: #AAA;[\\r\\n]+" +
+    "  margin: 10em;[\\r\\n]+" +
+    "  font-size: 14pt;[\\r\\n]+" +
+    "  font-family: helvetica, sans-serif;[\\r\\n]+" +
+    "  color: #AAA;[\\r\\n]+" +
     "}[\\r\\n]+" +
     "html {[\\r\\n]+" +
-    "    color: #000000;[\\r\\n]*";
+    "  color: #000000;[\\r\\n]*";
 
   const allMenuItems = openStyleContextMenuAndGetAllItems(view, prop);
   const menuitemCopy = allMenuItems.find(
@@ -86,6 +86,24 @@ async function checkCopySelection(view) {
   } catch (e) {
     failedClipboard(expectedPattern);
   }
+
+  info("Check copying from keyboard");
+  win.getSelection().removeRange(range);
+  // Selecting the declaration `margin: 10em;`
+  range = contentDoc.createRange();
+  range.setStart(prop, 0);
+  range.setEnd(prop, 1);
+  win.getSelection().addRange(range);
+
+  // Dispatching the copy event from the checkbox to make sure we cover Bug 1680893.
+  const declarationCheckbox = contentDoc.querySelector(
+    "input[type=checkbox].ruleview-enableproperty"
+  );
+  const copyEvent = new win.Event("copy", { bubbles: true });
+  await waitForClipboardPromise(
+    () => declarationCheckbox.dispatchEvent(copyEvent),
+    () => checkClipboardData("^margin: 10em;$")
+  );
 }
 
 async function checkSelectAll(view) {
@@ -101,13 +119,13 @@ async function checkSelectAll(view) {
   view.contextMenu._onSelectAll();
   const expectedPattern =
     "element {[\\r\\n]+" +
-    "    margin: 10em;[\\r\\n]+" +
-    "    font-size: 14pt;[\\r\\n]+" +
-    "    font-family: helvetica, sans-serif;[\\r\\n]+" +
-    "    color: #AAA;[\\r\\n]+" +
+    "  margin: 10em;[\\r\\n]+" +
+    "  font-size: 14pt;[\\r\\n]+" +
+    "  font-family: helvetica, sans-serif;[\\r\\n]+" +
+    "  color: #AAA;[\\r\\n]+" +
     "}[\\r\\n]+" +
     "html {[\\r\\n]+" +
-    "    color: #000000;[\\r\\n]+" +
+    "  color: #000000;[\\r\\n]+" +
     "}[\\r\\n]*";
 
   const allMenuItems = openStyleContextMenuAndGetAllItems(view, prop);

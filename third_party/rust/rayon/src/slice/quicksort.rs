@@ -4,7 +4,6 @@
 //! The only difference from the original is that calls to `recurse` are executed in parallel using
 //! `rayon_core::join`.
 
-use rayon_core;
 use std::cmp;
 use std::mem;
 use std::ptr;
@@ -230,7 +229,7 @@ where
 /// Partitioning is performed block-by-block in order to minimize the cost of branching operations.
 /// This idea is presented in the [BlockQuicksort][pdf] paper.
 ///
-/// [pdf]: http://drops.dagstuhl.de/opus/volltexte/2016/6389/pdf/LIPIcs-ESA-2016-38.pdf
+/// [pdf]: https://drops.dagstuhl.de/opus/volltexte/2016/6389/pdf/LIPIcs-ESA-2016-38.pdf
 fn partition_in_blocks<T, F>(v: &mut [T], pivot: &T, is_less: &F) -> usize
 where
     F: Fn(&T, &T) -> bool,
@@ -256,14 +255,14 @@ where
     let mut block_l = BLOCK;
     let mut start_l = ptr::null_mut();
     let mut end_l = ptr::null_mut();
-    let mut offsets_l: [u8; BLOCK] = unsafe { mem::uninitialized() };
+    let mut offsets_l = [0u8; BLOCK];
 
     // The current block on the right side (from `r.offset(-block_r)` to `r`).
     let mut r = unsafe { l.add(v.len()) };
     let mut block_r = BLOCK;
     let mut start_r = ptr::null_mut();
     let mut end_r = ptr::null_mut();
-    let mut offsets_r: [u8; BLOCK] = unsafe { mem::uninitialized() };
+    let mut offsets_r = [0u8; BLOCK];
 
     // Returns the number of elements between pointers `l` (inclusive) and `r` (exclusive).
     fn width<T>(l: *mut T, r: *mut T) -> usize {
@@ -767,7 +766,7 @@ mod tests {
 
     #[test]
     fn test_heapsort() {
-        let mut rng = thread_rng();
+        let ref mut rng = thread_rng();
 
         for len in (0..25).chain(500..501) {
             for &modulus in &[5, 10, 100] {

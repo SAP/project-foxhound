@@ -9,8 +9,6 @@
 #include "mozilla/MathAlgorithms.h"
 
 #include "jit/CodeGenerator.h"
-#include "jit/JitFrames.h"
-#include "jit/JitRealm.h"
 #include "jit/MIR.h"
 #include "jit/MIRGraph.h"
 #include "js/Conversions.h"
@@ -128,75 +126,6 @@ void CodeGenerator::visitUnbox(LUnbox* unbox) {
 void CodeGeneratorMIPS64::splitTagForTest(const ValueOperand& value,
                                           ScratchTagScope& tag) {
   masm.splitTag(value.valueReg(), tag);
-}
-
-void CodeGenerator::visitCompareB(LCompareB* lir) {
-  MCompare* mir = lir->mir();
-
-  const ValueOperand lhs = ToValue(lir, LCompareB::Lhs);
-  const LAllocation* rhs = lir->rhs();
-  const Register output = ToRegister(lir->output());
-
-  MOZ_ASSERT(mir->jsop() == JSOp::StrictEq || mir->jsop() == JSOp::StrictNe);
-  Assembler::Condition cond = JSOpToCondition(mir->compareType(), mir->jsop());
-
-  // Load boxed boolean in ScratchRegister.
-  if (rhs->isConstant()) {
-    masm.moveValue(rhs->toConstant()->toJSValue(),
-                   ValueOperand(ScratchRegister));
-  } else {
-    masm.boxValue(JSVAL_TYPE_BOOLEAN, ToRegister(rhs), ScratchRegister);
-  }
-
-  // Perform the comparison.
-  masm.cmpPtrSet(cond, lhs.valueReg(), ScratchRegister, output);
-}
-
-void CodeGenerator::visitCompareBAndBranch(LCompareBAndBranch* lir) {
-  MCompare* mir = lir->cmpMir();
-  const ValueOperand lhs = ToValue(lir, LCompareBAndBranch::Lhs);
-  const LAllocation* rhs = lir->rhs();
-
-  MOZ_ASSERT(mir->jsop() == JSOp::StrictEq || mir->jsop() == JSOp::StrictNe);
-
-  // Load boxed boolean in ScratchRegister.
-  if (rhs->isConstant()) {
-    masm.moveValue(rhs->toConstant()->toJSValue(),
-                   ValueOperand(ScratchRegister));
-  } else {
-    masm.boxValue(JSVAL_TYPE_BOOLEAN, ToRegister(rhs), ScratchRegister);
-  }
-
-  // Perform the comparison.
-  Assembler::Condition cond = JSOpToCondition(mir->compareType(), mir->jsop());
-  emitBranch(lhs.valueReg(), ScratchRegister, cond, lir->ifTrue(),
-             lir->ifFalse());
-}
-
-void CodeGenerator::visitCompareBitwise(LCompareBitwise* lir) {
-  MCompare* mir = lir->mir();
-  Assembler::Condition cond = JSOpToCondition(mir->compareType(), mir->jsop());
-  const ValueOperand lhs = ToValue(lir, LCompareBitwise::LhsInput);
-  const ValueOperand rhs = ToValue(lir, LCompareBitwise::RhsInput);
-  const Register output = ToRegister(lir->output());
-
-  MOZ_ASSERT(IsEqualityOp(mir->jsop()));
-
-  masm.cmpPtrSet(cond, lhs.valueReg(), rhs.valueReg(), output);
-}
-
-void CodeGenerator::visitCompareBitwiseAndBranch(
-    LCompareBitwiseAndBranch* lir) {
-  MCompare* mir = lir->cmpMir();
-  Assembler::Condition cond = JSOpToCondition(mir->compareType(), mir->jsop());
-  const ValueOperand lhs = ToValue(lir, LCompareBitwiseAndBranch::LhsInput);
-  const ValueOperand rhs = ToValue(lir, LCompareBitwiseAndBranch::RhsInput);
-
-  MOZ_ASSERT(mir->jsop() == JSOp::Eq || mir->jsop() == JSOp::StrictEq ||
-             mir->jsop() == JSOp::Ne || mir->jsop() == JSOp::StrictNe);
-
-  emitBranch(lhs.valueReg(), rhs.valueReg(), cond, lir->ifTrue(),
-             lir->ifFalse());
 }
 
 void CodeGenerator::visitCompareI64(LCompareI64* lir) {
@@ -330,6 +259,40 @@ void CodeGenerator::visitUDivOrModI64(LUDivOrModI64* lir) {
   masm.bind(&done);
 }
 
+void CodeGeneratorMIPS64::emitBigIntDiv(LBigIntDiv* ins, Register dividend,
+                                        Register divisor, Register output,
+                                        Label* fail) {
+  // Callers handle division by zero and integer overflow.
+
+#ifdef MIPSR6
+  masm.as_ddiv(/* result= */ dividend, dividend, divisor);
+#else
+  masm.as_ddiv(dividend, divisor);
+  masm.as_mflo(dividend);
+#endif
+
+  // Create and return the result.
+  masm.newGCBigInt(output, divisor, initialBigIntHeap(), fail);
+  masm.initializeBigInt(output, dividend);
+}
+
+void CodeGeneratorMIPS64::emitBigIntMod(LBigIntMod* ins, Register dividend,
+                                        Register divisor, Register output,
+                                        Label* fail) {
+  // Callers handle division by zero and integer overflow.
+
+#ifdef MIPSR6
+  masm.as_dmod(/* result= */ dividend, dividend, divisor);
+#else
+  masm.as_ddiv(dividend, divisor);
+  masm.as_mfhi(dividend);
+#endif
+
+  // Create and return the result.
+  masm.newGCBigInt(output, divisor, initialBigIntHeap(), fail);
+  masm.initializeBigInt(output, dividend);
+}
+
 template <typename T>
 void CodeGeneratorMIPS64::emitWasmLoadI64(T* lir) {
   const MWasmLoad* mir = lir->mir();
@@ -460,6 +423,20 @@ void CodeGenerator::visitSignExtendInt64(LSignExtendInt64* lir) {
   }
 }
 
+void CodeGenerator::visitWasmExtendU32Index(LWasmExtendU32Index* lir) {
+  Register input = ToRegister(lir->input());
+  Register output = ToRegister(lir->output());
+  MOZ_ASSERT(input == output);
+  masm.move32To64ZeroExtend(input, Register64(output));
+}
+
+void CodeGenerator::visitWasmWrapU32Index(LWasmWrapU32Index* lir) {
+  Register input = ToRegister(lir->input());
+  Register output = ToRegister(lir->output());
+  MOZ_ASSERT(input == output);
+  masm.move64To32(Register64(input), output);
+}
+
 void CodeGenerator::visitClzI64(LClzI64* lir) {
   Register64 input = ToRegister64(lir->getInt64Operand(0));
   Register64 output = ToOutRegister64(lir);
@@ -476,7 +453,15 @@ void CodeGenerator::visitNotI64(LNotI64* lir) {
   Register64 input = ToRegister64(lir->getInt64Operand(0));
   Register output = ToRegister(lir->output());
 
-  masm.cmp64Set(Assembler::Equal, input.reg, Imm32(0), output);
+  masm.ma_cmp_set(output, input.reg, zero, Assembler::Equal);
+}
+
+void CodeGenerator::visitBitNotI64(LBitNotI64* ins) {
+  const LAllocation* input = ins->getOperand(0);
+  MOZ_ASSERT(!input->isConstant());
+  Register inputReg = ToRegister(input);
+  MOZ_ASSERT(inputReg == ToRegister(ins->output()));
+  masm.ma_not(inputReg, inputReg);
 }
 
 void CodeGenerator::visitWasmTruncateToInt64(LWasmTruncateToInt64* lir) {
@@ -542,4 +527,49 @@ void CodeGenerator::visitTestI64AndBranch(LTestI64AndBranch* lir) {
   MBasicBlock* ifFalse = lir->ifFalse();
 
   emitBranch(input.reg, Imm32(0), Assembler::NonZero, ifTrue, ifFalse);
+}
+
+void CodeGenerator::visitAtomicLoad64(LAtomicLoad64* lir) {
+  Register elements = ToRegister(lir->elements());
+  Register temp = ToRegister(lir->temp());
+  Register64 temp64 = ToRegister64(lir->temp64());
+  Register out = ToRegister(lir->output());
+  const MLoadUnboxedScalar* mir = lir->mir();
+
+  Scalar::Type storageType = mir->storageType();
+
+  auto sync = Synchronization::Load();
+  masm.memoryBarrierBefore(sync);
+  if (lir->index()->isConstant()) {
+    Address source =
+        ToAddress(elements, lir->index(), storageType, mir->offsetAdjustment());
+    masm.load64(source, temp64);
+  } else {
+    BaseIndex source(elements, ToRegister(lir->index()),
+                     ScaleFromScalarType(storageType), mir->offsetAdjustment());
+    masm.load64(source, temp64);
+  }
+  masm.memoryBarrierAfter(sync);
+  emitCreateBigInt(lir, storageType, temp64, out, temp);
+}
+
+void CodeGenerator::visitAtomicStore64(LAtomicStore64* lir) {
+  Register elements = ToRegister(lir->elements());
+  Register value = ToRegister(lir->value());
+  Register64 temp1 = ToRegister64(lir->temp1());
+
+  Scalar::Type writeType = lir->mir()->writeType();
+
+  masm.loadBigInt64(value, temp1);
+  auto sync = Synchronization::Store();
+  masm.memoryBarrierBefore(sync);
+  if (lir->index()->isConstant()) {
+    Address dest = ToAddress(elements, lir->index(), writeType);
+    masm.store64(temp1, dest);
+  } else {
+    BaseIndex dest(elements, ToRegister(lir->index()),
+                   ScaleFromScalarType(writeType));
+    masm.store64(temp1, dest);
+  }
+  masm.memoryBarrierAfter(sync);
 }

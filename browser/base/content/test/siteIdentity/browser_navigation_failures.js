@@ -33,7 +33,7 @@ add_task(async function() {
       .className;
     is(
       newIdentityMode,
-      "unknownIdentity",
+      "certErrorPage notSecureText",
       "identity should be unknown (not secure) after"
     );
   });
@@ -147,6 +147,7 @@ add_task(async function() {
   certOverrideService.rememberValidityOverride(
     "localhost",
     server.port,
+    {},
     cert,
     overrideBits,
     true
@@ -154,7 +155,7 @@ add_task(async function() {
 
   // Un-do configuration changes we've made when the test is done.
   registerCleanupFunction(() => {
-    certOverrideService.clearValidityOverride("localhost", server.port);
+    certOverrideService.clearValidityOverride("localhost", server.port, {});
     server.close();
   });
 
@@ -172,6 +173,10 @@ add_task(async function() {
     );
 
     let identityMode = window.document.getElementById("identity-box").className;
-    is(identityMode, "unknownIdentity", "identity should be 'unknown'");
+    is(
+      identityMode,
+      "certErrorPage notSecureText",
+      "identity should be 'unknown'"
+    );
   });
 });

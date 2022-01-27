@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { actionCreators as ac } from "common/Actions.jsm";
 import { CardGrid } from "content-src/components/DiscoveryStreamComponents/CardGrid/CardGrid";
 import { CollectionCardGrid } from "content-src/components/DiscoveryStreamComponents/CollectionCardGrid/CollectionCardGrid";
 import { CollapsibleSection } from "content-src/components/CollapsibleSection/CollapsibleSection";
@@ -11,11 +10,10 @@ import { DSMessage } from "content-src/components/DiscoveryStreamComponents/DSMe
 import { DSPrivacyModal } from "content-src/components/DiscoveryStreamComponents/DSPrivacyModal/DSPrivacyModal";
 import { DSSignup } from "content-src/components/DiscoveryStreamComponents/DSSignup/DSSignup";
 import { DSTextPromo } from "content-src/components/DiscoveryStreamComponents/DSTextPromo/DSTextPromo";
-import { Hero } from "content-src/components/DiscoveryStreamComponents/Hero/Hero";
 import { Highlights } from "content-src/components/DiscoveryStreamComponents/Highlights/Highlights";
 import { HorizontalRule } from "content-src/components/DiscoveryStreamComponents/HorizontalRule/HorizontalRule";
-import { List } from "content-src/components/DiscoveryStreamComponents/List/List";
 import { Navigation } from "content-src/components/DiscoveryStreamComponents/Navigation/Navigation";
+import { PrivacyLink } from "content-src/components/DiscoveryStreamComponents/PrivacyLink/PrivacyLink";
 import React from "react";
 import { SectionTitle } from "content-src/components/DiscoveryStreamComponents/SectionTitle/SectionTitle";
 import { selectLayoutRender } from "content-src/lib/selectLayoutRender";
@@ -27,7 +25,6 @@ const ALLOWED_CSS_URL_PREFIXES = [
   "https://img-getpocket.cdn.mozilla.net/",
 ];
 const DUMMY_CSS_SELECTOR = "DUMMY#CSS.SELECTOR";
-let rollCache = []; // Cache of random probability values for a spoc position
 
 /**
  * Validate a CSS declaration. The values are assumed to be normalized by CSSOM.
@@ -170,10 +167,14 @@ export class _DiscoveryStreamBase extends React.PureComponent {
           <Navigation
             dispatch={this.props.dispatch}
             links={component.properties.links}
+            extraLinks={component.properties.extraLinks}
             alignment={component.properties.alignment}
             display_variant={component.properties.display_variant}
             explore_topics={component.properties.explore_topics}
             header={component.header}
+            locale={this.props.App.locale}
+            newFooterSection={component.newFooterSection}
+            privacyNoticeURL={component.properties.privacyNoticeURL}
           />
         );
       case "CollectionCardGrid":
@@ -207,39 +208,19 @@ export class _DiscoveryStreamBase extends React.PureComponent {
             type={component.type}
             dispatch={this.props.dispatch}
             items={component.properties.items}
+            compact={component.properties.compact}
+            include_descriptions={!component.properties.compact}
+            loadMoreEnabled={component.loadMoreEnabled}
+            lastCardMessageEnabled={component.lastCardMessageEnabled}
+            saveToPocketCard={component.saveToPocketCard}
             cta_variant={component.cta_variant}
             display_engagement_labels={ENGAGEMENT_LABEL_ENABLED}
           />
         );
-      case "Hero":
-        return (
-          <Hero
-            subComponentType={embedWidth >= 9 ? `cards` : `list`}
-            feed={component.feed}
-            title={component.header && component.header.title}
-            data={component.data}
-            border={component.properties.border}
-            type={component.type}
-            dispatch={this.props.dispatch}
-            items={component.properties.items}
-          />
-        );
       case "HorizontalRule":
         return <HorizontalRule />;
-      case "List":
-        return (
-          <List
-            data={component.data}
-            feed={component.feed}
-            fullWidth={component.properties.full_width}
-            hasBorders={component.properties.border === "border"}
-            hasImages={component.properties.has_images}
-            hasNumbers={component.properties.has_numbers}
-            items={component.properties.items}
-            type={component.type}
-            header={component.header}
-          />
-        );
+      case "PrivacyLink":
+        return <PrivacyLink properties={component.properties} />;
       default:
         return <div>{component.type}</div>;
     }
@@ -252,35 +233,14 @@ export class _DiscoveryStreamBase extends React.PureComponent {
     return <style key={json} data-styles={json} ref={this.onStyleMount} />;
   }
 
-  componentWillReceiveProps(oldProps) {
-    if (this.props.DiscoveryStream.layout !== oldProps.DiscoveryStream.layout) {
-      rollCache = [];
-    }
-  }
-
   render() {
     // Select layout render data by adding spocs and position to recommendations
-    const { layoutRender, spocsFill } = selectLayoutRender({
+    const { layoutRender } = selectLayoutRender({
       state: this.props.DiscoveryStream,
       prefs: this.props.Prefs.values,
-      rollCache,
       locale: this.props.locale,
     });
-    const { config, spocs, feeds } = this.props.DiscoveryStream;
-
-    // Send SPOCS Fill if any. Note that it should not send it again if the same
-    // page gets re-rendered by state changes.
-    if (
-      spocs.loaded &&
-      feeds.loaded &&
-      spocsFill.length &&
-      !this._spocsFillSent
-    ) {
-      this.props.dispatch(
-        ac.DiscoveryStreamSpocsFill({ spoc_fills: spocsFill })
-      );
-      this._spocsFillSent = true;
-    }
+    const { config } = this.props.DiscoveryStream;
 
     // Allow rendering without extracting special components
     if (!config.collapsible) {
@@ -322,6 +282,7 @@ export class _DiscoveryStreamBase extends React.PureComponent {
         title: topStories.title,
       },
     };
+    const privacyLinkComponent = extractComponent("PrivacyLink");
 
     // Render a DS-style TopSites then the rest if any in a collapsible section
     return (
@@ -348,7 +309,6 @@ export class _DiscoveryStreamBase extends React.PureComponent {
             className="ds-layout"
             collapsed={topStories.pref.collapsed}
             dispatch={this.props.dispatch}
-            icon={topStories.icon}
             id={topStories.id}
             isFixed={true}
             learnMore={{
@@ -360,6 +320,7 @@ export class _DiscoveryStreamBase extends React.PureComponent {
             privacyNoticeURL={topStories.privacyNoticeURL}
             showPrefName={topStories.pref.feed}
             title={message.header.title}
+            eventSource="CARDGRID"
           >
             {this.renderLayout(layoutRender)}
           </CollapsibleSection>
@@ -370,6 +331,13 @@ export class _DiscoveryStreamBase extends React.PureComponent {
             components: [{ type: "Highlights" }],
           },
         ])}
+        {privacyLinkComponent &&
+          this.renderLayout([
+            {
+              width: 12,
+              components: [privacyLinkComponent],
+            },
+          ])}
       </React.Fragment>
     );
   }
@@ -412,4 +380,5 @@ export const DiscoveryStreamBase = connect(state => ({
   Prefs: state.Prefs,
   Sections: state.Sections,
   document: global.document,
+  App: state.App,
 }))(_DiscoveryStreamBase);

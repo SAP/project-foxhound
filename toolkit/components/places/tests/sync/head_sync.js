@@ -66,7 +66,7 @@ const MobileBookmarksTitle = "mobile";
 
 function run_test() {
   let bufLog = Log.repository.getLogger("Sync.Engine.Bookmarks.Mirror");
-  bufLog.level = Log.Level.Error;
+  bufLog.level = Log.Level.All;
 
   let sqliteLog = Log.repository.getLogger("Sqlite");
   sqliteLog.level = Log.Level.Error;
@@ -344,11 +344,61 @@ BookmarkObserver.prototype = {
           this.notifications.push({ name: "bookmark-removed", params });
           break;
         }
+        case "bookmark-moved": {
+          const params = {
+            itemId: event.id,
+            type: event.itemType,
+            urlHref: event.url,
+            source: event.source,
+            guid: event.guid,
+            newIndex: event.index,
+            newParentGuid: event.parentGuid,
+            oldIndex: event.oldIndex,
+            oldParentGuid: event.oldParentGuid,
+            isTagging: event.isTagging,
+          };
+          this.notifications.push({ name: "bookmark-moved", params });
+          break;
+        }
+        case "bookmark-guid-changed": {
+          const params = {
+            itemId: event.id,
+            type: event.itemType,
+            urlHref: event.url,
+            guid: event.guid,
+            parentGuid: event.parentGuid,
+            source: event.source,
+            isTagging: event.isTagging,
+          };
+          this.notifications.push({ name: "bookmark-guid-changed", params });
+          break;
+        }
+        case "bookmark-title-changed": {
+          const params = {
+            itemId: event.id,
+            guid: event.guid,
+            title: event.title,
+            parentGuid: event.parentGuid,
+          };
+          this.notifications.push({ name: "bookmark-title-changed", params });
+          break;
+        }
+        case "bookmark-url-changed": {
+          const params = {
+            itemId: event.id,
+            type: event.itemType,
+            urlHref: event.url,
+            guid: event.guid,
+            parentGuid: event.parentGuid,
+            source: event.source,
+            isTagging: event.isTagging,
+          };
+          this.notifications.push({ name: "bookmark-url-changed", params });
+          break;
+        }
       }
     }
   },
-  onBeginUpdateBatch() {},
-  onEndUpdateBatch() {},
   onItemChanged(
     itemId,
     property,
@@ -379,44 +429,20 @@ BookmarkObserver.prototype = {
     }
     this.notifications.push({ name: "onItemChanged", params });
   },
-  onItemVisited() {},
-  onItemMoved(
-    itemId,
-    oldParentId,
-    oldIndex,
-    newParentId,
-    newIndex,
-    type,
-    guid,
-    oldParentGuid,
-    newParentGuid,
-    source,
-    urlHref
-  ) {
-    this.notifications.push({
-      name: "onItemMoved",
-      params: {
-        itemId,
-        oldParentId,
-        oldIndex,
-        newParentId,
-        newIndex,
-        type,
-        guid,
-        oldParentGuid,
-        newParentGuid,
-        source,
-        urlHref,
-      },
-    });
-  },
 
   QueryInterface: ChromeUtils.generateQI(["nsINavBookmarkObserver"]),
 
   check(expectedNotifications) {
     PlacesUtils.bookmarks.removeObserver(this);
     PlacesUtils.observers.removeListener(
-      ["bookmark-added", "bookmark-removed"],
+      [
+        "bookmark-added",
+        "bookmark-removed",
+        "bookmark-moved",
+        "bookmark-guid-changed",
+        "bookmark-title-changed",
+        "bookmark-url-changed",
+      ],
       this.handlePlacesEvents
     );
     if (!ObjectUtils.deepEqual(this.notifications, expectedNotifications)) {
@@ -434,7 +460,14 @@ function expectBookmarkChangeNotifications(options) {
   let observer = new BookmarkObserver(options);
   PlacesUtils.bookmarks.addObserver(observer);
   PlacesUtils.observers.addListener(
-    ["bookmark-added", "bookmark-removed"],
+    [
+      "bookmark-added",
+      "bookmark-removed",
+      "bookmark-moved",
+      "bookmark-guid-changed",
+      "bookmark-title-changed",
+      "bookmark-url-changed",
+    ],
     observer.handlePlacesEvents
   );
   return observer;
@@ -445,6 +478,6 @@ function expectBookmarkChangeNotifications(options) {
 async function setupFixtureFile(fixturePath) {
   let fixtureFile = do_get_file(fixturePath);
   let tempFile = FileTestUtils.getTempFile(fixturePath);
-  await OS.File.copy(fixtureFile.path, tempFile.path);
+  await IOUtils.copy(fixtureFile.path, tempFile.path);
   return tempFile;
 }

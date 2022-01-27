@@ -128,6 +128,8 @@ add_task(async function topSitesShown() {
     await UrlbarTestUtils.promisePopupClose(window, () => {
       gURLBar.blur();
     });
+    // This pops updateTopSites changes.
+    await SpecialPowers.popPrefEnv();
     await SpecialPowers.popPrefEnv();
   }
 });
@@ -162,13 +164,15 @@ add_task(async function selectSearchTopSite() {
     "First result should have the Amazon keyword."
   );
 
+  let searchPromise = UrlbarTestUtils.promiseSearchComplete(window);
   EventUtils.synthesizeMouseAtCenter(amazonSearch, {});
+  await searchPromise;
+  await UrlbarTestUtils.assertSearchMode(window, {
+    engineName: amazonSearch.result.payload.engine,
+    entry: "topsites_urlbar",
+  });
+  await UrlbarTestUtils.exitSearchMode(window, { backspace: true });
 
-  Assert.equal(
-    gURLBar.value,
-    "@amazon ",
-    "The Urlbar should be populated with the search alias."
-  );
   await UrlbarTestUtils.promisePopupClose(window, () => {
     gURLBar.blur();
   });
@@ -334,13 +338,13 @@ add_task(async function topSitesPinned() {
 });
 
 add_task(async function topSitesBookmarksAndTabsDisabled() {
+  await addTestVisits();
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.urlbar.suggest.openpage", false],
       ["browser.urlbar.suggest.bookmark", false],
     ],
   });
-  await addTestVisits();
 
   let sites = AboutNewTab.getTopSites();
   Assert.equal(
@@ -410,33 +414,6 @@ add_task(async function topSitesDisabled() {
   });
   await checkDoesNotOpenOnFocus();
   await SpecialPowers.popPrefEnv();
-
-  // Top Sites should not be shown in private windows.
-  let privateWin = await BrowserTestUtils.openNewBrowserWindow({
-    private: true,
-  });
-  await checkDoesNotOpenOnFocus(privateWin);
-
-  // Top sites should also not be shown in a private window if the search string
-  // gets cleared.
-  await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window: privateWin,
-    value: "example",
-  });
-  privateWin.gURLBar.select();
-  EventUtils.synthesizeKey("KEY_Backspace", {}, privateWin);
-  // Because the panel opening may not be immediate, we must wait a bit.
-  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
-  await new Promise(resolve => setTimeout(resolve, 500));
-  Assert.ok(!privateWin.gURLBar.view.isOpen, "check urlbar panel is not open");
-
-  await BrowserTestUtils.closeWindow(privateWin);
-
-  await PlacesUtils.bookmarks.eraseEverything();
-  await PlacesUtils.history.clear();
-  await UrlbarTestUtils.promisePopupClose(window, () => {
-    gURLBar.blur();
-  });
 });
 
 add_task(async function topSitesNumber() {

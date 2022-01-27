@@ -137,6 +137,12 @@ ProcessResult MinidumpProcessor::Process(
     }
   }
 
+  MinidumpMacCrashInfo *crash_info = dump->GetMacCrashInfo();
+  if (crash_info) {
+    process_state->mac_crash_info_ = crash_info->description();
+    process_state->mac_crash_info_records_ = crash_info->records();
+  }
+
   // This will just return an empty string if it doesn't exist.
   process_state->assertion_ = GetAssertion(dump);
 
@@ -170,6 +176,12 @@ ProcessResult MinidumpProcessor::Process(
   if (memory_list) {
     BPLOG(INFO) << "Found " << memory_list->region_count()
                 << " memory regions.";
+  }
+
+  MinidumpThreadNamesList* thread_names_list = dump->GetThreadNamesList();
+  if (thread_names_list) {
+    BPLOG(INFO) << "Found " << thread_names_list->name_count()
+                << " thread names.";
   }
 
   MinidumpThreadList *threads = dump->GetThreadList();
@@ -306,6 +318,10 @@ ProcessResult MinidumpProcessor::Process(
       BPLOG(ERROR) << "No stackwalker for " << thread_string;
     }
     stack->set_tid(thread_id);
+    stack->set_last_error(thread->GetLastError());
+    if (thread_names_list) {
+      stack->set_name(thread_names_list->GetNameForThreadId(thread_id));
+    }
     process_state->threads_.push_back(stack.release());
     process_state->thread_memory_regions_.push_back(thread_memory);
   }
@@ -1132,6 +1148,305 @@ string MinidumpProcessor::GetCrashReason(Minidump *dump, uint64_t *address) {
           reason = "EXC_RPC_ALERT / ";
           reason.append(flags_string);
           break;
+        case MD_EXCEPTION_MAC_RESOURCE:
+          reason = "EXC_RESOURCE / ";
+          {
+            uint32_t type = (exception_flags >> 29) & 0x7ULL;
+            uint32_t flavor = (exception_flags >> 26) & 0x7ULL;
+            char flavor_string[4] = {};
+            switch (type) {
+              case MD_MAC_EXC_RESOURCE_TYPE_CPU:
+                reason.append("RESOURCE_TYPE_CPU / ");
+                switch (flavor) {
+                  case MD_MAC_EXC_RESOURCE_FLAVOR_CPU_MONITOR:
+                    reason.append("FLAVOR_CPU_MONITOR");
+                    break;
+                  case MD_MAC_EXC_RESOURCE_FLAVOR_CPU_MONITOR_FATAL:
+                    reason.append("FLAVOR_CPU_MONITOR_FATAL");
+                    break;
+                  default:
+                    snprintf(flavor_string, sizeof(flavor_string), "%#3x", flavor);
+                    reason.append(flavor_string);
+                    break;
+                }
+                break;
+              case MD_MAC_EXC_RESOURCE_TYPE_WAKEUPS:
+                reason.append("RESOURCE_TYPE_WAKEUPS / ");
+                if (flavor == MD_MAC_EXC_RESOURCE_FLAVOR_WAKEUPS_MONITOR) {
+                  reason.append("FLAVOR_WAKEUPS_MONITOR");
+                } else {
+                  snprintf(flavor_string, sizeof(flavor_string), "%#3x", flavor);
+                  reason.append(flavor_string);
+                }
+                break;
+              case MD_MAC_EXC_RESOURCE_TYPE_MEMORY:
+                reason.append("RESOURCE_TYPE_MEMORY / ");
+                if (flavor == MD_MAC_EXC_RESOURCE_FLAVOR_HIGH_WATERMARK) {
+                  reason.append("FLAVOR_HIGH_WATERMARK");
+                } else {
+                  snprintf(flavor_string, sizeof(flavor_string), "%#3x", flavor);
+                  reason.append(flavor_string);
+                }
+                break;
+              case MD_MAC_EXC_RESOURCE_TYPE_IO:
+                reason.append("EXC_RESOURCE_TYPE_IO / ");
+                switch (flavor) {
+                  case MD_MAC_EXC_RESOURCE_FLAVOR_IO_PHYSICAL_WRITES:
+                    reason.append("FLAVOR_IO_PHYSICAL_WRITES");
+                    break;
+                  case MD_MAC_EXC_RESOURCE_FLAVOR_IO_LOGICAL_WRITES:
+                    reason.append("FLAVOR_IO_LOGICAL_WRITES");
+                    break;
+                  default:
+                    snprintf(flavor_string, sizeof(flavor_string), "%#3x", flavor);
+                    reason.append(flavor_string);
+                    break;
+                }
+                break;
+              case MD_MAC_EXC_RESOURCE_TYPE_THREADS:
+                reason.append("EXC_RESOURCE_TYPE_THREADS / ");
+                if (flavor == MD_MAC_EXC_RESOURCE_FLAVOR_THREADS_HIGH_WATERMARK) {
+                  reason.append("FLAVOR_THREADS_HIGH_WATERMARK");
+                } else {
+                  snprintf(flavor_string, sizeof(flavor_string), "%#3x", flavor);
+                  reason.append(flavor_string);
+                }
+                break;
+              default:
+                reason.append(flags_string);
+                break;
+            }
+          }
+          break;
+        case MD_EXCEPTION_MAC_GUARD:
+          reason = "EXC_GUARD / ";
+          {
+            uint32_t type = (exception_flags >> 29) & 0x7ULL;
+            uint32_t flavor = exception_flags & 0x1FFFFFFFULL;
+            switch (type) {
+              case MD_MAC_EXC_GUARD_TYPE_NONE:
+                reason.append("GUARD_TYPE_NONE");
+                break;
+              case MD_MAC_EXC_GUARD_TYPE_MACH_PORT:
+                reason.append("GUARD_TYPE_MACH_PORT");
+
+                if (flavor) {
+                  std::vector<std::string> flavors;
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_DESTROY) {
+                    flavors.push_back("GUARD_EXC_DESTROY");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_MOD_REFS) {
+                    flavors.push_back("GUARD_EXC_MOD_REFS");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_SET_CONTEXT) {
+                    flavors.push_back("GUARD_EXC_SET_CONTEXT");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_SET_CONTEXT) {
+                    flavors.push_back("GUARD_EXC_SET_CONTEXT");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_UNGUARDED) {
+                    flavors.push_back("GUARD_EXC_UNGUARDED");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_INCORRECT_GUARD) {
+                    flavors.push_back("GUARD_EXC_INCORRECT_GUARD");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_IMMOVABLE) {
+                    flavors.push_back("GUARD_EXC_IMMOVABLE");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_STRICT_REPLY) {
+                    flavors.push_back("GUARD_EXC_STRICT_REPLY");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_MSG_FILTERED) {
+                    flavors.push_back("GUARD_EXC_MSG_FILTERED");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_INVALID_RIGHT) {
+                    flavors.push_back("GUARD_EXC_INVALID_RIGHT");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_INVALID_NAME) {
+                    flavors.push_back("GUARD_EXC_INVALID_NAME");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_INVALID_VALUE) {
+                    flavors.push_back("GUARD_EXC_INVALID_VALUE");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_INVALID_ARGUMENT) {
+                    flavors.push_back("GUARD_EXC_INVALID_ARGUMENT");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_RIGHT_EXISTS) {
+                    flavors.push_back("GUARD_EXC_RIGHT_EXISTS");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_KERN_NO_SPACE) {
+                    flavors.push_back("GUARD_EXC_KERN_NO_SPACE");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_KERN_FAILURE) {
+                    flavors.push_back("GUARD_EXC_KERN_FAILURE");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_KERN_RESOURCE) {
+                    flavors.push_back("GUARD_EXC_KERN_RESOURCE");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_SEND_INVALID_REPLY) {
+                    flavors.push_back("GUARD_EXC_SEND_INVALID_REPLY");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_SEND_INVALID_VOUCHER) {
+                    flavors.push_back("GUARD_EXC_SEND_INVALID_VOUCHER");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_SEND_INVALID_RIGHT) {
+                    flavors.push_back("GUARD_EXC_SEND_INVALID_RIGHT");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_RCV_INVALID_NAME) {
+                    flavors.push_back("GUARD_EXC_RCV_INVALID_NAME");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_RCV_GUARDED_DESC) {
+                    flavors.push_back("GUARD_EXC_RCV_GUARDED_DESC");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_MOD_REFS_NON_FATAL) {
+                    flavors.push_back("GUARD_EXC_MOD_REFS_NON_FATAL");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_MACH_PORT_FLAVOR_GUARD_EXC_IMMOVABLE_NON_FATAL) {
+                    flavors.push_back("GUARD_EXC_IMMOVABLE_NON_FATAL");
+                  }
+
+                  reason.append(" / ");
+                  for (size_t i = 0; i < flavors.size(); i++) {
+                    if (i > 0) {
+                      reason.append(" | ");
+                    }
+
+                    reason.append(flavors[i]);
+                  }
+                }
+
+                break;
+              case MD_MAC_EXC_GUARD_TYPE_FD:
+                reason.append("GUARD_TYPE_FD");
+
+                if (flavor) {
+                  std::vector<std::string> flavors;
+
+                  if (flavor & MD_MAC_EXC_GUARD_FD_FLAVOR_GUARD_EXC_CLOSE) {
+                    flavors.push_back("GUARD_EXC_CLOSE");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_FD_FLAVOR_GUARD_EXC_DUP) {
+                    flavors.push_back("GUARD_EXC_DUP");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_FD_FLAVOR_GUARD_EXC_NOCLOEXEC) {
+                    flavors.push_back("GUARD_EXC_NOCLOEXEC");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_FD_FLAVOR_GUARD_EXC_SOCKET_IPC) {
+                    flavors.push_back("GUARD_EXC_SOCKET_IPC");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_FD_FLAVOR_GUARD_EXC_FILEPORT) {
+                    flavors.push_back("GUARD_EXC_FILEPORT");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_FD_FLAVOR_GUARD_EXC_MISMATCH) {
+                    flavors.push_back("GUARD_EXC_MISMATCH");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_FD_FLAVOR_GUARD_EXC_WRITE) {
+                    flavors.push_back("GUARD_EXC_WRITE");
+                  }
+
+                  reason.append(" / ");
+                  for (size_t i = 0; i < flavors.size(); i++) {
+                    if (i > 0) {
+                      reason.append(" | ");
+                    }
+
+                    reason.append(flavors[i]);
+                  }
+                }
+
+                break;
+              case MD_MAC_EXC_GUARD_TYPE_USER:
+                reason.append("GUARD_TYPE_USER");
+                break;
+              case MD_MAC_EXC_GUARD_TYPE_VN:
+                reason.append("GUARD_TYPE_VN");
+
+                if (flavor) {
+                  std::vector<std::string> flavors;
+
+                  if (flavor & MD_MAC_EXC_GUARD_FD_FLAVOR_GUARD_EXC_RENAME_TO) {
+                    flavors.push_back("GUARD_EXC_RENAME_TO");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_FD_FLAVOR_GUARD_EXC_RENAME_FROM) {
+                    flavors.push_back("GUARD_EXC_RENAME_FROM");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_FD_FLAVOR_GUARD_EXC_UNLINK) {
+                    flavors.push_back("GUARD_EXC_UNLINK");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_FD_FLAVOR_GUARD_EXC_WRITE_OTHER) {
+                    flavors.push_back("GUARD_EXC_WRITE_OTHER");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_FD_FLAVOR_GUARD_EXC_TRUNC_OTHER) {
+                    flavors.push_back("GUARD_EXC_TRUNC_OTHER");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_FD_FLAVOR_GUARD_EXC_LINK) {
+                    flavors.push_back("GUARD_EXC_LINK");
+                  }
+
+                  if (flavor & MD_MAC_EXC_GUARD_FD_FLAVOR_GUARD_EXC_EXCHDATA) {
+                    flavors.push_back("GUARD_EXC_EXCHDATA");
+                  }
+
+                  reason.append(" / ");
+                  for (size_t i = 0; i < flavors.size(); i++) {
+                    if (i > 0) {
+                      reason.append(" | ");
+                    }
+
+                    reason.append(flavors[i]);
+                  }
+                }
+
+                break;
+              case MD_MAC_EXC_GUARD_TYPE_VIRT_MEMORY:
+                reason.append("GUARD_TYPE_VIRT_MEMORY");
+
+                if (flavor & MD_MAC_EXC_GUARD_VIRT_MEMORY_FLAVOR_GUARD_EXC_DEALLOC_GAP) {
+                  reason.append(" / GUARD_EXC_DEALLOC_GAP");
+                }
+
+                break;
+              default:
+                reason.append(flags_string);
+                break;
+            }
+          }
+          break;
         case MD_EXCEPTION_MAC_SIMULATED:
           reason = "Simulated Exception";
           break;
@@ -1142,9 +1457,6 @@ string MinidumpProcessor::GetCrashReason(Minidump *dump, uint64_t *address) {
     case MD_OS_WIN32_NT:
     case MD_OS_WIN32_WINDOWS: {
       switch (exception_code) {
-        case MD_EXCEPTION_CODE_WIN_CONTROL_C:
-          reason = "DBG_CONTROL_C";
-          break;
         case MD_EXCEPTION_CODE_WIN_GUARD_PAGE_VIOLATION:
           reason = "EXCEPTION_GUARD_PAGE";
           break;
@@ -1233,7 +1545,13 @@ string MinidumpProcessor::GetCrashReason(Minidump *dump, uint64_t *address) {
                 static_cast<uint32_t>
                 (raw_exception->exception_record.exception_information[2]);
             reason.append(" / ");
-            reason.append(NTStatusToString(ntstatus));
+            const char* ntstatus_str = NTStatusToString(ntstatus);
+            if (ntstatus_str) {
+              reason.append(ntstatus_str);
+            } else {
+              snprintf(reason_string, sizeof(reason_string), "%#010x", ntstatus);
+              reason.append(reason_string);
+            }
           }
           break;
         case MD_EXCEPTION_CODE_WIN_INVALID_HANDLE:
@@ -1249,7 +1567,7 @@ string MinidumpProcessor::GetCrashReason(Minidump *dump, uint64_t *address) {
           reason = "EXCEPTION_INVALID_DISPOSITION";
           break;
         case MD_EXCEPTION_CODE_WIN_ARRAY_BOUNDS_EXCEEDED:
-          reason = "EXCEPTION_BOUNDS_EXCEEDED";
+          reason = "EXCEPTION_ARRAY_BOUNDS_EXCEEDED";
           break;
         case MD_EXCEPTION_CODE_WIN_FLOAT_DENORMAL_OPERAND:
           reason = "EXCEPTION_FLT_DENORMAL_OPERAND";
@@ -1290,11 +1608,24 @@ string MinidumpProcessor::GetCrashReason(Minidump *dump, uint64_t *address) {
         case MD_EXCEPTION_CODE_WIN_POSSIBLE_DEADLOCK:
           reason = "EXCEPTION_POSSIBLE_DEADLOCK";
           break;
-        case MD_EXCEPTION_CODE_WIN_STACK_BUFFER_OVERRUN:
-          reason = "EXCEPTION_STACK_BUFFER_OVERRUN";
-          break;
-        case MD_EXCEPTION_CODE_WIN_HEAP_CORRUPTION:
-          reason = "EXCEPTION_HEAP_CORRUPTION";
+        case MD_NTSTATUS_WIN_STATUS_STACK_BUFFER_OVERRUN:
+          reason = "STATUS_STACK_BUFFER_OVERRUN";
+            if (raw_exception->exception_record.number_parameters > 0) {
+            uint32_t fast_fail_code =
+                static_cast<uint32_t>
+                (raw_exception->exception_record.exception_information[0]);
+            char fast_fail_buff[11] = {};
+            const char* fast_fail_string = FastFailToString(fast_fail_code);
+            if (!fast_fail_string) {
+              snprintf(fast_fail_buff, sizeof(fast_fail_buff), "%#010x",
+                       fast_fail_code);
+              fast_fail_string = fast_fail_buff;
+            }
+
+            reason.append(" / ");
+            reason.append(fast_fail_string);
+          }
+
           break;
         case MD_EXCEPTION_OUT_OF_MEMORY:
           reason = "Out of Memory";
@@ -1306,7 +1637,15 @@ string MinidumpProcessor::GetCrashReason(Minidump *dump, uint64_t *address) {
           reason = "Simulated Exception";
           break;
         default:
-          BPLOG(INFO) << "Unknown exception reason " << reason;
+          fprintf(stderr, "exception_code = %u\n", exception_code);
+          const char* exception_str = NTStatusToString(exception_code);
+          fprintf(stderr, "exception_str = %s\n", exception_str);
+          if (exception_str == nullptr) {
+            exception_str = WinErrorToString(exception_code);
+          }
+          if (exception_str != nullptr) {
+            reason = exception_str;
+          }
           break;
       }
       break;
@@ -1366,6 +1705,12 @@ string MinidumpProcessor::GetCrashReason(Minidump *dump, uint64_t *address) {
         case MD_EXCEPTION_CODE_LIN_SIGBUS:
           reason = "SIGBUS / ";
           switch (exception_flags) {
+            case MD_EXCEPTION_FLAG_LIN_SI_USER:
+              reason.append("SI_USER");
+              break;
+            case MD_EXCEPTION_FLAG_LIN_SI_KERNEL:
+              reason.append("SI_KERNEL");
+              break;
             case MD_EXCEPTION_FLAG_LIN_BUS_ADRALN:
               reason.append("BUS_ADRALN");
               break;
@@ -1427,8 +1772,14 @@ string MinidumpProcessor::GetCrashReason(Minidump *dump, uint64_t *address) {
           reason = "SIGUSR1";
           break;
         case MD_EXCEPTION_CODE_LIN_SIGSEGV:
-          reason = "SIGSEGV /";
+          reason = "SIGSEGV / ";
           switch (exception_flags) {
+            case MD_EXCEPTION_FLAG_LIN_SI_USER:
+              reason.append("SI_USER");
+              break;
+            case MD_EXCEPTION_FLAG_LIN_SI_KERNEL:
+              reason.append("SI_KERNEL");
+              break;
             case MD_EXCEPTION_FLAG_LIN_SEGV_MAPERR:
               reason.append("SEGV_MAPERR");
               break;

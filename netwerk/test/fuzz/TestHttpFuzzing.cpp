@@ -1,11 +1,14 @@
 #include "mozilla/LoadInfo.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/SpinEventLoopUntil.h"
 
 #include "nsCOMPtr.h"
 #include "nsNetCID.h"
 #include "nsString.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
+#include "nsIChannel.h"
+#include "nsIHttpChannel.h"
 #include "nsILoadInfo.h"
 #include "nsIProxiedProtocolHandler.h"
 #include "nsIOService.h"
@@ -29,6 +32,7 @@ namespace net {
 // initialization function so we can cover all combinations.
 static nsAutoCString httpSpec;
 static nsAutoCString proxyType;
+static size_t minSize;
 
 static int FuzzingInitNetworkHttp(int* argc, char*** argv) {
   Preferences::SetBool("network.dns.native-is-localhost", true);
@@ -40,11 +44,23 @@ static int FuzzingInitNetworkHttp(int* argc, char*** argv) {
     httpSpec = "http://127.0.0.1/";
   }
 
+  net_EnsurePSMInit();
+
   return 0;
 }
 
 static int FuzzingInitNetworkHttp2(int* argc, char*** argv) {
   httpSpec = "https://127.0.0.1/";
+  return FuzzingInitNetworkHttp(argc, argv);
+}
+
+static int FuzzingInitNetworkHttp3(int* argc, char*** argv) {
+  Preferences::SetBool("fuzzing.necko.http3", true);
+  Preferences::SetBool("network.http.http3.enabled", true);
+  Preferences::SetCString("network.http.http3.alt-svc-mapping-for-testing",
+                          "fuzz.bad.tld;h3=:443");
+  httpSpec = "https://fuzz.bad.tld/";
+  minSize = 1200;
   return FuzzingInitNetworkHttp(argc, argv);
 }
 
@@ -77,6 +93,10 @@ static int FuzzingInitNetworkHttp2ProxyPlain(int* argc, char*** argv) {
 }
 
 static int FuzzingRunNetworkHttp(const uint8_t* data, size_t size) {
+  if (size < minSize) {
+    return 0;
+  }
+
   // Set the data to be processed
   addNetworkFuzzingBuffer(data, size);
 
@@ -120,11 +140,11 @@ static int FuzzingRunNetworkHttp(const uint8_t* data, size_t size) {
 
       nsCOMPtr<nsIProxyInfo> proxyInfo;
       rv = pps->NewProxyInfo(proxyType, proxyHost, 443,
-                             EmptyCString(),  // aProxyAuthorizationHeader
-                             EmptyCString(),  // aConnectionIsolationKey
-                             0,               // aFlags
-                             UINT32_MAX,      // aFailoverTimeout
-                             nullptr,         // aFailoverProxy
+                             ""_ns,       // aProxyAuthorizationHeader
+                             ""_ns,       // aConnectionIsolationKey
+                             0,           // aFlags
+                             UINT32_MAX,  // aFailoverTimeout
+                             nullptr,     // aFailoverProxy
                              getter_AddRefs(proxyInfo));
 
       if (NS_FAILED(rv)) {
@@ -228,21 +248,24 @@ static int FuzzingRunNetworkHttp(const uint8_t* data, size_t size) {
           NS_NewRunnableFunction("Dummy", [&]() { mainPingBack = true; }));
     }));
 
-    SpinEventLoopUntil([&]() -> bool { return mainPingBack; });
+    SpinEventLoopUntil("FuzzingRunNetworkHttp(mainPingBack)"_ns,
+                       [&]() -> bool { return mainPingBack; });
 
     channelRef = do_GetWeakReference(gHttpChannel);
   }
 
   // Wait for the channel to be destroyed
-  SpinEventLoopUntil([&]() -> bool {
-    nsCycleCollector_collect(nullptr);
-    nsCOMPtr<nsIHttpChannel> channel = do_QueryReferent(channelRef);
-    return channel == nullptr;
-  });
+  SpinEventLoopUntil(
+      "FuzzingRunNetworkHttp(channel == nullptr)"_ns, [&]() -> bool {
+        nsCycleCollector_collect(CCReason::API, nullptr);
+        nsCOMPtr<nsIHttpChannel> channel = do_QueryReferent(channelRef);
+        return channel == nullptr;
+      });
 
   if (!signalNetworkFuzzingDone()) {
     // Wait for the connection to indicate closed
-    SpinEventLoopUntil([&]() -> bool { return gFuzzingConnClosed; });
+    SpinEventLoopUntil("FuzzingRunNetworkHttp(gFuzzingConnClosed)"_ns,
+                       [&]() -> bool { return gFuzzingConnClosed; });
   }
 
   rcsvc->RemoveRequestContext(rcID);
@@ -254,6 +277,9 @@ MOZ_FUZZING_INTERFACE_RAW(FuzzingInitNetworkHttp, FuzzingRunNetworkHttp,
 
 MOZ_FUZZING_INTERFACE_RAW(FuzzingInitNetworkHttp2, FuzzingRunNetworkHttp,
                           NetworkHttp2);
+
+MOZ_FUZZING_INTERFACE_RAW(FuzzingInitNetworkHttp3, FuzzingRunNetworkHttp,
+                          NetworkHttp3);
 
 MOZ_FUZZING_INTERFACE_RAW(FuzzingInitNetworkHttp2ProxyHttp2,
                           FuzzingRunNetworkHttp, NetworkHttp2ProxyHttp2);

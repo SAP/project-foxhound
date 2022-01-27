@@ -9,30 +9,42 @@
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/PFetchEventOpProxyParent.h"
+#include "mozilla/dom/ServiceWorkerOpPromise.h"
 
 namespace mozilla {
 namespace dom {
 
 class FetchEventOpParent;
 class PRemoteWorkerParent;
-class ServiceWorkerFetchEventOpArgs;
+class ParentToParentServiceWorkerFetchEventOpArgs;
 
 /**
- * FetchEventOpProxyParent owns a FetchEventOpParent and is responsible for
- * calling PFetchEventOpParent::Send__delete__.
+ * FetchEventOpProxyParent owns a FetchEventOpParent in order to propagate
+ * the respondWith() value by directly calling SendRespondWith on the
+ * FetchEventOpParent, but the call to Send__delete__ is handled via MozPromise.
+ * This is done because this actor may only be created after its managing
+ * PRemoteWorker is created, which is asynchronous and may fail.  We take on
+ * responsibility for the promise once we are created, but we may not be created
+ * if the RemoteWorker is never successfully launched.
  */
 class FetchEventOpProxyParent final : public PFetchEventOpProxyParent {
   friend class PFetchEventOpProxyParent;
 
  public:
-  static void Create(PRemoteWorkerParent* aManager,
-                     const ServiceWorkerFetchEventOpArgs& aArgs,
-                     RefPtr<FetchEventOpParent> aReal);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FetchEventOpProxyParent, override);
 
-  ~FetchEventOpProxyParent();
+  static void Create(
+      PRemoteWorkerParent* aManager,
+      RefPtr<ServiceWorkerFetchEventOpPromise::Private>&& aPromise,
+      const ParentToParentServiceWorkerFetchEventOpArgs& aArgs,
+      RefPtr<FetchEventOpParent> aReal, nsCOMPtr<nsIInputStream> aBodyStream);
 
  private:
-  explicit FetchEventOpProxyParent(RefPtr<FetchEventOpParent>&& aReal);
+  FetchEventOpProxyParent(
+      RefPtr<FetchEventOpParent>&& aReal,
+      RefPtr<ServiceWorkerFetchEventOpPromise::Private>&& aPromise);
+
+  ~FetchEventOpProxyParent();
 
   mozilla::ipc::IPCResult RecvAsyncLog(const nsCString& aScriptSpec,
                                        const uint32_t& aLineNumber,
@@ -41,7 +53,7 @@ class FetchEventOpProxyParent final : public PFetchEventOpProxyParent {
                                        nsTArray<nsString>&& aParams);
 
   mozilla::ipc::IPCResult RecvRespondWith(
-      const IPCFetchEventRespondWithResult& aResult);
+      const ChildToParentFetchEventRespondWithResult& aResult);
 
   mozilla::ipc::IPCResult Recv__delete__(
       const ServiceWorkerFetchEventOpResult& aResult);
@@ -49,6 +61,7 @@ class FetchEventOpProxyParent final : public PFetchEventOpProxyParent {
   void ActorDestroy(ActorDestroyReason) override;
 
   RefPtr<FetchEventOpParent> mReal;
+  RefPtr<ServiceWorkerFetchEventOpPromise::Private> mLifetimePromise;
 };
 
 }  // namespace dom

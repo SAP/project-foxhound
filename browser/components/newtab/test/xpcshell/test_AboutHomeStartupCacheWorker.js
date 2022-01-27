@@ -12,10 +12,14 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 const { AddonTestUtils } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
 );
+const { SearchTestUtils } = ChromeUtils.import(
+  "resource://testing-common/SearchTestUtils.jsm"
+);
 const { TestUtils } = ChromeUtils.import(
   "resource://testing-common/TestUtils.jsm"
 );
 
+SearchTestUtils.init(this);
 AddonTestUtils.init(this);
 AddonTestUtils.createAppInfo(
   "xpcshell@tests.mozilla.org",
@@ -24,10 +28,6 @@ AddonTestUtils.createAppInfo(
   "42"
 );
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
 const { AboutNewTab } = ChromeUtils.import(
   "resource:///modules/AboutNewTab.jsm"
 );
@@ -44,6 +44,8 @@ ChromeUtils.defineModuleGetter(
 XPCOMUtils.defineLazyGlobalGetters(this, ["DOMParser"]);
 
 const CACHE_WORKER_URL = "resource://activity-stream/lib/cache-worker.js";
+const NEWTAB_RENDER_URL =
+  "resource://activity-stream/data/content/newtab-render.js";
 
 /**
  * In order to make this test less brittle, much of Activity Stream is
@@ -108,11 +110,14 @@ add_task(async function setup() {
   Services.prefs.setBoolPref("browser.ping-centre.telemetry", false);
 
   // We need a default search engine set up for rendering the search input.
-  let engine = await Services.search.addEngineWithDetails("Test engine", {
-    template: "http://example.com/?s=%S",
-    alias: "@testengine",
+  await SearchTestUtils.installSearchExtension({
+    name: "Test engine",
+    keyword: "@testengine",
+    search_url_get_params: "s={searchTerms}",
   });
-  Services.search.defaultEngine = engine;
+  Services.search.defaultEngine = Services.search.getEngineByName(
+    "Test engine"
+  );
 
   // Initialize Activity Stream, and pretend that a new window has been loaded
   // to kick off initializing all of the feeds.
@@ -126,7 +131,7 @@ add_task(async function setup() {
     let feed = AboutNewTab.activityStream.store.feeds.get(
       "feeds.discoverystreamfeed"
     );
-    return feed.loaded;
+    return feed?.loaded;
   });
 });
 
@@ -136,6 +141,14 @@ add_task(async function setup() {
  * and script makes sense.
  */
 add_task(async function test_cache_worker() {
+  Services.prefs.setBoolPref(
+    "security.allow_parent_unrestricted_js_loads",
+    true
+  );
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("security.allow_parent_unrestricted_js_loads");
+  });
+
   let state = AboutNewTab.activityStream.store.getState();
 
   let cacheWorker = new BasePromiseWorker(CACHE_WORKER_URL);
@@ -179,6 +192,11 @@ add_task(async function test_cache_worker() {
     },
   };
   Cu.evalInSandbox(script, sandbox);
+
+  // The NEWTAB_RENDER_URL script is what ultimately causes the state
+  // to be passed into the renderCache function.
+  Services.scriptloader.loadSubScript(NEWTAB_RENDER_URL, sandbox);
+
   equal(
     sandbox.window.__FROM_STARTUP_CACHE__,
     true,
@@ -221,4 +239,16 @@ add_task(async function test_cache_worker() {
 
   let placeholders = doc.querySelectorAll(".ds-card.placeholder");
   equal(placeholders.length, 2, "There should be 2 placeholders");
+});
+
+/**
+ * Tests that if the cache-worker construct method throws an exception
+ * that the construct Promise still resolves. Passing a null state should
+ * be enough to get it to throw.
+ */
+add_task(async function test_cache_worker_exception() {
+  let cacheWorker = new BasePromiseWorker(CACHE_WORKER_URL);
+  let { page, script } = await cacheWorker.post("construct", [null]);
+  equal(page, null, "Should have gotten a null page nsIInputStream");
+  equal(script, null, "Should have gotten a null script nsIInputStream");
 });

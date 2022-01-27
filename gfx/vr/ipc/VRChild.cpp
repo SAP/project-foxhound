@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "VRChild.h"
+#include "VRProcessManager.h"
 #include "VRProcessParent.h"
 #include "gfxConfig.h"
 
@@ -28,7 +29,7 @@ class OpenVRControllerManifestManager {
 
   void SetOpenVRControllerManifestPath(VRControllerType aType,
                                        const nsCString& aPath) {
-    mManifest.Put(static_cast<uint32_t>(aType), aPath);
+    mManifest.InsertOrUpdate(static_cast<uint32_t>(aType), aPath);
   }
 
   bool GetActionPath(nsCString* aPath) {
@@ -50,8 +51,7 @@ class OpenVRControllerManifestManager {
     }
     mAction = "";
 
-    for (auto iter = mManifest.Iter(); !iter.Done(); iter.Next()) {
-      nsCString path(iter.Data());
+    for (const auto& path : mManifest.Values()) {
       if (!path.IsEmpty() && remove(path.BeginReading()) != 0) {
         MOZ_ASSERT(false, "Delete controller manifest file failed.");
       }
@@ -60,7 +60,7 @@ class OpenVRControllerManifestManager {
   }
 
   nsCString mAction;
-  nsDataHashtable<nsUint32HashKey, nsCString> mManifest;
+  nsTHashMap<nsUint32HashKey, nsCString> mManifest;
   OpenVRControllerManifestManager(const OpenVRControllerManifestManager&) =
       delete;
 
@@ -78,15 +78,6 @@ mozilla::ipc::IPCResult VRChild::RecvAddMemoryReport(
     const MemoryReport& aReport) {
   if (mMemoryReportRequest) {
     mMemoryReportRequest->RecvReport(aReport);
-  }
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult VRChild::RecvFinishMemoryReport(
-    const uint32_t& aGeneration) {
-  if (mMemoryReportRequest) {
-    mMemoryReportRequest->Finish(aGeneration);
-    mMemoryReportRequest = nullptr;
   }
   return IPC_OK();
 }
@@ -113,7 +104,6 @@ void VRChild::Init() {
       gfxConfig::GetValue(Feature::D3D11_COMPOSITING);
   devicePrefs.oglCompositing() =
       gfxConfig::GetValue(Feature::OPENGL_COMPOSITING);
-  devicePrefs.advancedLayers() = gfxConfig::GetValue(Feature::ADVANCED_LAYERS);
   devicePrefs.useD2D1() = gfxConfig::GetValue(Feature::DIRECT2D);
 
   SendInit(updates, devicePrefs);
@@ -176,8 +166,27 @@ bool VRChild::SendRequestMemoryReport(const uint32_t& aGeneration,
                                       const bool& aMinimizeMemoryUsage,
                                       const Maybe<FileDescriptor>& aDMDFile) {
   mMemoryReportRequest = MakeUnique<MemoryReportRequestHost>(aGeneration);
-  Unused << PVRChild::SendRequestMemoryReport(aGeneration, aAnonymize,
-                                              aMinimizeMemoryUsage, aDMDFile);
+
+  PVRChild::SendRequestMemoryReport(
+      aGeneration, aAnonymize, aMinimizeMemoryUsage, aDMDFile,
+      [&](const uint32_t& aGeneration2) {
+        if (VRProcessManager* vpm = VRProcessManager::Get()) {
+          if (VRChild* child = vpm->GetVRChild()) {
+            if (child->mMemoryReportRequest) {
+              child->mMemoryReportRequest->Finish(aGeneration2);
+              child->mMemoryReportRequest = nullptr;
+            }
+          }
+        }
+      },
+      [&](mozilla::ipc::ResponseRejectReason) {
+        if (VRProcessManager* vpm = VRProcessManager::Get()) {
+          if (VRChild* child = vpm->GetVRChild()) {
+            child->mMemoryReportRequest = nullptr;
+          }
+        }
+      });
+
   return true;
 }
 

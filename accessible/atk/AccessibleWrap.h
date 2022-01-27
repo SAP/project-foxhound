@@ -8,7 +8,7 @@
 #define __NS_ACCESSIBLE_WRAP_H__
 
 #include "nsCOMPtr.h"
-#include "Accessible.h"
+#include "LocalAccessible.h"
 
 struct _AtkObject;
 typedef struct _AtkObject AtkObject;
@@ -45,7 +45,7 @@ class MaiHyperlink;
  * AccessibleWrap, and its descendents in atk directory provide the
  * implementation of AtkObject.
  */
-class AccessibleWrap : public Accessible {
+class AccessibleWrap : public LocalAccessible {
  public:
   AccessibleWrap(nsIContent* aContent, DocAccessible* aDoc);
   virtual ~AccessibleWrap();
@@ -58,22 +58,22 @@ class AccessibleWrap : public Accessible {
   virtual nsresult HandleAccEvent(AccEvent* aEvent) override;
 
   AtkObject* GetAtkObject(void);
-  static AtkObject* GetAtkObject(Accessible* aAccessible);
+  static AtkObject* GetAtkObject(LocalAccessible* aAccessible);
 
   bool IsValidObject();
 
   static const char* ReturnString(nsAString& aString) {
     static nsCString returnedString;
-    returnedString = NS_ConvertUTF16toUTF8(aString);
+    CopyUTF16toUTF8(aString, returnedString);
     return returnedString.get();
   }
 
-  static void GetKeyBinding(Accessible* aAccessible, nsAString& aResult);
+  static void GetKeyBinding(LocalAccessible* aAccessible, nsAString& aResult);
 
-  static Accessible* GetColumnHeader(TableAccessible* aAccessible,
-                                     int32_t aColIdx);
-  static Accessible* GetRowHeader(TableAccessible* aAccessible,
-                                  int32_t aRowIdx);
+  static LocalAccessible* GetColumnHeader(TableAccessible* aAccessible,
+                                          int32_t aColIdx);
+  static LocalAccessible* GetRowHeader(TableAccessible* aAccessible,
+                                       int32_t aRowIdx);
 
  protected:
   nsresult FireAtkStateChangeEvent(AccEvent* aEvent, AtkObject* aObject);

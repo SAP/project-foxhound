@@ -24,7 +24,7 @@ ContentProcessController::ContentProcessController(
 }
 
 void ContentProcessController::NotifyLayerTransforms(
-    const nsTArray<MatrixMessage>& aTransforms) {
+    nsTArray<MatrixMessage>&& aTransforms) {
   // This should never get called
   MOZ_ASSERT(false);
 }
@@ -102,6 +102,13 @@ bool ContentProcessController::IsRepaintThread() { return NS_IsMainThread(); }
 void ContentProcessController::DispatchToRepaintThread(
     already_AddRefed<Runnable> aTask) {
   NS_DispatchToMainThread(std::move(aTask));
+}
+
+PresShell* ContentProcessController::GetTopLevelPresShell() const {
+  if (!mBrowser) {
+    return nullptr;
+  }
+  return mBrowser->GetTopLevelPresShell();
 }
 
 }  // namespace layers

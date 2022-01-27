@@ -11,7 +11,6 @@
 #include "nsIContentPolicy.h"
 #include "nsIChannel.h"
 #include "nsIChannelEventSink.h"
-#include "nsDataHashtable.h"
 
 #define CSPSERVICE_CONTRACTID "@mozilla.org/cspservice;1"
 #define CSPSERVICE_CID                               \
@@ -40,7 +39,7 @@ class CSPService : public nsIContentPolicy, public nsIChannelEventSink {
   // an nsresult to Cancel the old channel with.
   static nsresult ConsultCSPForRedirect(nsIURI* aOriginalURI, nsIURI* aNewURI,
                                         nsILoadInfo* aLoadInfo,
-                                        Maybe<nsresult>& aCancelCode);
+                                        mozilla::Maybe<nsresult>& aCancelCode);
 
  protected:
   virtual ~CSPService();

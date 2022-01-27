@@ -13,10 +13,13 @@ const FORM_PAGE_PATH =
 const passwordInputSelector = "#form-basic-password";
 const usernameInputSelector = "#form-basic-username";
 
+requestLongerTimeout(2);
+
 async function task_setup() {
-  Services.logins.removeAllLogins();
+  Services.logins.removeAllUserFacingLogins();
   LoginTestUtils.resetGeneratedPasswordsCache();
   await cleanupPasswordNotifications();
+  await LoginTestUtils.remoteSettings.setupImprovedPasswordRules();
 }
 
 async function setup_withOneLogin(username = "username", password = "pass1") {
@@ -261,14 +264,16 @@ async function appendContentInputvalue(browser, selector, str) {
 async function submitForm(browser) {
   // Submit the form
   info("Now submit the form");
-
+  let correctPathNamePromise = BrowserTestUtils.browserLoaded(browser);
   await SpecialPowers.spawn(browser, [], async function() {
     content.document.querySelector("form").submit();
-
+  });
+  await correctPathNamePromise;
+  await SpecialPowers.spawn(browser, [], async () => {
+    let win = content;
     await ContentTaskUtils.waitForCondition(() => {
       return (
-        content.location.pathname == "/" &&
-        content.document.readyState == "complete"
+        win.location.pathname == "/" && win.document.readyState == "complete"
       );
     }, "Wait for form submission load");
   });

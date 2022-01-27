@@ -8,24 +8,10 @@
 
 #include "frontend/BytecodeEmitter.h"
 #include "frontend/NameOpEmitter.h"
-#include "frontend/SharedContext.h"
 #include "vm/Opcodes.h"
-#include "vm/StringType.h"
 
 using namespace js;
 using namespace js::frontend;
-
-using mozilla::Maybe;
-
-AutoEmittingRunOnceLambda::AutoEmittingRunOnceLambda(BytecodeEmitter* bce)
-    : bce_(bce) {
-  MOZ_ASSERT(!bce_->emittingRunOnceLambda);
-  bce_->emittingRunOnceLambda = true;
-}
-
-AutoEmittingRunOnceLambda::~AutoEmittingRunOnceLambda() {
-  bce_->emittingRunOnceLambda = false;
-}
 
 CallOrNewEmitter::CallOrNewEmitter(BytecodeEmitter* bce, JSOp op,
                                    ArgumentsKind argumentsKind,
@@ -38,14 +24,14 @@ CallOrNewEmitter::CallOrNewEmitter(BytecodeEmitter* bce, JSOp op,
   MOZ_ASSERT(isCall() || isNew() || isSuperCall());
 }
 
-bool CallOrNewEmitter::emitNameCallee(Handle<JSAtom*> name) {
+bool CallOrNewEmitter::emitNameCallee(TaggedParserAtomIndex name) {
   MOZ_ASSERT(state_ == State::Start);
 
   NameOpEmitter noe(
       bce_, name,
       isCall() ? NameOpEmitter::Kind::Call : NameOpEmitter::Kind::Get);
   if (!noe.emitGet()) {
-    //              [stack] CALLEE THIS
+    //              [stack] CALLEE THIS?
     return false;
   }
 
@@ -53,7 +39,7 @@ bool CallOrNewEmitter::emitNameCallee(Handle<JSAtom*> name) {
   return true;
 }
 
-MOZ_MUST_USE PropOpEmitter& CallOrNewEmitter::prepareForPropCallee(
+[[nodiscard]] PropOpEmitter& CallOrNewEmitter::prepareForPropCallee(
     bool isSuperProp) {
   MOZ_ASSERT(state_ == State::Start);
 
@@ -66,34 +52,32 @@ MOZ_MUST_USE PropOpEmitter& CallOrNewEmitter::prepareForPropCallee(
   return *poe_;
 }
 
-MOZ_MUST_USE ElemOpEmitter& CallOrNewEmitter::prepareForElemCallee(
-    bool isSuperElem, bool isPrivate) {
+[[nodiscard]] ElemOpEmitter& CallOrNewEmitter::prepareForElemCallee(
+    bool isSuperElem) {
   MOZ_ASSERT(state_ == State::Start);
 
   eoe_.emplace(bce_,
                isCall() ? ElemOpEmitter::Kind::Call : ElemOpEmitter::Kind::Get,
                isSuperElem ? ElemOpEmitter::ObjKind::Super
-                           : ElemOpEmitter::ObjKind::Other,
-               isPrivate ? NameVisibility::Private : NameVisibility::Public);
+                           : ElemOpEmitter::ObjKind::Other);
 
   state_ = State::ElemCallee;
   return *eoe_;
 }
 
+PrivateOpEmitter& CallOrNewEmitter::prepareForPrivateCallee(
+    TaggedParserAtomIndex privateName) {
+  MOZ_ASSERT(state_ == State::Start);
+  xoe_.emplace(
+      bce_,
+      isCall() ? PrivateOpEmitter::Kind::Call : PrivateOpEmitter::Kind::Get,
+      privateName);
+  state_ = State::PrivateCallee;
+  return *xoe_;
+}
+
 bool CallOrNewEmitter::prepareForFunctionCallee() {
   MOZ_ASSERT(state_ == State::Start);
-
-  // Top level lambdas which are immediately invoked should be treated as
-  // only running once. Every time they execute we will create new types and
-  // scripts for their contents, to increase the quality of type information
-  // within them and enable more backend optimizations. Note that this does
-  // not depend on the lambda being invoked at most once (it may be named or
-  // be accessed via foo.caller indirection), as multiple executions will
-  // just cause the inner scripts to be repeatedly cloned.
-  MOZ_ASSERT(!bce_->emittingRunOnceLambda);
-  if (bce_->checkRunOnceContext()) {
-    autoEmittingRunOnceLambda_.emplace(bce_);
-  }
 
   state_ = State::FunctionCallee;
   return true;
@@ -128,8 +112,9 @@ bool CallOrNewEmitter::prepareForOtherCallee() {
 
 bool CallOrNewEmitter::emitThis() {
   MOZ_ASSERT(state_ == State::NameCallee || state_ == State::PropCallee ||
-             state_ == State::ElemCallee || state_ == State::FunctionCallee ||
-             state_ == State::SuperCallee || state_ == State::OtherCallee);
+             state_ == State::ElemCallee || state_ == State::PrivateCallee ||
+             state_ == State::FunctionCallee || state_ == State::SuperCallee ||
+             state_ == State::OtherCallee);
 
   bool needsThis = false;
   switch (state_) {
@@ -150,8 +135,13 @@ bool CallOrNewEmitter::emitThis() {
         needsThis = true;
       }
       break;
+    case State::PrivateCallee:
+      xoe_.reset();
+      if (!isCall()) {
+        needsThis = true;
+      }
+      break;
     case State::FunctionCallee:
-      autoEmittingRunOnceLambda_.reset();
       needsThis = true;
       break;
     case State::SuperCallee:
@@ -200,56 +190,97 @@ bool CallOrNewEmitter::wantSpreadOperand() {
   MOZ_ASSERT(isSpread());
 
   state_ = State::WantSpreadOperand;
-  return isSingleSpreadRest();
+  return isSingleSpread() || isPassthroughRest();
+}
+
+bool CallOrNewEmitter::prepareForSpreadArguments() {
+  MOZ_ASSERT(state_ == State::WantSpreadOperand);
+  MOZ_ASSERT(isSpread());
+  MOZ_ASSERT(!isSingleSpread() && !isPassthroughRest());
+
+  state_ = State::Arguments;
+  return true;
 }
 
 bool CallOrNewEmitter::emitSpreadArgumentsTest() {
   // Caller should check wantSpreadOperand before this.
   MOZ_ASSERT(state_ == State::WantSpreadOperand);
   MOZ_ASSERT(isSpread());
+  MOZ_ASSERT(isSingleSpread() || isPassthroughRest());
 
-  if (isSingleSpreadRest()) {
-    // Emit a preparation code to optimize the spread call with a rest
-    // parameter:
+  if (isSingleSpread()) {
+    // Emit a preparation code to optimize the spread call:
     //
-    //   function f(...args) {
-    //     g(...args);
-    //   }
+    //   g(...args);
     //
-    // If the spread operand is a rest parameter and it's optimizable
-    // array, skip spread operation and pass it directly to spread call
-    // operation.  See the comment in OptimizeSpreadCall in
-    // Interpreter.cpp for the optimizable conditons.
-
+    // If the spread operand is a packed array, skip the spread
+    // operation and pass it directly to spread call operation.
+    // See the comment in OptimizeSpreadCall in Interpreter.cpp
+    // for the optimizable conditions.
     //              [stack] CALLEE THIS ARG0
 
     ifNotOptimizable_.emplace(bce_);
+    if (!bce_->emit1(JSOp::Dup)) {
+      //            [stack] CALLEE THIS ARG0 ARG0
+      return false;
+    }
     if (!bce_->emit1(JSOp::OptimizeSpreadCall)) {
-      //            [stack] CALLEE THIS ARG0 OPTIMIZED
+      //            [stack] CALLEE THIS ARG0 ARRAY_OR_UNDEF
       return false;
     }
-    if (!bce_->emit1(JSOp::Not)) {
-      //            [stack] CALLEE THIS ARG0 !OPTIMIZED
+
+    if (!bce_->emit1(JSOp::Dup)) {
+      //            [stack] CALLEE THIS ARG0 ARRAY_OR_UNDEF ARRAY_OR_UNDEF
       return false;
     }
-    if (!ifNotOptimizable_->emitThen()) {
-      //            [stack] CALLEE THIS ARG0
+    if (!bce_->emit1(JSOp::Undefined)) {
+      //            [stack] CALLEE THIS ARG0 ARRAY_OR_UNDEF ARRAY_OR_UNDEF UNDEF
+      return false;
+    }
+    if (!bce_->emit1(JSOp::StrictEq)) {
+      //            [stack] CALLEE THIS ARG0 ARRAY_OR_UNDEF EQ
+      return false;
+    }
+
+    if (!ifNotOptimizable_->emitThenElse()) {
+      //            [stack] CALLEE THIS ARG0 ARRAY_OR_UNDEF
       return false;
     }
     if (!bce_->emit1(JSOp::Pop)) {
-      //            [stack] CALLEE THIS
+      //            [stack] CALLEE THIS ARG0
       return false;
     }
   }
 
-  state_ = State::Arguments;
+  state_ = State::SpreadIteration;
   return true;
 }
 
-bool CallOrNewEmitter::emitEnd(uint32_t argc, const Maybe<uint32_t>& beginPos) {
+bool CallOrNewEmitter::wantSpreadIteration() {
+  MOZ_ASSERT(state_ == State::SpreadIteration);
+  MOZ_ASSERT(isSpread());
+
+  state_ = State::Arguments;
+  return !isPassthroughRest();
+}
+
+bool CallOrNewEmitter::emitEnd(uint32_t argc, uint32_t beginPos) {
   MOZ_ASSERT(state_ == State::Arguments);
 
-  if (isSingleSpreadRest()) {
+  if (isSingleSpread()) {
+    if (!ifNotOptimizable_->emitElse()) {
+      //            [stack] CALLEE THIS ARG0 ARRAY_OR_UNDEF
+      return false;
+    }
+    if (!bce_->emit1(JSOp::Swap)) {
+      //            [stack] CALLEE THIS ARRAY_OR_UNDEF ARG0
+      return false;
+    }
+    if (!bce_->emit1(JSOp::Pop)) {
+      //            [stack] CALLEE THIS ARRAY_OR_UNDEF
+      return false;
+    }
+
     if (!ifNotOptimizable_->emitEnd()) {
       //            [stack] CALLEE THIS ARR
       return false;
@@ -272,10 +303,8 @@ bool CallOrNewEmitter::emitEnd(uint32_t argc, const Maybe<uint32_t>& beginPos) {
       }
     }
   }
-  if (beginPos) {
-    if (!bce_->updateSourceCoordNotes(*beginPos)) {
-      return false;
-    }
+  if (!bce_->updateSourceCoordNotes(beginPos)) {
+    return false;
   }
   if (!bce_->markSimpleBreakpoint()) {
     return false;
@@ -292,8 +321,8 @@ bool CallOrNewEmitter::emitEnd(uint32_t argc, const Maybe<uint32_t>& beginPos) {
     }
   }
 
-  if (isEval() && beginPos) {
-    uint32_t lineNum = bce_->parser->errorReporter().lineAt(*beginPos);
+  if (isEval()) {
+    uint32_t lineNum = bce_->parser->errorReporter().lineAt(beginPos);
     if (!bce_->emitUint32Operand(JSOp::Lineno, lineNum)) {
       return false;
     }

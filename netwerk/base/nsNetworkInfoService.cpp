@@ -11,7 +11,6 @@
 #endif
 
 #include "nsNetworkInfoService.h"
-#include "mozilla/ScopeExit.h"
 
 #if defined(XP_MACOSX) || defined(XP_WIN) || defined(XP_LINUX)
 #  include "NetworkInfoServiceImpl.h"
@@ -45,8 +44,8 @@ nsresult nsNetworkInfoService::ListNetworkAddresses(
     return NS_OK;
   }
 
-  for (auto iter = addrMap.Iter(); !iter.Done(); iter.Next()) {
-    addrStrings.AppendElement(iter.Data());
+  for (const auto& data : addrMap.Values()) {
+    addrStrings.AppendElement(data);
   }
   aListener->OnListedNetworkAddresses(addrStrings);
   return NS_OK;

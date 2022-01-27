@@ -5,11 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "js/JSON.h"
+#include "nsContentUtils.h"
 #include "nsArrayUtils.h"
+#include "nsTString.h"
 #include "PaymentRequestUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 nsresult SerializeFromJSObject(JSContext* aCx, JS::HandleObject aObject,
                                nsAString& aSerializedObject) {
@@ -50,14 +51,11 @@ nsresult DeserializeToJSObject(const nsAString& aSerializedObject,
 nsresult DeserializeToJSValue(const nsAString& aSerializedObject,
                               JSContext* aCx, JS::MutableHandleValue aValue) {
   MOZ_ASSERT(aCx);
-  if (!JS_ParseJSON(aCx,
-                    static_cast<const char16_t*>(
-                        PromiseFlatString(aSerializedObject).get()),
+  if (!JS_ParseJSON(aCx, aSerializedObject.BeginReading(),
                     aSerializedObject.Length(), aValue)) {
     return NS_ERROR_UNEXPECTED;
   }
   return NS_OK;
 }
 
-}  // end of namespace dom
-}  // end of namespace mozilla
+}  // namespace mozilla::dom

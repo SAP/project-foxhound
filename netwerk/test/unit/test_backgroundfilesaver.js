@@ -242,35 +242,32 @@ function promisePumpToSaver(
       Ci.nsIInputStreamPump
     );
     pump.init(inputStream, 0, 0, true);
-    pump.asyncRead(
-      {
-        onStartRequest: function PPTS_onStartRequest(aRequest) {
-          aSaverStreamListener.onStartRequest(aRequest);
-        },
-        onStopRequest: function PPTS_onStopRequest(aRequest, aStatusCode) {
-          aSaverStreamListener.onStopRequest(aRequest, aStatusCode);
-          if (Components.isSuccessCode(aStatusCode)) {
-            resolve();
-          } else {
-            reject(new Components.Exception(aStatusCode));
-          }
-        },
-        onDataAvailable: function PPTS_onDataAvailable(
+    pump.asyncRead({
+      onStartRequest: function PPTS_onStartRequest(aRequest) {
+        aSaverStreamListener.onStartRequest(aRequest);
+      },
+      onStopRequest: function PPTS_onStopRequest(aRequest, aStatusCode) {
+        aSaverStreamListener.onStopRequest(aRequest, aStatusCode);
+        if (Components.isSuccessCode(aStatusCode)) {
+          resolve();
+        } else {
+          reject(new Components.Exception(aStatusCode));
+        }
+      },
+      onDataAvailable: function PPTS_onDataAvailable(
+        aRequest,
+        aInputStream,
+        aOffset,
+        aCount
+      ) {
+        aSaverStreamListener.onDataAvailable(
           aRequest,
           aInputStream,
           aOffset,
           aCount
-        ) {
-          aSaverStreamListener.onDataAvailable(
-            aRequest,
-            aInputStream,
-            aOffset,
-            aCount
-          );
-        },
+        );
       },
-      null
-    );
+    });
   });
 }
 
@@ -619,7 +616,6 @@ add_task(async function test_enableAppend_hash() {
 
 add_task(async function test_finish_only() {
   // This test checks creating the object and doing nothing.
-  let destFile = getTempFile(TEST_FILE_NAME_1);
   let saver = new BackgroundFileSaverOutputStream();
   function onTargetChange(aTarget) {
     do_throw("Should not receive the onTargetChange notification.");
@@ -683,7 +679,7 @@ add_task(async function test_invalid_hash() {
   let completionPromise = promiseSaverComplete(saver);
   // We shouldn't be able to get the hash if hashing hasn't been enabled
   try {
-    let hash = saver.sha256Hash;
+    saver.sha256Hash;
     do_throw("Shouldn't be able to get hash if hashing not enabled");
   } catch (ex) {
     if (ex.result != Cr.NS_ERROR_NOT_AVAILABLE) {
@@ -700,7 +696,7 @@ add_task(async function test_invalid_hash() {
   // successfully.
   saver.finish(Cr.NS_ERROR_FAILURE);
   try {
-    let hash = saver.sha256Hash;
+    saver.sha256Hash;
     do_throw("Shouldn't be able to get hash if save did not succeed");
   } catch (ex) {
     if (ex.result != Cr.NS_ERROR_NOT_AVAILABLE) {
@@ -727,7 +723,7 @@ add_task(async function test_signature() {
   let completionPromise = promiseSaverComplete(saver);
 
   try {
-    let signatureInfo = saver.signatureInfo;
+    saver.signatureInfo;
     do_throw("Can't get signature if saver is not complete");
   } catch (ex) {
     if (ex.result != Cr.NS_ERROR_NOT_AVAILABLE) {
@@ -762,7 +758,7 @@ add_task(async function test_signature_not_enabled() {
   saver.finish(Cr.NS_OK);
   await completionPromise;
   try {
-    let signatureInfo = saver.signatureInfo;
+    saver.signatureInfo;
     do_throw("Can't get signature if not enabled");
   } catch (ex) {
     if (ex.result != Cr.NS_ERROR_NOT_AVAILABLE) {

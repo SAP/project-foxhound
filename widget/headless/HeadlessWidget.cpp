@@ -3,14 +3,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "HeadlessWidget.h"
+#include "ErrorList.h"
 #include "HeadlessCompositorWidget.h"
 #include "Layers.h"
-#include "BasicLayers.h"
 #include "BasicEvents.h"
 #include "MouseEvents.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/WritingModes.h"
 #include "mozilla/widget/HeadlessWidgetTypes.h"
 #include "mozilla/widget/PlatformWidgetTypes.h"
 #include "nsIScreen.h"
@@ -246,11 +249,8 @@ LayoutDeviceIntPoint HeadlessWidget::WidgetToScreenOffset() {
   return mTopLevel->GetBounds().TopLeft();
 }
 
-LayerManager* HeadlessWidget::GetLayerManager(
-    PLayerTransactionChild* aShadowManager, LayersBackend aBackendHint,
-    LayerManagerPersistence aPersistence) {
-  return nsBaseWidget::GetLayerManager(aShadowManager, aBackendHint,
-                                       aPersistence);
+WindowRenderer* HeadlessWidget::GetWindowRenderer() {
+  return nsBaseWidget::GetWindowRenderer();
 }
 
 void HeadlessWidget::SetCompositorWidgetDelegate(
@@ -400,8 +400,15 @@ bool HeadlessWidget::GetEditCommands(NativeKeyBindingsType aType,
     return false;
   }
 
+  Maybe<WritingMode> writingMode;
+  if (aEvent.NeedsToRemapNavigationKey()) {
+    if (RefPtr<TextEventDispatcher> dispatcher = GetTextEventDispatcher()) {
+      writingMode = dispatcher->MaybeWritingModeAtSelection();
+    }
+  }
+
   HeadlessKeyBindings& bindings = HeadlessKeyBindings::GetInstance();
-  bindings.GetEditCommands(aType, aEvent, aCommands);
+  bindings.GetEditCommands(aType, aEvent, writingMode, aCommands);
   return true;
 }
 
@@ -422,30 +429,31 @@ nsresult HeadlessWidget::DispatchEvent(WidgetGUIEvent* aEvent,
   return NS_OK;
 }
 
-nsresult HeadlessWidget::SynthesizeNativeMouseEvent(LayoutDeviceIntPoint aPoint,
-                                                    uint32_t aNativeMessage,
-                                                    uint32_t aModifierFlags,
-                                                    nsIObserver* aObserver) {
+nsresult HeadlessWidget::SynthesizeNativeMouseEvent(
+    LayoutDeviceIntPoint aPoint, NativeMouseMessage aNativeMessage,
+    MouseButton aButton, nsIWidget::Modifiers aModifierFlags,
+    nsIObserver* aObserver) {
   AutoObserverNotifier notifier(aObserver, "mouseevent");
   EventMessage msg;
   switch (aNativeMessage) {
-    case MOZ_HEADLESS_MOUSE_MOVE:
+    case NativeMouseMessage::Move:
       msg = eMouseMove;
       break;
-    case MOZ_HEADLESS_MOUSE_DOWN:
+    case NativeMouseMessage::ButtonDown:
       msg = eMouseDown;
       break;
-    case MOZ_HEADLESS_MOUSE_UP:
+    case NativeMouseMessage::ButtonUp:
       msg = eMouseUp;
       break;
-    default:
+    case NativeMouseMessage::EnterWindow:
+    case NativeMouseMessage::LeaveWindow:
       MOZ_ASSERT_UNREACHABLE("Unsupported synthesized mouse event");
       return NS_ERROR_UNEXPECTED;
   }
   WidgetMouseEvent event(true, msg, this, WidgetMouseEvent::eReal);
   event.mRefPoint = aPoint - WidgetToScreenOffset();
   if (msg == eMouseDown || msg == eMouseUp) {
-    event.mButton = MouseButton::ePrimary;
+    event.mButton = aButton;
   }
   if (msg == eMouseDown) {
     event.mClickCount = 1;
@@ -499,5 +507,59 @@ nsresult HeadlessWidget::SynthesizeNativeTouchPoint(
   return NS_OK;
 }
 
+nsresult HeadlessWidget::SynthesizeNativeTouchPadPinch(
+    TouchpadGesturePhase aEventPhase, float aScale, LayoutDeviceIntPoint aPoint,
+    int32_t aModifierFlags) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  PinchGestureInput::PinchGestureType pinchGestureType =
+      PinchGestureInput::PINCHGESTURE_SCALE;
+  ScreenCoord CurrentSpan;
+  ScreenCoord PreviousSpan;
+  switch (aEventPhase) {
+    case PHASE_BEGIN:
+      pinchGestureType = PinchGestureInput::PINCHGESTURE_START;
+      CurrentSpan = aScale;
+      PreviousSpan = 0.999;
+      break;
+
+    case PHASE_UPDATE:
+      pinchGestureType = PinchGestureInput::PINCHGESTURE_SCALE;
+      if (aScale == mLastPinchSpan) {
+        return NS_ERROR_INVALID_ARG;
+      }
+      CurrentSpan = aScale;
+      PreviousSpan = mLastPinchSpan;
+      break;
+
+    case PHASE_END:
+      pinchGestureType = PinchGestureInput::PINCHGESTURE_END;
+      CurrentSpan = aScale;
+      PreviousSpan = mLastPinchSpan;
+      break;
+
+    default:
+      return NS_ERROR_INVALID_ARG;
+  }
+
+  LayoutDeviceIntPoint touchpadPoint = aPoint - WidgetToScreenOffset();
+  // The headless widget does not support modifiers.
+  // Do not pass `aModifierFlags` because it contains native modifier values.
+  PinchGestureInput inputToDispatch(
+      pinchGestureType, PinchGestureInput::TRACKPAD, PR_IntervalNow(),
+      TimeStamp::Now(), ExternalPoint(0, 0),
+      ScreenPoint(touchpadPoint.x, touchpadPoint.y),
+      100.0 * ((aEventPhase == PHASE_END) ? ScreenCoord(1.f) : CurrentSpan),
+      100.0 * ((aEventPhase == PHASE_END) ? ScreenCoord(1.f) : PreviousSpan),
+      0);
+
+  if (!inputToDispatch.SetLineOrPageDeltaY(this)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  mLastPinchSpan = aScale;
+  DispatchPinchGestureInput(inputToDispatch);
+  return NS_OK;
+}
 }  // namespace widget
 }  // namespace mozilla

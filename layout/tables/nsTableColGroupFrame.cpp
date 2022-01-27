@@ -297,18 +297,17 @@ void nsTableColGroupFrame::RemoveFrame(ChildListID aListID,
   }
 }
 
-nsIFrame::LogicalSides nsTableColGroupFrame::GetLogicalSkipSides(
-    const ReflowInput* aReflowInput) const {
+nsIFrame::LogicalSides nsTableColGroupFrame::GetLogicalSkipSides() const {
   LogicalSides skip(mWritingMode);
   if (MOZ_UNLIKELY(StyleBorder()->mBoxDecorationBreak ==
                    StyleBoxDecorationBreak::Clone)) {
     return skip;
   }
 
-  if (nullptr != GetPrevInFlow()) {
+  if (GetPrevInFlow()) {
     skip |= eLogicalSideBitsBStart;
   }
-  if (nullptr != GetNextInFlow()) {
+  if (GetNextInFlow()) {
     skip |= eLogicalSideBitsBEnd;
   }
   return skip;

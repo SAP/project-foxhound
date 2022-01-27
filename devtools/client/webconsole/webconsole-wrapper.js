@@ -26,7 +26,6 @@ const Telemetry = require("devtools/client/shared/telemetry");
 
 const EventEmitter = require("devtools/shared/event-emitter");
 const App = createFactory(require("devtools/client/webconsole/components/App"));
-const DataProvider = require("devtools/client/netmonitor/src/connector/firefox-data-provider");
 
 const {
   setupServiceContainer,
@@ -60,6 +59,7 @@ class WebConsoleWrapper {
    * @param {WebConsoleUI} webConsoleUI
    * @param {Toolbox} toolbox
    * @param {Document} document
+   *
    */
   constructor(parentNode, webConsoleUI, toolbox, document) {
     EventEmitter.decorate(this);
@@ -82,15 +82,6 @@ class WebConsoleWrapper {
   async init() {
     const { webConsoleUI } = this;
 
-    const webConsoleFront = await this.hud.currentTarget.getFront("console");
-
-    this.networkDataProvider = new DataProvider({
-      actions: {
-        updateRequest: (id, data) => this.batchedRequestUpdates({ id, data }),
-      },
-      webConsoleFront,
-    });
-
     return new Promise(resolve => {
       store = configureStore(this.webConsoleUI, {
         // We may not have access to the toolbox (e.g. in the browser console).
@@ -99,7 +90,7 @@ class WebConsoleWrapper {
           webConsoleUI,
           hud: this.hud,
           toolbox: this.toolbox,
-          client: this.webConsoleUI._commands,
+          commands: this.hud.commands,
         },
       });
 
@@ -151,11 +142,18 @@ class WebConsoleWrapper {
   dispatchMessagesClear() {
     // We might still have pending message additions and updates when the clear action is
     // triggered, so we need to flush them to make sure we don't have unexpected behavior
-    // in the ConsoleOutput.
-    this.queuedMessageAdds = [];
-    this.queuedMessageUpdates = [];
-    this.queuedRequestUpdates = [];
-    store.dispatch(actions.messagesClear());
+    // in the ConsoleOutput. *But* we want to keep any pending navigation request,
+    // as we want to keep displaying them even if we received a clear request.
+    function filter(l) {
+      return l.filter(update => update.isNavigationRequest);
+    }
+    this.queuedMessageAdds = filter(this.queuedMessageAdds);
+    this.queuedMessageUpdates = filter(this.queuedMessageUpdates);
+    this.queuedRequestUpdates = this.queuedRequestUpdates.filter(
+      update => update.data.isNavigationRequest
+    );
+
+    store?.dispatch(actions.messagesClear());
     this.webConsoleUI.emitForTests("messages-cleared");
   }
 
@@ -208,25 +206,8 @@ class WebConsoleWrapper {
     store.dispatch(actions.privateMessagesClear());
   }
 
-  dispatchMessageUpdate(message) {
-    // network-message-updated will emit when all the update message arrives.
-    // Since we can't ensure the order of the network update, we check
-    // that message.updates has all we need.
-    // Note that 'requestPostData' is sent only for POST requests, so we need
-    // to count with that.
-    const NUMBER_OF_NETWORK_UPDATE = 8;
-
-    let expectedLength = NUMBER_OF_NETWORK_UPDATE;
-    if (message.updates.includes("responseCache")) {
-      expectedLength++;
-    }
-    if (message.updates.includes("requestPostData")) {
-      expectedLength++;
-    }
-
-    if (message.updates.length === expectedLength) {
-      this.batchedMessageUpdates(message);
-    }
+  dispatchMessagesUpdate(messages) {
+    this.batchedMessagesUpdates(messages);
   }
 
   dispatchSidebarClose() {
@@ -252,7 +233,6 @@ class WebConsoleWrapper {
       // Add a type in order for this event packet to be identified by
       // utils/messages.js's `transformPacket`
       packet.type = "will-navigate";
-      packet.timeStamp = Date.now();
       this.dispatchMessageAdd(packet);
     } else {
       this.dispatchMessagesClear();
@@ -262,9 +242,11 @@ class WebConsoleWrapper {
     }
   }
 
-  batchedMessageUpdates(message) {
-    this.queuedMessageUpdates.push(message);
-    this.setTimeoutIfNeeded();
+  batchedMessagesUpdates(messages) {
+    if (messages.length > 0) {
+      this.queuedMessageUpdates.push(...messages);
+      this.setTimeoutIfNeeded();
+    }
   }
 
   batchedRequestUpdates(message) {
@@ -273,16 +255,10 @@ class WebConsoleWrapper {
   }
 
   batchedMessagesAdd(messages) {
-    this.queuedMessageAdds = this.queuedMessageAdds.concat(messages);
-    this.setTimeoutIfNeeded();
-  }
-
-  requestData(id, type) {
-    this.networkDataProvider.requestData(id, type);
-  }
-
-  dispatchClearLogpointMessages(logpointId) {
-    store.dispatch(actions.messagesClearLogpoint(logpointId));
+    if (messages.length > 0) {
+      this.queuedMessageAdds.push(...messages);
+      this.setTimeoutIfNeeded();
+    }
   }
 
   dispatchClearHistory() {
@@ -342,16 +318,17 @@ class WebConsoleWrapper {
         this.queuedMessageAdds = [];
 
         if (this.queuedMessageUpdates.length > 0) {
-          for (const message of this.queuedMessageUpdates) {
-            await store.dispatch(actions.networkMessageUpdate(message, null));
-            this.webConsoleUI.emitForTests("network-message-updated", message);
-          }
+          await store.dispatch(
+            actions.networkMessageUpdates(this.queuedMessageUpdates, null)
+          );
+          this.webConsoleUI.emitForTests("network-messages-updated");
           this.queuedMessageUpdates = [];
         }
         if (this.queuedRequestUpdates.length > 0) {
-          for (const { id, data } of this.queuedRequestUpdates) {
-            await store.dispatch(actions.networkUpdateRequest(id, data));
-          }
+          await store.dispatch(
+            actions.networkUpdateRequests(this.queuedRequestUpdates)
+          );
+          const updateCount = this.queuedRequestUpdates.length;
           this.queuedRequestUpdates = [];
 
           // Fire an event indicating that all data fetched from
@@ -361,7 +338,11 @@ class WebConsoleWrapper {
           // (netmonitor/src/connector/firefox-data-provider).
           // This event might be utilized in tests to find the right
           // time when to finish.
-          this.webConsoleUI.emitForTests("network-request-payload-ready");
+
+          this.webConsoleUI.emitForTests(
+            "network-request-payload-ready",
+            updateCount
+          );
         }
         done();
       }, 50);

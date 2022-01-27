@@ -28,6 +28,7 @@ class GfxInfo : public GfxInfoBase {
   NS_IMETHOD GetHasBattery(bool* aHasBattery) override;
   NS_IMETHOD GetWindowProtocol(nsAString& aWindowProtocol) override;
   NS_IMETHOD GetDesktopEnvironment(nsAString& aDesktopEnvironment) override;
+  NS_IMETHOD GetTestType(nsAString& aTestType) override;
   NS_IMETHOD GetCleartypeParameters(nsAString& aCleartypeParams) override;
   NS_IMETHOD GetAdapterDescription(nsAString& aAdapterDescription) override;
   NS_IMETHOD GetAdapterDriver(nsAString& aAdapterDriver) override;
@@ -52,6 +53,7 @@ class GfxInfo : public GfxInfoBase {
   NS_IMETHOD GetDisplayInfo(nsTArray<nsString>& aDisplayInfo) override;
   NS_IMETHOD GetDisplayWidth(nsTArray<uint32_t>& aDisplayWidth) override;
   NS_IMETHOD GetDisplayHeight(nsTArray<uint32_t>& aDisplayHeight) override;
+  NS_IMETHOD GetDrmRenderDevice(nsACString& aDrmRenderDevice) override;
 
   using GfxInfoBase::GetFeatureStatus;
   using GfxInfoBase::GetFeatureSuggestedDriverVersion;

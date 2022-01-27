@@ -80,8 +80,6 @@ StoreBuffer::StoreBuffer(JSRuntime* rt, const Nursery& nursery)
       nursery_(nursery),
       aboutToOverflow_(false),
       enabled_(false),
-      cancelIonCompilations_(false),
-      hasTypeSetPointers_(false),
       mayHavePointersToDeadCells_(false)
 #ifdef DEBUG
       ,
@@ -91,14 +89,13 @@ StoreBuffer::StoreBuffer(JSRuntime* rt, const Nursery& nursery)
 {
 }
 
-void StoreBuffer::checkEmpty() const {
-  MOZ_ASSERT(bufferVal.isEmpty());
-  MOZ_ASSERT(bufStrCell.isEmpty());
-  MOZ_ASSERT(bufBigIntCell.isEmpty());
-  MOZ_ASSERT(bufObjCell.isEmpty());
-  MOZ_ASSERT(bufferSlot.isEmpty());
-  MOZ_ASSERT(bufferWholeCell.isEmpty());
-  MOZ_ASSERT(bufferGeneric.isEmpty());
+void StoreBuffer::checkEmpty() const { MOZ_ASSERT(isEmpty()); }
+
+bool StoreBuffer::isEmpty() const {
+  return bufferVal.isEmpty() && bufStrCell.isEmpty() &&
+         bufBigIntCell.isEmpty() && bufObjCell.isEmpty() &&
+         bufferSlot.isEmpty() && bufferWholeCell.isEmpty() &&
+         bufferGeneric.isEmpty();
 }
 
 bool StoreBuffer::enable() {
@@ -134,8 +131,6 @@ void StoreBuffer::clear() {
   }
 
   aboutToOverflow_ = false;
-  cancelIonCompilations_ = false;
-  hasTypeSetPointers_ = false;
   mayHavePointersToDeadCells_ = false;
 
   bufferVal.clear();
@@ -213,6 +208,11 @@ ArenaCellSet* StoreBuffer::WholeCellBuffer::allocateCellSet(Arena* arena) {
   return cells;
 }
 
+void gc::CellHeaderPostWriteBarrier(JSObject** ptr, JSObject* prev,
+                                    JSObject* next) {
+  InternalBarrierMethods<JSObject*>::postBarrier(ptr, prev, next);
+}
+
 void StoreBuffer::WholeCellBuffer::clear() {
   for (auto** headPtr : {&stringHead_, &nonStringHead_}) {
     for (auto* set = *headPtr; set; set = set->next) {
@@ -228,3 +228,16 @@ void StoreBuffer::WholeCellBuffer::clear() {
 
 template struct StoreBuffer::MonoTypeBuffer<StoreBuffer::ValueEdge>;
 template struct StoreBuffer::MonoTypeBuffer<StoreBuffer::SlotsEdge>;
+
+void js::gc::PostWriteBarrierCell(Cell* cell, Cell* prev, Cell* next) {
+  if (!next || !cell->isTenured()) {
+    return;
+  }
+
+  StoreBuffer* buffer = next->storeBuffer();
+  if (!buffer || (prev && prev->storeBuffer())) {
+    return;
+  }
+
+  buffer->putWholeCell(cell);
+}

@@ -1,4 +1,4 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl")||release_or_beta)
+// |reftest| skip-if(!this.hasOwnProperty("Intl"))
 
 const {
   DayPeriod, Hour, Minute, Second, FractionalSecond, Literal
@@ -27,14 +27,15 @@ const tests = [
     date: new Date("2020-01-01T00:00:00.123"),
     options: {minute: "2-digit", fractionalSecondDigits: 3},
     parts: [
-      Second("٠"),
+      Minute("٠٠"),
+      Literal(":"),
+      Second("٠٠"),
       Literal("٫"),
       FractionalSecond("١٢٣"),
-      Literal(" (Minute: "),
-      Minute("٠"),
-      Literal(")")
     ]
   },
+
+  // https://unicode-org.atlassian.net/browse/ICU-20992
   {
     locale: "ckb-IR",
     date: new Date("2020-01-01T00:00:00.123"),

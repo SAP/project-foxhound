@@ -15,12 +15,10 @@ function test() {
     const TOOL_ID_2 = "webconsole";
     await addTab(URL);
 
-    const target = await TargetFactory.forTab(gBrowser.selectedTab);
-    toolbox = await gDevTools.showToolbox(
-      target,
-      TOOL_ID_1,
-      Toolbox.HostType.BOTTOM
-    );
+    toolbox = await gDevTools.showToolboxForTab(gBrowser.selectedTab, {
+      toolId: TOOL_ID_1,
+      hostType: Toolbox.HostType.BOTTOM,
+    });
 
     // select tool 2
     await toolbox.selectTool(TOOL_ID_2);
@@ -82,6 +80,10 @@ function unhighlightTab(toolId) {
 function checkHighlighted(toolId) {
   const tab = toolbox.doc.getElementById("toolbox-tab-" + toolId);
   ok(
+    toolbox.isHighlighted(toolId),
+    `Toolbox.isHighlighted reports ${toolId} as highlighted`
+  );
+  ok(
     tab.classList.contains("highlighted"),
     `The highlighted class is present in ${toolId}.`
   );
@@ -94,6 +96,10 @@ function checkHighlighted(toolId) {
 function checkNoHighlightWhenSelected(toolId) {
   const tab = toolbox.doc.getElementById("toolbox-tab-" + toolId);
   ok(
+    toolbox.isHighlighted(toolId),
+    `Toolbox.isHighlighted reports ${toolId} as highlighted`
+  );
+  ok(
     tab.classList.contains("highlighted"),
     `The highlighted class is present in ${toolId}`
   );
@@ -105,6 +111,10 @@ function checkNoHighlightWhenSelected(toolId) {
 
 function checkNoHighlight(toolId) {
   const tab = toolbox.doc.getElementById("toolbox-tab-" + toolId);
+  ok(
+    !toolbox.isHighlighted(toolId),
+    `Toolbox.isHighlighted reports ${toolId} as not highlighted`
+  );
   ok(
     !tab.classList.contains("highlighted"),
     `The highlighted class is not present in ${toolId}`

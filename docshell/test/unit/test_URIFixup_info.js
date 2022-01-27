@@ -1,24 +1,8 @@
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
-);
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
 
-const kSearchEngineID = "test_urifixup_search_engine";
-const kSearchEngineURL = "http://www.example.org/?search={searchTerms}";
-const kPrivateSearchEngineID = "test_urifixup_search_engine_private";
-const kPrivateSearchEngineURL = "http://www.example.org/?private={searchTerms}";
 const kForceDNSLookup = "browser.fixup.dns_first_for_single_words";
-
-AddonTestUtils.init(this);
-AddonTestUtils.overrideCertDB();
-AddonTestUtils.createAppInfo(
-  "xpcshell@tests.mozilla.org",
-  "XPCShell",
-  "1",
-  "42"
-);
 
 // TODO(bug 1522134), this test should also use
 // combinations of the following flags.
@@ -75,12 +59,12 @@ var testcases = [
   {
     input: "http://mozilla/",
     fixedURI: "http://mozilla/",
-    alternateURI: "http://www.mozilla.com/",
+    alternateURI: "https://www.mozilla.com/",
   },
   {
     input: "http://test./",
     fixedURI: "http://test./",
-    alternateURI: "http://www.test./",
+    alternateURI: "https://www.test./",
   },
   {
     input: "127.0.0.1",
@@ -250,13 +234,13 @@ var testcases = [
   {
     input: "whitelisted/foo.txt",
     fixedURI: "http://whitelisted/foo.txt",
-    alternateURI: "http://www.whitelisted.com/foo.txt",
+    alternateURI: "https://www.whitelisted.com/foo.txt",
     protocolChange: true,
   },
   {
     input: "mozilla",
     fixedURI: "http://mozilla/",
-    alternateURI: "http://www.mozilla.com/",
+    alternateURI: "https://www.mozilla.com/",
     keywordLookup: true,
     protocolChange: true,
     affectedByDNSForSingleWordHosts: true,
@@ -264,7 +248,7 @@ var testcases = [
   {
     input: "test.",
     fixedURI: "http://test./",
-    alternateURI: "http://www.test./",
+    alternateURI: "https://www.test./",
     keywordLookup: true,
     protocolChange: true,
     affectedByDNSForSingleWordHosts: true,
@@ -272,7 +256,7 @@ var testcases = [
   {
     input: ".test",
     fixedURI: "http://.test/",
-    alternateURI: "http://www..test/",
+    alternateURI: "https://www.test/",
     keywordLookup: true,
     protocolChange: true,
     affectedByDNSForSingleWordHosts: true,
@@ -300,7 +284,7 @@ var testcases = [
   {
     input: "mozilla ",
     fixedURI: "http://mozilla/",
-    alternateURI: "http://www.mozilla.com/",
+    alternateURI: "https://www.mozilla.com/",
     keywordLookup: true,
     protocolChange: true,
     affectedByDNSForSingleWordHosts: true,
@@ -308,7 +292,7 @@ var testcases = [
   {
     input: "   mozilla  ",
     fixedURI: "http://mozilla/",
-    alternateURI: "http://www.mozilla.com/",
+    alternateURI: "https://www.mozilla.com/",
     keywordLookup: true,
     protocolChange: true,
     affectedByDNSForSingleWordHosts: true,
@@ -328,7 +312,7 @@ var testcases = [
   {
     input: "mozilla\n",
     fixedURI: "http://mozilla/",
-    alternateURI: "http://www.mozilla.com/",
+    alternateURI: "https://www.mozilla.com/",
     keywordLookup: true,
     protocolChange: true,
     affectedByDNSForSingleWordHosts: true,
@@ -336,7 +320,7 @@ var testcases = [
   {
     input: "mozilla \r\n",
     fixedURI: "http://mozilla/",
-    alternateURI: "http://www.mozilla.com/",
+    alternateURI: "https://www.mozilla.com/",
     keywordLookup: true,
     protocolChange: true,
     affectedByDNSForSingleWordHosts: true,
@@ -344,7 +328,7 @@ var testcases = [
   {
     input: "moz\r\nfirefox\nos\r",
     fixedURI: "http://mozfirefoxos/",
-    alternateURI: "http://www.mozfirefoxos.com/",
+    alternateURI: "https://www.mozfirefoxos.com/",
     keywordLookup: true,
     protocolChange: true,
     affectedByDNSForSingleWordHosts: true,
@@ -364,27 +348,27 @@ var testcases = [
   {
     input: "http://whitelisted/",
     fixedURI: "http://whitelisted/",
-    alternateURI: "http://www.whitelisted.com/",
+    alternateURI: "https://www.whitelisted.com/",
     inWhitelist: true,
   },
   {
     input: "whitelisted",
     fixedURI: "http://whitelisted/",
-    alternateURI: "http://www.whitelisted.com/",
+    alternateURI: "https://www.whitelisted.com/",
     protocolChange: true,
     inWhitelist: true,
   },
   {
     input: "whitelisted.",
     fixedURI: "http://whitelisted./",
-    alternateURI: "http://www.whitelisted./",
+    alternateURI: "https://www.whitelisted./",
     protocolChange: true,
     inWhitelist: true,
   },
   {
     input: "mochi.test",
     fixedURI: "http://mochi.test/",
-    alternateURI: "http://www.mochi.test/",
+    alternateURI: "https://www.mochi.test/",
     protocolChange: true,
     inWhitelist: true,
   },
@@ -399,7 +383,7 @@ var testcases = [
   {
     input: "some.domain",
     fixedURI: "http://some.domain/",
-    alternateURI: "http://www.some.domain/",
+    alternateURI: "https://www.some.domain/",
     keywordLookup: true,
     protocolChange: true,
     affectedByDNSForSingleWordHosts: true,
@@ -407,13 +391,13 @@ var testcases = [
   {
     input: "café.com",
     fixedURI: "http://xn--caf-dma.com/",
-    alternateURI: "http://www.xn--caf-dma.com/",
+    alternateURI: "https://www.xn--caf-dma.com/",
     protocolChange: true,
   },
   {
     input: "mozilla.nonexistent",
     fixedURI: "http://mozilla.nonexistent/",
-    alternateURI: "http://www.mozilla.nonexistent/",
+    alternateURI: "https://www.mozilla.nonexistent/",
     keywordLookup: true,
     protocolChange: true,
     affectedByDNSForSingleWordHosts: true,
@@ -421,7 +405,7 @@ var testcases = [
   {
     input: "mochi.ocm",
     fixedURI: "http://mochi.com/",
-    alternateURI: "http://www.mochi.com/",
+    alternateURI: "https://www.mochi.com/",
     protocolChange: true,
   },
   {
@@ -455,7 +439,7 @@ var testcases = [
   {
     input: "5+2",
     fixedURI: "http://5+2/",
-    alternateURI: "http://www.5+2.com/",
+    alternateURI: "https://www.5+2.com/",
     keywordLookup: true,
     protocolChange: true,
     affectedByDNSForSingleWordHosts: true,
@@ -474,13 +458,13 @@ var testcases = [
   {
     input: "mozilla.com/?q=search",
     fixedURI: "http://mozilla.com/?q=search",
-    alternateURI: "http://www.mozilla.com/?q=search",
+    alternateURI: "https://www.mozilla.com/?q=search",
     protocolChange: true,
   },
   {
     input: "mozilla.com?q=search",
     fixedURI: "http://mozilla.com/?q=search",
-    alternateURI: "http://www.mozilla.com/?q=search",
+    alternateURI: "https://www.mozilla.com/?q=search",
     protocolChange: true,
   },
   {
@@ -495,7 +479,7 @@ var testcases = [
   {
     input: "mozilla.com'?q=search",
     fixedURI: "http://mozilla.com/?q=search",
-    alternateURI: "http://www.mozilla.com/?q=search",
+    alternateURI: "https://www.mozilla.com/?q=search",
     protocolChange: true,
   },
   {
@@ -509,7 +493,7 @@ var testcases = [
   {
     input: "':?",
     fixedURI: "http://'/?",
-    alternateURI: "http://www.'.com/?",
+    alternateURI: "https://www.'.com/?",
     keywordLookup: true,
     protocolChange: true,
     affectedByDNSForSingleWordHosts: true,
@@ -517,12 +501,20 @@ var testcases = [
   {
     input: "whitelisted?.com",
     fixedURI: "http://whitelisted/?.com",
-    alternateURI: "http://www.whitelisted.com/?.com",
+    alternateURI: "https://www.whitelisted.com/?.com",
     protocolChange: true,
   },
   {
     input: "?'.com",
     keywordLookup: true,
+  },
+  {
+    input: ".com",
+    keywordLookup: true,
+    affectedByDNSForSingleWordHosts: true,
+    fixedURI: "http://.com/",
+    alternateURI: "https://www.com/",
+    protocolChange: true,
   },
   {
     input: "' ?.com",
@@ -539,13 +531,13 @@ var testcases = [
   {
     input: "mozilla/",
     fixedURI: "http://mozilla/",
-    alternateURI: "http://www.mozilla.com/",
+    alternateURI: "https://www.mozilla.com/",
     protocolChange: true,
   },
   {
     input: "mozilla",
     fixedURI: "http://mozilla/",
-    alternateURI: "http://www.mozilla.com/",
+    alternateURI: "https://www.mozilla.com/",
     protocolChange: true,
     keywordLookup: true,
     affectedByDNSForSingleWordHosts: true,
@@ -553,7 +545,7 @@ var testcases = [
   {
     input: "mozilla5/2",
     fixedURI: "http://mozilla5/2",
-    alternateURI: "http://www.mozilla5.com/2",
+    alternateURI: "https://www.mozilla5.com/2",
     protocolChange: true,
     keywordLookup: true,
     affectedByDNSForSingleWordHosts: true,
@@ -561,7 +553,7 @@ var testcases = [
   {
     input: "mozilla/foo",
     fixedURI: "http://mozilla/foo",
-    alternateURI: "http://www.mozilla.com/foo",
+    alternateURI: "https://www.mozilla.com/foo",
     protocolChange: true,
     keywordLookup: true,
     affectedByDNSForSingleWordHosts: true,
@@ -569,7 +561,7 @@ var testcases = [
   {
     input: "mozilla\\",
     fixedURI: "http://mozilla/",
-    alternateURI: "http://www.mozilla.com/",
+    alternateURI: "https://www.mozilla.com/",
     keywordLookup: true,
     protocolChange: true,
     affectedByDNSForSingleWordHosts: true,
@@ -577,6 +569,20 @@ var testcases = [
   {
     input: "localhost",
     fixedURI: "http://localhost/",
+    keywordLookup: true,
+    protocolChange: true,
+    affectedByDNSForSingleWordHosts: true,
+  },
+  {
+    input: "http",
+    fixedURI: "http://http/",
+    keywordLookup: true,
+    protocolChange: true,
+    affectedByDNSForSingleWordHosts: true,
+  },
+  {
+    input: "https",
+    fixedURI: "http://https/",
     keywordLookup: true,
     protocolChange: true,
     affectedByDNSForSingleWordHosts: true,
@@ -604,7 +610,7 @@ var testcases = [
   {
     input: "plonk/ #",
     fixedURI: "http://plonk/%20#",
-    alternateURI: "http://www.plonk.com/%20#",
+    alternateURI: "https://www.plonk.com/%20#",
     protocolChange: true,
     keywordLookup: false,
   },
@@ -617,13 +623,13 @@ var testcases = [
     input:
       "\u10E0\u10D4\u10D2\u10D8\u10E1\u10E2\u10E0\u10D0\u10EA\u10D8\u10D0.\u10D2\u10D4",
     fixedURI: "http://xn--lodaehvb5cdik4g.xn--node/",
-    alternateURI: "http://www.xn--lodaehvb5cdik4g.xn--node/",
+    alternateURI: "https://www.xn--lodaehvb5cdik4g.xn--node/",
     protocolChange: true,
   },
   {
     input: " \t mozilla.org/\t \t ",
     fixedURI: "http://mozilla.org/",
-    alternateURI: "http://www.mozilla.org/",
+    alternateURI: "https://www.mozilla.org/",
     protocolChange: true,
   },
   {
@@ -633,13 +639,13 @@ var testcases = [
   {
     input: "mozilla/",
     fixedURI: "http://mozilla/",
-    alternateURI: "http://www.mozilla.com/",
+    alternateURI: "https://www.mozilla.com/",
     protocolChange: true,
   },
   {
     input: "mozilla/ test /",
     fixedURI: "http://mozilla/%20test%20/",
-    alternateURI: "http://www.mozilla.com/%20test%20/",
+    alternateURI: "https://www.mozilla.com/%20test%20/",
     protocolChange: true,
   },
   {
@@ -650,6 +656,126 @@ var testcases = [
     input: "pserver:8080",
     fixedURI: "http://pserver:8080/",
     protocolChange: true,
+  },
+  {
+    input: "http;mozilla",
+    fixedURI: "http://http;mozilla/",
+    alternateURI: "https://www.http;mozilla.com/",
+    keywordLookup: true,
+    protocolChange: true,
+    affectedByDNSForSingleWordHosts: true,
+  },
+  {
+    input: "http//mozilla.org",
+    fixedURI: "http://mozilla.org/",
+    shouldRunTest: flags =>
+      flags & Services.uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS,
+  },
+  {
+    input: "http//mozilla.org",
+    fixedURI: "http://http//mozilla.org",
+    keywordLookup: true,
+    protocolChange: true,
+    affectedByDNSForSingleWordHosts: true,
+    shouldRunTest: flags =>
+      !(flags & Services.uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS),
+  },
+  {
+    input: "www.mozilla",
+    fixedURI: "http://www.mozilla/",
+    protocolChange: true,
+  },
+  {
+    input: "https://sub.www..mozilla...org/",
+    fixedURI: "https://sub.www.mozilla.org/",
+  },
+  {
+    input: "sub.www..mozilla...org/",
+    fixedURI: "http://sub.www.mozilla.org/",
+    protocolChange: true,
+  },
+  {
+    input: "sub.www..mozilla...org",
+    fixedURI: "http://sub.www.mozilla.org/",
+    protocolChange: true,
+  },
+  {
+    input: "www...mozilla",
+    fixedURI: "http://www.mozilla/",
+    keywordLookup: true,
+    protocolChange: true,
+    shouldRunTest: flags =>
+      !gSingleWordDNSLookup &&
+      flags & Services.uriFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP,
+  },
+  {
+    input: "www...mozilla",
+    fixedURI: "http://www.mozilla/",
+    protocolChange: true,
+    shouldRunTest: flags =>
+      gSingleWordDNSLookup ||
+      !(flags & Services.uriFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP),
+  },
+  {
+    input: "mozilla...org",
+    fixedURI: "http://mozilla.org/",
+    protocolChange: true,
+  },
+  {
+    input: "モジラ...org",
+    fixedURI: "http://xn--yck6dwa.org/",
+    protocolChange: true,
+  },
+  {
+    input: "user@localhost",
+    fixedURI: "http://user@localhost/",
+    protocolChange: true,
+    shouldRunTest: () => gSingleWordDNSLookup,
+  },
+  {
+    input: "user@localhost",
+    fixedURI: "http://user@localhost/",
+    keywordLookup: true,
+    protocolChange: true,
+    shouldRunTest: () => !gSingleWordDNSLookup,
+  },
+  {
+    input: "user@192.168.0.1",
+    fixedURI: "http://user@192.168.0.1/",
+    protocolChange: true,
+  },
+  {
+    input: "user@dummy-host",
+    fixedURI: "http://user@dummy-host/",
+    protocolChange: true,
+    shouldRunTest: () => gSingleWordDNSLookup,
+  },
+  {
+    input: "user@dummy-host",
+    fixedURI: "http://user@dummy-host/",
+    keywordLookup: true,
+    protocolChange: true,
+    shouldRunTest: () => !gSingleWordDNSLookup,
+  },
+  {
+    input: "user:pass@dummy-host",
+    fixedURI: "http://user:pass@dummy-host/",
+    protocolChange: true,
+  },
+  {
+    input: ":pass@dummy-host",
+    fixedURI: "http://:pass@dummy-host/",
+    protocolChange: true,
+  },
+  {
+    input: "user@dummy-host/path",
+    fixedURI: "http://user@dummy-host/path",
+    protocolChange: true,
+    shouldRunTest: () => gSingleWordDNSLookup,
+  },
+  {
+    input: "jar:file:///omni.ja!/",
+    fixedURI: "jar:file:///omni.ja!/",
   },
 ];
 
@@ -662,13 +788,13 @@ if (AppConstants.platform == "win") {
   testcases.push({
     input: "//mozilla",
     fixedURI: "http://mozilla/",
-    alternateURI: "http://www.mozilla.com/",
+    alternateURI: "https://www.mozilla.com/",
     protocolChange: true,
   });
   testcases.push({
     input: "/a",
     fixedURI: "http://a/",
-    alternateURI: "http://www.a.com/",
+    alternateURI: "https://www.a.com/",
     keywordLookup: true,
     protocolChange: true,
     affectedByDNSForSingleWordHosts: true,
@@ -709,57 +835,15 @@ add_task(async function setup() {
     Services.prefs.setBoolPref(pref, true);
   }
 
-  await AddonTestUtils.promiseStartupManager();
+  await setupSearchService();
+  await addTestEngines();
 
-  Services.io
-    .getProtocolHandler("resource")
-    .QueryInterface(Ci.nsIResProtocolHandler)
-    .setSubstitution(
-      "search-extensions",
-      Services.io.newURI("chrome://mozapps/locale/searchextensions/")
-    );
-
-  var oldCurrentEngine = await Services.search.getDefault();
-  var oldPrivateEngine = await Services.search.getDefaultPrivate();
-
-  let newCurrentEngine = await Services.search.addEngineWithDetails(
-    kSearchEngineID,
-    {
-      method: "get",
-      template: kSearchEngineURL,
-    }
+  await Services.search.setDefault(
+    Services.search.getEngineByName(kSearchEngineID)
   );
-  await Services.search.setDefault(newCurrentEngine);
-
-  let newPrivateEngine = await Services.search.addEngineWithDetails(
-    kPrivateSearchEngineID,
-    {
-      method: "get",
-      template: kPrivateSearchEngineURL,
-    }
+  await Services.search.setDefaultPrivate(
+    Services.search.getEngineByName(kPrivateSearchEngineID)
   );
-  await Services.search.setDefaultPrivate(newPrivateEngine);
-
-  var selectedName = (await Services.search.getDefault()).name;
-  Assert.equal(selectedName, kSearchEngineID);
-
-  registerCleanupFunction(async function() {
-    if (oldCurrentEngine) {
-      await Services.search.setDefault(oldCurrentEngine);
-    }
-    if (oldPrivateEngine) {
-      await Services.search.setDefault(oldPrivateEngine);
-    }
-    await Services.search.removeEngine(newCurrentEngine);
-    await Services.search.removeEngine(newPrivateEngine);
-    Services.prefs.clearUserPref("keyword.enabled");
-    Services.prefs.clearUserPref("browser.fixup.typo.scheme");
-    Services.prefs.clearUserPref(kForceDNSLookup);
-    Services.prefs.clearUserPref("browser.search.separatePrivateDefault");
-    Services.prefs.clearUserPref(
-      "browser.search.separatePrivateDefault.ui.enabled"
-    );
-  });
 });
 
 var gSingleWordDNSLookup = false;
@@ -777,17 +861,30 @@ add_task(async function run_test() {
     }
   }
   Assert.equal(affectedTests.length, 0);
-  do_single_test_run();
+  await do_single_test_run();
   gSingleWordDNSLookup = true;
-  do_single_test_run();
+  await do_single_test_run();
+  gSingleWordDNSLookup = false;
+  await Services.search.setDefault(
+    Services.search.getEngineByName(kPostSearchEngineID)
+  );
+  await do_single_test_run();
 });
 
-function do_single_test_run() {
+async function do_single_test_run() {
   Services.prefs.setBoolPref(kForceDNSLookup, gSingleWordDNSLookup);
 
   let relevantTests = gSingleWordDNSLookup
     ? testcases.filter(t => t.keywordLookup)
     : testcases;
+
+  let engine = await Services.search.getDefault();
+  let engineUrl =
+    engine.name == kPostSearchEngineID
+      ? kPostSearchEngineURL
+      : kSearchEngineURL;
+  let privateEngine = await Services.search.getDefaultPrivate();
+  let privateEngineUrl = kPrivateSearchEngineURL;
 
   for (let {
     input: testInput,
@@ -797,6 +894,7 @@ function do_single_test_run() {
     protocolChange: expectProtocolChange,
     inWhitelist: inWhitelist,
     affectedByDNSForSingleWordHosts: affectedByDNSForSingleWordHosts,
+    shouldRunTest,
   } of relevantTests) {
     // Explicitly force these into a boolean
     expectKeywordLookup = !!expectKeywordLookup;
@@ -819,33 +917,18 @@ function do_single_test_run() {
           ")"
       );
 
-      let URIInfo;
-      let fixupURIOnly = null;
-      try {
-        fixupURIOnly = Services.uriFixup.createFixupURI(testInput, flags);
-      } catch (ex) {
-        info("Caught exception: " + ex);
-        Assert.equal(expectedFixedURI, null);
+      if (shouldRunTest && !shouldRunTest(flags)) {
+        continue;
       }
 
+      let URIInfo;
       try {
         URIInfo = Services.uriFixup.getFixupURIInfo(testInput, flags);
       } catch (ex) {
         // Both APIs should return an error in the same cases.
         info("Caught exception: " + ex);
         Assert.equal(expectedFixedURI, null);
-        Assert.equal(fixupURIOnly, null);
         continue;
-      }
-
-      // Both APIs should then also be using the same spec.
-      Assert.equal(!!fixupURIOnly, !!URIInfo.preferredURI);
-      if (fixupURIOnly) {
-        Assert.equal(
-          fixupURIOnly.spec,
-          URIInfo.preferredURI.spec,
-          "Fixed and preferred URI should match"
-        );
       }
 
       // Check the fixedURI:
@@ -899,18 +982,14 @@ function do_single_test_run() {
             }
             let isPrivate =
               flags & Services.uriFixup.FIXUP_FLAG_PRIVATE_CONTEXT;
-            let searchEngineUrl = isPrivate
-              ? kPrivateSearchEngineURL
-              : kSearchEngineURL;
+            let searchEngineUrl = isPrivate ? privateEngineUrl : engineUrl;
             let searchURL = searchEngineUrl.replace(
               "{searchTerms}",
               urlparamInput
             );
             let spec = URIInfo.preferredURI.spec.replace(/%27/g, "'");
             Assert.equal(spec, searchURL, "should get correct search URI");
-            let providerName = isPrivate
-              ? kPrivateSearchEngineID
-              : kSearchEngineID;
+            let providerName = isPrivate ? privateEngine.name : engine.name;
             Assert.equal(
               URIInfo.keywordProviderName,
               providerName,
@@ -922,6 +1001,19 @@ function do_single_test_run() {
               isPrivate
             );
             Assert.equal(kwInfo.providerName, URIInfo.providerName);
+            if (providerName == kPostSearchEngineID) {
+              Assert.ok(kwInfo.postData);
+              let submission = engine.getSubmission(urlparamInput);
+              let enginePostData = NetUtil.readInputStreamToString(
+                submission.postData,
+                submission.postData.available()
+              );
+              let postData = NetUtil.readInputStreamToString(
+                kwInfo.postData,
+                kwInfo.postData.available()
+              );
+              Assert.equal(postData, enginePostData);
+            }
           } else {
             Assert.equal(
               URIInfo.preferredURI,

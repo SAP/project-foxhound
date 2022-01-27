@@ -11,12 +11,14 @@
 #include "mozilla/ContentBlockingNotifier.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/PWindowGlobalParent.h"
 #include "mozilla/dom/WindowContext.h"
-#include "nsDataHashtable.h"
+#include "mozilla/dom/WindowGlobalActorsBinding.h"
+#include "nsTHashMap.h"
 #include "nsRefPtrHashtable.h"
 #include "nsWrapperCache.h"
 #include "nsISupports.h"
@@ -41,6 +43,10 @@ class BrowserParent;
 class WindowGlobalChild;
 class JSWindowActorParent;
 class JSActorMessageMeta;
+struct PageUseCounters;
+class WindowSessionStoreState;
+struct WindowSessionStoreUpdate;
+class SSCacheQueryResult;
 
 /**
  * A handle in the parent process to a specific nsGlobalWindowInner object.
@@ -78,6 +84,8 @@ class WindowGlobalParent final : public WindowContext,
     return CanonicalBrowsingContext::Cast(WindowContext::GetBrowsingContext());
   }
 
+  Element* GetRootOwnerElement();
+
   // Has this actor been shut down
   bool IsClosed() { return !CanSend(); }
 
@@ -86,12 +94,15 @@ class WindowGlobalParent final : public WindowContext,
   already_AddRefed<WindowGlobalChild> GetChildActor();
 
   // Get a JS actor object by name.
-  already_AddRefed<JSWindowActorParent> GetActor(const nsACString& aName,
+  already_AddRefed<JSWindowActorParent> GetActor(JSContext* aCx,
+                                                 const nsACString& aName,
                                                  ErrorResult& aRv);
+  already_AddRefed<JSWindowActorParent> GetExistingActor(
+      const nsACString& aName);
 
   // Get this actor's manager if it is not an in-process actor. Returns
   // |nullptr| if the actor has been torn down, or is in-process.
-  already_AddRefed<BrowserParent> GetBrowserParent();
+  BrowserParent* GetBrowserParent();
 
   ContentParent* GetContentParent();
 
@@ -100,9 +111,7 @@ class WindowGlobalParent final : public WindowContext,
   // |document.domain|.
   nsIPrincipal* DocumentPrincipal() { return mDocumentPrincipal; }
 
-  nsIPrincipal* ContentBlockingAllowListPrincipal() {
-    return mDocContentBlockingAllowListPrincipal;
-  }
+  nsIPrincipal* DocumentStoragePrincipal() { return mDocumentStoragePrincipal; }
 
   // The BrowsingContext which this WindowGlobal has been loaded into.
   // FIXME: It's quite awkward that this method has a slightly different name
@@ -120,7 +129,9 @@ class WindowGlobalParent final : public WindowContext,
   // The current URI which loaded in the document.
   nsIURI* GetDocumentURI() override { return mDocumentURI; }
 
-  void GetDocumentTitle(nsAString& aTitle) const { aTitle = mDocumentTitle; }
+  void GetDocumentTitle(nsAString& aTitle) const {
+    aTitle = mDocumentTitle.valueOr(nsString());
+  }
 
   nsIPrincipal* GetContentBlockingAllowListPrincipal() const {
     return mDocContentBlockingAllowListPrincipal;
@@ -142,16 +153,19 @@ class WindowGlobalParent final : public WindowContext,
 
   bool IsInitialDocument() { return mIsInitialDocument; }
 
-  bool HasBeforeUnload() { return mHasBeforeUnload; }
+  already_AddRefed<mozilla::dom::Promise> PermitUnload(
+      PermitUnloadAction aAction, uint32_t aTimeout, mozilla::ErrorResult& aRv);
+
+  void PermitUnload(std::function<void(bool)>&& aResolver);
 
   already_AddRefed<mozilla::dom::Promise> DrawSnapshot(
       const DOMRect* aRect, double aScale, const nsACString& aBackgroundColor,
-      mozilla::ErrorResult& aRv);
+      bool aResetScrollPosition, mozilla::ErrorResult& aRv);
 
   already_AddRefed<Promise> GetSecurityInfo(ErrorResult& aRv);
 
   static already_AddRefed<WindowGlobalParent> CreateDisconnected(
-      const WindowGlobalInit& aInit, bool aInProcess = false);
+      const WindowGlobalInit& aInit);
 
   // Initialize the mFrameLoader fields for a created WindowGlobalParent. Must
   // be called after setting the Manager actor.
@@ -175,6 +189,10 @@ class WindowGlobalParent final : public WindowContext,
 
   nsICookieJarSettings* CookieJarSettings() { return mCookieJarSettings; }
 
+  nsICookieJarSettings* GetCookieJarSettings() const {
+    return mCookieJarSettings;
+  }
+
   bool DocumentHasLoaded() { return mDocumentHasLoaded; }
 
   bool DocumentHasUserInteracted() { return mDocumentHasUserInteracted; }
@@ -189,12 +207,24 @@ class WindowGlobalParent final : public WindowContext,
 
   uint32_t HttpsOnlyStatus() { return mHttpsOnlyStatus; }
 
-  void AddMixedContentSecurityState(uint32_t aStateFlags);
-  uint32_t GetMixedContentSecurityFlags() { return mMixedContentSecurityState; }
+  void AddSecurityState(uint32_t aStateFlags);
+  uint32_t GetSecurityFlags() { return mSecurityState; }
 
   nsITransportSecurityInfo* GetSecurityInfo() { return mSecurityInfo; }
 
   const nsACString& GetRemoteType() override;
+
+  nsresult WriteFormDataAndScrollToSessionStore(
+      const Maybe<FormData>& aFormData, const Maybe<nsPoint>& aScrollPosition,
+      uint32_t aEpoch);
+
+  void NotifySessionStoreUpdatesComplete(Element* aEmbedder);
+
+  Maybe<uint64_t> GetSingleChannelId() { return mSingleChannelId; }
+
+  uint32_t GetBFCacheStatus() { return mBFCacheStatus; }
+
+  bool HasActivePeerConnections();
 
  protected:
   already_AddRefed<JSActor> InitJSActor(JS::HandleObject aMaybeActor,
@@ -206,12 +236,11 @@ class WindowGlobalParent final : public WindowContext,
   mozilla::ipc::IPCResult RecvLoadURI(
       const MaybeDiscarded<dom::BrowsingContext>& aTargetBC,
       nsDocShellLoadState* aLoadState, bool aSetNavigating);
-  mozilla::ipc::IPCResult RecvInternalLoad(
-      const MaybeDiscarded<dom::BrowsingContext>& aTargetBC,
-      nsDocShellLoadState* aLoadState);
+  mozilla::ipc::IPCResult RecvInternalLoad(nsDocShellLoadState* aLoadState);
   mozilla::ipc::IPCResult RecvUpdateDocumentURI(nsIURI* aURI);
   mozilla::ipc::IPCResult RecvUpdateDocumentPrincipal(
-      nsIPrincipal* aNewDocumentPrincipal);
+      nsIPrincipal* aNewDocumentPrincipal,
+      nsIPrincipal* aNewDocumentStoragePrincipal);
   mozilla::ipc::IPCResult RecvUpdateDocumentHasLoaded(bool aDocumentHasLoaded);
   mozilla::ipc::IPCResult RecvUpdateDocumentHasUserInteracted(
       bool aDocumentHasUserInteracted);
@@ -226,13 +255,12 @@ class WindowGlobalParent final : public WindowContext,
   }
   mozilla::ipc::IPCResult RecvUpdateDocumentSecurityInfo(
       nsITransportSecurityInfo* aSecurityInfo);
-  mozilla::ipc::IPCResult RecvSetHasBeforeUnload(bool aHasBeforeUnload);
   mozilla::ipc::IPCResult RecvSetClientInfo(
       const IPCClientInfo& aIPCClientInfo);
   mozilla::ipc::IPCResult RecvDestroy();
-  mozilla::ipc::IPCResult RecvRawMessage(const JSActorMessageMeta& aMeta,
-                                         const ClonedMessageData& aData,
-                                         const ClonedMessageData& aStack);
+  mozilla::ipc::IPCResult RecvRawMessage(
+      const JSActorMessageMeta& aMeta, const Maybe<ClonedMessageData>& aData,
+      const Maybe<ClonedMessageData>& aStack);
 
   mozilla::ipc::IPCResult RecvGetContentBlockingEvents(
       GetContentBlockingEventsResolver&& aResolver);
@@ -249,21 +277,67 @@ class WindowGlobalParent final : public WindowContext,
   mozilla::ipc::IPCResult RecvShare(IPCWebShareData&& aData,
                                     ShareResolver&& aResolver);
 
+  mozilla::ipc::IPCResult RecvCheckPermitUnload(
+      bool aHasInProcessBlocker, XPCOMPermitUnloadAction aAction,
+      CheckPermitUnloadResolver&& aResolver);
+
+  mozilla::ipc::IPCResult RecvExpectPageUseCounters(
+      const MaybeDiscarded<dom::WindowContext>& aTop);
+  mozilla::ipc::IPCResult RecvAccumulatePageUseCounters(
+      const UseCounters& aUseCounters);
+
+  mozilla::ipc::IPCResult RecvRequestRestoreTabContent();
+
+  mozilla::ipc::IPCResult RecvUpdateSessionStore(
+      const Maybe<FormData>& aFormData, const Maybe<nsPoint>& aScrollPosition,
+      uint32_t aEpoch);
+
+  mozilla::ipc::IPCResult RecvResetSessionStore(uint32_t aEpoch);
+
+  mozilla::ipc::IPCResult RecvUpdateBFCacheStatus(const uint32_t& aOnFlags,
+                                                  const uint32_t& aOffFlags);
+
+  // This IPC method is to notify the parent process that the caller process
+  // creates the first active peer connection (aIsAdded = true) or closes the
+  // last active peer connection (aIsAdded = false).
+  mozilla::ipc::IPCResult RecvUpdateActivePeerConnectionStatus(bool aIsAdded);
+
+ public:
+  mozilla::ipc::IPCResult RecvSetSingleChannelId(
+      const Maybe<uint64_t>& aSingleChannelId);
+
+  mozilla::ipc::IPCResult RecvSetDocumentDomain(nsIURI* aDomain);
+
+  mozilla::ipc::IPCResult RecvReloadWithHttpsOnlyException();
+
  private:
   WindowGlobalParent(CanonicalBrowsingContext* aBrowsingContext,
                      uint64_t aInnerWindowId, uint64_t aOuterWindowId,
-                     bool aInProcess, FieldValues&& aInit);
+                     FieldValues&& aInit);
 
   ~WindowGlobalParent();
 
   bool ShouldTrackSiteOriginTelemetry();
+  void FinishAccumulatingPageUseCounters();
 
-  // NOTE: This document principal doesn't reflect possible |document.domain|
-  // mutations which may have been made in the actual document.
+  nsresult ResetSessionStore(uint32_t aEpoch);
+
+  // Returns failure if the new storage principal cannot be validated
+  // against the current document principle.
+  nsresult SetDocumentStoragePrincipal(
+      nsIPrincipal* aNewDocumentStoragePrincipal);
+
+  // NOTE: Neither this document principal nor the document storage
+  // principal doesn't reflect possible |document.domain| mutations
+  // which may have been made in the actual document.
   nsCOMPtr<nsIPrincipal> mDocumentPrincipal;
+  nsCOMPtr<nsIPrincipal> mDocumentStoragePrincipal;
+
+  // The principal to use for the content blocking allow list.
   nsCOMPtr<nsIPrincipal> mDocContentBlockingAllowListPrincipal;
+
   nsCOMPtr<nsIURI> mDocumentURI;
-  nsString mDocumentTitle;
+  Maybe<nsString> mDocumentTitle;
 
   bool mIsInitialDocument;
 
@@ -275,7 +349,7 @@ class WindowGlobalParent final : public WindowContext,
   // includes the activity log for all of the nested subdocuments as well.
   ContentBlockingLog mContentBlockingLog;
 
-  uint32_t mMixedContentSecurityState = 0;
+  uint32_t mSecurityState = 0;
 
   Maybe<ClientInfo> mClientInfo;
   // Fields being mirrored from the corresponding document
@@ -288,7 +362,7 @@ class WindowGlobalParent final : public WindowContext,
     void UpdateSiteOriginsFrom(WindowGlobalParent* aParent, bool aIncrease);
     void Accumulate();
 
-    nsDataHashtable<nsCStringHashKey, int32_t> mOriginMap;
+    nsTHashMap<nsCStringHashKey, int32_t> mOriginMap;
     uint32_t mMaxOrigins = 0;
   };
 
@@ -299,11 +373,42 @@ class WindowGlobalParent final : public WindowContext,
 
   bool mDocumentHasLoaded;
   bool mDocumentHasUserInteracted;
+  bool mDocumentTreeWouldPreloadResources = false;
   bool mBlockAllMixedContent;
   bool mUpgradeInsecureRequests;
 
   // HTTPS-Only Mode flags
   uint32_t mHttpsOnlyStatus;
+
+  // The window of the document whose page use counters our document's use
+  // counters will contribute to.  (If we are a top-level document, this
+  // will point to ourselves.)
+  RefPtr<WindowGlobalParent> mPageUseCountersWindow;
+
+  // Our page use counters, if we are a top-level document.
+  UniquePtr<PageUseCounters> mPageUseCounters;
+
+  // Whether we have sent our page use counters, and so should ignore any
+  // subsequent ExpectPageUseCounters calls.
+  bool mSentPageUseCounters = false;
+
+  uint32_t mBFCacheStatus = 0;
+
+  // If this WindowGlobalParent is a top window, this field indicates how many
+  // child processes have active peer connections for this window and its
+  // descendants.
+  uint32_t mNumOfProcessesWithActivePeerConnections = 0;
+
+  // mSingleChannelId records whether the loadgroup contains a single request
+  // with an id. If there is one channel in the loadgroup and it has an id then
+  // mSingleChannelId is set to Some(id) (ids are non-zero). If there is one
+  // request in the loadgroup and it's not a channel or it doesn't have an id,
+  // or there are multiple requests in the loadgroup, then mSingleChannelId is
+  // set to Some(0). If there are no requests in the loadgroup then
+  // mSingleChannelId is set to Nothing().
+  // Note: We ignore favicon loads when considering the requests in the
+  // loadgroup.
+  Maybe<uint64_t> mSingleChannelId;
 };
 
 }  // namespace dom

@@ -12,14 +12,13 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/LocationBase.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsIWeakReferenceUtils.h"
-#include "nsPIDOMWindow.h"
 #include "nsString.h"
 #include "nsWrapperCache.h"
 
 class nsIDocShell;
+class nsIPrincipal;
 class nsIURI;
-class nsDocShellLoadState;
+class nsPIDOMWindowInner;
 
 namespace mozilla {
 namespace dom {
@@ -44,14 +43,7 @@ class Location final : public nsISupports,
               ErrorResult& aError);
 
   void Reload(bool aForceget, nsIPrincipal& aSubjectPrincipal,
-              ErrorResult& aError) {
-    if (!CallerSubsumes(&aSubjectPrincipal)) {
-      aError.Throw(NS_ERROR_DOM_SECURITY_ERR);
-      return;
-    }
-
-    Reload(aForceget, aError);
-  }
+              ErrorResult& aError);
 
   void GetHref(nsAString& aHref, nsIPrincipal& aSubjectPrincipal,
                ErrorResult& aError) {
@@ -118,8 +110,6 @@ class Location final : public nsISupports,
   nsresult GetHref(nsAString& aHref);
 
   nsresult ToString(nsAString& aString) { return GetHref(aString); }
-
-  void Reload(bool aForceget, ErrorResult& aRv);
 
  protected:
   virtual ~Location();

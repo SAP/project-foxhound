@@ -16,7 +16,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
   ServiceRequest: "resource://gre/modules/ServiceRequest.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
-  OS: "resource://gre/modules/osfile.jsm",
   Preferences: "resource://gre/modules/Preferences.jsm",
 });
 
@@ -541,33 +540,41 @@ var AddonRepository = {
    * @return Promise{null} Resolves when the metadata update is complete.
    */
   async backgroundUpdateCheck() {
-    let allAddons = await AddonManager.getAllAddons();
+    let shutter = (async () => {
+      let allAddons = await AddonManager.getAllAddons();
 
-    // Completely remove cache if caching is not enabled
-    if (!this.cacheEnabled) {
-      logger.debug("Clearing cache because it is disabled");
-      await this._clearCache();
-      return;
-    }
+      // Completely remove cache if caching is not enabled
+      if (!this.cacheEnabled) {
+        logger.debug("Clearing cache because it is disabled");
+        await this._clearCache();
+        return;
+      }
 
-    let ids = allAddons.map(a => a.id);
-    logger.debug("Repopulate add-on cache with " + ids.toSource());
+      let ids = allAddons.map(a => a.id);
+      logger.debug("Repopulate add-on cache with " + ids.toSource());
 
-    let addonsToCache = await getAddonsToCache(ids);
+      let addonsToCache = await getAddonsToCache(ids);
 
-    // Completely remove cache if there are no add-ons to cache
-    if (!addonsToCache.length) {
-      logger.debug("Clearing cache because 0 add-ons were requested");
-      await this._clearCache();
-      return;
-    }
+      // Completely remove cache if there are no add-ons to cache
+      if (!addonsToCache.length) {
+        logger.debug("Clearing cache because 0 add-ons were requested");
+        await this._clearCache();
+        return;
+      }
 
-    let addons = await this._getFullData(addonsToCache);
+      let addons = await this._getFullData(addonsToCache);
 
-    AddonDatabase.repopulate(addons);
+      AddonDatabase.repopulate(addons);
 
-    // Always call AddonManager updateAddonRepositoryData after we refill the cache
-    await AddonManagerPrivate.updateAddonRepositoryData();
+      // Always call AddonManager updateAddonRepositoryData after we refill the cache
+      await AddonManagerPrivate.updateAddonRepositoryData();
+    })();
+    AddonManager.beforeShutdown.addBlocker(
+      "AddonRepository Background Updater",
+      shutter
+    );
+    await shutter;
+    AddonManager.beforeShutdown.removeBlocker(shutter);
   },
 
   /*
@@ -735,7 +742,10 @@ var AddonDatabase = {
    * A getter to retrieve the path to the DB
    */
   get jsonFile() {
-    return OS.Path.join(OS.Constants.Path.profileDir, FILE_DATABASE);
+    return PathUtils.join(
+      Services.dirsvc.get("ProfD", Ci.nsIFile).path,
+      FILE_DATABASE
+    );
   },
 
   /**
@@ -749,7 +759,7 @@ var AddonDatabase = {
         let inputDB, schema;
 
         try {
-          let data = await OS.File.read(this.jsonFile, { encoding: "utf-8" });
+          let data = await IOUtils.readUTF8(this.jsonFile);
           inputDB = JSON.parse(data);
 
           if (
@@ -769,7 +779,7 @@ var AddonDatabase = {
             throw new Error("Invalid schema value.");
           }
         } catch (e) {
-          if (e instanceof OS.File.Error && e.becauseNoSuchFile) {
+          if (e.name == "NotFoundError") {
             logger.debug("No " + FILE_DATABASE + " found.");
           } else {
             logger.error(
@@ -847,7 +857,7 @@ var AddonDatabase = {
 
     // shutdown(true) never rejects
     this._deleting = this.shutdown(true)
-      .then(() => OS.File.remove(this.jsonFile, {}))
+      .then(() => IOUtils.remove(this.jsonFile))
       .catch(error =>
         logger.error(
           "Unable to delete Addon Repository file " + this.jsonFile,
@@ -866,7 +876,7 @@ var AddonDatabase = {
       addons: Array.from(this.DB.addons.values()),
     };
 
-    await OS.File.writeAtomic(this.jsonFile, JSON.stringify(json), {
+    await IOUtils.writeUTF8(this.jsonFile, JSON.stringify(json), {
       tmpPath: `${this.jsonFile}.tmp`,
     });
   },

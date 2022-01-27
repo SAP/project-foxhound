@@ -7,6 +7,7 @@
 #include "FuzzySecurityInfo.h"
 #include "mozilla/Logging.h"
 #include "mozilla/OriginAttributes.h"
+#include "nsITlsHandshakeListener.h"
 #include "nsThreadManager.h"
 
 namespace mozilla {
@@ -140,6 +141,13 @@ NS_IMETHODIMP
 FuzzySecurityInfo::GetIsDelegatedCredential(bool* aIsDelegCred) {
   NS_ENSURE_ARG_POINTER(aIsDelegCred);
   *aIsDelegCred = false;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+FuzzySecurityInfo::GetIsAcceptedEch(bool* aIsAcceptedEch) {
+  NS_ENSURE_ARG_POINTER(aIsAcceptedEch);
+  *aIsAcceptedEch = false;
   return NS_OK;
 }
 
@@ -319,6 +327,18 @@ FuzzySecurityInfo::SetEsniTxt(const nsACString& aEsniTxt) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+FuzzySecurityInfo::GetEchConfig(nsACString& aEchConfig) { return NS_OK; }
+
+NS_IMETHODIMP
+FuzzySecurityInfo::SetEchConfig(const nsACString& aEchConfig) {
+  MOZ_CRASH("Unused");
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+FuzzySecurityInfo::GetRetryEchConfig(nsACString& aEchConfig) { return NS_OK; }
+
 void FuzzySecurityInfo::SerializeToIPC(IPC::Message* aMsg) {
   MOZ_CRASH("Unused");
 }
@@ -331,7 +351,7 @@ bool FuzzySecurityInfo::DeserializeFromIPC(const IPC::Message* aMsg,
 
 NS_IMETHODIMP
 FuzzySecurityInfo::GetPeerId(nsACString& aResult) {
-  aResult.Assign(EmptyCString());
+  aResult.Assign(""_ns);
   return NS_OK;
 }
 
@@ -343,6 +363,16 @@ NS_IMETHODIMP FuzzySecurityInfo::SetIsBuiltCertChainRootBuiltInRoot(
 NS_IMETHODIMP FuzzySecurityInfo::GetIsBuiltCertChainRootBuiltInRoot(
     bool* aIsBuiltInRoot) {
   *aIsBuiltInRoot = false;
+  return NS_OK;
+}
+
+NS_IMETHODIMP FuzzySecurityInfo::DisableEarlyData(void) { return NS_OK; }
+
+NS_IMETHODIMP FuzzySecurityInfo::SetHandshakeCallbackListener(
+    nsITlsHandshakeCallbackListener* callback) {
+  if (callback) {
+    callback->HandshakeDone();
+  }
   return NS_OK;
 }
 

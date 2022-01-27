@@ -1,5 +1,9 @@
-commit d3bfa94c16ef8b3c7e2cf8510852f610c369161e
-Author: Leo Balter <leonardo.balter@gmail.com>
-Date:   Wed Jul 15 13:46:48 2020 -0700
+commit 45a913c057892bdd26f7bc06a59a0c7420f2d3ec
+Author: Philip Chimento <pchimento@igalia.com>
+Date:   Wed Aug 11 12:31:23 2021 -0700
 
-    Fix bad renaming, main should upstream to master
+    Add branding tests from Temporal (#3138)
+    
+    Closes: #3137
+    
+    Co-authored-by: Ms2ger <Ms2ger@igalia.com>

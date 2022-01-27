@@ -22,6 +22,7 @@
 #include "js/UniquePtr.h"
 #include "vm/JSContext.h"
 #include "vm/Realm.h"
+#include "vm/StaticStrings.h"
 
 #include "gc/FreeOp-inl.h"
 #include "gc/StoreBuffer-inl.h"
@@ -102,10 +103,9 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineString(
   return s;
 }
 
-template <typename Chars>
-static MOZ_ALWAYS_INLINE JSLinearString* TryEmptyOrStaticString(JSContext* cx,
-                                                                Chars chars,
-                                                                size_t n) {
+template <typename CharT>
+static MOZ_ALWAYS_INLINE JSLinearString* TryEmptyOrStaticString(
+    JSContext* cx, const CharT* chars, size_t n) {
   // Measurements on popular websites indicate empty strings are pretty common
   // and most strings with length 1 or 2 are in the StaticStrings table. For
   // length 3 strings that's only about 1%, so we check n <= 2.
@@ -121,13 +121,6 @@ static MOZ_ALWAYS_INLINE JSLinearString* TryEmptyOrStaticString(JSContext* cx,
   }
 
   return nullptr;
-}
-
-template <typename CharT, typename = std::enable_if_t<!std::is_const_v<CharT>>>
-static MOZ_ALWAYS_INLINE JSLinearString* TryEmptyOrStaticString(JSContext* cx,
-                                                                CharT* chars,
-                                                                size_t n) {
-  return TryEmptyOrStaticString(cx, const_cast<const CharT*>(chars), n);
 }
 
 } /* namespace js */
@@ -257,7 +250,7 @@ MOZ_ALWAYS_INLINE JSLinearString* JSDependentString::new_(
   }
 
   JSDependentString* str =
-      js::AllocateString<JSDependentString, js::NoGC>(cx, js::gc::DefaultHeap);
+      js::AllocateString<JSDependentString, js::NoGC>(cx, heap);
   if (str) {
     str->init(cx, baseArg, start, length, &taint);
     return str;
@@ -265,7 +258,7 @@ MOZ_ALWAYS_INLINE JSLinearString* JSDependentString::new_(
 
   js::RootedLinearString base(cx, baseArg);
 
-  str = js::AllocateString<JSDependentString>(cx, js::gc::DefaultHeap);
+  str = js::AllocateString<JSDependentString>(cx, heap);
   if (!str) {
     return nullptr;
   }
@@ -367,8 +360,7 @@ MOZ_ALWAYS_INLINE JSFatInlineString* JSFatInlineString::new_(
     return (JSFatInlineString*)(js::Allocate<js::FatInlineAtom, allowGC>(cx));
   }
 
-  return js::AllocateString<JSFatInlineString, allowGC>(cx,
-                                                        js::gc::DefaultHeap);
+  return js::AllocateString<JSFatInlineString, allowGC>(cx, heap);
 }
 
 template <>
@@ -486,15 +478,6 @@ inline void JSLinearString::finalize(JSFreeOp* fop) {
     fop->free_(this, nonInlineCharsRaw(), allocSize(),
                js::MemoryUse::StringContents);
   }
-}
-
-inline size_t JSLinearString::allocSize() const {
-  MOZ_ASSERT(ownsMallocedChars());
-
-  size_t charSize =
-      hasLatin1Chars() ? sizeof(JS::Latin1Char) : sizeof(char16_t);
-  size_t count = isExtensible() ? asExtensible().capacity() : length();
-  return count * charSize;
 }
 
 inline void JSFatInlineString::finalize(JSFreeOp* fop) {

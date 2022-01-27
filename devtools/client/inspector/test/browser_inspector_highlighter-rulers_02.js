@@ -14,7 +14,9 @@ const TEST_URL =
 const ID = "rulers-highlighter-";
 
 add_task(async function() {
-  const { inspector, testActor } = await openInspectorForURL(TEST_URL);
+  const { inspector, highlighterTestFront } = await openInspectorForURL(
+    TEST_URL
+  );
   const front = inspector.inspectorFront;
 
   const highlighter = await front.getHighlighterByType("RulersHighlighter");
@@ -24,30 +26,34 @@ add_task(async function() {
   const body = await getNodeFront("body", inspector);
   await highlighter.show(body);
 
-  await isUpdatedAfterScroll(highlighter, inspector, testActor);
+  await isUpdatedAfterScroll(highlighter, inspector, highlighterTestFront);
 
   await highlighter.finalize();
 });
 
-async function isUpdatedAfterScroll(highlighterFront, inspector, testActor) {
+async function isUpdatedAfterScroll(
+  highlighterFront,
+  inspector,
+  highlighterTestFront
+) {
   info("Check the rulers' position by default");
 
-  let xAxisRulerTransform = await testActor.getHighlighterNodeAttribute(
+  let xAxisRulerTransform = await highlighterTestFront.getHighlighterNodeAttribute(
     `${ID}x-axis-ruler`,
     "transform",
     highlighterFront
   );
-  let xAxisTextTransform = await testActor.getHighlighterNodeAttribute(
+  let xAxisTextTransform = await highlighterTestFront.getHighlighterNodeAttribute(
     `${ID}x-axis-text`,
     "transform",
     highlighterFront
   );
-  let yAxisRulerTransform = await testActor.getHighlighterNodeAttribute(
+  let yAxisRulerTransform = await highlighterTestFront.getHighlighterNodeAttribute(
     `${ID}y-axis-ruler`,
     "transform",
     highlighterFront
   );
-  let yAxisTextTransform = await testActor.getHighlighterNodeAttribute(
+  let yAxisTextTransform = await highlighterTestFront.getHighlighterNodeAttribute(
     `${ID}y-axis-text`,
     "transform",
     highlighterFront
@@ -63,29 +69,42 @@ async function isUpdatedAfterScroll(highlighterFront, inspector, testActor) {
   const x = 200,
     y = 300;
 
-  let data = await testActor.scrollWindow(x, y);
+  let data = await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [x, y],
+    (_x, _y) => {
+      return new Promise(resolve => {
+        content.addEventListener(
+          "scroll",
+          () => resolve({ x: content.scrollX, y: content.scrollY }),
+          { once: true }
+        );
+        content.scrollTo(_x, _y);
+      });
+    }
+  );
 
   is(data.x, x, "window scrolled properly horizontally");
   is(data.y, y, "window scrolled properly vertically");
 
   info("Check the rulers are properly positioned after the scrolling");
 
-  xAxisRulerTransform = await testActor.getHighlighterNodeAttribute(
+  xAxisRulerTransform = await highlighterTestFront.getHighlighterNodeAttribute(
     `${ID}x-axis-ruler`,
     "transform",
     highlighterFront
   );
-  xAxisTextTransform = await testActor.getHighlighterNodeAttribute(
+  xAxisTextTransform = await highlighterTestFront.getHighlighterNodeAttribute(
     `${ID}x-axis-text`,
     "transform",
     highlighterFront
   );
-  yAxisRulerTransform = await testActor.getHighlighterNodeAttribute(
+  yAxisRulerTransform = await highlighterTestFront.getHighlighterNodeAttribute(
     `${ID}y-axis-ruler`,
     "transform",
     highlighterFront
   );
-  yAxisTextTransform = await testActor.getHighlighterNodeAttribute(
+  yAxisTextTransform = await highlighterTestFront.getHighlighterNodeAttribute(
     `${ID}y-axis-text`,
     "transform",
     highlighterFront
@@ -114,29 +133,42 @@ async function isUpdatedAfterScroll(highlighterFront, inspector, testActor) {
 
   info("Ask the content window to scroll relative to the current position");
 
-  data = await testActor.scrollWindow(-50, -60, true);
+  data = await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [-50, -60],
+    (_deltaX, _deltaY) => {
+      return new Promise(resolve => {
+        content.addEventListener(
+          "scroll",
+          () => resolve({ x: content.scrollX, y: content.scrollY }),
+          { once: true }
+        );
+        content.scrollBy(_deltaX, _deltaY);
+      });
+    }
+  );
 
   is(data.x, x - 50, "window scrolled properly horizontally");
   is(data.y, y - 60, "window scrolled properly vertically");
 
   info("Check the rulers are properly positioned after the relative scrolling");
 
-  xAxisRulerTransform = await testActor.getHighlighterNodeAttribute(
+  xAxisRulerTransform = await highlighterTestFront.getHighlighterNodeAttribute(
     `${ID}x-axis-ruler`,
     "transform",
     highlighterFront
   );
-  xAxisTextTransform = await testActor.getHighlighterNodeAttribute(
+  xAxisTextTransform = await highlighterTestFront.getHighlighterNodeAttribute(
     `${ID}x-axis-text`,
     "transform",
     highlighterFront
   );
-  yAxisRulerTransform = await testActor.getHighlighterNodeAttribute(
+  yAxisRulerTransform = await highlighterTestFront.getHighlighterNodeAttribute(
     `${ID}y-axis-ruler`,
     "transform",
     highlighterFront
   );
-  yAxisTextTransform = await testActor.getHighlighterNodeAttribute(
+  yAxisTextTransform = await highlighterTestFront.getHighlighterNodeAttribute(
     `${ID}y-axis-text`,
     "transform",
     highlighterFront

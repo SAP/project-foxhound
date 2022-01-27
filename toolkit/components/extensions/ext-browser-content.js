@@ -3,16 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 var { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
   clearTimeout: "resource://gre/modules/Timer.jsm",
-  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   ExtensionCommon: "resource://gre/modules/ExtensionCommon.jsm",
+  Services: "resource://gre/modules/Services.jsm",
   setTimeout: "resource://gre/modules/Timer.jsm",
 });
 
@@ -20,41 +18,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 
 // Minimum time between two resizes.
 const RESIZE_TIMEOUT = 100;
-
-/**
- * Check if the provided color is fully opaque.
- *
- * @param   {string} color
- *          Any valid CSS color.
- * @returns {boolean} true if the color is opaque.
- */
-const isOpaque = function(color) {
-  try {
-    if (/(rgba|hsla)/i.test(color)) {
-      // Match .123456, 123.456, 123456 with an optional % sign.
-      let numberRe = /(\.\d+|\d+\.?\d*)%?/g;
-      // hsla/rgba, opacity is the last number in the color string (can be a percentage).
-      let opacity = color.match(numberRe)[3];
-
-      // Convert to [0, 1] space if the opacity was expressed as a percentage.
-      if (opacity.includes("%")) {
-        opacity = opacity.slice(0, -1);
-        opacity = opacity / 100;
-      }
-
-      return opacity * 1 >= 1;
-    } else if (/^#[a-f0-9]{4}$/i.test(color)) {
-      // Hex color with 4 characters, opacity is one if last character is F
-      return color.toUpperCase().endsWith("F");
-    } else if (/^#[a-f0-9]{8}$/i.test(color)) {
-      // Hex color with 8 characters, opacity is one if last 2 characters are FF
-      return color.toUpperCase().endsWith("FF");
-    }
-  } catch (e) {
-    // Invalid color.
-  }
-  return true;
-};
 
 const BrowserListener = {
   init({
@@ -246,6 +209,7 @@ const BrowserListener = {
     }
 
     let result;
+    const zoom = content.browsingContext.fullZoom;
     if (this.fixedWidth) {
       // If we're in a fixed-width area (namely a slide-in subview of the main
       // menu panel), we need to calculate the view height based on the
@@ -275,17 +239,12 @@ const BrowserListener = {
         bodyPadding = Math.min(p, bodyPadding);
       }
 
-      let height = Math.ceil(body.scrollHeight + bodyPadding);
+      let height = Math.ceil((body.scrollHeight + bodyPadding) * zoom);
 
       result = { height, detail };
     } else {
-      let background = doc.defaultView.getComputedStyle(body).backgroundColor;
-      if (!isOpaque(background)) {
-        // Ignore non-opaque backgrounds.
-        background = null;
-      }
-
-      if (background === null || background !== this.oldBackground) {
+      let background = content.windowUtils.canvasBackgroundColor;
+      if (background !== this.oldBackground) {
         sendAsyncMessage("Extension:BrowserBackgroundChanged", { background });
       }
       this.oldBackground = background;
@@ -303,8 +262,8 @@ const BrowserListener = {
         h
       );
 
-      let width = Math.ceil(w.value / ratio);
-      let height = Math.ceil(h.value / ratio);
+      let width = Math.ceil((w.value * zoom) / ratio);
+      let height = Math.ceil((h.value * zoom) / ratio);
 
       result = { width, height, detail };
     }
@@ -316,38 +275,6 @@ const BrowserListener = {
 addMessageListener("Extension:InitBrowser", BrowserListener);
 addMessageListener("Extension:UnblockParser", BrowserListener);
 addMessageListener("Extension:GrabFocus", BrowserListener);
-
-var WebBrowserChrome = {
-  onBeforeLinkTraversal(originalTarget, linkURI, linkNode, isAppTab) {
-    // isAppTab is the value for the docShell that received the click.  We're
-    // handling this in the top-level frame and want traversal behavior to
-    // match the value for this frame rather than any subframe, so we pass
-    // through the docShell.isAppTab value rather than what we were handed.
-    return BrowserUtils.onBeforeLinkTraversal(
-      originalTarget,
-      linkURI,
-      linkNode,
-      docShell.isAppTab
-    );
-  },
-
-  shouldLoadURI(docShell, URI, referrerInfo, hasPostData, triggeringPrincipal) {
-    return true;
-  },
-
-  shouldLoadURIInThisProcess(URI) {
-    let remoteSubframes = docShell.QueryInterface(Ci.nsILoadContext)
-      .useRemoteSubframes;
-    return E10SUtils.shouldLoadURIInThisProcess(URI, remoteSubframes);
-  },
-};
-
-if (Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT) {
-  let tabchild = docShell
-    .QueryInterface(Ci.nsIInterfaceRequestor)
-    .getInterface(Ci.nsIBrowserChild);
-  tabchild.webBrowserChrome = WebBrowserChrome;
-}
 
 // This is a temporary hack to prevent regressions (bug 1471327).
 void content;

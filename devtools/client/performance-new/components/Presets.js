@@ -12,6 +12,8 @@
 const {
   PureComponent,
   createElement,
+  createFactory,
+  Fragment,
 } = require("devtools/client/shared/vendor/react");
 const {
   div,
@@ -21,6 +23,10 @@ const {
 const selectors = require("devtools/client/performance-new/store/selectors");
 const actions = require("devtools/client/performance-new/store/actions");
 const { connect } = require("devtools/client/shared/vendor/react-redux");
+
+const Localized = createFactory(
+  require("devtools/client/shared/vendor/fluent-react").Localized
+);
 
 /**
  * @typedef {Object} PresetProps
@@ -47,33 +53,35 @@ class Preset extends PureComponent {
 
   render() {
     const { preset, presetName, selected } = this.props;
-    let labelText, description;
-    if (preset) {
-      labelText = preset.label;
-      description = preset.description;
-    } else {
-      labelText = "Custom";
-    }
+    const presetLabelAndDescription = preset
+      ? createElement(
+          Fragment,
+          null,
+          Localized(
+            { id: preset.l10nIds.devtools.label },
+            div({ className: "perf-toggle-text-label" })
+          ),
+          Localized(
+            { id: preset.l10nIds.devtools.description },
+            div({ className: "perf-toggle-description" })
+          )
+        )
+      : Localized(
+          { id: "perftools-presets-custom-label" },
+          div({ className: "perf-toggle-text-label" }, "Custom")
+        );
+
     return label(
-      { className: "perf-presets-label" },
-      div(
-        { className: "perf-presets-input-container" },
-        input({
-          className: "perf-presets-input",
-          type: "radio",
-          name: "presets",
-          value: presetName,
-          checked: selected,
-          onChange: this.onChange,
-        })
-      ),
-      div(
-        { className: "perf-presets-text" },
-        div({ className: "pref-preset-text-label" }, labelText),
-        description
-          ? div({ className: "perf-presets-description" }, description)
-          : null
-      )
+      { className: "perf-toggle-label" },
+      input({
+        className: "perf-presets-radio-button",
+        type: "radio",
+        name: "presets",
+        value: presetName,
+        checked: selected,
+        onChange: this.onChange,
+      }),
+      presetLabelAndDescription
     );
   }
 }
@@ -102,20 +110,14 @@ class Preset extends PureComponent {
  * @extends {React.PureComponent<Props>}
  */
 class Presets extends PureComponent {
-  /** @param {Props} props */
-  constructor(props) {
-    super(props);
-    this.onChange = this.onChange.bind(this);
-  }
-
   /**
    * Handle the checkbox change.
    * @param {string} presetName
    */
-  onChange(presetName) {
+  onChange = presetName => {
     const { presets } = this.props;
     this.props.changePreset(presets, presetName);
-  }
+  };
 
   render() {
     const { presets, selectedPresetName } = this.props;

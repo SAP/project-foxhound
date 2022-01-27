@@ -5,9 +5,10 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 UNIFIED_SOURCES += [
-    'bench-collections/Bench.cpp',
-    'nsstring/Test.cpp',
-    'xpcom/Test.cpp',
+    "bench-collections/Bench.cpp",
+    "moz_task/TestMozTask.cpp",
+    "nsstring/TestnsString.cpp",
+    "xpcom/TestXpcom.cpp",
 ]
 
-FINAL_LIBRARY = 'xul-gtest'
+FINAL_LIBRARY = "xul-gtest"

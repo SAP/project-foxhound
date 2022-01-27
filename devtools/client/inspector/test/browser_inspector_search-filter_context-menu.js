@@ -50,13 +50,20 @@ add_task(async function() {
 
   info("Closing context menu");
   let onContextMenuClose = toolbox.once("menu-close");
-  EventUtils.sendKey("ESCAPE", toolbox.win);
+  searchContextMenu.hidePopup();
   await onContextMenuClose;
 
   info("Copy text in search field using the context menu");
+  const onSearchProcessingDone = inspector.searchSuggestions.once(
+    "processing-done"
+  );
   searchBox.setUserInput(TEST_INPUT);
   searchBox.select();
   searchBox.focus();
+
+  // We have to wait for search query to avoid test failure.
+  info("Waiting for search query to complete and getting the suggestions");
+  await onSearchProcessingDone;
 
   onContextMenuOpen = toolbox.once("menu-open");
   synthesizeContextMenuEvent(searchBox);
@@ -69,7 +76,7 @@ add_task(async function() {
 
   cmdCopy = searchContextMenu.querySelector("#editmenu-copy");
   await waitForClipboardPromise(
-    () => EventUtils.synthesizeMouseAtCenter(cmdCopy, {}, toolbox.topWindow),
+    () => searchContextMenu.activateItem(cmdCopy),
     TEST_INPUT
   );
 
@@ -98,10 +105,6 @@ add_task(async function() {
   is(cmdPaste.getAttribute("disabled"), "", "cmdPaste is enabled");
 
   const onContextMenuHidden = toolbox.once("menu-close");
-  EventUtils.sendKey("ESCAPE", toolbox.win);
+  searchContextMenu.hidePopup();
   await onContextMenuHidden;
-
-  // We have to wait for search query to avoid test failure.
-  info("Waiting for search query to complete and getting the suggestions");
-  await inspector.searchSuggestions._lastQuery;
 });

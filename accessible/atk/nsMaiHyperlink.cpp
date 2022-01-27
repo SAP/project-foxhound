@@ -6,7 +6,7 @@
 
 #include "nsIURI.h"
 #include "nsMaiHyperlink.h"
-#include "mozilla/a11y/ProxyAccessible.h"
+#include "mozilla/a11y/RemoteAccessible.h"
 
 using namespace mozilla::a11y;
 
@@ -94,7 +94,7 @@ GType mai_atk_hyperlink_get_type(void) {
   return type;
 }
 
-MaiHyperlink::MaiHyperlink(AccessibleOrProxy aHyperLink)
+MaiHyperlink::MaiHyperlink(Accessible* aHyperLink)
     : mHyperlink(aHyperLink), mMaiAtkHyperlink(nullptr) {
   mMaiAtkHyperlink = reinterpret_cast<AtkHyperlink*>(
       g_object_new(mai_atk_hyperlink_get_type(), nullptr));
@@ -136,8 +136,9 @@ void finalizeCB(GObject* aObj) {
   maiAtkHyperlink->maiHyperlink = nullptr;
 
   /* call parent finalize function */
-  if (G_OBJECT_CLASS(parent_class)->finalize)
+  if (G_OBJECT_CLASS(parent_class)->finalize) {
     G_OBJECT_CLASS(parent_class)->finalize(aObj);
+  }
 }
 
 gchar* getUriCB(AtkHyperlink* aLink, gint aLinkIndex) {
@@ -145,7 +146,7 @@ gchar* getUriCB(AtkHyperlink* aLink, gint aLinkIndex) {
   if (!maiLink) return nullptr;
 
   nsAutoCString cautoStr;
-  if (Accessible* hyperlink = maiLink->GetAccHyperlink()) {
+  if (LocalAccessible* hyperlink = maiLink->GetAccHyperlink()) {
     nsCOMPtr<nsIURI> uri = hyperlink->AnchorURIAt(aLinkIndex);
     if (!uri) return nullptr;
 
@@ -168,14 +169,14 @@ AtkObject* getObjectCB(AtkHyperlink* aLink, gint aLinkIndex) {
     return nullptr;
   }
 
-  if (Accessible* hyperlink = maiLink->GetAccHyperlink()) {
-    Accessible* anchor = hyperlink->AnchorAt(aLinkIndex);
+  if (LocalAccessible* hyperlink = maiLink->GetAccHyperlink()) {
+    LocalAccessible* anchor = hyperlink->AnchorAt(aLinkIndex);
     NS_ENSURE_TRUE(anchor, nullptr);
 
     return AccessibleWrap::GetAtkObject(anchor);
   }
 
-  ProxyAccessible* anchor = maiLink->Proxy()->AnchorAt(aLinkIndex);
+  RemoteAccessible* anchor = maiLink->Proxy()->AnchorAt(aLinkIndex);
   return anchor ? GetWrapperFor(anchor) : nullptr;
 }
 
@@ -183,8 +184,9 @@ gint getEndIndexCB(AtkHyperlink* aLink) {
   MaiHyperlink* maiLink = GetMaiHyperlink(aLink);
   if (!maiLink) return false;
 
-  if (Accessible* hyperlink = maiLink->GetAccHyperlink())
+  if (LocalAccessible* hyperlink = maiLink->GetAccHyperlink()) {
     return static_cast<gint>(hyperlink->EndOffset());
+  }
 
   bool valid = false;
   uint32_t endIdx = maiLink->Proxy()->EndOffset(&valid);
@@ -195,20 +197,16 @@ gint getStartIndexCB(AtkHyperlink* aLink) {
   MaiHyperlink* maiLink = GetMaiHyperlink(aLink);
   if (!maiLink) return -1;
 
-  if (Accessible* hyperlink = maiLink->GetAccHyperlink())
-    return static_cast<gint>(hyperlink->StartOffset());
-
-  bool valid = false;
-  uint32_t startIdx = maiLink->Proxy()->StartOffset(&valid);
-  return valid ? static_cast<gint>(startIdx) : -1;
+  return static_cast<gint>(maiLink->Acc()->StartOffset());
 }
 
 gboolean isValidCB(AtkHyperlink* aLink) {
   MaiHyperlink* maiLink = GetMaiHyperlink(aLink);
   if (!maiLink) return false;
 
-  if (Accessible* hyperlink = maiLink->GetAccHyperlink())
+  if (LocalAccessible* hyperlink = maiLink->GetAccHyperlink()) {
     return static_cast<gboolean>(hyperlink->IsLinkValid());
+  }
 
   return static_cast<gboolean>(maiLink->Proxy()->IsLinkValid());
 }
@@ -217,8 +215,9 @@ gint getAnchorCountCB(AtkHyperlink* aLink) {
   MaiHyperlink* maiLink = GetMaiHyperlink(aLink);
   if (!maiLink) return -1;
 
-  if (Accessible* hyperlink = maiLink->GetAccHyperlink())
+  if (LocalAccessible* hyperlink = maiLink->GetAccHyperlink()) {
     return static_cast<gint>(hyperlink->AnchorCount());
+  }
 
   bool valid = false;
   uint32_t anchorCount = maiLink->Proxy()->AnchorCount(&valid);

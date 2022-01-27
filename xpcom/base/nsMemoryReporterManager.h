@@ -8,13 +8,15 @@
 #define nsMemoryReporterManager_h__
 
 #include "mozilla/Mutex.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsHashKeys.h"
-#include "nsIEventTarget.h"
 #include "nsIMemoryReporter.h"
-#include "nsITimer.h"
+#include "nsISupports.h"
 #include "nsServiceManagerUtils.h"
-#include "nsDataHashtable.h"
+
+#ifdef XP_WIN
+#  include <windows.h>
+#endif  // XP_WIN
 
 namespace mozilla {
 class MemoryReportingProcess;
@@ -23,6 +25,9 @@ class MemoryReport;
 }  // namespace dom
 }  // namespace mozilla
 
+class mozIDOMWindowProxy;
+class nsIEventTarget;
+class nsIRunnable;
 class nsITimer;
 
 class nsMemoryReporterManager final : public nsIMemoryReporterManager,
@@ -39,16 +44,15 @@ class nsMemoryReporterManager final : public nsIMemoryReporterManager,
   nsMemoryReporterManager();
 
   // Gets the memory reporter manager service.
-  static nsMemoryReporterManager* GetOrCreate() {
+  static already_AddRefed<nsMemoryReporterManager> GetOrCreate() {
     nsCOMPtr<nsIMemoryReporterManager> imgr =
         do_GetService("@mozilla.org/memory-reporter-manager;1");
-    return static_cast<nsMemoryReporterManager*>(imgr.get());
+    return imgr.forget().downcast<nsMemoryReporterManager>();
   }
 
-  typedef nsDataHashtable<nsRefPtrHashKey<nsIMemoryReporter>, bool>
+  typedef nsTHashMap<nsRefPtrHashKey<nsIMemoryReporter>, bool>
       StrongReportersTable;
-  typedef nsDataHashtable<nsPtrHashKey<nsIMemoryReporter>, bool>
-      WeakReportersTable;
+  typedef nsTHashMap<nsPtrHashKey<nsIMemoryReporter>, bool> WeakReportersTable;
 
   // Inter-process memory reporting proceeds as follows.
   //
@@ -153,8 +157,6 @@ class nsMemoryReporterManager final : public nsIMemoryReporterManager,
 
     mozilla::InfallibleAmountFn mStorageSQLite = nullptr;
 
-    mozilla::InfallibleAmountFn mLowMemoryEventsVirtual = nullptr;
-    mozilla::InfallibleAmountFn mLowMemoryEventsCommitSpace = nullptr;
     mozilla::InfallibleAmountFn mLowMemoryEventsPhysical = nullptr;
 
     mozilla::InfallibleAmountFn mGhostWindows = nullptr;
@@ -170,7 +172,17 @@ class nsMemoryReporterManager final : public nsIMemoryReporterManager,
 
   // Convenience function to get USS easily from other code.  This is useful
   // when debugging unshared memory pages for forked processes.
-  static int64_t ResidentUnique();
+  //
+  // Returns 0 if, for some reason, the resident unique memory cannot be
+  // determined - typically if there is a race between us and someone else
+  // closing the process and we lost that race.
+#ifdef XP_WIN
+  static int64_t ResidentUnique(HANDLE aProcess = nullptr);
+#elif XP_MACOSX
+  static int64_t ResidentUnique(mach_port_t aPort = 0);
+#else
+  static int64_t ResidentUnique(pid_t aPid = 0);
+#endif  // XP_{WIN, MACOSX, LINUX, *}
 
   // Functions that measure per-tab memory consumption.
   struct SizeOfTabFns {

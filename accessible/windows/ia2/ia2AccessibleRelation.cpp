@@ -16,7 +16,7 @@ using namespace mozilla::a11y;
 
 ia2AccessibleRelation::ia2AccessibleRelation(RelationType aType, Relation* aRel)
     : mType(aType) {
-  Accessible* target = nullptr;
+  LocalAccessible* target = nullptr;
   while ((target = aRel->Next())) mTargets.AppendElement(target);
 }
 
@@ -69,10 +69,9 @@ ia2AccessibleRelation::get_target(long aTargetIndex, IUnknown** aTarget) {
       !aTarget)
     return E_INVALIDARG;
 
-  AccessibleWrap* target =
-      static_cast<AccessibleWrap*>(mTargets[aTargetIndex].get());
-  *aTarget = static_cast<IAccessible*>(target);
-  (*aTarget)->AddRef();
+  RefPtr<IAccessible> target;
+  mTargets[aTargetIndex]->GetNativeInterface(getter_AddRefs(target));
+  target.forget(aTarget);
 
   return S_OK;
 }

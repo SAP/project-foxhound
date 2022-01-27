@@ -3,6 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 # ***** END LICENSE BLOCK *****
+from __future__ import absolute_import
 import os
 
 config = {
@@ -15,7 +16,6 @@ config = {
         "--certutil-binary=%(xre_path)s/certutil",
         "--product=firefox_android",
     ],
-    "avds_dir": "/builds/worker/workspace/build/.android",
     "binary_path": "/tmp",
     "geckodriver": "%(abs_fetches_dir)s/geckodriver",
     "hostutils_manifest_path": "testing/config/tooltool-manifests/linux64/hostutils.manifest",

@@ -1,11 +1,12 @@
 [package]
 name = "mp4parse"
-version = "0.11.4"
+version = "0.12.0"
 authors = [
   "Ralph Giles <giles@mozilla.com>",
   "Matthew Gregan <kinetik@flim.org>",
   "Alfredo Yang <ayang@mozilla.com>",
   "Jon Bauman <jbauman@mozilla.com>",
+  "Bryce Seager van Dyk <bvandyk@mozilla.com>",
 ]
 
 description = "Parser for ISO base media file format (mp4)"
@@ -27,18 +28,28 @@ travis-ci = { repository = "https://github.com/mozilla/mp4parse-rust" }
 [dependencies]
 byteorder = "1.2.1"
 bitreader = { version = "0.3.2" }
-hashbrown = "0.7.1"
-num-traits = "0.2.0"
+env_logger = "0.8"
+fallible_collections = { version = "0.4", features = ["std_io"] }
+num-traits = "0.2.14"
 log = "0.4"
 static_assertions = "1.1.0"
 
 [dev-dependencies]
 test-assembler = "0.1.2"
-env_logger = "0.7.1"
 walkdir = "2.3.1"
+criterion = "0.3"
 
 [features]
-# Enable mp4parse_fallible to use fallible memory allocation rather than
-# panicking on OOM.  Note that this is only safe within Gecko where the system
-# allocator has been globally overridden (see BMO 1457359).
-mp4parse_fallible = []
+missing-pixi-permitted = []
+3gpp = []
+meta-xml = []
+unstable-api = []
+mp4v = []
+
+[[bench]]
+name = "avif_benchmark"
+harness = false
+
+# See https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
+[lib]
+bench = false

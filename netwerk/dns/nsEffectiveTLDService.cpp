@@ -15,6 +15,7 @@
 #include "mozilla/TextUtils.h"
 
 #include "MainThreadUtils.h"
+#include "nsContentUtils.h"
 #include "nsCRT.h"
 #include "nsEffectiveTLDService.h"
 #include "nsIFile.h"
@@ -24,7 +25,7 @@
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
-#include "prnetdb.h"
+#include "mozilla/net/DNS.h"
 
 namespace etld_dafsa {
 
@@ -57,7 +58,9 @@ nsresult nsEffectiveTLDService::Init() {
 
   nsresult rv;
   mIDNService = do_GetService(NS_IDNSERVICE_CONTRACTID, &rv);
-  if (NS_FAILED(rv)) return rv;
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   gService = this;
   RegisterWeakMemoryReporter(this);
@@ -90,7 +93,7 @@ NS_IMETHODIMP nsEffectiveTLDService::Observe(nsISupports* aSubject,
     size_t size = mDafsaMap.size();
     const uint8_t* remoteDafsaPtr = mDafsaMap.get<uint8_t>().get();
 
-    auto remoteDafsa = mozilla::MakeSpan(remoteDafsaPtr, size);
+    auto remoteDafsa = mozilla::Span(remoteDafsaPtr, size);
 
     mGraph.reset();
     mGraph.emplace(remoteDafsa);
@@ -199,6 +202,54 @@ nsEffectiveTLDService::GetBaseDomain(nsIURI* aURI, uint32_t aAdditionalParts,
   return GetBaseDomainInternal(host, aAdditionalParts + 1, false, aBaseDomain);
 }
 
+// External function for dealing with URIs to get a schemeless site.
+// Calls through to GetBaseDomain(), handling IP addresses and aliases by
+// just returning their serialized host.
+NS_IMETHODIMP
+nsEffectiveTLDService::GetSchemelessSite(nsIURI* aURI, nsACString& aSite) {
+  NS_ENSURE_ARG_POINTER(aURI);
+
+  nsresult rv = GetBaseDomain(aURI, 0, aSite);
+  if (rv == NS_ERROR_HOST_IS_IP_ADDRESS ||
+      rv == NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS) {
+    rv = nsContentUtils::GetHostOrIPv6WithBrackets(aURI, aSite);
+  }
+  return rv;
+}
+
+// External function for dealing with URIs to get site correctly.
+// Calls through to GetSchemelessSite(), and serializes with the scheme and
+// "://" prepended.
+NS_IMETHODIMP
+nsEffectiveTLDService::GetSite(nsIURI* aURI, nsACString& aSite) {
+  NS_ENSURE_ARG_POINTER(aURI);
+
+  nsAutoCString scheme;
+  nsresult rv = aURI->GetScheme(scheme);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsAutoCString schemeless;
+  rv = GetSchemelessSite(aURI, schemeless);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // aURI (and thus BaseDomain) may be the string '.'. If so, fail.
+  if (schemeless.Length() == 1 && schemeless.Last() == '.') {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  // Reject any URIs without a host that aren't file:// URIs.
+  if (schemeless.IsEmpty() && !aURI->SchemeIs("file")) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  aSite.SetCapacity(scheme.Length() + 3 + schemeless.Length());
+  aSite.Append(scheme);
+  aSite.Append("://"_ns);
+  aSite.Append(schemeless);
+
+  return NS_OK;
+}
+
 // External function for dealing with a host string directly: finds the public
 // suffix (e.g. co.uk) for the given hostname. See GetBaseDomainInternal().
 NS_IMETHODIMP
@@ -208,7 +259,9 @@ nsEffectiveTLDService::GetPublicSuffixFromHost(const nsACString& aHostname,
   // This will fail if the hostname includes invalid characters.
   nsAutoCString normHostname(aHostname);
   nsresult rv = NormalizeHostname(normHostname);
-  if (NS_FAILED(rv)) return rv;
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   return GetBaseDomainInternal(normHostname, 0, false, aPublicSuffix);
 }
@@ -220,7 +273,9 @@ nsEffectiveTLDService::GetKnownPublicSuffixFromHost(const nsACString& aHostname,
   // This will fail if the hostname includes invalid characters.
   nsAutoCString normHostname(aHostname);
   nsresult rv = NormalizeHostname(normHostname);
-  if (NS_FAILED(rv)) return rv;
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   return GetBaseDomainInternal(normHostname, 0, true, aPublicSuffix);
 }
@@ -238,7 +293,9 @@ nsEffectiveTLDService::GetBaseDomainFromHost(const nsACString& aHostname,
   // This will fail if the hostname includes invalid characters.
   nsAutoCString normHostname(aHostname);
   nsresult rv = NormalizeHostname(normHostname);
-  if (NS_FAILED(rv)) return rv;
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   return GetBaseDomainInternal(normHostname, aAdditionalParts + 1, false,
                                aBaseDomain);
@@ -267,16 +324,21 @@ nsresult nsEffectiveTLDService::GetBaseDomainInternal(
   const int kExceptionRule = 1;
   const int kWildcardRule = 2;
 
-  if (aHostname.IsEmpty()) return NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS;
+  if (aHostname.IsEmpty()) {
+    return NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS;
+  }
 
   // chomp any trailing dot, and keep track of it for later
   bool trailingDot = aHostname.Last() == '.';
-  if (trailingDot) aHostname.Truncate(aHostname.Length() - 1);
+  if (trailingDot) {
+    aHostname.Truncate(aHostname.Length() - 1);
+  }
 
   // check the edge cases of the host being '.' or having a second trailing '.',
   // since subsequent checks won't catch it.
-  if (aHostname.IsEmpty() || aHostname.Last() == '.')
+  if (aHostname.IsEmpty() || aHostname.Last() == '.') {
     return NS_ERROR_INVALID_ARG;
+  }
 
   // Lookup in the cache if this is a normal query. This is restricted to
   // main thread-only as the cache is not thread-safe.
@@ -301,13 +363,10 @@ nsresult nsEffectiveTLDService::GetBaseDomainInternal(
   }
 
   // Check if we're dealing with an IPv4/IPv6 hostname, and return
-  PRNetAddr addr;
-  PRStatus result = PR_StringToNetAddr(aHostname.get(), &addr);
-  if (result == PR_SUCCESS) {
+  if (mozilla::net::HostIsIPLiteral(aHostname)) {
     // Update the MRU table if in use.
     if (entry) {
-      entry->Set(TLDCacheEntry{aHostname, EmptyCString(),
-                               NS_ERROR_HOST_IS_IP_ADDRESS});
+      entry->Set(TLDCacheEntry{aHostname, ""_ns, NS_ERROR_HOST_IS_IP_ADDRESS});
     }
 
     return NS_ERROR_HOST_IS_IP_ADDRESS;
@@ -330,8 +389,7 @@ nsresult nsEffectiveTLDService::GetBaseDomainInternal(
     if (*currDomain == '.') {
       // Update the MRU table if in use.
       if (entry) {
-        entry->Set(
-            TLDCacheEntry{aHostname, EmptyCString(), NS_ERROR_INVALID_ARG});
+        entry->Set(TLDCacheEntry{aHostname, ""_ns, NS_ERROR_INVALID_ARG});
       }
 
       return NS_ERROR_INVALID_ARG;
@@ -350,7 +408,7 @@ nsresult nsEffectiveTLDService::GetBaseDomainInternal(
         eTLD = prevDomain;
         break;
       }
-      if ((result == kWildcardRule || result != kExceptionRule) || !nextDot) {
+      if (result != kExceptionRule || !nextDot) {
         // specific match, or we've hit the top domain level
         eTLD = currDomain;
         break;
@@ -383,8 +441,9 @@ nsresult nsEffectiveTLDService::GetBaseDomainInternal(
     NS_ASSERTION(aAdditionalParts == -1,
                  "aAdditionalParts can't be negative and different from -1");
 
-    for (iter = aHostname.get(); iter != eTLD && *iter != '.'; iter++)
+    for (iter = aHostname.get(); iter != eTLD && *iter != '.'; iter++) {
       ;
+    }
 
     if (iter != eTLD) {
       iter++;
@@ -398,7 +457,9 @@ nsresult nsEffectiveTLDService::GetBaseDomainInternal(
     iter = eTLD;
 
     while (true) {
-      if (iter == begin) break;
+      if (iter == begin) {
+        break;
+      }
 
       if (*(--iter) == '.' && aAdditionalParts-- == 0) {
         ++iter;
@@ -411,8 +472,8 @@ nsresult nsEffectiveTLDService::GetBaseDomainInternal(
   if (aAdditionalParts != 0) {
     // Update the MRU table if in use.
     if (entry) {
-      entry->Set(TLDCacheEntry{aHostname, EmptyCString(),
-                               NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS});
+      entry->Set(
+          TLDCacheEntry{aHostname, ""_ns, NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS});
     }
 
     return NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS;
@@ -426,7 +487,9 @@ nsresult nsEffectiveTLDService::GetBaseDomainInternal(
   }
 
   // add on the trailing dot, if applicable
-  if (trailingDot) aBaseDomain.Append('.');
+  if (trailingDot) {
+    aBaseDomain.Append('.');
+  }
 
   return NS_OK;
 }
@@ -437,7 +500,9 @@ nsresult nsEffectiveTLDService::GetBaseDomainInternal(
 nsresult nsEffectiveTLDService::NormalizeHostname(nsCString& aHostname) {
   if (!IsAscii(aHostname)) {
     nsresult rv = mIDNService->ConvertUTF8toACE(aHostname, aHostname);
-    if (NS_FAILED(rv)) return rv;
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
   }
 
   ToLowerCase(aHostname);
@@ -447,28 +512,5 @@ nsresult nsEffectiveTLDService::NormalizeHostname(nsCString& aHostname) {
 NS_IMETHODIMP
 nsEffectiveTLDService::HasRootDomain(const nsACString& aInput,
                                      const nsACString& aHost, bool* aResult) {
-  if (NS_WARN_IF(!aResult)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  *aResult = false;
-
-  // If the strings are the same, we obviously have a match.
-  if (aInput == aHost) {
-    *aResult = true;
-    return NS_OK;
-  }
-
-  // If aHost is not found, we know we do not have it as a root domain.
-  int32_t index = nsAutoCString(aInput).Find(aHost.BeginReading());
-  if (index == kNotFound) {
-    return NS_OK;
-  }
-
-  // Otherwise, we have aHost as our root domain iff the index of aHost is
-  // aHost.length subtracted from our length and (since we do not have an
-  // exact match) the character before the index is a dot or slash.
-  *aResult = index > 0 && (uint32_t)index == aInput.Length() - aHost.Length() &&
-             (aInput[index - 1] == '.' || aInput[index - 1] == '/');
-  return NS_OK;
+  return NS_HasRootDomain(aInput, aHost, aResult);
 }

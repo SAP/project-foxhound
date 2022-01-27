@@ -14,18 +14,27 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/SVGAnimatedClass.h"
 #include "mozilla/SVGContentUtils.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/Element.h"
-#include "mozilla/dom/SVGAnimatedClass.h"
 #include "mozilla/gfx/MatrixFwd.h"
 #include "mozilla/UniquePtr.h"
+#include "nsCSSPropertyID.h"
 #include "nsChangeHint.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsError.h"
 #include "nsISupportsImpl.h"
 #include "nsStyledElement.h"
 #include "gfxMatrix.h"
+
+// {70db954d-e452-4be3-83aa-f54a51cf7890}
+#define MOZILLA_SVGELEMENT_IID                       \
+  {                                                  \
+    0x70db954d, 0xe452, 0x4be3, {                    \
+      0x82, 0xaa, 0xf5, 0x4a, 0x51, 0xcf, 0x78, 0x90 \
+    }                                                \
+  }
 
 nsresult NS_NewSVGElement(mozilla::dom::Element** aResult,
                           already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -81,10 +90,13 @@ class SVGElement : public SVGElementBase  // nsIContent
   // From Element
   nsresult CopyInnerTo(mozilla::dom::Element* aDest);
 
+  NS_DECLARE_STATIC_IID_ACCESSOR(MOZILLA_SVGELEMENT_IID)
   // nsISupports
   NS_INLINE_DECL_REFCOUNTING_INHERITED(SVGElement, SVGElementBase)
 
   NS_DECL_ADDSIZEOFEXCLUDINGTHIS
+
+  NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr) override;
 
   void DidAnimateClass();
 
@@ -175,10 +187,10 @@ class SVGElement : public SVGElementBase  // nsIContent
   }
 
   bool IsStringAnimatable(uint8_t aAttrEnum) {
-    return GetStringInfo().mStringInfo[aAttrEnum].mIsAnimatable;
+    return GetStringInfo().mInfos[aAttrEnum].mIsAnimatable;
   }
   bool NumberAttrAllowsPercentage(uint8_t aAttrEnum) {
-    return GetNumberInfo().mNumberInfo[aAttrEnum].mPercentagesAllowed;
+    return GetNumberInfo().mInfos[aAttrEnum].mPercentagesAllowed;
   }
   virtual bool HasValidDimensions() const { return true; }
   void SetLength(nsAtom* aName, const SVGAnimatedLength& aLength);
@@ -188,6 +200,9 @@ class SVGElement : public SVGElementBase  // nsIContent
                                                nsCSSPropertyID aPropId,
                                                const SVGAnimatedLength& aLength,
                                                ValToUse aValToUse);
+  static bool UpdateDeclarationBlockFromPath(
+      DeclarationBlock& aBlock, const SVGAnimatedPathSegList& aPath,
+      ValToUse aValToUse);
 
   nsAttrValue WillChangeLength(uint8_t aAttrEnum,
                                const mozAutoDocUpdate& aProofOfUpdate);
@@ -271,6 +286,7 @@ class SVGElement : public SVGElementBase  // nsIContent
     DO_ALLOCATE = 0x1
   };
 
+  SVGAnimatedLength* GetAnimatedLength(uint8_t aAttrEnum);
   SVGAnimatedLength* GetAnimatedLength(const nsAtom* aAttrName);
   void GetAnimatedLengthValues(float* aFirst, ...);
   void GetAnimatedNumberValues(float* aFirst, ...);
@@ -308,8 +324,6 @@ class SVGElement : public SVGElementBase  // nsIContent
                                                nsAtom* aName) override;
   void AnimationNeedsResample();
   void FlushAnimations();
-
-  virtual void RecompileScriptEventListeners() override;
 
   void GetStringBaseValue(uint8_t aAttrEnum, nsAString& aResult) const;
   void SetStringBaseValue(uint8_t aAttrEnum, const nsAString& aValue);
@@ -368,7 +382,7 @@ class SVGElement : public SVGElementBase  // nsIContent
                       const mozAutoDocUpdate& aProofOfUpdate);
   void MaybeSerializeAttrBeforeRemoval(nsAtom* aName, bool aNotify);
 
-  static nsAtom* GetEventNameForAttr(nsAtom* aAttr);
+  nsAtom* GetEventNameForAttr(nsAtom* aAttr) override;
 
   struct LengthInfo {
     nsStaticAtom* const mName;
@@ -377,19 +391,21 @@ class SVGElement : public SVGElementBase  // nsIContent
     const uint8_t mCtxType;
   };
 
-  struct LengthAttributesInfo {
-    SVGAnimatedLength* const mLengths;
-    const LengthInfo* const mLengthInfo;
-    const uint32_t mLengthCount;
+  template <typename Value, typename InfoValue>
+  struct AttributesInfo {
+    Value* const mValues;
+    const InfoValue* const mInfos;
+    const uint32_t mCount;
 
-    LengthAttributesInfo(SVGAnimatedLength* aLengths, LengthInfo* aLengthInfo,
-                         uint32_t aLengthCount)
-        : mLengths(aLengths),
-          mLengthInfo(aLengthInfo),
-          mLengthCount(aLengthCount) {}
+    AttributesInfo(Value* aValues, const InfoValue* aInfos, uint32_t aCount)
+        : mValues(aValues), mInfos(aInfos), mCount(aCount) {}
 
-    void Reset(uint8_t aAttrEnum);
+    void CopyAllFrom(const AttributesInfo&);
+    void ResetAll();
+    void Reset(uint8_t aEnum);
   };
+
+  using LengthAttributesInfo = AttributesInfo<SVGAnimatedLength, LengthInfo>;
 
   struct NumberInfo {
     nsStaticAtom* const mName;
@@ -397,19 +413,7 @@ class SVGElement : public SVGElementBase  // nsIContent
     const bool mPercentagesAllowed;
   };
 
-  struct NumberAttributesInfo {
-    SVGAnimatedNumber* const mNumbers;
-    const NumberInfo* const mNumberInfo;
-    const uint32_t mNumberCount;
-
-    NumberAttributesInfo(SVGAnimatedNumber* aNumbers, NumberInfo* aNumberInfo,
-                         uint32_t aNumberCount)
-        : mNumbers(aNumbers),
-          mNumberInfo(aNumberInfo),
-          mNumberCount(aNumberCount) {}
-
-    void Reset(uint8_t aAttrEnum);
-  };
+  using NumberAttributesInfo = AttributesInfo<SVGAnimatedNumber, NumberInfo>;
 
   struct NumberPairInfo {
     nsStaticAtom* const mName;
@@ -417,39 +421,15 @@ class SVGElement : public SVGElementBase  // nsIContent
     const float mDefaultValue2;
   };
 
-  struct NumberPairAttributesInfo {
-    SVGAnimatedNumberPair* const mNumberPairs;
-    const NumberPairInfo* const mNumberPairInfo;
-    const uint32_t mNumberPairCount;
-
-    NumberPairAttributesInfo(SVGAnimatedNumberPair* aNumberPairs,
-                             NumberPairInfo* aNumberPairInfo,
-                             uint32_t aNumberPairCount)
-        : mNumberPairs(aNumberPairs),
-          mNumberPairInfo(aNumberPairInfo),
-          mNumberPairCount(aNumberPairCount) {}
-
-    void Reset(uint8_t aAttrEnum);
-  };
+  using NumberPairAttributesInfo =
+      AttributesInfo<SVGAnimatedNumberPair, NumberPairInfo>;
 
   struct IntegerInfo {
     nsStaticAtom* const mName;
     const int32_t mDefaultValue;
   };
 
-  struct IntegerAttributesInfo {
-    SVGAnimatedInteger* const mIntegers;
-    const IntegerInfo* const mIntegerInfo;
-    const uint32_t mIntegerCount;
-
-    IntegerAttributesInfo(SVGAnimatedInteger* aIntegers,
-                          IntegerInfo* aIntegerInfo, uint32_t aIntegerCount)
-        : mIntegers(aIntegers),
-          mIntegerInfo(aIntegerInfo),
-          mIntegerCount(aIntegerCount) {}
-
-    void Reset(uint8_t aAttrEnum);
-  };
+  using IntegerAttributesInfo = AttributesInfo<SVGAnimatedInteger, IntegerInfo>;
 
   struct IntegerPairInfo {
     nsStaticAtom* const mName;
@@ -457,39 +437,15 @@ class SVGElement : public SVGElementBase  // nsIContent
     const int32_t mDefaultValue2;
   };
 
-  struct IntegerPairAttributesInfo {
-    SVGAnimatedIntegerPair* const mIntegerPairs;
-    const IntegerPairInfo* const mIntegerPairInfo;
-    const uint32_t mIntegerPairCount;
-
-    IntegerPairAttributesInfo(SVGAnimatedIntegerPair* aIntegerPairs,
-                              IntegerPairInfo* aIntegerPairInfo,
-                              uint32_t aIntegerPairCount)
-        : mIntegerPairs(aIntegerPairs),
-          mIntegerPairInfo(aIntegerPairInfo),
-          mIntegerPairCount(aIntegerPairCount) {}
-
-    void Reset(uint8_t aAttrEnum);
-  };
+  using IntegerPairAttributesInfo =
+      AttributesInfo<SVGAnimatedIntegerPair, IntegerPairInfo>;
 
   struct BooleanInfo {
     nsStaticAtom* const mName;
     const bool mDefaultValue;
   };
 
-  struct BooleanAttributesInfo {
-    SVGAnimatedBoolean* const mBooleans;
-    const BooleanInfo* const mBooleanInfo;
-    const uint32_t mBooleanCount;
-
-    BooleanAttributesInfo(SVGAnimatedBoolean* aBooleans,
-                          BooleanInfo* aBooleanInfo, uint32_t aBooleanCount)
-        : mBooleans(aBooleans),
-          mBooleanInfo(aBooleanInfo),
-          mBooleanCount(aBooleanCount) {}
-
-    void Reset(uint8_t aAttrEnum);
-  };
+  using BooleanAttributesInfo = AttributesInfo<SVGAnimatedBoolean, BooleanInfo>;
 
   friend class mozilla::SVGAnimatedEnumeration;
 
@@ -499,37 +455,14 @@ class SVGElement : public SVGElementBase  // nsIContent
     const uint16_t mDefaultValue;
   };
 
-  struct EnumAttributesInfo {
-    SVGAnimatedEnumeration* const mEnums;
-    const EnumInfo* const mEnumInfo;
-    const uint32_t mEnumCount;
-
-    EnumAttributesInfo(SVGAnimatedEnumeration* aEnums, EnumInfo* aEnumInfo,
-                       uint32_t aEnumCount)
-        : mEnums(aEnums), mEnumInfo(aEnumInfo), mEnumCount(aEnumCount) {}
-
-    void Reset(uint8_t aAttrEnum);
-    void SetUnknownValue(uint8_t aAttrEnum);
-  };
+  using EnumAttributesInfo = AttributesInfo<SVGAnimatedEnumeration, EnumInfo>;
 
   struct NumberListInfo {
     nsStaticAtom* const mName;
   };
 
-  struct NumberListAttributesInfo {
-    SVGAnimatedNumberList* const mNumberLists;
-    const NumberListInfo* const mNumberListInfo;
-    const uint32_t mNumberListCount;
-
-    NumberListAttributesInfo(SVGAnimatedNumberList* aNumberLists,
-                             NumberListInfo* aNumberListInfo,
-                             uint32_t aNumberListCount)
-        : mNumberLists(aNumberLists),
-          mNumberListInfo(aNumberListInfo),
-          mNumberListCount(aNumberListCount) {}
-
-    void Reset(uint8_t aAttrEnum);
-  };
+  using NumberListAttributesInfo =
+      AttributesInfo<SVGAnimatedNumberList, NumberListInfo>;
 
   struct LengthListInfo {
     nsStaticAtom* const mName;
@@ -545,20 +478,8 @@ class SVGElement : public SVGElementBase  // nsIContent
     const bool mCouldZeroPadList;
   };
 
-  struct LengthListAttributesInfo {
-    SVGAnimatedLengthList* const mLengthLists;
-    const LengthListInfo* const mLengthListInfo;
-    const uint32_t mLengthListCount;
-
-    LengthListAttributesInfo(SVGAnimatedLengthList* aLengthLists,
-                             LengthListInfo* aLengthListInfo,
-                             uint32_t aLengthListCount)
-        : mLengthLists(aLengthLists),
-          mLengthListInfo(aLengthListInfo),
-          mLengthListCount(aLengthListCount) {}
-
-    void Reset(uint8_t aAttrEnum);
-  };
+  using LengthListAttributesInfo =
+      AttributesInfo<SVGAnimatedLengthList, LengthListInfo>;
 
   struct StringInfo {
     nsStaticAtom* const mName;
@@ -566,19 +487,7 @@ class SVGElement : public SVGElementBase  // nsIContent
     const bool mIsAnimatable;
   };
 
-  struct StringAttributesInfo {
-    SVGAnimatedString* const mStrings;
-    const StringInfo* const mStringInfo;
-    const uint32_t mStringCount;
-
-    StringAttributesInfo(SVGAnimatedString* aStrings, StringInfo* aStringInfo,
-                         uint32_t aStringCount)
-        : mStrings(aStrings),
-          mStringInfo(aStringInfo),
-          mStringCount(aStringCount) {}
-
-    void Reset(uint8_t aAttrEnum);
-  };
+  using StringAttributesInfo = AttributesInfo<SVGAnimatedString, StringInfo>;
 
   friend class DOMSVGStringList;
 
@@ -586,20 +495,8 @@ class SVGElement : public SVGElementBase  // nsIContent
     nsStaticAtom* const mName;
   };
 
-  struct StringListAttributesInfo {
-    SVGStringList* const mStringLists;
-    const StringListInfo* const mStringListInfo;
-    const uint32_t mStringListCount;
-
-    StringListAttributesInfo(SVGStringList* aStringLists,
-                             StringListInfo* aStringListInfo,
-                             uint32_t aStringListCount)
-        : mStringLists(aStringLists),
-          mStringListInfo(aStringListInfo),
-          mStringListCount(aStringListCount) {}
-
-    void Reset(uint8_t aAttrEnum);
-  };
+  using StringListAttributesInfo =
+      AttributesInfo<SVGStringList, StringListInfo>;
 
   virtual LengthAttributesInfo GetLengthInfo();
   virtual NumberAttributesInfo GetNumberInfo();
@@ -627,6 +524,8 @@ class SVGElement : public SVGElementBase  // nsIContent
   UniquePtr<nsAttrValue> mClassAnimAttr;
   RefPtr<mozilla::DeclarationBlock> mContentDeclarationBlock;
 };
+
+NS_DEFINE_STATIC_IID_ACCESSOR(SVGElement, MOZILLA_SVGELEMENT_IID)
 
 /**
  * A macro to implement the NS_NewSVGXXXElement() functions.

@@ -58,7 +58,7 @@ nsDragService::~nsDragService() {}
 
 NSImage* nsDragService::ConstructDragImage(nsINode* aDOMNode, const Maybe<CSSIntRegion>& aRegion,
                                            NSPoint* aDragPoint) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   CGFloat scaleFactor = nsCocoaUtils::GetBackingScaleFactor(mNativeDragView);
 
@@ -89,12 +89,12 @@ NSImage* nsDragService::ConstructDragImage(nsINode* aDOMNode, const Maybe<CSSInt
 
   return image;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 NSImage* nsDragService::ConstructDragImage(nsINode* aDOMNode, const Maybe<CSSIntRegion>& aRegion,
                                            CSSIntPoint aPoint, LayoutDeviceIntRect* aDragRect) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   CGFloat scaleFactor = nsCocoaUtils::GetBackingScaleFactor(mNativeDragView);
 
@@ -172,11 +172,11 @@ NSImage* nsDragService::ConstructDragImage(nsINode* aDOMNode, const Maybe<CSSInt
 
   return [image autorelease];
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 bool nsDragService::IsValidType(NSString* availableType, bool allowFileURL) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   // Prevent exposing fileURL for non-fileURL type.
   // We need URL provided by dropped webloc file, but don't need file's URL.
@@ -190,12 +190,12 @@ bool nsDragService::IsValidType(NSString* availableType, bool allowFileURL) {
 
   return isValid;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(false);
+  NS_OBJC_END_TRY_BLOCK_RETURN(false);
 }
 
 NSString* nsDragService::GetStringForType(NSPasteboardItem* item, const NSString* type,
                                           bool allowFileURL) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NSString* availableType = [item availableTypeFromArray:[NSArray arrayWithObjects:(id)type, nil]];
   if (availableType && IsValidType(availableType, allowFileURL)) {
@@ -204,11 +204,11 @@ NSString* nsDragService::GetStringForType(NSPasteboardItem* item, const NSString
 
   return nil;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 NSString* nsDragService::GetTitleForURL(NSPasteboardItem* item) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NSString* name =
       GetStringForType(item, [UTIHelper stringFromPboardType:kPublicUrlNamePboardType]);
@@ -223,11 +223,11 @@ NSString* nsDragService::GetTitleForURL(NSPasteboardItem* item) {
 
   return nil;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 NSString* nsDragService::GetFilePath(NSPasteboardItem* item) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NSString* urlString =
       GetStringForType(item, [UTIHelper stringFromPboardType:(NSString*)kUTTypeFileURL], true);
@@ -240,13 +240,13 @@ NSString* nsDragService::GetFilePath(NSPasteboardItem* item) {
 
   return nil;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
 nsresult nsDragService::InvokeDragSessionImpl(nsIArray* aTransferableArray,
                                               const Maybe<CSSIntRegion>& aRegion,
                                               uint32_t aActionType) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (!gLastDragView) {
     // gLastDragView is non-null between -[ChildView mouseDown:] and -[ChildView mouseUp:].
@@ -320,12 +320,12 @@ nsresult nsDragService::InvokeDragSessionImpl(nsIArray* aTransferableArray,
 
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 NS_IMETHODIMP
 nsDragService::GetData(nsITransferable* aTransferable, uint32_t aItemIndex) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (!aTransferable) return NS_ERROR_FAILURE;
 
@@ -410,7 +410,7 @@ nsDragService::GetData(nsITransferable* aTransferable, uint32_t aItemIndex) {
       if (!clipboardDataPtr) {
         return NS_ERROR_OUT_OF_MEMORY;
       }
-      [pasteboardData getBytes:clipboardDataPtr];
+      [pasteboardData getBytes:clipboardDataPtr length:dataLength];
 
       nsCOMPtr<nsISupports> genericDataWrapper;
       nsPrimitiveHelpers::CreatePrimitiveForData(flavorStr, clipboardDataPtr, dataLength,
@@ -452,7 +452,7 @@ nsDragService::GetData(nsITransferable* aTransferable, uint32_t aItemIndex) {
       unsigned int dataLength = [stringData length];
       void* clipboardDataPtr = malloc(dataLength);
       if (!clipboardDataPtr) return NS_ERROR_OUT_OF_MEMORY;
-      [stringData getBytes:clipboardDataPtr];
+      [stringData getBytes:clipboardDataPtr length:dataLength];
 
       // The DOM only wants LF, so convert from MacOS line endings to DOM line endings.
       int32_t signedDataLength = dataLength;
@@ -487,12 +487,12 @@ nsDragService::GetData(nsITransferable* aTransferable, uint32_t aItemIndex) {
   }
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 NS_IMETHODIMP
 nsDragService::IsDataFlavorSupported(const char* aDataFlavor, bool* _retval) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   *_retval = false;
 
@@ -548,12 +548,12 @@ nsDragService::IsDataFlavorSupported(const char* aDataFlavor, bool* _retval) {
 
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 NS_IMETHODIMP
 nsDragService::GetNumDropItems(uint32_t* aNumItems) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   *aNumItems = 0;
 
@@ -570,7 +570,7 @@ nsDragService::GetNumDropItems(uint32_t* aNumItems) {
 
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 NS_IMETHODIMP
@@ -634,7 +634,7 @@ void nsDragService::DragMovedWithView(NSDraggingSession* aSession, NSPoint aPoin
 
 NS_IMETHODIMP
 nsDragService::EndDragSession(bool aDoneDrag, uint32_t aKeyModifiers) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (mNativeDragView) {
     [mNativeDragView release];
@@ -651,5 +651,5 @@ nsDragService::EndDragSession(bool aDoneDrag, uint32_t aKeyModifiers) {
   mDataItems = nullptr;
   return rv;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }

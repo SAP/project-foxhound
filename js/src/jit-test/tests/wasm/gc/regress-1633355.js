@@ -1,4 +1,5 @@
 // |jit-test| skip-if: !wasmGcEnabled()
+
 load(libdir + "asserts.js");
 
 var g23 = newGlobal({newCompartment: true});
@@ -10,20 +11,20 @@ g23.eval(`
 let bin = wasmTextToBinary(`
      (type $wabbit (struct
         (field $x (mut i32))
-        (field $left (mut (ref opt $wabbit)))
-        (field $right (mut (ref opt $wabbit)))
+        (field $left (mut (ref null $wabbit)))
+        (field $right (mut (ref null $wabbit)))
      ))
-     (global $g (mut (ref opt $wabbit)) (ref.null opt $wabbit))
+     (global $g (mut (ref null $wabbit)) (ref.null $wabbit))
      (func (export "init") (param $n i32)
        (global.set $g (call $make (local.get $n)))
      )
-     (func $make (param $n i32) (result (ref opt $wabbit))
+     (func $make (param $n i32) (result (ref null $wabbit))
        (local $tmp i32)
-       (struct.new $wabbit (local.get $tmp) (ref.null opt $wabbit) (ref.null opt $wabbit))
+       (struct.new_with_rtt $wabbit (local.get $tmp) (ref.null $wabbit) (ref.null $wabbit) (rtt.canon $wabbit))
      )
 `);
 let mod = new WebAssembly.Module(bin);
 let ins = new WebAssembly.Instance(mod).exports;
 
-assertErrorMessage(() => ins.init(6), TypeError,
-                    /conversion from WebAssembly typed ref to JavaScript/);
+// Debugger can handle non-exposable fields, like (ref T).
+ins.init(6)

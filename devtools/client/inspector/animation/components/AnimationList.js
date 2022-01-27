@@ -19,11 +19,10 @@ class AnimationList extends PureComponent {
   static get propTypes() {
     return {
       animations: PropTypes.arrayOf(PropTypes.object).isRequired,
-      emitEventForTest: PropTypes.func.isRequired,
+      dispatch: PropTypes.func.isRequired,
+      displayableRange: PropTypes.object.isRequired,
       getAnimatedPropertyMap: PropTypes.func.isRequired,
       getNodeFromActor: PropTypes.func.isRequired,
-      onHideBoxModelHighlighter: PropTypes.func.isRequired,
-      onShowBoxModelHighlighterForNode: PropTypes.func.isRequired,
       selectAnimation: PropTypes.func.isRequired,
       setHighlightedNode: PropTypes.func.isRequired,
       setSelectedNode: PropTypes.func.isRequired,
@@ -35,11 +34,10 @@ class AnimationList extends PureComponent {
   render() {
     const {
       animations,
-      emitEventForTest,
+      dispatch,
+      displayableRange,
       getAnimatedPropertyMap,
       getNodeFromActor,
-      onHideBoxModelHighlighter,
-      onShowBoxModelHighlighterForNode,
       selectAnimation,
       setHighlightedNode,
       setSelectedNode,
@@ -47,18 +45,19 @@ class AnimationList extends PureComponent {
       timeScale,
     } = this.props;
 
+    const { startIndex, endIndex } = displayableRange;
+
     return dom.ul(
       {
         className: "animation-list",
       },
-      animations.map(animation =>
+      animations.map((animation, index) =>
         AnimationItem({
           animation,
-          emitEventForTest,
+          dispatch,
           getAnimatedPropertyMap,
           getNodeFromActor,
-          onHideBoxModelHighlighter,
-          onShowBoxModelHighlighterForNode,
+          isDisplayable: startIndex <= index && index <= endIndex,
           selectAnimation,
           setHighlightedNode,
           setSelectedNode,

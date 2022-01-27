@@ -6,6 +6,7 @@
 
 #include "InternalRequest.h"
 
+#include "InternalResponse.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/FetchTypes.h"
@@ -18,8 +19,7 @@
 #include "nsIContentPolicy.h"
 #include "nsStreamUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 // The global is used to extract the principal.
 SafeRefPtr<InternalRequest> InternalRequest::GetRequestConstructorCopy(
     nsIGlobalObject* aGlobal, ErrorResult& aRv) const {
@@ -191,11 +191,9 @@ void InternalRequest::OverrideContentPolicyType(
 /* static */
 RequestDestination InternalRequest::MapContentPolicyTypeToRequestDestination(
     nsContentPolicyType aContentPolicyType) {
-  RequestDestination destination = RequestDestination::_empty;
   switch (aContentPolicyType) {
     case nsIContentPolicy::TYPE_OTHER:
-      destination = RequestDestination::_empty;
-      break;
+      return RequestDestination::_empty;
     case nsIContentPolicy::TYPE_INTERNAL_SCRIPT:
     case nsIContentPolicy::TYPE_INTERNAL_SCRIPT_PRELOAD:
     case nsIContentPolicy::TYPE_INTERNAL_MODULE:
@@ -203,115 +201,90 @@ RequestDestination InternalRequest::MapContentPolicyTypeToRequestDestination(
     case nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER:
     case nsIContentPolicy::TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS:
     case nsIContentPolicy::TYPE_INTERNAL_CHROMEUTILS_COMPILED_SCRIPT:
+    case nsIContentPolicy::TYPE_INTERNAL_FRAME_MESSAGEMANAGER_SCRIPT:
     case nsIContentPolicy::TYPE_SCRIPT:
-      destination = RequestDestination::Script;
-      break;
+      return RequestDestination::Script;
     case nsIContentPolicy::TYPE_INTERNAL_WORKER:
-      destination = RequestDestination::Worker;
-      break;
+      return RequestDestination::Worker;
     case nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER:
-      destination = RequestDestination::Sharedworker;
-      break;
+      return RequestDestination::Sharedworker;
     case nsIContentPolicy::TYPE_IMAGESET:
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE:
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE_PRELOAD:
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE_FAVICON:
     case nsIContentPolicy::TYPE_IMAGE:
-      destination = RequestDestination::Image;
-      break;
+      return RequestDestination::Image;
     case nsIContentPolicy::TYPE_STYLESHEET:
     case nsIContentPolicy::TYPE_INTERNAL_STYLESHEET:
     case nsIContentPolicy::TYPE_INTERNAL_STYLESHEET_PRELOAD:
-      destination = RequestDestination::Style;
-      break;
+      return RequestDestination::Style;
     case nsIContentPolicy::TYPE_OBJECT:
     case nsIContentPolicy::TYPE_INTERNAL_OBJECT:
-      destination = RequestDestination::Object;
-      break;
+      return RequestDestination::Object;
     case nsIContentPolicy::TYPE_INTERNAL_EMBED:
-      destination = RequestDestination::Embed;
-      break;
+      return RequestDestination::Embed;
     case nsIContentPolicy::TYPE_DOCUMENT:
+      return RequestDestination::Document;
     case nsIContentPolicy::TYPE_SUBDOCUMENT:
     case nsIContentPolicy::TYPE_INTERNAL_IFRAME:
-      destination = RequestDestination::Document;
-      break;
+      return RequestDestination::Iframe;
     case nsIContentPolicy::TYPE_INTERNAL_FRAME:
-      destination = RequestDestination::_empty;
-      break;
-    case nsIContentPolicy::TYPE_REFRESH:
-      destination = RequestDestination::_empty;
-      break;
+      return RequestDestination::Frame;
     case nsIContentPolicy::TYPE_PING:
-      destination = RequestDestination::_empty;
-      break;
+      return RequestDestination::_empty;
     case nsIContentPolicy::TYPE_XMLHTTPREQUEST:
     case nsIContentPolicy::TYPE_INTERNAL_XMLHTTPREQUEST:
-      destination = RequestDestination::_empty;
-      break;
+      return RequestDestination::_empty;
     case nsIContentPolicy::TYPE_INTERNAL_EVENTSOURCE:
-      destination = RequestDestination::_empty;
-      break;
+      return RequestDestination::_empty;
     case nsIContentPolicy::TYPE_OBJECT_SUBREQUEST:
-      destination = RequestDestination::_empty;
-      break;
+      return RequestDestination::_empty;
     case nsIContentPolicy::TYPE_DTD:
     case nsIContentPolicy::TYPE_INTERNAL_DTD:
     case nsIContentPolicy::TYPE_INTERNAL_FORCE_ALLOWED_DTD:
-      destination = RequestDestination::_empty;
-      break;
+      return RequestDestination::_empty;
     case nsIContentPolicy::TYPE_FONT:
     case nsIContentPolicy::TYPE_INTERNAL_FONT_PRELOAD:
-      destination = RequestDestination::Font;
-      break;
+    case nsIContentPolicy::TYPE_UA_FONT:
+      return RequestDestination::Font;
     case nsIContentPolicy::TYPE_MEDIA:
-      destination = RequestDestination::_empty;
-      break;
+      return RequestDestination::_empty;
     case nsIContentPolicy::TYPE_INTERNAL_AUDIO:
-      destination = RequestDestination::Audio;
-      break;
+      return RequestDestination::Audio;
     case nsIContentPolicy::TYPE_INTERNAL_VIDEO:
-      destination = RequestDestination::Video;
-      break;
+      return RequestDestination::Video;
     case nsIContentPolicy::TYPE_INTERNAL_TRACK:
-      destination = RequestDestination::Track;
-      break;
+      return RequestDestination::Track;
     case nsIContentPolicy::TYPE_WEBSOCKET:
-      destination = RequestDestination::_empty;
-      break;
+      return RequestDestination::_empty;
     case nsIContentPolicy::TYPE_CSP_REPORT:
-      destination = RequestDestination::_empty;
-      break;
+      return RequestDestination::Report;
     case nsIContentPolicy::TYPE_XSLT:
-      destination = RequestDestination::Xslt;
-      break;
+      return RequestDestination::Xslt;
     case nsIContentPolicy::TYPE_BEACON:
-      destination = RequestDestination::_empty;
-      break;
+      return RequestDestination::_empty;
     case nsIContentPolicy::TYPE_FETCH:
-      destination = RequestDestination::_empty;
-      break;
+    case nsIContentPolicy::TYPE_INTERNAL_FETCH_PRELOAD:
+      return RequestDestination::_empty;
     case nsIContentPolicy::TYPE_WEB_MANIFEST:
-      destination = RequestDestination::Manifest;
-      break;
+      return RequestDestination::Manifest;
     case nsIContentPolicy::TYPE_SAVEAS_DOWNLOAD:
-      destination = RequestDestination::_empty;
-      break;
+      return RequestDestination::_empty;
     case nsIContentPolicy::TYPE_SPECULATIVE:
-      destination = RequestDestination::_empty;
-      break;
+      return RequestDestination::_empty;
     case nsIContentPolicy::TYPE_INTERNAL_AUDIOWORKLET:
-      destination = RequestDestination::Audioworklet;
-      break;
+      return RequestDestination::Audioworklet;
     case nsIContentPolicy::TYPE_INTERNAL_PAINTWORKLET:
-      destination = RequestDestination::Paintworklet;
+      return RequestDestination::Paintworklet;
+    case nsIContentPolicy::TYPE_PROXIED_WEBRTC_MEDIA:
+      return RequestDestination::_empty;
+    case nsIContentPolicy::TYPE_INVALID:
       break;
-    default:
-      MOZ_ASSERT(false, "Unhandled nsContentPolicyType value");
-      break;
+      // Do not add default: so that compilers can catch the missing case.
   }
 
-  return destination;
+  MOZ_ASSERT(false, "Unhandled nsContentPolicyType value");
+  return RequestDestination::_empty;
 }
 
 // static
@@ -324,16 +297,10 @@ bool InternalRequest::IsNavigationContentPolicy(
   // "location", "metarefresh", and "prerender".
   //
   // Note, all of these request types are effectively initiated by nsDocShell.
-  //
-  // The TYPE_REFRESH is used in some code paths for metarefresh, but will not
-  // be seen during the actual load.  Instead the new load gets a normal
-  // nsDocShell policy type.  We include it here in case this utility method
-  // is called before the load starts.
   return aContentPolicyType == nsIContentPolicy::TYPE_DOCUMENT ||
          aContentPolicyType == nsIContentPolicy::TYPE_SUBDOCUMENT ||
          aContentPolicyType == nsIContentPolicy::TYPE_INTERNAL_FRAME ||
-         aContentPolicyType == nsIContentPolicy::TYPE_INTERNAL_IFRAME ||
-         aContentPolicyType == nsIContentPolicy::TYPE_REFRESH;
+         aContentPolicyType == nsIContentPolicy::TYPE_INTERNAL_IFRAME;
 }
 
 // static
@@ -432,5 +399,4 @@ void InternalRequest::SetPrincipalInfo(
   mPrincipalInfo = std::move(aPrincipalInfo);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

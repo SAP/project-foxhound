@@ -17,17 +17,15 @@
 #include "SSLServerCertVerification.h"
 #include "ScopedNSSTypes.h"
 #include "SharedSSLState.h"
-#ifdef MOZ_NEW_CERT_STORAGE
-#  include "cert_storage/src/cert_storage.h"
-#endif
+#include "cert_storage/src/cert_storage.h"
 #include "keyhi.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Casting.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Logging.h"
-#include "mozilla/net/SSLTokensCache.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/net/SSLTokensCache.h"
 #include "mozilla/net/SocketProcessChild.h"
 #include "mozpkix/pkixnss.h"
 #include "mozpkix/pkixtypes.h"
@@ -193,6 +191,7 @@ nsNSSSocketInfo::SetClientCert(nsIX509Cert* aClientCert) {
 }
 
 void nsNSSSocketInfo::NoteTimeUntilReady() {
+  MutexAutoLock lock(mMutex);
   if (mNotedTimeUntilReady) return;
 
   mNotedTimeUntilReady = true;
@@ -200,11 +199,6 @@ void nsNSSSocketInfo::NoteTimeUntilReady() {
   // This will include TCP and proxy tunnel wait time
   Telemetry::AccumulateTimeDelta(Telemetry::SSL_TIME_UNTIL_READY,
                                  mSocketCreationTimestamp, TimeStamp::Now());
-  if (mIsDelegatedCredential) {
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::TLS_DELEGATED_CREDENTIALS_TIME_UNTIL_READY_MS,
-        mSocketCreationTimestamp, TimeStamp::Now());
-  }
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
           ("[%p] nsNSSSocketInfo::NoteTimeUntilReady\n", mFd));
 }
@@ -218,13 +212,12 @@ void nsNSSSocketInfo::SetHandshakeCompleted() {
       NotAllowedToFalseStart = 4,
     };
 
-    HandshakeType handshakeType =
-        !IsFullHandshake() ? Resumption
-                           : mFalseStarted ? FalseStarted
-                                           : mFalseStartCallbackCalled
-                                                 ? ChoseNotToFalseStart
-                                                 : NotAllowedToFalseStart;
-
+    HandshakeType handshakeType = !IsFullHandshake() ? Resumption
+                                  : mFalseStarted    ? FalseStarted
+                                  : mFalseStartCallbackCalled
+                                      ? ChoseNotToFalseStart
+                                      : NotAllowedToFalseStart;
+    MutexAutoLock lock(mMutex);
     // This will include TCP and proxy tunnel wait time
     Telemetry::AccumulateTimeDelta(
         Telemetry::SSL_TIME_UNTIL_HANDSHAKE_FINISHED_KEYED_BY_KA, mKeaGroup,
@@ -257,9 +250,15 @@ void nsNSSSocketInfo::SetHandshakeCompleted() {
           ("[%p] nsNSSSocketInfo::SetHandshakeCompleted\n", (void*)mFd));
 
   mIsFullHandshake = false;  // reset for next handshake on this connection
+
+  if (mTlsHandshakeCallback) {
+    auto callback = std::move(mTlsHandshakeCallback);
+    Unused << callback->HandshakeDone();
+  }
 }
 
 void nsNSSSocketInfo::SetNegotiatedNPN(const char* value, uint32_t length) {
+  MutexAutoLock lock(mMutex);
   if (!value) {
     mNegotiatedNPN.Truncate();
   } else {
@@ -327,7 +326,13 @@ nsNSSSocketInfo::DriveHandshake() {
 
   if (rv != SECSuccess) {
     PRErrorCode errorCode = PR_GetError();
-    MOZ_DIAGNOSTIC_ASSERT(errorCode, "handshake failed without error code");
+    MOZ_ASSERT(errorCode, "handshake failed without error code");
+    // There is a bug in NSS. Sometimes SSL_ForceHandshake will return
+    // SECFailure without setting an error code. In these cases, cancel
+    // the connection with SEC_ERROR_LIBRARY_FAILURE.
+    if (!errorCode) {
+      errorCode = SEC_ERROR_LIBRARY_FAILURE;
+    }
     if (errorCode == PR_WOULD_BLOCK_ERROR) {
       return NS_BASE_STREAM_WOULD_BLOCK;
     }
@@ -441,6 +446,28 @@ void nsNSSSocketInfo::SetSharedOwningReference(SharedSSLState* aRef) {
   mOwningSharedRef = aRef;
 }
 
+NS_IMETHODIMP
+nsNSSSocketInfo::DisableEarlyData() {
+  if (!mFd) {
+    return NS_OK;
+  }
+  if (IsCanceled()) {
+    return NS_OK;
+  }
+
+  if (SSL_OptionSet(mFd, SSL_ENABLE_0RTT_DATA, false) != SECSuccess) {
+    return NS_ERROR_FAILURE;
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNSSSocketInfo::SetHandshakeCallbackListener(
+    nsITlsHandshakeCallbackListener* callback) {
+  mTlsHandshakeCallback = callback;
+  return NS_OK;
+}
+
 void nsSSLIOLayerHelpers::Cleanup() {
   MutexAutoLock lock(mutex);
   mTLSIntoleranceInfo.Clear();
@@ -524,7 +551,7 @@ void nsSSLIOLayerHelpers::rememberTolerantAtVersion(const nsACString& hostName,
 
   entry.AssertInvariant();
 
-  mTLSIntoleranceInfo.Put(key, entry);
+  mTLSIntoleranceInfo.InsertOrUpdate(key, entry);
 }
 
 void nsSSLIOLayerHelpers::forgetIntolerance(const nsACString& hostName,
@@ -542,7 +569,7 @@ void nsSSLIOLayerHelpers::forgetIntolerance(const nsACString& hostName,
     entry.intoleranceReason = 0;
 
     entry.AssertInvariant();
-    mTLSIntoleranceInfo.Put(key, entry);
+    mTLSIntoleranceInfo.InsertOrUpdate(key, entry);
   }
 }
 
@@ -587,7 +614,7 @@ bool nsSSLIOLayerHelpers::rememberIntolerantAtVersion(
   entry.intolerant = intolerant;
   entry.intoleranceReason = intoleranceReason;
   entry.AssertInvariant();
-  mTLSIntoleranceInfo.Put(key, entry);
+  mTLSIntoleranceInfo.InsertOrUpdate(key, entry);
 
   return true;
 }
@@ -725,6 +752,46 @@ nsNSSSocketInfo::SetEsniTxt(const nsACString& aEsniTxt) {
     }
   }
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNSSSocketInfo::GetEchConfig(nsACString& aEchConfig) {
+  aEchConfig = mEchConfig;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNSSSocketInfo::SetEchConfig(const nsACString& aEchConfig) {
+  mEchConfig = aEchConfig;
+
+  if (mEchConfig.Length()) {
+    if (SECSuccess !=
+        SSL_SetClientEchConfigs(
+            mFd, reinterpret_cast<const PRUint8*>(aEchConfig.BeginReading()),
+            aEchConfig.Length())) {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Error,
+              ("[%p] Invalid EchConfig record %s\n", (void*)mFd,
+               PR_ErrorToName(PR_GetError())));
+      return NS_OK;
+    }
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNSSSocketInfo::GetRetryEchConfig(nsACString& aEchConfig) {
+  if (!mFd) {
+    return NS_ERROR_FAILURE;
+  }
+
+  ScopedAutoSECItem retryConfigItem;
+  SECStatus rv = SSL_GetEchRetryConfigs(mFd, &retryConfigItem);
+  if (rv != SECSuccess) {
+    return NS_ERROR_FAILURE;
+  }
+  aEchConfig = nsCString(reinterpret_cast<const char*>(retryConfigItem.data),
+                         retryConfigItem.len);
   return NS_OK;
 }
 
@@ -1386,7 +1453,7 @@ PrefObserver::Observe(nsISupports* aSubject, const char* aTopic,
     } else if (prefName.EqualsLiteral("security.tls.version.fallback-limit")) {
       mOwner->loadVersionFallbackLimit();
     } else if (prefName.EqualsLiteral("security.tls.insecure_fallback_hosts")) {
-      // Changes to the whitelist on the public side will update the pref.
+      // Changes to the allowlist on the public side will update the pref.
       // Don't propagate the changes to the private side.
       if (mOwner->isPublic()) {
         mOwner->initInsecureFallbackSites();
@@ -1552,8 +1619,10 @@ void nsSSLIOLayerHelpers::loadVersionFallbackLimit() {
 }
 
 void nsSSLIOLayerHelpers::clearStoredData() {
+  MOZ_ASSERT(NS_IsMainThread());
+  initInsecureFallbackSites();
+
   MutexAutoLock lock(mutex);
-  mInsecureFallbackSites.Clear();
   mTLSIntoleranceInfo.Clear();
 }
 
@@ -1562,14 +1631,7 @@ void nsSSLIOLayerHelpers::setInsecureFallbackSites(const nsCString& str) {
 
   mInsecureFallbackSites.Clear();
 
-  if (str.IsEmpty()) {
-    return;
-  }
-
-  nsCCharSeparatedTokenizer toker(str, ',');
-
-  while (toker.hasMoreTokens()) {
-    const nsACString& host = toker.nextToken();
+  for (const nsACString& host : nsCCharSeparatedTokenizer(str, ',').ToRange()) {
     if (!host.IsEmpty()) {
       mInsecureFallbackSites.PutEntry(host);
     }
@@ -1603,10 +1665,9 @@ FallbackPrefRemover::Run() {
   MOZ_ASSERT(NS_IsMainThread());
   nsAutoCString oldValue;
   Preferences::GetCString("security.tls.insecure_fallback_hosts", oldValue);
-  nsCCharSeparatedTokenizer toker(oldValue, ',');
   nsCString newValue;
-  while (toker.hasMoreTokens()) {
-    const nsACString& host = toker.nextToken();
+  for (const nsACString& host :
+       nsCCharSeparatedTokenizer(oldValue, ',').ToRange()) {
     if (host.Equals(mHost)) {
       continue;
     }
@@ -1848,9 +1909,6 @@ SECStatus nsNSS_SSLGetClientAuthData(void* arg, PRFileDesc* socket,
   *pRetCert = nullptr;
   *pRetKey = nullptr;
 
-  Telemetry::ScalarAdd(Telemetry::ScalarID::SECURITY_CLIENT_CERT,
-                       u"requested"_ns, 1);
-
   RefPtr<nsNSSSocketInfo> info(
       BitwiseCast<nsNSSSocketInfo*, PRFilePrivate*>(socket->higher->secret));
 
@@ -1909,8 +1967,10 @@ SECStatus nsNSS_SSLGetClientAuthData(void* arg, PRFileDesc* socket,
     *pRetKey = selectedKey.release();
     // Make joinConnection prohibit joining after we've sent a client cert
     info->SetSentClientCert();
-    Telemetry::ScalarAdd(Telemetry::ScalarID::SECURITY_CLIENT_CERT, u"sent"_ns,
-                         1);
+    if (info->GetSSLVersionUsed() == nsISSLSocketControl::TLS_VERSION_1_3) {
+      Telemetry::Accumulate(Telemetry::TLS_1_3_CLIENT_AUTH_USES_PHA,
+                            info->IsHandshakeCompleted());
+    }
   }
 
   return SECSuccess;
@@ -1960,11 +2020,8 @@ class ClientAuthCertNonverifyingTrustDomain final : public TrustDomain {
       nsTArray<nsTArray<uint8_t>>& collectedCANames,
       nsTArray<nsTArray<uint8_t>>& thirdPartyCertificates)
       : mCollectedCANames(collectedCANames),
-#ifdef MOZ_NEW_CERT_STORAGE
         mCertStorage(do_GetService(NS_CERT_STORAGE_CID)),
-#endif
-        mThirdPartyCertificates(thirdPartyCertificates) {
-  }
+        mThirdPartyCertificates(thirdPartyCertificates) {}
 
   virtual mozilla::pkix::Result GetCertTrust(
       EndEntityOrCA endEntityOrCA, const CertPolicyId& policy,
@@ -1976,9 +2033,10 @@ class ClientAuthCertNonverifyingTrustDomain final : public TrustDomain {
 
   virtual mozilla::pkix::Result CheckRevocation(
       EndEntityOrCA endEntityOrCA, const CertID& certID, Time time,
-      Time validityPeriodBeginning, Duration validityDuration,
+      Duration validityDuration,
       /*optional*/ const Input* stapledOCSPresponse,
-      /*optional*/ const Input* aiaExtension) override {
+      /*optional*/ const Input* aiaExtension,
+      /*optional*/ const Input* sctExtension) override {
     return Success;
   }
 
@@ -2030,9 +2088,7 @@ class ClientAuthCertNonverifyingTrustDomain final : public TrustDomain {
 
  private:
   nsTArray<nsTArray<uint8_t>>& mCollectedCANames;  // non-owning
-#ifdef MOZ_NEW_CERT_STORAGE
   nsCOMPtr<nsICertStorage> mCertStorage;
-#endif
   nsTArray<nsTArray<uint8_t>>& mThirdPartyCertificates;  // non-owning
   UniqueCERTCertList mBuiltChain;
 };
@@ -2091,7 +2147,6 @@ mozilla::pkix::Result ClientAuthCertNonverifyingTrustDomain::FindIssuer(
   // First try all relevant certificates known to Gecko, which avoids calling
   // CERT_CreateSubjectCertList, because that can be expensive.
   Vector<Input> geckoCandidates;
-#ifdef MOZ_NEW_CERT_STORAGE
   if (!mCertStorage) {
     return mozilla::pkix::Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
@@ -2113,7 +2168,6 @@ mozilla::pkix::Result ClientAuthCertNonverifyingTrustDomain::FindIssuer(
       return mozilla::pkix::Result::FATAL_ERROR_NO_MEMORY;
     }
   }
-#endif
 
   for (const auto& thirdPartyCertificate : mThirdPartyCertificates) {
     Input thirdPartyCertificateInput;
@@ -2336,13 +2390,18 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
   if (cars) {
     nsCString rememberedDBKey;
     bool found;
-    nsresult rv =
-        cars->HasRememberedDecision(hostname, mInfo.OriginAttributesRef(),
-                                    mServerCert, rememberedDBKey, &found);
+    nsCOMPtr<nsIX509Cert> cert(nsNSSCertificate::Create(mServerCert));
+    nsresult rv = cars->HasRememberedDecision(
+        hostname, mInfo.OriginAttributesRef(), cert, rememberedDBKey, &found);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return;
     }
-    if (found && !rememberedDBKey.IsEmpty()) {
+    if (found) {
+      // An empty dbKey indicates that the user chose not to use a certificate
+      // and chose to remember this decision
+      if (rememberedDBKey.IsEmpty()) {
+        return;
+      }
       nsCOMPtr<nsIX509CertDB> certdb = do_GetService(NS_X509CERTDB_CONTRACTID);
       if (NS_WARN_IF(!certdb)) {
         return;
@@ -2431,9 +2490,13 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
   }
 
   if (cars && wantRemember) {
-    rv = cars->RememberDecision(
-        hostname, mInfo.OriginAttributesRef(), mServerCert,
-        certChosen ? mSelectedCertificate.get() : nullptr);
+    nsCOMPtr<nsIX509Cert> serverCert(nsNSSCertificate::Create(mServerCert));
+    nsCOMPtr<nsIX509Cert> clientCert;
+    if (certChosen) {
+      clientCert = nsNSSCertificate::Create(mSelectedCertificate.get());
+    }
+    rv = cars->RememberDecision(hostname, mInfo.OriginAttributesRef(),
+                                serverCert, clientCert);
     Unused << NS_WARN_IF(NS_FAILED(rv));
   }
 }
@@ -2517,7 +2580,8 @@ static PRFileDesc* nsSSLIOLayerImportFD(PRFileDesc* fd,
   uint32_t flags = 0;
   infoObject->GetProviderFlags(&flags);
   // Provide the client cert to HTTPS proxy no matter if it is anonymous.
-  if (flags & nsISocketProvider::ANONYMOUS_CONNECT && !haveHTTPSProxy) {
+  if (flags & nsISocketProvider::ANONYMOUS_CONNECT && !haveHTTPSProxy &&
+      !(flags & nsISocketProvider::ANONYMOUS_CONNECT_ALLOW_CLIENT_CERT)) {
     SSL_GetClientAuthDataHook(sslSock, nullptr, infoObject);
   } else {
     SSL_GetClientAuthDataHook(
@@ -2689,7 +2753,7 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
     return NS_ERROR_FAILURE;
   }
 
-#ifdef __arm__
+#if defined(__arm__) && not defined(__ARM_FEATURE_CRYPTO)
   unsigned int enabledCiphers = 0;
   std::vector<uint16_t> ciphers(SSL_GetNumImplementedCiphers());
 
@@ -2701,10 +2765,11 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
     return NS_ERROR_FAILURE;
   }
 
-  // On ARM, prefer (TLS_CHACHA20_POLY1305_SHA256) over AES. However,
-  // it may be disabled. If enabled, it will either be element [0] or [1]*.
-  // If [0], we're done. If [1], swap it with [0] (TLS_AES_128_GCM_SHA256).
-  // * (assuming the compile-time order remains unchanged)
+  // On ARM, prefer (TLS_CHACHA20_POLY1305_SHA256) over AES when hardware
+  // support for AES isn't available. However, it may be disabled. If enabled,
+  // it will either be element [0] or [1]*. If [0], we're done. If [1], swap it
+  // with [0] (TLS_AES_128_GCM_SHA256).
+  // *(assuming the compile-time order remains unchanged)
   if (enabledCiphers > 1) {
     if (ciphers[0] != TLS_CHACHA20_POLY1305_SHA256 &&
         ciphers[1] == TLS_CHACHA20_POLY1305_SHA256) {

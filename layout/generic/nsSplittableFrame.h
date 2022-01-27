@@ -87,40 +87,45 @@ class nsSplittableFrame : public nsIFrame {
    * Return the sum of the block-axis content size of our previous
    * continuations.
    *
-   * @param aWM a writing-mode to determine the block-axis
+   * Classes that call this are _required_ to call this at least once for each
+   * reflow (unless you're the first continuation, in which case you can skip
+   * it, because as an optimization we don't cache it there).
    *
-   * @note (bz) This makes laying out a splittable frame with N continuations
-   *       O(N^2)! So, use this function with caution and minimize the number
-   *       of calls to this method.
+   * This guarantees that the internal cache works, by refreshing it. Calling it
+   * multiple times in the same reflow is wasteful, but not an error.
    */
-  nscoord ConsumedBSize(mozilla::WritingMode aWM) const;
+  nscoord CalcAndCacheConsumedBSize();
 
   /**
    * Retrieve the effective computed block size of this frame, which is the
    * computed block size, minus the block size consumed by any previous
    * continuations.
    */
-  nscoord GetEffectiveComputedBSize(
-      const ReflowInput& aReflowInput,
-      nscoord aConsumed = NS_UNCONSTRAINEDSIZE) const;
+  nscoord GetEffectiveComputedBSize(const ReflowInput& aReflowInput,
+                                    nscoord aConsumed) const;
 
   /**
    * @see nsIFrame::GetLogicalSkipSides()
    */
-  LogicalSides GetLogicalSkipSides(
-      const ReflowInput* aReflowInput = nullptr) const override;
+  LogicalSides GetLogicalSkipSides() const override {
+    return GetBlockLevelLogicalSkipSides(true);
+  }
+
+  LogicalSides GetBlockLevelLogicalSkipSides(bool aAfterReflow) const;
 
   /**
-   * A faster version of GetLogicalSkipSides() that is intended to be used
-   * inside Reflow before it's known if |this| frame will be COMPLETE or not.
+   * A version of GetLogicalSkipSides() that is intended to be used inside
+   * Reflow before it's known if |this| frame will be COMPLETE or not.
    * It returns a result that assumes this fragment is the last and thus
    * should apply the block-end border/padding etc (except for "true" overflow
    * containers which always skip block sides).  You're then expected to
    * recalculate the block-end side (as needed) when you know |this| frame's
    * reflow status is INCOMPLETE.
-   * This method is intended for frames that breaks in the block axis.
+   * This method is intended for frames that break in the block axis.
    */
-  LogicalSides PreReflowBlockLevelLogicalSkipSides() const;
+  LogicalSides PreReflowBlockLevelLogicalSkipSides() const {
+    return GetBlockLevelLogicalSkipSides(false);
+  };
 
   nsIFrame* mPrevContinuation;
   nsIFrame* mNextContinuation;

@@ -8,6 +8,10 @@
 interface nsIHttpHeaderVisitor;
 interface nsIReferrerInfo;
 
+%{C++
+#include "GeckoProfiler.h"
+%}
+
 /**
  * nsIHttpChannel
  *
@@ -146,6 +150,17 @@ interface nsIHttpChannel : nsIIdentChannel
                                      in boolean aMerge);
 
     /**
+     * Creates and sets new ReferrerInfo object
+     * @param aUrl          referrer url
+     * @param aPolicy       referrer policy of the created object
+     * @param aSendReferrer indicates if the referrer should not be sent or not
+     *                      even when it's available.
+     */
+    [must_use] void setNewReferrerInfo(in ACString aUrl,
+                                       in nsIReferrerInfo_ReferrerPolicyIDL aPolicy,
+                                       in boolean aSendReferrer);
+
+    /**
      * Set a request header with empty value.
      *
      * This should be used with caution in the cases where the behavior of
@@ -223,7 +238,6 @@ interface nsIHttpChannel : nsIIdentChannel
      * implementation).
      */
     [must_use] attribute unsigned long redirectionLimit;
-
 
     /**************************************************************************
      * RESPONSE INFO
@@ -464,13 +478,12 @@ interface nsIHttpChannel : nsIIdentChannel
     [infallible] readonly attribute nsIHttpChannel_FlashPluginState flashPluginState;
 
     /**
-     * ID of the top-level outer content window. Identifies this channel's
-     * top-level window it comes from.
+     * ID of the top-level browsing context for this channel.
      *
      * NOTE: The setter of this attribute is currently for xpcshell test only.
      *       Don't alter it otherwise.
      */
-    [must_use] attribute uint64_t topLevelOuterContentWindowId;
+    [must_use] attribute uint64_t topBrowsingContextId;
 
     /**
      * In e10s, the information that the CORS response blocks the load is in the
@@ -491,6 +504,6 @@ interface nsIHttpChannel : nsIIdentChannel
                              in AString aContentType);
 
 %{ C++
-  virtual void SetSource(UniqueProfilerBacktrace aSource) {}
+  virtual void SetSource(mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> aSource) {}
 %}
 };

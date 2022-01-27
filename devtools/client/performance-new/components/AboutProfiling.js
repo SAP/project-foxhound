@@ -19,8 +19,7 @@
 /**
  * @typedef {StateProps} Props
  * @typedef {import("../@types/perf").State} StoreState
- * @typedef {import("../@types/perf").PanelWindow} PanelWindow
- *@typedef {import("../@types/perf").PageContext} PageContext
+ * @typedef {import("../@types/perf").PageContext} PageContext
  */
 
 "use strict";
@@ -35,6 +34,9 @@ const {
   h1,
   button,
 } = require("devtools/client/shared/vendor/react-dom-factories");
+const Localized = createFactory(
+  require("devtools/client/shared/vendor/fluent-react").Localized
+);
 const Settings = createFactory(
   require("devtools/client/performance-new/components/Settings.js")
 );
@@ -54,13 +56,7 @@ const {
  * @extends {React.PureComponent<Props>}
  */
 class AboutProfiling extends PureComponent {
-  /** @param {Props} props */
-  constructor(props) {
-    super(props);
-    this.handleRestart = this.handleRestart.bind(this);
-  }
-
-  handleRestart() {
+  handleRestart = () => {
     const { promptEnvRestart } = this.props;
     if (!promptEnvRestart) {
       throw new Error(
@@ -68,7 +64,7 @@ class AboutProfiling extends PureComponent {
       );
     }
     restartBrowserWithEnvironmentVariable(promptEnvRestart, "1");
-  }
+  };
 
   render() {
     const {
@@ -94,14 +90,14 @@ class AboutProfiling extends PureComponent {
                   "perf-photon-message-bar perf-photon-message-bar-warning perf-env-restart-fixed",
               },
               div({ className: "perf-photon-message-bar-warning-icon" }),
-              "The browser must be restarted to enable this feature.",
+              Localized({ id: "perftools-status-restart-required" }),
               button(
                 {
                   className: "perf-photon-button perf-photon-button-micro",
                   type: "button",
                   onClick: this.handleRestart,
                 },
-                "Restart"
+                Localized({ id: "perftools-button-restart" })
               )
             )
           )
@@ -116,26 +112,26 @@ class AboutProfiling extends PureComponent {
                 type: "button",
                 onClick: openRemoteDevTools,
               },
-              "Save settings and go back"
+              Localized({ id: "perftools-button-save-settings" })
             )
           )
         : null,
 
       div(
         { className: "perf-intro" },
-        h1({ className: "perf-intro-title" }, "Profiler Settings"),
+        h1(
+          { className: "perf-intro-title" },
+          Localized({ id: "perftools-intro-title" })
+        ),
         div(
           { className: "perf-intro-row" },
           div({}, div({ className: "perf-intro-icon" })),
-          div(
-            { className: "perf-intro-text" },
-            "Recordings launch profiler.firefox.com in a new tab. All data is stored " +
-              "locally, but you can choose to upload it for sharing."
-          )
+          Localized({
+            className: "perf-intro-text",
+            id: "perftools-intro-description",
+          })
         )
       ),
-      // The presets aren't built yet, but this div serves as a place to put the
-      // visual divider that is in the UX mock-up.
       Presets(),
       Settings()
     );

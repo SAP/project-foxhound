@@ -7,20 +7,18 @@
 #include "AudioParamMap.h"
 #include "mozilla/dom/AudioParamMapBinding.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(AudioParamMap, mParent)
 
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(AudioParamMap, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(AudioParamMap, Release)
 
-AudioParamMap::AudioParamMap(nsPIDOMWindowInner* aParent) : mParent(aParent) {}
+AudioParamMap::AudioParamMap(AudioWorkletNode* aParent) : mParent(aParent) {}
 
 JSObject* AudioParamMap::WrapObject(JSContext* aCx,
                                     JS::Handle<JSObject*> aGivenProto) {
   return AudioParamMap_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

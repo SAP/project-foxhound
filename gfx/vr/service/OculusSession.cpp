@@ -15,6 +15,7 @@
 #include "mozilla/dom/GamepadEventTypes.h"
 #include "mozilla/dom/GamepadBinding.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
+#include "mozilla/gfx/Logging.h"
 #include "mozilla/SharedLibrary.h"
 #include "OculusSession.h"
 
@@ -567,7 +568,7 @@ bool OculusSession::LoadOvrLib() {
   libName.AppendPrintf("LibOVRRT%d_%d.dll", BUILD_BITS, OVR_PRODUCT_VERSION);
 
   // search the path/module dir
-  libSearchPaths.InsertElementsAt(0, 1, EmptyString());
+  libSearchPaths.InsertElementsAt(0, 1, u""_ns);
 
   // If the env var is present, we override libName
   if (_wgetenv(L"OVR_LIB_PATH")) {
@@ -1054,6 +1055,7 @@ bool OculusSession::InitState(VRSystemState& aSystemState) {
                                        texSize[VRDisplayState::Eye_Right].w);
   state.eyeResolution.height = std::max(texSize[VRDisplayState::Eye_Left].h,
                                         texSize[VRDisplayState::Eye_Right].h);
+  state.nativeFramebufferScaleFactor = 1.0f;
 
   // default to an identity quaternion
   aSystemState.sensorState.pose.orientation[3] = 1.0f;
@@ -1062,9 +1064,10 @@ bool OculusSession::InitState(VRSystemState& aSystemState) {
   UpdateEyeParameters(aSystemState);
 
   VRHMDSensorState& sensorState = aSystemState.sensorState;
-  sensorState.flags = (VRDisplayCapabilityFlags)(
-      (int)VRDisplayCapabilityFlags::Cap_Orientation |
-      (int)VRDisplayCapabilityFlags::Cap_Position);
+  sensorState.flags =
+      (VRDisplayCapabilityFlags)((int)
+                                     VRDisplayCapabilityFlags::Cap_Orientation |
+                                 (int)VRDisplayCapabilityFlags::Cap_Position);
   sensorState.pose.orientation[3] = 1.0f;  // Default to an identity quaternion
 
   return true;
@@ -1323,7 +1326,6 @@ void OculusSession::EnumerateControllers(VRSystemState& aState,
     // and Right Touch Controller will always be at index 1
     VRControllerState& controllerState = aState.controllerState[handIdx];
     if (aInputState.ControllerType & OculusControllerTypes[handIdx]) {
-      bool bNewController = false;
       // Touch Controller detected
       if (controllerState.controllerName[0] == '\0') {
         // Controller has been just enumerated
@@ -1335,7 +1337,6 @@ void OculusSession::EnumerateControllers(VRSystemState& aState,
         controllerState.numAxes = kNumOculusAxes;
         controllerState.numHaptics = kNumOculusHaptcs;
         controllerState.type = VRControllerType::OculusTouch;
-        bNewController = true;
       }
     } else {
       // Touch Controller not detected

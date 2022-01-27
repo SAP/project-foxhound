@@ -8,6 +8,10 @@ add_task(async function() {
         "network.cookie.cookieBehavior",
         Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
       ],
+      [
+        "network.cookie.cookieBehavior.pbmode",
+        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
+      ],
       ["privacy.trackingprotection.enabled", false],
       ["privacy.trackingprotection.pbmode.enabled", false],
       ["privacy.trackingprotection.annotate_channels", true],
@@ -35,7 +39,7 @@ add_task(async function() {
   )
     .then(r => r.text())
     .then(text => {
-      is(text, 0, "Cookies received for images");
+      is(text, "0", "Cookies received for images");
     });
 
   await fetch(
@@ -43,7 +47,7 @@ add_task(async function() {
   )
     .then(r => r.text())
     .then(text => {
-      is(text, 0, "Cookies received for images");
+      is(text, "0", "Cookies received for images");
     });
 
   info("Creating a 3rd party content");

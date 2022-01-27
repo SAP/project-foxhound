@@ -5,8 +5,9 @@
 
 const TEST_FILE = "test-network-request.html";
 const TEST_PATH =
-  "https://example.com/browser/devtools/client/webconsole/" + "test/browser/";
+  "https://example.com/browser/devtools/client/webconsole/test/browser/";
 const TEST_URI = TEST_PATH + TEST_FILE;
+const XHR_URL = TEST_PATH + "sjs_slow-response-test-server.sjs";
 
 requestLongerTimeout(2);
 
@@ -21,75 +22,64 @@ registerCleanupFunction(async function() {
 pushPref("devtools.webconsole.filter.net", false);
 pushPref("devtools.webconsole.filter.netxhr", true);
 
-const tabs = [
-  {
-    id: "headers",
-    testEmpty: testEmptyHeaders,
-    testContent: testHeaders,
-  },
-  {
-    id: "cookies",
-    testEmpty: testEmptyCookies,
-    testContent: testCookies,
-  },
-  {
-    id: "params",
-    testEmpty: testEmptyParams,
-    testContent: testParams,
-  },
-  {
-    id: "response",
-    testEmpty: testEmptyResponse,
-    testContent: testResponse,
-  },
-  {
-    id: "timings",
-    testEmpty: testEmptyTimings,
-    testContent: testTimings,
-  },
-  {
-    id: "stack-trace",
-    testEmpty: testEmptyStackTrace,
-    testContent: testStackTrace,
-  },
-  {
-    id: "security",
-    testEmpty: testEmptySecurity,
-    testContent: testSecurity,
-  },
-];
-
 /**
  * Main test for checking HTTP logs in the Console panel.
  */
 add_task(async function task() {
   const hud = await openNewTabAndConsole(TEST_URI);
 
-  const currentTab = gBrowser.selectedTab;
-  const target = await TargetFactory.forTab(currentTab);
+  const messageNode = await doXhrAndExpand(hud);
 
+  await testNetworkMessage(hud.toolbox, messageNode);
+
+  await closeToolbox();
+});
+
+add_task(async function task() {
+  info(
+    "Verify that devtools.netmonitor.saveRequestAndResponseBodies=false disable response content collection"
+  );
+  await pushPref("devtools.netmonitor.saveRequestAndResponseBodies", false);
+  const hud = await openNewTabAndConsole(TEST_URI);
+
+  const messageNode = await doXhrAndExpand(hud);
+
+  const responseTab = messageNode.querySelector("#response-tab");
+  ok(responseTab, "Response tab is available");
+
+  const { TEST_EVENTS } = require("devtools/client/netmonitor/src/constants");
+  const onResponseContent = hud.ui.once(TEST_EVENTS.RECEIVED_RESPONSE_CONTENT);
+  // Select Response tab and check the content.
+  responseTab.click();
+
+  // Even if response content aren't collected by NetworkObserver,
+  // we do try to fetch the content via an RDP request, which
+  // we try to wait for here.
+  info("Wait for the async getResponseContent request");
+  await onResponseContent;
+  const responsePanel = messageNode.querySelector("#response-panel");
+
+  // This is updated only after we tried to fetch the response content
+  // and fired the getResponseContent request
+  info("Wait for the empty response content");
+  ok(
+    responsePanel.querySelector("div.empty-notice"),
+    "An empty notice is displayed instead of the response content"
+  );
+  const responseContent = messageNode.querySelector(
+    "#response-panel .editor-row-container .CodeMirror"
+  );
+  ok(!responseContent, "Response content is really not displayed");
+
+  await waitForLazyRequests(hud.toolbox);
+  await closeToolbox();
+});
+
+async function doXhrAndExpand(hud) {
   // Execute XHR and expand it after all network
   // update events are received. Consequently,
   // check out content of all (HTTP details) tabs.
-  await openRequestAfterUpdates(target, hud);
-
-  // Test proper UI update when request is opened.
-  // For every tab (with HTTP details):
-  // 1. Execute long-time request
-  // 2. Expand the net log before the request finishes (set default tab)
-  // 3. Check the default tab empty content
-  // 4. Wait till the request finishes
-  // 5. Check content of all tabs
-  for (const tab of tabs) {
-    await openRequestBeforeUpdates(target, hud, tab);
-  }
-});
-
-async function openRequestAfterUpdates(target, hud) {
-  const toolbox = gDevTools.getToolbox(target);
-
-  const xhrUrl = TEST_PATH + "sjs_slow-response-test-server.sjs";
-  const onMessage = waitForMessage(hud, xhrUrl);
+  const onMessage = waitForMessage(hud, XHR_URL);
   const onRequestUpdates = waitForRequestUpdates(hud);
   const onPayloadReady = waitForPayloadReady(hud);
 
@@ -110,58 +100,8 @@ async function openRequestAfterUpdates(target, hud) {
   ok(!toggleButtonNode, "Sidebar toggle button shouldn't be shown");
 
   await onPayloadReady;
-  await testNetworkMessage(toolbox, messageNode);
-}
 
-async function openRequestBeforeUpdates(target, hud, tab) {
-  const toolbox = gDevTools.getToolbox(target);
-
-  await clearOutput(hud);
-
-  const xhrUrl = TEST_PATH + "sjs_slow-response-test-server.sjs";
-  const onMessage = waitForMessage(hud, xhrUrl);
-  const onRequestUpdates = waitForRequestUpdates(hud);
-  const onPayloadReady = waitForPayloadReady(hud);
-
-  // Fire an XHR POST request.
-  SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
-    content.wrappedJSObject.testXhrPostSlowResponse();
-  });
-  const { node: messageNode } = await onMessage;
-  ok(messageNode, "Network message found.");
-
-  // Set the default panel.
-  const state = hud.ui.wrapper.getStore().getState();
-  state.ui.networkMessageActiveTabId = tab.id;
-
-  // Expand network log
-  await expandXhrMessage(messageNode);
-
-  // Except the security tab. It isn't available till the
-  // "securityInfo" packet type is received, so doesn't
-  // fit this part of the test.
-  if (tab.id != "security") {
-    // Make sure the current tab is the expected one.
-    const currentTab = messageNode.querySelector(`#${tab.id}-tab`);
-    is(
-      currentTab.getAttribute("aria-selected"),
-      "true",
-      "The correct tab is selected"
-    );
-
-    // The tab should be empty now.
-    tab.testEmpty(messageNode);
-  }
-
-  // Wait till all updates and payload are received.
-  await onRequestUpdates;
-  await onPayloadReady;
-
-  // Test content of the default tab.
-  await tab.testContent(messageNode);
-
-  // Test all tabs in the network log.
-  await testNetworkMessage(toolbox, messageNode);
+  return messageNode;
 }
 
 // Panel testing helpers
@@ -170,7 +110,7 @@ async function testNetworkMessage(toolbox, messageNode) {
   await testStatusInfo(messageNode);
   await testHeaders(messageNode);
   await testCookies(messageNode);
-  await testParams(messageNode);
+  await testRequest(messageNode);
   await testResponse(messageNode);
   await testTimings(messageNode);
   await testStackTrace(messageNode);
@@ -186,74 +126,52 @@ function testStatusInfo(messageNode) {
 }
 
 // Headers
-
-function testEmptyHeaders(messageNode) {
-  const emptyNotice = messageNode.querySelector("#headers-panel .empty-notice");
-  ok(emptyNotice, "Headers tab is empty");
-}
-
 async function testHeaders(messageNode) {
   const headersTab = messageNode.querySelector("#headers-tab");
   ok(headersTab, "Headers tab is available");
 
   // Select Headers tab and check the content.
   headersTab.click();
-  await waitFor(() =>
-    messageNode.querySelector("#headers-panel .headers-overview")
+  await waitFor(
+    () => messageNode.querySelector("#headers-panel .headers-overview"),
+    "Wait for .header-overview to be rendered"
   );
 }
 
 // Cookies
-
-function testEmptyCookies(messageNode) {
-  const emptyNotice = messageNode.querySelector("#cookies-panel .empty-notice");
-  ok(emptyNotice, "Cookies tab is empty");
-}
-
 async function testCookies(messageNode) {
   const cookiesTab = messageNode.querySelector("#cookies-tab");
   ok(cookiesTab, "Cookies tab is available");
 
   // Select tab and check the content.
   cookiesTab.click();
-  await waitFor(() =>
-    messageNode.querySelector("#cookies-panel .treeValueCell")
+  await waitFor(
+    () => messageNode.querySelector("#cookies-panel .treeValueCell"),
+    "Wait for .treeValueCell to be rendered"
   );
 }
 
-// Params
+// Request
+async function testRequest(messageNode) {
+  const requestTab = messageNode.querySelector("#request-tab");
+  ok(requestTab, "Request tab is available");
 
-function testEmptyParams(messageNode) {
-  const emptyNotice = messageNode.querySelector("#params-panel .empty-notice");
-  ok(emptyNotice, "Params tab is empty");
-}
-
-async function testParams(messageNode) {
-  const paramsTab = messageNode.querySelector("#params-tab");
-  ok(paramsTab, "Params tab is available");
-
-  // Select Params tab and check the content. CodeMirror initialization
+  // Select Request tab and check the content. CodeMirror initialization
   // is delayed to prevent UI freeze, so wait for a little while.
-  paramsTab.click();
-  const paramsPanel = messageNode.querySelector("#params-panel");
-  await waitForSourceEditor(paramsPanel);
-  const paramsContent = messageNode.querySelector(
-    "#params-panel .panel-container .CodeMirror"
+  requestTab.click();
+  const requestPanel = messageNode.querySelector("#request-panel");
+  await waitForSourceEditor(requestPanel);
+  const requestContent = requestPanel.querySelector(
+    ".panel-container .CodeMirror"
   );
-  ok(paramsContent, "Params content is available");
+  ok(requestContent, "Request content is available");
   ok(
-    paramsContent.textContent.includes("Hello world!"),
-    "Post body is correct"
+    requestContent.textContent.includes("Hello world!"),
+    "Request POST body is correct"
   );
 }
 
 // Response
-
-function testEmptyResponse(messageNode) {
-  const panel = messageNode.querySelector("#response-panel .tab-panel");
-  is(panel.textContent, "", "Cookies tab is empty");
-}
-
 async function testResponse(messageNode) {
   const responseTab = messageNode.querySelector("#response-tab");
   ok(responseTab, "Response tab is available");
@@ -271,63 +189,45 @@ async function testResponse(messageNode) {
 }
 
 // Timings
-
-function testEmptyTimings(messageNode) {
-  const panel = messageNode.querySelector("#timings-panel .tab-panel");
-  is(panel.textContent, "", "Timings tab is empty");
-}
-
 async function testTimings(messageNode) {
   const timingsTab = messageNode.querySelector("#timings-tab");
   ok(timingsTab, "Timings tab is available");
 
   // Select Timings tab and check the content.
   timingsTab.click();
-  await waitFor(() =>
+  const timingsContent = await waitFor(() =>
     messageNode.querySelector(
-      "#timings-panel .timings-container .timings-label"
+      "#timings-panel .timings-container .timings-label",
+      "Wait for .timings-label to be rendered"
     )
-  );
-  const timingsContent = messageNode.querySelector(
-    "#timings-panel .timings-container .timings-label"
   );
   ok(timingsContent, "Timings content is available");
   ok(timingsContent.textContent, "Timings text is available");
 }
 
 // Stack Trace
-
-function testEmptyStackTrace(messageNode) {
-  const panel = messageNode.querySelector("#stack-trace-panel .stack-trace");
-  is(panel.textContent, "", "StackTrace tab is empty");
-}
-
 async function testStackTrace(messageNode) {
   const stackTraceTab = messageNode.querySelector("#stack-trace-tab");
   ok(stackTraceTab, "StackTrace tab is available");
 
-  // Select Timings tab and check the content.
+  // Select Stack Trace tab and check the content.
   stackTraceTab.click();
-  await waitFor(() =>
-    messageNode.querySelector("#stack-trace-panel .frame-link")
+  await waitFor(
+    () => messageNode.querySelector("#stack-trace-panel .frame-link"),
+    "Wait for .frame-link to be rendered"
   );
 }
 
 // Security
-
-function testEmptySecurity(messageNode) {
-  const panel = messageNode.querySelector("#security-panel .tab-panel");
-  is(panel.textContent, "", "Security tab is empty");
-}
-
 async function testSecurity(messageNode) {
   const securityTab = messageNode.querySelector("#security-tab");
   ok(securityTab, "Security tab is available");
 
-  // Select Timings tab and check the content.
+  // Select Security tab and check the content.
   securityTab.click();
-  await waitFor(() =>
-    messageNode.querySelector("#security-panel .treeTable .treeRow")
+  await waitFor(
+    () => messageNode.querySelector("#security-panel .treeTable .treeRow"),
+    "Wait for #security-panel .treeTable .treeRow to be rendered"
   );
 }
 
@@ -344,7 +244,7 @@ async function waitForSourceEditor(panel) {
 }
 
 async function waitForRequestUpdates(hud) {
-  return hud.ui.once("network-message-updated");
+  return hud.ui.once("network-messages-updated");
 }
 
 function expandXhrMessage(node) {
@@ -352,5 +252,8 @@ function expandXhrMessage(node) {
     "Click on XHR message and wait for the network detail panel to be displayed"
   );
   node.querySelector(".url").click();
-  return waitFor(() => node.querySelector(".network-info"));
+  return waitFor(
+    () => node.querySelector(".network-info"),
+    "Wait for .network-info to be rendered"
+  );
 }

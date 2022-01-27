@@ -4,20 +4,22 @@
 
 @import url("chrome://global/skin/in-content/common.css");
 
-html {
-  height: 100%;
-}
-
 body {
   display: flex;
-  height: 100%;
+}
+
+/* This is needed to make the sidebar not hide the last button but breaks printing by hiding overflowing content */
+@media not print {
+  html, body {
+    height: 100%;
+  }
 }
 
 #categories {
   padding-top: 0;
   overflow-y: auto;
   margin-bottom: 42px;
-  -moz-user-select: none;
+  user-select: none;
 }
 
 .main-content.search > section > *:not(.data) {
@@ -82,13 +84,13 @@ body {
 #newer-ping,
 #ping-date {
   pointer-events: all;
-  -moz-user-select: none;
+  user-select: none;
   cursor: pointer;
   text-align: center;
 }
 
 .dropdown {
-  background-image: url(chrome://global/skin/icons/arrow-dropdown-16.svg);
+  background-image: url(chrome://global/skin/icons/arrow-down.svg);
   background-position: right 8px center;
   background-repeat: no-repeat;
   -moz-context-properties: fill;
@@ -114,6 +116,12 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 42px;
+}
+
+#categories > .category.category-no-icon {
+  margin-inline-start: 0;
+  margin-inline-end: 0;
+  width: auto;
 }
 
 .category-name {
@@ -169,12 +177,6 @@ section:not(.active) {
   margin-bottom: 2em;
 }
 
-.no-search-results-image {
-  background-image: url("chrome://browser/skin/preferences/no-search-results.svg");
-  width: 380px;
-  height: 293px;
-}
-
 .hidden {
   display: none !important;
 }
@@ -226,6 +228,7 @@ section:not(.active) {
   padding-block: 12px;
   padding-inline: 20px;
   border: 1px solid var(--in-content-box-border-color);
+  background-color: var(--in-content-box-background);
   border-radius: 2px;
   margin-bottom: 24px;
   margin-inline-end: 24px;
@@ -273,8 +276,8 @@ section:not(.active) {
 }
 
 .bar-inner {
-  background-color: #0a84ff;
-  border: 1px solid #0060df;
+  background-color: var(--in-content-accent-color);
+  border: 1px solid rgba(0,0,0,0.1);
   border-radius: 2px;
 }
 
@@ -296,7 +299,7 @@ table {
 
 td {
   padding-bottom: 0.25em;
-  border-bottom: 1px solid var(--in-content-box-border-color);
+  border-bottom: 1px solid var(--in-content-border-color);
 }
 
 tr:not(:first-child):hover {

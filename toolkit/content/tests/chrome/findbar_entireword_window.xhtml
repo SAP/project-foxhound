@@ -15,7 +15,6 @@
         title="findbar test - entire words only">
 
   <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
-  <script src="chrome://mochikit/content/tests/SimpleTest/ChromeUtils.js"/>
 
   <script type="application/javascript"><![CDATA[
     const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
@@ -24,10 +23,12 @@
     var gFindBar = null;
     var gBrowser;
 
-    var imports = ["SimpleTest", "SpecialPowers", "ok", "is", "isnot", "info"];
-    for (var name of imports) {
-      window[name] = window.arguments[0][name];
-    }
+    var SimpleTest = window.arguments[0].SimpleTest;
+    var SpecialPowers = window.arguments[0].SpecialPowers;
+    var ok = window.arguments[0].ok;
+    var is = window.arguments[0].is;
+    var isnot = window.arguments[0].isnot;
+    var info = window.arguments[0].info;
     SimpleTest.requestLongerTimeout(2);
 
     const kBaseURL = "chrome://mochitests/content/chrome/toolkit/content/tests/chrome";
@@ -145,9 +146,13 @@
         if (waitForResult) {
           promise = promiseFindResult();
         }
-        let event = document.createEvent("KeyboardEvent");
-        event.initKeyEvent("keypress", true, true, null, false, false,
-                           false, false, 0, str.charCodeAt(i));
+        let event = new KeyboardEvent("keypress", {
+          bubbles: true,
+          cancelable: true,
+          view: null,
+          keyCode: 0,
+          charCode: str.charCodeAt(i),
+        });
         gFindBar._findField.dispatchEvent(event);
         if (waitForResult) {
           await promise;
@@ -241,11 +246,14 @@
 
     async function testQuickfind(tests) {
       await SpecialPowers.spawn(gBrowser, [], async function() {
-        let document = content.document;
-        let event = document.createEvent("KeyboardEvent");
-        event.initKeyEvent("keypress", true, true, null, false, false,
-                           false, false, 0, "/".charCodeAt(0));
-        document.documentElement.dispatchEvent(event);
+        let event = new content.window.KeyboardEvent("keypress", {
+          bubbles: true,
+          cancelable: true,
+          view: null,
+          keyCode: 0,
+          charCode: "/".charCodeAt(0),
+        });
+        content.document.documentElement.dispatchEvent(event);
       });
 
       ok(!gFindBar.hidden, "testQuickfind: failed to open findbar");

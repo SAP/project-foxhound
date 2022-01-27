@@ -5,9 +5,6 @@
 SimpleTest.requestCompleteLog();
 
 add_task(async function test_windows_events_not_allowed() {
-  SpecialPowers.pushPrefEnv({
-    set: [["extensions.allowPrivateBrowsingByDefault", false]],
-  });
   let monitor = await startIncognitoMonitorExtension();
 
   function background() {
@@ -86,11 +83,11 @@ add_task(async function test_windows_events_not_allowed() {
     return windowInfo.winId;
   }
 
-  let {
+  const {
     Management: {
       global: { windowTracker },
     },
-  } = ChromeUtils.import("resource://gre/modules/Extension.jsm", null);
+  } = ChromeUtils.import("resource://gre/modules/Extension.jsm");
 
   let currentWindow = window;
   let currentWindowId = windowTracker.getId(currentWindow);

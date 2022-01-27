@@ -120,7 +120,7 @@ class nsMenuFrame final : public nsBoxFrame, public nsIReflowCallback {
 
   NS_IMETHOD SelectMenu(bool aActivateFlag);
 
-  virtual nsIScrollableFrame* GetScrollTargetFrame() override;
+  virtual nsIScrollableFrame* GetScrollTargetFrame() const override;
 
   /**
    * NOTE: OpenMenu will open the menu asynchronously.
@@ -145,7 +145,7 @@ class nsMenuFrame final : public nsBoxFrame, public nsIReflowCallback {
 
   const nsAString& GetRadioGroupName() { return mGroupName; }
   nsMenuType GetMenuType() { return mType; }
-  nsMenuPopupFrame* GetPopup();
+  nsMenuPopupFrame* GetPopup() const;
 
   /**
    * @return true if this frame has a popup child frame.
@@ -169,6 +169,9 @@ class nsMenuFrame final : public nsBoxFrame, public nsIReflowCallback {
   bool IsParentMenuList();
   bool IsDisabled();
   void ToggleMenuState();
+
+  // Activate this menu item.
+  void ActivateItem(mozilla::Modifiers aModifiers, int16_t aButton);
 
   // indiciate that the menu's popup has just been opened, so that the menu
   // can update its open state. This method modifies the open attribute on
@@ -240,10 +243,10 @@ class nsMenuFrame final : public nsBoxFrame, public nsIReflowCallback {
   bool SizeToPopup(nsBoxLayoutState& aState, nsSize& aSize);
 
   bool ShouldBlink();
-  void StartBlinking(mozilla::WidgetGUIEvent* aEvent, bool aFlipChecked);
+  void StartBlinking();
   void StopBlinking();
-  void CreateMenuCommandEvent(mozilla::WidgetGUIEvent* aEvent,
-                              bool aFlipChecked);
+  void CreateMenuCommandEvent(bool aIsTrusted, mozilla::Modifiers aModifiers,
+                              int16_t aButton);
   void PassMenuCommandEventToPopupManager();
 
  protected:

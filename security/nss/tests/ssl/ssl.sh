@@ -115,9 +115,20 @@ ssl_init()
 
   NON_EC_SUITES=":0016:0032:0033:0038:0039:003B:003C:003D:0040:0041:0067:006A:006B"
   NON_EC_SUITES="${NON_EC_SUITES}:0084:009C:009D:009E:009F:00A2:00A3:CCAAcdeinvyz"
+  TLS13_SUITES=":1301:1302:1303"
 
   # List of cipher suites to test, including ECC cipher suites.
   CIPHER_SUITES="-c ${EC_SUITES}${NON_EC_SUITES}"
+  TLS13_CIPHER_SUITES="-c ${TLS13_SUITES}${EC_SUITES}${NON_EC_SUITES}"
+
+  # in fips mode, turn off curve25519 until it's NIST approved
+  FIPS_OPTIONS="-I P256,P384,P521,FF2048,FF3072,FF4096,FF6144,FF8192"
+
+  # in non-fips mode, tstclnt may run without the db password in some
+  # cases, but in fips mode it's always needed
+  CLIENT_PW=""
+  CLIENT_PW_FIPS="-w nss"
+  CLIENT_PW_NORMAL=""
 
   if [ "${OS_ARCH}" != "WINNT" ]; then
       ulimit -n 1000 # make sure we have enough file descriptors
@@ -292,17 +303,30 @@ ignore_blank_lines()
 ########################################################################
 ssl_cov()
 {
-  #verbose="-v"
+  verbose_save=${verbose}
+  verbose="-v"
   html_head "SSL Cipher Coverage $NORM_EXT - server $SERVER_MODE/client $CLIENT_MODE"
 
   testname=""
+
+  SAVE_SERVER_OPTIONS=${SERVER_OPTIONS}
+  if [ "${SERVER_MODE}" = "fips" ] ; then
+      SERVER_OPTIONS="${SERVER_OPTIONS} ${FIPS_OPTIONS}"
+  fi
+  SAVE_CLIENT_OPTIONS=${CLIENT_OPTIONS}
+  if [ "${CLIENT_MODE}" = "fips" ] ; then
+      CLIENT_OPTIONS="${CLIENT_OPTIONS} ${FIPS_OPTIONS}"
+  fi
 
   start_selfserv $CIPHER_SUITES # Launch the server
 
   VMIN="ssl3"
   VMAX="tls1.1"
-
-  ignore_blank_lines ${SSLCOV} | \
+  # can't use a pipe here, because we may have to restart selfserv, and
+  # doing so hides the server pid environment variable in the subshell in
+  # cygwin, which means we can't kill selfserv at the end here.
+  SSL_COV_TMP=$(mktemp /tmp/ssl_cov.XXXXXX)
+  ignore_blank_lines ${SSLCOV} > ${SSL_COV_TMP}
   while read ectype testmax param testname
   do
       echo "${testname}" | grep "EXPORT" > /dev/null
@@ -326,6 +350,31 @@ ssl_cov()
       if [ "$testmax" = "TLS12" ]; then
           VMAX="tls1.2"
       fi
+      if [ "$testmax" = "TLS13" ]; then
+          # if our selfserv can only do up to tls1.2
+          # restart it so it can do tls1.3, This requires
+          # moving VMIN up to tls1.0 because you can't enable SSL3 and
+          # TLS 1.3.
+          if [ "$VMIN" = "ssl3" ]; then
+              SERVER_VMIN="tls1.0"
+              SERVER_VMAX="tls1.3"
+              kill_selfserv
+              start_selfserv ${TLS13_CIPHER_SUITES}
+              unset SERVER_VMIN
+              unset SERVER_VMAX
+              VMIN="tls1.0"
+          fi
+          VMAX="tls1.3"
+      fi
+      # if we are testing ssl3 and our server can only do down to tls1.1,
+      # restart it to enable ssl3
+      if [ "$VMAX" = "ssl3" -a "$VMIN" = "tls1.1" ]; then
+              kill_selfserv
+              start_selfserv $CIPHER_SUITES
+              VMIN="ssl3"
+      fi
+
+
 
       echo "tstclnt -4 -p ${PORT} -h ${HOSTADDR} -c ${param} -V ${VMIN}:${VMAX} ${CLIENT_OPTIONS} \\"
       echo "        -f -d ${P_R_CLIENTDIR} $verbose -w nss < ${REQUEST_FILE}"
@@ -339,8 +388,12 @@ ssl_cov()
       rm ${TMP}/$HOST.tmp.$$ 2>/dev/null
       html_msg $ret 0 "${testname}" \
                "produced a returncode of $ret, expected is 0"
-  done
+  done < ${SSL_COV_TMP}
+  rm -f ${SSL_COV_TMP}
 
+  SERVER_OPTIONS=${SAVE_SERVER_OPTIONS}
+  CLIENT_OPTIONS=${SAVE_CLIENT_OPTIONS}
+  verbose=${verbose_save}
   kill_selfserv
   html "</TABLE><BR>"
 }
@@ -469,10 +522,6 @@ ssl_stapling_sub()
         echo "$SCRIPTNAME: skipping  $testname for $NORM_EXT"
         return 0
     fi
-    if [ "$SERVER_MODE" = "fips" -o "$CLIENT_MODE" = "fips" ] ; then
-          echo "$SCRIPTNAME: skipping  $testname (non-FIPS only)"
-        return 0
-    fi
 
     SAVE_SERVER_OPTIONS=${SERVER_OPTIONS}
     SERVER_OPTIONS="${SERVER_OPTIONS} ${SO}"
@@ -485,10 +534,10 @@ ssl_stapling_sub()
     start_selfserv
 
     echo "tstclnt -4 -p ${PORT} -h ${HOSTADDR} -f -d ${P_R_CLIENTDIR} $verbose ${CLIENT_OPTIONS} \\"
-    echo "        -c v -T -O -F -M 1 -V ssl3:tls1.2 < ${REQUEST_FILE}"
+    echo "        -c v -T -O -F -M 1 -V ssl3:tls1.2 ${CLIENT_PW} < ${REQUEST_FILE}"
     rm ${TMP}/$HOST.tmp.$$ 2>/dev/null
     ${PROFTOOL} ${BINDIR}/tstclnt -4 -p ${PORT} -h ${HOSTADDR} -f ${CLIENT_OPTIONS} \
-            -d ${P_R_CLIENTDIR} $verbose -c v -T -O -F -M 1 -V ssl3:tls1.2 < ${REQUEST_FILE} \
+            -d ${P_R_CLIENTDIR} $verbose -c v -T -O -F -M 1 -V ssl3:tls1.2 ${CLIENT_PW} < ${REQUEST_FILE} \
             >${TMP}/$HOST.tmp.$$  2>&1
     ret=$?
     cat ${TMP}/$HOST.tmp.$$
@@ -516,10 +565,6 @@ ssl_stapling_stress()
         # which doesn't contain the required "TestCA" for server cert
         # verification, I don't know if it would be OK to add it...
         echo "$SCRIPTNAME: skipping  $testname for $NORM_EXT"
-        return 0
-    fi
-    if [ "$SERVER_MODE" = "fips" -o "$CLIENT_MODE" = "fips" ] ; then
-          echo "$SCRIPTNAME: skipping  $testname (non-FIPS only)"
         return 0
     fi
 
@@ -592,11 +637,6 @@ ssl_signed_cert_timestamps()
     testname="ssl_signed_cert_timestamps"
     value=0
 
-    if [ "$SERVER_MODE" = "fips" -o "$CLIENT_MODE" = "fips" ] ; then
-          echo "$SCRIPTNAME: skipping  $testname (non-FIPS only)"
-        return 0
-    fi
-
     echo "${testname}"
 
     start_selfserv
@@ -604,10 +644,10 @@ ssl_signed_cert_timestamps()
     # Since we don't have server-side support, this test only covers advertising the
     # extension in the client hello.
     echo "tstclnt -4 -p ${PORT} -h ${HOSTADDR} -f -d ${P_R_CLIENTDIR} $verbose ${CLIENT_OPTIONS} \\"
-    echo "        -U -V tls1.0:tls1.2 < ${REQUEST_FILE}"
+    echo "        -U -V tls1.0:tls1.2 ${CLIENT_PW} < ${REQUEST_FILE}"
     rm ${TMP}/$HOST.tmp.$$ 2>/dev/null
     ${PROFTOOL} ${BINDIR}/tstclnt -4 -p ${PORT} -h ${HOSTADDR} -f ${CLIENT_OPTIONS} \
-            -d ${P_R_CLIENTDIR} $verbose -U -V tls1.0:tls1.2 < ${REQUEST_FILE} \
+            -d ${P_R_CLIENTDIR} $verbose -U -V tls1.0:tls1.2 ${CLIENT_PW} < ${REQUEST_FILE} \
             >${TMP}/$HOST.tmp.$$  2>&1
     ret=$?
     cat ${TMP}/$HOST.tmp.$$
@@ -652,7 +692,7 @@ ssl_stress()
           start_selfserv `echo "$sparam" | sed -e 's,_, ,g'`
 
           if [ "`uname -n`" = "sjsu" ] ; then
-              echo "debugging disapering selfserv... ps -ef | grep selfserv"
+              echo "debugging disappearing selfserv... ps -ef | grep selfserv"
               ps -ef | grep selfserv
           fi
 
@@ -886,6 +926,7 @@ ssl_policy_listsuites()
   cp ${P_R_CLIENTDIR}/pkcs11.txt ${P_R_CLIENTDIR}/pkcs11.txt.sav
 
   # Disallow all explicitly
+  testname="listsuites with all cipher disallowed by policy"
   setup_policy "disallow=all" ${P_R_CLIENTDIR}
   RET_EXP=1
   list_enabled_suites | grep '^TLS_'
@@ -894,6 +935,7 @@ ssl_policy_listsuites()
            "produced a returncode of $RET, expected is $RET_EXP"
 
   # Disallow RSA in key exchange explicitly
+  testname="listsuites with rsa cipher disallowed by policy"
   setup_policy "disallow=rsa/ssl-key-exchange" ${P_R_CLIENTDIR}
   RET_EXP=1
   list_enabled_suites | grep '^TLS_RSA_'
@@ -901,9 +943,81 @@ ssl_policy_listsuites()
   html_msg $RET $RET_EXP "${testname}" \
            "produced a returncode of $RET, expected is $RET_EXP"
 
+  # allow by policy, but disable by default
+  testname="listsuites with all ciphers enabled by policy but disabled by default"
+  setup_policy "allow=all disable=all" ${P_R_CLIENTDIR}
+  RET_EXP=1
+  list_enabled_suites | grep '^TLS_'
+  RET=$?
+  html_msg $RET $RET_EXP "${testname}" \
+           "produced a returncode of $RET, expected is $RET_EXP"
+
+  # allow by policy, but disable by default just rsa-kea
+  testname="listsuites with all ciphers enabled by policy but rsa disabled by default"
+  setup_policy "allow=all disable=rsa/ssl-key-exchange" ${P_R_CLIENTDIR}
+  RET_EXP=1
+  list_enabled_suites | grep '^TLS_RSA_'
+  RET=$?
+  html_msg $RET $RET_EXP "${testname}" \
+           "produced a returncode of $RET, expected is $RET_EXP"
+
+  # list_enabled_suites tries to set a policy value explicitly, This will
+  # cause list_enabled_suites to fail if we lock the policy
+  testname="listsuites with policy locked"
+  setup_policy "allow=all flags=policy-lock" ${P_R_CLIENTDIR}
+  RET_EXP=1
+  SSL_DIR="${P_R_CLIENTDIR}" ${BINDIR}/listsuites
+  RET=$?
+  html_msg $RET $RET_EXP "${testname}" \
+           "produced a returncode of $RET, expected is $RET_EXP"
+
   cp ${P_R_CLIENTDIR}/pkcs11.txt.sav ${P_R_CLIENTDIR}/pkcs11.txt
 
   html "</TABLE><BR>"
+}
+
+ssl_policy_pkix_ocsp()
+{
+  #verbose="-v"
+  html_head "Check that OCSP doesn't break if we disable sha1 $NORM_EXT - server $SERVER_MODE/client $CLIENT_MODE"
+
+  PKIX_SAVE=${NSS_ENABLE_PKIX_VERIFY-"unset"}
+  NSS_ENABLE_PKIX_VERIFY="1"
+  export NSS_ENABLE_PKIX_VERIFY
+
+  testname=""
+
+  if [ ! -f "${P_R_SERVERDIR}/pkcs11.txt" ] ; then
+      html_failed "${SCRIPTNAME}: ${P_R_SERVERDIR} is not initialized"
+      return 1;
+  fi
+
+  echo "Saving pkcs11.txt"
+  cp ${P_R_SERVERDIR}/pkcs11.txt ${P_R_SERVERDIR}/pkcs11.txt.sav
+
+  # Disallow sha1 explicitly. This will test if we are trying to verify the sha1 signature
+  # on the GlobalSign root during OCSP processing
+  setup_policy "disallow=sha1" ${P_R_SERVERDIR}
+  RET_EXP=0
+  echo " vfyserv -o wrong.host.badssl.com -d ${P_R_SERVERDIR} 2>&1 | tee ${P_R_SERVERDIR}/vfy.out"
+  vfyserv -o wrong.host.badssl.com -d ${P_R_SERVERDIR} 2>&1 | tee ${P_R_SERVERDIR}/vfy.out
+  # make sure we have the domain mismatch, not bad signature error
+  echo "grep 12276 ${P_R_SERVERDIR}/vfy.out"
+  grep 12276 ${P_R_SERVERDIR}/vfy.out
+  RET=$?
+  html_msg $RET $RET_EXP "${testname}" \
+           "produced a returncode of $RET, expected is $RET_EXP"
+
+  if [ "${PKIX_SAVE}" = "unset" ]; then
+      unset NSS_ENABLE_PKIX_VERIFY
+  else
+      NSS_ENABLE_PKIX_VERIFY=${PKIX_SAVE}
+      export NSS_ENABLE_PKIX_VERIFY
+  fi
+  cp ${P_R_SERVERDIR}/pkcs11.txt.sav ${P_R_SERVERDIR}/pkcs11.txt
+
+  html "</TABLE><BR>"
+
 }
 
 ############################## ssl_policy_selfserv #####################
@@ -925,6 +1039,7 @@ ssl_policy_selfserv()
   cp ${P_R_SERVERDIR}/pkcs11.txt ${P_R_SERVERDIR}/pkcs11.txt.sav
 
   # Disallow RSA in key exchange explicitly
+  testname="Disallow RSA key exchange explicitly"
   setup_policy "disallow=rsa/ssl-key-exchange" ${P_R_SERVERDIR}
 
   SAVE_SERVER_OPTIONS=${SERVER_OPTIONS}
@@ -1200,27 +1315,22 @@ ssl_dtls()
     testname="ssl_dtls"
     value=0
 
-    if [ "$SERVER_MODE" = "fips" -o "$CLIENT_MODE" = "fips" ] ; then
-        echo "$SCRIPTNAME: skipping  $testname (non-FIPS only)"
-        return 0
-    fi
-
     echo "${testname}"
 
-    echo "tstclnt -4 -p ${PORT} -h ${HOSTADDR} -f -d ${P_R_SERVERDIR} $verbose ${SERVER_OPTIONS} \\"
-    echo "        -U -V tls1.1:tls1.2 -P server -Q < ${REQUEST_FILE} &"
+    echo "tstclnt -4 -p ${PORT} -h ${HOSTADDR} -f ${SERVER_OPTIONS} \\"
+    echo "        -d ${P_R_SERVERDIR} $verbose -U -V tls1.1:tls1.2 -P server -n ${HOSTADDR} -w nss < ${REQUEST_FILE} &"
 
-    ${PROFTOOL} ${BINDIR}/tstclnt -4 -p ${PORT} -h ${HOSTADDR} -f ${SERVER_OPTIONS} \
-                -d ${P_R_SERVERDIR} $verbose -U -V tls1.1:tls1.2 -P server -n ${HOSTADDR} -w nss < ${REQUEST_FILE} 2>&1 &
+    (sleep 2; cat ${REQUEST_FILE}) | ${PROFTOOL} ${BINDIR}/tstclnt -4 -p ${PORT} -h ${HOSTADDR} -f ${SERVER_OPTIONS} \
+                -d ${P_R_SERVERDIR} $verbose -U -V tls1.1:tls1.2 -P server -n ${HOSTADDR} -w nss 2>&1 &
 
     PID=$!
 
     sleep 1
 
-    echo "tstclnt -4 -p ${PORT} -h ${HOSTADDR} -f -d ${P_R_CLIENTDIR} $verbose ${CLIENT_OPTIONS} \\"
-    echo "        -U -V tls1.1:tls1.2 -P client -Q < ${REQUEST_FILE}"
+    echo "tstclnt -4 -p ${PORT} -h ${HOSTADDR} -f ${CLIENT_OPTIONS} \\"
+    echo "        -d ${P_R_CLIENTDIR} $verbose -U -V tls1.1:tls1.2 -P client -Q ${CLIENT_PW} < ${REQUEST_FILE}"
     ${PROFTOOL} ${BINDIR}/tstclnt -4 -p ${PORT} -h ${HOSTADDR} -f ${CLIENT_OPTIONS} \
-            -d ${P_R_CLIENTDIR} $verbose -U -V tls1.1:tls1.2 -P client -Q < ${REQUEST_FILE} 2>&1
+            -d ${P_R_CLIENTDIR} $verbose -U -V tls1.1:tls1.2 -P client -Q ${CLIENT_PW} < ${REQUEST_FILE} 2>&1
     ret=$?
     html_msg $ret $value "${testname}" \
              "produced a returncode of $ret, expected is $value"
@@ -1235,11 +1345,6 @@ ssl_dtls()
 #########################################################################
 ssl_scheme()
 {
-    if [ "$SERVER_MODE" = "fips" -o "$CLIENT_MODE" = "fips" ] ; then
-        echo "$SCRIPTNAME: skipping  $testname (non-FIPS only)"
-        return 0
-    fi
-
     html_head "SSL SCHEME $NORM_EXT - server $SERVER_MODE/client $CLIENT_MODE"
 
     NO_ECC_CERTS=1
@@ -1252,9 +1357,9 @@ ssl_scheme()
             start_selfserv -V tls1.2:tls1.2 -J "$sscheme"
 
             echo "tstclnt -4 -p ${PORT} -h ${HOSTADDR} -f -d ${P_R_CLIENTDIR} $verbose ${CLIENT_OPTIONS} \\"
-            echo "        -V tls1.2:tls1.2 -J "$cscheme" < ${REQUEST_FILE}"
+            echo "        -V tls1.2:tls1.2 -J "$cscheme" ${CLIENT_PW} < ${REQUEST_FILE}"
             ${PROFTOOL} ${BINDIR}/tstclnt -4 -p ${PORT} -h ${HOSTADDR} -f ${CLIENT_OPTIONS} \
-                        -d ${P_R_CLIENTDIR} $verbose -V tls1.2:tls1.2 -J "$cscheme" < ${REQUEST_FILE} 2>&1
+                        -d ${P_R_CLIENTDIR} $verbose -V tls1.2:tls1.2 -J "$cscheme" ${CLIENT_PW} < ${REQUEST_FILE} 2>&1
             ret=$?
             # If both schemes include just one option and those options don't
             # match, then the test should fail; otherwise, assume that it works.
@@ -1280,11 +1385,6 @@ ssl_scheme()
 #########################################################################
 ssl_scheme_stress()
 {
-    if [ "$SERVER_MODE" = "fips" -o "$CLIENT_MODE" = "fips" ] ; then
-        echo "$SCRIPTNAME: skipping  $testname (non-FIPS only)"
-        return 0
-    fi
-
     html_head "SSL SCHEME $NORM_EXT - server $SERVER_MODE/client $CLIENT_MODE"
 
     NO_ECC_CERTS=1
@@ -1297,9 +1397,9 @@ ssl_scheme_stress()
             start_selfserv -V tls1.2:tls1.2 -J "$sscheme"
 
             echo "strsclnt -4 -q -p ${PORT} -d ${P_R_CLIENTDIR} $verbose ${CLIENT_OPTIONS} \\"
-            echo "         -V tls1.2:tls1.2 -J "$cscheme" ${HOSTADDR} < ${REQUEST_FILE}"
+            echo "         -V tls1.2:tls1.2 -J "$cscheme" ${HOSTADDR} ${CLIENT_PW} < ${REQUEST_FILE}"
             ${PROFTOOL} ${BINDIR}/strsclnt -4 -q -p ${PORT} ${CLIENT_OPTIONS} \
-                        -d ${P_R_CLIENTDIR} $verbose -V tls1.2:tls1.2 -J "$cscheme" ${HOSTADDR} < ${REQUEST_FILE} 2>&1
+                        -d ${P_R_CLIENTDIR} $verbose -V tls1.2:tls1.2 -J "$cscheme" ${HOSTADDR} ${CLIENT_PW} < ${REQUEST_FILE} 2>&1
             ret=$?
             # If both schemes include just one option and those options don't
             # match, then the test should fail; otherwise, assume that it works.
@@ -1336,9 +1436,9 @@ ssl_exporter()
         start_selfserv -V tls1.2:tls1.2 -x "$exporter"
 
         echo "tstclnt -4 -p ${PORT} -h ${HOSTADDR} -f -d ${P_R_CLIENTDIR} $verbose ${CLIENT_OPTIONS} \\"
-        echo "        -V tls1.2:tls1.2 -x $exporter < ${REQUEST_FILE}"
+        echo "        -V tls1.2:tls1.2 -x $exporter ${CLIENT_PW} < ${REQUEST_FILE}"
         ${PROFTOOL} ${BINDIR}/tstclnt -4 -p ${PORT} -h ${HOSTADDR} -f ${CLIENT_OPTIONS} \
-                    -d ${P_R_CLIENTDIR} $verbose -V tls1.2:tls1.2 -x "$exporter" < ${REQUEST_FILE} 2>&1 > client.out
+                    -d ${P_R_CLIENTDIR} $verbose -V tls1.2:tls1.2 -x "$exporter" ${CLIENT_PW} < ${REQUEST_FILE} 2>&1 > client.out
         kill_selfserv
         diff <(LC_ALL=C grep -A1 "^ *Keying Material:" server.out) \
              <(LC_ALL=C grep -A1 "^ *Keying Material:" client.out)
@@ -1522,6 +1622,7 @@ ssl_run_tests()
             if [ "${TEST_MODE}" = "SHARED_DB" ] ; then
                 ssl_policy_listsuites
                 ssl_policy_selfserv
+                ssl_policy_pkix_ocsp
                 ssl_policy
             fi
             ;;
@@ -1553,9 +1654,11 @@ ssl_run_tests()
             case "${CLIENT_MODE}" in
             "normal")
                 CLIENT_OPTIONS=
+                CLIENT_PW=${CLIENT_PW_NORMAL}
                 ;;
             "fips")
-                SERVER_OPTIONS=
+                CLIENT_OPTIONS=
+                CLIENT_PW=${CLIENT_PW_FIPS}
                 ssl_set_fips client on
                 ;;
             *)

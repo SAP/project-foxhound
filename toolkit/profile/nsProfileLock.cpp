@@ -7,6 +7,8 @@
 #include "nsCOMPtr.h"
 #include "nsQueryObject.h"
 #include "nsString.h"
+#include "nsPrintfCString.h"
+#include "nsDebug.h"
 
 #if defined(XP_WIN)
 #  include "ProfileUnlockerWin.h"
@@ -15,6 +17,10 @@
 #if defined(XP_MACOSX)
 #  include <Carbon/Carbon.h>
 #  include <CoreFoundation/CoreFoundation.h>
+#endif
+
+#if defined(MOZ_WIDGET_ANDROID)
+#  include "ProfileUnlockerAndroid.h"
 #endif
 
 #ifdef XP_UNIX
@@ -182,7 +188,8 @@ void nsProfileLock::FatalSignalHandler(int signo
   _exit(signo);
 }
 
-nsresult nsProfileLock::LockWithFcntl(nsIFile* aLockFile) {
+nsresult nsProfileLock::LockWithFcntl(nsIFile* aLockFile,
+                                      nsIProfileUnlocker** aUnlocker) {
   nsresult rv = NS_OK;
 
   nsAutoCString lockFilePath;
@@ -211,6 +218,14 @@ nsresult nsProfileLock::LockWithFcntl(nsIFile* aLockFile) {
       mLockFileDesc = -1;
       rv = NS_ERROR_FAILURE;
     } else if (fcntl(mLockFileDesc, F_SETLK, &lock) == -1) {
+#  ifdef MOZ_WIDGET_ANDROID
+      MOZ_ASSERT(aUnlocker);
+      RefPtr<mozilla::ProfileUnlockerAndroid> unlocker(
+          new mozilla::ProfileUnlockerAndroid(testlock.l_pid));
+      nsCOMPtr<nsIProfileUnlocker> unlockerInterface(do_QueryObject(unlocker));
+      unlockerInterface.forget(aUnlocker);
+#  endif
+
       close(mLockFileDesc);
       mLockFileDesc = -1;
 
@@ -384,18 +399,29 @@ nsresult nsProfileLock::GetReplacedLockTime(PRTime* aResult) {
   return NS_OK;
 }
 
-nsresult nsProfileLock::Lock(nsIFile* aProfileDir,
-                             nsIProfileUnlocker** aUnlocker) {
 #if defined(XP_MACOSX)
-  constexpr auto LOCKFILE_NAME = u".parentlock"_ns;
-  constexpr auto OLD_LOCKFILE_NAME = u"parent.lock"_ns;
+constexpr auto LOCKFILE_NAME = u".parentlock"_ns;
+constexpr auto OLD_LOCKFILE_NAME = u"parent.lock"_ns;
 #elif defined(XP_UNIX)
-  constexpr auto OLD_LOCKFILE_NAME = u"lock"_ns;
-  constexpr auto LOCKFILE_NAME = u".parentlock"_ns;
+constexpr auto OLD_LOCKFILE_NAME = u"lock"_ns;
+constexpr auto LOCKFILE_NAME = u".parentlock"_ns;
 #else
-  constexpr auto LOCKFILE_NAME = u"parent.lock"_ns;
+constexpr auto LOCKFILE_NAME = u"parent.lock"_ns;
 #endif
 
+bool nsProfileLock::IsMaybeLockFile(nsIFile* aFile) {
+  nsAutoString tmp;
+  if (NS_SUCCEEDED(aFile->GetLeafName(tmp))) {
+    if (tmp.Equals(LOCKFILE_NAME)) return true;
+#if (defined(XP_MACOSX) || defined(XP_UNIX))
+    if (tmp.Equals(OLD_LOCKFILE_NAME)) return true;
+#endif
+  }
+  return false;
+}
+
+nsresult nsProfileLock::Lock(nsIFile* aProfileDir,
+                             nsIProfileUnlocker** aUnlocker) {
   nsresult rv;
   if (aUnlocker) *aUnlocker = nullptr;
 
@@ -479,7 +505,7 @@ nsresult nsProfileLock::Lock(nsIFile* aProfileDir,
 
   // First, try locking using fcntl. It is more reliable on
   // a local machine, but may not be supported by an NFS server.
-  rv = LockWithFcntl(lockFile);
+  rv = LockWithFcntl(lockFile, aUnlocker);
   if (NS_SUCCEEDED(rv)) {
     // Check to see whether there is a symlink lock held by an older
     // Firefox build, and also place our own symlink lock --- but

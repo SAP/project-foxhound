@@ -9,9 +9,10 @@
 #ifndef nsITheme_h_
 #define nsITheme_h_
 
+#include "mozilla/AlreadyAddRefed.h"
 #include "nsISupports.h"
-#include "nsCOMPtr.h"
-#include "nsColor.h"
+#include "nsID.h"
+#include "nscore.h"
 #include "Units.h"
 
 struct nsRect;
@@ -26,6 +27,7 @@ class nsIWidget;
 namespace mozilla {
 class ComputedStyle;
 enum class StyleAppearance : uint8_t;
+enum class StyleScrollbarWidth : uint8_t;
 namespace layers {
 class StackingContextHelper;
 class RenderRootStateManager;
@@ -58,7 +60,11 @@ class IpcResourceUpdateQueue;
 class nsITheme : public nsISupports {
  protected:
   using LayoutDeviceIntMargin = mozilla::LayoutDeviceIntMargin;
+  using LayoutDeviceIntSize = mozilla::LayoutDeviceIntSize;
+  using LayoutDeviceIntCoord = mozilla::LayoutDeviceIntCoord;
   using StyleAppearance = mozilla::StyleAppearance;
+  using StyleScrollbarWidth = mozilla::StyleScrollbarWidth;
+  using ComputedStyle = mozilla::ComputedStyle;
 
  public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_ITHEME_IID)
@@ -70,11 +76,15 @@ class nsITheme : public nsISupports {
    * @param aWidgetType the -moz-appearance value to draw
    * @param aRect the rectangle defining the area occupied by the widget
    * @param aDirtyRect the rectangle that needs to be drawn
+   * @param DrawOverflow whether outlines, shadows and other such overflowing
+   *        things should be drawn. Honoring this creates better results for
+   *        box-shadow, though it's not a hard requirement.
    */
+  enum class DrawOverflow { No, Yes };
   NS_IMETHOD DrawWidgetBackground(gfxContext* aContext, nsIFrame* aFrame,
                                   StyleAppearance aWidgetType,
-                                  const nsRect& aRect,
-                                  const nsRect& aDirtyRect) = 0;
+                                  const nsRect& aRect, const nsRect& aDirtyRect,
+                                  DrawOverflow = DrawOverflow::Yes) = 0;
 
   /**
    * Create WebRender commands for the theme background.
@@ -90,6 +100,19 @@ class nsITheme : public nsISupports {
       StyleAppearance aWidgetType, const nsRect& aRect) {
     return false;
   }
+
+  /**
+   * Returns the minimum widths of a scrollbar for a given style, that is, the
+   * minimum width for a vertical scrollbar, and the minimum height of a
+   * horizontal scrollbar.
+   */
+  enum class Overlay { No, Yes };
+  struct ScrollbarSizes {
+    LayoutDeviceIntCoord mVertical;
+    LayoutDeviceIntCoord mHorizontal;
+  };
+  virtual ScrollbarSizes GetScrollbarSizes(nsPresContext*, StyleScrollbarWidth,
+                                           Overlay) = 0;
 
   /**
    * Return the border for the widget, in device pixels.
@@ -129,6 +152,14 @@ class nsITheme : public nsISupports {
                                  StyleAppearance aWidgetType,
                                  /*INOUT*/ nsRect* aOverflowRect) {
     return false;
+  }
+
+  /**
+   * Get the preferred content-box size of a checkbox / radio button, in app
+   * units.  Historically 9px.
+   */
+  virtual nscoord GetCheckboxRadioPrefSize() {
+    return mozilla::CSSPixel::ToAppUnits(9);
   }
 
   /**
@@ -206,7 +237,7 @@ class nsITheme : public nsISupports {
   /**
    * Does the nsITheme implementation draw its own focus ring for this widget?
    */
-  virtual bool ThemeDrawsFocusForWidget(StyleAppearance aWidgetType) = 0;
+  virtual bool ThemeDrawsFocusForWidget(nsIFrame*, StyleAppearance) = 0;
 
   /**
    * Whether we want an inner focus ring for buttons and such.
@@ -215,14 +246,17 @@ class nsITheme : public nsISupports {
    * is special, because it wants it even though focus also alters the border
    * color and such.
    */
-  virtual bool ThemeWantsButtonInnerFocusRing(StyleAppearance aAppearance) {
-    return !ThemeDrawsFocusForWidget(aAppearance);
+  virtual bool ThemeWantsButtonInnerFocusRing(nsIFrame* aFrame,
+                                              StyleAppearance aAppearance) {
+    return !ThemeDrawsFocusForWidget(aFrame, aAppearance);
   }
 
   /**
    * Should we insert a dropmarker inside of combobox button?
    */
   virtual bool ThemeNeedsComboboxDropmarker() = 0;
+
+  virtual bool ThemeSupportsScrollbarButtons() = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsITheme, NS_ITHEME_IID)
@@ -232,5 +266,6 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsITheme, NS_ITHEME_IID)
 // Do not use directly, use nsPresContext::Theme instead.
 extern already_AddRefed<nsITheme> do_GetNativeThemeDoNotUseDirectly();
 extern already_AddRefed<nsITheme> do_GetBasicNativeThemeDoNotUseDirectly();
+extern already_AddRefed<nsITheme> do_GetRDMThemeDoNotUseDirectly();
 
 #endif

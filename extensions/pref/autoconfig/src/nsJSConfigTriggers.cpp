@@ -13,9 +13,11 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/NullPrincipal.h"
+#include "mozilla/dom/ScriptSettings.h"
 #include "nsContentUtils.h"
 #include "nsJSPrincipals.h"
 #include "nsIScriptError.h"
+#include "js/PropertyAndElement.h"  // JS_DefineProperty
 #include "js/Wrapper.h"
 #include "mozilla/Utf8.h"
 
@@ -29,7 +31,7 @@ using mozilla::dom::AutoJSAPI;
 
 static JS::PersistentRooted<JSObject*> autoconfigSystemSb;
 static JS::PersistentRooted<JSObject*> autoconfigSb;
-static bool sandboxEnabled;
+bool sandboxEnabled;
 
 nsresult CentralizedAdminPrefManagerInit(bool aSandboxEnabled) {
   // If the sandbox is already created, no need to create it again.
@@ -137,7 +139,7 @@ nsresult EvaluateAdminConfigScript(JS::HandleObject sandbox,
   nsString convertedScript;
   bool isUTF8 = IsUtf8(script);
   if (isUTF8) {
-    convertedScript = NS_ConvertUTF8toUTF16(script);
+    CopyUTF8toUTF16(script, convertedScript);
   } else {
     nsContentUtils::ReportToConsoleNonLocalized(
         nsLiteralString(

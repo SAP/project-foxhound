@@ -10,27 +10,55 @@
 #include "mozilla/EventForwards.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/TouchEvents.h"
+#include "mozilla/WeakPtr.h"
+
+// XXX Avoid including this here by moving function bodies to the cpp file
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
 
 class nsIFrame;
 class nsIContent;
+class nsPresContext;
 
 namespace mozilla {
 
 class PresShell;
 
+namespace dom {
+class BrowserParent;
+class Document;
+class Element;
+};  // namespace dom
+
 class PointerCaptureInfo final {
  public:
-  nsCOMPtr<nsIContent> mPendingContent;
-  nsCOMPtr<nsIContent> mOverrideContent;
+  RefPtr<dom::Element> mPendingElement;
+  RefPtr<dom::Element> mOverrideElement;
 
-  explicit PointerCaptureInfo(nsIContent* aPendingContent)
-      : mPendingContent(aPendingContent) {
+  explicit PointerCaptureInfo(dom::Element* aPendingElement)
+      : mPendingElement(aPendingElement) {
     MOZ_COUNT_CTOR(PointerCaptureInfo);
   }
 
   MOZ_COUNTED_DTOR(PointerCaptureInfo)
 
-  bool Empty() { return !(mPendingContent || mOverrideContent); }
+  bool Empty() { return !(mPendingElement || mOverrideElement); }
+};
+
+class PointerInfo final {
+ public:
+  uint16_t mPointerType;
+  bool mActiveState;
+  bool mPrimaryState;
+  bool mPreventMouseEventByContent;
+  WeakPtr<dom::Document> mActiveDocument;
+  explicit PointerInfo(bool aActiveState, uint16_t aPointerType,
+                       bool aPrimaryState, dom::Document* aActiveDocument)
+      : mPointerType(aPointerType),
+        mActiveState(aActiveState),
+        mPrimaryState(aPrimaryState),
+        mPreventMouseEventByContent(false),
+        mActiveDocument(aActiveDocument) {}
 };
 
 class PointerEventHandler final {
@@ -45,21 +73,34 @@ class PointerEventHandler final {
 
   // Called in ESM::PreHandleEvent to update current active pointers in a hash
   // table.
-  static void UpdateActivePointerState(WidgetMouseEvent* aEvent);
+  static void UpdateActivePointerState(WidgetMouseEvent* aEvent,
+                                       nsIContent* aTargetContent = nullptr);
 
-  // Got/release pointer capture of the specified pointer by the content.
-  static void SetPointerCaptureById(uint32_t aPointerId, nsIContent* aContent);
+  // Request/release pointer capture of the specified pointer by the element.
+  static void RequestPointerCaptureById(uint32_t aPointerId,
+                                        dom::Element* aElement);
   static void ReleasePointerCaptureById(uint32_t aPointerId);
   static void ReleaseAllPointerCapture();
+
+  // Set/release pointer capture of the specified pointer by the remote target.
+  // Should only be called in parent process.
+  static bool SetPointerCaptureRemoteTarget(uint32_t aPointerId,
+                                            dom::BrowserParent* aBrowserParent);
+  static void ReleasePointerCaptureRemoteTarget(
+      dom::BrowserParent* aBrowserParent);
+  static void ReleasePointerCaptureRemoteTarget(uint32_t aPointerId);
+  static void ReleaseAllPointerCaptureRemoteTarget();
+
+  // Get the pointer capturing remote target of the specified pointer.
+  static dom::BrowserParent* GetPointerCapturingRemoteTarget(
+      uint32_t aPointerId);
 
   // Get the pointer captured info of the specified pointer.
   static PointerCaptureInfo* GetPointerCaptureInfo(uint32_t aPointerId);
 
-  // GetPointerInfo returns true if pointer with aPointerId is situated in
-  // device, false otherwise.
-  // aActiveState is additional information, which shows state of pointer like
-  // button state for mouse.
-  static bool GetPointerInfo(uint32_t aPointerId, bool& aActiveState);
+  // Return the PointerInfo if the pointer with aPointerId is situated in device
+  // , nullptr otherwise.
+  static const PointerInfo* GetPointerInfo(uint32_t aPointerId);
 
   // CheckPointerCaptureState checks cases, when got/lostpointercapture events
   // should be fired.
@@ -78,18 +119,18 @@ class PointerEventHandler final {
   static void ImplicitlyReleasePointerCapture(WidgetEvent* aEvent);
 
   /**
-   * GetPointerCapturingContent returns a target content which captures the
+   * GetPointerCapturingContent returns a target element which captures the
    * pointer. It's applied to mouse or pointer event (except mousedown and
-   * pointerdown). When capturing, return the content. Otherwise, nullptr.
+   * pointerdown). When capturing, return the element. Otherwise, nullptr.
    *
    * @param aEvent               A mouse event or pointer event which may be
    *                             captured.
    *
-   * @return                     Target content for aEvent.
+   * @return                     Target element for aEvent.
    */
-  static nsIContent* GetPointerCapturingContent(WidgetGUIEvent* aEvent);
+  static dom::Element* GetPointerCapturingElement(WidgetGUIEvent* aEvent);
 
-  static nsIContent* GetPointerCapturingContent(uint32_t aPointerId);
+  static dom::Element* GetPointerCapturingElement(uint32_t aPointerId);
 
   // Release pointer capture if captured by the specified content or it's
   // descendant. This is called to handle the case that the pointer capturing
@@ -135,14 +176,15 @@ class PointerEventHandler final {
                                         WidgetMouseEvent* aMouseEvent,
                                         EventMessage aMessage);
 
-  static void InitPointerEventFromTouch(WidgetPointerEvent* aPointerEvent,
-                                        WidgetTouchEvent* aTouchEvent,
-                                        mozilla::dom::Touch* aTouch,
+  static void InitPointerEventFromTouch(WidgetPointerEvent& aPointerEvent,
+                                        const WidgetTouchEvent& aTouchEvent,
+                                        const mozilla::dom::Touch& aTouch,
                                         bool aIsPrimary);
 
   static bool ShouldGeneratePointerEventFromMouse(WidgetGUIEvent* aEvent) {
     return aEvent->mMessage == eMouseDown || aEvent->mMessage == eMouseUp ||
-           aEvent->mMessage == eMouseMove;
+           aEvent->mMessage == eMouseMove ||
+           aEvent->mMessage == eMouseExitFromWidget;
   }
 
   static bool ShouldGeneratePointerEventFromTouch(WidgetGUIEvent* aEvent) {
@@ -155,7 +197,15 @@ class PointerEventHandler final {
     return sSpoofedPointerId.valueOr(0);
   }
 
+  static void NotifyDestroyPresContext(nsPresContext* aPresContext);
+
+  static bool IsDragAndDropEnabled(WidgetMouseEvent& aEvent);
+
  private:
+  // Set pointer capture of the specified pointer by the element.
+  static void SetPointerCaptureById(uint32_t aPointerId,
+                                    dom::Element* aElement);
+
   // GetPointerType returns pointer type like mouse, pen or touch for pointer
   // event with pointerId. The return value must be one of
   // MouseEvent_Binding::MOZ_SOURCE_*
@@ -168,7 +218,7 @@ class PointerEventHandler final {
   MOZ_CAN_RUN_SCRIPT
   static void DispatchGotOrLostPointerCaptureEvent(
       bool aIsGotCapture, const WidgetPointerEvent* aPointerEvent,
-      nsIContent* aCaptureTarget);
+      dom::Element* aCaptureTarget);
 
   // The cached spoofed pointer ID for fingerprinting resistance. We will use a
   // mouse pointer id for desktop. For mobile, we should use the touch pointer

@@ -7,20 +7,19 @@
 #ifndef gc_Cell_h
 #define gc_Cell_h
 
+#include "mozilla/Atomics.h"
+#include "mozilla/EndianUtils.h"
+
 #include <type_traits>
 
 #include "gc/GCEnum.h"
 #include "gc/Heap.h"
 #include "js/GCAnnotations.h"
+#include "js/shadow/Zone.h"  // JS::shadow::Zone
 #include "js/TraceKind.h"
 #include "js/TypeDecls.h"
 
 namespace JS {
-
-namespace shadow {
-struct Zone;
-} /* namespace shadow */
-
 enum class TraceKind;
 } /* namespace JS */
 
@@ -38,6 +37,9 @@ extern bool RuntimeFromMainThreadIsHeapMajorCollecting(
 extern bool CurrentThreadIsIonCompiling();
 
 extern bool CurrentThreadIsGCMarking();
+extern bool CurrentThreadIsGCSweeping();
+extern bool CurrentThreadIsGCFinalizing();
+extern bool RuntimeIsVerifyingPreBarriers(JSRuntime* runtime);
 
 #endif
 
@@ -49,9 +51,13 @@ namespace gc {
 
 class Arena;
 enum class AllocKind : uint8_t;
-struct Chunk;
 class StoreBuffer;
 class TenuredCell;
+
+extern void PerformIncrementalReadBarrier(TenuredCell* cell);
+extern void PerformIncrementalPreWriteBarrier(TenuredCell* cell);
+extern void PerformIncrementalBarrierDuringFlattening(JSString* str);
+extern void UnmarkGrayGCThingRecursively(TenuredCell* cell);
 
 // Like gc::MarkColor but allows the possibility of the cell being unmarked.
 //
@@ -119,7 +125,13 @@ class CellColor {
 struct Cell {
  protected:
   // Cell header word. Stores GC flags and derived class data.
-  uintptr_t header_;
+  //
+  // This is atomic since it can be read from and written to by different
+  // threads during compacting GC, in a limited way. Specifically, writes that
+  // update the derived class data can race with reads that check the forwarded
+  // flag. The writes do not change the forwarded flag (which is always false in
+  // this situation).
+  mozilla::Atomic<uintptr_t, mozilla::MemoryOrdering::Relaxed> header_;
 
  public:
   static_assert(gc::CellFlagBitsReservedForGC >= 3,
@@ -131,7 +143,7 @@ struct Cell {
   // compacting GC and is now a RelocationOverlay.
   static constexpr uintptr_t FORWARD_BIT = Bit(0);
 
-  // Bits 1 and 2 are currently unused.
+  // Bits 1 and 2 are reserved for future use by the GC.
 
   bool isForwarded() const { return header_ & FORWARD_BIT; }
   uintptr_t flags() const { return header_ & RESERVED_MASK; }
@@ -147,9 +159,9 @@ struct Cell {
   MOZ_ALWAYS_INLINE bool isMarkedAtLeast(gc::MarkColor color) const;
 
   MOZ_ALWAYS_INLINE CellColor color() const {
-    return isMarkedBlack()
-               ? CellColor::Black
-               : isMarkedGray() ? CellColor::Gray : CellColor::White;
+    return isMarkedBlack()  ? CellColor::Black
+           : isMarkedGray() ? CellColor::Gray
+                            : CellColor::White;
   }
 
   inline JSRuntime* runtimeFromMainThread() const;
@@ -167,7 +179,7 @@ struct Cell {
 
   inline JS::TraceKind getTraceKind() const;
 
-  static MOZ_ALWAYS_INLINE bool needWriteBarrierPre(JS::Zone* zone);
+  static MOZ_ALWAYS_INLINE bool needPreWriteBarrier(JS::Zone* zone);
 
   template <typename T, typename = std::enable_if_t<JS::IsBaseTraceType_v<T>>>
   inline bool is() const {
@@ -197,6 +209,10 @@ struct Cell {
   inline JS::Zone* nurseryZone() const;
   inline JS::Zone* nurseryZoneFromAnyThread() const;
 
+  // Default implementation for kinds that cannot be permanent. This may be
+  // overriden by derived classes.
+  MOZ_ALWAYS_INLINE bool isPermanentAndMayBeShared() const { return false; }
+
 #ifdef DEBUG
   static inline void assertThingIsNotGray(Cell* cell);
   inline bool isAligned() const;
@@ -206,7 +222,7 @@ struct Cell {
 
  protected:
   uintptr_t address() const;
-  inline Chunk* chunk() const;
+  inline ChunkBase* chunk() const;
 
  private:
   // Cells are destroyed by the GC. Do not delete them directly.
@@ -222,6 +238,10 @@ class TenuredCell : public Cell {
     return true;
   }
 
+  TenuredChunk* chunk() const {
+    return static_cast<TenuredChunk*>(Cell::chunk());
+  }
+
   // Mark bit management.
   MOZ_ALWAYS_INLINE bool isMarkedAny() const;
   MOZ_ALWAYS_INLINE bool isMarkedBlack() const;
@@ -229,9 +249,9 @@ class TenuredCell : public Cell {
 
   // Same as Cell::color, but skips nursery checks.
   MOZ_ALWAYS_INLINE CellColor color() const {
-    return isMarkedBlack()
-               ? CellColor::Black
-               : isMarkedGray() ? CellColor::Gray : CellColor::White;
+    return isMarkedBlack()  ? CellColor::Black
+           : isMarkedGray() ? CellColor::Gray
+                            : CellColor::White;
   }
 
   // The return value indicates if the cell went from unmarked to marked.
@@ -277,13 +297,6 @@ class TenuredCell : public Cell {
     return static_cast<const T*>(this);
   }
 
-  static MOZ_ALWAYS_INLINE void readBarrier(TenuredCell* thing);
-  static MOZ_ALWAYS_INLINE void writeBarrierPre(TenuredCell* thing);
-
-  static void MOZ_ALWAYS_INLINE writeBarrierPost(void* cellp,
-                                                 TenuredCell* prior,
-                                                 TenuredCell* next);
-
   // Default implementation for kinds that don't require fixup.
   void fixupAfterMovingGC() {}
 
@@ -323,32 +336,30 @@ MOZ_ALWAYS_INLINE bool Cell::isMarkedAtLeast(gc::MarkColor color) const {
 }
 
 inline JSRuntime* Cell::runtimeFromMainThread() const {
-  JSRuntime* rt = chunk()->trailer.runtime;
+  JSRuntime* rt = chunk()->runtime;
   MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt));
   return rt;
 }
 
 inline JSRuntime* Cell::runtimeFromAnyThread() const {
-  return chunk()->trailer.runtime;
+  return chunk()->runtime;
 }
 
 inline uintptr_t Cell::address() const {
   uintptr_t addr = uintptr_t(this);
   MOZ_ASSERT(addr % CellAlignBytes == 0);
-  MOZ_ASSERT(Chunk::withinValidRange(addr));
+  MOZ_ASSERT(TenuredChunk::withinValidRange(addr));
   return addr;
 }
 
-Chunk* Cell::chunk() const {
+ChunkBase* Cell::chunk() const {
   uintptr_t addr = uintptr_t(this);
   MOZ_ASSERT(addr % CellAlignBytes == 0);
   addr &= ~ChunkMask;
-  return reinterpret_cast<Chunk*>(addr);
+  return reinterpret_cast<ChunkBase*>(addr);
 }
 
-inline StoreBuffer* Cell::storeBuffer() const {
-  return chunk()->trailer.storeBuffer;
-}
+inline StoreBuffer* Cell::storeBuffer() const { return chunk()->storeBuffer; }
 
 JS::Zone* Cell::zone() const {
   if (isTenured()) {
@@ -390,38 +401,38 @@ inline JS::TraceKind Cell::getTraceKind() const {
   return NurseryCellHeader::from(this)->traceKind();
 }
 
-/* static */ MOZ_ALWAYS_INLINE bool Cell::needWriteBarrierPre(JS::Zone* zone) {
+/* static */ MOZ_ALWAYS_INLINE bool Cell::needPreWriteBarrier(JS::Zone* zone) {
   return JS::shadow::Zone::from(zone)->needsIncrementalBarrier();
 }
 
 bool TenuredCell::isMarkedAny() const {
   MOZ_ASSERT(arena()->allocated());
-  return chunk()->bitmap.isMarkedAny(this);
+  return chunk()->markBits.isMarkedAny(this);
 }
 
 bool TenuredCell::isMarkedBlack() const {
   MOZ_ASSERT(arena()->allocated());
-  return chunk()->bitmap.isMarkedBlack(this);
+  return chunk()->markBits.isMarkedBlack(this);
 }
 
 bool TenuredCell::isMarkedGray() const {
   MOZ_ASSERT(arena()->allocated());
-  return chunk()->bitmap.isMarkedGray(this);
+  return chunk()->markBits.isMarkedGray(this);
 }
 
 bool TenuredCell::markIfUnmarked(MarkColor color /* = Black */) const {
-  return chunk()->bitmap.markIfUnmarked(this, color);
+  return chunk()->markBits.markIfUnmarked(this, color);
 }
 
-void TenuredCell::markBlack() const { chunk()->bitmap.markBlack(this); }
+void TenuredCell::markBlack() const { chunk()->markBits.markBlack(this); }
 
 void TenuredCell::copyMarkBitsFrom(const TenuredCell* src) {
-  ChunkBitmap& bitmap = chunk()->bitmap;
-  bitmap.copyMarkBit(this, src, ColorBit::BlackBit);
-  bitmap.copyMarkBit(this, src, ColorBit::GrayOrBlackBit);
+  MarkBitmap& markBits = chunk()->markBits;
+  markBits.copyMarkBit(this, src, ColorBit::BlackBit);
+  markBits.copyMarkBit(this, src, ColorBit::GrayOrBlackBit);
 }
 
-void TenuredCell::unmark() { chunk()->bitmap.unmark(this); }
+void TenuredCell::unmark() { chunk()->markBits.unmark(this); }
 
 inline Arena* TenuredCell::arena() const {
   MOZ_ASSERT(isTenured());
@@ -448,82 +459,109 @@ bool TenuredCell::isInsideZone(JS::Zone* zone) const {
   return zone == arena()->zone;
 }
 
-/* static */ MOZ_ALWAYS_INLINE void TenuredCell::readBarrier(
-    TenuredCell* thing) {
+// Read barrier and pre-write barrier implementation for GC cells.
+
+template <typename T>
+MOZ_ALWAYS_INLINE void ReadBarrier(T* thing) {
+  static_assert(std::is_base_of_v<Cell, T>);
+  static_assert(!std::is_same_v<Cell, T> && !std::is_same_v<TenuredCell, T>);
+
+  if (thing) {
+    ReadBarrierImpl(thing);
+  }
+}
+
+MOZ_ALWAYS_INLINE void ReadBarrierImpl(TenuredCell* thing) {
   MOZ_ASSERT(!CurrentThreadIsIonCompiling());
+  MOZ_ASSERT(!CurrentThreadIsGCMarking());
   MOZ_ASSERT(thing);
-  MOZ_ASSERT(CurrentThreadCanAccessZone(thing->zoneFromAnyThread()));
+
   // Barriers should not be triggered on main thread while collecting.
-  MOZ_ASSERT_IF(CurrentThreadCanAccessRuntime(thing->runtimeFromAnyThread()),
+  mozilla::DebugOnly<JSRuntime*> runtime = thing->runtimeFromAnyThread();
+  MOZ_ASSERT_IF(CurrentThreadCanAccessRuntime(runtime),
                 !JS::RuntimeHeapIsCollecting());
 
   JS::shadow::Zone* shadowZone = thing->shadowZoneFromAnyThread();
   if (shadowZone->needsIncrementalBarrier()) {
-    // Barriers are only enabled on the main thread and are disabled while
-    // collecting.
-    MOZ_ASSERT(!RuntimeFromMainThreadIsHeapMajorCollecting(shadowZone));
-    Cell* tmp = thing;
-    TraceManuallyBarrieredGenericPointerEdge(shadowZone->barrierTracer(), &tmp,
-                                             "read barrier");
-    MOZ_ASSERT(tmp == thing);
+    PerformIncrementalReadBarrier(thing);
+    return;
   }
 
   if (thing->isMarkedGray()) {
     // There shouldn't be anything marked gray unless we're on the main thread.
-    MOZ_ASSERT(CurrentThreadCanAccessRuntime(thing->runtimeFromAnyThread()));
-    if (!JS::RuntimeHeapIsCollecting()) {
-      JS::UnmarkGrayGCThingRecursively(
-          JS::GCCellPtr(thing, thing->getTraceKind()));
-    }
+    MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime));
+    UnmarkGrayGCThingRecursively(thing);
   }
 }
 
-void AssertSafeToSkipBarrier(TenuredCell* thing);
+MOZ_ALWAYS_INLINE void ReadBarrierImpl(Cell* thing) {
+  MOZ_ASSERT(!CurrentThreadIsGCMarking());
+  MOZ_ASSERT(thing);
 
-/* static */ MOZ_ALWAYS_INLINE void TenuredCell::writeBarrierPre(
-    TenuredCell* thing) {
+  if (thing->isTenured()) {
+    ReadBarrierImpl(&thing->asTenured());
+  }
+}
+
+MOZ_ALWAYS_INLINE void PreWriteBarrierImpl(TenuredCell* thing) {
   MOZ_ASSERT(!CurrentThreadIsIonCompiling());
-  if (!thing) {
+  MOZ_ASSERT(!CurrentThreadIsGCMarking());
+  MOZ_ASSERT(thing);
+
+  // Barriers can be triggered on the main thread while collecting, but are
+  // disabled. For example, this happens when destroying HeapPtr wrappers.
+
+  JS::shadow::Zone* zone = thing->shadowZoneFromAnyThread();
+  if (!zone->needsIncrementalBarrier()) {
     return;
   }
 
-#ifdef JS_GC_ZEAL
-  // When verifying pre barriers we need to switch on all barriers, even
-  // those on the Atoms Zone. Normally, we never enter a parse task when
-  // collecting in the atoms zone, so will filter out atoms below.
-  // Unfortuantely, If we try that when verifying pre-barriers, we'd never be
-  // able to handle off thread parse tasks at all as we switch on the verifier
-  // any time we're not doing GC. This would cause us to deadlock, as off thread
-  // parsing is meant to resume after GC work completes. Instead we filter out
-  // any off thread barriers that reach us and assert that they would normally
-  // not be possible.
-  if (!CurrentThreadCanAccessRuntime(thing->runtimeFromAnyThread())) {
-    AssertSafeToSkipBarrier(thing);
+  PerformIncrementalPreWriteBarrier(thing);
+}
+
+MOZ_ALWAYS_INLINE void PreWriteBarrierImpl(Cell* thing) {
+  MOZ_ASSERT(!CurrentThreadIsGCMarking());
+  MOZ_ASSERT(thing);
+
+  if (thing->isTenured()) {
+    PreWriteBarrierImpl(&thing->asTenured());
+  }
+}
+
+template <typename T>
+MOZ_ALWAYS_INLINE void PreWriteBarrier(T* thing) {
+  static_assert(std::is_base_of_v<Cell, T>);
+  static_assert(!std::is_same_v<Cell, T> && !std::is_same_v<TenuredCell, T>);
+
+  if (thing) {
+    PreWriteBarrierImpl(thing);
+  }
+}
+
+// Pre-write barrier implementation for structures containing GC cells, taking a
+// functor to trace the structure.
+template <typename T, typename F>
+MOZ_ALWAYS_INLINE void PreWriteBarrier(JS::Zone* zone, T* data,
+                                       const F& traceFn) {
+  MOZ_ASSERT(!CurrentThreadIsIonCompiling());
+  MOZ_ASSERT(!CurrentThreadIsGCMarking());
+
+  auto* shadowZone = JS::shadow::Zone::from(zone);
+  if (!shadowZone->needsIncrementalBarrier()) {
     return;
   }
-#endif
 
-  JS::shadow::Zone* shadowZone = thing->shadowZoneFromAnyThread();
-  if (shadowZone->needsIncrementalBarrier()) {
-    MOZ_ASSERT(!RuntimeFromMainThreadIsHeapMajorCollecting(shadowZone));
-    Cell* tmp = thing;
-    TraceManuallyBarrieredGenericPointerEdge(shadowZone->barrierTracer(), &tmp,
-                                             "pre barrier");
-    MOZ_ASSERT(tmp == thing);
-  }
+  MOZ_ASSERT(CurrentThreadCanAccessRuntime(shadowZone->runtimeFromAnyThread()));
+  MOZ_ASSERT(!RuntimeFromMainThreadIsHeapMajorCollecting(shadowZone));
+
+  traceFn(shadowZone->barrierTracer(), data);
 }
 
-static MOZ_ALWAYS_INLINE void AssertValidToSkipBarrier(TenuredCell* thing) {
-  MOZ_ASSERT(!IsInsideNursery(thing));
-  MOZ_ASSERT_IF(
-      thing,
-      MapAllocToTraceKind(thing->getAllocKind()) != JS::TraceKind::Object &&
-          MapAllocToTraceKind(thing->getAllocKind()) != JS::TraceKind::String);
-}
-
-/* static */ MOZ_ALWAYS_INLINE void TenuredCell::writeBarrierPost(
-    void* cellp, TenuredCell* prior, TenuredCell* next) {
-  AssertValidToSkipBarrier(next);
+// Pre-write barrier implementation for structures containing GC cells. T must
+// support a |trace| method.
+template <typename T>
+MOZ_ALWAYS_INLINE void PreWriteBarrier(JS::Zone* zone, T* data) {
+  PreWriteBarrier(zone, data, [](JSTracer* trc, T* data) { data->trace(trc); });
 }
 
 #ifdef DEBUG
@@ -576,30 +614,27 @@ class alignas(gc::CellAlignBytes) CellWithLengthAndFlags : public Cell {
 
   uint32_t headerFlagsField() const { return uint32_t(header_); }
 
-  void setHeaderFlagBit(uint32_t flag) { header_ |= uintptr_t(flag); }
-  void clearHeaderFlagBit(uint32_t flag) { header_ &= ~uintptr_t(flag); }
-  void toggleHeaderFlagBit(uint32_t flag) { header_ ^= uintptr_t(flag); }
+  void setHeaderFlagBit(uint32_t flag) {
+    MOZ_ASSERT((flag & RESERVED_MASK) == 0);
+    header_ |= uintptr_t(flag);
+  }
+  void clearHeaderFlagBit(uint32_t flag) {
+    MOZ_ASSERT((flag & RESERVED_MASK) == 0);
+    header_ &= ~uintptr_t(flag);
+  }
+  void toggleHeaderFlagBit(uint32_t flag) {
+    MOZ_ASSERT((flag & RESERVED_MASK) == 0);
+    header_ ^= uintptr_t(flag);
+  }
 
   void setHeaderLengthAndFlags(uint32_t len, uint32_t flags) {
+    MOZ_ASSERT((flags & RESERVED_MASK) == 0);
 #if JS_BITS_PER_WORD == 32
     header_ = flags;
     length_ = len;
 #else
     header_ = (uint64_t(len) << 32) | uint64_t(flags);
 #endif
-  }
-
-  // Sub classes can store temporary data in the flags word. This is not GC safe
-  // and users must ensure flags/length are never checked (including by asserts)
-  // while this data is stored. Use of this method is strongly discouraged!
-  void setTemporaryGCUnsafeData(uintptr_t data) { header_ = data; }
-
-  // To get back the data, values to safely re-initialize clobbered flags
-  // must be provided.
-  uintptr_t unsetTemporaryGCUnsafeData(uint32_t len, uint32_t flags) {
-    uintptr_t data = header_;
-    setHeaderLengthAndFlags(len, flags);
-    return data;
   }
 
  public:
@@ -657,13 +692,8 @@ class alignas(gc::CellAlignBytes) TenuredCellWithNonGCPointer
   }
 
   PtrT* headerPtr() const {
-    // Currently we never observe any flags set here because this base class is
-    // only used for JSObject (for which the nursery kind flags are always
-    // clear) or GC things that are always tenured (for which the nursery kind
-    // flags are also always clear). This means we don't need to use masking to
-    // get and set the pointer.
     MOZ_ASSERT(flags() == 0);
-    return reinterpret_cast<PtrT*>(header_);
+    return reinterpret_cast<PtrT*>(uintptr_t(header_));
   }
 
   void setHeaderPtr(PtrT* newValue) {
@@ -677,6 +707,34 @@ class alignas(gc::CellAlignBytes) TenuredCellWithNonGCPointer
  public:
   static constexpr size_t offsetOfHeaderPtr() {
     return offsetof(TenuredCellWithNonGCPointer, header_);
+  }
+};
+
+// Base class for non-nursery-allocatable GC things that allows storing flags
+// in the first word.
+//
+// The low bits of the flags word (see CellFlagBitsReservedForGC) are reserved
+// for GC.
+class alignas(gc::CellAlignBytes) TenuredCellWithFlags : public TenuredCell {
+ protected:
+  TenuredCellWithFlags() = default;
+  explicit TenuredCellWithFlags(uintptr_t initial) {
+    MOZ_ASSERT((initial & RESERVED_MASK) == 0);
+    header_ = initial;
+  }
+
+  uintptr_t headerFlagsField() const {
+    MOZ_ASSERT(flags() == 0);
+    return header_;
+  }
+
+  void setHeaderFlagBits(uintptr_t flags) {
+    MOZ_ASSERT((flags & RESERVED_MASK) == 0);
+    header_ |= flags;
+  }
+  void clearHeaderFlagBits(uintptr_t flags) {
+    MOZ_ASSERT((flags & RESERVED_MASK) == 0);
+    header_ &= ~flags;
   }
 };
 
@@ -717,22 +775,18 @@ class alignas(gc::CellAlignBytes) CellWithTenuredGCPointer : public BaseCell {
   void setHeaderPtr(PtrT* newValue) {
     // As above, no flags are expected to be set here.
     MOZ_ASSERT(!IsInsideNursery(newValue));
-    PtrT::writeBarrierPre(headerPtr());
-    unsafeSetHeaderPtr(newValue);
+    PreWriteBarrier(headerPtr());
+    unbarrieredSetHeaderPtr(newValue);
   }
 
  public:
   PtrT* headerPtr() const {
-    // Currently we never observe any flags set here because this base class is
-    // only used for GC things that are always tenured (for which the nursery
-    // kind flags are also always clear). This means we don't need to use
-    // masking to get and set the pointer.
     staticAsserts();
     MOZ_ASSERT(this->flags() == 0);
-    return reinterpret_cast<PtrT*>(this->header_);
+    return reinterpret_cast<PtrT*>(uintptr_t(this->header_));
   }
 
-  void unsafeSetHeaderPtr(PtrT* newValue) {
+  void unbarrieredSetHeaderPtr(PtrT* newValue) {
     uintptr_t data = uintptr_t(newValue);
     MOZ_ASSERT(this->flags() == 0);
     MOZ_ASSERT((data & Cell::RESERVED_MASK) == 0);
@@ -741,6 +795,61 @@ class alignas(gc::CellAlignBytes) CellWithTenuredGCPointer : public BaseCell {
 
   static constexpr size_t offsetOfHeaderPtr() {
     return offsetof(CellWithTenuredGCPointer, header_);
+  }
+};
+
+void CellHeaderPostWriteBarrier(JSObject** ptr, JSObject* prev, JSObject* next);
+
+template <class PtrT>
+class alignas(gc::CellAlignBytes) TenuredCellWithGCPointer
+    : public TenuredCell {
+  static void staticAsserts() {
+    // These static asserts are not in class scope because the PtrT may not be
+    // defined when this class template is instantiated.
+    static_assert(
+        !std::is_pointer_v<PtrT>,
+        "PtrT should be the type of the referent, not of the pointer");
+    static_assert(
+        std::is_base_of_v<Cell, PtrT>,
+        "Only use TenuredCellWithGCPointer for pointers to GC things");
+    static_assert(
+        !std::is_base_of_v<TenuredCell, PtrT>,
+        "Don't use TenuredCellWithGCPointer for always-tenured GC things");
+  }
+
+ protected:
+  TenuredCellWithGCPointer() = default;
+  explicit TenuredCellWithGCPointer(PtrT* initial) { initHeaderPtr(initial); }
+
+  void initHeaderPtr(PtrT* initial) {
+    uintptr_t data = uintptr_t(initial);
+    MOZ_ASSERT((data & Cell::RESERVED_MASK) == 0);
+    this->header_ = data;
+    if (IsInsideNursery(initial)) {
+      CellHeaderPostWriteBarrier(headerPtrAddress(), nullptr, initial);
+    }
+  }
+
+  PtrT** headerPtrAddress() {
+    MOZ_ASSERT(this->flags() == 0);
+    return reinterpret_cast<PtrT**>(&this->header_);
+  }
+
+ public:
+  PtrT* headerPtr() const {
+    MOZ_ASSERT(this->flags() == 0);
+    return reinterpret_cast<PtrT*>(uintptr_t(this->header_));
+  }
+
+  void unbarrieredSetHeaderPtr(PtrT* newValue) {
+    uintptr_t data = uintptr_t(newValue);
+    MOZ_ASSERT(this->flags() == 0);
+    MOZ_ASSERT((data & Cell::RESERVED_MASK) == 0);
+    this->header_ = data;
+  }
+
+  static constexpr size_t offsetOfHeaderPtr() {
+    return offsetof(TenuredCellWithGCPointer, header_);
   }
 };
 

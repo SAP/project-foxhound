@@ -16,6 +16,8 @@
 #include "nsIPromptService.h"
 #include "nsIInputStream.h"
 #include "nsIOutputStream.h"
+#include "nsIPrefBranch.h"
+#include "nsIPrefService.h"
 #include "nsIStringBundle.h"
 #include "nsContentUtils.h"
 #include "nsCRT.h"
@@ -26,6 +28,7 @@
 
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Logging.h"
+#include "mozilla/SpinEventLoopUntil.h"
 
 using mozilla::LogLevel;
 
@@ -274,7 +277,8 @@ nsresult nsAutoConfig::downloadAutoConfig() {
        that mLoaded will be set to true in any case (success/failure)
     */
 
-    if (!mozilla::SpinEventLoopUntil([&]() { return mLoaded; })) {
+    if (!mozilla::SpinEventLoopUntil("nsAutoConfig::downloadAutoConfig"_ns,
+                                     [&]() { return mLoaded; })) {
       return NS_ERROR_FAILURE;
     }
 

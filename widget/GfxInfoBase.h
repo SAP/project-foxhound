@@ -16,7 +16,8 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
-#include "mozilla/dom/PContentParent.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/gfx/GraphicsMessages.h"
 #include "nsCOMPtr.h"
 #include "nsIGfxInfo.h"
 #include "nsIGfxInfoDebug.h"
@@ -55,6 +56,7 @@ class GfxInfoBase : public nsIGfxInfo,
 
   NS_IMETHOD GetMonitors(JSContext* cx,
                          JS::MutableHandleValue _retval) override;
+  NS_IMETHOD RefreshMonitors() override;
   NS_IMETHOD GetFailures(nsTArray<int32_t>& indices,
                          nsTArray<nsCString>& failures) override;
   NS_IMETHOD_(void) LogFailure(const nsACString& failure) override;
@@ -64,19 +66,15 @@ class GfxInfoBase : public nsIGfxInfo,
   NS_IMETHOD GetActiveCrashGuards(JSContext*,
                                   JS::MutableHandle<JS::Value>) override;
   NS_IMETHOD GetContentBackend(nsAString& aContentBackend) override;
+  NS_IMETHOD GetAzureCanvasBackend(nsAString& aBackend) override;
+  NS_IMETHOD GetAzureContentBackend(nsAString& aBackend) override;
   NS_IMETHOD GetUsingGPUProcess(bool* aOutValue) override;
   NS_IMETHOD GetWebRenderEnabled(bool* aWebRenderEnabled) override;
   NS_IMETHOD GetIsHeadless(bool* aIsHeadless) override;
-  NS_IMETHOD GetUsesTiling(bool* aUsesTiling) override;
-  NS_IMETHOD GetContentUsesTiling(bool* aUsesTiling) override;
-  NS_IMETHOD GetOffMainThreadPaintEnabled(
-      bool* aOffMainThreadPaintEnabled) override;
-  NS_IMETHOD GetOffMainThreadPaintWorkerCount(
-      int32_t* aOffMainThreadPaintWorkerCount) override;
   NS_IMETHOD GetTargetFrameRate(uint32_t* aTargetFrameRate) override;
 
   // Non-XPCOM method to get IPC data:
-  void GetAllFeatures(dom::XPCOMInitData& xpcomInit);
+  nsTArray<mozilla::gfx::GfxInfoFeatureStatus> GetAllFeatures();
 
   // Initialization function. If you override this, you must call this class's
   // version of Init first.
@@ -88,20 +86,26 @@ class GfxInfoBase : public nsIGfxInfo,
   virtual nsresult Init();
 
   NS_IMETHOD_(void) GetData() override;
-  NS_IMETHOD_(int32_t) GetMaxRefreshRate() override { return -1; }
+  NS_IMETHOD_(int32_t) GetMaxRefreshRate(bool* aMixed) override {
+    if (aMixed) {
+      *aMixed = false;
+    }
+    return -1;
+  }
 
   static void AddCollector(GfxInfoCollectorBase* collector);
   static void RemoveCollector(GfxInfoCollectorBase* collector);
 
   static nsTArray<GfxDriverInfo>* sDriverInfo;
-  static nsTArray<mozilla::dom::GfxInfoFeatureStatus>* sFeatureStatus;
+  static StaticAutoPtr<nsTArray<mozilla::gfx::GfxInfoFeatureStatus>>
+      sFeatureStatus;
   static bool sDriverInfoObserverInitialized;
   static bool sShutdownOccurred;
 
-  virtual nsString Model() { return EmptyString(); }
-  virtual nsString Hardware() { return EmptyString(); }
-  virtual nsString Product() { return EmptyString(); }
-  virtual nsString Manufacturer() { return EmptyString(); }
+  virtual nsString Model() { return u""_ns; }
+  virtual nsString Hardware() { return u""_ns; }
+  virtual nsString Product() { return u""_ns; }
+  virtual nsString Manufacturer() { return u""_ns; }
   virtual uint32_t OperatingSystemVersion() { return 0; }
   virtual uint32_t OperatingSystemBuild() { return 0; }
 
@@ -111,7 +115,7 @@ class GfxInfoBase : public nsIGfxInfo,
   virtual nsresult FindMonitors(JSContext* cx, JS::HandleObject array);
 
   static void SetFeatureStatus(
-      const nsTArray<mozilla::dom::GfxInfoFeatureStatus>& aFS);
+      nsTArray<mozilla::gfx::GfxInfoFeatureStatus>&& aFS);
 
  protected:
   virtual ~GfxInfoBase();

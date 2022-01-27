@@ -179,6 +179,59 @@ add_task(async function test_description_change_saved() {
   );
 });
 
+add_task(async function test_siteName_change_saved() {
+  await PlacesUtils.history.clear();
+
+  let TEST_URL = "http://mozilla.org/test_siteName_change_saved";
+  await PlacesTestUtils.addVisits(TEST_URL);
+  Assert.ok(await PlacesTestUtils.isPageInDB(TEST_URL));
+
+  let siteName = "Test site name";
+  await PlacesUtils.history.update({ url: TEST_URL, siteName });
+  let siteNameInDB = await PlacesTestUtils.fieldInDB(TEST_URL, "site_name");
+  Assert.equal(
+    siteName,
+    siteNameInDB,
+    "siteName should be updated via URL as expected"
+  );
+
+  siteName = "";
+  await PlacesUtils.history.update({ url: TEST_URL, siteName });
+  siteNameInDB = await PlacesTestUtils.fieldInDB(TEST_URL, "site_name");
+  Assert.strictEqual(
+    null,
+    siteNameInDB,
+    "an empty siteName should set it to null in the database"
+  );
+
+  let guid = await PlacesTestUtils.fieldInDB(TEST_URL, "guid");
+  siteName = "Test site name";
+  await PlacesUtils.history.update({ url: TEST_URL, guid, siteName });
+  siteNameInDB = await PlacesTestUtils.fieldInDB(TEST_URL, "site_name");
+  Assert.equal(
+    siteName,
+    siteNameInDB,
+    "siteName should be updated via GUID as expected"
+  );
+
+  siteName = "Test site name".repeat(1000);
+  await PlacesUtils.history.update({ url: TEST_URL, siteName });
+  siteNameInDB = await PlacesTestUtils.fieldInDB(TEST_URL, "site_name");
+  Assert.ok(
+    !!siteNameInDB.length < siteName.length,
+    "a long siteName should be truncated"
+  );
+
+  siteName = null;
+  await PlacesUtils.history.update({ url: TEST_URL, siteName });
+  siteNameInDB = await PlacesTestUtils.fieldInDB(TEST_URL, "site_name");
+  Assert.strictEqual(
+    siteName,
+    siteNameInDB,
+    "a null siteName should set it to null in the database"
+  );
+});
+
 add_task(async function test_previewImageURL_change_saved() {
   await PlacesUtils.history.clear();
 
@@ -363,8 +416,8 @@ add_task(async function test_simple_change_annotations() {
     {
       content: "testContent",
       flags: 0,
-      type: Ci.nsIAnnotationService.TYPE_STRING,
-      expiration: Ci.nsIAnnotationService.EXPIRE_NEVER,
+      type: PlacesUtils.history.ANNOTATION_TYPE_STRING,
+      expiration: PlacesUtils.history.ANNOTATION_EXPIRE_NEVER,
     },
     annotationInfo[0],
     "Should have stored the correct annotation data in the db"
@@ -425,8 +478,8 @@ add_task(async function test_simple_change_annotations() {
     {
       content: 1234,
       flags: 0,
-      type: Ci.nsIAnnotationService.TYPE_INT64,
-      expiration: Ci.nsIAnnotationService.EXPIRE_NEVER,
+      type: PlacesUtils.history.ANNOTATION_TYPE_INT64,
+      expiration: PlacesUtils.history.ANNOTATION_EXPIRE_NEVER,
     },
     annotationInfo[0],
     "Should have updated the annotation data in the db"

@@ -13,6 +13,7 @@
 #include "SVGCircleElement.h"
 #include "SVGEllipseElement.h"
 #include "SVGGeometryProperty.h"
+#include "SVGPathElement.h"
 #include "SVGRectElement.h"
 #include "mozilla/dom/DOMPointBinding.h"
 #include "mozilla/dom/SVGLengthBinding.h"
@@ -53,7 +54,7 @@ nsresult SVGGeometryElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
 }
 
 bool SVGGeometryElement::IsNodeOfType(uint32_t aFlags) const {
-  return !(aFlags & ~eSHAPE);
+  return !(aFlags & ~(eSHAPE | eUSE_TARGET));
 }
 
 bool SVGGeometryElement::AttributeDefinesGeometry(const nsAtom* aName) {
@@ -63,8 +64,8 @@ bool SVGGeometryElement::AttributeDefinesGeometry(const nsAtom* aName) {
 
   // Check for SVGAnimatedLength attribute
   LengthAttributesInfo info = GetLengthInfo();
-  for (uint32_t i = 0; i < info.mLengthCount; i++) {
-    if (aName == info.mLengthInfo[i].mName) {
+  for (uint32_t i = 0; i < info.mCount; i++) {
+    if (aName == info.mInfos[i].mName) {
       return true;
     }
   }
@@ -76,8 +77,8 @@ bool SVGGeometryElement::GeometryDependsOnCoordCtx() {
   // Check the SVGAnimatedLength attribute
   LengthAttributesInfo info =
       const_cast<SVGGeometryElement*>(this)->GetLengthInfo();
-  for (uint32_t i = 0; i < info.mLengthCount; i++) {
-    if (info.mLengths[i].GetSpecifiedUnitType() ==
+  for (uint32_t i = 0; i < info.mCount; i++) {
+    if (info.mValues[i].GetSpecifiedUnitType() ==
         SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE) {
       return true;
     }
@@ -95,9 +96,8 @@ already_AddRefed<Path> SVGGeometryElement::GetOrBuildPath(
   // and it's not a capturing drawtarget. A capturing DT might start using the
   // the Path object on a different thread (OMTP), and we might have a data race
   // if we keep a handle to it.
-  bool cacheable = (aDrawTarget->GetBackendType() ==
-                    gfxPlatform::GetPlatform()->GetDefaultContentBackend()) &&
-                   !aDrawTarget->IsCaptureDT();
+  bool cacheable = aDrawTarget->GetBackendType() ==
+                   gfxPlatform::GetPlatform()->GetDefaultContentBackend();
 
   if (cacheable && mCachedPath && mCachedPath->GetFillRule() == aFillRule &&
       aDrawTarget->GetBackendType() == mCachedPath->GetBackendType()) {
@@ -133,16 +133,19 @@ already_AddRefed<Path> SVGGeometryElement::GetOrBuildPathForHitTest() {
 
 bool SVGGeometryElement::IsGeometryChangedViaCSS(
     ComputedStyle const& aNewStyle, ComputedStyle const& aOldStyle) const {
-  if (IsSVGElement(nsGkAtoms::rect)) {
+  nsAtom* name = NodeInfo()->NameAtom();
+  if (name == nsGkAtoms::rect) {
     return SVGRectElement::IsLengthChangedViaCSS(aNewStyle, aOldStyle);
   }
-
-  if (IsSVGElement(nsGkAtoms::circle)) {
+  if (name == nsGkAtoms::circle) {
     return SVGCircleElement::IsLengthChangedViaCSS(aNewStyle, aOldStyle);
   }
-
-  if (IsSVGElement(nsGkAtoms::ellipse)) {
+  if (name == nsGkAtoms::ellipse) {
     return SVGEllipseElement::IsLengthChangedViaCSS(aNewStyle, aOldStyle);
+  }
+  if (name == nsGkAtoms::path) {
+    return StaticPrefs::layout_css_d_property_enabled() &&
+           SVGPathElement::IsDPropertyChangedViaCSS(aNewStyle, aOldStyle);
   }
   return false;
 }
@@ -226,15 +229,15 @@ float SVGGeometryElement::GetTotalLength() {
   return flat ? flat->ComputeLength() : 0.f;
 }
 
-already_AddRefed<nsISVGPoint> SVGGeometryElement::GetPointAtLength(
+already_AddRefed<DOMSVGPoint> SVGGeometryElement::GetPointAtLength(
     float distance, ErrorResult& rv) {
   RefPtr<Path> path = GetOrBuildPathForMeasuring();
   if (!path) {
-    rv.Throw(NS_ERROR_FAILURE);
+    rv.ThrowInvalidStateError("No path available for measuring");
     return nullptr;
   }
 
-  nsCOMPtr<nsISVGPoint> point = new DOMSVGPoint(path->ComputePointAtLength(
+  RefPtr<DOMSVGPoint> point = new DOMSVGPoint(path->ComputePointAtLength(
       clamped(distance, 0.f, path->ComputeLength())));
   return point.forget();
 }

@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 use std::error;
 use std::fmt;
 
@@ -60,9 +64,9 @@ fn empty_string() -> String {
     "".to_owned()
 }
 
-impl Into<Error> for MarionetteError {
-    fn into(self) -> Error {
-        Error::Marionette(self)
+impl From<MarionetteError> for Error {
+    fn from(error: MarionetteError) -> Error {
+        Error::Marionette(error)
     }
 }
 

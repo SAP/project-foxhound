@@ -10,8 +10,7 @@
 #include "mozilla/css/Rule.h"
 #include "mozilla/dom/CSSKeyframeRule.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class CSSKeyframeList;
 
@@ -32,8 +31,11 @@ class CSSKeyframesRule final : public css::Rule {
   void DropSheetReference() final;
 
   // WebIDL interface
-  uint16_t Type() const final { return CSSRule_Binding::KEYFRAMES_RULE; }
-  void GetCssText(nsAString& aCssText) const final;
+  StyleCssRuleType Type() const final;
+  const RawServoKeyframesRule* Raw() const { return mRawRule.get(); }
+  void SetRawAfterClone(RefPtr<RawServoKeyframesRule>);
+
+  void GetCssText(nsACString& aCssText) const final;
   void GetName(nsAString& aName) const;
   void SetName(const nsAString& aName);
   CSSRuleList* CssRules();
@@ -57,7 +59,6 @@ class CSSKeyframesRule final : public css::Rule {
   RefPtr<CSSKeyframeList> mKeyframeList;  // lazily constructed
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_CSSKeyframesRule_h

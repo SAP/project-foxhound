@@ -25,30 +25,6 @@ body {
   flex: 1;
 }
 
-.illustrated #errorPageContainer {
-  min-height: 300px;
-  display: flex;
-  flex-direction: column;
-  background-position: left center;
-  background-repeat: no-repeat;
-  background-size: 38%;
-}
-
-.illustrated #errorPageContainer:dir(rtl) {
-  background-position-x: right;
-}
-
-.illustrated .title {
-  background: none;
-  padding-inline-start: 0;
-  margin-inline-start: 0;
-}
-
-.illustrated #text-container {
-  margin: auto;
-  padding-inline-start: 38%;
-}
-
 @media only screen and (max-width: 959px) {
   body {
     padding: 0 75px;
@@ -111,12 +87,10 @@ body {
   }
 }
 
-/* For small window height, shift the stripes up by 10px.
- * We could just change the background size, but that changes
- * the angle of the stripes so just shifting up is easier. */
 @media only screen and (max-height: 480px) {
   body {
-    background-position: 10px -10px;
+    /* Note: if you change the top padding, also update the image positioning
+     * media query in aboutNetError.css for the certificate error case. */
     padding-top: 38px;
     /* We get rid of bottom padding for width < 640px, but
      * for height < 480px a bit of space between the content

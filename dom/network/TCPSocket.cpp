@@ -9,6 +9,8 @@
 #include "TCPSocket.h"
 #include "TCPServerSocket.h"
 #include "TCPSocketChild.h"
+#include "TCPSocketParent.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/TCPSocketBinding.h"
 #include "mozilla/dom/TCPSocketErrorEvent.h"
@@ -16,6 +18,7 @@
 #include "mozilla/dom/TCPSocketEvent.h"
 #include "mozilla/dom/TCPSocketEventBinding.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsIArrayBufferInputStream.h"
 #include "nsISocketTransportService.h"
@@ -23,14 +26,24 @@
 #include "nsIMultiplexInputStream.h"
 #include "nsIAsyncStreamCopier.h"
 #include "nsIInputStream.h"
+#include "nsIInputStreamPump.h"
 #include "nsIBinaryInputStream.h"
 #include "nsIScriptableInputStream.h"
 #include "nsIAsyncInputStream.h"
 #include "nsISupportsPrimitives.h"
 #include "nsITransport.h"
+#include "nsIObserverService.h"
 #include "nsIOutputStream.h"
 #include "nsINSSErrorsService.h"
 #include "nsISSLSocketControl.h"
+#include "nsIProtocolProxyService.h"
+#include "nsICancelable.h"
+#include "nsIChannel.h"
+#include "nsIURIMutator.h"
+#include "nsNetCID.h"
+#include "nsNetUtil.h"
+#include "nsServiceManagerUtils.h"
+#include "nsString.h"
 #include "nsStringStream.h"
 #include "secerr.h"
 #include "sslerr.h"
@@ -125,6 +138,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TCPSocket)
   NS_INTERFACE_MAP_ENTRY(nsIObserver)
   NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
   NS_INTERFACE_MAP_ENTRY(nsITCPSocketCallback)
+  NS_INTERFACE_MAP_ENTRY(nsIProtocolProxyCallback)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 TCPSocket::TCPSocket(nsIGlobalObject* aGlobal, const nsAString& aHost,
@@ -215,7 +229,7 @@ nsresult TCPSocket::InitWithUnconnectedTransport(
   return NS_OK;
 }
 
-nsresult TCPSocket::Init() {
+nsresult TCPSocket::Init(nsIProxyInfo* aProxyInfo) {
   nsCOMPtr<nsIObserverService> obs =
       do_GetService("@mozilla.org/observer-service;1");
   if (obs) {
@@ -246,8 +260,9 @@ nsresult TCPSocket::Init() {
     socketTypes.AppendElement("starttls"_ns);
   }
   nsCOMPtr<nsISocketTransport> transport;
-  nsresult rv = sts->CreateTransport(socketTypes, NS_ConvertUTF16toUTF8(mHost),
-                                     mPort, nullptr, getter_AddRefs(transport));
+  nsresult rv =
+      sts->CreateTransport(socketTypes, NS_ConvertUTF16toUTF8(mHost), mPort,
+                           aProxyInfo, nullptr, getter_AddRefs(transport));
   NS_ENSURE_SUCCESS(rv, rv);
 
   return InitWithUnconnectedTransport(transport);
@@ -272,7 +287,7 @@ nsresult TCPSocket::InitWithTransport(nsISocketTransport* aTransport) {
 
   nsAutoCString host;
   mTransport->GetHost(host);
-  mHost = NS_ConvertUTF8toUTF16(host);
+  CopyUTF8toUTF16(host, mHost);
   int32_t port;
   mTransport->GetPort(&port);
   mPort = port;
@@ -330,6 +345,19 @@ CopierCallbacks::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
 }
 }  // unnamed namespace
 
+void TCPSocket::CalculateBufferedAmount() {
+  // Let's update the buffered amount of data.
+  uint64_t bufferedAmount = 0;
+  for (uint32_t i = 0, len = mPendingData.Length(); i < len; ++i) {
+    nsCOMPtr<nsIInputStream> stream = mPendingData[i];
+    uint64_t available = 0;
+    if (NS_SUCCEEDED(stream->Available(&available))) {
+      bufferedAmount += available;
+    }
+  }
+  mBufferedAmount = bufferedAmount;
+}
+
 nsresult TCPSocket::EnsureCopying() {
   if (mAsyncCopierActive) {
     return NS_OK;
@@ -375,17 +403,7 @@ nsresult TCPSocket::EnsureCopying() {
 
 void TCPSocket::NotifyCopyComplete(nsresult aStatus) {
   mAsyncCopierActive = false;
-
-  // Let's update the buffered amount of data.
-  uint64_t bufferedAmount = 0;
-  for (uint32_t i = 0, len = mPendingData.Length(); i < len; ++i) {
-    nsCOMPtr<nsIInputStream> stream = mPendingData[i];
-    uint64_t available = 0;
-    if (NS_SUCCEEDED(stream->Available(&available))) {
-      bufferedAmount += available;
-    }
-  }
-  mBufferedAmount = bufferedAmount;
+  CalculateBufferedAmount();
 
   if (mSocketBridgeParent && mSocketBridgeParent->IPCOpen()) {
     mozilla::Unused << mSocketBridgeParent->SendUpdateBufferedAmount(
@@ -397,7 +415,7 @@ void TCPSocket::NotifyCopyComplete(nsresult aStatus) {
     return;
   }
 
-  if (bufferedAmount != 0) {
+  if (BufferedAmount() != 0) {
     EnsureCopying();
     return;
   }
@@ -413,7 +431,7 @@ void TCPSocket::NotifyCopyComplete(nsresult aStatus) {
     // If we have pending data, we should send them, or fire
     // a drain event if we are waiting for it.
     if (!mPendingDataAfterStartTLS.IsEmpty()) {
-      mPendingData.SwapElements(mPendingDataAfterStartTLS);
+      mPendingData = std::move(mPendingDataAfterStartTLS);
       EnsureCopying();
       return;
     }
@@ -446,9 +464,10 @@ void TCPSocket::ActivateTLS() {
 }
 
 NS_IMETHODIMP
-TCPSocket::FireErrorEvent(const nsAString& aName, const nsAString& aType) {
+TCPSocket::FireErrorEvent(const nsAString& aName, const nsAString& aType,
+                          nsresult aErrorCode) {
   if (mSocketBridgeParent) {
-    mSocketBridgeParent->FireErrorEvent(aName, aType, mReadyState);
+    mSocketBridgeParent->FireErrorEvent(aName, aType, aErrorCode, mReadyState);
     return NS_OK;
   }
 
@@ -457,6 +476,8 @@ TCPSocket::FireErrorEvent(const nsAString& aName, const nsAString& aType) {
   init.mCancelable = false;
   init.mName = aName;
   init.mMessage = aType;
+  static_assert(std::is_same_v<std::underlying_type_t<nsresult>, uint32_t>);
+  init.mErrorCode = uint32_t(aErrorCode);
 
   RefPtr<TCPSocketErrorEvent> event =
       TCPSocketErrorEvent::Constructor(this, u"error"_ns, init);
@@ -683,7 +704,7 @@ nsresult TCPSocket::MaybeReportErrorAndCloseIfOpen(nsresult status) {
       }
     }
 
-    Unused << NS_WARN_IF(NS_FAILED(FireErrorEvent(errName, errorType)));
+    Unused << NS_WARN_IF(NS_FAILED(FireErrorEvent(errName, errorType, status)));
   }
 
   return FireEvent(u"close"_ns);
@@ -700,6 +721,11 @@ void TCPSocket::CloseHelper(bool waitForUnsentData) {
   }
 
   mReadyState = TCPReadyState::Closing;
+
+  if (mProxyRequest) {
+    mProxyRequest->Cancel(NS_BINDING_ABORTED);
+    mProxyRequest = nullptr;
+  }
 
   if (mSocketBridgeChild) {
     mSocketBridgeChild->SendClose();
@@ -812,6 +838,7 @@ bool TCPSocket::Send(nsIInputStream* aStream, uint32_t aByteLength) {
     mPendingData.AppendElement(aStream);
   }
 
+  CalculateBufferedAmount();
   EnsureCopying();
 
   return !bufferFull;
@@ -822,16 +849,15 @@ TCPReadyState TCPSocket::ReadyState() { return mReadyState; }
 TCPSocketBinaryType TCPSocket::BinaryType() {
   if (mUseArrayBuffers) {
     return TCPSocketBinaryType::Arraybuffer;
-  } else {
-    return TCPSocketBinaryType::String;
   }
+  return TCPSocketBinaryType::String;
 }
 
 already_AddRefed<TCPSocket> TCPSocket::CreateAcceptedSocket(
     nsIGlobalObject* aGlobal, nsISocketTransport* aTransport,
     bool aUseArrayBuffers) {
   RefPtr<TCPSocket> socket =
-      new TCPSocket(aGlobal, EmptyString(), 0, false, aUseArrayBuffers);
+      new TCPSocket(aGlobal, u""_ns, 0, false, aUseArrayBuffers);
   nsresult rv = socket->InitWithTransport(aTransport);
   NS_ENSURE_SUCCESS(rv, nullptr);
   return socket.forget();
@@ -840,7 +866,7 @@ already_AddRefed<TCPSocket> TCPSocket::CreateAcceptedSocket(
 already_AddRefed<TCPSocket> TCPSocket::CreateAcceptedSocket(
     nsIGlobalObject* aGlobal, TCPSocketChild* aBridge, bool aUseArrayBuffers) {
   RefPtr<TCPSocket> socket =
-      new TCPSocket(aGlobal, EmptyString(), 0, false, aUseArrayBuffers);
+      new TCPSocket(aGlobal, u""_ns, 0, false, aUseArrayBuffers);
   socket->InitWithSocketChild(aBridge);
   return socket.forget();
 }
@@ -852,13 +878,71 @@ already_AddRefed<TCPSocket> TCPSocket::Constructor(
   RefPtr<TCPSocket> socket =
       new TCPSocket(global, aHost, aPort, aOptions.mUseSecureTransport,
                     aOptions.mBinaryType == TCPSocketBinaryType::Arraybuffer);
-  nsresult rv = socket->Init();
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    aRv.Throw(rv);
-    return nullptr;
-  }
+  socket->ResolveProxy();
 
   return socket.forget();
+}
+
+nsresult TCPSocket::ResolveProxy() {
+  nsresult rv;
+  nsCOMPtr<nsIProtocolProxyService> pps =
+      do_GetService(NS_PROTOCOLPROXYSERVICE_CONTRACTID, &rv);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  nsCOMPtr<nsIURI> uri;
+  nsCString spec = mSsl ? "https://"_ns : "http://"_ns;
+  bool maybeIPv6 = mHost.FindChar(':') != -1;
+  if (maybeIPv6) spec.Append('[');
+  if (!AppendUTF16toUTF8(mHost, spec, fallible)) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+  if (maybeIPv6) spec.Append(']');
+  rv = NS_MutateURI(NS_STANDARDURLMUTATOR_CONTRACTID)
+           .SetSpec(spec)
+           .SetPort(mPort)
+           .Finalize(uri);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  nsCOMPtr<nsIChannel> channel;
+  rv = NS_NewChannel(getter_AddRefs(channel), uri,
+                     nsContentUtils::GetSystemPrincipal(),
+                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+                     nsIContentPolicy::TYPE_OTHER);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = pps->AsyncResolve(channel,
+                         nsIProtocolProxyService::RESOLVE_PREFER_SOCKS_PROXY,
+                         this, nullptr, getter_AddRefs(mProxyRequest));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+TCPSocket::OnProxyAvailable(nsICancelable* aRequest, nsIChannel* aChannel,
+                            nsIProxyInfo* aProxyInfo, nsresult aResult) {
+  mProxyRequest = nullptr;
+  if (NS_SUCCEEDED(aResult) && aProxyInfo) {
+    nsCString proxyType;
+    nsresult rv = aProxyInfo->GetType(proxyType);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      Close();
+      return rv;
+    }
+    // Only supports SOCKS proxy for now.
+    if (proxyType == "socks" || proxyType == "socks4") {
+      return Init(aProxyInfo);
+    }
+  }
+  return Init(nullptr);
 }
 
 nsresult TCPSocket::CreateInputStreamPump() {
@@ -878,7 +962,7 @@ nsresult TCPSocket::CreateInputStreamPump() {
     mInputStreamPump->Suspend();
   }
 
-  rv = mInputStreamPump->AsyncRead(this, nullptr);
+  rv = mInputStreamPump->AsyncRead(this);
   NS_ENSURE_SUCCESS(rv, rv);
   return NS_OK;
 }

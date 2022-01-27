@@ -53,6 +53,8 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 
+#include "Orientation.h"
+
 #ifdef LoadImage
 // Undefine LoadImage to prevent naming conflict with Windows.
 #  undef LoadImage
@@ -96,14 +98,11 @@ nsImageLoadingContent::nsImageLoadingContent()
       mObserverList(nullptr),
       mOutstandingDecodePromises(0),
       mRequestGeneration(0),
-      mImageBlockingStatus(nsIContentPolicy::ACCEPT),
       mLoadingEnabled(true),
       mIsImageStateForced(false),
       mLoading(false),
       // mBroken starts out true, since an image without a URI is broken....
       mBroken(true),
-      mUserDisabled(false),
-      mSuppressed(false),
       mNewRequestsWillNeedAnimationReset(false),
       mUseUrgentStartForChannel(false),
       mLazyLoading(false),
@@ -549,10 +548,6 @@ void nsImageLoadingContent::MaybeForceSyncDecoding(
   }
 }
 
-int16_t nsImageLoadingContent::GetImageBlockingStatus() {
-  return ImageBlockingStatus();
-}
-
 static void ReplayImageStatus(imgIRequest* aRequest,
                               imgINotificationObserver* aObserver) {
   if (!aRequest) {
@@ -912,8 +907,7 @@ nsImageLoadingContent::GetRequestType(imgIRequest* aRequest,
   return result.StealNSResult();
 }
 
-already_AddRefed<nsIURI> nsImageLoadingContent::GetCurrentURI(
-    ErrorResult& aError) {
+already_AddRefed<nsIURI> nsImageLoadingContent::GetCurrentURI() {
   nsCOMPtr<nsIURI> uri;
   if (mCurrentRequest) {
     mCurrentRequest->GetURI(getter_AddRefs(uri));
@@ -927,10 +921,8 @@ already_AddRefed<nsIURI> nsImageLoadingContent::GetCurrentURI(
 NS_IMETHODIMP
 nsImageLoadingContent::GetCurrentURI(nsIURI** aURI) {
   NS_ENSURE_ARG_POINTER(aURI);
-
-  ErrorResult result;
-  *aURI = GetCurrentURI(result).take();
-  return result.StealNSResult();
+  *aURI = GetCurrentURI().take();
+  return NS_OK;
 }
 
 already_AddRefed<nsIURI> nsImageLoadingContent::GetCurrentRequestFinalURI() {
@@ -938,7 +930,6 @@ already_AddRefed<nsIURI> nsImageLoadingContent::GetCurrentRequestFinalURI() {
   if (mCurrentRequest) {
     mCurrentRequest->GetFinalURI(getter_AddRefs(uri));
   }
-
   return uri.forget();
 }
 
@@ -976,8 +967,8 @@ nsImageLoadingContent::LoadImageWithChannel(nsIChannel* aChannel,
 
   // Do the load.
   RefPtr<imgRequestProxy>& req = PrepareNextRequest(eImageLoadType_Normal);
-  nsresult rv = loader->LoadImageWithChannel(aChannel, this, doc,
-                                             aListener, getter_AddRefs(req));
+  nsresult rv = loader->LoadImageWithChannel(aChannel, this, doc, aListener,
+                                             getter_AddRefs(req));
   if (NS_SUCCEEDED(rv)) {
     CloneScriptedRequests(req);
     TrackImage(req);
@@ -1008,9 +999,8 @@ void nsImageLoadingContent::ForceReload(bool aNotify, ErrorResult& aError) {
   ImageLoadType loadType = (mCurrentRequestFlags & REQUEST_IS_IMAGESET)
                                ? eImageLoadType_Imageset
                                : eImageLoadType_Normal;
-  nsresult rv =
-      LoadImage(currentURI, true, aNotify, loadType,
-                nsIRequest::VALIDATE_ALWAYS | LoadFlags(), true, nullptr);
+  nsresult rv = LoadImage(currentURI, true, aNotify, loadType,
+                          nsIRequest::VALIDATE_ALWAYS | LoadFlags());
   if (NS_FAILED(rv)) {
     aError.Throw(rv);
   }
@@ -1031,38 +1021,21 @@ nsresult nsImageLoadingContent::LoadImage(const nsAString& aNewURI, bool aForce,
     return NS_OK;
   }
 
-  // Pending load/error events need to be canceled in some situations. This
-  // is not documented in the spec, but can cause site compat problems if not
-  // done. See bug 1309461 and https://github.com/whatwg/html/issues/1872.
-  CancelPendingEvent();
-
-  if (aNewURI.IsEmpty()) {
-    // Cancel image requests and then fire only error event per spec.
-    CancelImageRequests(aNotify);
-    // Mark error event as cancelable only for src="" case, since only this
-    // error causes site compat problem (bug 1308069) for now.
-    FireEvent(u"error"_ns, true);
-    return NS_OK;
-  }
-
-  // Fire loadstart event
-  FireEvent(u"loadstart"_ns);
-
   // Parse the URI string to get image URI
   nsCOMPtr<nsIURI> imageURI;
-  nsresult rv = StringToURI(aNewURI, doc, getter_AddRefs(imageURI));
-  NS_ENSURE_SUCCESS(rv, rv);
-  // XXXbiesi fire onerror if that failed?
+  if (!aNewURI.IsEmpty()) {
+    Unused << StringToURI(aNewURI, doc, getter_AddRefs(imageURI));
+  }
 
-  return LoadImage(imageURI, aForce, aNotify, aImageLoadType, LoadFlags(),
-                   false, doc, aTriggeringPrincipal);
+  return LoadImage(imageURI, aForce, aNotify, aImageLoadType, LoadFlags(), doc,
+                   aTriggeringPrincipal);
 }
 
 nsresult nsImageLoadingContent::LoadImage(nsIURI* aNewURI, bool aForce,
                                           bool aNotify,
                                           ImageLoadType aImageLoadType,
                                           nsLoadFlags aLoadFlags,
-                                          bool aLoadStart, Document* aDocument,
+                                          Document* aDocument,
                                           nsIPrincipal* aTriggeringPrincipal) {
   MOZ_ASSERT(!mIsStartingImageLoad, "some evil code is reentering LoadImage.");
   if (mIsStartingImageLoad) {
@@ -1074,10 +1047,19 @@ nsresult nsImageLoadingContent::LoadImage(nsIURI* aNewURI, bool aForce,
   // done. See bug 1309461 and https://github.com/whatwg/html/issues/1872.
   CancelPendingEvent();
 
-  // Fire loadstart event if required
-  if (aLoadStart) {
-    FireEvent(u"loadstart"_ns);
+  if (!aNewURI) {
+    // Cancel image requests and then fire only error event per spec.
+    CancelImageRequests(aNotify);
+    if (aImageLoadType == eImageLoadType_Normal) {
+      // Mark error event as cancelable only for src="" case, since only this
+      // error causes site compat problem (bug 1308069) for now.
+      FireEvent(u"error"_ns, true);
+    }
+    return NS_OK;
   }
+
+  // Fire loadstart event if required
+  FireEvent(u"loadstart"_ns);
 
   if (!mLoadingEnabled) {
     // XXX Why fire an error here? seems like the callers to SetLoadingEnabled
@@ -1109,11 +1091,8 @@ nsresult nsImageLoadingContent::LoadImage(nsIURI* aNewURI, bool aForce,
   // instead? (It seems we only check ShouldLoadImages in HTMLImageElement,
   // which seems wrong...)
   if (aDocument->IsLoadedAsData() && !aDocument->IsStaticDocument()) {
-    // This is the only codepath on which we can reach SetBlockedRequest while
-    // our pending request exists.  Just clear it out here if we do have one.
+    // Clear our pending request if we do have one.
     ClearPendingRequest(NS_BINDING_ABORTED, Some(OnNonvisible::DiscardImages));
-
-    SetBlockedRequest(nsIContentPolicy::REJECT_REQUEST);
 
     FireEvent(u"error"_ns);
     FireEvent(u"loadend"_ns);
@@ -1122,9 +1101,9 @@ nsresult nsImageLoadingContent::LoadImage(nsIURI* aNewURI, bool aForce,
 
   // URI equality check.
   //
-  // We skip the equality check if our current image was blocked, since in that
+  // We skip the equality check if we don't have a current image, since in that
   // case we really do want to try loading again.
-  if (!aForce && NS_CP_ACCEPTED(mImageBlockingStatus)) {
+  if (!aForce && mCurrentRequest) {
     nsCOMPtr<nsIURI> currentURI;
     GetCurrentURI(getter_AddRefs(currentURI));
     bool equal;
@@ -1184,6 +1163,14 @@ nsresult nsImageLoadingContent::LoadImage(nsIURI* aNewURI, bool aForce,
   aDocument->ForgetImagePreload(aNewURI);
 
   if (NS_SUCCEEDED(rv)) {
+    // Based on performance testing unsuppressing painting soon after the page
+    // has gotten an image may improve visual metrics.
+    if (Document* doc = element->GetComposedDoc()) {
+      if (PresShell* shell = doc->GetPresShell()) {
+        shell->TryUnsuppressPaintingSoon();
+      }
+    }
+
     CloneScriptedRequests(req);
     TrackImage(req);
     ResetAnimationIfNeeded();
@@ -1211,7 +1198,9 @@ nsresult nsImageLoadingContent::LoadImage(nsIURI* aNewURI, bool aForce,
     MOZ_ASSERT(!req, "Shouldn't have non-null request here");
     // If we don't have a current URI, we might as well store this URI so people
     // know what we tried (and failed) to load.
-    if (!mCurrentRequest) mCurrentURI = aNewURI;
+    if (!mCurrentRequest) {
+      mCurrentURI = aNewURI;
+    }
 
     FireEvent(u"error"_ns);
     FireEvent(u"loadend"_ns);
@@ -1226,41 +1215,34 @@ void nsImageLoadingContent::ForceImageState(bool aForce,
   mForcedImageState = EventStates(aState);
 }
 
-uint32_t nsImageLoadingContent::NaturalWidth() {
+CSSIntSize nsImageLoadingContent::GetWidthHeightForImage() {
+  Element* element = AsContent()->AsElement();
+  if (nsIFrame* frame = element->GetPrimaryFrame(FlushType::Layout)) {
+    return CSSIntSize::FromAppUnitsRounded(frame->GetContentRect().Size());
+  }
+  const nsAttrValue* value;
   nsCOMPtr<imgIContainer> image;
   if (mCurrentRequest) {
     mCurrentRequest->GetImage(getter_AddRefs(image));
   }
 
-  int32_t size = 0;
-  if (image) {
-    if (image->GetOrientation().SwapsWidthAndHeight() &&
-        !image->HandledOrientation() &&
-        StaticPrefs::image_honor_orientation_metadata_natural_size()) {
-      Unused << image->GetHeight(&size);
-    } else {
-      Unused << image->GetWidth(&size);
-    }
-  }
-  return size;
-}
-
-uint32_t nsImageLoadingContent::NaturalHeight() {
-  nsCOMPtr<imgIContainer> image;
-  if (mCurrentRequest) {
-    mCurrentRequest->GetImage(getter_AddRefs(image));
+  CSSIntSize size;
+  if ((value = element->GetParsedAttr(nsGkAtoms::width)) &&
+      value->Type() == nsAttrValue::eInteger) {
+    size.width = value->GetIntegerValue();
+  } else if (image) {
+    image->GetWidth(&size.width);
   }
 
-  int32_t size = 0;
-  if (image) {
-    if (image->GetOrientation().SwapsWidthAndHeight() &&
-        !image->HandledOrientation() &&
-        StaticPrefs::image_honor_orientation_metadata_natural_size()) {
-      Unused << image->GetWidth(&size);
-    } else {
-      Unused << image->GetHeight(&size);
-    }
+  if ((value = element->GetParsedAttr(nsGkAtoms::height)) &&
+      value->Type() == nsAttrValue::eInteger) {
+    size.height = value->GetIntegerValue();
+  } else if (image) {
+    image->GetHeight(&size.height);
   }
+
+  NS_ASSERTION(size.width >= 0, "negative width");
+  NS_ASSERTION(size.height >= 0, "negative height");
   return size;
 }
 
@@ -1273,12 +1255,6 @@ EventStates nsImageLoadingContent::ImageState() const {
 
   if (mBroken) {
     states |= NS_EVENT_STATE_BROKEN;
-  }
-  if (mUserDisabled) {
-    states |= NS_EVENT_STATE_USERDISABLED;
-  }
-  if (mSuppressed) {
-    states |= NS_EVENT_STATE_SUPPRESSED;
   }
   if (mLoading) {
     states |= NS_EVENT_STATE_LOADING;
@@ -1300,16 +1276,11 @@ void nsImageLoadingContent::UpdateImageState(bool aNotify) {
 
   nsIContent* thisContent = AsContent();
 
-  mLoading = mBroken = mUserDisabled = mSuppressed = false;
+  mLoading = mBroken = false;
 
-  // If we were blocked by server-based content policy, we claim to be
-  // suppressed.  If we were blocked by type-based content policy, we claim to
-  // be user-disabled.  Otherwise, claim to be broken.
-  if (mImageBlockingStatus == nsIContentPolicy::REJECT_SERVER) {
-    mSuppressed = true;
-  } else if (mImageBlockingStatus == nsIContentPolicy::REJECT_TYPE) {
-    mUserDisabled = true;
-  } else if (!mCurrentRequest) {
+  // If we were blocked, we're broken, so are we if we don't have an image
+  // request at all or the image has errored.
+  if (!mCurrentRequest) {
     if (!mLazyLoading) {
       // In case of non-lazy loading, no current request means error, since we
       // weren't disabled or suppressed
@@ -1427,34 +1398,8 @@ RefPtr<imgRequestProxy>& nsImageLoadingContent::PrepareNextRequest(
                                    : PrepareCurrentRequest(aImageLoadType);
 }
 
-void nsImageLoadingContent::SetBlockedRequest(int16_t aContentDecision) {
-  // If this is not calling from LoadImage, for example, from ServiceWorker,
-  // bail out.
-  if (!mIsStartingImageLoad) {
-    return;
-  }
-
-  // Sanity
-  MOZ_ASSERT(!NS_CP_ACCEPTED(aContentDecision), "Blocked but not?");
-
-  // We should never have a pending request after we got blocked.
-  MOZ_ASSERT(!mPendingRequest, "mPendingRequest should be null.");
-
-  if (HaveSize(mCurrentRequest)) {
-    // PreparePendingRequest set mPendingRequestFlags, now since we've decided
-    // to block it, we reset it back to 0.
-    mPendingRequestFlags = 0;
-  } else {
-    mImageBlockingStatus = aContentDecision;
-  }
-}
-
 RefPtr<imgRequestProxy>& nsImageLoadingContent::PrepareCurrentRequest(
     ImageLoadType aImageLoadType) {
-  // Blocked images go through SetBlockedRequest, which is a separate path. For
-  // everything else, we're unblocked.
-  mImageBlockingStatus = nsIContentPolicy::ACCEPT;
-
   // Get rid of anything that was there previously.
   ClearCurrentRequest(NS_BINDING_ABORTED, Some(OnNonvisible::DiscardImages));
 

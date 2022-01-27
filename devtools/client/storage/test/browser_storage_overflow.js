@@ -9,14 +9,13 @@
 const ITEMS_PER_PAGE = 50;
 
 add_task(async function() {
-  await openTabAndSetupStorage(MAIN_DOMAIN + "storage-overflow.html");
+  await openTabAndSetupStorage(MAIN_DOMAIN_SECURED + "storage-overflow.html");
 
   info("Run the tests with short DevTools");
   await runTests();
 
   info("Close Toolbox");
-  const target = await TargetFactory.forTab(gBrowser.selectedTab);
-  await gDevTools.closeToolbox(target);
+  await gDevTools.closeToolboxForTab(gBrowser.selectedTab);
 
   info("Set a toolbox height of 1000px");
   await pushPref("devtools.toolbox.footer.height", 1000);
@@ -26,13 +25,11 @@ add_task(async function() {
 
   info("Run the tests with tall DevTools");
   await runTests();
-
-  await finishTests();
 });
 
 async function runTests() {
   gUI.tree.expandAll();
-  await selectTreeItem(["localStorage", "http://test1.example.org"]);
+  await selectTreeItem(["localStorage", "https://test1.example.org"]);
   checkCellLength(ITEMS_PER_PAGE);
 
   await scroll();

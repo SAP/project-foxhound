@@ -58,8 +58,12 @@ class nsAppStartup final : public nsIAppStartup,
   bool mIsSafeModeNecessary;        // Whether safe mode is necessary
   bool mStartupCrashTrackingEnded;  // Whether startup crash tracking has
                                     // already ended
+  bool mWasSilentlyStarted;         // Was this startup a silent start?
 
 #if defined(XP_WIN)
+  // If true, allow the process to live on after the last window is closed
+  bool mAllowWindowless;
+
   // Interaction with OS-provided profiling probes
   typedef mozilla::probes::ProbeManager ProbeManager;
   typedef mozilla::probes::Probe Probe;

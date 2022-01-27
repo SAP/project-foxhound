@@ -7,6 +7,9 @@
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
+#ifndef RLBOX_USE_CUSTOM_SHARED_LOCK
+#  include <mutex>
+#endif
 
 #include "rlbox_stdlib_polyfill.hpp"
 
@@ -21,8 +24,12 @@ namespace detail {
     #if __cpp_exceptions && defined(RLBOX_USE_EXCEPTIONS)
       throw std::runtime_error(msg);
     #else
-      std::cerr << msg << std::endl;
-      std::abort();
+      #ifdef RLBOX_CUSTOM_ABORT
+        RLBOX_CUSTOM_ABORT(msg);
+      #else
+        std::cerr << msg << std::endl;
+        std::abort();
+      #endif
     #endif
   }
     // clang-format on
@@ -100,7 +107,8 @@ namespace detail {
       const_cast<T_ConstClassPtr>(this)->func_name());                         \
   } else if constexpr (detail::is_fundamental_or_enum_v<result_type> ||        \
                        detail::is_std_array_v<result_type> ||                  \
-                       detail::is_func_ptr_v<result_type>) {                   \
+                       detail::is_func_ptr_v<result_type> ||                   \
+                       std::is_class_v<result_type>) {                         \
     return const_cast<T_ConstClassPtr>(this)->func_name();                     \
   } else {                                                                     \
     return const_cast<result_type>(                                            \
@@ -117,7 +125,8 @@ namespace detail {
       const_cast<T_ConstClassPtr>(this)->func_name(__VA_ARGS__));              \
   } else if constexpr (detail::is_fundamental_or_enum_v<result_type> ||        \
                        detail::is_std_array_v<result_type> ||                  \
-                       detail::is_func_ptr_v<result_type>) {                   \
+                       detail::is_func_ptr_v<result_type> ||                   \
+                       std::is_class_v<result_type>) {                         \
     return const_cast<T_ConstClassPtr>(this)->func_name(__VA_ARGS__);          \
   } else {                                                                     \
     return const_cast<result_type>(                                            \
@@ -240,8 +249,10 @@ But C++ doesn't seem to allow the above
   friend class rlbox_sandbox;                                                  \
                                                                                \
   template<typename U1, typename U2>                                           \
-  friend class sandbox_callback;
-
+  friend class sandbox_callback;                                               \
+                                                                               \
+  template<typename U1, typename U2>                                           \
+  friend class app_pointer;
 }
 
 }

@@ -5,7 +5,7 @@
 
 #include "XULListboxAccessible.h"
 
-#include "Accessible-inl.h"
+#include "LocalAccessible-inl.h"
 #include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
 #include "DocAccessible.h"
@@ -67,10 +67,10 @@ bool XULColumnItemAccessible::DoAction(uint8_t aIndex) const {
 XULListboxAccessible::XULListboxAccessible(nsIContent* aContent,
                                            DocAccessible* aDoc)
     : XULSelectControlAccessible(aContent, aDoc) {
-  nsIContent* parentContent = mContent->GetFlattenedTreeParent();
-  if (parentContent) {
+  dom::Element* parentEl = mContent->GetParentElement();
+  if (parentEl) {
     nsCOMPtr<nsIAutoCompletePopup> autoCompletePopupElm =
-        parentContent->AsElement()->AsAutoCompletePopup();
+        parentEl->AsAutoCompletePopup();
     if (autoCompletePopupElm) mGenericTypes |= eAutoCompletePopup;
   }
 
@@ -78,14 +78,14 @@ XULListboxAccessible::XULListboxAccessible(nsIContent* aContent,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// XULListboxAccessible: Accessible
+// XULListboxAccessible: LocalAccessible
 
 uint64_t XULListboxAccessible::NativeState() const {
   // As a XULListboxAccessible we can have the following states:
   //   FOCUSED, READONLY, FOCUSABLE
 
   // Get focus status from base class
-  uint64_t states = Accessible::NativeState();
+  uint64_t states = LocalAccessible::NativeState();
 
   // see if we are multiple select if so set ourselves as such
 
@@ -101,8 +101,9 @@ role XULListboxAccessible::NativeRole() const {
   // A richlistbox is used with the new autocomplete URL bar, and has a parent
   // popup <panel>.
   if (mContent->GetParent() &&
-      mContent->GetParent()->IsXULElement(nsGkAtoms::panel))
+      mContent->GetParent()->IsXULElement(nsGkAtoms::panel)) {
     return roles::COMBOBOX_LIST;
+  }
 
   return IsMulticolumn() ? roles::TABLE : roles::LISTBOX;
 }
@@ -121,8 +122,8 @@ uint32_t XULListboxAccessible::RowCount() {
   return itemCount;
 }
 
-Accessible* XULListboxAccessible::CellAt(uint32_t aRowIndex,
-                                         uint32_t aColumnIndex) {
+LocalAccessible* XULListboxAccessible::CellAt(uint32_t aRowIndex,
+                                              uint32_t aColumnIndex) {
   nsCOMPtr<nsIDOMXULSelectControlElement> control = Elm()->AsXULSelectControl();
   NS_ENSURE_TRUE(control, nullptr);
 
@@ -130,10 +131,10 @@ Accessible* XULListboxAccessible::CellAt(uint32_t aRowIndex,
   control->GetItemAtIndex(aRowIndex, getter_AddRefs(element));
   if (!element) return nullptr;
 
-  Accessible* row = mDoc->GetAccessible(element);
+  LocalAccessible* row = mDoc->GetAccessible(element);
   NS_ENSURE_TRUE(row, nullptr);
 
-  return row->GetChildAt(aColumnIndex);
+  return row->LocalChildAt(aColumnIndex);
 }
 
 bool XULListboxAccessible::IsColSelected(uint32_t aColIdx) {
@@ -216,7 +217,7 @@ uint32_t XULListboxAccessible::SelectedRowCount() {
   return selectedRowCount >= 0 ? selectedRowCount : 0;
 }
 
-void XULListboxAccessible::SelectedCells(nsTArray<Accessible*>* aCells) {
+void XULListboxAccessible::SelectedCells(nsTArray<LocalAccessible*>* aCells) {
   nsCOMPtr<nsIDOMXULMultiSelectControlElement> control =
       Elm()->AsXULMultiSelectControl();
   NS_ASSERTION(control,
@@ -230,12 +231,12 @@ void XULListboxAccessible::SelectedCells(nsTArray<Accessible*>* aCells) {
 
   for (uint32_t index = 0; index < selectedItemsCount; index++) {
     nsIContent* itemContent = selectedItems->Item(index);
-    Accessible* item = mDoc->GetAccessible(itemContent);
+    LocalAccessible* item = mDoc->GetAccessible(itemContent);
 
     if (item) {
       uint32_t cellCount = item->ChildCount();
       for (uint32_t cellIdx = 0; cellIdx < cellCount; cellIdx++) {
-        Accessible* cell = mChildren[cellIdx];
+        LocalAccessible* cell = mChildren[cellIdx];
         if (cell->Role() == roles::CELL) aCells->AppendElement(cell);
       }
     }
@@ -267,9 +268,11 @@ void XULListboxAccessible::SelectedCellIndices(nsTArray<uint32_t>* aCells) {
     if (item) {
       int32_t itemIdx = -1;
       control->GetIndexOfItem(item, &itemIdx);
-      if (itemIdx >= 0)
-        for (uint32_t colIdx = 0; colIdx < colCount; colIdx++, cellsIdx++)
+      if (itemIdx >= 0) {
+        for (uint32_t colIdx = 0; colIdx < colCount; colIdx++, cellsIdx++) {
           aCells->ElementAt(cellsIdx) = itemIdx * colCount + colIdx;
+        }
+      }
     }
   }
 }
@@ -278,8 +281,9 @@ void XULListboxAccessible::SelectedColIndices(nsTArray<uint32_t>* aCols) {
   uint32_t selColCount = SelectedColCount();
   aCols->SetCapacity(selColCount);
 
-  for (uint32_t colIdx = 0; colIdx < selColCount; colIdx++)
+  for (uint32_t colIdx = 0; colIdx < selColCount; colIdx++) {
     aCols->AppendElement(colIdx);
+  }
 }
 
 void XULListboxAccessible::SelectedRowIndices(nsTArray<uint32_t>* aRows) {
@@ -383,7 +387,7 @@ bool XULListboxAccessible::AreItemsOperable() const {
   return true;
 }
 
-Accessible* XULListboxAccessible::ContainerWidget() const {
+LocalAccessible* XULListboxAccessible::ContainerWidget() const {
   if (IsAutoCompletePopup() && mContent->GetParent()) {
     // This works for XUL autocompletes. It doesn't work for HTML forms
     // autocomplete because of potential crossprocess calls (when autocomplete
@@ -395,7 +399,7 @@ Accessible* XULListboxAccessible::ContainerWidget() const {
       RefPtr<mozilla::dom::Element> inputElm;
       menuListElm->GetInputField(getter_AddRefs(inputElm));
       if (inputElm) {
-        Accessible* input = mDoc->GetAccessible(inputElm);
+        LocalAccessible* input = mDoc->GetAccessible(inputElm);
         return input ? input->ContainerWidget() : nullptr;
       }
     }
@@ -417,7 +421,7 @@ XULListitemAccessible::XULListitemAccessible(nsIContent* aContent,
 
 XULListitemAccessible::~XULListitemAccessible() {}
 
-Accessible* XULListitemAccessible::GetListAccessible() const {
+LocalAccessible* XULListitemAccessible::GetListAccessible() const {
   if (IsDefunct()) return nullptr;
 
   nsCOMPtr<nsIDOMXULSelectControlItemElement> listItem =
@@ -432,24 +436,24 @@ Accessible* XULListitemAccessible::GetListAccessible() const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// XULListitemAccessible Accessible
+// XULListitemAccessible LocalAccessible
 
-void XULListitemAccessible::Description(nsString& aDesc) {
+void XULListitemAccessible::Description(nsString& aDesc) const {
   AccessibleWrap::Description(aDesc);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// XULListitemAccessible: Accessible
+// XULListitemAccessible: LocalAccessible
 
 /**
  * Get the name from GetXULName.
  */
 ENameValueFlag XULListitemAccessible::NativeName(nsString& aName) const {
-  return Accessible::NativeName(aName);
+  return LocalAccessible::NativeName(aName);
 }
 
 role XULListitemAccessible::NativeRole() const {
-  Accessible* list = GetListAccessible();
+  LocalAccessible* list = GetListAccessible();
   if (!list) {
     NS_ERROR("No list accessible for listitem accessible!");
     return roles::NOTHING;
@@ -459,8 +463,9 @@ role XULListitemAccessible::NativeRole() const {
 
   if (mIsCheckbox) return roles::CHECK_RICH_OPTION;
 
-  if (mParent && mParent->Role() == roles::COMBOBOX_LIST)
+  if (mParent && mParent->Role() == roles::COMBOBOX_LIST) {
     return roles::COMBOBOX_OPTION;
+  }
 
   return roles::RICH_OPTION;
 }
@@ -492,14 +497,17 @@ uint64_t XULListitemAccessible::NativeInteractiveState() const {
 void XULListitemAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   if (aIndex == eAction_Click && mIsCheckbox) {
     uint64_t states = NativeState();
-    if (states & states::CHECKED)
+    if (states & states::CHECKED) {
       aName.AssignLiteral("uncheck");
-    else
+    } else {
       aName.AssignLiteral("check");
+    }
   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // XULListitemAccessible: Widgets
 
-Accessible* XULListitemAccessible::ContainerWidget() const { return Parent(); }
+LocalAccessible* XULListitemAccessible::ContainerWidget() const {
+  return LocalParent();
+}

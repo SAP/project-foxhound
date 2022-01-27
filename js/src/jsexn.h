@@ -13,18 +13,22 @@
 
 #include "mozilla/Assertions.h"
 
-#include "jsapi.h"
 #include "jspubtd.h"
 #include "jstypes.h"
 #include "NamespaceImports.h"
 
 #include "js/ErrorReport.h"
+#include "js/Exception.h"
+#include "js/friend/ErrorMessages.h"  // JSErr_Limit
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/UniquePtr.h"
 #include "js/Utility.h"
 
+extern const JSErrorFormatString js_ErrorFormatString[JSErr_Limit];
+
 namespace js {
+
 class ErrorObject;
 
 UniquePtr<JSErrorNotes::Note> CopyErrorNote(JSContext* cx,

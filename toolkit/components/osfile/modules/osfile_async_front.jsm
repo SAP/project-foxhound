@@ -19,14 +19,17 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["OS"];
+// Scheduler is exported for test-only usage.
+var EXPORTED_SYMBOLS = ["OS", "Scheduler"];
 
 var SharedAll = {};
 ChromeUtils.import(
   "resource://gre/modules/osfile/osfile_shared_allthreads.jsm",
   SharedAll
 );
-ChromeUtils.import("resource://gre/modules/Timer.jsm", this);
+const { clearInterval, setInterval } = ChromeUtils.import(
+  "resource://gre/modules/Timer.jsm"
+);
 
 // Boilerplate, to simplify the transition to require()
 var LOG = SharedAll.LOG.bind(SharedAll, "Controller");
@@ -61,12 +64,15 @@ ChromeUtils.defineModuleGetter(
 );
 
 // The implementation of communications
-ChromeUtils.import("resource://gre/modules/PromiseWorker.jsm", this);
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-ChromeUtils.import("resource://gre/modules/AsyncShutdown.jsm", this);
+const { BasePromiseWorker } = ChromeUtils.import(
+  "resource://gre/modules/PromiseWorker.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { AsyncShutdown } = ChromeUtils.import(
+  "resource://gre/modules/AsyncShutdown.jsm"
+);
 var Native = ChromeUtils.import(
-  "resource://gre/modules/osfile/osfile_native.jsm",
-  null
+  "resource://gre/modules/osfile/osfile_native.jsm"
 );
 
 // It's possible for osfile.jsm to get imported before the profile is
@@ -160,10 +166,7 @@ function summarizeObject(obj) {
   return obj;
 }
 
-// In order to expose Scheduler to the unfiltered Cu.import return value variant
-// on B2G we need to save it to `this`.  This does not make it public;
-// EXPORTED_SYMBOLS still controls that in all cases.
-var Scheduler = (this.Scheduler = {
+var Scheduler = {
   /**
    * |true| once we have sent at least one message to the worker.
    * This field is unaffected by resetting the worker.
@@ -549,7 +552,7 @@ var Scheduler = (this.Scheduler = {
       worker.workerTimeStamps.loaded - worker.launchTimeStamp
     );
   },
-});
+};
 
 const PREF_OSFILE_LOG = "toolkit.osfile.log";
 const PREF_OSFILE_LOG_REDIRECT = "toolkit.osfile.log.redirect";
@@ -1584,7 +1587,7 @@ OS.Shared = {
     return SharedAll.Config.DEBUG;
   },
   set DEBUG(x) {
-    return (SharedAll.Config.DEBUG = x);
+    SharedAll.Config.DEBUG = x;
   },
 };
 Object.freeze(OS.Shared);

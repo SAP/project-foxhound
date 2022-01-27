@@ -25,9 +25,10 @@ function leaveCustomizationMode(win = window) {
 }
 
 Services.prefs.setBoolPref("browser.uiCustomization.skipSourceNodeCheck", true);
-registerCleanupFunction(() =>
-  Services.prefs.clearUserPref("browser.uiCustomization.skipSourceNodeCheck")
-);
+registerCleanupFunction(() => {
+  CustomizableUI.reset();
+  Services.prefs.clearUserPref("browser.uiCustomization.skipSourceNodeCheck");
+});
 
 // Stolen from browser/components/customizableui/tests/browser/head.js
 function simulateItemDrag(aToDrag, aTarget, aEvent = {}, aOffset = 2) {
@@ -78,7 +79,6 @@ function organizeToolbars(state = {}) {
       pageActionsInUrlBar: [],
 
       // Areas to show or hide.
-      dragSpaceVisible: false,
       titlebarVisible: false,
       menubarVisible: false,
       personalToolbarVisible: false,
@@ -111,12 +111,8 @@ function organizeToolbars(state = {}) {
     targetState.personalToolbarVisible
   );
 
-  Services.prefs.setBoolPref(
-    "browser.tabs.extraDragSpace",
-    !targetState.titlebarVisible && targetState.dragSpaceVisible
-  );
-  Services.prefs.setBoolPref(
-    "browser.tabs.drawInTitlebar",
+  Services.prefs.setIntPref(
+    "browser.tabs.inTitlebar",
     !targetState.titlebarVisible
   );
 
@@ -168,7 +164,6 @@ add_task(async function widgetPositions() {
   BrowserUsageTelemetry._recordUITelemetry();
 
   assertVisibilityScalars([
-    "drag-space_pinned_off",
     "menu-toolbar_pinned_off",
     "titlebar_pinned_off",
     "bookmarks-bar_pinned_off",
@@ -202,14 +197,12 @@ add_task(async function widgetPositions() {
       "library-button",
     ],
 
-    dragSpaceVisible: true,
     personalToolbarVisible: true,
   });
 
   BrowserUsageTelemetry._recordUITelemetry();
 
   assertVisibilityScalars([
-    "drag-space_pinned_on",
     "menu-toolbar_pinned_off",
     "titlebar_pinned_off",
     "bookmarks-bar_pinned_on",
@@ -253,7 +246,6 @@ add_task(async function customizeMode() {
   BrowserUsageTelemetry._recordUITelemetry();
 
   assertVisibilityScalars([
-    "drag-space_pinned_off",
     "menu-toolbar_pinned_off",
     "titlebar_pinned_off",
     "bookmarks-bar_pinned_off",
@@ -283,9 +275,14 @@ add_task(async function customizeMode() {
   EventUtils.synthesizeMouseAtCenter(toolbarButton, {}, win);
   await popupShown;
 
+  let barMenu = win.document.getElementById("toggle_PersonalToolbar");
   let popupHidden = BrowserTestUtils.waitForEvent(toolbarPopup, "popuphidden");
-  let barButton = win.document.getElementById("toggle_PersonalToolbar");
-  EventUtils.synthesizeMouseAtCenter(barButton, {}, win);
+  let subMenu = barMenu.querySelector("menupopup");
+  popupShown = BrowserTestUtils.waitForEvent(subMenu, "popupshown");
+  EventUtils.synthesizeMouseAtCenter(barMenu, {}, win);
+  await popupShown;
+  let alwaysButton = barMenu.querySelector('*[data-visibility-enum="always"]');
+  EventUtils.synthesizeMouseAtCenter(alwaysButton, {}, win);
   await popupHidden;
 
   let navbar = CustomizableUI.getCustomizationTarget(
@@ -317,7 +314,7 @@ add_task(async function customizeMode() {
     "library-button_move_nav-bar-end_bookmarks-bar_drag": 1,
     "stop-reload-button_move_nav-bar-start_tabs-bar_drag": 2,
     "stop-reload-button_move_tabs-bar_nav-bar-start_drag": 1,
-    "bookmarks-bar_move_off_on_customization-toolbar-menu": 1,
+    "bookmarks-bar_move_off_always_customization-toolbar-menu": 1,
   });
 
   CustomizableUI.reset();
@@ -343,7 +340,6 @@ add_task(async function contextMenus() {
   BrowserUsageTelemetry._recordUITelemetry();
 
   assertVisibilityScalars([
-    "drag-space_pinned_off",
     "menu-toolbar_pinned_off",
     "titlebar_pinned_off",
     "bookmarks-bar_pinned_off",
@@ -371,9 +367,14 @@ add_task(async function contextMenus() {
   );
   await popupShown;
 
+  let barMenu = document.getElementById("toggle_PersonalToolbar");
   let popupHidden = BrowserTestUtils.waitForEvent(menu, "popuphidden");
-  let barButton = document.getElementById("toggle_PersonalToolbar");
-  EventUtils.synthesizeMouseAtCenter(barButton, {}, window);
+  let subMenu = barMenu.querySelector("menupopup");
+  popupShown = BrowserTestUtils.waitForEvent(subMenu, "popupshown");
+  barMenu.openMenu(true);
+  await popupShown;
+  let alwaysButton = subMenu.querySelector('*[data-visibility-enum="always"]');
+  subMenu.activateItem(alwaysButton);
   await popupHidden;
 
   popupShown = BrowserTestUtils.waitForEvent(menu, "popupshown");
@@ -388,113 +389,15 @@ add_task(async function contextMenus() {
   let removeButton = document.querySelector(
     "#toolbar-context-menu .customize-context-removeFromToolbar"
   );
-  EventUtils.synthesizeMouseAtCenter(removeButton, {}, window);
+  menu.activateItem(removeButton);
   await popupHidden;
 
   assertCustomizeScalars({
-    "bookmarks-bar_move_off_on_toolbar-context-menu": 1,
+    "bookmarks-bar_move_off_always_toolbar-context-menu": 1,
     "stop-reload-button_remove_nav-bar-start_na_toolbar-context-menu": 1,
   });
 
   CustomizableUI.reset();
-});
-
-add_task(async function pageActions() {
-  // The page action button is only visible when a page is loaded.
-  await BrowserTestUtils.withNewTab("http://example.com", async () => {
-    // Create a default state.
-    organizeToolbars({
-      PersonalToolbar: ["personal-bookmarks"],
-
-      TabsToolbar: ["tabbrowser-tabs", "new-tab-button"],
-
-      "nav-bar": [
-        "back-button",
-        "forward-button",
-        "stop-reload-button",
-        "urlbar-container",
-        "home-button",
-        "library-button",
-      ],
-
-      pageActionsInUrlBar: ["emailLink", "pinTab"],
-    });
-
-    BrowserUsageTelemetry._recordUITelemetry();
-
-    assertVisibilityScalars([
-      "drag-space_pinned_off",
-      "menu-toolbar_pinned_off",
-      "titlebar_pinned_off",
-      "bookmarks-bar_pinned_off",
-
-      "tabbrowser-tabs_pinned_tabs-bar",
-      "new-tab-button_pinned_tabs-bar",
-      "alltabs-button_pinned_tabs-bar",
-
-      "back-button_pinned_nav-bar-start",
-      "forward-button_pinned_nav-bar-start",
-      "stop-reload-button_pinned_nav-bar-start",
-      "home-button_pinned_nav-bar-end",
-      "library-button_pinned_nav-bar-end",
-
-      "emailLink_pinned_pageaction-urlbar",
-      "pinTab_pinned_pageaction-urlbar",
-
-      "personal-bookmarks_pinned_bookmarks-bar",
-    ]);
-
-    let panel = document.getElementById("pageActionPanel");
-    let button = document.getElementById("pageActionButton");
-    let context = document.getElementById("pageActionContextMenu");
-
-    let popupShown = BrowserTestUtils.waitForEvent(panel, "popupshown");
-    EventUtils.synthesizeMouseAtCenter(button, {}, window);
-    await popupShown;
-
-    popupShown = BrowserTestUtils.waitForEvent(context, "popupshown");
-    EventUtils.synthesizeMouseAtCenter(
-      document.getElementById("pageAction-panel-copyURL"),
-      { type: "contextmenu", button: 2 },
-      window
-    );
-    await popupShown;
-
-    let popupHidden = BrowserTestUtils.waitForEvent(context, "popuphidden");
-    EventUtils.synthesizeMouseAtCenter(
-      document.querySelector(".pageActionContextMenuItem.builtInUnpinned"),
-      {},
-      window
-    );
-    await popupHidden;
-
-    popupHidden = BrowserTestUtils.waitForEvent(panel, "popuphidden");
-    EventUtils.synthesizeMouseAtCenter(button, {}, window);
-    await popupHidden;
-
-    popupShown = BrowserTestUtils.waitForEvent(context, "popupshown");
-    EventUtils.synthesizeMouseAtCenter(
-      document.getElementById("pageAction-urlbar-emailLink"),
-      { type: "contextmenu", button: 2 },
-      window
-    );
-    await popupShown;
-
-    popupHidden = BrowserTestUtils.waitForEvent(context, "popuphidden");
-    EventUtils.synthesizeMouseAtCenter(
-      document.querySelector(".pageActionContextMenuItem.builtInPinned"),
-      {},
-      window
-    );
-    await popupHidden;
-
-    assertCustomizeScalars({
-      "copyURL_add_na_pageaction-urlbar_pageaction-context": 1,
-      "emailLink_remove_pageaction-urlbar_na_pageaction-context": 1,
-    });
-
-    CustomizableUI.reset();
-  });
 });
 
 add_task(async function extensions() {
@@ -530,7 +433,6 @@ add_task(async function extensions() {
     BrowserUsageTelemetry._recordUITelemetry();
 
     assertVisibilityScalars([
-      "drag-space_pinned_off",
       "menu-toolbar_pinned_off",
       "titlebar_pinned_off",
       "bookmarks-bar_pinned_off",
@@ -557,7 +459,6 @@ add_task(async function extensions() {
     BrowserUsageTelemetry._recordUITelemetry();
 
     assertVisibilityScalars([
-      "drag-space_pinned_off",
       "menu-toolbar_pinned_off",
       "titlebar_pinned_off",
       "bookmarks-bar_pinned_off",
@@ -579,7 +480,6 @@ add_task(async function extensions() {
     BrowserUsageTelemetry._recordUITelemetry();
 
     assertVisibilityScalars([
-      "drag-space_pinned_off",
       "menu-toolbar_pinned_off",
       "titlebar_pinned_off",
       "bookmarks-bar_pinned_off",
@@ -627,7 +527,6 @@ add_task(async function extensions() {
     BrowserUsageTelemetry._recordUITelemetry();
 
     assertVisibilityScalars([
-      "drag-space_pinned_off",
       "menu-toolbar_pinned_off",
       "titlebar_pinned_off",
       "bookmarks-bar_pinned_off",

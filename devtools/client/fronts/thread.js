@@ -41,13 +41,19 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
     this.client = client;
     this._pauseGrips = {};
     this._threadGrips = {};
-    this._state = "paused";
+    // Note that this isn't matching ThreadActor state field.
+    // ThreadFront is only using two values: paused or attached.
+    // @backward-compat { version 86 } ThreadActor.attach no longer pauses the thread,
+    //                                 so that the default state is "attached" by default.
+    if (this.targetFront.getTrait("noPauseOnThreadActorAttach")) {
+      this._state = "attached";
+    } else {
+      this._state = "paused";
+    }
     this._beforePaused = this._beforePaused.bind(this);
     this._beforeResumed = this._beforeResumed.bind(this);
-    this._beforeDetached = this._beforeDetached.bind(this);
     this.before("paused", this._beforePaused);
     this.before("resumed", this._beforeResumed);
-    this.before("detached", this._beforeDetached);
     this.targetFront.on("will-navigate", this._onWillNavigate.bind(this));
     // Attribute name from which to retrieve the actorID out of the target actor's form
     this.formAttributeName = "threadActor";
@@ -185,7 +191,7 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
   async getSources() {
     let sources = [];
     try {
-      ({ sources } = await super.sources());
+      sources = await super.sources();
     } catch (e) {
       // we may have closed the connection
       console.log(`getSources failed. Connection may have closed: ${e}`);
@@ -197,19 +203,17 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
    * attach to the thread actor.
    */
   async attach(options) {
-    const onPaused = this.once("paused");
+    const noPauseOnThreadActorAttach = this.targetFront.getTrait(
+      "noPauseOnThreadActorAttach"
+    );
+    const onPaused = noPauseOnThreadActorAttach ? null : this.once("paused");
     await super.attach(options);
-    await onPaused;
-  }
-
-  /**
-   * Detach from the thread actor.
-   */
-  async detach() {
-    const onDetached = this.once("detached");
-    await super.detach();
-    await onDetached;
-    await this.destroy();
+    // @backward-compat { version 86 } ThreadActor.attach no longer pause the thread,
+    //                                 so that we shouldn't wait for the paused event,
+    //                                 since it won't be emitted anymore.
+    if (!noPauseOnThreadActorAttach) {
+      await onPaused;
+    }
   }
 
   /**
@@ -254,14 +258,6 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
     this._clearObjectFronts("_pauseGrips");
   }
 
-  /**
-   * Invalidate thread-lifetime grip clients and clear the list of current grip
-   * clients.
-   */
-  _clearThreadGrips() {
-    this._clearObjectFronts("_threadGrips");
-  }
-
   _beforePaused(packet) {
     this._state = "paused";
     this._onThreadState(packet);
@@ -270,13 +266,6 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
   _beforeResumed() {
     this._state = "attached";
     this._onThreadState(null);
-    this.unmanageChildren(FrameFront);
-  }
-
-  _beforeDetached(packet) {
-    this._state = "detached";
-    this._onThreadState(packet);
-    this._clearThreadGrips();
     this.unmanageChildren(FrameFront);
   }
 

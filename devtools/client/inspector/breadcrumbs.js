@@ -4,7 +4,6 @@
 
 "use strict";
 
-const promise = require("promise");
 const flags = require("devtools/shared/flags");
 const { ELLIPSIS } = require("devtools/shared/l10n");
 const EventEmitter = require("devtools/shared/event-emitter");
@@ -592,7 +591,9 @@ HTMLBreadcrumbs.prototype = {
    * @param {DOMEvent} event.
    */
   handleMouseOut: function(event) {
-    this.inspector.highlighter.unhighlight();
+    this.inspector.highlighters.hideHighlighterType(
+      this.inspector.highlighters.TYPES.BOXMODEL
+    );
   },
 
   /**
@@ -611,7 +612,7 @@ HTMLBreadcrumbs.prototype = {
     event.preventDefault();
     event.stopPropagation();
 
-    this.keyPromise = (this.keyPromise || promise.resolve(null)).then(() => {
+    this.keyPromise = (this.keyPromise || Promise.resolve(null)).then(() => {
       let currentnode;
 
       const isLeft = event.code === "ArrowLeft";
@@ -741,7 +742,10 @@ HTMLBreadcrumbs.prototype = {
     };
 
     button.onBreadcrumbsHover = () => {
-      this.inspector.highlighter.highlight(node);
+      this.inspector.highlighters.showHighlighterTypeForNode(
+        this.inspector.highlighters.TYPES.BOXMODEL,
+        node
+      );
     };
 
     return button;

@@ -36,7 +36,7 @@ XPCOMUtils.defineLazyGetter(this, "SearchTestUtils", () => {
   const { SearchTestUtils: module } = ChromeUtils.import(
     "resource://testing-common/SearchTestUtils.jsm"
   );
-  module.init(Assert, registerCleanupFunction);
+  module.init(this);
   return module;
 });
 
@@ -56,6 +56,61 @@ add_task(async function init() {
 });
 
 /**
+ * Override our binary path so that the update lock doesn't think more than one
+ * instance of this test is running.
+ * This is a heavily pared down copy of the function in xpcshellUtilsAUS.js.
+ */
+function adjustGeneralPaths() {
+  let dirProvider = {
+    getFile(aProp, aPersistent) {
+      // Set the value of persistent to false so when this directory provider is
+      // unregistered it will revert back to the original provider.
+      aPersistent.value = false;
+      // The sync manager only uses XRE_EXECUTABLE_FILE, so that's all we need
+      // to override, we won't bother handling anything else.
+      if (aProp == XRE_EXECUTABLE_FILE) {
+        // The temp directory that the mochitest runner creates is unique per
+        // test, so its path can serve to provide the unique key that the update
+        // sync manager requires (it doesn't need for this to be the actual
+        // path to any real file, it's only used as an opaque string).
+        let tempPath = gEnv.get("MOZ_PROCESS_LOG");
+        let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+        file.initWithPath(tempPath);
+        return file;
+      }
+      return null;
+    },
+    QueryInterface: ChromeUtils.generateQI(["nsIDirectoryServiceProvider"]),
+  };
+
+  let ds = Services.dirsvc.QueryInterface(Ci.nsIDirectoryService);
+  try {
+    ds.QueryInterface(Ci.nsIProperties).undefine(XRE_EXECUTABLE_FILE);
+  } catch (_ex) {
+    // We only override one property, so we have nothing to do if that fails.
+    return;
+  }
+  ds.registerProvider(dirProvider);
+  registerCleanupFunction(() => {
+    ds.unregisterProvider(dirProvider);
+    // Reset the update lock once again so that we know the lock we're
+    // interested in here will be closed properly (normally that happens during
+    // XPCOM shutdown, but that isn't consistent during tests).
+    let syncManager = Cc[
+      "@mozilla.org/updates/update-sync-manager;1"
+    ].getService(Ci.nsIUpdateSyncManager);
+    syncManager.resetLock();
+  });
+
+  // Now that we've overridden the directory provider, the name of the update
+  // lock needs to be changed to match the overridden path.
+  let syncManager = Cc["@mozilla.org/updates/update-sync-manager;1"].getService(
+    Ci.nsIUpdateSyncManager
+  );
+  syncManager.resetLock();
+}
+
+/**
  * Initializes a mock app update.  Adapted from runAboutDialogUpdateTest:
  * https://searchfox.org/mozilla-central/source/toolkit/mozapps/update/tests/browser/head.js
  *
@@ -71,6 +126,7 @@ async function initUpdate(params) {
     ],
   });
 
+  adjustGeneralPaths();
   await setupTestUpdater();
 
   let queryString = params.queryString ? params.queryString : "";
@@ -87,10 +143,14 @@ async function initUpdate(params) {
       await continueFileHandler(params.continueFile);
     }
     if (params.waitForUpdateState) {
+      let whichUpdate =
+        params.waitForUpdateState == STATE_DOWNLOADING
+          ? "downloadingUpdate"
+          : "readyUpdate";
       await TestUtils.waitForCondition(
         () =>
-          gUpdateManager.activeUpdate &&
-          gUpdateManager.activeUpdate.state == params.waitForUpdateState,
+          gUpdateManager[whichUpdate] &&
+          gUpdateManager[whichUpdate].state == params.waitForUpdateState,
         "Waiting for update state: " + params.waitForUpdateState,
         undefined,
         200
@@ -101,7 +161,7 @@ async function initUpdate(params) {
       });
       // Display the UI after the update state equals the expected value.
       Assert.equal(
-        gUpdateManager.activeUpdate.state,
+        gUpdateManager[whichUpdate].state,
         params.waitForUpdateState,
         "The update state value should equal " + params.waitForUpdateState
       );
@@ -140,23 +200,31 @@ async function processUpdateStep(step) {
 
   const { panelId, checkActiveUpdate, continueFile, downloadInfo } = step;
   if (checkActiveUpdate) {
+    let whichUpdate =
+      checkActiveUpdate.state == STATE_DOWNLOADING
+        ? "downloadingUpdate"
+        : "readyUpdate";
     await TestUtils.waitForCondition(
-      () => gUpdateManager.activeUpdate,
+      () => gUpdateManager[whichUpdate],
       "Waiting for active update"
     );
     Assert.ok(
-      !!gUpdateManager.activeUpdate,
+      !!gUpdateManager[whichUpdate],
       "There should be an active update"
     );
     Assert.equal(
-      gUpdateManager.activeUpdate.state,
+      gUpdateManager[whichUpdate].state,
       checkActiveUpdate.state,
       "The active update state should equal " + checkActiveUpdate.state
     );
   } else {
     Assert.ok(
-      !gUpdateManager.activeUpdate,
-      "There should not be an active update"
+      !gUpdateManager.readyUpdate,
+      "There should not be a ready update"
+    );
+    Assert.ok(
+      !gUpdateManager.downloadingUpdate,
+      "There should not be a downloadingUpdate update"
     );
   }
 
@@ -165,7 +233,10 @@ async function processUpdateStep(step) {
       let data = downloadInfo[i];
       // The About Dialog tests always specify a continue file.
       await continueFileHandler(continueFile);
-      let patch = getPatchOfType(data.patchType);
+      let patch = getPatchOfType(
+        data.patchType,
+        gUpdateManager.downloadingUpdate
+      );
       // The update is removed early when the last download fails so check
       // that there is a patch before proceeding.
       let isLastPatch = i == downloadInfo.length - 1;
@@ -449,51 +520,16 @@ async function awaitNoTip(searchString, win = window) {
 }
 
 /**
- * Copied from BrowserTestUtils.jsm, but lets you listen for any one of multiple
- * dialog URIs instead of only one.
- * @param {string} buttonAction
- *   What button should be pressed on the alert dialog.
- * @param {array} uris
- *   The URIs for the alert dialogs.
- * @param {function} [func]
- *   An optional callback.
+ * Search tips helper.  Asserts that a particular search tip is shown or that no
+ * search tip is shown.
+ *
+ * @param {window} win
+ *   A browser window.
+ * @param {UrlbarProviderSearchTips.TIP_TYPE} expectedTip
+ *   The expected search tip.  Pass a falsey value (like zero) for none.
+ * @param {boolean} closeView
+ *   If true, this function closes the urlbar view before returning.
  */
-async function promiseAlertDialogOpen(buttonAction, uris, func) {
-  let win = await BrowserTestUtils.domWindowOpened(null, async aWindow => {
-    // The test listens for the "load" event which guarantees that the alert
-    // class has already been added (it is added when "DOMContentLoaded" is
-    // fired).
-    await BrowserTestUtils.waitForEvent(aWindow, "load");
-
-    return uris.includes(aWindow.document.documentURI);
-  });
-
-  if (func) {
-    await func(win);
-    return win;
-  }
-
-  let dialog = win.document.querySelector("dialog");
-  dialog.getButton(buttonAction).click();
-
-  return win;
-}
-
-/**
- * Copied from BrowserTestUtils.jsm, but lets you listen for any one of multiple
- * dialog URIs instead of only one.
- * @param {string} buttonAction
- *   What button should be pressed on the alert dialog.
- * @param {array} uris
- *   The URIs for the alert dialogs.
- * @param {function} [func]
- *   An optional callback.
- */
-async function promiseAlertDialog(buttonAction, uris, func) {
-  let win = await promiseAlertDialogOpen(buttonAction, uris, func);
-  return BrowserTestUtils.windowClosed(win);
-}
-
 async function checkTip(win, expectedTip, closeView = true) {
   if (!expectedTip) {
     // Wait a bit for the tip to not show up.
@@ -544,11 +580,30 @@ async function checkTip(win, expectedTip, closeView = true) {
     1
   );
 
+  Assert.ok(
+    !UrlbarTestUtils.getOneOffSearchButtonsVisible(window),
+    "One-offs should be hidden when showing a search tip"
+  );
+
   if (closeView) {
     await UrlbarTestUtils.promisePopupClose(win);
   }
 }
 
+/**
+ * Search tips helper.  Opens a foreground tab and asserts that a particular
+ * search tip is shown or that no search tip is shown.
+ *
+ * @param {window} win
+ *   A browser window.
+ * @param {string} url
+ *   The URL to load in a new foreground tab.
+ * @param {UrlbarProviderSearchTips.TIP_TYPE} expectedTip
+ *   The expected search tip.  Pass a falsey value (like zero) for none.
+ * @param {boolean} reset
+ *   If true, the search tips provider will be reset before this function
+ *   returns.  See resetSearchTipsProvider.
+ */
 async function checkTab(win, url, expectedTip, reset = true) {
   // BrowserTestUtils.withNewTab always waits for tab load, which hangs on
   // about:newtab for some reason, so don't use it.
@@ -633,7 +688,6 @@ async function withDNSRedirect(domain, path, callback) {
     Ci.nsISiteSecurityService
   );
   sss.clearAll();
-  sss.clearPreloads();
 }
 
 function resetSearchTipsProvider() {

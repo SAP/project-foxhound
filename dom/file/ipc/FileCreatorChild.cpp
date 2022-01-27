@@ -5,11 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FileCreatorChild.h"
+#include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/IPCBlobUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 FileCreatorChild::FileCreatorChild() = default;
 
@@ -56,5 +56,4 @@ void FileCreatorChild::ActorDestroy(ActorDestroyReason aWhy) {
   }
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

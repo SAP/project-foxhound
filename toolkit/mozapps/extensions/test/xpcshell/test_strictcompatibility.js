@@ -8,6 +8,13 @@
 // turn on Cu.isInAutomation
 Services.prefs.setBoolPref(PREF_DISABLE_SECURITY, true);
 
+PromiseTestUtils.allowMatchingRejectionsGlobally(
+  /IOUtils: Shutting down and refusing additional I\/O tasks/
+);
+PromiseTestUtils.allowMatchingRejectionsGlobally(
+  /IOUtils\.profileBeforeChange getter: IOUtils: profileBeforeChange phase has already finished/
+);
+
 // The `compatbile` array defines which of the tests below the add-on
 // should be compatible in. It's pretty gross.
 const ADDONS = [

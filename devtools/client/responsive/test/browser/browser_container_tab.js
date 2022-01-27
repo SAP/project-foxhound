@@ -5,7 +5,7 @@
 
 // Verify RDM opens for a container tab.
 
-const TEST_URL = "http://example.com/";
+const TEST_URL = "https://example.com/";
 
 addRDMTask(
   null,
@@ -20,7 +20,7 @@ addRDMTask(
     const { ui } = await openRDM(tab);
     await waitForDeviceAndViewportState(ui);
 
-    await navigateToNewDomain(TEST_URL, ui);
+    await navigateTo(TEST_URL);
     ok(true, "Test URL navigated successfully");
 
     await closeRDM(tab);

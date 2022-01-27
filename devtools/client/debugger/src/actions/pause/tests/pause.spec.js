@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 import {
   actions,
   selectors,
@@ -26,7 +24,6 @@ const mockCommandClient = {
     }),
   stepOver: () => new Promise(_resolve => _resolve),
   evaluate: async () => {},
-  evaluateInFrame: async () => {},
   evaluateExpressions: async () => [],
   resume: async () => {},
   getFrameScopes: async frame => frame.scope,

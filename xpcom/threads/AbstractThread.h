@@ -7,13 +7,15 @@
 #if !defined(AbstractThread_h_)
 #  define AbstractThread_h_
 
-#  include "mozilla/RefPtr.h"
+#  include "mozilla/AlreadyAddRefed.h"
 #  include "mozilla/ThreadLocal.h"
 #  include "nscore.h"
-#  include "nsIRunnable.h"
 #  include "nsISerialEventTarget.h"
-#  include "nsISupportsImpl.h"
-#  include "nsIThread.h"
+#  include "nsISupports.h"
+
+class nsIEventTarget;
+class nsIRunnable;
+class nsIThread;
 
 namespace mozilla {
 
@@ -58,6 +60,7 @@ class AbstractThread : public nsISerialEventTarget {
   // We don't use NS_DECL_NSIEVENTTARGET so that we can remove the default
   // |flags| parameter from Dispatch. Otherwise, a single-argument Dispatch call
   // would be ambiguous.
+  using nsISerialEventTarget::IsOnCurrentThread;
   NS_IMETHOD_(bool) IsOnCurrentThreadInfallible(void) override;
   NS_IMETHOD IsOnCurrentThread(bool* _retval) override;
   NS_IMETHOD Dispatch(already_AddRefed<nsIRunnable> event,

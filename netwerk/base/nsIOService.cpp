@@ -47,6 +47,7 @@
 #include "mozilla/net/NeckoParent.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/nsHTTPSOnlyUtils.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
 #include "mozilla/net/CaptivePortalService.h"
 #include "mozilla/net/NetworkConnectivityService.h"
@@ -56,7 +57,6 @@
 #include "mozilla/Unused.h"
 #include "nsContentSecurityManager.h"
 #include "nsContentUtils.h"
-#include "nsExceptionHandler.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "nsNSSComponent.h"
@@ -98,78 +98,91 @@ static LazyLogModule gIOServiceLog("nsIOService");
 // A general port blacklist.  Connections to these ports will not be allowed
 // unless the protocol overrides.
 //
-// TODO: I am sure that there are more ports to be added.
-//       This cut is based on the classic mozilla codebase
+// This list is to be kept in sync with "bad ports" as defined in the
+// WHATWG Fetch standard at <https://fetch.spec.whatwg.org/#port-blocking>
 
 int16_t gBadPortList[] = {
-    1,     // tcpmux
-    7,     // echo
-    9,     // discard
-    11,    // systat
-    13,    // daytime
-    15,    // netstat
-    17,    // qotd
-    19,    // chargen
-    20,    // ftp-data
-    21,    // ftp
-    22,    // ssh
-    23,    // telnet
-    25,    // smtp
-    37,    // time
-    42,    // name
-    43,    // nicname
-    53,    // domain
-    77,    // priv-rjs
-    79,    // finger
-    87,    // ttylink
-    95,    // supdup
-    101,   // hostriame
-    102,   // iso-tsap
-    103,   // gppitnp
-    104,   // acr-nema
-    109,   // pop2
-    110,   // pop3
-    111,   // sunrpc
-    113,   // auth
-    115,   // sftp
-    117,   // uucp-path
-    119,   // nntp
-    123,   // ntp
-    135,   // loc-srv / epmap
-    139,   // netbios
-    143,   // imap2
-    179,   // bgp
-    389,   // ldap
-    427,   // afp (alternate)
-    465,   // smtp (alternate)
-    512,   // print / exec
-    513,   // login
-    514,   // shell
-    515,   // printer
-    526,   // tempo
-    530,   // courier
-    531,   // chat
-    532,   // netnews
-    540,   // uucp
-    548,   // afp
-    556,   // remotefs
-    563,   // nntp+ssl
-    587,   // smtp (outgoing)
-    601,   // syslog-conn
-    636,   // ldap+ssl
-    993,   // imap+ssl
-    995,   // pop3+ssl
-    2049,  // nfs
-    3659,  // apple-sasl
-    4045,  // lockd
-    6000,  // x11
-    6665,  // irc (alternate)
-    6666,  // irc (alternate)
-    6667,  // irc (default)
-    6668,  // irc (alternate)
-    6669,  // irc (alternate)
-    6697,  // irc+tls
-    0,     // Sentinel value: This MUST be zero
+    1,      // tcpmux
+    7,      // echo
+    9,      // discard
+    11,     // systat
+    13,     // daytime
+    15,     // netstat
+    17,     // qotd
+    19,     // chargen
+    20,     // ftp-data
+    21,     // ftp
+    22,     // ssh
+    23,     // telnet
+    25,     // smtp
+    37,     // time
+    42,     // name
+    43,     // nicname
+    53,     // domain
+    69,     // tftp
+    77,     // priv-rjs
+    79,     // finger
+    87,     // ttylink
+    95,     // supdup
+    101,    // hostriame
+    102,    // iso-tsap
+    103,    // gppitnp
+    104,    // acr-nema
+    109,    // pop2
+    110,    // pop3
+    111,    // sunrpc
+    113,    // auth
+    115,    // sftp
+    117,    // uucp-path
+    119,    // nntp
+    123,    // ntp
+    135,    // loc-srv / epmap
+    137,    // netbios
+    139,    // netbios
+    143,    // imap2
+    161,    // snmp
+    179,    // bgp
+    389,    // ldap
+    427,    // afp (alternate)
+    465,    // smtp (alternate)
+    512,    // print / exec
+    513,    // login
+    514,    // shell
+    515,    // printer
+    526,    // tempo
+    530,    // courier
+    531,    // chat
+    532,    // netnews
+    540,    // uucp
+    548,    // afp
+    554,    // rtsp
+    556,    // remotefs
+    563,    // nntp+ssl
+    587,    // smtp (outgoing)
+    601,    // syslog-conn
+    636,    // ldap+ssl
+    989,    // ftps-data
+    990,    // ftps
+    993,    // imap+ssl
+    995,    // pop3+ssl
+    1719,   // h323gatestat
+    1720,   // h323hostcall
+    1723,   // pptp
+    2049,   // nfs
+    3659,   // apple-sasl
+    4045,   // lockd
+    5060,   // sip
+    5061,   // sips
+    6000,   // x11
+    6566,   // sane-port
+    6665,   // irc (alternate)
+    6666,   // irc (alternate)
+    6667,   // irc (default)
+    6668,   // irc (alternate)
+    6669,   // irc (alternate)
+    6697,   // irc+tls
+    10080,  // amanda
+    0,      // Sentinel value: This MUST be zero
 };
 
 static const char kProfileChangeNetTeardownTopic[] =
@@ -185,26 +198,9 @@ uint32_t nsIOService::gDefaultSegmentCount = 24;
 ////////////////////////////////////////////////////////////////////////////////
 
 nsIOService::nsIOService()
-    : mOffline(true),
-      mOfflineForProfileChange(false),
-      mManageLinkStatus(false),
-      mConnectivity(true),
-      mSettingOffline(false),
-      mSetOfflineValue(false),
-      mSocketProcessLaunchComplete(false),
-      mShutdown(false),
-      mHttpHandlerAlreadyShutingDown(false),
-      mNetworkLinkServiceInitialized(false),
-      mChannelEventSinks(NS_CHANNEL_EVENT_SINK_CATEGORY),
-      mMutex("nsIOService::mMutex"),
-      mTotalRequests(0),
-      mCacheWon(0),
-      mNetWon(0),
-      mLastOfflineStateChange(PR_IntervalNow()),
+    : mLastOfflineStateChange(PR_IntervalNow()),
       mLastConnectivityChange(PR_IntervalNow()),
-      mLastNetworkLinkChange(PR_IntervalNow()),
-      mNetTearingDownStarted(0),
-      mSocketProcess(nullptr) {}
+      mLastNetworkLinkChange(PR_IntervalNow()) {}
 
 static const char* gCallbackPrefs[] = {
     PORT_PREF_PREFIX,
@@ -221,9 +217,15 @@ static const char* gCallbackPrefsForSocketProcess[] = {
     "network.ssl_tokens_cache_enabled",
     "network.send_ODA_to_content_directly",
     "network.trr.",
+    "doh-rollout.",
     "network.dns.disableIPv6",
     "network.dns.skipTRR-when-parental-control-enabled",
     "network.offline-mirrors-connectivity",
+    "network.disable-localhost-when-offline",
+    "network.proxy.parse_pac_on_socket_process",
+    "network.proxy.allow_hijacking_localhost",
+    "network.connectivity-service.",
+    "network.captive-portal-service.testMode",
     nullptr,
 };
 
@@ -246,7 +248,6 @@ static const char* gCallbackSecurityPrefs[] = {
     "security.ssl.enable_ocsp_stapling",
     "security.ssl.enable_ocsp_must_staple",
     "security.pki.certificate_transparency.mode",
-    "security.cert_pinning.enforcement_level",
     "security.pki.name_matching_mode",
     nullptr,
 };
@@ -263,20 +264,21 @@ nsresult nsIOService::Init() {
   InitializeCaptivePortalService();
 
   // setup our bad port list stuff
-  for (int i = 0; gBadPortList[i]; i++)
+  for (int i = 0; gBadPortList[i]; i++) {
     mRestrictedPortList.AppendElement(gBadPortList[i]);
+  }
 
   // Further modifications to the port list come from prefs
   Preferences::RegisterPrefixCallbacks(nsIOService::PrefsChanged,
                                        gCallbackPrefs, this);
   PrefsChanged();
 
-  mSocketProcessTopicBlackList.PutEntry(
+  mSocketProcessTopicBlackList.Insert(
       nsLiteralCString(NS_XPCOM_WILL_SHUTDOWN_OBSERVER_ID));
-  mSocketProcessTopicBlackList.PutEntry(
+  mSocketProcessTopicBlackList.Insert(
       nsLiteralCString(NS_XPCOM_SHUTDOWN_OBSERVER_ID));
-  mSocketProcessTopicBlackList.PutEntry("xpcom-shutdown-threads"_ns);
-  mSocketProcessTopicBlackList.PutEntry("profile-do-change"_ns);
+  mSocketProcessTopicBlackList.Insert("xpcom-shutdown-threads"_ns);
+  mSocketProcessTopicBlackList.Insert("profile-do-change"_ns);
 
   // Register for profile change notifications
   mObserverService = services::GetObserverService();
@@ -340,7 +342,7 @@ nsIOService::AddObserver(nsIObserver* aObserver, const char* aTopic,
     return NS_ERROR_FAILURE;
   }
 
-  mObserverTopicForSocketProcess.PutEntry(topic);
+  mObserverTopicForSocketProcess.Insert(topic);
 
   // This happens when AddObserver() is called by nsIOService::Init(). We don't
   // want to add nsIOService again.
@@ -392,7 +394,6 @@ void nsIOService::OnTLSPrefChange(const char* aPref, void* aSelf) {
   } else if (pref.EqualsLiteral("security.ssl.enable_ocsp_stapling") ||
              pref.EqualsLiteral("security.ssl.enable_ocsp_must_staple") ||
              pref.EqualsLiteral("security.pki.certificate_transparency.mode") ||
-             pref.EqualsLiteral("security.cert_pinning.enforcement_level") ||
              pref.EqualsLiteral("security.pki.name_matching_mode")) {
     SetValidationOptionsCommon();
   }
@@ -628,15 +629,14 @@ void nsIOService::OnProcessLaunchComplete(SocketProcessHost* aHost,
 
   LOG(("nsIOService::OnProcessLaunchComplete aSucceeded=%d\n", aSucceeded));
 
-  mSocketProcessLaunchComplete = true;
+  mSocketProcessLaunchComplete = aSucceeded;
 
-  if (mShutdown || !SocketProcessReady()) {
+  if (mShutdown || !SocketProcessReady() || !aSucceeded) {
     return;
   }
 
   if (!mPendingEvents.IsEmpty()) {
-    nsTArray<std::function<void()>> pendingEvents;
-    mPendingEvents.SwapElements(pendingEvents);
+    nsTArray<std::function<void()>> pendingEvents = std::move(mPendingEvents);
     for (auto& func : pendingEvents) {
       func();
     }
@@ -732,17 +732,10 @@ nsresult nsIOService::RecheckCaptivePortalIfLocalRedirect(nsIChannel* newChan) {
     return rv;
   }
 
-  PRNetAddr prAddr;
-  if (PR_StringToNetAddr(host.BeginReading(), &prAddr) != PR_SUCCESS) {
-    // The redirect wasn't to an IP literal, so there's probably no need
-    // to trigger the captive portal detection right now. It can wait.
-    return NS_OK;
-  }
-
-  NetAddr netAddr;
-  PRNetAddrToNetAddr(&prAddr, &netAddr);
-  if (IsIPAddrLocal(&netAddr)) {
-    // Redirects to local IP addresses are probably captive portals
+  NetAddr addr;
+  // If the redirect wasn't to an IP literal, so there's probably no need
+  // to trigger the captive portal detection right now. It can wait.
+  if (NS_SUCCEEDED(addr.InitFromString(host)) && addr.IsIPAddrLocal()) {
     RecheckCaptivePortal();
   }
 
@@ -857,14 +850,6 @@ static bool UsesExternalProtocolHandler(const char* aScheme) {
     return false;
   }
 
-  // When ftp protocol is disabled, return true if external protocol handler was
-  // not explicitly disabled by the prererence.
-  if ("ftp"_ns.Equals(aScheme) &&
-      !Preferences::GetBool("network.ftp.enabled", true) &&
-      Preferences::GetBool("network.protocol-handler.external.ftp", true)) {
-    return true;
-  }
-
   for (const auto& forcedExternalScheme : gForcedExternalSchemes) {
     if (!nsCRT::strcasecmp(forcedExternalScheme, aScheme)) {
       return true;
@@ -945,14 +930,9 @@ nsIOService::HostnameIsLocalIPAddress(nsIURI* aURI, bool* aResult) {
 
   *aResult = false;
 
-  PRNetAddr addr;
-  PRStatus result = PR_StringToNetAddr(host.get(), &addr);
-  if (result == PR_SUCCESS) {
-    NetAddr netAddr;
-    PRNetAddrToNetAddr(&addr, &netAddr);
-    if (IsIPAddrLocal(&netAddr)) {
-      *aResult = true;
-    }
+  NetAddr addr;
+  if (NS_SUCCEEDED(addr.InitFromString(host)) && addr.IsIPAddrLocal()) {
+    *aResult = true;
   }
 
   return NS_OK;
@@ -973,14 +953,9 @@ nsIOService::HostnameIsSharedIPAddress(nsIURI* aURI, bool* aResult) {
 
   *aResult = false;
 
-  PRNetAddr addr;
-  PRStatus result = PR_StringToNetAddr(host.get(), &addr);
-  if (result == PR_SUCCESS) {
-    NetAddr netAddr;
-    PRNetAddrToNetAddr(&addr, &netAddr);
-    if (IsIPAddrShared(&netAddr)) {
-      *aResult = true;
-    }
+  NetAddr addr;
+  if (NS_SUCCEEDED(addr.InitFromString(host)) && addr.IsIPAddrShared()) {
+    *aResult = true;
   }
 
   return NS_OK;
@@ -1041,8 +1016,7 @@ already_AddRefed<nsIURI> nsIOService::CreateExposableURI(nsIURI* aURI) {
   nsAutoCString userPass;
   uri->GetUserPass(userPass);
   if (!userPass.IsEmpty()) {
-    DebugOnly<nsresult> rv =
-        NS_MutateURI(uri).SetUserPass(EmptyCString()).Finalize(uri);
+    DebugOnly<nsresult> rv = NS_MutateURI(uri).SetUserPass(""_ns).Finalize(uri);
     MOZ_ASSERT(NS_SUCCEEDED(rv) && uri, "Mutating URI should never fail");
   }
   return uri.forget();
@@ -1062,7 +1036,7 @@ nsIOService::NewChannelFromURI(nsIURI* aURI, nsINode* aLoadingNode,
                                nsIPrincipal* aLoadingPrincipal,
                                nsIPrincipal* aTriggeringPrincipal,
                                uint32_t aSecurityFlags,
-                               uint32_t aContentPolicyType,
+                               nsContentPolicyType aContentPolicyType,
                                nsIChannel** result) {
   return NewChannelFromURIWithProxyFlags(aURI,
                                          nullptr,  // aProxyURI
@@ -1076,7 +1050,8 @@ nsresult nsIOService::NewChannelFromURIWithClientAndController(
     nsIPrincipal* aTriggeringPrincipal,
     const Maybe<ClientInfo>& aLoadingClientInfo,
     const Maybe<ServiceWorkerDescriptor>& aController, uint32_t aSecurityFlags,
-    uint32_t aContentPolicyType, uint32_t aSandboxFlags, nsIChannel** aResult) {
+    nsContentPolicyType aContentPolicyType, uint32_t aSandboxFlags,
+    nsIChannel** aResult) {
   return NewChannelFromURIWithProxyFlagsInternal(
       aURI,
       nullptr,  // aProxyURI
@@ -1100,7 +1075,8 @@ nsresult nsIOService::NewChannelFromURIWithProxyFlagsInternal(
     nsIPrincipal* aTriggeringPrincipal,
     const Maybe<ClientInfo>& aLoadingClientInfo,
     const Maybe<ServiceWorkerDescriptor>& aController, uint32_t aSecurityFlags,
-    uint32_t aContentPolicyType, uint32_t aSandboxFlags, nsIChannel** result) {
+    nsContentPolicyType aContentPolicyType, uint32_t aSandboxFlags,
+    nsIChannel** result) {
   nsCOMPtr<nsILoadInfo> loadInfo = new LoadInfo(
       aLoadingPrincipal, aTriggeringPrincipal, aLoadingNode, aSecurityFlags,
       aContentPolicyType, aLoadingClientInfo, aController, aSandboxFlags);
@@ -1184,7 +1160,7 @@ nsIOService::NewChannelFromURIWithProxyFlags(
     nsIURI* aURI, nsIURI* aProxyURI, uint32_t aProxyFlags,
     nsINode* aLoadingNode, nsIPrincipal* aLoadingPrincipal,
     nsIPrincipal* aTriggeringPrincipal, uint32_t aSecurityFlags,
-    uint32_t aContentPolicyType, nsIChannel** result) {
+    nsContentPolicyType aContentPolicyType, nsIChannel** result) {
   return NewChannelFromURIWithProxyFlagsInternal(
       aURI, aProxyURI, aProxyFlags, aLoadingNode, aLoadingPrincipal,
       aTriggeringPrincipal, Maybe<ClientInfo>(),
@@ -1197,7 +1173,8 @@ nsIOService::NewChannel(const nsACString& aSpec, const char* aCharset,
                         nsIURI* aBaseURI, nsINode* aLoadingNode,
                         nsIPrincipal* aLoadingPrincipal,
                         nsIPrincipal* aTriggeringPrincipal,
-                        uint32_t aSecurityFlags, uint32_t aContentPolicyType,
+                        uint32_t aSecurityFlags,
+                        nsContentPolicyType aContentPolicyType,
                         nsIChannel** result) {
   nsresult rv;
   nsCOMPtr<nsIURI> uri;
@@ -1242,8 +1219,9 @@ nsIOService::SetOffline(bool offline) {
   LOG(("nsIOService::SetOffline offline=%d\n", offline));
   // When someone wants to go online (!offline) after we got XPCOM shutdown
   // throw ERROR_NOT_AVAILABLE to prevent return to online state.
-  if ((mShutdown || mOfflineForProfileChange) && !offline)
+  if ((mShutdown || mOfflineForProfileChange) && !offline) {
     return NS_ERROR_NOT_AVAILABLE;
+  }
 
   // SetOffline() may re-enter while it's shutting down services.
   // If that happens, save the most recent value and it will be
@@ -1279,18 +1257,20 @@ nsIOService::SetOffline(bool offline) {
       mOffline = true;  // indicate we're trying to shutdown
 
       // don't care if notifications fail
-      if (observerService)
+      if (observerService) {
         observerService->NotifyObservers(subject,
                                          NS_IOSERVICE_GOING_OFFLINE_TOPIC,
                                          u"" NS_IOSERVICE_OFFLINE);
+      }
 
       if (mSocketTransportService) mSocketTransportService->SetOffline(true);
 
       mLastOfflineStateChange = PR_IntervalNow();
-      if (observerService)
+      if (observerService) {
         observerService->NotifyObservers(subject,
                                          NS_IOSERVICE_OFFLINE_STATUS_TOPIC,
                                          u"" NS_IOSERVICE_OFFLINE);
+      }
     } else if (!offline && mOffline) {
       // go online
       InitializeSocketTransportService();
@@ -1407,7 +1387,7 @@ nsIOService::AllowPort(int32_t inPort, const char* scheme, bool* _retval) {
     return NS_OK;
   }
 
-  if (port == 0) {
+  if (port <= 0 || port > std::numeric_limits<uint16_t>::max()) {
     *_retval = false;
     return NS_OK;
   }
@@ -1417,7 +1397,6 @@ nsIOService::AllowPort(int32_t inPort, const char* scheme, bool* _retval) {
     MutexAutoLock lock(mMutex);
     restrictedPortList.Assign(mRestrictedPortList);
   }
-
   // first check to see if the port is in our blacklist:
   int32_t badPortListCnt = restrictedPortList.Length();
   for (int i = 0; i < badPortListCnt; i++) {
@@ -1453,12 +1432,14 @@ void nsIOService::PrefsChanged(const char* pref, void* self) {
 
 void nsIOService::PrefsChanged(const char* pref) {
   // Look for extra ports to block
-  if (!pref || strcmp(pref, PORT_PREF("banned")) == 0)
+  if (!pref || strcmp(pref, PORT_PREF("banned")) == 0) {
     ParsePortList(PORT_PREF("banned"), false);
+  }
 
   // ...as well as previous blocks to remove.
-  if (!pref || strcmp(pref, PORT_PREF("banned.override")) == 0)
+  if (!pref || strcmp(pref, PORT_PREF("banned.override")) == 0) {
     ParsePortList(PORT_PREF("banned.override"), true);
+  }
 
   if (!pref || strcmp(pref, MANAGE_OFFLINE_STATUS_PREF) == 0) {
     bool manage;
@@ -1474,20 +1455,23 @@ void nsIOService::PrefsChanged(const char* pref) {
   if (!pref || strcmp(pref, NECKO_BUFFER_CACHE_COUNT_PREF) == 0) {
     int32_t count;
     if (NS_SUCCEEDED(
-            Preferences::GetInt(NECKO_BUFFER_CACHE_COUNT_PREF, &count)))
+            Preferences::GetInt(NECKO_BUFFER_CACHE_COUNT_PREF, &count))) {
       /* check for bogus values and default if we find such a value */
       if (count > 0) gDefaultSegmentCount = count;
+    }
   }
 
   if (!pref || strcmp(pref, NECKO_BUFFER_CACHE_SIZE_PREF) == 0) {
     int32_t size;
-    if (NS_SUCCEEDED(Preferences::GetInt(NECKO_BUFFER_CACHE_SIZE_PREF, &size)))
+    if (NS_SUCCEEDED(
+            Preferences::GetInt(NECKO_BUFFER_CACHE_SIZE_PREF, &size))) {
       /* check for bogus values and default if we find such a value
        * the upper limit here is arbitrary. having a 1mb segment size
        * is pretty crazy.  if you remove this, consider adding some
        * integer rollover test.
        */
       if (size > 0 && size < 1024 * 1024) gDefaultSegmentSize = size;
+    }
     NS_WARNING_ASSERTION(!(size & (size - 1)),
                          "network segment size is not a power of 2!");
   }
@@ -1528,21 +1512,24 @@ void nsIOService::ParsePortList(const char* pref, bool remove) {
         if ((portBegin < 65536) && (portEnd < 65536)) {
           int32_t curPort;
           if (remove) {
-            for (curPort = portBegin; curPort <= portEnd; curPort++)
+            for (curPort = portBegin; curPort <= portEnd; curPort++) {
               restrictedPortList.RemoveElement(curPort);
+            }
           } else {
-            for (curPort = portBegin; curPort <= portEnd; curPort++)
+            for (curPort = portBegin; curPort <= portEnd; curPort++) {
               restrictedPortList.AppendElement(curPort);
+            }
           }
         }
       } else {
         nsresult aErrorCode;
         int32_t port = portListArray[index].ToInteger(&aErrorCode);
         if (NS_SUCCEEDED(aErrorCode) && port < 65536) {
-          if (remove)
+          if (remove) {
             restrictedPortList.RemoveElement(port);
-          else
+          } else {
             restrictedPortList.AppendElement(port);
+          }
         }
       }
     }
@@ -1832,8 +1819,9 @@ nsIOService::EscapeString(const nsACString& aString, uint32_t aEscapeType,
   nsAutoCString stringCopy(aString);
   nsCString result;
 
-  if (!NS_Escape(stringCopy, result, (nsEscapeMask)aEscapeType))
+  if (!NS_Escape(stringCopy, result, (nsEscapeMask)aEscapeType)) {
     return NS_ERROR_OUT_OF_MEMORY;
+  }
 
   aResult.Assign(result);
 
@@ -1965,6 +1953,27 @@ nsresult nsIOService::SpeculativeConnectInternal(
 
   if (!aPrincipal) {
     return NS_ERROR_INVALID_ARG;
+  }
+
+  // XXX Bug 1724080: Avoid TCP connections on port 80 when https-only
+  // or https-first is enabled. Let's create a dummy loadinfo which we
+  // only use to determine whether we need ot upgrade the speculative
+  // connection from http to https.
+  nsCOMPtr<nsIURI> httpsURI;
+  if (aURI->SchemeIs("http")) {
+    nsCOMPtr<nsILoadInfo> httpsOnlyCheckLoadInfo =
+        new LoadInfo(loadingPrincipal, loadingPrincipal, nullptr,
+                     nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK,
+                     nsIContentPolicy::TYPE_SPECULATIVE);
+
+    // Check if https-only, or https-first would upgrade the request
+    if (nsHTTPSOnlyUtils::ShouldUpgradeRequest(aURI, httpsOnlyCheckLoadInfo) ||
+        nsHTTPSOnlyUtils::ShouldUpgradeHttpsFirstRequest(
+            aURI, httpsOnlyCheckLoadInfo)) {
+      rv = NS_GetSecureUpgradedURI(aURI, getter_AddRefs(httpsURI));
+      NS_ENSURE_SUCCESS(rv, rv);
+      aURI = httpsURI.get();
+    }
   }
 
   // dummy channel used to create a TCP connection.

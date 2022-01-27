@@ -11,7 +11,7 @@ const SEARCH_ENGINE_DETAILS = [
   {
     alias: "a",
     baseURL:
-      "https://www.amazon.com/exec/obidos/external-search/?field-keywords=foo&ie=UTF-8&mode=blended&tag=mozilla-20&sourceid=Mozilla-search",
+      "https://www.amazon.com/exec/obidos/external-search/?field-keywords=foo&ie=UTF-8&mode=blended&tag=moz-us-20&sourceid=Mozilla-search",
     codes: {
       context: "",
       keyword: "",
@@ -45,7 +45,7 @@ const SEARCH_ENGINE_DETAILS = [
   {
     alias: "e",
     baseURL:
-      "https://rover.ebay.com/rover/1/711-53200-19255-0/1?ff3=4&toolid=20004&campid=5338192028&customid=&mpre=https://www.ebay.com/sch/foo",
+      "https://www.ebay.com/sch/?toolid=20004&campid=5338192028&mkevt=1&mkcid=1&mkrid=711-53200-19255-0&kw=foo",
     codes: {
       context: "",
       keyword: "",
@@ -71,6 +71,14 @@ const SEARCH_ENGINE_DETAILS = [
 
 function promiseContentSearchReady(browser) {
   return SpecialPowers.spawn(browser, [], async function(args) {
+    SpecialPowers.pushPrefEnv({
+      set: [
+        [
+          "browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar",
+          false,
+        ],
+      ],
+    });
     await ContentTaskUtils.waitForCondition(
       () =>
         content.wrappedJSObject.gContentSearchController &&

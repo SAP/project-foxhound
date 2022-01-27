@@ -10,16 +10,12 @@
 #include "gfxFontUtils.h"
 #include "gfxTextRun.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/intl/String.h"
 #include "nsUnicodeProperties.h"
 #include "nsUnicodeScriptCodes.h"
 
 #include "harfbuzz/hb.h"
 #include "harfbuzz/hb-ot.h"
-
-#include "unicode/unorm.h"
-#include "unicode/utext.h"
-
-static const UNormalizer2* sNormalizer = nullptr;
 
 #include <algorithm>
 
@@ -87,9 +83,6 @@ hb_codepoint_t gfxHarfBuzzShaper::GetNominalGlyph(
     gid = mFont->GetGlyph(unicode, 0);
   } else {
     // we only instantiate a harfbuzz shaper if there's a cmap available
-    NS_ASSERTION(mFont->GetFontEntry()->HasCmapTable(),
-                 "we cannot be using this font!");
-
     NS_ASSERTION(mCmapTable && (mCmapFormat > 0) && (mSubtableOffset > 0),
                  "cmap data not correctly set up, expect disaster");
 
@@ -120,9 +113,17 @@ hb_codepoint_t gfxHarfBuzzShaper::GetNominalGlyph(
   }
 
   if (!gid) {
-    // if there's no glyph for &nbsp;, just use the space glyph instead
-    if (unicode == 0xA0) {
-      gid = mFont->GetSpaceGlyph();
+    switch (unicode) {
+      case 0xA0:
+        // if there's no glyph for &nbsp;, just use the space glyph instead.
+        gid = mFont->GetSpaceGlyph();
+        break;
+      case 0x2010:
+      case 0x2011:
+        // For Unicode HYPHEN and NON-BREAKING HYPHEN, fall back to the ASCII
+        // HYPHEN-MINUS as a substitute.
+        gid = GetNominalGlyph('-');
+        break;
     }
   }
 
@@ -998,47 +999,13 @@ static hb_unicode_combining_class_t HBGetCombiningClass(
   return hb_unicode_combining_class_t(GetCombiningClass(aCh));
 }
 
-// Hebrew presentation forms with dagesh, for characters 0x05D0..0x05EA;
-// note that some letters do not have a dagesh presForm encoded
-static const char16_t sDageshForms[0x05EA - 0x05D0 + 1] = {
-    0xFB30,  // ALEF
-    0xFB31,  // BET
-    0xFB32,  // GIMEL
-    0xFB33,  // DALET
-    0xFB34,  // HE
-    0xFB35,  // VAV
-    0xFB36,  // ZAYIN
-    0,       // HET
-    0xFB38,  // TET
-    0xFB39,  // YOD
-    0xFB3A,  // FINAL KAF
-    0xFB3B,  // KAF
-    0xFB3C,  // LAMED
-    0,       // FINAL MEM
-    0xFB3E,  // MEM
-    0,       // FINAL NUN
-    0xFB40,  // NUN
-    0xFB41,  // SAMEKH
-    0,       // AYIN
-    0xFB43,  // FINAL PE
-    0xFB44,  // PE
-    0,       // FINAL TSADI
-    0xFB46,  // TSADI
-    0xFB47,  // QOF
-    0xFB48,  // RESH
-    0xFB49,  // SHIN
-    0xFB4A   // TAV
-};
-
 static hb_bool_t HBUnicodeCompose(hb_unicode_funcs_t* ufuncs, hb_codepoint_t a,
                                   hb_codepoint_t b, hb_codepoint_t* ab,
                                   void* user_data) {
-  if (sNormalizer) {
-    UChar32 ch = unorm2_composePair(sNormalizer, a, b);
-    if (ch >= 0) {
-      *ab = ch;
-      return true;
-    }
+  char32_t ch = mozilla::intl::String::ComposePairNFC(a, b);
+  if (ch > 0) {
+    *ab = ch;
+    return true;
   }
 
   return false;
@@ -1057,37 +1024,16 @@ static hb_bool_t HBUnicodeDecompose(hb_unicode_funcs_t* ufuncs,
   }
 #endif
 
-  if (!sNormalizer) {
-    return false;
+  char32_t decomp[2] = {0};
+  if (mozilla::intl::String::DecomposeRawNFD(ab, decomp)) {
+    if (decomp[1] || decomp[0] != ab) {
+      *a = decomp[0];
+      *b = decomp[1];
+      return true;
+    }
   }
 
-  // Canonical decompositions are never more than two characters,
-  // or a maximum of 4 utf-16 code units.
-  const unsigned MAX_DECOMP_LENGTH = 4;
-
-  UErrorCode error = U_ZERO_ERROR;
-  UChar decomp[MAX_DECOMP_LENGTH];
-  int32_t len = unorm2_getRawDecomposition(sNormalizer, ab, decomp,
-                                           MAX_DECOMP_LENGTH, &error);
-  if (U_FAILURE(error) || len < 0) {
-    return false;
-  }
-
-  UText text = UTEXT_INITIALIZER;
-  utext_openUChars(&text, decomp, len, &error);
-  NS_ASSERTION(U_SUCCESS(error), "UText failure?");
-
-  UChar32 ch = UTEXT_NEXT32(&text);
-  if (ch != U_SENTINEL) {
-    *a = ch;
-  }
-  ch = UTEXT_NEXT32(&text);
-  if (ch != U_SENTINEL) {
-    *b = ch;
-  }
-  utext_close(&text);
-
-  return *b != 0 || *a != ab;
+  return false;
 }
 
 static void AddOpenTypeFeature(const uint32_t& aTag, uint32_t& aValue,
@@ -1106,6 +1052,7 @@ static void AddOpenTypeFeature(const uint32_t& aTag, uint32_t& aValue,
  */
 
 static hb_font_funcs_t* sHBFontFuncs = nullptr;
+static hb_font_funcs_t* sNominalGlyphFunc = nullptr;
 static hb_unicode_funcs_t* sHBUnicodeFuncs = nullptr;
 static const hb_script_t sMathScript =
     hb_ot_tag_to_script(HB_TAG('m', 'a', 't', 'h'));
@@ -1137,6 +1084,12 @@ bool gfxHarfBuzzShaper::Initialize() {
                                                nullptr, nullptr);
     hb_font_funcs_set_glyph_h_kerning_func(sHBFontFuncs, HBGetHKerning, nullptr,
                                            nullptr);
+    hb_font_funcs_make_immutable(sHBFontFuncs);
+
+    sNominalGlyphFunc = hb_font_funcs_create();
+    hb_font_funcs_set_nominal_glyph_func(sNominalGlyphFunc, HBGetNominalGlyph,
+                                         nullptr, nullptr);
+    hb_font_funcs_make_immutable(sNominalGlyphFunc);
 
     sHBUnicodeFuncs = hb_unicode_funcs_create(hb_unicode_funcs_get_empty());
     hb_unicode_funcs_set_mirroring_func(sHBUnicodeFuncs, HBGetMirroring,
@@ -1151,10 +1104,7 @@ bool gfxHarfBuzzShaper::Initialize() {
                                       nullptr, nullptr);
     hb_unicode_funcs_set_decompose_func(sHBUnicodeFuncs, HBUnicodeDecompose,
                                         nullptr, nullptr);
-
-    UErrorCode error = U_ZERO_ERROR;
-    sNormalizer = unorm2_getNFCInstance(&error);
-    MOZ_ASSERT(U_SUCCESS(error), "failed to get ICU normalizer");
+    hb_unicode_funcs_make_immutable(sHBUnicodeFuncs);
   }
 
   gfxFontEntry* entry = mFont->GetFontEntry();
@@ -1187,7 +1137,11 @@ bool gfxHarfBuzzShaper::Initialize() {
   hb_buffer_set_cluster_level(mBuffer,
                               HB_BUFFER_CLUSTER_LEVEL_MONOTONE_CHARACTERS);
 
-  mHBFont = CreateHBFont(mFont, sHBFontFuncs, &mCallbackData);
+  auto* funcs =
+      mFont->GetFontEntry()->HasFontTable(TRUETYPE_TAG('C', 'F', 'F', ' '))
+          ? sNominalGlyphFunc
+          : sHBFontFuncs;
+  mHBFont = CreateHBFont(mFont, funcs, &mCallbackData);
 
   return true;
 }
@@ -1199,10 +1153,12 @@ hb_font_t* gfxHarfBuzzShaper::CreateHBFont(gfxFont* aFont,
   hb_font_t* result = hb_font_create(hbFace);
   hb_face_destroy(hbFace);
 
-  if (!aFontFuncs || !aCallbackData ||
-      aFont->GetFontEntry()->HasFontTable(TRUETYPE_TAG('C', 'F', 'F', ' '))) {
-    hb_ot_font_set_funcs(result);
-  } else {
+  if (aFontFuncs && aCallbackData) {
+    if (aFontFuncs == sNominalGlyphFunc) {
+      hb_font_t* subfont = hb_font_create_sub_font(result);
+      hb_font_destroy(result);
+      result = subfont;
+    }
     hb_font_set_funcs(result, aFontFuncs, aCallbackData, nullptr);
   }
   hb_font_set_ppem(result, aFont->GetAdjustedSize(), aFont->GetAdjustedSize());
@@ -1333,7 +1289,8 @@ void gfxHarfBuzzShaper::InitializeVertical() {
 bool gfxHarfBuzzShaper::ShapeText(DrawTarget* aDrawTarget,
                                   const char16_t* aText, uint32_t aOffset,
                                   uint32_t aLength, Script aScript,
-                                  bool aVertical, RoundingFlags aRounding,
+                                  nsAtom* aLanguage, bool aVertical,
+                                  RoundingFlags aRounding,
                                   gfxShapedText* aShapedText) {
   mUseVerticalPresentationForms = false;
 
@@ -1393,9 +1350,9 @@ bool gfxHarfBuzzShaper::ShapeText(DrawTarget* aDrawTarget,
     language = hb_ot_tag_to_language(style->languageOverride);
   } else if (entry->mLanguageOverride) {
     language = hb_ot_tag_to_language(entry->mLanguageOverride);
-  } else if (style->explicitLanguage) {
+  } else if (aLanguage) {
     nsCString langString;
-    style->language->ToUTF8String(langString);
+    aLanguage->ToUTF8String(langString);
     language = hb_language_from_string(langString.get(), langString.Length());
   } else {
     language = hb_ot_tag_to_language(HB_OT_TAG_DEFAULT_LANGUAGE);
@@ -1687,11 +1644,9 @@ nsresult gfxHarfBuzzShaper::SetGlyphsFromRun(gfxShapedText* aShapedText,
         }
       }
 
-      bool isClusterStart = charGlyphs[baseCharIndex].IsClusterStart();
-      aShapedText->SetGlyphs(aOffset + baseCharIndex,
-                             CompressedGlyph::MakeComplex(
-                                 isClusterStart, true, detailedGlyphs.Length()),
-                             detailedGlyphs.Elements());
+      aShapedText->SetDetailedGlyphs(aOffset + baseCharIndex,
+                                     detailedGlyphs.Length(),
+                                     detailedGlyphs.Elements());
 
       detailedGlyphs.Clear();
     }
@@ -1702,7 +1657,7 @@ nsresult gfxHarfBuzzShaper::SetGlyphsFromRun(gfxShapedText* aShapedText,
            baseCharIndex < int32_t(wordLength)) {
       CompressedGlyph& g = charGlyphs[baseCharIndex];
       NS_ASSERTION(!g.IsSimpleGlyph(), "overwriting a simple glyph");
-      g.SetComplex(g.IsClusterStart(), false, 0);
+      g.SetComplex(g.IsClusterStart(), false);
     }
 
     glyphStart = glyphEnd;

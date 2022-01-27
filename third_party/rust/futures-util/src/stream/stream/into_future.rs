@@ -1,9 +1,9 @@
 use crate::stream::StreamExt;
 use core::pin::Pin;
 use futures_core::future::{FusedFuture, Future};
+use futures_core::ready;
 use futures_core::stream::Stream;
 use futures_core::task::{Context, Poll};
-use pin_utils::unsafe_pinned;
 
 /// Future for the [`into_future`](super::StreamExt::into_future) method.
 #[derive(Debug)]
@@ -12,13 +12,9 @@ pub struct StreamFuture<St> {
     stream: Option<St>,
 }
 
-impl<St: Unpin> Unpin for StreamFuture<St> {}
-
 impl<St: Stream + Unpin> StreamFuture<St> {
-    unsafe_pinned!(stream: Option<St>);
-
-    pub(super) fn new(stream: St) -> StreamFuture<St> {
-        StreamFuture { stream: Some(stream) }
+    pub(super) fn new(stream: St) -> Self {
+        Self { stream: Some(stream) }
     }
 
     /// Acquires a reference to the underlying stream that this combinator is
@@ -57,7 +53,7 @@ impl<St: Stream + Unpin> StreamFuture<St> {
     /// in order to return it to the caller of `Future::poll` if the stream yielded
     /// an element.
     pub fn get_pin_mut(self: Pin<&mut Self>) -> Option<Pin<&mut St>> {
-        self.stream().as_pin_mut()
+        self.get_mut().stream.as_mut().map(Pin::new)
     }
 
     /// Consumes this combinator, returning the underlying stream.
@@ -83,10 +79,7 @@ impl<St: Stream + Unpin> FusedFuture for StreamFuture<St> {
 impl<St: Stream + Unpin> Future for StreamFuture<St> {
     type Output = (Option<St::Item>, St);
 
-    fn poll(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let item = {
             let s = self.stream.as_mut().expect("polling StreamFuture twice");
             ready!(s.poll_next_unpin(cx))

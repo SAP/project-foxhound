@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-addons-window =
-    .title = Add-ons Manager
 addons-page-title = Add-ons Manager
 
 search-header =
@@ -12,6 +10,15 @@ search-header =
 
 search-header-shortcut =
     .key = f
+
+list-empty-get-extensions-message =
+    Get extensions and themes on <a data-l10n-name="get-extensions">{ $domain }</a>
+
+list-empty-get-dictionaries-message =
+    Get dictionaries on <a data-l10n-name="get-extensions">{ $domain }</a>
+
+list-empty-get-language-packs-message =
+    Get language packs on <a data-l10n-name="get-extensions">{ $domain }</a>
 
 list-empty-installed =
     .value = You don’t have any add-ons of this type installed
@@ -32,60 +39,15 @@ help-button = Add-ons Support
 sidebar-help-button-title =
     .title = Add-ons Support
 
-preferences =
-    { PLATFORM() ->
-        [windows] { -brand-short-name } Options
-       *[other] { -brand-short-name } Preferences
-    }
-sidebar-preferences-button-title =
-    .title =
-        { PLATFORM() ->
-            [windows] { -brand-short-name } Options
-           *[other] { -brand-short-name } Preferences
-        }
+addons-settings-button = { -brand-short-name } Settings
+sidebar-settings-button-title =
+    .title = { -brand-short-name } Settings
 
 show-unsigned-extensions-button =
     .label = Some extensions could not be verified
 
 show-all-extensions-button =
     .label = Show all extensions
-
-cmd-show-details =
-    .label = Show More Information
-    .accesskey = S
-
-cmd-find-updates =
-    .label = Find Updates
-    .accesskey = F
-
-cmd-preferences =
-    .label =
-        { PLATFORM() ->
-            [windows] Options
-           *[other] Preferences
-        }
-    .accesskey =
-        { PLATFORM() ->
-            [windows] O
-           *[other] P
-        }
-
-cmd-enable-theme =
-    .label = Wear Theme
-    .accesskey = W
-
-cmd-disable-theme =
-    .label = Stop Wearing Theme
-    .accesskey = W
-
-cmd-install-addon =
-    .label = Install
-    .accesskey = I
-
-cmd-contribute =
-    .label = Contribute
-    .accesskey = C
-    .tooltiptext = Contribute to the development of this add-on
 
 detail-version =
     .label = Version
@@ -240,7 +202,6 @@ extensions-warning-update-security = Add-on update security checking is disabled
 extensions-warning-update-security-button = Enable
     .title = Enable add-on update security checking
 
-
 ## Strings connected to add-on updates
 
 addon-updates-check-for-updates = Check for Updates
@@ -359,6 +320,7 @@ install-theme-button = Install Theme
 # the detailed add-on view is opened, from where the add-on can be managed.
 manage-addon-button = Manage
 find-more-addons = Find more add-ons
+find-more-themes = Find more themes
 
 # This is a label for the button to open the "more options" menu, it is only
 # used for screen readers.
@@ -366,6 +328,7 @@ addon-options-button =
     .aria-label = More Options
 
 ## Add-on actions
+
 report-addon-button = Report
 remove-addon-button = Remove
 # The link will always be shown after the other text.
@@ -390,6 +353,8 @@ extension-disabled-heading = Disabled
 
 theme-enabled-heading = Enabled
 theme-disabled-heading = Disabled
+theme-monochromatic-heading = Colorways
+theme-monochromatic-subheading = Vibrant new colorways from { -brand-product-name }. Available for a limited time.
 
 plugin-enabled-heading = Enabled
 plugin-disabled-heading = Disabled
@@ -400,7 +365,6 @@ dictionary-disabled-heading = Disabled
 locale-enabled-heading = Enabled
 locale-disabled-heading = Disabled
 
-ask-to-activate-button = Ask to Activate
 always-activate-button = Always Activate
 never-activate-button = Never Activate
 
@@ -409,6 +373,10 @@ addon-detail-version-label = Version
 addon-detail-last-updated-label = Last Updated
 addon-detail-homepage-label = Homepage
 addon-detail-rating-label = Rating
+
+# Message for add-ons with a staged pending update.
+install-postponed-message = This extension will be updated when { -brand-short-name } restarts.
+install-postponed-button = Update Now
 
 # The average rating that the add-on has received.
 # Variables:
@@ -453,11 +421,22 @@ addon-detail-private-browsing-help = When allowed, the extension will have acces
 addon-detail-private-browsing-allow = Allow
 addon-detail-private-browsing-disallow = Don’t Allow
 
-# This is the tooltip text for the recommended badge for an extension in about:addons. The
-# badge is a small icon displayed next to an extension when it is recommended on AMO.
+## This is the tooltip text for the recommended badges for an extension in about:addons. The
+## badge is a small icon displayed next to an extension when it is recommended on AMO.
+
 addon-badge-recommended2 =
   .title = { -brand-product-name } only recommends extensions that meet our standards for security and performance
   .aria-label = { addon-badge-recommended2.title }
+# We hard code "Mozilla" in the string below because the extensions are built
+# by Mozilla and we don't want forks to display "by Fork".
+addon-badge-line3 =
+  .title = Official extension built by Mozilla. Meets security and performance standards
+  .aria-label = { addon-badge-line3.title }
+addon-badge-verified2 =
+  .title = This extension has been reviewed to meet our standards for security and performance
+  .aria-label = { addon-badge-verified2.title }
+
+##
 
 available-updates-heading = Available Updates
 recent-updates-heading = Recent Updates
@@ -466,6 +445,9 @@ release-notes-loading = Loading…
 release-notes-error = Sorry, but there was an error loading the release notes.
 
 addon-permissions-empty = This extension doesn’t require any permissions
+addon-permissions-required = Required permissions for core functionality:
+addon-permissions-optional = Optional permissions for added functionality:
+addon-permissions-learnmore = Learn more about permissions
 
 recommended-extensions-heading = Recommended Extensions
 recommended-themes-heading = Recommended Themes

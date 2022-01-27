@@ -38,12 +38,8 @@ add_task(async function test_add_interesting_window() {
     content.location = newPage;
   });
 
-  if (Services.prefs.getBoolPref("fission.sessionHistoryInParent", false)) {
-    let tab = newWin.gBrowser.selectedTab;
-    await promiseOnHistoryReplaceEntry(tab);
-  } else {
-    await promiseOnHistoryReplaceEntryInChild(browser);
-  }
+  await promiseOnHistoryReplaceEntry(browser);
+
   // Clear out the userTypedValue so that the new window looks like
   // it's really not worth restoring.
   browser.userTypedValue = null;
@@ -121,9 +117,16 @@ add_task(async function test_remove_uninteresting_window() {
     // Epic hackery to make this browser seem suddenly boring.
     docShell.setCurrentURI(Services.io.newURI("about:blank"));
 
-    let { sessionHistory } = docShell.QueryInterface(Ci.nsIWebNavigation);
-    sessionHistory.legacySHistory.PurgeHistory(sessionHistory.count);
+    if (!SpecialPowers.Services.appinfo.sessionHistoryInParent) {
+      let { sessionHistory } = docShell.QueryInterface(Ci.nsIWebNavigation);
+      sessionHistory.legacySHistory.purgeHistory(sessionHistory.count);
+    }
   });
+
+  if (SpecialPowers.Services.appinfo.sessionHistoryInParent) {
+    let { sessionHistory } = browser.browsingContext;
+    sessionHistory.purgeHistory(sessionHistory.count);
+  }
 
   // Once this windowClosed Promise resolves, we should have finished
   // the flush and revisited our decision to put this window into

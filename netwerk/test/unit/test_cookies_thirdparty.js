@@ -17,6 +17,10 @@ add_task(async () => {
     "network.cookie.rejectForeignWithExceptions.enabled",
     false
   );
+  Services.prefs.setBoolPref("dom.security.https_first", false);
+
+  // Bug 1617611 - Fix all the tests broken by "cookies SameSite=Lax by default"
+  Services.prefs.setBoolPref("network.cookie.sameSite.laxByDefault", false);
 
   CookieXPCShellUtils.createServer({
     hosts: ["foo.com", "bar.com", "third.com"],
@@ -159,4 +163,6 @@ add_task(async () => {
     await do_set_cookies(uri1, channel2, true, [1, 2]);
     Services.cookies.removeAll();
   }
+  Services.prefs.clearUserPref("dom.security.https_first");
+  Services.prefs.clearUserPref("network.cookie.sameSite.laxByDefault");
 });

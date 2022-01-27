@@ -7,11 +7,14 @@
 #ifndef mozilla_dom_l10n_DocumentL10n_h
 #define mozilla_dom_l10n_DocumentL10n_h
 
-#include "mozilla/dom/Document.h"
 #include "mozilla/dom/DOMLocalization.h"
+
+class nsIContentSink;
 
 namespace mozilla {
 namespace dom {
+
+class Document;
 
 enum class DocumentL10nState {
   // State set when the DocumentL10n gets constructed.
@@ -44,12 +47,10 @@ class DocumentL10n final : public DOMLocalization {
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(DocumentL10n, DOMLocalization)
 
-  static RefPtr<DocumentL10n> Create(Document* aDocument, const bool aSync);
+  static RefPtr<DocumentL10n> Create(Document* aDocument, bool aSync);
 
  protected:
-  explicit DocumentL10n(Document* aDocument, const bool aSync);
-  bool Init() override;
-
+  explicit DocumentL10n(Document* aDocument, bool aSync);
   virtual ~DocumentL10n() = default;
 
   RefPtr<Document> mDocument;
@@ -75,7 +76,12 @@ class DocumentL10n final : public DOMLocalization {
 
   DocumentL10nState GetState() { return mState; };
 
+  void MaybeRecordTelemetry();
+
   bool mBlockingLayout = false;
+
+  mozilla::TimeStamp mInitialTranslationStart;
+  static bool mIsFirstBrowserWindow;
 };
 
 }  // namespace dom

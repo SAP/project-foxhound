@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 // Base preferences file to allow unittests to run successfully.
 // NOTE: Toggling prefs for testing features should happen in
 // unittest-features/user.js or in harness/test manifests, not here!
@@ -60,6 +64,9 @@ user_pref("browser.ui.layout.tablet", 0); // force tablet UI off
 // Ensure UITour won't hit the network
 user_pref("browser.uitour.pinnedTabUrl", "http://{server}/uitour-dummy/pinnedTab");
 user_pref("browser.uitour.url", "http://{server}/uitour-dummy/tour");
+// Turn off Merino suggestions in the location bar so as not to trigger network
+// connections.
+user_pref("browser.urlbar.merino.endpointURL", "");
 user_pref("browser.urlbar.speculativeConnect.enabled", false);
 // Turn off search suggestions in the location bar so as not to trigger network
 // connections.
@@ -88,7 +95,6 @@ user_pref("dom.ipc.tabs.shutdownTimeoutSecs", 0);
 user_pref("dom.min_background_timeout_value", 1000);
 user_pref("dom.popup_maximum", -1);
 user_pref("dom.block_multiple_popups", false);
-user_pref("dom.presentation.testing.simulate-receiver", false);
 // Prevent connection to the push server for tests.
 user_pref("dom.push.connection.enabled", false);
 user_pref("dom.successive_dialog_time_limit", 0);
@@ -142,15 +148,10 @@ user_pref("identity.fxaccounts.remote.root", "https://{server}/");
 // Avoid idle-daily notifications, to avoid expensive operations that may
 // cause unexpected test timeouts.
 user_pref("idle.lastDailyNotification", -1);
-user_pref("javascript.options.showInConsole", true);
 // Make sure CSS error reporting is enabled for tests
 user_pref("layout.css.report_errors", true);
 // Disable spammy layout warnings because they pollute test logs
 user_pref("layout.spammy_warnings.enabled", false);
-// Disable all recommended Marionette preferences for Gecko tests.
-// The prefs recommended by Marionette are typically geared towards
-// consumer automation; not vendor testing.
-user_pref("marionette.prefs.recommended", false);
 user_pref("media.cache_size", 1000);
 user_pref("media.dormant-on-pause-timeout-ms", 0); // Enter dormant immediately without waiting for timeout.
 // Set the number of shmems the PChromiumCDM protocol pre-allocates to 0,
@@ -190,11 +191,13 @@ user_pref("network.sntp.pools", "{server}");
 // tests. This, like many things, will stop working correctly in 2038.
 user_pref("places.database.lastMaintenance", 2147483647);
 user_pref("privacy.trackingprotection.introURL", "http://{server}/trackingprotection/tour");
+// Disable all recommended Remote Protocol preferences for Gecko tests.
+// The prefs recommended by Remote Protocol are typically geared towards
+// consumer automation; not vendor testing.
+user_pref("remote.prefs.recommended", false);
 user_pref("security.default_personal_cert", "Select Automatically"); // Need to client auth test be w/o any dialogs
 // Existing tests don't wait for the notification button security delay
 user_pref("security.notification_enable_delay", 0);
-// Make sure SSL Error reports don't hit the network
-user_pref("security.ssl.errorReporting.url", "https://example.com/browser/browser/base/content/test/general/ssl_error_reports.sjs?succeed");
 user_pref("security.warn_viewing_mixed", false);
 // Ensure blocklist updates don't hit the network
 user_pref("services.settings.server", "http://{server}/dummy-kinto/v1");
@@ -216,6 +219,7 @@ user_pref("toolkit.telemetry.firstShutdownPing.enabled", false);
 user_pref("toolkit.telemetry.newProfilePing.enabled", false);
 // We want to collect telemetry, but we don't want to send in the results.
 user_pref("toolkit.telemetry.server", "https://{server}/telemetry-dummy/");
+user_pref("telemetry.fog.test.localhost_port", -1);
 // Don't send the 'shutdown' ping using the pingsender on the first session using
 // the 'pingsender' process. Valgrind marks the process as leaky (e.g. see bug 1364068
 // for the 'new-profile' ping) but does not provide enough information

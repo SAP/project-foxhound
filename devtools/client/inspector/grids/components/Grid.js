@@ -36,14 +36,12 @@ const Types = require("devtools/client/inspector/grids/types");
 class Grid extends PureComponent {
   static get propTypes() {
     return {
+      dispatch: PropTypes.func.isRequired,
       getSwatchColorPickerTooltip: PropTypes.func.isRequired,
       grids: PropTypes.arrayOf(PropTypes.shape(Types.grid)).isRequired,
       highlighterSettings: PropTypes.shape(Types.highlighterSettings)
         .isRequired,
-      onHideBoxModelHighlighter: PropTypes.func.isRequired,
       onSetGridOverlayColor: PropTypes.func.isRequired,
-      onShowBoxModelHighlighterForNode: PropTypes.func.isRequired,
-      onShowGridOutlineHighlight: PropTypes.func.isRequired,
       onToggleGridHighlighter: PropTypes.func.isRequired,
       onToggleShowGridAreas: PropTypes.func.isRequired,
       onToggleShowGridLineNumbers: PropTypes.func.isRequired,
@@ -61,13 +59,11 @@ class Grid extends PureComponent {
     }
 
     const {
+      dispatch,
       getSwatchColorPickerTooltip,
       grids,
       highlighterSettings,
-      onHideBoxModelHighlighter,
       onSetGridOverlayColor,
-      onShowBoxModelHighlighterForNode,
-      onShowGridOutlineHighlight,
       onToggleShowGridAreas,
       onToggleGridHighlighter,
       onToggleShowGridLineNumbers,
@@ -81,11 +77,10 @@ class Grid extends PureComponent {
       dom.div(
         { className: "grid-content" },
         GridList({
+          dispatch,
           getSwatchColorPickerTooltip,
           grids,
-          onHideBoxModelHighlighter,
           onSetGridOverlayColor,
-          onShowBoxModelHighlighterForNode,
           onToggleGridHighlighter,
           setSelectedNode,
         }),
@@ -98,8 +93,8 @@ class Grid extends PureComponent {
       ),
       highlightedGrids.length === 1
         ? GridOutline({
+            dispatch,
             grids,
-            onShowGridOutlineHighlight,
           })
         : null
     );

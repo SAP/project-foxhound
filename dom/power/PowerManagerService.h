@@ -7,7 +7,6 @@
 #define mozilla_dom_power_PowerManagerService_h
 
 #include "nsCOMPtr.h"
-#include "nsDataHashtable.h"
 #include "nsHashKeys.h"
 #include "nsTArray.h"
 #include "nsIDOMWakeLockListener.h"
@@ -37,21 +36,6 @@ class PowerManagerService : public nsIPowerManagerService,
 
   // Implement WakeLockObserver
   void Notify(const hal::WakeLockInformation& aWakeLockInfo) override;
-
-  /**
-   * Acquire a wake lock on behalf of a given process (aContentParent).
-   *
-   * This method stands in contrast to nsIPowerManagerService::NewWakeLock,
-   * which acquires a wake lock on behalf of the /current/ process.
-   *
-   * NewWakeLockOnBehalfOfProcess is different from NewWakeLock in that
-   *
-   *  - The wake lock unlocks itself if the /given/ process dies, and
-   *  - The /given/ process shows up in WakeLockInfo::lockingProcesses.
-   *
-   */
-  already_AddRefed<WakeLock> NewWakeLockOnBehalfOfProcess(
-      const nsAString& aTopic, ContentParent* aContentParent);
 
   already_AddRefed<WakeLock> NewWakeLock(const nsAString& aTopic,
                                          nsPIDOMWindowInner* aWindow,

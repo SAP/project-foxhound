@@ -7,12 +7,14 @@
 #ifndef gc_FindSCCs_h
 #define gc_FindSCCs_h
 
-#include <algorithm>
-#include <utility>
+#include "mozilla/Assertions.h"  // MOZ_ASSERT
 
-#include "jsfriendapi.h"
+#include <algorithm>  // std::min
+#include <stdint.h>   // uintptr_t
 
-#include "js/HashTable.h"
+#include "js/AllocPolicy.h"         // js::SystemAllocPolicy
+#include "js/friend/StackLimits.h"  // js::AutoCheckRecursionLimit
+#include "js/HashTable.h"           // js::HashSet, js::DefaultHasher
 
 namespace js {
 namespace gc {
@@ -66,7 +68,7 @@ struct GraphNodeBase {
 template <typename Node>
 class ComponentFinder {
  public:
-  explicit ComponentFinder(uintptr_t sl) : stackLimit(sl) {}
+  explicit ComponentFinder(JSContext* cx) : cx(cx) {}
 
   ~ComponentFinder() {
     MOZ_ASSERT(!stack);
@@ -143,8 +145,12 @@ class ComponentFinder {
     v->gcNextGraphNode = stack;
     stack = v;
 
-    int stackDummy;
-    if (stackFull || !JS_CHECK_STACK_SIZE(stackLimit, &stackDummy)) {
+    if (stackFull) {
+      return;
+    }
+
+    AutoCheckRecursionLimit recursion(cx);
+    if (!recursion.checkSystemDontReport(cx)) {
       stackFull = true;
       return;
     }
@@ -192,7 +198,7 @@ class ComponentFinder {
   Node* stack = nullptr;
   Node* firstComponent = nullptr;
   Node* cur = nullptr;
-  uintptr_t stackLimit;
+  JSContext* cx;
   bool stackFull = false;
 };
 

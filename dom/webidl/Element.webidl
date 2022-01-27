@@ -34,7 +34,7 @@ interface Element : Node {
   readonly attribute DOMTokenList classList;
 
   // https://drafts.csswg.org/css-shadow-parts/#idl
-  [SameObject, PutForwards=value, Pref="layout.css.shadow-parts.enabled"]
+  [SameObject, PutForwards=value]
   readonly attribute DOMTokenList part;
 
   [SameObject]
@@ -63,12 +63,12 @@ interface Element : Node {
   boolean hasAttributes();
 
   [Throws, Pure]
-  Element? closest(DOMString selector);
+  Element? closest(UTF8String selector);
 
   [Throws, Pure]
-  boolean matches(DOMString selector);
+  boolean matches(UTF8String selector);
   [Throws, Pure, BinaryName="matches"]
-  boolean webkitMatchesSelector(DOMString selector);
+  boolean webkitMatchesSelector(UTF8String selector);
 
   [Pure]
   HTMLCollection getElementsByTagName(DOMString localName);
@@ -112,16 +112,13 @@ interface Element : Node {
    * See <http://dev.w3.org/2006/webapi/selectors-api2/#matchesselector>
    */
   [Throws, Pure, BinaryName="matches"]
-  boolean mozMatchesSelector(DOMString selector);
+  boolean mozMatchesSelector(UTF8String selector);
 
   // Pointer events methods.
-  [Throws, Pref="dom.w3c_pointer_events.enabled"]
+  [UseCounter, Throws]
   void setPointerCapture(long pointerId);
-
-  [Throws, Pref="dom.w3c_pointer_events.enabled"]
+  [UseCounter, Throws]
   void releasePointerCapture(long pointerId);
-
-  [Pref="dom.w3c_pointer_events.enabled"]
   boolean hasPointerCapture(long pointerId);
 
   // Proprietary extensions
@@ -133,12 +130,14 @@ interface Element : Node {
    * element.
    *
    */
+  [Deprecated=ElementSetCapture, Pref="dom.mouse_capture.enabled"]
   void setCapture(optional boolean retargetToElement = false);
 
   /**
    * If this element has captured the mouse, release the capture. If another
    * element has captured the mouse, this method has no effect.
    */
+  [Deprecated=ElementReleaseCapture, Pref="dom.mouse_capture.enabled"]
   void releaseCapture();
 
   /*
@@ -170,6 +169,9 @@ interface Element : Node {
 // https://html.spec.whatwg.org/#focus-management-apis
 dictionary FocusOptions {
   boolean preventScroll = false;
+  // Prevents the focus ring if this is not a text control / editable element.
+  [Func="nsContentUtils::IsCallerChromeOrErrorPage"]
+  boolean preventFocusRing = false;
 };
 
 interface mixin HTMLOrForeignElement {
@@ -240,9 +242,9 @@ partial interface Element {
 // http://domparsing.spec.whatwg.org/#extensions-to-the-element-interface
 partial interface Element {
   [CEReactions, SetterNeedsSubjectPrincipal=NonSystem, Pure, SetterThrows, GetterCanOOM]
-  attribute [TreatNullAs=EmptyString] DOMString innerHTML;
+  attribute [LegacyNullToEmptyString] DOMString innerHTML;
   [CEReactions, Pure, SetterThrows]
-  attribute [TreatNullAs=EmptyString] DOMString outerHTML;
+  attribute [LegacyNullToEmptyString] DOMString outerHTML;
   [CEReactions, Throws]
   void insertAdjacentHTML(DOMString position, DOMString text);
 };
@@ -250,14 +252,18 @@ partial interface Element {
 // http://www.w3.org/TR/selectors-api/#interface-definitions
 partial interface Element {
   [Throws, Pure]
-  Element?  querySelector(DOMString selectors);
+  Element?  querySelector(UTF8String selectors);
   [Throws, Pure]
-  NodeList  querySelectorAll(DOMString selectors);
+  NodeList  querySelectorAll(UTF8String selectors);
 };
 
 // https://dom.spec.whatwg.org/#dictdef-shadowrootinit
 dictionary ShadowRootInit {
   required ShadowRootMode mode;
+  [Pref="dom.shadowdom.delegatesFocus.enabled"]
+  boolean delegatesFocus = false;
+  [Pref="dom.shadowdom.slot.assign.enabled"]
+  SlotAssignmentMode slotAssignment = "named";
 };
 
 // https://dom.spec.whatwg.org/#element
@@ -351,6 +357,13 @@ partial interface Element {
   void setAttributeDevtools(DOMString name, DOMString value);
   [ChromeOnly, CEReactions, Throws]
   void setAttributeDevtoolsNS(DOMString? namespace, DOMString name, DOMString value);
+
+  /**
+   * Provide a direct way to determine if this Element has visible
+   * scrollbars. Flushes layout.
+   */
+  [ChromeOnly]
+  readonly attribute boolean hasVisibleScrollbars;
 };
 
 // These variables are used in vtt.js, they are used for positioning vtt cues.
@@ -366,4 +379,15 @@ partial interface Element {
   // height. If the direction is vertical, it represents box's width.
   [ChromeOnly]
   readonly attribute double firstLineBoxBSize;
+};
+
+
+// Sanitizer API, https://wicg.github.io/sanitizer-api/
+dictionary SetHTMLOptions {
+  Sanitizer sanitizer;
+};
+
+partial interface Element {
+  [UseCounter, Throws, Pref="dom.security.sanitizer.enabled"]
+    void setHTML(DOMString aInnerHTML, optional SetHTMLOptions options = {});
 };

@@ -7,26 +7,25 @@
 #ifndef frontend_FunctionEmitter_h
 #define frontend_FunctionEmitter_h
 
-#include "mozilla/Attributes.h"  // MOZ_STACK_CLASS, MOZ_MUST_USE
+#include "mozilla/Attributes.h"  // MOZ_STACK_CLASS
 
 #include <stdint.h>  // uint16_t, uint32_t
 
+#include "frontend/AsyncEmitter.h"        // AsyncEmitter
 #include "frontend/DefaultEmitter.h"      // DefaultEmitter
 #include "frontend/EmitterScope.h"        // EmitterScope
 #include "frontend/FunctionSyntaxKind.h"  // FunctionSyntaxKind
-#include "frontend/SharedContext.h"       // FunctionBox, TopLevelFunction
+#include "frontend/ParserAtom.h"          // TaggedParserAtomIndex
 #include "frontend/TDZCheckCache.h"       // TDZCheckCache
-#include "frontend/TryEmitter.h"          // TryEmitter
-#include "gc/Rooting.h"                   // JS::Rooted, JS::Handle
-#include "vm/BytecodeUtil.h"              // JSOp
-#include "vm/JSAtom.h"                    // JSAtom
-#include "vm/JSFunction.h"                // JSFunction
-#include "vm/SharedStencil.h"             // GCThingIndex
 
 namespace js {
+
+class GCThingIndex;
+
 namespace frontend {
 
 struct BytecodeEmitter;
+class FunctionBox;
 
 // Class for emitting function declaration, expression, or method etc.
 //
@@ -72,7 +71,7 @@ class MOZ_STACK_CLASS FunctionEmitter {
   FunctionBox* funbox_;
 
   // Function's explicit name.
-  JS::Rooted<JSAtom*> name_;
+  TaggedParserAtomIndex name_;
 
   FunctionSyntaxKind syntaxKind_;
   IsHoisted isHoisted_;
@@ -120,27 +119,27 @@ class MOZ_STACK_CLASS FunctionEmitter {
   FunctionEmitter(BytecodeEmitter* bce, FunctionBox* funbox,
                   FunctionSyntaxKind syntaxKind, IsHoisted isHoisted);
 
-  MOZ_MUST_USE bool prepareForNonLazy();
-  MOZ_MUST_USE bool emitNonLazyEnd();
+  [[nodiscard]] bool prepareForNonLazy();
+  [[nodiscard]] bool emitNonLazyEnd();
 
-  MOZ_MUST_USE bool emitLazy();
+  [[nodiscard]] bool emitLazy();
 
-  MOZ_MUST_USE bool emitAgain();
+  [[nodiscard]] bool emitAgain();
 
-  MOZ_MUST_USE bool emitAsmJSModule();
+  [[nodiscard]] bool emitAsmJSModule();
 
  private:
   // Emit the function declaration, expression, method etc.
   // This leaves function object on the stack for expression etc,
   // and doesn't for declaration.
-  MOZ_MUST_USE bool emitFunction();
+  [[nodiscard]] bool emitFunction();
 
   // Helper methods used by emitFunction for each case.
   // `index` is the object index of the function.
-  MOZ_MUST_USE bool emitNonHoisted(GCThingIndex index);
-  MOZ_MUST_USE bool emitHoisted(GCThingIndex index);
-  MOZ_MUST_USE bool emitTopLevelFunction(GCThingIndex index);
-  MOZ_MUST_USE bool emitNewTargetForArrow();
+  [[nodiscard]] bool emitNonHoisted(GCThingIndex index);
+  [[nodiscard]] bool emitHoisted(GCThingIndex index);
+  [[nodiscard]] bool emitTopLevelFunction(GCThingIndex index);
+  [[nodiscard]] bool emitNewTargetForArrow();
 };
 
 // Class for emitting function script.
@@ -185,7 +184,7 @@ class MOZ_STACK_CLASS FunctionScriptEmitter {
   mozilla::Maybe<TDZCheckCache> tdzCache_;
 
   // try-catch block for async function parameter and body.
-  mozilla::Maybe<TryEmitter> rejectTryCatch_;
+  mozilla::Maybe<AsyncEmitter> asyncEmitter_;
 
   // See the comment for constructor.
   mozilla::Maybe<uint32_t> paramStart_;
@@ -245,20 +244,15 @@ class MOZ_STACK_CLASS FunctionScriptEmitter {
         paramStart_(paramStart),
         bodyEnd_(bodyEnd) {}
 
-  MOZ_MUST_USE bool prepareForParameters();
-  MOZ_MUST_USE bool prepareForBody();
-  MOZ_MUST_USE bool emitEndBody();
+  [[nodiscard]] bool prepareForParameters();
+  [[nodiscard]] bool prepareForBody();
+  [[nodiscard]] bool emitEndBody();
 
   // Generate the ScriptStencil using the bytecode emitter data.
-  MOZ_MUST_USE bool intoStencil();
+  [[nodiscard]] bool intoStencil();
 
  private:
-  MOZ_MUST_USE bool emitExtraBodyVarScope();
-
-  // Async functions have implicit try-catch blocks to convert exceptions
-  // into promise rejections.
-  MOZ_MUST_USE bool emitAsyncFunctionRejectPrologue();
-  MOZ_MUST_USE bool emitAsyncFunctionRejectEpilogue();
+  [[nodiscard]] bool emitExtraBodyVarScope();
 };
 
 // Class for emitting function parameters.
@@ -321,7 +315,7 @@ class MOZ_STACK_CLASS FunctionParamsEmitter {
   //              |                                             |
   // +------------+                                             |
   // |                                                          |
-  // | [single binding, wihtout default]                        |
+  // | [single binding, without default]                        |
   // |   emitSimple                                             |
   // +--------------------------------------------------------->+
   // |                                                          ^
@@ -410,30 +404,30 @@ class MOZ_STACK_CLASS FunctionParamsEmitter {
 
   // paramName is used only when there's at least one expression in the
   // paramerters (funbox_->hasParameterExprs == true).
-  MOZ_MUST_USE bool emitSimple(JS::Handle<JSAtom*> paramName);
+  [[nodiscard]] bool emitSimple(TaggedParserAtomIndex paramName);
 
-  MOZ_MUST_USE bool prepareForDefault();
-  MOZ_MUST_USE bool emitDefaultEnd(JS::Handle<JSAtom*> paramName);
+  [[nodiscard]] bool prepareForDefault();
+  [[nodiscard]] bool emitDefaultEnd(TaggedParserAtomIndex paramName);
 
-  MOZ_MUST_USE bool prepareForDestructuring();
-  MOZ_MUST_USE bool emitDestructuringEnd();
+  [[nodiscard]] bool prepareForDestructuring();
+  [[nodiscard]] bool emitDestructuringEnd();
 
-  MOZ_MUST_USE bool prepareForDestructuringDefaultInitializer();
-  MOZ_MUST_USE bool prepareForDestructuringDefault();
-  MOZ_MUST_USE bool emitDestructuringDefaultEnd();
+  [[nodiscard]] bool prepareForDestructuringDefaultInitializer();
+  [[nodiscard]] bool prepareForDestructuringDefault();
+  [[nodiscard]] bool emitDestructuringDefaultEnd();
 
-  MOZ_MUST_USE bool emitRest(JS::Handle<JSAtom*> paramName);
+  [[nodiscard]] bool emitRest(TaggedParserAtomIndex paramName);
 
-  MOZ_MUST_USE bool prepareForDestructuringRest();
-  MOZ_MUST_USE bool emitDestructuringRestEnd();
+  [[nodiscard]] bool prepareForDestructuringRest();
+  [[nodiscard]] bool emitDestructuringRestEnd();
 
  private:
-  MOZ_MUST_USE bool prepareForInitializer();
-  MOZ_MUST_USE bool emitInitializerEnd();
+  [[nodiscard]] bool prepareForInitializer();
+  [[nodiscard]] bool emitInitializerEnd();
 
-  MOZ_MUST_USE bool emitRestArray();
+  [[nodiscard]] bool emitRestArray();
 
-  MOZ_MUST_USE bool emitAssignment(JS::Handle<JSAtom*> paramName);
+  [[nodiscard]] bool emitAssignment(TaggedParserAtomIndex paramName);
 };
 
 } /* namespace frontend */

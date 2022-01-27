@@ -4,8 +4,16 @@
 "use strict";
 
 add_task(async function() {
-  const target = await TargetFactory.forTab(gBrowser.selectedTab);
-  const toolbox = await gDevTools.showToolbox(target);
+  // For some reason, mochitest spawn a very special default tab,
+  // whose WindowGlobal is still the initial about:blank document.
+  // This seems to be specific to mochitest, this doesn't reproduce
+  // in regular firefox run. Even having about:blank as home page,
+  // force loading another final about:blank document (which isn't the initial one)
+  //
+  // To workaround this, force opening a dedicated test tab
+  const tab = await addTab("data:text/html;charset=utf-8,Test page");
+
+  const toolbox = await gDevTools.showToolboxForTab(tab);
   const doc = toolbox.doc;
   const root = doc.documentElement;
 

@@ -11,10 +11,12 @@
 #include "mozilla/dom/SRIMetadata.h"
 #include "mozilla/CORSMode.h"
 
-#include "nsIURI.h"
 #include "nsIReferrerInfo.h"
 
 class nsIPrincipal;
+class nsIURI;
+struct RawServoStyleSheetContents;
+struct StyleUseCounters;
 
 namespace mozilla {
 class StyleSheet;
@@ -76,6 +78,8 @@ struct StyleSheetInfo final {
   nsString mSourceURL;
 
   RefPtr<const RawServoStyleSheetContents> mContents;
+
+  UniquePtr<StyleUseCounters> mUseCounters;
 
   // XXX We already have mSheetURI, mBaseURI, and mPrincipal.
   //

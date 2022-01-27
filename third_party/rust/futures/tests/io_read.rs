@@ -9,8 +9,8 @@ struct MockReader {
 }
 
 impl MockReader {
-    pub fn new(fun: impl FnMut(&mut [u8]) -> Poll<io::Result<usize>> + 'static) -> Self {
-        MockReader { fun: Box::new(fun) }
+    fn new(fun: impl FnMut(&mut [u8]) -> Poll<io::Result<usize>> + 'static) -> Self {
+        Self { fun: Box::new(fun) }
     }
 }
 
@@ -18,7 +18,7 @@ impl AsyncRead for MockReader {
     fn poll_read(
         self: Pin<&mut Self>,
         _cx: &mut Context<'_>,
-        buf: &mut [u8]
+        buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
         (self.get_mut().fun)(buf)
     }
@@ -52,7 +52,7 @@ fn read_vectored_first_non_empty() {
     let cx = &mut panic_context();
     let mut buf = [0; 4];
     let bufs = &mut [
-        io::IoSliceMut::new(&mut []), 
+        io::IoSliceMut::new(&mut []),
         io::IoSliceMut::new(&mut []),
         io::IoSliceMut::new(&mut buf),
     ];
@@ -62,4 +62,3 @@ fn read_vectored_first_non_empty() {
     assert_eq!(res, Poll::Ready(Ok(4)));
     assert_eq!(buf, b"four"[..]);
 }
-

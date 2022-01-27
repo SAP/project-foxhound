@@ -16,6 +16,7 @@
 #include "nsITransport.h"
 #include "nsIObserverService.h"
 #include "nsThreadPool.h"
+#include "mozilla/DelayedRunnable.h"
 #include "mozilla/Services.h"
 
 namespace mozilla {
@@ -40,18 +41,14 @@ class nsInputStreamTransport : public nsITransport,
   NS_DECL_NSIINPUTSTREAMCALLBACK
 
   nsInputStreamTransport(nsIInputStream* source, bool closeWhenDone)
-      : mMutex("nsInputStreamTransport::mMutex"),
-        mSource(source),
-        mOffset(0),
-        mCloseWhenDone(closeWhenDone),
-        mInProgress(false) {
+      : mSource(source), mCloseWhenDone(closeWhenDone) {
     mAsyncSource = do_QueryInterface(mSource);
   }
 
  private:
   virtual ~nsInputStreamTransport() = default;
 
-  Mutex mMutex;
+  Mutex mMutex{"nsInputStreamTransport::mMutex"};
 
   // This value is protected by mutex.
   nsCOMPtr<nsIInputStreamCallback> mAsyncWaitCallback;
@@ -66,12 +63,12 @@ class nsInputStreamTransport : public nsITransport,
   // It can be null.
   nsCOMPtr<nsIAsyncInputStream> mAsyncSource;
 
-  int64_t mOffset;
+  int64_t mOffset{0};
   const bool mCloseWhenDone;
 
   // this variable serves as a lock to prevent the state of the transport
   // from being modified once the copy is in progress.
-  bool mInProgress;
+  bool mInProgress{false};
 };
 
 NS_IMPL_ADDREF(nsInputStreamTransport);
@@ -144,9 +141,10 @@ nsInputStreamTransport::SetEventSink(nsITransportEventSink* sink,
                                      nsIEventTarget* target) {
   NS_ENSURE_TRUE(!mInProgress, NS_ERROR_IN_PROGRESS);
 
-  if (target)
+  if (target) {
     return net_NewTransportEventSinkProxy(getter_AddRefs(mEventSink), sink,
                                           target);
+  }
 
   mEventSink = sink;
   return NS_OK;
@@ -174,8 +172,9 @@ nsInputStreamTransport::Read(char* buf, uint32_t count, uint32_t* result) {
 
   if (NS_SUCCEEDED(rv)) {
     mOffset += *result;
-    if (mEventSink)
+    if (mEventSink) {
       mEventSink->OnTransportStatus(this, NS_NET_STATUS_READING, mOffset, -1);
+    }
   }
   return rv;
 }
@@ -243,6 +242,10 @@ nsInputStreamTransport::OnInputStreamReady(nsIAsyncInputStream* aStream) {
 // nsStreamTransportService
 //-----------------------------------------------------------------------------
 
+nsStreamTransportService::nsStreamTransportService()
+    : mScheduledDelayedRunnables(
+          "nsStreamTransportService.mScheduledDelayedRunnables") {}
+
 nsStreamTransportService::~nsStreamTransportService() {
   NS_ASSERTION(!mPool, "thread pool wasn't shutdown");
 }
@@ -262,8 +265,25 @@ nsresult nsStreamTransportService::Init() {
   return NS_OK;
 }
 
+void nsStreamTransportService::OnDelayedRunnableCreated(
+    DelayedRunnable* aRunnable) {}
+
+void nsStreamTransportService::OnDelayedRunnableScheduled(
+    DelayedRunnable* aRunnable) {
+  MOZ_ASSERT(IsOnCurrentThread());
+  auto delayedRunnables = mScheduledDelayedRunnables.Lock();
+  delayedRunnables->AppendElement(aRunnable);
+}
+
+void nsStreamTransportService::OnDelayedRunnableRan(
+    DelayedRunnable* aRunnable) {
+  MOZ_ASSERT(IsOnCurrentThread());
+  auto delayedRunnables = mScheduledDelayedRunnables.Lock();
+  Unused << delayedRunnables->RemoveElement(aRunnable);
+}
+
 NS_IMPL_ISUPPORTS(nsStreamTransportService, nsIStreamTransportService,
-                  nsIEventTarget, nsIObserver)
+                  nsIEventTarget, nsIDelayedRunnableObserver, nsIObserver)
 
 NS_IMETHODIMP
 nsStreamTransportService::DispatchFromScript(nsIRunnable* task,
@@ -289,9 +309,17 @@ nsStreamTransportService::Dispatch(already_AddRefed<nsIRunnable> task,
 }
 
 NS_IMETHODIMP
-nsStreamTransportService::DelayedDispatch(already_AddRefed<nsIRunnable>,
-                                          uint32_t) {
-  return NS_ERROR_NOT_IMPLEMENTED;
+nsStreamTransportService::DelayedDispatch(already_AddRefed<nsIRunnable> aEvent,
+                                          uint32_t aDelayMs) {
+  nsCOMPtr<nsIRunnable> event = aEvent;
+  NS_ENSURE_TRUE(!!aDelayMs, NS_ERROR_UNEXPECTED);
+
+  RefPtr<DelayedRunnable> r =
+      new DelayedRunnable(do_AddRef(this), event.forget(), aDelayMs);
+  nsresult rv = r->Init();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return Dispatch(r.forget(), NS_DISPATCH_NORMAL);
 }
 
 NS_IMETHODIMP_(bool)
@@ -344,6 +372,31 @@ nsStreamTransportService::Observe(nsISupports* subject, const char* topic,
   if (mPool) {
     mPool->Shutdown();
     mPool = nullptr;
+  }
+
+  // Because the DelayedRunnables are run by a thread pool, no guarantee is
+  // given to which thread they run or get released on. Releasing them on the
+  // thread pool or on the background target thus doesn't really matter. We are
+  // forced to do it on the background target after the thread pool has finished
+  // processing all events, since doing it on the thread pool would allow the
+  // shutdown task to race with scheduling new DelayedRunnables, possibly
+  // missing the cleanup of some of them.
+  nsTArray<RefPtr<DelayedRunnable>> delayedRunnables;
+  {
+    auto sdrs = mScheduledDelayedRunnables.Lock();
+    std::swap(*sdrs, delayedRunnables);
+    MOZ_ASSERT(sdrs->IsEmpty());
+  }
+  if (!delayedRunnables.IsEmpty()) {
+    NS_DispatchBackgroundTask(
+        NS_NewRunnableFunction(
+            "nsStreamTransportService::mScheduledDelayedRunnables Cancel",
+            [delayedRunnables = std::move(delayedRunnables)] {
+              for (const auto& r : delayedRunnables) {
+                r->CancelTimer();
+              }
+            }),
+        NS_DISPATCH_SYNC);
   }
   return NS_OK;
 }

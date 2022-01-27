@@ -9,12 +9,14 @@ Browser context menu subtest.
 <div id="test-text">Lorem ipsum dolor sit amet, consectetuer adipiscing elit.</div>
 <a id="test-link" href="http://mozilla.com">Click the monkey!</a>
 <div id="shadow-host"></div>
+<a href="http://mozilla.com" style="display: block">
+  <span id="shadow-host-in-link"></span>
+</a>
 <script>
-// Create the shadow DOM in case shadow DOM is enabled.
-if ("ShadowRoot" in this) {
-  var sr = document.getElementById("shadow-host").attachShadow({mode: "closed"});
-  sr.innerHTML = "<a href='http://mozilla.com'>Click the monkey!</a>";
-}
+document.getElementById("shadow-host").attachShadow({ mode: "closed" }).innerHTML =
+  "<a href='http://mozilla.com'>Click the monkey!</a>";
+document.getElementById("shadow-host-in-link").attachShadow({ mode: "closed" }).innerHTML =
+  "<span>Click the monkey!</span>";
 </script>
 <a id="test-mailto" href="mailto:codemonkey@mozilla.com">Mail the monkey!</a><br>
 <input id="test-input"><br>
@@ -78,7 +80,6 @@ if ("ShadowRoot" in this) {
 <a id="test-image-link" href="#"><img src="ctxmenu-image.png"></a>
 <input id="test-select-input-text" type="text" value="input">
 <input id="test-select-input-text-type-password" type="password" value="password">
-<embed id="test-plugin" style="width: 200px; height: 200px;" type="application/x-test"></embed>
 <img id="test-longdesc" src="ctxmenu-image.png" longdesc="http://www.mozilla.org"></embed>
 <iframe id="test-srcdoc" width="98"  height="98" srcdoc="Hello World" style="border: 1px solid black"></iframe>
 <svg id="svg-with-link" width=10 height=10><a xlink:href="http://example.com/"><circle cx="50%" cy="50%" r="50%" fill="blue"/></a></svg>
@@ -87,5 +88,8 @@ if ("ShadowRoot" in this) {
 <svg id="svg-with-relative-link" width=10 height=10><a xlink:href="/"><circle cx="50%" cy="50%" r="50%" fill="blue"/></a></svg>
 <svg id="svg-with-relative-link2" width=10 height=10><a xlink:href="/" xlink:type="simple"><circle cx="50%" cy="50%" r="50%" fill="green"/></a></svg>
 <svg id="svg-with-relative-link3" width=10 height=10><a href="/"><circle cx="50%" cy="50%" r="50%" fill="red"/></a></svg>
-</body>
+<span id="test-background-image" style="background-image: url('ctxmenu-image.png')">Text with background
+  <a id='test-background-image-link' href="about:blank">image</a>
+  .
+</span></body>
 </html>

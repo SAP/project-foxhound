@@ -1,4 +1,4 @@
-// |jit-test| skip-if: !wasmCachingIsSupported()
+// |jit-test| skip-if: !wasmCachingEnabled()
 
 load(libdir + "wasm-binary.js");
 
@@ -56,6 +56,8 @@ testCached(`(module
 
 testCached(
     `(module
+       (type $long-serialized-type (func (param
+          i64 i32 f64 f32 i64 i32 f64 f32 i64 i32 f64 f32 i64 i32 f64 f32))) 
        (func (export "run") (result i32)
          (i32.const 42)))`,
     undefined,

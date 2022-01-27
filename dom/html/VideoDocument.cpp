@@ -13,8 +13,7 @@
 #include "nsContentUtils.h"
 #include "mozilla/dom/Element.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class VideoDocument final : public MediaDocument {
  public:
@@ -131,7 +130,9 @@ nsresult VideoDocument::CreateVideoElement() {
         true);
   }
 
-  return body->AppendChildTo(element, false);
+  ErrorResult rv;
+  body->AppendChildTo(element, false, rv);
+  return rv.StealNSResult();
 }
 
 void VideoDocument::UpdateTitle(nsIChannel* aChannel) {
@@ -143,8 +144,7 @@ void VideoDocument::UpdateTitle(nsIChannel* aChannel) {
   SetTitle(fileName, ignored);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 nsresult NS_NewVideoDocument(mozilla::dom::Document** aResult) {
   auto* doc = new mozilla::dom::VideoDocument();

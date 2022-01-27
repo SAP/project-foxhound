@@ -15,10 +15,25 @@ const LoginInfo = new Components.Constructor(
   "init"
 );
 
+XPCOMUtils.defineLazyGetter(this, "LoginRelatedRealmsParent", () => {
+  const { LoginRelatedRealmsParent } = ChromeUtils.import(
+    "resource://gre/modules/LoginRelatedRealms.jsm"
+  );
+  return new LoginRelatedRealmsParent();
+});
+
+XPCOMUtils.defineLazyGetter(this, "PasswordRulesManager", () => {
+  const { PasswordRulesManagerParent } = ChromeUtils.import(
+    "resource://gre/modules/PasswordRulesManager.jsm"
+  );
+  return new PasswordRulesManagerParent();
+});
+
 XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   ChromeMigrationUtils: "resource:///modules/ChromeMigrationUtils.jsm",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
   LoginHelper: "resource://gre/modules/LoginHelper.jsm",
   MigrationUtils: "resource:///modules/MigrationUtils.jsm",
   PasswordGenerator: "resource://gre/modules/PasswordGenerator.jsm",
@@ -36,7 +51,10 @@ XPCOMUtils.defineLazyGetter(this, "log", () => {
   let logger = LoginHelper.createLogger("LoginManagerParent");
   return logger.log.bind(logger);
 });
-
+XPCOMUtils.defineLazyGetter(this, "debug", () => {
+  let logger = LoginHelper.createLogger("LoginManagerParent");
+  return logger.debug.bind(logger);
+});
 const EXPORTED_SYMBOLS = ["LoginManagerParent"];
 
 /**
@@ -127,7 +145,8 @@ Services.ppmm.addMessageListener("PasswordManager:findRecipes", message => {
 async function getImportableLogins(formOrigin) {
   // Include the experiment state for data and UI decisions; otherwise skip
   // importing if not supported or disabled.
-  const state = LoginHelper.showAutoCompleteImport;
+  const state =
+    LoginHelper.suggestImportCount > 0 && LoginHelper.showAutoCompleteImport;
   return state
     ? {
         browsers: await ChromeMigrationUtils.getImportableLogins(formOrigin),
@@ -178,6 +197,7 @@ class LoginManagerParent extends JSWindowActorParent {
    * @param {origin?} options.httpRealm To match on. Omit this argument to match all realms.
    * @param {boolean} options.acceptDifferentSubdomains Include results for eTLD+1 matches
    * @param {boolean} options.ignoreActionAndRealm Include all form and HTTP auth logins for the site
+   * @param {string[]} options.relatedRealms Related realms to match against when searching
    */
   static async searchAndDedupeLogins(
     formOrigin,
@@ -186,6 +206,7 @@ class LoginManagerParent extends JSWindowActorParent {
       formActionOrigin,
       httpRealm,
       ignoreActionAndRealm,
+      relatedRealms,
     } = {}
   ) {
     let logins;
@@ -200,6 +221,10 @@ class LoginManagerParent extends JSWindowActorParent {
       } else if (typeof httpRealm != "undefined") {
         matchData.httpRealm = httpRealm;
       }
+    }
+    if (LoginHelper.relatedRealmsEnabled) {
+      matchData.acceptRelatedRealms = LoginHelper.relatedRealmsEnabled;
+      matchData.relatedRealms = relatedRealms;
     }
     try {
       logins = await Services.logins.searchLoginsAsync(matchData);
@@ -231,7 +256,7 @@ class LoginManagerParent extends JSWindowActorParent {
     );
   }
 
-  receiveMessage(msg) {
+  async receiveMessage(msg) {
     let data = msg.data;
     if (data.origin || data.formOrigin) {
       throw new Error(
@@ -256,6 +281,11 @@ class LoginManagerParent extends JSWindowActorParent {
         break;
       }
 
+      case "PasswordManager:decreaseSuggestImportCount": {
+        this.decreaseSuggestImportCount(data);
+        break;
+      }
+
       case "PasswordManager:findLogins": {
         return this.sendLoginDataToChild(
           context.origin,
@@ -265,13 +295,11 @@ class LoginManagerParent extends JSWindowActorParent {
       }
 
       case "PasswordManager:onFormSubmit": {
-        let browser = this.getRootBrowser();
-        let submitPromise = this.onFormSubmit(browser, context.origin, data);
-        if (gListenerForTests) {
-          submitPromise.then(() => {
-            gListenerForTests("FormSubmit", { origin: context.origin, data });
-          });
-        }
+        Services.obs.notifyObservers(
+          null,
+          "passwordmgr-form-submission-detected",
+          context.origin
+        );
         break;
       }
 
@@ -286,6 +314,29 @@ class LoginManagerParent extends JSWindowActorParent {
         break;
       }
 
+      case "PasswordManager:onIgnorePasswordEdit": {
+        log("Received PasswordManager:onIgnorePasswordEdit");
+        if (gListenerForTests) {
+          log("calling gListenerForTests");
+          gListenerForTests("PasswordIgnoreEdit", {});
+        }
+        break;
+      }
+
+      case "PasswordManager:ShowDoorhanger": {
+        let browser = this.getRootBrowser();
+        let submitPromise = this.showDoorhanger(browser, context.origin, data);
+        if (gListenerForTests) {
+          submitPromise.then(() => {
+            gListenerForTests("ShowDoorhanger", {
+              origin: context.origin,
+              data,
+            });
+          });
+        }
+        break;
+      }
+
       case "PasswordManager:autoCompleteLogins": {
         return this.doAutocompleteSearch(context.origin, data);
       }
@@ -296,13 +347,55 @@ class LoginManagerParent extends JSWindowActorParent {
         break;
       }
 
-      case "PasswordManager:OpenMigrationWizard": {
-        // Open the migration wizard pre-selecting the appropriate browser.
+      case "PasswordManager:OpenImportableLearnMore": {
         let window = this.getRootBrowser().ownerGlobal;
-        MigrationUtils.showMigrationWizard(window, [
-          MigrationUtils.MIGRATION_ENTRYPOINT_PASSWORDS,
-          data,
-        ]);
+        window.openTrustedLinkIn(
+          Services.urlFormatter.formatURLPref("app.support.baseURL") +
+            "password-import",
+          "tab",
+          { relatedToCurrent: true }
+        );
+        break;
+      }
+
+      case "PasswordManager:HandleImportable": {
+        const { browserId } = data;
+
+        // Directly migrate passwords for a single profile.
+        const migrator = await MigrationUtils.getMigrator(browserId);
+        const profiles = await migrator.getSourceProfiles();
+        if (
+          profiles.length == 1 &&
+          NimbusFeatures["password-autocomplete"].getVariable(
+            "directMigrateSingleProfile"
+          )
+        ) {
+          const loginAdded = new Promise(resolve => {
+            const obs = (subject, topic, data) => {
+              if (data == "addLogin") {
+                Services.obs.removeObserver(obs, "passwordmgr-storage-changed");
+                resolve();
+              }
+            };
+            Services.obs.addObserver(obs, "passwordmgr-storage-changed");
+          });
+
+          await migrator.migrate(
+            MigrationUtils.resourceTypes.PASSWORDS,
+            null,
+            profiles[0]
+          );
+          await loginAdded;
+
+          // Reshow the popup with the imported password.
+          this.sendAsyncMessage("PasswordManager:repopulateAutocompletePopup");
+        } else {
+          // Open the migration wizard pre-selecting the appropriate browser.
+          MigrationUtils.showMigrationWizard(
+            this.getRootBrowser().ownerGlobal,
+            [MigrationUtils.MIGRATION_ENTRYPOINT_PASSWORDS, browserId]
+          );
+        }
         break;
       }
 
@@ -318,7 +411,7 @@ class LoginManagerParent extends JSWindowActorParent {
       // Used by tests to detect that a form-fill has occurred. This redirects
       // to the top-level browsing context.
       case "PasswordManager:formProcessed": {
-        let topActor = this.browsingContext.top.currentWindowGlobal.getActor(
+        let topActor = this.browsingContext.currentWindowGlobal.getActor(
           "LoginManager"
         );
         topActor.sendAsyncMessage("PasswordManager:formProcessed", {
@@ -334,6 +427,36 @@ class LoginManagerParent extends JSWindowActorParent {
     }
 
     return undefined;
+  }
+
+  /**
+   * Update the remaining number of import suggestion impressions with debounce
+   * to allow multiple popups showing the "same" items to count as one.
+   */
+  decreaseSuggestImportCount(count) {
+    // Delay an existing timer with a potentially larger count.
+    if (this._suggestImportTimer) {
+      this._suggestImportTimer.delay =
+        LoginManagerParent.SUGGEST_IMPORT_DEBOUNCE_MS;
+      this._suggestImportCount = Math.max(count, this._suggestImportCount);
+      return;
+    }
+
+    this._suggestImportTimer = Cc["@mozilla.org/timer;1"].createInstance(
+      Ci.nsITimer
+    );
+    this._suggestImportTimer.init(
+      () => {
+        this._suggestImportTimer = null;
+        Services.prefs.setIntPref(
+          "signon.suggestImportCount",
+          LoginHelper.suggestImportCount - this._suggestImportCount
+        );
+      },
+      LoginManagerParent.SUGGEST_IMPORT_DEBOUNCE_MS,
+      Ci.nsITimer.TYPE_ONE_SHOT
+    );
+    this._suggestImportCount = count;
   }
 
   /**
@@ -452,13 +575,26 @@ class LoginManagerParent extends JSWindowActorParent {
         origin: formOrigin,
       });
     } else {
+      let relatedRealmsOrigins = [];
+      if (LoginHelper.relatedRealmsEnabled) {
+        relatedRealmsOrigins = await LoginRelatedRealmsParent.findRelatedRealms(
+          formOrigin
+        );
+      }
       logins = await LoginManagerParent.searchAndDedupeLogins(formOrigin, {
         formActionOrigin: actionOrigin,
         ignoreActionAndRealm: true,
         acceptDifferentSubdomains: LoginHelper.includeOtherSubdomainsInLookup,
+        relatedRealms: relatedRealmsOrigins,
       });
-    }
 
+      if (LoginHelper.relatedRealmsEnabled) {
+        debug(
+          "Adding related logins on page load",
+          logins.map(l => l.origin)
+        );
+      }
+    }
     log("sendLoginDataToChild:", logins.length, "deduped logins");
     // Convert the array of nsILoginInfo to vanilla JS objects since nsILoginInfo
     // doesn't support structured cloning.
@@ -523,12 +659,18 @@ class LoginManagerParent extends JSWindowActorParent {
       logins = LoginHelper.vanillaObjectsToLogins(previousResult.logins);
     } else {
       log("Creating new autocomplete search result.");
-
+      let relatedRealmsOrigins = [];
+      if (LoginHelper.relatedRealmsEnabled) {
+        relatedRealmsOrigins = await LoginRelatedRealmsParent.findRelatedRealms(
+          formOrigin
+        );
+      }
       // Autocomplete results do not need to match actionOrigin or exact origin.
       logins = await LoginManagerParent.searchAndDedupeLogins(formOrigin, {
         formActionOrigin: actionOrigin,
         ignoreActionAndRealm: true,
         acceptDifferentSubdomains: LoginHelper.includeOtherSubdomainsInLookup,
+        relatedRealms: relatedRealmsOrigins,
       });
     }
 
@@ -553,7 +695,9 @@ class LoginManagerParent extends JSWindowActorParent {
         (isProbablyANewPasswordField &&
           Services.logins.getLoginSavingEnabled(formOrigin)))
     ) {
-      generatedPassword = this.getGeneratedPassword();
+      // We either generate a new password here, or grab the previously generated password
+      // if we're still on the same domain when we generated the password
+      generatedPassword = await this.getGeneratedPassword();
       let potentialConflictingLogins = await Services.logins.searchLoginsAsync({
         origin: formOrigin,
         formActionOrigin: actionOrigin,
@@ -595,7 +739,7 @@ class LoginManagerParent extends JSWindowActorParent {
     return this.browsingContext;
   }
 
-  getGeneratedPassword() {
+  async getGeneratedPassword() {
     if (
       !LoginHelper.enabled ||
       !LoginHelper.generationAvailable ||
@@ -630,8 +774,14 @@ class LoginManagerParent extends JSWindowActorParent {
        * merge/overwrite via a doorhanger.
        */
       storageGUID: null,
-      value: PasswordGenerator.generatePassword(),
     };
+    if (LoginHelper.improvedPasswordRulesEnabled) {
+      generatedPW.value = await PasswordRulesManager.generatePassword(
+        browsingContext.currentWindowGlobal.documentURI
+      );
+    } else {
+      generatedPW.value = PasswordGenerator.generatePassword({});
+    }
 
     // Add these observers when a password is assigned.
     if (!gGeneratedPasswordObserver.addedObserver) {
@@ -688,7 +838,7 @@ class LoginManagerParent extends JSWindowActorParent {
     return prompterSvc;
   }
 
-  async onFormSubmit(
+  async showDoorhanger(
     browser,
     formOrigin,
     {
@@ -727,7 +877,7 @@ class LoginManagerParent extends JSWindowActorParent {
     let browsingContext = BrowsingContext.get(browsingContextId);
     let framePrincipalOrigin =
       browsingContext.currentWindowGlobal.documentPrincipal.origin;
-    log("onFormSubmit, got framePrincipalOrigin: ", framePrincipalOrigin);
+    log("showDoorhanger, got framePrincipalOrigin: ", framePrincipalOrigin);
 
     let formLogin = new LoginInfo(
       formOrigin,
@@ -1305,6 +1455,8 @@ class LoginManagerParent extends JSWindowActorParent {
     return gRecipeManager.initializationPromise;
   }
 }
+
+LoginManagerParent.SUGGEST_IMPORT_DEBOUNCE_MS = 10000;
 
 XPCOMUtils.defineLazyPreferenceGetter(
   LoginManagerParent,

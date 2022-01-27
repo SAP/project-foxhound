@@ -44,7 +44,7 @@ class SandboxTarget {
   }
 
   template <typename CallbackT>
-  void RegisterSandboxStartCallback(CallbackT aCallback) {
+  void RegisterSandboxStartCallback(CallbackT&& aCallback) {
     mStartObservers.push_back(std::forward<CallbackT>(aCallback));
   }
 
@@ -61,6 +61,9 @@ class SandboxTarget {
   bool BrokerDuplicateHandle(HANDLE aSourceHandle, DWORD aTargetProcessId,
                              HANDLE* aTargetHandle, DWORD aDesiredAccess,
                              DWORD aOptions);
+
+  bool GetComplexLineBreaks(const WCHAR* text, uint32_t length,
+                            uint8_t* break_before);
 
  protected:
   SandboxTarget() : mTargetServices(nullptr) {}

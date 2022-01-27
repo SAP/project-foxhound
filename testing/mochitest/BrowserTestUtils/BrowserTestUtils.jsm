@@ -34,7 +34,6 @@ const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 XPCOMUtils.defineLazyModuleGetters(this, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   ContentTask: "resource://testing-common/ContentTask.jsm",
-  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetters(this, {
@@ -189,6 +188,7 @@ var BrowserTestUtils = {
    * @resolves The new tab.
    */
   openNewForegroundTab(tabbrowser, ...args) {
+    let startTime = Cu.now();
     let options;
     if (
       tabbrowser.ownerGlobal &&
@@ -272,7 +272,15 @@ var BrowserTestUtils = {
         );
       }
     }
-    return Promise.all(promises).then(() => tab);
+    return Promise.all(promises).then(() => {
+      let { innerWindowId } = tabbrowser.ownerGlobal.windowGlobalChild;
+      ChromeUtils.addProfilerMarker(
+        "BrowserTestUtils",
+        { startTime, category: "Test", innerWindowId },
+        "openNewForegroundTab"
+      );
+      return tab;
+    });
   },
 
   /**
@@ -356,11 +364,21 @@ var BrowserTestUtils = {
    * @resolves The tab switched to.
    */
   switchTab(tabbrowser, tab) {
+    let startTime = Cu.now();
+    let { innerWindowId } = tabbrowser.ownerGlobal.windowGlobalChild;
+
     let promise = new Promise(resolve => {
       tabbrowser.addEventListener(
         "TabSwitchDone",
         function() {
-          TestUtils.executeSoon(() => resolve(tabbrowser.selectedTab));
+          TestUtils.executeSoon(() => {
+            ChromeUtils.addProfilerMarker(
+              "BrowserTestUtils",
+              { category: "Test", startTime, innerWindowId },
+              "switchTab"
+            );
+            resolve(tabbrowser.selectedTab);
+          });
         },
         { once: true }
       );
@@ -409,6 +427,9 @@ var BrowserTestUtils = {
     wantLoad = null,
     maybeErrorPage = false
   ) {
+    let startTime = Cu.now();
+    let { innerWindowId } = browser.ownerGlobal.windowGlobalChild;
+
     // Passing a url as second argument is a common mistake we should prevent.
     if (includeSubFrames && typeof includeSubFrames != "boolean") {
       throw new Error(
@@ -420,7 +441,10 @@ var BrowserTestUtils = {
     // inserted into the document.
     let tabbrowser = browser.ownerGlobal.gBrowser;
     if (tabbrowser && tabbrowser.getTabForBrowser) {
-      tabbrowser._insertBrowser(tabbrowser.getTabForBrowser(browser));
+      let tab = tabbrowser.getTabForBrowser(browser);
+      if (tab) {
+        tabbrowser._insertBrowser(tab);
+      }
     }
 
     function isWanted(url) {
@@ -429,6 +453,22 @@ var BrowserTestUtils = {
       } else if (typeof wantLoad == "function") {
         return wantLoad(url);
       }
+
+      // HTTPS-First (Bug 1704453) TODO: In case we are waiting
+      // for an http:// URL to be loaded and https-first is enabled,
+      // then we also return true in case the backend upgraded
+      // the load to https://.
+      if (
+        BrowserTestUtils._httpsFirstEnabled &&
+        typeof wantLoad == "string" &&
+        wantLoad.startsWith("http://")
+      ) {
+        let wantLoadHttps = wantLoad.replace("http://", "https://");
+        if (wantLoadHttps == url) {
+          return true;
+        }
+      }
+
       // It's a string.
       return wantLoad == url;
     }
@@ -462,12 +502,21 @@ var BrowserTestUtils = {
               return;
             }
 
+            ChromeUtils.addProfilerMarker(
+              "BrowserTestUtils",
+              { startTime, category: "Test", innerWindowId },
+              "browserLoaded: " + internalURL
+            );
             resolve(internalURL);
             break;
           }
 
           case "unload":
-            reject();
+            reject(
+              new Error(
+                "The window unloaded while we were waiting for the browser to load - this should never happen."
+              )
+            );
             break;
 
           default:
@@ -836,21 +885,8 @@ var BrowserTestUtils = {
           );
 
           if (url) {
-            let browser = win.gBrowser.selectedBrowser;
-
-            if (
-              win.gMultiProcessBrowser &&
-              !E10SUtils.canLoadURIInRemoteType(
-                url,
-                win.gFissionBrowser,
-                browser.remoteType
-              )
-            ) {
-              await this.waitForEvent(browser, "XULFrameLoaderCreated");
-            }
-
             let loadPromise = this.browserLoaded(
-              browser,
+              win.gBrowser.selectedBrowser,
               false,
               url,
               maybeErrorPage
@@ -878,41 +914,17 @@ var BrowserTestUtils = {
   },
 
   /**
-   * Loads a new URI in the given browser and waits until we really started
-   * loading. In e10s browser.loadURI() can be an asynchronous operation due
-   * to having to switch the browser's remoteness and keep its shistory data.
+   * Loads a new URI in the given browser, triggered by the system principal.
    *
    * @param {xul:browser} browser
    *        A xul:browser.
    * @param {string} uri
    *        The URI to load.
-   *
-   * @return {Promise}
-   * @resolves When we started loading the given URI.
    */
-  async loadURI(browser, uri) {
-    // Load the new URI.
+  loadURI(browser, uri) {
     browser.loadURI(uri, {
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
     });
-
-    // Nothing to do in non-e10s mode.
-    if (!browser.ownerGlobal.gMultiProcessBrowser) {
-      return;
-    }
-
-    // If the new URI can't load in the browser's current process then we
-    // should wait for the new frameLoader to be created. This will happen
-    // asynchronously when the browser's remoteness changes.
-    if (
-      !E10SUtils.canLoadURIInRemoteType(
-        uri,
-        browser.ownerGlobal.gFissionBrowser,
-        browser.remoteType
-      )
-    ) {
-      await this.waitForEvent(browser, "XULFrameLoaderCreated");
-    }
   },
 
   /**
@@ -974,13 +986,23 @@ var BrowserTestUtils = {
    *        resolve when the first "domwindowopened" notification is seen.
    *        The promise will be resolved once the new window's document has been
    *        loaded.
+   *
+   * @param {function} checkFn (optional)
+   *        Called with the nsIDOMWindow object as argument, should return true
+   *        if the event is the expected one, or false if it should be ignored
+   *        and observing should continue. If not specified, the first window
+   *        resolves the returned promise.
+   *
    * @return {Promise}
    *         A Promise which resolves when a "domwindowopened" notification
    *         has been fired by the window watcher.
    */
-  domWindowOpenedAndLoaded(win) {
-    return this.domWindowOpened(win, async win => {
-      await this.waitForEvent(win, "load");
+  domWindowOpenedAndLoaded(win, checkFn) {
+    return this.domWindowOpened(win, async observedWin => {
+      await this.waitForEvent(observedWin, "load");
+      if (checkFn && !(await checkFn(observedWin))) {
+        return false;
+      }
       return true;
     });
   },
@@ -1007,6 +1029,19 @@ var BrowserTestUtils = {
   },
 
   /**
+   * Clear the stylesheet cache and open a new window to ensure
+   * CSS @supports -moz-bool-pref(...) {} rules are correctly
+   * applied to the browser chrome.
+   *
+   * @param {Object} options See BrowserTestUtils.openNewBrowserWindow
+   * @returns {Promise} Resolves with the new window once it is loaded.
+   */
+  async openNewWindowWithFlushedCacheForMozSupports(options) {
+    ChromeUtils.clearStyleSheetCache();
+    return BrowserTestUtils.openNewBrowserWindow(options);
+  },
+
+  /**
    * Open a new browser window from an existing one.
    * This relies on OpenBrowserWindow in browser.js, and waits for the window
    * to be completely loaded before resolving.
@@ -1021,6 +1056,8 @@ var BrowserTestUtils = {
    *         Resolves with the new window once it is loaded.
    */
   async openNewBrowserWindow(options = {}) {
+    let startTime = Cu.now();
+
     let currentWin = BrowserWindowTracker.getTopWindow({ private: false });
     if (!currentWin) {
       throw new Error(
@@ -1054,6 +1091,11 @@ var BrowserTestUtils = {
     );
 
     await Promise.all(promises);
+    ChromeUtils.addProfilerMarker(
+      "BrowserTestUtils",
+      { startTime, category: "Test" },
+      "openNewBrowserWindow"
+    );
 
     return win;
   },
@@ -1090,6 +1132,7 @@ var BrowserTestUtils = {
     let domWinClosedPromise = BrowserTestUtils.domWindowClosed(win);
     let promises = [domWinClosedPromise];
     let winType = win.document.documentElement.getAttribute("windowtype");
+    let flushTopic = "sessionstore-browser-shutdown-flush";
 
     if (winType == "navigator:browser") {
       let finalMsgsPromise = new Promise(resolve => {
@@ -1099,24 +1142,21 @@ var BrowserTestUtils = {
         browserSet.forEach(browser => {
           win.gBrowser._insertBrowser(win.gBrowser.getTabForBrowser(browser));
         });
-        let mm = win.getGroupMessageManager("browsers");
 
-        mm.addMessageListener(
-          "SessionStore:update",
-          function onMessage(msg) {
-            if (browserSet.has(msg.target) && msg.data.isFinal) {
-              browserSet.delete(msg.target);
-              if (!browserSet.size) {
-                mm.removeMessageListener("SessionStore:update", onMessage);
-                // Give the TabStateFlusher a chance to react to this final
-                // update and for the TabStateFlusher.flushWindow promise
-                // to resolve before we resolve.
-                TestUtils.executeSoon(resolve);
-              }
-            }
-          },
-          true
-        );
+        let observer = (subject, topic, data) => {
+          if (browserSet.has(subject)) {
+            browserSet.delete(subject);
+          }
+          if (!browserSet.size) {
+            Services.obs.removeObserver(observer, flushTopic);
+            // Give the TabStateFlusher a chance to react to this final
+            // update and for the TabStateFlusher.flushWindow promise
+            // to resolve before we resolve.
+            TestUtils.executeSoon(resolve);
+          }
+        };
+
+        Services.obs.addObserver(observer, flushTopic);
       });
 
       promises.push(finalMsgsPromise);
@@ -1136,19 +1176,17 @@ var BrowserTestUtils = {
    */
   waitForSessionStoreUpdate(tab) {
     return new Promise(resolve => {
-      let { messageManager: mm, frameLoader } = tab.linkedBrowser;
-      mm.addMessageListener(
-        "SessionStore:update",
-        function onMessage(msg) {
-          if (msg.targetFrameLoader == frameLoader && msg.data.isFinal) {
-            mm.removeMessageListener("SessionStore:update", onMessage);
-            // Wait for the next event tick to make sure other listeners are
-            // called.
-            TestUtils.executeSoon(() => resolve());
-          }
-        },
-        true
-      );
+      let browser = tab.linkedBrowser;
+      let flushTopic = "sessionstore-browser-shutdown-flush";
+      let observer = (subject, topic, data) => {
+        if (subject === browser) {
+          Services.obs.removeObserver(observer, flushTopic);
+          // Wait for the next event tick to make sure other listeners are
+          // called.
+          TestUtils.executeSoon(() => resolve());
+        }
+      };
+      Services.obs.addObserver(observer, flushTopic);
     });
   },
 
@@ -1204,28 +1242,63 @@ var BrowserTestUtils = {
    * @resolves The Event object.
    */
   waitForEvent(subject, eventName, capture, checkFn, wantsUntrusted) {
+    let startTime = Cu.now();
+    let innerWindowId = subject.ownerGlobal?.windowGlobalChild.innerWindowId;
+
     return new Promise((resolve, reject) => {
-      subject.addEventListener(
-        eventName,
-        function listener(event) {
-          try {
-            if (checkFn && !checkFn(event)) {
-              return;
-            }
-            subject.removeEventListener(eventName, listener, capture);
-            TestUtils.executeSoon(() => resolve(event));
-          } catch (ex) {
-            try {
-              subject.removeEventListener(eventName, listener, capture);
-            } catch (ex2) {
-              // Maybe the provided object does not support removeEventListener.
-            }
-            TestUtils.executeSoon(() => reject(ex));
+      let removed = false;
+      function listener(event) {
+        function cleanup() {
+          removed = true;
+          // Avoid keeping references to objects after the promise resolves.
+          subject = null;
+          checkFn = null;
+        }
+        try {
+          if (checkFn && !checkFn(event)) {
+            return;
           }
-        },
-        capture,
-        wantsUntrusted
-      );
+          subject.removeEventListener(eventName, listener, capture);
+          cleanup();
+          TestUtils.executeSoon(() => {
+            ChromeUtils.addProfilerMarker(
+              "BrowserTestUtils",
+              { startTime, category: "Test", innerWindowId },
+              "waitForEvent: " + eventName
+            );
+            resolve(event);
+          });
+        } catch (ex) {
+          try {
+            subject.removeEventListener(eventName, listener, capture);
+          } catch (ex2) {
+            // Maybe the provided object does not support removeEventListener.
+          }
+          cleanup();
+          TestUtils.executeSoon(() => reject(ex));
+        }
+      }
+
+      subject.addEventListener(eventName, listener, capture, wantsUntrusted);
+
+      TestUtils.promiseTestFinished?.then(() => {
+        if (removed) {
+          return;
+        }
+
+        subject.removeEventListener(eventName, listener, capture);
+        let text = eventName + " listener";
+        if (subject.id) {
+          text += ` on #${subject.id}`;
+        }
+        text += " not removed before the end of test";
+        reject(text);
+        ChromeUtils.addProfilerMarker(
+          "BrowserTestUtils",
+          { startTime, category: "Test", innerWindowId },
+          "waitForEvent: " + text
+        );
+      });
     });
   },
 
@@ -1331,7 +1404,7 @@ var BrowserTestUtils = {
     let contentEventListeners = this._contentEventListeners;
     contentEventListeners.set(id, {
       listener,
-      browsingContext: browser.browsingContext,
+      browserId: browser.browserId,
     });
 
     let eventListenerState = this._contentEventListenerSharedState;
@@ -1367,12 +1440,12 @@ var BrowserTestUtils = {
    * BrowserTestUtilsParent.jsm when a content event we were listening for
    * happens.
    */
-  _receivedContentEventListener(listenerId, browsingContext) {
+  _receivedContentEventListener(listenerId, browserId) {
     let listenerData = this._contentEventListeners.get(listenerId);
     if (!listenerData) {
       return;
     }
-    if (listenerData.browsingContext != browsingContext) {
+    if (listenerData.browserId != browserId) {
       return;
     }
     listenerData.listener();
@@ -1409,10 +1482,33 @@ var BrowserTestUtils = {
   },
 
   /**
+   * Wait until DOM mutations cause the condition expressed in checkFn
+   * to pass.
+   *
+   * Intended as an easy-to-use alternative to waitForCondition.
+   *
+   * @param {Element} target    The target in which to observe mutations.
+   * @param {Object}  options   The options to pass to MutationObserver.observe();
+   * @param {function} checkFn  Function that returns true when it wants the promise to be
+   * resolved.
+   */
+  waitForMutationCondition(target, options, checkFn) {
+    if (checkFn()) {
+      return Promise.resolve();
+    }
+    return new Promise(resolve => {
+      let obs = new target.ownerGlobal.MutationObserver(function() {
+        if (checkFn()) {
+          obs.disconnect();
+          resolve();
+        }
+      });
+      obs.observe(target, options);
+    });
+  },
+
+  /**
    * Like browserLoaded, but waits for an error page to appear.
-   * This explicitly deals with cases where the browser is not currently remote and a
-   * remoteness switch will occur before the error page is loaded, which is tricky
-   * because error pages don't fire 'regular' load events that we can rely on.
    *
    * @param {xul:browser} browser
    *        A xul:browser.
@@ -1421,27 +1517,13 @@ var BrowserTestUtils = {
    * @resolves When an error page has been loaded in the browser.
    */
   waitForErrorPage(browser) {
-    let waitForLoad = () =>
-      this.waitForContentEvent(browser, "AboutNetErrorLoad", false, null, true);
-
-    let win = browser.ownerGlobal;
-    let tab = win.gBrowser.getTabForBrowser(browser);
-    if (!tab || browser.isRemoteBrowser || !win.gMultiProcessBrowser) {
-      return waitForLoad();
-    }
-
-    // We're going to switch remoteness when loading an error page. We need to be
-    // quite careful in order to make sure we're adding the listener in time to
-    // get this event:
-    return new Promise((resolve, reject) => {
-      tab.addEventListener(
-        "TabRemotenessChange",
-        function() {
-          waitForLoad().then(resolve, reject);
-        },
-        { once: true }
-      );
-    });
+    return this.waitForContentEvent(
+      browser,
+      "AboutNetErrorLoad",
+      false,
+      null,
+      true
+    );
   },
 
   /**
@@ -1460,83 +1542,61 @@ var BrowserTestUtils = {
   waitForDocLoadAndStopIt(expectedURL, browser, checkFn) {
     let isHttp = url => /^https?:/.test(url);
 
-    let stoppedDocLoadPromise = () => {
-      return new Promise(resolve => {
-        // Redirect non-http URIs to http://mochi.test:8888/, so we can still
-        // use http-on-before-connect to listen for loads. Since we're
-        // aborting the load as early as possible, it doesn't matter whether the
-        // server handles it sensibly or not. However, this also means that this
-        // helper shouldn't be used to load local URIs (about pages, chrome://
-        // URIs, etc).
-        let proxyFilter;
-        if (!isHttp(expectedURL)) {
-          proxyFilter = {
-            proxyInfo: ProtocolProxyService.newProxyInfo(
-              "http",
-              "mochi.test",
-              8888,
-              "",
-              "",
-              0,
-              4096,
-              null
-            ),
+    return new Promise(resolve => {
+      // Redirect non-http URIs to http://mochi.test:8888/, so we can still
+      // use http-on-before-connect to listen for loads. Since we're
+      // aborting the load as early as possible, it doesn't matter whether the
+      // server handles it sensibly or not. However, this also means that this
+      // helper shouldn't be used to load local URIs (about pages, chrome://
+      // URIs, etc).
+      let proxyFilter;
+      if (!isHttp(expectedURL)) {
+        proxyFilter = {
+          proxyInfo: ProtocolProxyService.newProxyInfo(
+            "http",
+            "mochi.test",
+            8888,
+            "",
+            "",
+            0,
+            4096,
+            null
+          ),
 
-            applyFilter(channel, defaultProxyInfo, callback) {
-              callback.onProxyFilterResult(
-                isHttp(channel.URI.spec) ? defaultProxyInfo : this.proxyInfo
-              );
-            },
-          };
+          applyFilter(channel, defaultProxyInfo, callback) {
+            callback.onProxyFilterResult(
+              isHttp(channel.URI.spec) ? defaultProxyInfo : this.proxyInfo
+            );
+          },
+        };
 
-          ProtocolProxyService.registerChannelFilter(proxyFilter, 0);
+        ProtocolProxyService.registerChannelFilter(proxyFilter, 0);
+      }
+
+      function observer(chan) {
+        chan.QueryInterface(Ci.nsIHttpChannel);
+        if (!chan.originalURI || chan.originalURI.spec !== expectedURL) {
+          return;
+        }
+        if (checkFn && !checkFn(chan)) {
+          return;
         }
 
-        function observer(chan) {
-          chan.QueryInterface(Ci.nsIHttpChannel);
-          if (!chan.originalURI || chan.originalURI.spec !== expectedURL) {
-            return;
-          }
-          if (checkFn && !checkFn(chan)) {
-            return;
-          }
+        // TODO: We should check that the channel's BrowsingContext matches
+        // the browser's. See bug 1587114.
 
-          // TODO: We should check that the channel's BrowsingContext matches
-          // the browser's. See bug 1587114.
-
-          try {
-            chan.cancel(Cr.NS_BINDING_ABORTED);
-          } finally {
-            if (proxyFilter) {
-              ProtocolProxyService.unregisterChannelFilter(proxyFilter);
-            }
-            Services.obs.removeObserver(observer, "http-on-before-connect");
-            resolve();
+        try {
+          chan.cancel(Cr.NS_BINDING_ABORTED);
+        } finally {
+          if (proxyFilter) {
+            ProtocolProxyService.unregisterChannelFilter(proxyFilter);
           }
+          Services.obs.removeObserver(observer, "http-on-before-connect");
+          resolve();
         }
+      }
 
-        Services.obs.addObserver(observer, "http-on-before-connect");
-      });
-    };
-
-    let win = browser.ownerGlobal;
-    let tab = win.gBrowser.getTabForBrowser(browser);
-    let { mustChangeProcess } = E10SUtils.shouldLoadURIInBrowser(
-      browser,
-      expectedURL
-    );
-    if (!tab || !win.gMultiProcessBrowser || !mustChangeProcess) {
-      return stoppedDocLoadPromise();
-    }
-
-    return new Promise((resolve, reject) => {
-      tab.addEventListener(
-        "TabRemotenessChange",
-        function() {
-          stoppedDocLoadPromise().then(resolve, reject);
-        },
-        { once: true }
-      );
+      Services.obs.addObserver(observer, "http-on-before-connect");
     });
   },
 
@@ -1804,6 +1864,8 @@ var BrowserTestUtils = {
           return;
         }
 
+        Services.obs.removeObserver(observer, "ipc:content-shutdown");
+
         let dumpID;
         if (AppConstants.MOZ_CRASHREPORTER) {
           dumpID = subject.getPropertyAsAString("dumpID");
@@ -1847,7 +1909,6 @@ var BrowserTestUtils = {
         }
 
         removalPromise.then(() => {
-          Services.obs.removeObserver(observer, "ipc:content-shutdown");
           dump("\nCrash cleaned up\n");
           // There might be other ipc:content-shutdown handlers that need to
           // run before we want to continue, so we'll resolve on the next tick
@@ -2133,7 +2194,7 @@ var BrowserTestUtils = {
    */
   waitForGlobalNotificationBar(win, notificationValue) {
     return this.waitForNotificationInNotificationBox(
-      win.gHighPriorityNotificationBox,
+      win.gNotificationBox,
       notificationValue
     );
   },
@@ -2276,8 +2337,9 @@ var BrowserTestUtils = {
   /**
    * Waits for the dialog to open, and clicks the specified button.
    *
-   * @param {string} buttonAction
-   *        The ID of the button to click ("accept", "cancel", etc).
+   * @param {string} buttonNameOrElementID
+   *        The name of the button ("accept", "cancel", etc) or element ID to
+   *        click.
    * @param {string} uri
    *        The URI of the dialog to wait for.  Defaults to the common dialog.
    * @return {Promise}
@@ -2286,26 +2348,36 @@ var BrowserTestUtils = {
    *         specified button is clicked.
    */
   async promiseAlertDialogOpen(
-    buttonAction,
+    buttonNameOrElementID,
     uri = "chrome://global/content/commonDialog.xhtml",
-    func
+    options = { callback: null, isSubDialog: false }
   ) {
-    let win = await this.domWindowOpened(null, async win => {
+    let win;
+    if (uri == "chrome://global/content/commonDialog.xhtml") {
+      [win] = await TestUtils.topicObserved("common-dialog-loaded");
+    } else if (options.isSubDialog) {
+      [win] = await TestUtils.topicObserved("subdialog-loaded");
+    } else {
       // The test listens for the "load" event which guarantees that the alert
       // class has already been added (it is added when "DOMContentLoaded" is
       // fired).
-      await this.waitForEvent(win, "load");
+      win = await this.domWindowOpenedAndLoaded(null, win => {
+        return win.document.documentURI === uri;
+      });
+    }
 
-      return win.document.documentURI === uri;
-    });
-
-    if (func) {
-      await func(win);
+    if (options.callback) {
+      await options.callback(win);
       return win;
     }
 
-    let dialog = win.document.querySelector("dialog");
-    dialog.getButton(buttonAction).click();
+    if (buttonNameOrElementID) {
+      let dialog = win.document.querySelector("dialog");
+      let element =
+        dialog.getButton(buttonNameOrElementID) ||
+        win.document.getElementById(buttonNameOrElementID);
+      element.click();
+    }
 
     return win;
   },
@@ -2314,8 +2386,9 @@ var BrowserTestUtils = {
    * Waits for the dialog to open, and clicks the specified button, and waits
    * for the dialog to close.
    *
-   * @param {string} buttonAction
-   *        The ID of the button to click ("accept", "cancel", etc).
+   * @param {string} buttonNameOrElementID
+   *        The name of the button ("accept", "cancel", etc) or element ID to
+   *        click.
    * @param {string} uri
    *        The URI of the dialog to wait for.  Defaults to the common dialog.
    * @return {Promise}
@@ -2324,12 +2397,26 @@ var BrowserTestUtils = {
    *         specified button is clicked, and the dialog has been fully closed.
    */
   async promiseAlertDialog(
-    buttonAction,
+    buttonNameOrElementID,
     uri = "chrome://global/content/commonDialog.xhtml",
-    func
+    options = { callback: null, isSubDialog: false }
   ) {
-    let win = await this.promiseAlertDialogOpen(buttonAction, uri, func);
-    return this.windowClosed(win);
+    let win = await this.promiseAlertDialogOpen(
+      buttonNameOrElementID,
+      uri,
+      options
+    );
+    if (!win.docShell.browsingContext.embedderElement) {
+      return this.windowClosed(win);
+    }
+    let container = win.top.document.getElementById("window-modal-dialog");
+    return this.waitForEvent(container, "close").then(() => {
+      return this.waitForMutationCondition(
+        container,
+        { childList: true, attributes: true },
+        () => !container.hasChildNodes() && !container.open
+      );
+    });
   },
 
   /**
@@ -2481,6 +2568,7 @@ var BrowserTestUtils = {
    *        Extra information to pass to the actor.
    */
   async sendQuery(aBrowsingContext, aMessageName, aMessageData) {
+    let startTime = Cu.now();
     if (!aBrowsingContext.currentWindowGlobal) {
       await this.waitForCondition(() => aBrowsingContext.currentWindowGlobal);
     }
@@ -2488,8 +2576,22 @@ var BrowserTestUtils = {
     let actor = aBrowsingContext.currentWindowGlobal.getActor(
       "BrowserTestUtils"
     );
-    return actor.sendQuery(aMessageName, aMessageData);
+    return actor.sendQuery(aMessageName, aMessageData).then(val => {
+      ChromeUtils.addProfilerMarker(
+        "BrowserTestUtils",
+        { startTime, category: "Test" },
+        aMessageName
+      );
+      return val;
+    });
   },
 };
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  BrowserTestUtils,
+  "_httpsFirstEnabled",
+  "dom.security.https_first",
+  false
+);
 
 Services.obs.addObserver(BrowserTestUtils, "test-complete");

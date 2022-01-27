@@ -2,8 +2,14 @@
    http://creativecommons.org/publicdomain/zero/1.0/
 */
 
-ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", this);
+const { TelemetryController } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryController.jsm"
+);
+const { TelemetrySession } = ChromeUtils.import(
+  "resource://gre/modules/TelemetrySession.jsm"
+);
+
+Cu.importGlobalProperties(["Glean"]);
 
 function tick(aHowMany) {
   for (let i = 0; i < aHowMany; i++) {
@@ -40,6 +46,9 @@ add_task(async function test_setup() {
   do_get_profile();
   // Make sure we don't generate unexpected pings due to pref changes.
   await setEmptyPrefWatchlist();
+  // Ensure FOG's init
+  let FOG = Cc["@mozilla.org/toolkit/glean;1"].getService(Ci.nsIFOG);
+  FOG.initializeFOG();
 });
 
 add_task(async function test_record_activeTicks() {
@@ -61,6 +70,7 @@ add_task(async function test_record_activeTicks() {
         "TelemetrySession must record the expected number of active ticks (in scalars)."
       );
     }
+    Assert.equal(Glean.browserEngagement.activeTicks.testGetValue(), expected);
   };
 
   for (let i = 0; i < 3; i++) {

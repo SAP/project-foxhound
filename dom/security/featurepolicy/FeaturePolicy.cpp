@@ -5,6 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FeaturePolicy.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/dom/Feature.h"
 #include "mozilla/dom/FeaturePolicyBinding.h"
 #include "mozilla/dom/FeaturePolicyParser.h"
 #include "mozilla/dom/FeaturePolicyUtils.h"
@@ -158,6 +160,7 @@ void FeaturePolicy::ResetDeclaredPolicy() {
   mSelfOrigin = nullptr;
   mSrcOrigin = nullptr;
   mDeclaredFeaturesInAncestorChain.Clear();
+  mAttributeEnabledFeatureNames.Clear();
 }
 
 JSObject* FeaturePolicy::WrapObject(JSContext* aCx,
@@ -326,6 +329,7 @@ void FeaturePolicy::MaybeSetAllowedPolicy(const nsAString& aFeatureName) {
   feature.SetAllowsAll();
 
   mFeatures.AppendElement(feature);
+  mAttributeEnabledFeatureNames.AppendElement(aFeatureName);
 }
 
 }  // namespace dom

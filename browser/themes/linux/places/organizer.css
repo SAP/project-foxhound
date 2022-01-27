@@ -7,6 +7,7 @@
 #placesToolbar {
   appearance: auto;
   -moz-default-appearance: menubar;
+  color: -moz-menubartext;
 }
 
 @media (-moz-menubar-drag) {
@@ -72,7 +73,7 @@
 
 #placesMenu > menu:active,
 #placesMenu > menu[open] {
-  color: -moz-gtk-buttonactivetext;
+  color: -moz-buttonactivetext;
 }
 
 #placesMenu > menu::after {
@@ -80,7 +81,7 @@
   display: -moz-box;
   width: 12px;
   height: 12px;
-  content: url("chrome://global/skin/icons/arrow-dropdown-12.svg");
+  content: url("chrome://global/skin/icons/arrow-down-12.svg");
   -moz-context-properties: fill;
   fill: currentColor;
 }
@@ -91,12 +92,30 @@
 }
 
 /* Info box */
-#detailsDeck {
+#detailsPane {
   padding: 5px;
+}
+
+/* Expanders */
+
+.expander-up,
+.expander-down {
+  min-width: 0;
+  padding: 2px 0;
+  padding-inline-start: 2px;
+}
+
+.expander-up > .button-box {
+  appearance: auto;
+  -moz-default-appearance: button-arrow-up;
+}
+
+.expander-down > .button-box {
+  appearance: auto;
+  -moz-default-appearance: button-arrow-down;
 }
 
 /* Downloads pane */
 #clearDownloadsButton > .toolbarbutton-icon {
   display: none;
 }
-

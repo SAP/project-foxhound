@@ -5,6 +5,16 @@ Some parts of this process, including cloning and compiling, can take a long tim
 If at any point you get stuck, please don't hesitate to ask at `https://chat.mozilla.org <https://chat.mozilla.org>`__
 in the `#introduction <https://chat.mozilla.org/#/room/#introduction:mozilla.org>`__ channel.
 
+Before you start
+----------------
+Please register and create your account for
+
+`Bugzilla <https://bugzilla.mozilla.org/>`__ : web-based general-purpose bug tracking system.
+To register with Phabricator, make sure you enable Two-Factor Authentication (My Profile >> Edit Profile & Preferences >> Two-Factor Authentication) in Bugzilla.
+
+`Phabricator <https://phabricator.services.mozilla.com/>`__: web-based software development collaboration tools, mainly for code review.
+Please obtain an API Token (Settings >> Conduit API Tokens)
+
 Clone the sources
 -----------------
 
@@ -16,7 +26,7 @@ You can use either mercurial or git. `Mercurial <https://www.mercurial-scm.org/d
 
 For git, see the `git cinnabar documentation <https://github.com/glandium/git-cinnabar/wiki/Mozilla:-A-git-workflow-for-Gecko-development>`__
 
-The clone can take from 40 minutes to two hours,(depending on your connection) and
+The clone can take from 40 minutes to two hours (depending on your connection) and
 the repository should be less than 5GB (~ 20GB after the build).
 
 If you have any network connection issues and cannot clone with command, try :ref:`Mercurial bundles <Mercurial bundles>`.
@@ -33,7 +43,7 @@ Firefox provides a mechanism to install all dependencies; in the source tree:
      $ ./mach bootstrap
 
 The default options are recommended.
-If you're not planning to write C++ or Rust code, select :ref:`Artifact Mode <Artifact builds>`
+If you're not planning to write C++ or Rust code, select :ref:`Artifact Mode <Understanding Artifact Builds>`
 and follow the instructions at the end of the bootstrap for creating a mozconfig file.
 
 More information :ref:`for Linux <Building Firefox On Linux>` and :ref:`for MacOS <Building Firefox On MacOS>`
@@ -72,9 +82,9 @@ This will take a while; a few minutes to a few hours depending on your hardware.
 .. note::
 
     The default build is a compiled build with optimizations. Check out the
-    `mozconfig file documentation <https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Build_Instructions/Configuring_Build_Options>`__
+    :ref:`mozconfig file documentation <Configuring Build Options>`
     to see other build options. If you don't plan to change C++ or Rust code,
-    an :ref:`artifact build <Artifact builds>` will be faster.
+    an :ref:`artifact build <Understanding Artifact Builds>` will be faster.
 
 To run it:
 
@@ -82,9 +92,9 @@ To run it:
 
      $ ./mach run
 
-`More
-information <https://developer.mozilla.org/docs/Mozilla/Developer_guide/Build_Instructions/Simple_Firefox_build/Linux_and_MacOS_build_preparation>`__
+:ref:`More information about Linux <Building Firefox On Linux>` / :ref:`More information about MacOS <Building Firefox On MacOS>`
 
+.. _write_a_patch:
 
 To write a patch
 ----------------
@@ -105,7 +115,7 @@ Then:
 
 The commit message should look like:
 
-.. code-block::
+.. code-block:: text
 
     Bug xxxx - Short description of your change. r?reviewer
 
@@ -129,9 +139,23 @@ To visualize your patch in the repository, run:
     # Git
     $ git show
 
+:ref:`More information on how to work with stack of patches <Working with stack of patches Quick Reference>`
 
 :ref:`More information <Mercurial Overview>`
 
+To make sure the change follows the coding style
+------------------------------------------------
+
+To detect coding style violations, use mach lint:
+
+.. code-block:: shell
+
+    $ ./mach lint path/to/the/file/or/directory/you/changed
+
+    # To get the autofix, add --fix:
+    $ ./mach lint path/to/the/file/or/directory/you/changed --fix
+
+:ref:`More information <Code quality>`
 
 To test a change locally
 ------------------------
@@ -143,7 +167,11 @@ always easy to parse the results.
 
     $ ./mach test dom/serviceworkers
 
-`More information <https://developer.mozilla.org/docs/Mozilla/QA/Automated_testing>`__
+To run tests based on :ref:`GTest` (C/C++ based unit tests), run:
+
+.. code-block:: shell
+
+    $ ./mach gtest 'QuotaManager.*'
 
 To test a change remotely
 -------------------------
@@ -173,7 +201,7 @@ more information.
     You can ask your reviewer to submit the patch for you if you don't have that
     level of access.
 
-:ref:`More information <Try Server>`
+:ref:`More information <Pushing to Try>`
 
 
 To submit a patch
@@ -222,6 +250,18 @@ Run:
 
 After amending the patch, you will need to submit it using moz-phab again.
 
+.. warning::
+
+    Don't use ``hg commit --amend -m`` or ``git commit --amend -m``.
+
+    Phabricator tracks revision by editing the commit message when a
+    revision is created to add a special ``Differential Revision:
+    <url>`` line.
+
+    When ``--amend -m`` is used, that line will be lost, leading to
+    the creation of a new revision when re-submitted, which isn't
+    the desired outcome.
+
 If you wrote many changes, you can squash or edit commits with the
 command:
 
@@ -234,6 +274,8 @@ command:
    $ git rebase -i
 
 The submission step is the same as for the initial patch.
+
+:ref:`More information on how to work with stack of patches <Working with stack of patches Quick Reference>`
 
 Retrieve new changes from the repository
 ----------------------------------------
@@ -248,17 +290,22 @@ To pull changes from the repository, run:
    # Git
    $ git pull --rebase
 
+.. _push_a_change:
+
 To push a change in the code base
 ---------------------------------
 
 Once the change has been accepted and you've fixed any remaining issues
-the reviewer identified, add the *Check-in Needed* tag to the review
-(use the *Edit Revision* option on the top right).
+the reviewer identified, the reviewer should land the patch.
+
+If the patch has not landed on "autoland" (the integration branch) after a few days,
+feel free to contact the reviewer and/or
+@Aryx or @Sylvestre on the `#introduction <https://chat.mozilla.org/#/room/#introduction:mozilla.org>`__
+channel.
 
 The landing procedure will automatically close the review and the bug.
 
-`More
-information <https://developer.mozilla.org/docs/Mozilla/Developer_guide/How_to_Submit_a_Patch#Submitting_the_patch>`__
+:ref:`More information <How to submit a patch>`
 
 Contributing to GeckoView
 -------------------------
@@ -269,7 +316,7 @@ GeckoView setup and contribution docs live in `geckoview.dev <https://geckoview.
 More documentation about contribution
 -------------------------------------
 
-https://developer.mozilla.org/docs/Mozilla/Developer_guide/Introduction
+:ref:`Contributing to Mozilla projects`
 
 https://mozilla-version-control-tools.readthedocs.io/en/latest/devguide/contributing.html
 

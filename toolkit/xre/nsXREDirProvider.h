@@ -114,7 +114,6 @@ class nsXREDirProvider final : public nsIDirectoryServiceProvider2,
                             nsISimpleEnumerator** aResult);
   static nsresult GetUserDataDirectoryHome(nsIFile** aFile, bool aLocal);
   static nsresult GetSysUserExtensionsDirectory(nsIFile** aFile);
-  static nsresult GetSysUserExtensionsDevDirectory(nsIFile** aFile);
 #if defined(XP_UNIX) || defined(XP_MACOSX)
   static nsresult GetSystemExtensionsDirectory(nsIFile** aFile);
 #endif
@@ -125,7 +124,6 @@ class nsXREDirProvider final : public nsIDirectoryServiceProvider2,
   static nsresult AppendProfilePath(nsIFile* aFile, bool aLocal);
 
   static nsresult AppendSysUserExtensionPath(nsIFile* aFile);
-  static nsresult AppendSysUserExtensionsDevPath(nsIFile* aFile);
 
   // Internal helper that splits a path into components using the '/' and '\\'
   // delimiters.
@@ -134,7 +132,6 @@ class nsXREDirProvider final : public nsIDirectoryServiceProvider2,
 #if defined(MOZ_SANDBOX)
   // Load the temp directory for sandboxed content processes
   nsresult LoadContentProcessTempDir();
-  nsresult LoadPluginProcessTempDir();
 #endif
 
   void Append(nsIFile* aDirectory);
@@ -153,8 +150,6 @@ class nsXREDirProvider final : public nsIDirectoryServiceProvider2,
 #if defined(MOZ_SANDBOX)
   nsCOMPtr<nsIFile> mContentTempDir;
   nsCOMPtr<nsIFile> mContentProcessSandboxTempDir;
-  nsCOMPtr<nsIFile> mPluginTempDir;
-  nsCOMPtr<nsIFile> mPluginProcessSandboxTempDir;
 #endif
 
  private:

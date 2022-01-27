@@ -50,40 +50,31 @@ class Mutex {
  private:
   MutexImpl impl_;
 
+#ifdef DEBUG
+  const MutexId id_;
+  Mutex* prev_ = nullptr;
+  ThreadId owningThread_;
+
+  static MOZ_THREAD_LOCAL(Mutex*) HeldMutexStack;
+#endif
+
  public:
 #ifdef DEBUG
   static bool Init();
-#else
-  static bool Init() { return true; }
-#endif
 
-  explicit Mutex(const MutexId& id)
-#ifdef DEBUG
-      : id_(id)
-#endif
-  {
-    MOZ_ASSERT(id_.order != 0);
-  }
+  explicit Mutex(const MutexId& id) : id_(id) { MOZ_ASSERT(id_.order != 0); }
 
-#ifdef DEBUG
   void lock();
   void unlock();
+  void assertOwnedByCurrentThread() const;
 #else
+  static bool Init() { return true; }
+
+  explicit Mutex(const MutexId& id) {}
+
   void lock() { impl_.lock(); }
   void unlock() { impl_.unlock(); }
-#endif
-
-#ifdef DEBUG
- public:
-  bool isHeld() const;
-  bool ownedByCurrentThread() const;
-
- private:
-  const MutexId id_;
-  Mutex* prev_ = nullptr;
-  mozilla::Maybe<ThreadId> owningThread_;
-
-  static MOZ_THREAD_LOCAL(Mutex*) HeldMutexStack;
+  void assertOwnedByCurrentThread() const {};
 #endif
 
  private:

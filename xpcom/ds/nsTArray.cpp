@@ -7,6 +7,7 @@
 #include <string.h>
 #include "nsTArray.h"
 #include "nsXPCOM.h"
+#include "nsCycleCollectionNoteChild.h"
 #include "nsDebug.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/IntegerPrintfMacros.h"
@@ -14,7 +15,7 @@
 // Ensure this is sufficiently aligned so that Elements() and co don't create
 // unaligned pointers, or slices with unaligned pointers for empty arrays, see
 // https://github.com/servo/servo/issues/22613.
-alignas(8) nsTArrayHeader sEmptyTArrayHeader = {0, 0, 0};
+alignas(8) const nsTArrayHeader sEmptyTArrayHeader = {0, 0, 0};
 
 bool IsTwiceTheRequiredBytesRepresentableAsUint32(size_t aCapacity,
                                                   size_t aElemSize) {
@@ -22,9 +23,6 @@ bool IsTwiceTheRequiredBytesRepresentableAsUint32(size_t aCapacity,
   return ((CheckedUint32(aCapacity) * aElemSize) * 2).isValid();
 }
 
-MOZ_NORETURN MOZ_COLD void InvalidArrayIndex_CRASH(size_t aIndex,
-                                                   size_t aLength) {
-  MOZ_CRASH_UNSAFE_PRINTF(
-      "ElementAt(aIndex = %" PRIu64 ", aLength = %" PRIu64 ")",
-      static_cast<uint64_t>(aIndex), static_cast<uint64_t>(aLength));
+void ::detail::SetCycleCollectionArrayFlag(uint32_t& aFlags) {
+  aFlags |= CycleCollectionEdgeNameArrayFlag;
 }

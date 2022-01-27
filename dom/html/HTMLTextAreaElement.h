@@ -11,13 +11,13 @@
 #include "mozilla/TextControlElement.h"
 #include "mozilla/TextControlState.h"
 #include "mozilla/TextEditor.h"
+#include "mozilla/dom/ConstraintValidation.h"
 #include "mozilla/dom/HTMLFormElement.h"
 #include "mozilla/dom/HTMLInputElementBinding.h"
 #include "nsIControllers.h"
 #include "nsCOMPtr.h"
 #include "nsGenericHTMLElement.h"
 #include "nsStubMutationObserver.h"
-#include "nsIConstraintValidation.h"
 #include "nsGkAtoms.h"
 
 class nsIControllers;
@@ -32,13 +32,15 @@ class PresState;
 
 namespace dom {
 
-class HTMLFormSubmission;
+class FormData;
 
 class HTMLTextAreaElement final : public TextControlElement,
                                   public nsStubMutationObserver,
-                                  public nsIConstraintValidation {
+                                  public ConstraintValidation {
  public:
-  using nsIConstraintValidation::GetValidationMessage;
+  using ConstraintValidation::GetValidationMessage;
+  using ValueSetterOption = TextControlState::ValueSetterOption;
+  using ValueSetterOptions = TextControlState::ValueSetterOptions;
 
   explicit HTMLTextAreaElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
@@ -54,17 +56,23 @@ class HTMLTextAreaElement final : public TextControlElement,
   // Element
   virtual bool IsInteractiveHTMLContent() const override { return true; }
 
+  // nsGenericHTMLElement
+  virtual bool IsDisabledForEvents(WidgetEvent* aEvent) override;
+
+  // nsGenericHTMLFormElement
+  void SaveState() override;
+  bool RestoreState(PresState* aState) override;
+
   // nsIFormControl
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   NS_IMETHOD Reset() override;
-  NS_IMETHOD SubmitNamesValues(HTMLFormSubmission* aFormSubmission) override;
-  NS_IMETHOD SaveState() override;
-  virtual bool RestoreState(PresState* aState) override;
-  virtual bool IsDisabledForEvents(WidgetEvent* aEvent) override;
+  NS_IMETHOD SubmitNamesValues(FormData* aFormData) override;
 
   virtual void FieldSetDisabledChanged(bool aNotify) override;
 
   virtual EventStates IntrinsicState() const override;
+
+  void SetLastValueChangeWasInteractive(bool);
 
   // TextControlElement
   virtual nsresult SetValueChanged(bool aValueChanged) override;
@@ -89,9 +97,6 @@ class HTMLTextAreaElement final : public TextControlElement,
   MOZ_CAN_RUN_SCRIPT virtual void UnbindFromFrame(
       nsTextControlFrame* aFrame) override;
   MOZ_CAN_RUN_SCRIPT virtual nsresult CreateEditor() override;
-  virtual void UpdateOverlayTextVisibility(bool aNotify) override;
-  virtual bool GetPlaceholderVisibility() override;
-  virtual bool GetPreviewVisibility() override;
   virtual void SetPreviewValue(const nsAString& aValue) override;
   virtual void GetPreviewValue(nsAString& aValue) override;
   virtual void EnablePreview() override;
@@ -155,6 +160,8 @@ class HTMLTextAreaElement final : public TextControlElement,
   void UpdateTooShortValidityState();
   void UpdateValueMissingValidityState();
   void UpdateBarredFromConstraintValidation();
+
+  // ConstraintValidation
   nsresult GetValidationMessage(nsAString& aValidationMessage,
                                 ValidityStateType aType) override;
 
@@ -176,8 +183,8 @@ class HTMLTextAreaElement final : public TextControlElement,
   void SetDisabled(bool aDisabled, ErrorResult& aError) {
     SetHTMLBoolAttr(nsGkAtoms::disabled, aDisabled, aError);
   }
-  // nsGenericHTMLFormElementWithState::GetForm is fine
-  using nsGenericHTMLFormElementWithState::GetForm;
+  // nsGenericHTMLFormControlElementWithState::GetForm is fine
+  using nsGenericHTMLFormControlElementWithState::GetForm;
   int32_t MaxLength() const { return GetIntAttr(nsGkAtoms::maxlength, -1); }
   int32_t UsedMaxLength() const final { return MaxLength(); }
   void SetMaxLength(int32_t aMaxLength, ErrorResult& aError) {
@@ -254,7 +261,7 @@ class HTMLTextAreaElement final : public TextControlElement,
   // via bindings.
   void SetCustomValidity(const nsAString& aError);
 
-  void Select();
+  MOZ_CAN_RUN_SCRIPT void Select();
   Nullable<uint32_t> GetSelectionStart(ErrorResult& aError);
   MOZ_CAN_RUN_SCRIPT void SetSelectionStart(
       const Nullable<uint32_t>& aSelectionStart, ErrorResult& aError);
@@ -286,7 +293,7 @@ class HTMLTextAreaElement final : public TextControlElement,
   MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual ~HTMLTextAreaElement();
 
   // get rid of the compiler warning
-  using nsGenericHTMLFormElementWithState::IsSingleLineTextControl;
+  using nsGenericHTMLFormControlElementWithState::IsSingleLineTextControl;
 
   virtual JSObject* WrapNode(JSContext* aCx,
                              JS::Handle<JSObject*> aGivenProto) override;
@@ -335,10 +342,10 @@ class HTMLTextAreaElement final : public TextControlElement,
    * Setting the value.
    *
    * @param aValue      String to set.
-   * @param aFlags      See TextControlState::SetValueFlags.
+   * @param aOptions    See TextControlState::ValueSetterOption.
    */
-  MOZ_CAN_RUN_SCRIPT
-  nsresult SetValueInternal(const nsAString& aValue, uint32_t aFlags);
+  MOZ_CAN_RUN_SCRIPT nsresult
+  SetValueInternal(const nsAString& aValue, const ValueSetterOptions& aOptions);
 
   /**
    * Common method to call from the various mutation observer methods.

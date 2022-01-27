@@ -20,11 +20,9 @@ ChromeUtils.defineModuleGetter(
   "resource:///modules/UITour.jsm"
 );
 
-// These are available on the widget implementation, but it seems impossible
-// to grab that impl at runtime.
 const DECKINDEX_TABS = 0;
-const DECKINDEX_TABSDISABLED = 1;
-const DECKINDEX_FETCHING = 2;
+const DECKINDEX_FETCHING = 1;
+const DECKINDEX_TABSDISABLED = 2;
 const DECKINDEX_NOCLIENTS = 3;
 
 const SAMPLE_TAB_URL = "https://example.com/";
@@ -256,7 +254,11 @@ add_task(async function() {
 
   // The widget is still fetching tabs, as we've neutered everything that
   // provides them
-  is(deck.selectedIndex, DECKINDEX_FETCHING, "first deck entry is visible");
+  is(
+    deck.selectedIndex,
+    "" + DECKINDEX_FETCHING,
+    "first deck entry is visible"
+  );
 
   // Tell the widget there are tabs available, but with zero clients.
   mockedInternal.getTabClients = () => {
@@ -267,7 +269,7 @@ add_task(async function() {
   // The UI should be showing the "no clients" pane.
   is(
     deck.selectedIndex,
-    DECKINDEX_NOCLIENTS,
+    "" + DECKINDEX_NOCLIENTS,
     "no-clients deck entry is visible"
   );
 
@@ -318,7 +320,11 @@ add_task(async function() {
   await updateTabsPanel();
 
   // The UI should be showing tabs!
-  is(deck.selectedIndex, DECKINDEX_TABS, "no-clients deck entry is visible");
+  is(
+    deck.selectedIndex,
+    "" + DECKINDEX_TABS,
+    "no-clients deck entry is visible"
+  );
   let tabList = document.getElementById("PanelUI-remotetabs-tabslist");
   let node = tabList.firstElementChild;
   // First entry should be the client with the most-recent tab.
@@ -461,7 +467,7 @@ add_task(async function() {
   let subpanel = document.getElementById("PanelUI-remotetabs-main");
   ok(!subpanel.hidden, "main pane is visible");
   let deck = document.getElementById("PanelUI-remotetabs-deck");
-  is(deck.selectedIndex, DECKINDEX_TABS, "we should be showing tabs");
+  is(deck.selectedIndex, "" + DECKINDEX_TABS, "we should be showing tabs");
 
   function checkTabsPage(tabsShownCount, showMoreLabel) {
     let tabList = document.getElementById("PanelUI-remotetabs-tabslist");
@@ -516,13 +522,7 @@ add_task(async function() {
     return promise;
   }
 
-  showMoreButton = checkTabsPage(25, "Show More");
-  await clickShowMoreButton();
-
-  showMoreButton = checkTabsPage(50, "Show More");
-  await clickShowMoreButton();
-
-  showMoreButton = checkTabsPage(72, "Show All");
+  showMoreButton = checkTabsPage(25, "Show More Tabs");
   await clickShowMoreButton();
 
   checkTabsPage(77, null);

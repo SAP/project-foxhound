@@ -7,7 +7,7 @@
 "use strict";
 
 const TEST_URI =
-  "data:text/html;charset=utf8," +
+  "data:text/html;charset=utf8,<!DOCTYPE html>" +
   `<script>
     console.log({a:1}, 100, {b:1}, 'foo', false, null, undefined);
 
@@ -100,7 +100,7 @@ add_task(async function() {
   sidebarText = hud.ui.document.querySelector(".sidebar-contents").textContent;
   is(
     oiNodes[0].textContent,
-    "CustomServerError",
+    "CustomServerError: oh my",
     "First node has expected content"
   );
   ok(

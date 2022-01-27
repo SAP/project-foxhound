@@ -6,24 +6,30 @@
 #include "PreloadService.h"
 
 #include "FetchPreloader.h"
+#include "PreloaderBase.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/dom/HTMLLinkElement.h"
 #include "mozilla/dom/ScriptLoader.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/FontPreloader.h"
 #include "mozilla/StaticPrefs_network.h"
-#include "nsIReferrerInfo.h"
 #include "nsNetUtil.h"
 
 namespace mozilla {
 
+PreloadService::PreloadService(dom::Document* aDoc) : mDocument(aDoc) {}
+PreloadService::~PreloadService() = default;
+
 bool PreloadService::RegisterPreload(const PreloadHashKey& aKey,
                                      PreloaderBase* aPreload) {
-  if (PreloadExists(aKey)) {
+  return mPreloads.WithEntryHandle(aKey, [&](auto&& lookup) {
+    if (lookup) {
+      lookup.Data() = aPreload;
+      return true;
+    }
+    lookup.Insert(aPreload);
     return false;
-  }
-
-  mPreloads.Put(aKey, RefPtr{aPreload});
-  return true;
+  });
 }
 
 void PreloadService::DeregisterPreload(const PreloadHashKey& aKey) {
@@ -33,9 +39,7 @@ void PreloadService::DeregisterPreload(const PreloadHashKey& aKey) {
 void PreloadService::ClearAllPreloads() { mPreloads.Clear(); }
 
 bool PreloadService::PreloadExists(const PreloadHashKey& aKey) {
-  bool found;
-  mPreloads.GetWeak(aKey, &found);
-  return found;
+  return mPreloads.Contains(aKey);
 }
 
 already_AddRefed<PreloaderBase> PreloadService::LookupPreload(
@@ -57,18 +61,13 @@ already_AddRefed<nsIURI> PreloadService::GetPreloadURI(const nsAString& aURL) {
 }
 
 already_AddRefed<PreloaderBase> PreloadService::PreloadLinkElement(
-    dom::HTMLLinkElement* aLinkElement, nsContentPolicyType aPolicyType,
-    nsIReferrerInfo* aReferrerInfo) {
-  if (!StaticPrefs::network_preload()) {
-    return nullptr;
-  }
-
-  if (!CheckReferrerURIScheme(aReferrerInfo)) {
-    return nullptr;
-  }
-
+    dom::HTMLLinkElement* aLinkElement, nsContentPolicyType aPolicyType) {
   if (aPolicyType == nsIContentPolicy::TYPE_INVALID) {
-    NotifyNodeEvent(aLinkElement, false);
+    MOZ_ASSERT_UNREACHABLE("Caller should check");
+    return nullptr;
+  }
+
+  if (!StaticPrefs::network_preload()) {
     return nullptr;
   }
 
@@ -86,9 +85,9 @@ already_AddRefed<PreloaderBase> PreloadService::PreloadLinkElement(
   aLinkElement->GetReferrerPolicy(referrerPolicy);
   aLinkElement->GetType(type);
 
-  auto result =
-      PreloadOrCoalesce(uri, url, aPolicyType, as, type, charset, srcset, sizes,
-                        integrity, crossOrigin, referrerPolicy);
+  auto result = PreloadOrCoalesce(uri, url, aPolicyType, as, type, charset,
+                                  srcset, sizes, integrity, crossOrigin,
+                                  referrerPolicy, /* aFromHeader = */ false);
 
   if (!result.mPreloader) {
     NotifyNodeEvent(aLinkElement, result.mAlreadyComplete);
@@ -103,21 +102,19 @@ void PreloadService::PreloadLinkHeader(
     nsIURI* aURI, const nsAString& aURL, nsContentPolicyType aPolicyType,
     const nsAString& aAs, const nsAString& aType, const nsAString& aIntegrity,
     const nsAString& aSrcset, const nsAString& aSizes, const nsAString& aCORS,
-    const nsAString& aReferrerPolicy, nsIReferrerInfo* aReferrerInfo) {
+    const nsAString& aReferrerPolicy) {
+  if (aPolicyType == nsIContentPolicy::TYPE_INVALID) {
+    MOZ_ASSERT_UNREACHABLE("Caller should check");
+    return;
+  }
+
   if (!StaticPrefs::network_preload()) {
     return;
   }
 
-  if (!CheckReferrerURIScheme(aReferrerInfo)) {
-    return;
-  }
-
-  if (aPolicyType == nsIContentPolicy::TYPE_INVALID) {
-    return;
-  }
-
-  PreloadOrCoalesce(aURI, aURL, aPolicyType, aAs, aType, EmptyString(), aSrcset,
-                    aSizes, aIntegrity, aCORS, aReferrerPolicy);
+  PreloadOrCoalesce(aURI, aURL, aPolicyType, aAs, aType, u""_ns, aSrcset,
+                    aSizes, aIntegrity, aCORS, aReferrerPolicy,
+                    /* aFromHeader = */ true);
 }
 
 PreloadService::PreloadOrCoalesceResult PreloadService::PreloadOrCoalesce(
@@ -125,7 +122,7 @@ PreloadService::PreloadOrCoalesceResult PreloadService::PreloadOrCoalesce(
     const nsAString& aAs, const nsAString& aType, const nsAString& aCharset,
     const nsAString& aSrcset, const nsAString& aSizes,
     const nsAString& aIntegrity, const nsAString& aCORS,
-    const nsAString& aReferrerPolicy) {
+    const nsAString& aReferrerPolicy, bool aFromHeader) {
   if (!aURI) {
     MOZ_ASSERT_UNREACHABLE("Should not pass null nsIURI");
     return {nullptr, false};
@@ -168,7 +165,12 @@ PreloadService::PreloadOrCoalesceResult PreloadService::PreloadOrCoalesce(
     PreloadScript(uri, aType, aCharset, aCORS, aReferrerPolicy, aIntegrity,
                   true /* isInHead - TODO */);
   } else if (aAs.LowerCaseEqualsASCII("style")) {
-    switch (PreloadStyle(uri, aCharset, aCORS, aReferrerPolicy, aIntegrity)) {
+    auto status = mDocument->PreloadStyle(
+        aURI, Encoding::ForLabel(aCharset), aCORS,
+        PreloadReferrerPolicy(aReferrerPolicy), aIntegrity,
+        aFromHeader ? css::StylePreloadKind::FromLinkRelPreloadHeader
+                    : css::StylePreloadKind::FromLinkRelPreloadElement);
+    switch (status) {
       case dom::SheetPreloadStatus::AlreadyComplete:
         return {nullptr, /* already_complete = */ true};
       case dom::SheetPreloadStatus::Errored:
@@ -195,14 +197,6 @@ void PreloadService::PreloadScript(nsIURI* aURI, const nsAString& aType,
   mDocument->ScriptLoader()->PreloadURI(
       aURI, aCharset, aType, aCrossOrigin, aIntegrity, aScriptFromHead, false,
       false, false, true, PreloadReferrerPolicy(aReferrerPolicy));
-}
-
-dom::SheetPreloadStatus PreloadService::PreloadStyle(
-    nsIURI* aURI, const nsAString& aCharset, const nsAString& aCrossOrigin,
-    const nsAString& aReferrerPolicy, const nsAString& aIntegrity) {
-  return mDocument->PreloadStyle(
-      aURI, Encoding::ForLabel(aCharset), aCrossOrigin,
-      PreloadReferrerPolicy(aReferrerPolicy), aIntegrity, true);
 }
 
 void PreloadService::PreloadImage(nsIURI* aURI, const nsAString& aCrossOrigin,
@@ -265,22 +259,6 @@ dom::ReferrerPolicy PreloadService::PreloadReferrerPolicy(
   }
 
   return referrerPolicy;
-}
-
-bool PreloadService::CheckReferrerURIScheme(nsIReferrerInfo* aReferrerInfo) {
-  if (!aReferrerInfo) {
-    return false;
-  }
-
-  nsCOMPtr<nsIURI> referrer = aReferrerInfo->GetOriginalReferrer();
-  if (!referrer) {
-    return false;
-  }
-  if (!referrer->SchemeIs("http") && !referrer->SchemeIs("https")) {
-    return false;
-  }
-
-  return true;
 }
 
 nsIURI* PreloadService::BaseURIForPreload() {

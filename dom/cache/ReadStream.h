@@ -7,7 +7,7 @@
 #ifndef mozilla_dom_cache_ReadStream_h
 #define mozilla_dom_cache_ReadStream_h
 
-#include "mozilla/ErrorResult.h"
+#include "mozilla/dom/SafeRefPtr.h"
 #include "mozilla/ipc/FileDescriptor.h"
 #include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
@@ -17,6 +17,8 @@
 #include "nsTArrayForwardDeclare.h"
 
 namespace mozilla {
+class ErrorResult;
+
 namespace ipc {
 class AutoIPCStream;
 }  // namespace ipc
@@ -60,8 +62,6 @@ class ReadStream final : public nsIInputStream {
     // Closes the stream and then forgets the stream control.  Does not
     // notify.
     virtual void CloseStreamWithoutReporting() = 0;
-
-    virtual bool MatchId(const nsID& aId) const = 0;
 
     virtual bool HasEverBeenRead() const = 0;
 

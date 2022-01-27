@@ -14,7 +14,9 @@
 #include "mozilla/MediaManager.h"
 
 #ifdef MOZ_WEBRTC
-extern mozilla::LazyLogModule gMediaManagerLog;
+namespace mozilla {
+extern LazyLogModule gMediaManagerLog;
+}
 #else
 static mozilla::LazyLogModule gMediaManagerLog("MediaManager");
 #endif
@@ -22,6 +24,7 @@ static mozilla::LazyLogModule gMediaManagerLog("MediaManager");
 
 namespace mozilla {
 
+using dom::CallerType;
 using dom::ConstrainBooleanParameters;
 
 template <class ValueType>
@@ -331,49 +334,12 @@ bool MediaConstraintsHelper::SomeSettingsFit(
 
   MOZ_ASSERT(!aDevices.IsEmpty());
   for (auto& device : aDevices) {
-    if (device->GetBestFitnessDistance(sets, false) != UINT32_MAX) {
+    auto distance = device->GetBestFitnessDistance(sets, CallerType::NonSystem);
+    if (distance != UINT32_MAX) {
       return true;
     }
   }
   return false;
-}
-
-template <class ValueType, class NormalizedRange>
-/* static */
-uint32_t MediaConstraintsHelper::FitnessDistance(
-    ValueType aN, const NormalizedRange& aRange) {
-  if (aRange.mMin > aN || aRange.mMax < aN) {
-    return UINT32_MAX;
-  }
-  if (aN == aRange.mIdeal.valueOr(aN)) {
-    return 0;
-  }
-  return uint32_t(
-      ValueType((std::abs(aN - aRange.mIdeal.value()) * 1000) /
-                std::max(std::abs(aN), std::abs(aRange.mIdeal.value()))));
-}
-
-template <class ValueType, class NormalizedRange>
-/* static */
-uint32_t MediaConstraintsHelper::FeasibilityDistance(
-    ValueType aN, const NormalizedRange& aRange) {
-  if (aRange.mMin > aN) {
-    return UINT32_MAX;
-  }
-  // We prefer larger resolution because now we support downscaling
-  if (aN == aRange.mIdeal.valueOr(aN)) {
-    return 0;
-  }
-
-  if (aN > aRange.mIdeal.value()) {
-    return uint32_t(
-        ValueType((std::abs(aN - aRange.mIdeal.value()) * 1000) /
-                  std::max(std::abs(aN), std::abs(aRange.mIdeal.value()))));
-  }
-
-  return 10000 + uint32_t(ValueType(
-                     (std::abs(aN - aRange.mIdeal.value()) * 1000) /
-                     std::max(std::abs(aN), std::abs(aRange.mIdeal.value()))));
 }
 
 // Fitness distance returned as integer math * 1000. Infinity = UINT32_MAX
@@ -395,7 +361,7 @@ uint32_t MediaConstraintsHelper::FitnessDistance(
 
 /* static */ const char* MediaConstraintsHelper::SelectSettings(
     const NormalizedConstraints& aConstraints,
-    nsTArray<RefPtr<MediaDevice>>& aDevices, bool aIsChrome) {
+    nsTArray<RefPtr<MediaDevice>>& aDevices, CallerType aCallerType) {
   auto& c = aConstraints;
   LogConstraints(c);
 
@@ -412,7 +378,7 @@ uint32_t MediaConstraintsHelper::FitnessDistance(
 
   for (uint32_t i = 0; i < aDevices.Length();) {
     uint32_t distance =
-        aDevices[i]->GetBestFitnessDistance(aggregateConstraints, aIsChrome);
+        aDevices[i]->GetBestFitnessDistance(aggregateConstraints, aCallerType);
     if (distance == UINT32_MAX) {
       unsatisfactory.AppendElement(std::move(aDevices[i]));
       aDevices.RemoveElementAt(i);
@@ -437,8 +403,8 @@ uint32_t MediaConstraintsHelper::FitnessDistance(
     aggregateConstraints.AppendElement(&advanced);
     nsTArray<RefPtr<MediaDevice>> rejects;
     for (uint32_t j = 0; j < aDevices.Length();) {
-      uint32_t distance =
-          aDevices[j]->GetBestFitnessDistance(aggregateConstraints, aIsChrome);
+      uint32_t distance = aDevices[j]->GetBestFitnessDistance(
+          aggregateConstraints, aCallerType);
       if (distance == UINT32_MAX) {
         rejects.AppendElement(std::move(aDevices[j]));
         aDevices.RemoveElementAt(j);

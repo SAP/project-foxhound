@@ -2,8 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#commonDialog {
+%include ../../shared/commonDialog.inc.css
+
+#commonDialog:not([subdialog]) {
   line-height: 13px;
+}
+
+#commonDialog:not([subdialog]) #infoTitle,
+#commonDialog:not([subdialog]) #infoBody {
+  font: menu;
+  line-height: 16px;
+  margin-bottom: 6px;
 }
 
 #infoContainer {
@@ -15,14 +24,6 @@
   margin-inline-end: 14px;
 }
 
-#infoTitle,
-#infoHeader,
-#infoBody {
-  font: menu;
-  line-height: 16px;
-  margin-bottom: 6px;
-}
-
-#infoTitle {
+#commonDialog:not([subdialog]) #infoTitle {
   font-weight: bold;
 }

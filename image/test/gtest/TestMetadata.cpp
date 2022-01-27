@@ -79,7 +79,7 @@ static void CheckMetadata(const ImageTestCase& aTestCase,
   // Check that we got the expected metadata.
   EXPECT_TRUE(metadataProgress & FLAG_SIZE_AVAILABLE);
 
-  IntSize metadataSize = decoder->Size();
+  OrientedIntSize metadataSize = decoder->Size();
   EXPECT_EQ(aTestCase.mSize.width, metadataSize.width);
   if (aBMPWithinICO == BMPWithinICO::YES) {
     // Half the data is considered to be part of the AND mask if embedded
@@ -120,7 +120,7 @@ static void CheckMetadata(const ImageTestCase& aTestCase,
   EXPECT_EQ(fullProgress, metadataProgress | fullProgress);
 
   // The full decoder and the metadata decoder should agree on the image's size.
-  IntSize fullSize = decoder->Size();
+  OrientedIntSize fullSize = decoder->Size();
   EXPECT_EQ(metadataSize.width, fullSize.width);
   EXPECT_EQ(metadataSize.height, fullSize.height);
 
@@ -136,6 +136,10 @@ class ImageDecoderMetadata : public ::testing::Test {
   AutoInitializeImageLib mInit;
 };
 
+TEST_F(ImageDecoderMetadata, TransparentAVIF) {
+  CheckMetadata(TransparentAVIFTestCase());
+}
+
 TEST_F(ImageDecoderMetadata, PNG) { CheckMetadata(GreenPNGTestCase()); }
 TEST_F(ImageDecoderMetadata, TransparentPNG) {
   CheckMetadata(TransparentPNGTestCase());
@@ -149,6 +153,13 @@ TEST_F(ImageDecoderMetadata, BMP) { CheckMetadata(GreenBMPTestCase()); }
 TEST_F(ImageDecoderMetadata, ICO) { CheckMetadata(GreenICOTestCase()); }
 TEST_F(ImageDecoderMetadata, Icon) { CheckMetadata(GreenIconTestCase()); }
 TEST_F(ImageDecoderMetadata, WebP) { CheckMetadata(GreenWebPTestCase()); }
+
+#ifdef MOZ_JXL
+TEST_F(ImageDecoderMetadata, JXL) { CheckMetadata(GreenJXLTestCase()); }
+TEST_F(ImageDecoderMetadata, TransparentJXL) {
+  CheckMetadata(TransparentJXLTestCase());
+}
+#endif
 
 TEST_F(ImageDecoderMetadata, AnimatedGIF) {
   CheckMetadata(GreenFirstFrameAnimatedGIFTestCase());
@@ -203,12 +214,12 @@ TEST_F(ImageDecoderMetadata, NoFrameDelayGIFFullDecode) {
   ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   // Write the data into the image.
-  rv = image->OnImageDataAvailable(nullptr, nullptr, inputStream, 0,
+  rv = image->OnImageDataAvailable(nullptr, inputStream, 0,
                                    static_cast<uint32_t>(length));
   ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   // Let the image know we've sent all the data.
-  rv = image->OnImageDataComplete(nullptr, nullptr, NS_OK, true);
+  rv = image->OnImageDataComplete(nullptr, NS_OK, true);
   ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   RefPtr<ProgressTracker> tracker = image->GetProgressTracker();

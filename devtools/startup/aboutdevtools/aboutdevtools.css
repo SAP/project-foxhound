@@ -30,7 +30,7 @@ p {
   margin-right: calc(100% - 100vw);
 }
 
-.wrapper {
+.wrapper:not([hidden]) {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -136,7 +136,6 @@ button {
   padding: 10px 20px;
 
   font-size: 15px;
-  font-weight: 400;
   line-height: 21px;
   cursor: pointer;
 }
@@ -144,10 +143,6 @@ button {
 /* Remove light gray outline when clicking on the button */
 button::-moz-focus-inner {
   border: 0;
-}
-
-[hidden="true"] {
-  display: none;
 }
 
 footer {
@@ -177,7 +172,7 @@ footer {
 }
 
 .footer-link {
-  display: block;
+  display: inline;
   margin-top: 10px;
 }
 

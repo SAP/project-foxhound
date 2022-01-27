@@ -18,6 +18,10 @@
 #include "nsIURI.h"
 #include "nsProxyRelease.h"
 #include "nsQueryObject.h"
+#include "NeckoChild.h"
+#include "mozilla/ContentBlocking.h"
+#include "nsIHttpChannel.h"
+#include "nsIStreamListener.h"
 
 namespace mozilla {
 namespace net {
@@ -92,14 +96,6 @@ ClassifierDummyChannel::ClassifierDummyChannel(nsIURI* aURI,
   SetLoadInfo(aLoadInfo);
 }
 
-ClassifierDummyChannel::~ClassifierDummyChannel() {
-  NS_ReleaseOnMainThread("ClassifierDummyChannel::mLoadInfo",
-                         mLoadInfo.forget());
-  NS_ReleaseOnMainThread("ClassifierDummyChannel::mURI", mURI.forget());
-  NS_ReleaseOnMainThread("ClassifierDummyChannel::mTopWindowURI",
-                         mTopWindowURI.forget());
-}
-
 void ClassifierDummyChannel::AddClassificationFlags(
     uint32_t aClassificationFlags, bool aThirdParty) {
   if (aThirdParty) {
@@ -115,7 +111,7 @@ void ClassifierDummyChannel::AddClassificationFlags(
 
 NS_IMETHODIMP
 ClassifierDummyChannel::GetOriginalURI(nsIURI** aOriginalURI) {
-  NS_IF_ADDREF(*aOriginalURI = mURI);
+  *aOriginalURI = do_AddRef(mURI).take();
   return NS_OK;
 }
 
@@ -127,7 +123,7 @@ ClassifierDummyChannel::SetOriginalURI(nsIURI* aOriginalURI) {
 
 NS_IMETHODIMP
 ClassifierDummyChannel::GetURI(nsIURI** aURI) {
-  NS_IF_ADDREF(*aURI = mURI);
+  *aURI = do_AddRef(mURI).take();
   return NS_OK;
 }
 
@@ -237,7 +233,7 @@ ClassifierDummyChannel::GetContentDispositionHeader(
 
 NS_IMETHODIMP
 ClassifierDummyChannel::GetLoadInfo(nsILoadInfo** aLoadInfo) {
-  NS_IF_ADDREF(*aLoadInfo = mLoadInfo);
+  *aLoadInfo = do_AddRef(mLoadInfo).take();
   return NS_OK;
 }
 
@@ -349,7 +345,7 @@ ClassifierDummyChannel::SetCookie(const nsACString& aCookieHeader) {
 }
 
 NS_IMETHODIMP
-ClassifierDummyChannel::SetupFallbackChannel(const char* aFallbackKey) {
+ClassifierDummyChannel::GetIsAuthChannel(bool* aIsAuthChannel) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -441,6 +437,16 @@ ClassifierDummyChannel::SetAllowSpdy(bool aAllowSpdy) {
 }
 
 NS_IMETHODIMP
+ClassifierDummyChannel::GetAllowHttp3(bool* aAllowHttp3) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+ClassifierDummyChannel::SetAllowHttp3(bool aAllowHttp3) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 ClassifierDummyChannel::GetResponseTimeoutEnabled(
     bool* aResponseTimeoutEnabled) {
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -488,6 +494,16 @@ ClassifierDummyChannel::SetBeConservative(bool aBeConservative) {
 }
 
 NS_IMETHODIMP
+ClassifierDummyChannel::GetBypassProxy(bool* aBypassProxy) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+ClassifierDummyChannel::SetBypassProxy(bool aBypassProxy) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 ClassifierDummyChannel::GetIsTRRServiceChannel(bool* aTrr) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -499,6 +515,16 @@ ClassifierDummyChannel::SetIsTRRServiceChannel(bool aTrr) {
 
 NS_IMETHODIMP
 ClassifierDummyChannel::GetIsResolvedByTRR(bool* aResolvedByTRR) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+ClassifierDummyChannel::GetIsOCSP(bool* value) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+ClassifierDummyChannel::SetIsOCSP(bool value) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -641,11 +667,6 @@ void ClassifierDummyChannel::SetIPv4Disabled() {}
 
 void ClassifierDummyChannel::SetIPv6Disabled() {}
 
-bool ClassifierDummyChannel::GetHasNonEmptySandboxingFlag() { return false; }
-
-void ClassifierDummyChannel::SetHasNonEmptySandboxingFlag(
-    bool aHasNonEmptySandboxingFlag) {}
-
 NS_IMETHODIMP ClassifierDummyChannel::ComputeCrossOriginOpenerPolicy(
     nsILoadInfo::CrossOriginOpenerPolicy aInitiatorPolicy,
     nsILoadInfo::CrossOriginOpenerPolicy* aOutPolicy) {
@@ -743,6 +764,26 @@ void ClassifierDummyChannel::DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() {}
 
 NS_IMETHODIMP ClassifierDummyChannel::GetResponseEmbedderPolicy(
     nsILoadInfo::CrossOriginEmbedderPolicy* aOutPolicy) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP ClassifierDummyChannel::SetWaitForHTTPSSVCRecord() {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+ClassifierDummyChannel::GetSupportsHTTP3(bool* aSupportsHTTP3) {
+  *aSupportsHTTP3 = false;
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+ClassifierDummyChannel::GetHasHTTPSRR(bool*) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+ClassifierDummyChannel::SetEarlyHintObserver(nsIEarlyHintObserver* aObserver) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

@@ -10,8 +10,9 @@
 #include <unordered_map>
 #include <queue>
 
-#include "base/platform_thread.h"  // for PlatformThreadId
+#include "base/platform_thread.h"           // for PlatformThreadId
 #include "mozilla/layers/OMTAController.h"  // for OMTAController
+#include "mozilla/Atomics.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
@@ -102,6 +103,9 @@ class OMTASampler final {
    */
   bool IsSamplerThread() const;
 
+  void EnterTestMode() { mIsInTestMode = true; }
+  void LeaveTestMode() { mIsInTestMode = false; }
+
  protected:
   ~OMTASampler() = default;
 
@@ -143,6 +147,7 @@ class OMTASampler final {
   // We basically use this time stamp instead of |mSampleTime| to make
   // animations more in sync with other animations on the main thread.
   TimeStamp mPreviousSampleTime;
+  Atomic<bool> mIsInTestMode;
 };
 
 }  // namespace layers

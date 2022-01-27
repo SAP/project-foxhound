@@ -15,8 +15,35 @@ conforms to recommendations.
 
 .. container:: blockIndicator warning
 
-   Firefox code base uses the `Google Coding style for C++
-   code <https://google.github.io/styleguide/cppguide.html>`__
+   The Firefox code base adopts parts of the `Google Coding style for C++
+   code <https://google.github.io/styleguide/cppguide.html>`__, but not all of its rules.
+   A few rules are followed across the code base, others are intended to be
+   followed in new or significantly revised code. We may extend this list in the
+   future, when we evaluate the Google Coding Style for C++ Code further and/or update
+   our coding practices. However, the plan is not to adopt all rules of the Google Coding
+   Style for C++ Code. Some rules are explicitly unlikely to be adopted at any time.
+
+   Followed across the code base:
+
+   - `Formatting <https://google.github.io/styleguide/cppguide.html#Formatting>`__,
+     except for subsections noted here otherwise
+   - `Implicit Conversions <https://google.github.io/styleguide/cppguide.html#Implicit_Conversions>`__,
+     which is enforced by a custom clang-plugin check, unless explicitly overridden using
+     ``MOZ_IMPLICIT``
+
+   Followed in new/significantly revised code:
+
+   - `Include guards <https://google.github.io/styleguide/cppguide.html#The__define_Guard>`__
+
+   Unlikely to be ever adopted:
+
+   - `Forward declarations <https://google.github.io/styleguide/cppguide.html#Forward_Declarations>`__
+   - `Formatting/Conditionals <https://google.github.io/styleguide/cppguide.html#Conditionals>`__
+     w.r.t. curly braces around inner statements, we require them in all cases where the
+     Google style allows to leave them out for single-line conditional statements
+
+   This list reflects the state of the Google Google Coding Style for C++ Code as of
+   2020-07-17. It may become invalid when the Google modifies its Coding Style.
 
 
 Formatting code
@@ -365,19 +392,296 @@ C/C++ practices
 -  Use ``char32_t`` as the return type or argument type of a method that
    returns or takes as argument a single Unicode scalar value. (Don't
    use UTF-32 strings, though.)
--  Forward-declare classes in your header files, instead of including
-   them, whenever possible. For example, if you have an interface with a
-   ``void DoSomething(nsIContent* aContent)`` function, forward-declare
-   with ``class nsIContent;`` instead of ``#include "nsIContent.h"``
--  Include guards are named per the Google coding style and should not
-   include a leading ``MOZ_`` or ``MOZILLA_``. For example
-   ``dom/media/foo.h`` would use the guard ``DOM_MEDIA_FOO_H_``.
+-  Prefer unsigned types for semantically-non-negative integer values.
+-  When operating on integers that could overflow, use ``CheckedInt``.
 -  Avoid the usage of ``typedef``, instead, please use ``using`` instead.
 
 .. note::
 
    For parts of this rule, clang-tidy provides the ``modernize-use-using``
    check with autofixes.
+
+
+Header files
+------------
+
+Since the Firefox code base is huge and uses a monolithic build, it is
+of utmost importance for keeping build times reasonable to limit the
+number of included files in each translation unit to the required minimum.
+Exported header files need particular attention in this regard, since their
+included files propagate, and many of them are directly or indirectly
+included in a large number of translation units.
+
+-  Include guards are named per the Google coding style (i.e. upper snake
+   case with a single trailing underscore). They should not include a
+   leading ``MOZ_`` or ``MOZILLA_``. For example, ``dom/media/foo.h``
+   would use the guard ``DOM_MEDIA_FOO_H_``.
+-  Forward-declare classes in your header files, instead of including
+   them, whenever possible. For example, if you have an interface with a
+   ``void DoSomething(nsIContent* aContent)`` function, forward-declare
+   with ``class nsIContent;`` instead of ``#include "nsIContent.h"``.
+   If a "forwarding header" is provided for a type, include that instead of
+   putting the literal forward declaration(s) in your header file. E.g. for
+   some JavaScript types, there is ``js/TypeDecls.h``, for the string types
+   there is ``StringFwd.h``. One reason for this is that this allows
+   changing a type to a type alias by only changing the forwarding header.
+   The following uses of a type can be done with a forward declaration only:
+
+   -  Parameter or return type in a function declaration
+   -  Member/local variable pointer or reference type
+   -  Use as a template argument (not in all cases) in a member/local variable type
+   -  Defining a type alias
+
+   The following uses of a type require a full definition:
+
+   -  Base class
+   -  Member/local variable type
+   -  Use with delete or new
+   -  Use as a template argument (not in all cases)
+   -  Any uses of non-scoped enum types
+   -  Enum values of a scoped enum type
+
+   Use as a template argument is somewhat tricky. It depends on how the
+   template uses the type. E.g. ``mozilla::Maybe<T>`` and ``AutoTArray<T>``
+   always require a full definition of ``T`` because the size of the
+   template instance depends on the size of ``T``. ``RefPtr<T>`` and
+   ``UniquePtr<T>`` don't require a full definition (because their
+   pointer member always has the same size), but their destructor
+   requires a full definition. If you encounter a template that cannot
+   be instantiated with a forward declaration only, but it seems
+   it should be possible, please file a bug (if it doesn't exist yet).
+
+   Therefore, also consider the following guidelines to allow using forward
+   declarations as widely as possible.
+-  Inline function bodies in header files often pull in a lot of additional
+   dependencies. Be mindful when adding or extending inline function bodies,
+   and consider moving the function body to the cpp file or to a separate
+   header file that is not included everywhere. Bug 1677553 intends to provide
+   a more specific guideline on this.
+-  Consider the use of the `Pimpl idiom <https://en.cppreference.com/w/cpp/language/pimpl>`__,
+   i.e. hide the actual implementation in a separate ``Impl`` class that is
+   defined in the implementation file and only expose a ``class Impl;`` forward
+   declaration and ``UniquePtr<Impl>`` member in the header file.
+-  Do not use non-scoped enum types. These cannot be forward-declared. Use
+   scoped enum types instead, and forward declare them when possible.
+-  Avoid nested types that need to be referenced from outside the class.
+   These cannot be forward declared. Place them in a namespace instead, maybe
+   in an extra inner namespace, and forward declare them where possible.
+-  Avoid mixing declarations with different sets of dependencies in a single
+   header file. This is generally advisable, but even more so when some of these
+   declarations are used by a subset of the translation units that include the
+   combined header file only. Consider such a badly mixed header file like:
+
+   .. code-block:: cpp
+
+      /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+      /* vim: set ts=8 sts=2 et sw=2 tw=80: */
+      /* This Source Code Form is subject to the terms of the Mozilla Public
+      * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+      * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+      #ifndef BAD_MIXED_FILE_H_
+      #define BAD_MIXED_FILE_H_
+
+      // Only this include is needed for the function declaration below.
+      #include "nsCOMPtr.h"
+
+      // These includes are only needed for the class definition.
+      #include "nsIFile.h"
+      #include "mozilla/ComplexBaseClass.h"
+
+      namespace mozilla {
+
+      class WrappedFile : public nsIFile, ComplexBaseClass {
+      // ... class definition left out for clarity
+      };
+
+      // Assuming that most translation units that include this file only call
+      // the function, but don't need the class definition, this should be in a
+      // header file on its own in order to avoid pulling in the other
+      // dependencies everywhere.
+      nsCOMPtr<nsIFile> CreateDefaultWrappedFile(nsCOMPtr<nsIFile>&& aFileToWrap);
+
+      } // namespace mozilla
+
+      #endif // BAD_MIXED_FILE_H_
+
+
+An example header file based on these rules (with some extra comments):
+
+.. code-block:: cpp
+
+   /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+   /* vim: set ts=8 sts=2 et sw=2 tw=80: */
+   /* This Source Code Form is subject to the terms of the Mozilla Public
+   * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+   * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+   #ifndef DOM_BASE_FOO_H_
+   #define DOM_BASE_FOO_H_
+
+   // Include guards should come at the very beginning and always use exactly
+   // the style above. Otherwise, compiler optimizations that avoid rescanning
+   // repeatedly included headers might not hit and cause excessive compile
+   // times.
+
+   #include <cstdint>
+   #include "nsCOMPtr.h"  // This is needed because we have a nsCOMPtr<T> data member.
+
+   class nsIFile;  // Used as a template argument only.
+   enum class nsresult : uint32_t; // Used as a parameter type only.
+   template <class T>
+   class RefPtr;   // Used as a return type only.
+
+   namespace mozilla::dom {
+
+   class Document; // Used as a template argument only.
+
+   // Scoped enum, not as a nested type, so it can be
+   // forward-declared elsewhere.
+   enum class FooKind { Small, Big };
+
+   class Foo {
+   public:
+     // Do not put the implementation in the header file, it would
+     // require including nsIFile.h
+     Foo(nsCOMPtr<nsIFile> aFile, FooKind aFooKind);
+
+     RefPtr<Document> CreateDocument();
+
+     void SetResult(nsresult aResult);
+
+     // Even though we will default this destructor, do this in the
+     // implementation file since we would otherwise need to include
+     // nsIFile.h in the header.
+     ~Foo();
+
+   private:
+     nsCOMPtr<nsIFile> mFile;
+   };
+
+   } // namespace mozilla::dom
+
+   #endif // DOM_BASE_FOO_H_
+
+
+Corresponding implementation file:
+
+.. code-block:: cpp
+
+   /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+   /* vim: set ts=8 sts=2 et sw=2 tw=80: */
+   /* This Source Code Form is subject to the terms of the Mozilla Public
+   * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+   * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+   #include "mozilla/dom/Foo.h"  // corresponding header
+
+   #include "mozilla/Assertions.h"  // Needed for MOZ_ASSERT.
+   #include "mozilla/dom/Document.h" // Needed because we construct a Document.
+   #include "nsError.h"  // Needed because we use NS_OK aka nsresult::NS_OK.
+   #include "nsIFile.h"  // This is needed because our destructor indirectly calls delete nsIFile in a template instance.
+
+   namespace mozilla::dom {
+
+   // Do not put the implementation in the header file, it would
+   // require including nsIFile.h
+   Foo::Foo(nsCOMPtr<nsIFile> aFile, FooKind aFooKind)
+    : mFile{std::move(aFile)} {
+   }
+
+   RefPtr<Document> Foo::CreateDocument() {
+     return MakeRefPtr<Document>();
+   }
+
+   void Foo::SetResult(nsresult aResult) {
+      MOZ_ASSERT(aResult != NS_OK);
+
+      // do something with aResult
+   }
+
+   // Even though we default this destructor, do this in the
+   // implementation file since we would otherwise need to include
+   // nsIFile.h in the header.
+   Foo::~Foo() = default;
+
+   } // namespace mozilla::dom
+
+
+Include directives
+------------------
+
+- Ordering:
+
+  - In an implementation file (cpp file), the very first include directive
+    should include the corresponding header file, followed by a blank line.
+  - Any conditional includes (depending on some ``#ifdef`` or similar) follow
+    after non-conditional includes. Don't mix them in.
+  - Don't place comments between non-conditional includes.
+
+  Bug 1679522 addresses automating the ordering via clang-format, which
+  is going to enforce some stricter rules. Expect the includes to be reordered.
+  If you include third-party headers that are not self-contained, and therefore
+  need to be included in a particular order, enclose those (and only those)
+  between ``// clang-format off`` and ``// clang-format on``. This should not be
+  done for Mozilla headers, which should rather be made self-contained if they
+  are not.
+
+- Brackets vs. quotes: C/C++ standard library headers are included using
+  brackets (e.g. ``#include <cstdint>``), all other include directives use
+  (double) quotes (e.g. ``#include "mozilla/dom/Document.h``).
+- Exported headers should always be included from their exported path, not
+  from their source path in the tree, even if available locally. E.g. always
+  do ``#include "mozilla/Vector.h"``, not ``#include "Vector.h"``, even
+  from within `mfbt`.
+- Generally, you should include exactly those headers that are needed, not
+  more and not less. Unfortunately this is not easy to see. Maybe C++20
+  modules will bring improvements to this, but it will take a long time
+  to be adopted.
+- The basic rule is that if you literally use a symbol in your file that
+  is declared in a header A.h, include that header. In particular in header
+  files, check if a forward declaration or including a forwarding header is
+  sufficient, see section :ref:`Header files`.
+
+  There are cases where this basic rule is not sufficient. Some cases where
+  you need to include additional headers are:
+
+  - You reference a member of a type that is not literally mentioned in your
+    code, but, e.g. is the return type of a function you are calling.
+
+  There are also cases where the basic rule leads to redundant includes. Note
+  that "redundant" here does not refer to "accidentally redundant" headers,
+  e.g. at the time of writing ``mozilla/dom/BodyUtil.h`` includes
+  ``mozilla/dom/FormData.h``, but it doesn't need to (it only needs a forward
+  declaration), so including ``mozilla/dom/FormData.h`` is "accidentally
+  redundant" when including ``mozilla/dom/BodyUtil.h``. The includes of
+  ``mozilla/dom/BodyUtil.h`` might change at any time, so if a file that
+  includes ``mozilla/dom/BodyUtil.h`` needs a full definition of
+  ``mozilla::dom::FormData``, it should includes ``mozilla/dom/FormData.h``
+  itself. In fact, these "accidentally redundant" headers MUST be included.
+  Relying on accidentally redundant includes makes any change to a header
+  file extremely hard, in particular when considering that the set of
+  accidentally redundant includes differs between platforms.
+  But some cases in fact are non-accidentally redundant, and these can and
+  typically should not be repeated:
+
+  - The includes of the header file do not need to be repeated in its
+    corresponding implementation file. Rationale: the implementation file and
+    its corresponding header file are tightly coupled per se.
+
+  Macros are a special case. Generally, the literal rule also applies here,
+  i.e. if the macro definition references a symbol, the file containing the
+  macro definition should include the header defining the symbol. E.g.
+  ``NS_IMPL_CYCLE_COLLECTING_NATIVE_RELEASE`` defined in ``nsISupportsImpl.h``
+  makes use of ``MOZ_ASSERT`` defined in ``mozilla/Assertions.h``, so
+  ``nsISupportsImpl.h`` includes ``mozilla/Assertions.h``. However, this
+  requires human judgment of what is intended, since technically only the
+  invocations of the macro reference a symbol (and that's how
+  include-what-you-use handles this). It might depend on the
+  context or parameters which symbol is actually referenced, and sometimes
+  this is on purpose. In these cases, the user of the macro needs to include
+  the required header(s).
+
 
 
 COM and pointers
@@ -514,7 +818,7 @@ If most callers need to check the output value first, then adding
 ``[[nodiscard]]`` might be too verbose. In this case, change the return value
 to void might be a reasonable choice.
 
-There is also a static analysis attribute ``MOZ_MUST_USE_TYPE``, which can
+There is also a static analysis attribute ``[[nodiscard]]``, which can
 be added to class declarations, to ensure that those declarations are
 always used when they are returned.
 
@@ -656,16 +960,28 @@ found.
 Strings
 -------
 
--  String arguments to functions should be declared as ``nsAString``.
--  Use ``EmptyString()`` and ``EmptyCString()`` instead of
-   ``NS_LITERAL_STRING("")`` or ``nsAutoString empty;``.
--  Use ``str.IsEmpty()`` instead of ``str.Length() == 0``.
--  Use ``str.Truncate()`` instead of ``str.SetLength(0)`` or
-   ``str.Assign(EmptyString())``.
--  For constant strings, use ``NS_LITERAL_STRING("...")`` instead of
-   ``NS_ConvertASCIItoUCS2("...")``, ``AssignWithConversion("...")``,
-   ``EqualsWithConversion("...")``, or ``nsAutoString()``
+.. note::
+
+   This section overlaps with the more verbose advice given in
+   `Internal strings <https://wiki.developer.mozilla.org/en-US/docs/Mozilla/Tech/XPCOM/Guide/Internal_strings>`__.
+   These should eventually be merged. For now, please refer to that guide for
+   more advice.
+
+-  String arguments to functions should be declared as ``[const] nsA[C]String&``.
+-  Prefer using string literals. In particular, use empty string literals,
+   i.e. ``u""_ns`` or ``""_ns``, instead of ``Empty[C]String()`` or
+   ``const nsAuto[C]String empty;``. Use ``Empty[C]String()`` only if you
+   specifically need a ``const ns[C]String&``, e.g. with the ternary operator
+   or when you need to return/bind to a reference or take the address of the
+   empty string.
+-  For 16-bit literal strings, use ``u"..."_ns`` or, if necessary
+   ``NS_LITERAL_STRING_FROM_CSTRING(...)`` instead of ``nsAutoString()``
+   or other ways that would do a run-time conversion.
+   See :ref:`Avoid runtime conversion of string literals <Avoid runtime conversion of string literals>` below.
 -  To compare a string with a literal, use ``.EqualsLiteral("...")``.
+-  Use ``str.IsEmpty()`` instead of ``str.Length() == 0``.
+-  Use ``str.Truncate()`` instead of ``str.SetLength(0)``,
+   ``str.Assign(""_ns)`` or ``str.AssignLiteral("")``.
 -  Don't use functions from ``ctype.h`` (``isdigit()``, ``isalpha()``,
    etc.) or from ``strings.h`` (``strcasecmp()``, ``strncasecmp()``).
    These are locale-sensitive, which makes them inappropriate for
@@ -763,15 +1079,18 @@ Free the string manually:
      WarnUser(warning);
      nsMemory::Free(warning);
 
+.. _Avoid runtime conversion of string literals:
 
-Use MOZ_UTF16() or NS_LITERAL_STRING() to avoid runtime string conversion
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Avoid runtime conversion of string literals
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 It is very common to need to assign the value of a literal string, such
 as ``"Some String"``, into a unicode buffer. Instead of using ``nsString``'s
-``AssignLiteral`` and ``AppendLiteral``, use ``NS_LITERAL_STRING()``
+``AssignLiteral`` and ``AppendLiteral``, use a user-defined literal like `u"foo"_ns`
 instead. On most platforms, this will force the compiler to compile in a
-raw unicode string, and assign it directly.
+raw unicode string, and assign it directly. In cases where the literal is defined
+via a macro that is used in both 8-bit and 16-bit ways, you can use
+`NS_LITERAL_STRING_FROM_CSTRING` to do the conversion at compile time.
 
 Incorrect:
 
@@ -788,7 +1107,7 @@ Correct:
 
 .. code-block:: cpp
 
-   NS_NAMED_LITERAL_STRING(warning, "danger will robinson!");
+   constexpr auto warning = u"danger will robinson!"_ns;
    ...
    // if you'll be using the 'warning' string, you can still use it as before:
    foo->SetStringValue(warning);
@@ -796,13 +1115,20 @@ Correct:
    bar->SetUnicodeValue(warning.get());
 
    // alternatively, use the wide string directly:
-   foo->SetStringValue(NS_LITERAL_STRING("danger will robinson!"));
+   foo->SetStringValue(u"danger will robinson!"_ns);
    ...
-   bar->SetUnicodeValue(MOZ_UTF16("danger will robinson!"));
 
-.. note::
+   // if a macro is the source of a 8-bit literal and you cannot change it, use
+   // NS_LITERAL_STRING_FROM_CSTRING, but only if necessary.
+   #define MY_MACRO_LITERAL "danger will robinson!"
+   foo->SetStringValue(NS_LITERAL_STRING_FROM_CSTRING(MY_MACRO_LITERAL));
 
-   Note: Named literal strings cannot yet be static.
+   // If you need to pass to a raw const char16_t *, there's no benefit to
+   // go through our string classes at all, just do...
+   bar->SetUnicodeValue(u"danger will robinson!");
+
+   // .. or, again, if a macro is the source of a 8-bit literal
+   bar->SetUnicodeValue(u"" MY_MACRO_LITERAL);
 
 
 Usage of PR_(MAX|MIN|ABS|ROUNDUP) macro calls

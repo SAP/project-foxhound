@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsCOMArray.h"
 #include "nsIAuthPrompt.h"
 #include "mozilla/dom/Document.h"
 #include "nsIExpatSink.h"
@@ -15,6 +14,7 @@
 #include "nsContentPolicyUtils.h"
 #include "nsIStreamConverterService.h"
 #include "nsSyncLoadService.h"
+#include "nsIHttpChannel.h"
 #include "nsIURI.h"
 #include "nsIPrincipal.h"
 #include "nsIWindowWatcher.h"
@@ -28,6 +28,7 @@
 #include "txStylesheetCompiler.h"
 #include "txXMLUtils.h"
 #include "nsAttrName.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIScriptError.h"
 #include "nsError.h"
 #include "mozilla/Attributes.h"
@@ -423,7 +424,6 @@ nsresult txCompileObserver::startLoad(nsIURI* aUri,
   NS_ENSURE_SUCCESS(rv, rv);
 
   RefPtr<txStylesheetSink> sink = new txStylesheetSink(aCompiler, parser);
-  NS_ENSURE_TRUE(sink, NS_ERROR_OUT_OF_MEMORY);
 
   channel->SetNotificationCallbacks(sink);
 
@@ -445,11 +445,9 @@ nsresult TX_LoadSheet(nsIURI* aUri, txMozillaXSLTProcessor* aProcessor,
 
   RefPtr<txCompileObserver> observer =
       new txCompileObserver(aProcessor, aLoaderDocument);
-  NS_ENSURE_TRUE(observer, NS_ERROR_OUT_OF_MEMORY);
 
   RefPtr<txStylesheetCompiler> compiler = new txStylesheetCompiler(
       NS_ConvertUTF8toUTF16(spec), aReferrerPolicy, observer);
-  NS_ENSURE_TRUE(compiler, NS_ERROR_OUT_OF_MEMORY);
 
   return observer->startLoad(aUri, compiler, principal, aReferrerPolicy);
 }
@@ -555,7 +553,8 @@ nsresult txSyncCompileObserver::loadURI(const nsAString& aUri,
   if (mProcessor) {
     source = mProcessor->GetSourceContentModel();
   }
-  dom::nsAutoSyncOperation sync(source ? source->OwnerDoc() : nullptr);
+  dom::nsAutoSyncOperation sync(source ? source->OwnerDoc() : nullptr,
+                                dom::SyncOperationBehavior::eSuspendInput);
   nsCOMPtr<Document> document;
 
   rv = nsSyncLoadService::LoadDocument(
@@ -608,11 +607,9 @@ nsresult TX_CompileStylesheet(nsINode* aNode,
   NS_ConvertUTF8toUTF16 stylesheetURI(spec);
 
   RefPtr<txSyncCompileObserver> obs = new txSyncCompileObserver(aProcessor);
-  NS_ENSURE_TRUE(obs, NS_ERROR_OUT_OF_MEMORY);
 
   RefPtr<txStylesheetCompiler> compiler =
       new txStylesheetCompiler(stylesheetURI, doc->GetReferrerPolicy(), obs);
-  NS_ENSURE_TRUE(compiler, NS_ERROR_OUT_OF_MEMORY);
 
   compiler->setBaseURI(baseURI);
 

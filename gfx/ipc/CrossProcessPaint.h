@@ -9,15 +9,18 @@
 #include "nsISupportsImpl.h"
 
 #include "mozilla/dom/ipc/IdType.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/DOMRect.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/Maybe.h"
+#include "mozilla/gfx/Point.h"
+#include "mozilla/gfx/RecordedEvent.h"
+#include "mozilla/gfx/Rect.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/ipc/ByteBuf.h"
-#include "nsDataHashtable.h"
+#include "nsColor.h"
+#include "nsTHashMap.h"
 #include "nsHashKeys.h"
 #include "nsRefPtrHashtable.h"
-#include "nsTHashtable.h"
+#include "nsTHashSet.h"
+
+class nsIDocShell;
 
 namespace IPC {
 template <typename T>
@@ -27,6 +30,9 @@ struct ParamTraits;
 namespace mozilla {
 
 namespace dom {
+class CanonicalBrowsingContext;
+class DOMRect;
+class Promise;
 class WindowGlobalParent;
 }  // namespace dom
 
@@ -37,6 +43,7 @@ class CrossProcessPaint;
 enum class CrossProcessPaintFlags {
   None = 0,
   DrawView = 1 << 1,
+  ResetScrollPosition = 1 << 2,
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(CrossProcessPaintFlags)
@@ -51,9 +58,9 @@ class PaintFragment final {
 
   /**
    * Creates a paint fragment by recording the draw commands and dependent tabs
-   * for an nsIDocShell.
+   * for a BrowsingContext.
    *
-   * @param aDocShell The document shell to record.
+   * @param aBrowsingContext The frame to record.
    * @param aRect The rectangle relative to the viewport to use. If no
    *   rectangle is specified, then the whole viewport will be used.
    * @param aScale The coordinate scale to use. The size of the resolved
@@ -64,7 +71,7 @@ class PaintFragment final {
    * @return A paint fragment. The paint fragment may be `empty` if rendering
    *         was unable to be accomplished for some reason.
    */
-  static PaintFragment Record(nsIDocShell* aDocShell,
+  static PaintFragment Record(dom::BrowsingContext* aBc,
                               const Maybe<IntRect>& aRect, float aScale,
                               nscolor aBackgroundColor,
                               CrossProcessPaintFlags aFlags);
@@ -81,11 +88,11 @@ class PaintFragment final {
 
   typedef mozilla::ipc::ByteBuf ByteBuf;
 
-  PaintFragment(IntSize, ByteBuf&&, nsTHashtable<nsUint64HashKey>&&);
+  PaintFragment(IntSize, ByteBuf&&, nsTHashSet<uint64_t>&&);
 
   IntSize mSize;
   ByteBuf mRecording;
-  nsTHashtable<nsUint64HashKey> mDependencies;
+  nsTHashSet<uint64_t> mDependencies;
 };
 
 /**
@@ -95,6 +102,9 @@ class CrossProcessPaint final {
   NS_INLINE_DECL_REFCOUNTING(CrossProcessPaint);
 
  public:
+  typedef nsRefPtrHashtable<nsUint64HashKey, RecordedDependentSurface>
+      ResolvedFragmentMap;
+  typedef MozPromise<ResolvedFragmentMap, nsresult, true> ResolvePromise;
   /**
    * Begin an asynchronous paint of a cross process document tree starting at
    * a WindowGlobalParent. A maybe-async paint for the root WGP will be done,
@@ -118,26 +128,30 @@ class CrossProcessPaint final {
                     float aScale, nscolor aBackgroundColor,
                     CrossProcessPaintFlags aFlags, dom::Promise* aPromise);
 
+  static RefPtr<ResolvePromise> Start(nsTHashSet<uint64_t>&& aDependencies);
+
   void ReceiveFragment(dom::WindowGlobalParent* aWGP,
                        PaintFragment&& aFragment);
   void LostFragment(dom::WindowGlobalParent* aWGP);
 
  private:
-  typedef nsRefPtrHashtable<nsUint64HashKey, SourceSurface> ResolvedSurfaceMap;
-  typedef nsDataHashtable<nsUint64HashKey, PaintFragment> ReceivedFragmentMap;
+  typedef nsTHashMap<nsUint64HashKey, PaintFragment> ReceivedFragmentMap;
 
-  CrossProcessPaint(dom::Promise* aPromise, float aScale,
-                    dom::WindowGlobalParent* aRoot);
+  CrossProcessPaint(float aScale, dom::TabId aRoot);
   ~CrossProcessPaint();
+
+  void QueueDependencies(const nsTHashSet<uint64_t>& aDependencies);
 
   void QueuePaint(
       dom::WindowGlobalParent* aWGP, const Maybe<IntRect>& aRect,
       nscolor aBackgroundColor = NS_RGBA(0, 0, 0, 0),
       CrossProcessPaintFlags aFlags = CrossProcessPaintFlags::DrawView);
 
+  void QueuePaint(dom::CanonicalBrowsingContext* aBc);
+
   /// Clear the state of this paint so that it cannot be resolved or receive
   /// any paint fragments.
-  void Clear();
+  void Clear(nsresult aStatus);
 
   /// Returns if this paint has been cleared.
   bool IsCleared() const;
@@ -145,10 +159,15 @@ class CrossProcessPaint final {
   /// Resolves the paint fragments if we have none pending and resolves the
   /// promise.
   void MaybeResolve();
-  nsresult ResolveInternal(dom::TabId aTabId, ResolvedSurfaceMap* aResolved);
+  nsresult ResolveInternal(dom::TabId aTabId, ResolvedFragmentMap* aResolved);
 
-  RefPtr<dom::Promise> mPromise;
-  RefPtr<dom::WindowGlobalParent> mRoot;
+  RefPtr<ResolvePromise> Init() {
+    MOZ_ASSERT(mPromise.IsEmpty());
+    return mPromise.Ensure(__func__);
+  }
+
+  MozPromiseHolder<ResolvePromise> mPromise;
+  dom::TabId mRoot;
   float mScale;
   uint32_t mPendingFragments;
   ReceivedFragmentMap mReceivedFragments;

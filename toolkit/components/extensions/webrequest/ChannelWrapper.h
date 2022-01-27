@@ -25,6 +25,7 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsIChannel.h"
 #include "nsIHttpChannel.h"
+#include "nsIMultiPartChannel.h"
 #include "nsIStreamListener.h"
 #include "nsIRemoteTab.h"
 #include "nsIThreadRetargetableStreamListener.h"
@@ -140,8 +141,8 @@ class ChannelWrapper final : public DOMEventTargetHelper,
   void UpgradeToSecure(ErrorResult& aRv);
 
   bool Suspended() const { return mSuspended; }
-  void Suspend(ErrorResult& aRv);
-  void Resume(const nsCString& aText, ErrorResult& aRv);
+  void Suspend(const nsCString& aProfileMarkerText, ErrorResult& aRv);
+  void Resume(ErrorResult& aRv);
 
   void GetContentType(nsCString& aContentType) const;
   void SetContentType(const nsACString& aContentType);
@@ -195,6 +196,10 @@ class ChannelWrapper final : public DOMEventTargetHelper,
   void GetFrameAncestors(
       dom::Nullable<nsTArray<dom::MozFrameAncestorInfo>>& aFrameAncestors,
       ErrorResult& aRv) const;
+
+  bool IsServiceWorkerScript() const;
+
+  static bool IsServiceWorkerScript(const nsCOMPtr<nsIChannel>& aChannel);
 
   bool IsSystemLoad() const;
 
@@ -317,14 +322,18 @@ class ChannelWrapper final : public DOMEventTargetHelper,
 
   nsInterfaceHashtable<nsPtrHashKey<const nsAtom>, nsIRemoteTab> mAddonEntries;
 
-  mozilla::TimeStamp mSuspendTime;
+  // The text for the "Extension Suspend" marker, set from the Suspend method
+  // when called for the first time and then cleared on the Resume method.
+  nsCString mSuspendedMarkerText = VoidCString();
 
   class RequestListener final : public nsIStreamListener,
+                                public nsIMultiPartChannelListener,
                                 public nsIThreadRetargetableStreamListener {
    public:
     NS_DECL_THREADSAFE_ISUPPORTS
     NS_DECL_NSIREQUESTOBSERVER
     NS_DECL_NSISTREAMLISTENER
+    NS_DECL_NSIMULTIPARTCHANNELLISTENER
     NS_DECL_NSITHREADRETARGETABLESTREAMLISTENER
 
     explicit RequestListener(ChannelWrapper* aWrapper)

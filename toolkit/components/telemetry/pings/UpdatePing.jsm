@@ -5,9 +5,11 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Log.jsm", this);
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm", this);
+const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { TelemetryUtils } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryUtils.jsm"
+);
 
 ChromeUtils.defineModuleGetter(
   this,
@@ -60,11 +62,11 @@ var UpdatePing = {
     let updateManager = Cc["@mozilla.org/updates/update-manager;1"].getService(
       Ci.nsIUpdateManager
     );
-    if (!updateManager || !updateManager.activeUpdate) {
+    if (!updateManager || !updateManager.readyUpdate) {
       return null;
     }
 
-    return updateManager.activeUpdate;
+    return updateManager.readyUpdate;
   },
 
   /**

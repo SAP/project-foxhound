@@ -1,39 +1,27 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/FileUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
-ChromeUtils.import("resource://testing-common/httpd.js", this);
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "AddonTestUtils",
-  "resource://testing-common/AddonTestUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "TelemetrySend",
-  "resource://gre/modules/TelemetrySend.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "TelemetryStorage",
-  "resource://gre/modules/TelemetryStorage.jsm"
-);
-ChromeUtils.defineModuleGetter(this, "Log", "resource://gre/modules/Log.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "NetUtil",
-  "resource://gre/modules/NetUtil.jsm"
-);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  TelemetryScheduler: "resource://gre/modules/TelemetryScheduler.jsm",
+  TelemetryController: "resource://gre/modules/TelemetryController.jsm",
+  TelemetryUtils: "resource://gre/modules/TelemetryUtils.jsm",
+  Services: "resource://gre/modules/Services.jsm",
+  AddonTestUtils: "resource://testing-common/AddonTestUtils.jsm",
+  AppConstants: "resource://gre/modules/AppConstants.jsm",
+  FileUtils: "resource://gre/modules/FileUtils.jsm",
+  Log: "resource://gre/modules/Log.jsm",
+  HttpServer: "resource://testing-common/httpd.js",
+  NetUtil: "resource://gre/modules/NetUtil.jsm",
+  OS: "resource://gre/modules/osfile.jsm",
+  Preferences: "resource://gre/modules/Preferences.jsm",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
+  TelemetrySend: "resource://gre/modules/TelemetrySend.jsm",
+  TelemetryStorage: "resource://gre/modules/TelemetryStorage.jsm",
+});
 
 const gIsWindows = AppConstants.platform == "win";
 const gIsMac = AppConstants.platform == "macosx";
@@ -292,7 +280,7 @@ function wrapWithExceptionHandler(f) {
   return wrapper;
 }
 
-function loadAddonManager(...args) {
+async function loadAddonManager(...args) {
   AddonTestUtils.init(gGlobalScope);
   AddonTestUtils.overrideCertDB();
   createAppInfo(...args);
@@ -301,11 +289,9 @@ function loadAddonManager(...args) {
   // used by system add-ons.
   const distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "app0"], true);
   AddonTestUtils.registerDirectory("XREAppFeat", distroDir);
-  AddonTestUtils.awaitPromise(
-    AddonTestUtils.overrideBuiltIns({
-      system: ["tel-system-xpi@tests.mozilla.org"],
-    })
-  );
+  await AddonTestUtils.overrideBuiltIns({
+    system: ["tel-system-xpi@tests.mozilla.org"],
+  });
   return AddonTestUtils.promiseStartupManager();
 }
 
@@ -327,12 +313,11 @@ function createAppInfo(
 
 // Fake the timeout functions for the TelemetryScheduler.
 function fakeSchedulerTimer(set, clear) {
-  let scheduler = ChromeUtils.import(
-    "resource://gre/modules/TelemetryScheduler.jsm",
-    null
+  const { Policy } = ChromeUtils.import(
+    "resource://gre/modules/TelemetryScheduler.jsm"
   );
-  scheduler.Policy.setSchedulerTickTimeout = set;
-  scheduler.Policy.clearSchedulerTickTimeout = clear;
+  Policy.setSchedulerTickTimeout = set;
+  Policy.clearSchedulerTickTimeout = clear;
 }
 
 /* global TelemetrySession:false, TelemetryEnvironment:false, TelemetryController:false,
@@ -349,19 +334,13 @@ function fakeSchedulerTimer(set, clear) {
 function fakeNow(...args) {
   const date = new Date(...args);
   const modules = [
-    ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", null),
-    ChromeUtils.import("resource://gre/modules/TelemetryEnvironment.jsm", null),
-    ChromeUtils.import(
-      "resource://gre/modules/TelemetryControllerParent.jsm",
-      null
-    ),
-    ChromeUtils.import("resource://gre/modules/TelemetryStorage.jsm", null),
-    ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", null),
-    ChromeUtils.import(
-      "resource://gre/modules/TelemetryReportingPolicy.jsm",
-      null
-    ),
-    ChromeUtils.import("resource://gre/modules/TelemetryScheduler.jsm", null),
+    ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm"),
+    ChromeUtils.import("resource://gre/modules/TelemetryEnvironment.jsm"),
+    ChromeUtils.import("resource://gre/modules/TelemetryControllerParent.jsm"),
+    ChromeUtils.import("resource://gre/modules/TelemetryStorage.jsm"),
+    ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm"),
+    ChromeUtils.import("resource://gre/modules/TelemetryReportingPolicy.jsm"),
+    ChromeUtils.import("resource://gre/modules/TelemetryScheduler.jsm"),
   ];
 
   for (let m of modules) {
@@ -372,71 +351,79 @@ function fakeNow(...args) {
 }
 
 function fakeMonotonicNow(ms) {
-  const m = ChromeUtils.import(
-    "resource://gre/modules/TelemetrySession.jsm",
-    null
+  const { Policy } = ChromeUtils.import(
+    "resource://gre/modules/TelemetrySession.jsm"
   );
-  m.Policy.monotonicNow = () => ms;
+  Policy.monotonicNow = () => ms;
   return ms;
 }
 
 // Fake the timeout functions for TelemetryController sending.
 function fakePingSendTimer(set, clear) {
-  let module = ChromeUtils.import(
-    "resource://gre/modules/TelemetrySend.jsm",
-    null
+  const { Policy } = ChromeUtils.import(
+    "resource://gre/modules/TelemetrySend.jsm"
   );
-  let obj = Cu.cloneInto({ set, clear }, module, { cloneFunctions: true });
-  module.Policy.setSchedulerTickTimeout = obj.set;
-  module.Policy.clearSchedulerTickTimeout = obj.clear;
+  let obj = Cu.cloneInto({ set, clear }, TelemetrySend, {
+    cloneFunctions: true,
+  });
+  Policy.setSchedulerTickTimeout = obj.set;
+  Policy.clearSchedulerTickTimeout = obj.clear;
 }
 
 function fakeMidnightPingFuzzingDelay(delayMs) {
-  let module = ChromeUtils.import(
-    "resource://gre/modules/TelemetrySend.jsm",
-    null
+  const { Policy } = ChromeUtils.import(
+    "resource://gre/modules/TelemetrySend.jsm"
   );
-  module.Policy.midnightPingFuzzingDelay = () => delayMs;
+  Policy.midnightPingFuzzingDelay = () => delayMs;
 }
 
 function fakeGeneratePingId(func) {
-  let module = ChromeUtils.import(
-    "resource://gre/modules/TelemetryControllerParent.jsm",
-    null
+  const { Policy } = ChromeUtils.import(
+    "resource://gre/modules/TelemetryControllerParent.jsm"
   );
-  module.Policy.generatePingId = func;
+  Policy.generatePingId = func;
 }
 
 function fakeCachedClientId(uuid) {
-  let module = ChromeUtils.import(
-    "resource://gre/modules/TelemetryControllerParent.jsm",
-    null
+  const { Policy } = ChromeUtils.import(
+    "resource://gre/modules/TelemetryControllerParent.jsm"
   );
-  module.Policy.getCachedClientID = () => uuid;
+  Policy.getCachedClientID = () => uuid;
 }
 
 // Fake the gzip compression for the next ping to be sent out
 // and immediately reset to the original function.
 function fakeGzipCompressStringForNextPing(length) {
-  let send = ChromeUtils.import(
-    "resource://gre/modules/TelemetrySend.jsm",
-    null
+  const { Policy, gzipCompressString } = ChromeUtils.import(
+    "resource://gre/modules/TelemetrySend.jsm"
   );
   let largePayload = generateString(length);
-  send.Policy.gzipCompressString = data => {
-    send.Policy.gzipCompressString = send.gzipCompressString;
+  Policy.gzipCompressString = data => {
+    Policy.gzipCompressString = gzipCompressString;
     return largePayload;
   };
 }
 
 function fakeIntlReady() {
-  const m = ChromeUtils.import(
-    "resource://gre/modules/TelemetryEnvironment.jsm",
-    null
+  const { Policy } = ChromeUtils.import(
+    "resource://gre/modules/TelemetryEnvironment.jsm"
   );
-  m.Policy._intlLoaded = true;
+  Policy._intlLoaded = true;
   // Dispatch the observer event in case the promise has been registered already.
   Services.obs.notifyObservers(null, "browser-delayed-startup-finished");
+}
+
+// Override the uninstall ping file names
+function fakeUninstallPingPath(aPathFcn) {
+  const { Policy } = ChromeUtils.import(
+    "resource://gre/modules/TelemetryStorage.jsm"
+  );
+  Policy.getUninstallPingPath =
+    aPathFcn ||
+    (id => ({
+      directory: new FileUtils.File(OS.Constants.Path.profileDir),
+      file: `uninstall_ping_0123456789ABCDEF_${id}.json`,
+    }));
 }
 
 // Return a date that is |offset| ms in the future from |date|.
@@ -529,13 +516,6 @@ if (runningInParent) {
   // Speed up child process accumulations
   Services.prefs.setIntPref(TelemetryUtils.Preferences.IPCBatchTimeout, 10);
 
-  // Make sure ecosystem telemetry is disabled, no matter which build
-  // Individual tests will enable it when appropriate
-  Services.prefs.setBoolPref(
-    TelemetryUtils.Preferences.EcosystemTelemetryEnabled,
-    false
-  );
-
   // Non-unified Telemetry (e.g. Fennec on Android) needs the preference to be set
   // in order to enable Telemetry.
   if (Services.prefs.getBoolPref(TelemetryUtils.Preferences.Unified, false)) {
@@ -570,3 +550,21 @@ fakeSchedulerTimer(
 );
 // Make pind sending predictable.
 fakeMidnightPingFuzzingDelay(0);
+
+// Avoid using the directory service, which is not registered in some tests.
+fakeUninstallPingPath();
+
+const PLATFORM_VERSION = "1.9.2";
+const APP_VERSION = "1";
+const APP_ID = "xpcshell@tests.mozilla.org";
+const APP_NAME = "XPCShell";
+
+const DISTRIBUTION_CUSTOMIZATION_COMPLETE_TOPIC =
+  "distribution-customization-complete";
+
+const PLUGIN2_NAME = "Quicktime";
+const PLUGIN2_DESC = "A mock Quicktime plugin";
+const PLUGIN2_VERSION = "2.3";
+//
+// system add-ons are enabled at startup, so record date when the test starts
+const SYSTEM_ADDON_INSTALL_DATE = Date.now();

@@ -39,19 +39,25 @@ add_task(async function() {
     "info",
     "We expect this notification to have the type of 'info'."
   );
+
+  // Make sure the CSS is fully loaded...
   ok(
-    notification.messageImage.getAttribute("src"),
+    await TestUtils.waitForCondition(
+      () =>
+        notification.ownerGlobal.getComputedStyle(
+          notification.messageImage,
+          "::after"
+        ).content == 'url("chrome://global/skin/icons/info-filled.svg")'
+    ),
     "We expect this notification to have an icon."
   );
 
-  let buttons = notification.getElementsByClassName("notification-button");
+  let buttons = notification.buttonContainer.getElementsByClassName(
+    "notification-button"
+  );
   is(buttons.length, 1, "We expect see one button.");
 
   let button = buttons[0];
   isnot(button.label, null, "We expect the add button to have a label.");
-  todo_isnot(
-    button.accesskey,
-    null,
-    "We expect the add button to have a accesskey."
-  );
+  todo(button.accesskey, "We expect the add button to have a accesskey.");
 });

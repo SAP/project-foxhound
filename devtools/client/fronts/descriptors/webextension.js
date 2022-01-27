@@ -10,19 +10,21 @@ const {
   FrontClassWithSpec,
   registerFront,
 } = require("devtools/shared/protocol");
+const {
+  DescriptorMixin,
+} = require("devtools/client/fronts/descriptors/descriptor-mixin");
 loader.lazyRequireGetter(
   this,
-  "BrowsingContextTargetFront",
-  "devtools/client/fronts/targets/browsing-context",
+  "WindowGlobalTargetFront",
+  "devtools/client/fronts/targets/window-global",
   true
 );
 
-class WebExtensionDescriptorFront extends FrontClassWithSpec(
-  webExtensionDescriptorSpec
+class WebExtensionDescriptorFront extends DescriptorMixin(
+  FrontClassWithSpec(webExtensionDescriptorSpec)
 ) {
   constructor(client, targetFront, parentFront) {
     super(client, targetFront, parentFront);
-    this.client = client;
     this.traits = {};
   }
 
@@ -58,6 +60,10 @@ class WebExtensionDescriptorFront extends FrontClassWithSpec(
     return this._form.isSystem;
   }
 
+  get isWebExtensionDescriptor() {
+    return true;
+  }
+
   get isWebExtension() {
     return this._form.isWebExtension;
   }
@@ -82,15 +88,33 @@ class WebExtensionDescriptorFront extends FrontClassWithSpec(
     return this._form.warnings;
   }
 
+  isServerTargetSwitchingEnabled() {
+    // For now, we don't expose any target out of the WatcherActor.
+    // And the top level target is still manually instantiated by the descriptor.
+    // We most likely need to wait for full enabling of EFT before being able to spawn
+    // the extension target from the server side as doing this would most likely break
+    // the iframe dropdown. It would break it as spawning the targets from the server
+    // would probably mean getting rid of the usage of WindowGlobalTargetActor._setWindow
+    // and instead spawn one target per extension document.
+    // That, instead of having a unique target for all the documents.
+    return false;
+  }
+
+  getWatcher() {
+    return super.getWatcher({
+      isServerTargetSwitchingEnabled: this.isServerTargetSwitchingEnabled(),
+    });
+  }
+
   _createWebExtensionTarget(form) {
-    const front = new BrowsingContextTargetFront(this.conn, null, this);
+    const front = new WindowGlobalTargetFront(this.conn, null, this);
     front.form(form);
     this.manage(front);
     return front;
   }
 
   /**
-   * Retrieve the BrowsingContextTargetFront representing a
+   * Retrieve the WindowGlobalTargetFront representing a
    * WebExtensionTargetActor if this addon is a webextension.
    *
    * WebExtensionDescriptors will be created for any type of addon type
@@ -108,7 +132,7 @@ class WebExtensionDescriptorFront extends FrontClassWithSpec(
       );
     }
 
-    if (this._targetFront && this._targetFront.actorID) {
+    if (this._targetFront && !this._targetFront.isDestroyed()) {
       return this._targetFront;
     }
 
@@ -121,7 +145,6 @@ class WebExtensionDescriptorFront extends FrontClassWithSpec(
       try {
         const targetForm = await super.getTarget();
         targetFront = this._createWebExtensionTarget(targetForm);
-        await targetFront.attach();
       } catch (e) {
         console.log(
           `Request to connect to WebExtensionDescriptor "${this.id}" failed: ${e}`

@@ -21,7 +21,7 @@ describe("ToolbarPanelHub", () => {
   let setBoolPrefStub;
   let waitForInitializedStub;
   let isBrowserPrivateStub;
-  let fakeDispatch;
+  let fakeSendTelemetry;
   let getEarliestRecordedDateStub;
   let getEventsByDateRangeStub;
   let defaultSearchStub;
@@ -119,7 +119,7 @@ describe("ToolbarPanelHub", () => {
     removeObserverStub = sandbox.stub();
     getBoolPrefStub = sandbox.stub();
     setBoolPrefStub = sandbox.stub();
-    fakeDispatch = sandbox.stub();
+    fakeSendTelemetry = sandbox.stub();
     isBrowserPrivateStub = sandbox.stub();
     getEarliestRecordedDateStub = sandbox.stub().returns(
       // A random date that's not the current timestamp
@@ -175,12 +175,19 @@ describe("ToolbarPanelHub", () => {
   it("should create an instance", () => {
     assert.ok(instance);
   });
-  it("should enableAppmenuButton() on init()", async () => {
+  it("should enableAppmenuButton() on init() just once", async () => {
     instance.enableAppmenuButton = sandbox.stub();
 
     await instance.init(waitForInitializedStub, { getMessages: () => {} });
+    await instance.init(waitForInitializedStub, { getMessages: () => {} });
 
     assert.calledOnce(instance.enableAppmenuButton);
+
+    instance.uninit();
+
+    await instance.init(waitForInitializedStub, { getMessages: () => {} });
+
+    assert.calledTwice(instance.enableAppmenuButton);
   });
   it("should unregisterCallback on uninit()", () => {
     instance.uninit();
@@ -197,21 +204,39 @@ describe("ToolbarPanelHub", () => {
     });
   });
   describe("#toggleWhatsNewPref", () => {
-    it("should call Preferences.set() with the checkbox value", () => {
+    it("should call Preferences.set() with the opposite value", () => {
       let checkbox = {};
       let event = { target: checkbox };
       // checkbox starts false
       checkbox.checked = false;
 
-      // toggling the checkbox to set the value to true
+      // toggling the checkbox to set the value to true;
+      // Preferences.set() gets called before the checkbox changes,
+      // so we have to call it with the opposite value.
       instance.toggleWhatsNewPref(event);
 
       assert.calledOnce(preferencesStub.set);
       assert.calledWith(
         preferencesStub.set,
         "browser.messaging-system.whatsNewPanel.enabled",
-        checkbox.checked
+        !checkbox.checked
       );
+    });
+    it("should report telemetry with the opposite value", () => {
+      let sendUserEventTelemetryStub = sandbox.stub(
+        instance,
+        "sendUserEventTelemetry"
+      );
+      let event = {
+        target: { checked: true, ownerGlobal: fakeWindow },
+      };
+
+      instance.toggleWhatsNewPref(event);
+
+      assert.calledOnce(sendUserEventTelemetryStub);
+      const { args } = sendUserEventTelemetryStub.firstCall;
+      assert.equal(args[1], "WNP_PREF_TOGGLE");
+      assert.propertyVal(args[3].value, "prefValue", false);
     });
   });
   describe("#enableAppmenuButton", () => {
@@ -289,20 +314,31 @@ describe("ToolbarPanelHub", () => {
     it("should unhide appmenu button on _showAppmenuButton()", async () => {
       await instance._showAppmenuButton(fakeWindow);
 
-      assert.calledWith(fakeElementById.removeAttribute, "hidden");
+      assert.equal(fakeElementById.hidden, false);
     });
     it("should hide appmenu button on _hideAppmenuButton()", () => {
       instance._hideAppmenuButton(fakeWindow);
-      assert.calledWith(fakeElementById.setAttribute, "hidden", true);
+      assert.equal(fakeElementById.hidden, true);
+    });
+    it("should not do anything if the window is closed", () => {
+      instance._hideAppmenuButton(fakeWindow, true);
+      assert.notCalled(PanelMultiView.getViewNode);
+    });
+    it("should not throw if the element does not exist", () => {
+      let fn = instance._hideAppmenuButton.bind(null, {
+        browser: { ownerDocument: {} },
+      });
+      getViewNodeStub.returns(undefined);
+      assert.doesNotThrow(fn);
     });
     it("should unhide toolbar button on _showToolbarButton()", async () => {
       await instance._showToolbarButton(fakeWindow);
 
-      assert.calledWith(fakeElementById.removeAttribute, "hidden");
+      assert.equal(fakeElementById.hidden, false);
     });
     it("should hide toolbar button on _hideToolbarButton()", () => {
       instance._hideToolbarButton(fakeWindow);
-      assert.calledWith(fakeElementById.setAttribute, "hidden", true);
+      assert.equal(fakeElementById.hidden, true);
     });
   });
   describe("#renderMessages", () => {
@@ -311,7 +347,7 @@ describe("ToolbarPanelHub", () => {
       getMessagesStub = sandbox.stub();
       instance.init(waitForInitializedStub, {
         getMessages: getMessagesStub,
-        dispatch: fakeDispatch,
+        sendTelemetry: fakeSendTelemetry,
       });
     });
     it("should have correct state", async () => {
@@ -450,10 +486,8 @@ describe("ToolbarPanelHub", () => {
       );
     });
     it("should set state values as data-attribute", async () => {
-      const [message] = (await PanelTestProvider.getMessages()).filter(
-        m =>
-          m.template === "whatsnew_panel_message" &&
-          m.content.layout === "tracking-protections"
+      const message = (await PanelTestProvider.getMessages()).find(
+        m => m.template === "whatsnew_panel_message"
       );
       getMessagesStub.returns([message]);
       instance.state.contentArguments = { foo: "foo", bar: "bar" };
@@ -506,14 +540,15 @@ describe("ToolbarPanelHub", () => {
 
       await instance.renderMessages(fakeWindow, fakeDocument, "container-id");
 
-      const buttonEl = createdCustomElements.find(
-        el => el.tagName === "button"
+      const messageEl = createdCustomElements.find(
+        el =>
+          el.tagName === "div" && el.classList.includes("whatsNew-message-body")
       );
       const anchorEl = createdCustomElements.find(el => el.tagName === "a");
 
       assert.notCalled(global.SpecialMessageActions.handleAction);
 
-      buttonEl.doCommand();
+      messageEl.doCommand();
       anchorEl.doCommand();
 
       assert.calledTwice(global.SpecialMessageActions.handleAction);
@@ -557,7 +592,7 @@ describe("ToolbarPanelHub", () => {
         await instance.renderMessages(fakeWindow, fakeDocument, "container-id");
 
         assert.calledOnce(spy);
-        assert.calledOnce(fakeDispatch);
+        assert.calledOnce(fakeSendTelemetry);
         assert.propertyVal(
           spy.firstCall.args[2],
           "id",
@@ -581,7 +616,7 @@ describe("ToolbarPanelHub", () => {
         await instance.renderMessages(fakeWindow, fakeDocument, "container-id");
 
         assert.calledOnce(spy);
-        assert.calledOnce(fakeDispatch);
+        assert.calledOnce(fakeSendTelemetry);
 
         spy.resetHistory();
 
@@ -620,10 +655,10 @@ describe("ToolbarPanelHub", () => {
             },
           }
         );
-        assert.calledOnce(fakeDispatch);
+        assert.calledOnce(fakeSendTelemetry);
         const {
           args: [dispatchPayload],
-        } = fakeDispatch.lastCall;
+        } = fakeSendTelemetry.lastCall;
         assert.propertyVal(dispatchPayload, "type", "TOOLBAR_PANEL_TELEMETRY");
         assert.propertyVal(dispatchPayload.data, "message_id", panelPingId);
         assert.deepEqual(dispatchPayload.data.event_context, {
@@ -659,10 +694,10 @@ describe("ToolbarPanelHub", () => {
             },
           }
         );
-        assert.calledOnce(fakeDispatch);
+        assert.calledOnce(fakeSendTelemetry);
         const {
           args: [dispatchPayload],
-        } = fakeDispatch.lastCall;
+        } = fakeSendTelemetry.lastCall;
         assert.propertyVal(dispatchPayload, "type", "TOOLBAR_PANEL_TELEMETRY");
         assert.propertyVal(dispatchPayload.data, "message_id", panelPingId);
         assert.deepEqual(dispatchPayload.data.event_context, {
@@ -684,9 +719,7 @@ describe("ToolbarPanelHub", () => {
         removeMessagesSpy = sandbox.spy(instance, "removeMessages");
         renderMessagesStub = sandbox.spy(instance, "renderMessages");
         addEventListenerStub = fakeElementById.addEventListener;
-        browser = {
-          browser: { ownerGlobal: fakeWindow, ownerDocument: fakeDocument },
-        };
+        browser = { ownerGlobal: fakeWindow, ownerDocument: fakeDocument };
         fakeElementById.querySelectorAll.returns([fakeElementById]);
       });
       it("should call removeMessages when forcing a message to show", () => {
@@ -743,7 +776,7 @@ describe("ToolbarPanelHub", () => {
           onboardingMsgs.find(msg => msg.template === "protections_panel")
         );
       await instance.init(waitForInitializedStub, {
-        dispatch: fakeDispatch,
+        sendTelemetry: fakeSendTelemetry,
         getMessages: getMessagesStub,
       });
     });

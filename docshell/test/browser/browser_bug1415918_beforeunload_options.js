@@ -6,320 +6,156 @@ const TEST_PATH = getRootDirectory(gTestPath).replace(
   "http://example.com"
 );
 
-add_task(async function test() {
-  const XUL_NS =
-    "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
+const { PromptTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PromptTestUtils.jsm"
+);
 
+SimpleTest.requestFlakyTimeout("Needs to test a timeout");
+
+function delay(msec) {
+  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+  return new Promise(resolve => setTimeout(resolve, msec));
+}
+
+function allowNextNavigation(browser) {
+  return PromptTestUtils.handleNextPrompt(
+    browser,
+    { modalType: Services.prompt.MODAL_TYPE_CONTENT, promptType: "confirmEx" },
+    { buttonNumClick: 0 }
+  );
+}
+
+function cancelNextNavigation(browser) {
+  return PromptTestUtils.handleNextPrompt(
+    browser,
+    { modalType: Services.prompt.MODAL_TYPE_CONTENT, promptType: "confirmEx" },
+    { buttonNumClick: 1 }
+  );
+}
+
+add_task(async function test() {
   await SpecialPowers.pushPrefEnv({
     set: [["dom.require_user_interaction_for_beforeunload", false]],
   });
 
-  let url = TEST_PATH + "file_bug1415918_beforeunload.html";
+  const permitUnloadTimeout = Services.prefs.getIntPref(
+    "dom.beforeunload_timeout_ms"
+  );
+
+  let url = TEST_PATH + "dummy_page.html";
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
   let browser = tab.linkedBrowser;
-  let stack = browser.parentNode;
-  let buttonId;
-  let promptShown = false;
 
-  let observer = new MutationObserver(function(mutations) {
-    mutations.forEach(function(mutation) {
-      if (
-        buttonId &&
-        mutation.type == "attributes" &&
-        browser.hasAttribute("tabmodalPromptShowing")
-      ) {
-        let prompt = stack.getElementsByTagNameNS(XUL_NS, "tabmodalprompt")[0];
-        prompt.querySelector(`.tabmodalprompt-${buttonId}`).click();
-        promptShown = true;
-      }
+  await SpecialPowers.spawn(browser.browsingContext, [], () => {
+    content.addEventListener("beforeunload", event => {
+      event.preventDefault();
     });
   });
-  observer.observe(browser, { attributes: true });
 
   /*
    * Check condition where beforeunload handlers request a prompt.
    */
 
   // Prompt is shown, user clicks OK.
-  buttonId = "button0";
-  promptShown = false;
+
+  let promptShownPromise = allowNextNavigation(browser);
   ok(browser.permitUnload().permitUnload, "permit unload should be true");
-  ok(promptShown, "prompt should have been displayed");
-
-  // Check that all beforeunload handlers fired and reset attributes.
-  await SpecialPowers.spawn(browser, [], () => {
-    ok(
-      content.window.document.body.hasAttribute("fired"),
-      "parent document beforeunload handler should fire"
-    );
-    content.window.document.body.removeAttribute("fired");
-
-    for (let frame of Array.from(content.window.frames)) {
-      ok(
-        frame.document.body.hasAttribute("fired"),
-        "frame document beforeunload handler should fire"
-      );
-      frame.document.body.removeAttribute("fired");
-    }
-  });
+  await promptShownPromise;
 
   // Prompt is shown, user clicks CANCEL.
-  buttonId = "button1";
-  promptShown = false;
+  promptShownPromise = cancelNextNavigation(browser);
   ok(!browser.permitUnload().permitUnload, "permit unload should be false");
-  ok(promptShown, "prompt should have been displayed");
-  buttonId = "";
-
-  // Check that only the parent beforeunload handler fired, and reset attribute.
-  await SpecialPowers.spawn(browser, [], () => {
-    ok(
-      content.window.document.body.hasAttribute("fired"),
-      "parent document beforeunload handler should fire"
-    );
-    content.window.document.body.removeAttribute("fired");
-
-    for (let frame of Array.from(content.window.frames)) {
-      ok(
-        !frame.document.body.hasAttribute("fired"),
-        "frame document beforeunload handler should not fire"
-      );
-    }
-  });
+  await promptShownPromise;
 
   // Prompt is not shown, don't permit unload.
-  promptShown = false;
+  let promptShown = false;
+  let shownCallback = () => {
+    promptShown = true;
+  };
+
+  browser.addEventListener("DOMWillOpenModalDialog", shownCallback);
   ok(
-    !browser.permitUnload(browser.dontPromptAndDontUnload).permitUnload,
+    !browser.permitUnload("dontUnload").permitUnload,
     "permit unload should be false"
   );
   ok(!promptShown, "prompt should not have been displayed");
 
-  // Check that only the parent beforeunload handler fired, and reset attribute.
-  await SpecialPowers.spawn(browser, [], () => {
-    ok(
-      content.window.document.body.hasAttribute("fired"),
-      "parent document beforeunload handler should fire"
-    );
-    content.window.document.body.removeAttribute("fired");
-
-    for (let frame of Array.from(content.window.frames)) {
-      ok(
-        !frame.document.body.hasAttribute("fired"),
-        "frame document beforeunload handler should not fire"
-      );
-    }
-  });
-
   // Prompt is not shown, permit unload.
   promptShown = false;
   ok(
-    browser.permitUnload(browser.dontPromptAndUnload).permitUnload,
+    browser.permitUnload("unload").permitUnload,
     "permit unload should be true"
   );
   ok(!promptShown, "prompt should not have been displayed");
+  browser.removeEventListener("DOMWillOpenModalDialog", shownCallback);
 
-  // Check that all beforeunload handlers fired.
-  await SpecialPowers.spawn(browser, [], () => {
-    ok(
-      content.window.document.body.hasAttribute("fired"),
-      "parent document beforeunload handler should fire"
-    );
-
-    for (let frame of Array.from(content.window.frames)) {
-      ok(
-        frame.document.body.hasAttribute("fired"),
-        "frame document beforeunload handler should fire"
-      );
-    }
+  promptShownPromise = PromptTestUtils.waitForPrompt(browser, {
+    modalType: Services.prompt.MODAL_TYPE_CONTENT,
+    promptType: "confirmEx",
   });
+
+  let promptDismissed = false;
+  let closedCallback = () => {
+    promptDismissed = true;
+  };
+
+  browser.addEventListener("DOMModalDialogClosed", closedCallback);
+
+  let promise = browser.asyncPermitUnload();
+
+  let promiseResolved = false;
+  promise.then(() => {
+    promiseResolved = true;
+  });
+
+  let dialog = await promptShownPromise;
+  ok(!promiseResolved, "Should not have resolved promise yet");
+
+  await delay(permitUnloadTimeout * 1.5);
+
+  ok(!promptDismissed, "Should not have dismissed prompt yet");
+  ok(!promiseResolved, "Should not have resolved promise yet");
+
+  await PromptTestUtils.handlePrompt(dialog, { buttonNumClick: 1 });
+
+  let { permitUnload } = await promise;
+  ok(promptDismissed, "Should have dismissed prompt");
+  ok(!permitUnload, "Should not have permitted unload");
+
+  browser.removeEventListener("DOMModalDialogClosed", closedCallback);
+
+  promptShownPromise = allowNextNavigation(browser);
 
   /*
    * Check condition where no one requests a prompt.  In all cases,
    * permitUnload should be true, and all handlers fired.
    */
-
-  buttonId = "button0";
-  url = TEST_PATH + "file_bug1415918_beforeunload_2.html";
+  url += "?1";
   BrowserTestUtils.loadURI(browser, url);
   await BrowserTestUtils.browserLoaded(browser, false, url);
-  buttonId = "";
+  await promptShownPromise;
 
   promptShown = false;
+  browser.addEventListener("DOMWillOpenModalDialog", shownCallback);
+
   ok(browser.permitUnload().permitUnload, "permit unload should be true");
   ok(!promptShown, "prompt should not have been displayed");
 
-  // Check that all beforeunload handlers fired and reset attributes.
-  await SpecialPowers.spawn(browser, [], () => {
-    ok(
-      content.window.document.body.hasAttribute("fired"),
-      "parent document beforeunload handler should fire"
-    );
-    content.window.document.body.removeAttribute("fired");
-
-    for (let frame of Array.from(content.window.frames)) {
-      ok(
-        frame.document.body.hasAttribute("fired"),
-        "frame document beforeunload handler should fire"
-      );
-      frame.document.body.removeAttribute("fired");
-    }
-  });
-
   promptShown = false;
   ok(
-    browser.permitUnload(browser.dontPromptAndDontUnload).permitUnload,
+    browser.permitUnload("dontUnload").permitUnload,
     "permit unload should be true"
   );
   ok(!promptShown, "prompt should not have been displayed");
 
-  // Check that all beforeunload handlers fired and reset attributes.
-  await SpecialPowers.spawn(browser, [], () => {
-    ok(
-      content.window.document.body.hasAttribute("fired"),
-      "parent document beforeunload handler should fire"
-    );
-    content.window.document.body.removeAttribute("fired");
-
-    for (let frame of Array.from(content.window.frames)) {
-      ok(
-        frame.document.body.hasAttribute("fired"),
-        "frame document beforeunload handler should fire"
-      );
-      frame.document.body.removeAttribute("fired");
-    }
-  });
-
   promptShown = false;
   ok(
-    browser.permitUnload(browser.dontPromptAndUnload).permitUnload,
+    browser.permitUnload("unload").permitUnload,
     "permit unload should be true"
   );
   ok(!promptShown, "prompt should not have been displayed");
 
-  // Check that all beforeunload handlers fired.
-  await SpecialPowers.spawn(browser, [], () => {
-    ok(
-      content.window.document.body.hasAttribute("fired"),
-      "parent document beforeunload handler should fire"
-    );
+  browser.removeEventListener("DOMWillOpenModalDialog", shownCallback);
 
-    for (let frame of Array.from(content.window.frames)) {
-      ok(
-        frame.document.body.hasAttribute("fired"),
-        "frame document beforeunload handler should fire"
-      );
-    }
-  });
-
-  /*
-   * Check condition where the parent beforeunload handler does not request a prompt,
-   * but a child beforeunload handler does.
-   */
-
-  buttonId = "button0";
-  url = TEST_PATH + "file_bug1415918_beforeunload_3.html";
-  BrowserTestUtils.loadURI(browser, url);
-  await BrowserTestUtils.browserLoaded(browser, false, url);
-
-  // Prompt is shown, user clicks OK.
-  promptShown = false;
-  ok(browser.permitUnload().permitUnload, "permit unload should be true");
-  ok(promptShown, "prompt should have been displayed");
-
-  // Check that all beforeunload handlers fired and reset attributes.
-  await SpecialPowers.spawn(browser, [], () => {
-    ok(
-      content.window.document.body.hasAttribute("fired"),
-      "parent document beforeunload handler should fire"
-    );
-    content.window.document.body.removeAttribute("fired");
-
-    for (let frame of Array.from(content.window.frames)) {
-      ok(
-        frame.document.body.hasAttribute("fired"),
-        "frame document beforeunload handler should fire"
-      );
-      frame.document.body.removeAttribute("fired");
-    }
-  });
-
-  // Prompt is shown, user clicks CANCEL.
-  buttonId = "button1";
-  promptShown = false;
-  ok(!browser.permitUnload().permitUnload, "permit unload should be false");
-  ok(promptShown, "prompt should have been displayed");
-  buttonId = "";
-
-  // Check that the parent beforeunload handler fired, and only one child beforeunload
-  // handler fired.  Reset attributes.
-  await SpecialPowers.spawn(browser, [], () => {
-    ok(
-      content.window.document.body.hasAttribute("fired"),
-      "parent document beforeunload handler should fire"
-    );
-    content.window.document.body.removeAttribute("fired");
-
-    let count = 0;
-    for (let frame of Array.from(content.window.frames)) {
-      if (frame.document.body.hasAttribute("fired")) {
-        count++;
-        frame.document.body.removeAttribute("fired");
-      }
-    }
-    is(count, 1, "only one frame document beforeunload handler should fire");
-  });
-
-  // Prompt is not shown, don't permit unload.
-  promptShown = false;
-  ok(
-    !browser.permitUnload(browser.dontPromptAndDontUnload).permitUnload,
-    "permit unload should be false"
-  );
-  ok(!promptShown, "prompt should not have been displayed");
-
-  // Check that the parent beforeunload handler fired, and only one child beforeunload
-  // handler fired.  Reset attributes.
-  await SpecialPowers.spawn(browser, [], () => {
-    ok(
-      content.window.document.body.hasAttribute("fired"),
-      "parent document beforeunload handler should fire"
-    );
-    content.window.document.body.removeAttribute("fired");
-
-    let count = 0;
-    for (let frame of Array.from(content.window.frames)) {
-      if (frame.document.body.hasAttribute("fired")) {
-        count++;
-        frame.document.body.removeAttribute("fired");
-      }
-    }
-    is(count, 1, "only one frame document beforeunload handler should fire");
-  });
-
-  // Prompt is not shown, permit unload.
-  promptShown = false;
-  ok(
-    browser.permitUnload(browser.dontPromptAndUnload).permitUnload,
-    "permit unload should be true"
-  );
-  ok(!promptShown, "prompt should not have been displayed");
-
-  // Check that all beforeunload handlers fired.
-  await SpecialPowers.spawn(browser, [], () => {
-    ok(
-      content.window.document.body.hasAttribute("fired"),
-      "parent document beforeunload handler should fire"
-    );
-
-    for (let frame of Array.from(content.window.frames)) {
-      ok(
-        frame.document.body.hasAttribute("fired"),
-        "frame document beforeunload handler should fire"
-      );
-    }
-  });
-
-  // Remove tab.
-  buttonId = "button0";
-  BrowserTestUtils.removeTab(tab);
+  await BrowserTestUtils.removeTab(tab, { skipPermitUnload: true });
 });

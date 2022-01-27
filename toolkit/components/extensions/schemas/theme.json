@@ -171,7 +171,8 @@
               },
               "toolbar_field_separator": {
                 "$ref": "ThemeColor",
-                "optional": true
+                "optional": true,
+                "deprecated": "This color property is ignored in Firefox >= 89."
               },
               "toolbar_top_separator": {
                 "$ref": "ThemeColor",
@@ -234,6 +235,10 @@
                 "optional": true
               },
               "ntp_background": {
+                "$ref": "ThemeColor",
+                "optional": true
+              },
+              "ntp_card_background": {
                 "$ref": "ThemeColor",
                 "optional": true
               },

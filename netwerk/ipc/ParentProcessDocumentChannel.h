@@ -7,10 +7,11 @@
 #ifndef mozilla_net_ParentProcessDocumentChannel_h
 #define mozilla_net_ParentProcessDocumentChannel_h
 
-#include "ProtocolUtils.h"
+#include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/net/DocumentChannel.h"
 #include "mozilla/net/DocumentLoadListener.h"
 #include "nsIObserver.h"
+#include "nsIAsyncVerifyRedirectCallback.h"
 
 namespace mozilla {
 namespace net {

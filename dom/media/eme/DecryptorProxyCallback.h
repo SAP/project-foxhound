@@ -9,13 +9,14 @@
 #include "mozilla/dom/MediaKeyStatusMapBinding.h"     // For MediaKeyStatus
 #include "mozilla/dom/MediaKeyMessageEventBinding.h"  // For MediaKeyMessageType
 #include "mozilla/CDMProxy.h"
-#include "mozilla/ErrorResult.h"
+
+namespace mozilla {
+class ErrorResult;
+}
 
 class DecryptorProxyCallback {
  public:
   virtual ~DecryptorProxyCallback() {}
-
-  virtual void SetDecryptorId(uint32_t aId) = 0;
 
   virtual void SetSessionId(uint32_t aCreateSessionId,
                             const nsCString& aSessionId) = 0;

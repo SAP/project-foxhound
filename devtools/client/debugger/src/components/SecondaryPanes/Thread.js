@@ -2,31 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 import React, { Component } from "react";
 import { connect } from "../../utils/connect";
 import classnames from "classnames";
 
 import actions from "../../actions";
 import { getCurrentThread, getIsPaused, getContext } from "../../selectors";
-import { isWorker } from "../../utils/threads";
 import AccessibleImage from "../shared/AccessibleImage";
 
-import type { Context, Thread as ThreadType } from "../../types";
-
-type OwnProps = {|
-  thread: ThreadType,
-|};
-type Props = {
-  cx: Context,
-  selectThread: typeof actions.selectThread,
-  isPaused: boolean,
-  thread: ThreadType,
-  currentThread: string,
-};
-
-export class Thread extends Component<Props> {
+export class Thread extends Component {
   onSelectThread = () => {
     const { thread } = this.props;
     this.props.selectThread(this.props.cx, thread.actor);
@@ -35,7 +19,7 @@ export class Thread extends Component<Props> {
   render() {
     const { currentThread, isPaused, thread } = this.props;
 
-    const worker = isWorker(thread);
+    const isWorker = thread.targetType.includes("worker");
     let label = thread.name;
     if (thread.serviceWorkerStatus) {
       label += ` (${thread.serviceWorkerStatus})`;
@@ -50,7 +34,7 @@ export class Thread extends Component<Props> {
         onClick={this.onSelectThread}
       >
         <div className="icon">
-          <AccessibleImage className={worker ? "worker" : "window"} />
+          <AccessibleImage className={isWorker ? "worker" : "window"} />
         </div>
         <div className="label">{label}</div>
         {isPaused ? (
@@ -69,6 +53,6 @@ const mapStateToProps = (state, props) => ({
   isPaused: getIsPaused(state, props.thread.actor),
 });
 
-export default connect<Props, OwnProps, _, _, _, _>(mapStateToProps, {
+export default connect(mapStateToProps, {
   selectThread: actions.selectThread,
 })(Thread);

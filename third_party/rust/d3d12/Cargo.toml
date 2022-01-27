@@ -11,13 +11,14 @@
 # will likely look very different (and much more reasonable)
 
 [package]
+edition = "2018"
 name = "d3d12"
-version = "0.3.0"
+version = "0.4.1"
 authors = ["msiglreith <m.siglreith@gmail.com>", "Dzmitry Malyshau <kvarkus@gmail.com>"]
 description = "Low level D3D12 API wrapper"
 documentation = "https://docs.rs/d3d12"
 keywords = ["windows", "graphics"]
-categories = ["memory-management"]
+categories = ["api-bindings", "graphics", "memory-management", "os::windows-apis"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/gfx-rs/d3d12-rs"
 [package.metadata.docs.rs]
@@ -26,7 +27,7 @@ default-target = "x86_64-pc-windows-msvc"
 version = "1"
 
 [dependencies.libloading]
-version = "0.5"
+version = "0.7"
 optional = true
 
 [dependencies.winapi]

@@ -6,7 +6,9 @@
 
 #include "OffscreenCanvas.h"
 
+#include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/OffscreenCanvasBinding.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/layers/CanvasRenderer.h"
@@ -17,9 +19,10 @@
 #include "CanvasUtils.h"
 #include "GLContext.h"
 #include "GLScreenBuffer.h"
+#include "ImageBitmap.h"
+#include "nsContentUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 OffscreenCanvasCloneData::OffscreenCanvasCloneData(
     layers::CanvasRenderer* aRenderer, uint32_t aWidth, uint32_t aHeight,
@@ -131,7 +134,7 @@ already_AddRefed<nsISupports> OffscreenCanvas::GetContext(
   return result.forget();
 }
 
-ImageContainer* OffscreenCanvas::GetImageContainer() {
+layers::ImageContainer* OffscreenCanvas::GetImageContainer() {
   if (!mCanvasRenderer) {
     return nullptr;
   }
@@ -194,9 +197,8 @@ OffscreenCanvasCloneData* OffscreenCanvas::ToCloneData() {
 
 already_AddRefed<ImageBitmap> OffscreenCanvas::TransferToImageBitmap(
     ErrorResult& aRv) {
-  nsCOMPtr<nsIGlobalObject> globalObject = GetGlobalObject();
   RefPtr<ImageBitmap> result =
-      ImageBitmap::CreateFromOffscreenCanvas(globalObject, *this, aRv);
+      ImageBitmap::CreateFromOffscreenCanvas(GetOwnerGlobal(), *this, aRv);
   if (aRv.Failed()) {
     return nullptr;
   }
@@ -215,7 +217,7 @@ already_AddRefed<Promise> OffscreenCanvas::ToBlob(JSContext* aCx,
     return nullptr;
   }
 
-  nsCOMPtr<nsIGlobalObject> global = GetGlobalObject();
+  nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal();
 
   RefPtr<Promise> promise = Promise::Create(global, aRv);
   if (aRv.Failed()) {
@@ -253,16 +255,7 @@ already_AddRefed<Promise> OffscreenCanvas::ToBlob(JSContext* aCx,
 
   RefPtr<EncodeCompleteCallback> callback = new EncodeCallback(global, promise);
 
-  bool usePlaceholder;
-  if (NS_IsMainThread()) {
-    nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(GetGlobalObject());
-    Document* doc = window->GetExtantDoc();
-    usePlaceholder =
-        doc ? nsContentUtils::ShouldResistFingerprinting(doc) : false;
-  } else {
-    dom::WorkerPrivate* workerPrivate = dom::GetCurrentThreadWorkerPrivate();
-    usePlaceholder = nsContentUtils::ShouldResistFingerprinting(workerPrivate);
-  }
+  bool usePlaceholder = ShouldResistFingerprinting();
   CanvasRenderingContextHelper::ToBlob(aCx, global, callback, aType, aParams,
                                        usePlaceholder, aRv);
 
@@ -278,13 +271,8 @@ already_AddRefed<gfx::SourceSurface> OffscreenCanvas::GetSurfaceSnapshot(
   return mCurrentContext->GetSurfaceSnapshot(aOutAlphaType);
 }
 
-nsCOMPtr<nsIGlobalObject> OffscreenCanvas::GetGlobalObject() {
-  if (NS_IsMainThread()) {
-    return GetParentObject();
-  }
-
-  dom::WorkerPrivate* workerPrivate = dom::GetCurrentThreadWorkerPrivate();
-  return workerPrivate->GlobalScope();
+bool OffscreenCanvas::ShouldResistFingerprinting() const {
+  return nsContentUtils::ShouldResistFingerprinting(GetOwnerGlobal());
 }
 
 /* static */
@@ -320,5 +308,4 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(OffscreenCanvas)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

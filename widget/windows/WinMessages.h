@@ -34,16 +34,8 @@
 // Internal message used in correcting backwards clock skew
 #define MOZ_WM_SKEWFIX (WM_APP + 0x0316)
 
-// Following MOZ_WM_*KEY* messages are used by PluginInstanceChild and
-// NativeKey internally. (never posted to the queue)
-#define MOZ_WM_KEYDOWN (WM_APP + 0x0318)
-#define MOZ_WM_KEYUP (WM_APP + 0x0319)
-#define MOZ_WM_SYSKEYDOWN (WM_APP + 0x031A)
-#define MOZ_WM_SYSKEYUP (WM_APP + 0x031B)
-#define MOZ_WM_CHAR (WM_APP + 0x031C)
-#define MOZ_WM_SYSCHAR (WM_APP + 0x031D)
-#define MOZ_WM_DEADCHAR (WM_APP + 0x031E)
-#define MOZ_WM_SYSDEADCHAR (WM_APP + 0x031F)
+// Internal message used for rolling up popups for dmanip events
+#define MOZ_WM_DMANIP (WM_APP + 0x0317)
 
 // XXX Should rename them to MOZ_WM_* and use safer values!
 // Messages for fullscreen transition window

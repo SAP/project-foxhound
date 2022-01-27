@@ -9,30 +9,29 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-
-#include <objbase.h>
+#include "mozilla/mscom/COMWrappers.h"
 
 namespace mozilla {
 namespace mscom {
 
-class MOZ_NON_TEMPORARY_CLASS ApartmentRegion {
+class MOZ_NON_TEMPORARY_CLASS ApartmentRegion final {
  public:
   /**
    * This constructor is to be used when we want to instantiate the object but
    * we do not yet know which type of apartment we want. Call Init() to
    * complete initialization.
    */
-  ApartmentRegion() : mInitResult(CO_E_NOTINITIALIZED) {}
+  constexpr ApartmentRegion() : mInitResult(CO_E_NOTINITIALIZED) {}
 
   explicit ApartmentRegion(COINIT aAptType)
-      : mInitResult(::CoInitializeEx(nullptr, aAptType)) {
+      : mInitResult(wrapped::CoInitializeEx(nullptr, aAptType)) {
     // If this fires then we're probably mixing apartments on the same thread
     MOZ_ASSERT(IsValid());
   }
 
   ~ApartmentRegion() {
     if (IsValid()) {
-      ::CoUninitialize();
+      wrapped::CoUninitialize();
     }
   }
 
@@ -44,7 +43,7 @@ class MOZ_NON_TEMPORARY_CLASS ApartmentRegion {
 
   bool Init(COINIT aAptType) {
     MOZ_ASSERT(mInitResult == CO_E_NOTINITIALIZED);
-    mInitResult = ::CoInitializeEx(nullptr, aAptType);
+    mInitResult = wrapped::CoInitializeEx(nullptr, aAptType);
     MOZ_ASSERT(IsValid());
     return IsValid();
   }
@@ -62,7 +61,7 @@ class MOZ_NON_TEMPORARY_CLASS ApartmentRegion {
 };
 
 template <COINIT T>
-class MOZ_NON_TEMPORARY_CLASS ApartmentRegionT {
+class MOZ_NON_TEMPORARY_CLASS ApartmentRegionT final {
  public:
   ApartmentRegionT() : mAptRgn(T) {}
 

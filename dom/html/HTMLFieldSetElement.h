@@ -8,21 +8,21 @@
 #define mozilla_dom_HTMLFieldSetElement_h
 
 #include "mozilla/Attributes.h"
-#include "nsGenericHTMLElement.h"
-#include "nsIConstraintValidation.h"
-#include "mozilla/dom/HTMLFormElement.h"
+#include "mozilla/dom/ConstraintValidation.h"
 #include "mozilla/dom/ValidityState.h"
+#include "nsGenericHTMLElement.h"
 
 namespace mozilla {
+class ErrorResult;
 class EventChainPreVisitor;
 namespace dom {
+class FormData;
 
-class HTMLFieldSetElement final : public nsGenericHTMLFormElement,
-                                  public nsIConstraintValidation {
+class HTMLFieldSetElement final : public nsGenericHTMLFormControlElement,
+                                  public ConstraintValidation {
  public:
-  using nsGenericHTMLFormElement::GetForm;
-  using nsIConstraintValidation::GetValidationMessage;
-  using nsIConstraintValidation::SetCustomValidity;
+  using ConstraintValidation::GetValidationMessage;
+  using ConstraintValidation::SetCustomValidity;
 
   explicit HTMLFieldSetElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -40,15 +40,16 @@ class HTMLFieldSetElement final : public nsGenericHTMLFormElement,
                                 nsIPrincipal* aSubjectPrincipal,
                                 bool aNotify) override;
 
-  virtual nsresult InsertChildBefore(nsIContent* aChild,
-                                     nsIContent* aBeforeThis,
-                                     bool aNotify) override;
+  virtual void InsertChildBefore(nsIContent* aChild, nsIContent* aBeforeThis,
+                                 bool aNotify, ErrorResult& aRv) override;
   virtual void RemoveChildNode(nsIContent* aKid, bool aNotify) override;
+
+  // nsGenericHTMLElement
+  virtual bool IsDisabledForEvents(WidgetEvent* aEvent) override;
 
   // nsIFormControl
   NS_IMETHOD Reset() override;
-  NS_IMETHOD SubmitNamesValues(HTMLFormSubmission* aFormSubmission) override;
-  virtual bool IsDisabledForEvents(WidgetEvent* aEvent) override;
+  NS_IMETHOD SubmitNamesValues(FormData* aFormData) override { return NS_OK; }
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   const nsIContent* GetFirstLegend() const { return mFirstLegend; }
@@ -58,7 +59,7 @@ class HTMLFieldSetElement final : public nsGenericHTMLFormElement,
   void RemoveElement(nsGenericHTMLFormElement* aElement);
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLFieldSetElement,
-                                           nsGenericHTMLFormElement)
+                                           nsGenericHTMLFormControlElement)
 
   // WebIDL
   bool Disabled() const { return GetBoolAttr(nsGkAtoms::disabled); }

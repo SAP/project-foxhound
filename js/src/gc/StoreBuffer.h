@@ -22,7 +22,32 @@
 #include "threading/Mutex.h"
 
 namespace js {
+
+#ifdef DEBUG
+extern bool CurrentThreadIsGCMarking();
+#endif
+
 namespace gc {
+
+// Map from all trace kinds to the base GC type.
+template <JS::TraceKind kind>
+struct MapTraceKindToType {};
+
+#define DEFINE_TRACE_KIND_MAP(name, type, _, _1)   \
+  template <>                                      \
+  struct MapTraceKindToType<JS::TraceKind::name> { \
+    using Type = type;                             \
+  };
+JS_FOR_EACH_TRACEKIND(DEFINE_TRACE_KIND_MAP);
+#undef DEFINE_TRACE_KIND_MAP
+
+// Map from a possibly-derived type to the base GC type.
+template <typename T>
+struct BaseGCType {
+  using type =
+      typename MapTraceKindToType<JS::MapTypeToTraceKind<T>::kind>::Type;
+  static_assert(std::is_base_of_v<type, T>, "Failed to find base type");
+};
 
 class Arena;
 class ArenaCellSet;
@@ -63,8 +88,8 @@ class StoreBuffer {
   static const size_t GenericBufferLowAvailableThreshold =
       LifoAllocBlockSize / 2;
 
-  /* The size at which the whole cell buffer is about to overflow. */
-  static const size_t WholeCellBufferOverflowThresholdBytes = 128 * 1024;
+  /* The size at which other store buffers are about to overflow. */
+  static const size_t BufferOverflowThresholdBytes = 128 * 1024;
 
   /*
    * This buffer holds only a single type of edge. Using this buffer is more
@@ -88,7 +113,7 @@ class StoreBuffer {
     JS::GCReason gcReason_;
 
     /* Maximum number of entries before we request a minor GC. */
-    const static size_t MaxEntries = 48 * 1024 / sizeof(T);
+    const static size_t MaxEntries = BufferOverflowThresholdBytes / sizeof(T);
 
     explicit MonoTypeBuffer(StoreBuffer* owner, JS::GCReason reason)
         : last_(T()), owner_(owner), gcReason_(reason) {}
@@ -155,13 +180,13 @@ class StoreBuffer {
           nonStringHead_(nullptr),
           owner_(owner) {}
 
-    MOZ_MUST_USE bool init();
+    [[nodiscard]] bool init();
 
     void clear();
 
     bool isAboutToOverflow() const {
       return !storage_->isEmpty() &&
-             storage_->used() > WholeCellBufferOverflowThresholdBytes;
+             storage_->used() > BufferOverflowThresholdBytes;
     }
 
     void trace(TenuringTracer& mover);
@@ -192,7 +217,7 @@ class StoreBuffer {
     explicit GenericBuffer(StoreBuffer* owner)
         : storage_(nullptr), owner_(owner) {}
 
-    MOZ_MUST_USE bool init();
+    [[nodiscard]] bool init();
 
     void clear() {
       if (storage_) {
@@ -394,7 +419,8 @@ class StoreBuffer {
   inline void CheckAccess() const {
 #ifdef DEBUG
     if (JS::RuntimeHeapIsBusy()) {
-      MOZ_ASSERT(lock_.ownedByCurrentThread());
+      MOZ_ASSERT(!CurrentThreadIsGCMarking());
+      lock_.assertOwnedByCurrentThread();
     } else {
       MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime_));
     }
@@ -438,8 +464,6 @@ class StoreBuffer {
 
   bool aboutToOverflow_;
   bool enabled_;
-  bool cancelIonCompilations_;
-  bool hasTypeSetPointers_;
   bool mayHavePointersToDeadCells_;
 #ifdef DEBUG
   bool mEntered; /* For ReentrancyGuard. */
@@ -451,26 +475,18 @@ class StoreBuffer {
 #endif
 
   explicit StoreBuffer(JSRuntime* rt, const Nursery& nursery);
-  MOZ_MUST_USE bool enable();
+  [[nodiscard]] bool enable();
 
   void disable();
   bool isEnabled() const { return enabled_; }
 
+  bool isEmpty() const;
   void clear();
 
   const Nursery& nursery() const { return nursery_; }
 
   /* Get the overflowed status. */
   bool isAboutToOverflow() const { return aboutToOverflow_; }
-
-  bool cancelIonCompilations() const { return cancelIonCompilations_; }
-
-  /*
-   * Type inference data structures are moved during sweeping, so if we we are
-   * to sweep them then we must make sure that the storebuffer has no pointers
-   * into them.
-   */
-  bool hasTypeSetPointers() const { return hasTypeSetPointers_; }
 
   /*
    * Brain transplants may add whole cell buffer entires for dead cells. We must
@@ -510,8 +526,6 @@ class StoreBuffer {
     put(bufferGeneric, t);
   }
 
-  void setShouldCancelIonCompilations() { cancelIonCompilations_ = true; }
-  void setHasTypeSetPointers() { hasTypeSetPointers_ = true; }
   void setMayHavePointersToDeadCells() { mayHavePointersToDeadCells_ = true; }
 
   /* Methods to trace the source of all edges in the store buffer. */
@@ -612,6 +626,52 @@ class ArenaCellSet {
   static size_t offsetOfArena() { return offsetof(ArenaCellSet, arena); }
   static size_t offsetOfBits() { return offsetof(ArenaCellSet, bits); }
 };
+
+// Post-write barrier implementation for GC cells.
+
+// Implement the post-write barrier for nursery allocateable cell type |T|. Call
+// this from |T::postWriteBarrier|.
+template <typename T>
+MOZ_ALWAYS_INLINE void PostWriteBarrierImpl(void* cellp, T* prev, T* next) {
+  MOZ_ASSERT(cellp);
+
+  // If the target needs an entry, add it.
+  StoreBuffer* buffer;
+  if (next && (buffer = next->storeBuffer())) {
+    // If we know that the prev has already inserted an entry, we can skip
+    // doing the lookup to add the new entry. Note that we cannot safely
+    // assert the presence of the entry because it may have been added
+    // via a different store buffer.
+    if (prev && prev->storeBuffer()) {
+      return;
+    }
+    buffer->putCell(static_cast<T**>(cellp));
+    return;
+  }
+
+  // Remove the prev entry if the new value does not need it. There will only
+  // be a prev entry if the prev value was in the nursery.
+  if (prev && (buffer = prev->storeBuffer())) {
+    buffer->unputCell(static_cast<T**>(cellp));
+  }
+}
+
+template <typename T>
+MOZ_ALWAYS_INLINE void PostWriteBarrier(T** vp, T* prev, T* next) {
+  static_assert(std::is_base_of_v<Cell, T>);
+  static_assert(!std::is_same_v<Cell, T> && !std::is_same_v<TenuredCell, T>);
+
+  if constexpr (!std::is_base_of_v<TenuredCell, T>) {
+    using BaseT = typename BaseGCType<T>::type;
+    PostWriteBarrierImpl<BaseT>(vp, prev, next);
+    return;
+  }
+
+  MOZ_ASSERT(!IsInsideNursery(next));
+}
+
+// Used when we don't have a specific edge to put in the store buffer.
+void PostWriteBarrierCell(Cell* cell, Cell* prev, Cell* next);
 
 } /* namespace gc */
 } /* namespace js */

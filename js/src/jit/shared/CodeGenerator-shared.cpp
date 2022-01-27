@@ -12,16 +12,19 @@
 
 #include "jit/CodeGenerator.h"
 #include "jit/CompactBuffer.h"
+#include "jit/CompileInfo.h"
+#include "jit/InlineScriptTree.h"
 #include "jit/JitcodeMap.h"
+#include "jit/JitFrames.h"
 #include "jit/JitSpewer.h"
 #include "jit/MacroAssembler.h"
 #include "jit/MIR.h"
 #include "jit/MIRGenerator.h"
+#include "jit/SafepointIndex.h"
 #include "js/Conversions.h"
 #include "util/Memory.h"
 #include "vm/TraceLogging.h"
 
-#include "jit/JitFrames-inl.h"
 #include "jit/MacroAssembler-inl.h"
 #include "vm/JSScript-inl.h"
 
@@ -66,7 +69,6 @@ CodeGeneratorShared::CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph,
       nativeToBytecodeNumRegions_(0),
       nativeToBytecodeScriptList_(nullptr),
       nativeToBytecodeScriptListLength_(0),
-      skipArgCheckEntryOffset_(0),
 #ifdef CHECK_OSIPOINT_REGISTERS
       checkOsiPointRegisters(JitOptions.checkOsiPointRegisters),
 #endif
@@ -84,8 +86,9 @@ CodeGeneratorShared::CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph,
     frameDepth_ += gen->wasmMaxStackArgBytes();
 
 #ifdef ENABLE_WASM_SIMD
-#  if defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_X86)
-    // On X64 and x86, we don't need alignment for Wasm SIMD at this time.
+#  if defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_X86) || \
+      defined(JS_CODEGEN_ARM64)
+    // On X64/x86 and ARM64, we don't need alignment for Wasm SIMD at this time.
 #  else
 #    error \
         "we may need padding so that local slots are SIMD-aligned and the stack must be kept SIMD-aligned too."
@@ -160,6 +163,8 @@ bool CodeGeneratorShared::generateEpilogue() {
 }
 
 bool CodeGeneratorShared::generateOutOfLineCode() {
+  AutoCreatedBy acb(masm, "CodeGeneratorShared::generateOutOfLineCode");
+
   // OOL paths should not attempt to use |current| as it's the last block
   // instead of the block corresponding to the OOL path.
   current = nullptr;
@@ -180,7 +185,6 @@ bool CodeGeneratorShared::generateOutOfLineCode() {
     JitSpew(JitSpew_Codegen, "# Emitting out of line code");
 
     masm.setFramePushed(outOfLineCode_[i]->framePushed());
-    lastPC_ = outOfLineCode_[i]->pc();
     outOfLineCode_[i]->bind(&masm);
 
     outOfLineCode_[i]->generate(this);
@@ -197,13 +201,17 @@ void CodeGeneratorShared::addOutOfLineCode(OutOfLineCode* code,
 
 void CodeGeneratorShared::addOutOfLineCode(OutOfLineCode* code,
                                            const BytecodeSite* site) {
+  MOZ_ASSERT_IF(!gen->compilingWasm(), site->script()->containsPC(site->pc()));
   code->setFramePushed(masm.framePushed());
   code->setBytecodeSite(site);
-  MOZ_ASSERT_IF(!gen->compilingWasm(), code->script()->containsPC(code->pc()));
   masm.propagateOOM(outOfLineCode_.append(code));
 }
 
 bool CodeGeneratorShared::addNativeToBytecodeEntry(const BytecodeSite* site) {
+  MOZ_ASSERT(site);
+  MOZ_ASSERT(site->tree());
+  MOZ_ASSERT(site->pc());
+
   // Skip the table entirely if profiling is not enabled.
   if (!isProfilerInstrumentationEnabled()) {
     return true;
@@ -214,10 +222,6 @@ bool CodeGeneratorShared::addNativeToBytecodeEntry(const BytecodeSite* site) {
   if (masm.oom()) {
     return false;
   }
-
-  MOZ_ASSERT(site);
-  MOZ_ASSERT(site->tree());
-  MOZ_ASSERT(site->pc());
 
   InlineScriptTree* tree = site->tree();
   jsbytecode* pc = site->pc();
@@ -337,10 +341,9 @@ void CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot,
     mir = mir->toBox()->getOperand(0);
   }
 
-  MIRType type =
-      mir->isRecoveredOnBailout()
-          ? MIRType::None
-          : mir->isUnused() ? MIRType::MagicOptimizedOut : mir->type();
+  MIRType type = mir->isRecoveredOnBailout() ? MIRType::None
+                 : mir->isUnused()           ? MIRType::MagicOptimizedOut
+                                             : mir->type();
 
   RValueAllocation alloc;
 
@@ -392,7 +395,7 @@ void CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot,
     case MIRType::Symbol:
     case MIRType::BigInt:
     case MIRType::Object:
-    case MIRType::ObjectOrNull:
+    case MIRType::Shape:
     case MIRType::Boolean:
     case MIRType::Double: {
       LAllocation* payload = snapshot->payloadOfSlot(*allocIndex);
@@ -405,9 +408,7 @@ void CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot,
         break;
       }
 
-      JSValueType valueType = (type == MIRType::ObjectOrNull)
-                                  ? JSVAL_TYPE_OBJECT
-                                  : ValueTypeFromMIRType(type);
+      JSValueType valueType = ValueTypeFromMIRType(type);
 
       MOZ_DIAGNOSTIC_ASSERT(payload->isMemory() || payload->isRegister());
       if (payload->isMemory()) {
@@ -441,16 +442,12 @@ void CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot,
       }
       break;
     }
-    case MIRType::MagicOptimizedArguments:
     case MIRType::MagicOptimizedOut:
     case MIRType::MagicUninitializedLexical:
     case MIRType::MagicIsConstructing: {
       uint32_t index;
       JSWhyMagic why = JS_GENERIC_MAGIC;
       switch (type) {
-        case MIRType::MagicOptimizedArguments:
-          why = JS_OPTIMIZED_ARGUMENTS;
-          break;
         case MIRType::MagicOptimizedOut:
           why = JS_OPTIMIZED_OUT;
           break;
@@ -564,14 +561,14 @@ void CodeGeneratorShared::encode(LSnapshot* snapshot) {
   uint32_t mirOpcode = 0;
   uint32_t mirId = 0;
 
-  if (LNode* ins = instruction()) {
+  if (LInstruction* ins = instruction()) {
     lirOpcode = uint32_t(ins->op());
     lirId = ins->id();
-    if (ins->mirRaw()) {
-      mirOpcode = uint32_t(ins->mirRaw()->op());
-      mirId = ins->mirRaw()->id();
-      if (ins->mirRaw()->trackedPc()) {
-        pcOpcode = *ins->mirRaw()->trackedPc();
+    if (MDefinition* mir = ins->mirRaw()) {
+      mirOpcode = uint32_t(mir->op());
+      mirId = mir->id();
+      if (jsbytecode* pc = mir->trackedSite()->pc()) {
+        pcOpcode = *pc;
       }
     }
   }
@@ -886,15 +883,18 @@ class OutOfLineTruncateSlow : public OutOfLineCodeBase<CodeGeneratorShared> {
   Register dest_;
   bool widenFloatToDouble_;
   wasm::BytecodeOffset bytecodeOffset_;
+  bool preserveTls_;
 
  public:
   OutOfLineTruncateSlow(
       FloatRegister src, Register dest, bool widenFloatToDouble = false,
-      wasm::BytecodeOffset bytecodeOffset = wasm::BytecodeOffset())
+      wasm::BytecodeOffset bytecodeOffset = wasm::BytecodeOffset(),
+      bool preserveTls = false)
       : src_(src),
         dest_(dest),
         widenFloatToDouble_(widenFloatToDouble),
-        bytecodeOffset_(bytecodeOffset) {}
+        bytecodeOffset_(bytecodeOffset),
+        preserveTls_(preserveTls) {}
 
   void accept(CodeGeneratorShared* codegen) override {
     codegen->visitOutOfLineTruncateSlow(this);
@@ -902,32 +902,43 @@ class OutOfLineTruncateSlow : public OutOfLineCodeBase<CodeGeneratorShared> {
   FloatRegister src() const { return src_; }
   Register dest() const { return dest_; }
   bool widenFloatToDouble() const { return widenFloatToDouble_; }
+  bool preserveTls() const { return preserveTls_; }
   wasm::BytecodeOffset bytecodeOffset() const { return bytecodeOffset_; }
 };
 
 OutOfLineCode* CodeGeneratorShared::oolTruncateDouble(
     FloatRegister src, Register dest, MInstruction* mir,
-    wasm::BytecodeOffset bytecodeOffset) {
+    wasm::BytecodeOffset bytecodeOffset, bool preserveTls) {
   MOZ_ASSERT_IF(IsCompilingWasm(), bytecodeOffset.isValid());
 
-  OutOfLineTruncateSlow* ool = new (alloc())
-      OutOfLineTruncateSlow(src, dest, /* float32 */ false, bytecodeOffset);
+  OutOfLineTruncateSlow* ool = new (alloc()) OutOfLineTruncateSlow(
+      src, dest, /* float32 */ false, bytecodeOffset, preserveTls);
   addOutOfLineCode(ool, mir);
   return ool;
 }
 
 void CodeGeneratorShared::emitTruncateDouble(FloatRegister src, Register dest,
-                                             MTruncateToInt32* mir) {
-  OutOfLineCode* ool = oolTruncateDouble(src, dest, mir, mir->bytecodeOffset());
+                                             MInstruction* mir) {
+  MOZ_ASSERT(mir->isTruncateToInt32() || mir->isWasmBuiltinTruncateToInt32());
+  wasm::BytecodeOffset bytecodeOffset =
+      mir->isTruncateToInt32()
+          ? mir->toTruncateToInt32()->bytecodeOffset()
+          : mir->toWasmBuiltinTruncateToInt32()->bytecodeOffset();
+  OutOfLineCode* ool = oolTruncateDouble(src, dest, mir, bytecodeOffset);
 
   masm.branchTruncateDoubleMaybeModUint32(src, dest, ool->entry());
   masm.bind(ool->rejoin());
 }
 
 void CodeGeneratorShared::emitTruncateFloat32(FloatRegister src, Register dest,
-                                              MTruncateToInt32* mir) {
-  OutOfLineTruncateSlow* ool = new (alloc()) OutOfLineTruncateSlow(
-      src, dest, /* float32 */ true, mir->bytecodeOffset());
+                                              MInstruction* mir) {
+  MOZ_ASSERT(mir->isTruncateToInt32() || mir->isWasmBuiltinTruncateToInt32());
+  wasm::BytecodeOffset bytecodeOffset =
+      mir->isTruncateToInt32()
+          ? mir->toTruncateToInt32()->bytecodeOffset()
+          : mir->toWasmBuiltinTruncateToInt32()->bytecodeOffset();
+  OutOfLineTruncateSlow* ool = new (alloc())
+      OutOfLineTruncateSlow(src, dest, /* float32 */ true, bytecodeOffset);
   addOutOfLineCode(ool, mir);
 
   masm.branchTruncateFloat32MaybeModUint32(src, dest, ool->entry());

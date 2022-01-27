@@ -32,7 +32,8 @@ class nsIRollupListener {
    * Returns true if the event that the caller is processing should be consumed.
    */
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  virtual bool Rollup(uint32_t aCount, bool aFlush, const nsIntPoint* aPoint,
+  virtual bool Rollup(uint32_t aCount, bool aFlush,
+                      const mozilla::LayoutDeviceIntPoint* aPoint,
                       nsIContent** aLastRolledUp) = 0;
 
   /**
@@ -67,6 +68,12 @@ class nsIRollupListener {
   virtual void NotifyGeometryChange() = 0;
 
   virtual nsIWidget* GetRollupWidget() = 0;
+
+  /**
+   * If a native menu is currently shown, closes the menu.
+   * Returns true if a native menu was open.
+   */
+  virtual bool RollupNativeMenu() { return false; }
 };
 
 #endif /* __nsIRollupListener_h__ */

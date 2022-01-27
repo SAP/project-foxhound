@@ -4,18 +4,15 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Timer.jsm", this);
-ChromeUtils.import("resource://testing-common/PromiseTestUtils.jsm", this);
+const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { PromiseTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PromiseTestUtils.jsm"
+);
 
 // Prevent test failures due to the unhandled rejections in this test file.
 PromiseTestUtils.disableUncaughtRejectionObserverForSelfTest();
 
 add_task(async function test_globals() {
-  Assert.equal(
-    Promise.defer || undefined,
-    undefined,
-    "We are testing DOM Promise."
-  );
   Assert.notEqual(
     PromiseDebugging,
     undefined,

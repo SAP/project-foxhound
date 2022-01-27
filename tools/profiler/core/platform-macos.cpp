@@ -15,6 +15,7 @@
 #include <semaphore.h>
 #include <signal.h>
 #include <libkern/OSAtomic.h>
+#include <libproc.h>
 #include <mach/mach.h>
 #include <mach/semaphore.h>
 #include <mach/task.h>
@@ -33,38 +34,13 @@
 
 // this port is based off of v8 svn revision 9837
 
-int profiler_current_process_id() { return getpid(); }
+mozilla::profiler::PlatformData::PlatformData(ProfilerThreadId aThreadId)
+    : mProfiledThread(mach_thread_self()) {}
 
-int profiler_current_thread_id() {
-  return static_cast<int>(static_cast<pid_t>(syscall(SYS_thread_selfid)));
+mozilla::profiler::PlatformData::~PlatformData() {
+  // Deallocate Mach port for thread.
+  mach_port_deallocate(mach_task_self(), mProfiledThread);
 }
-
-void* GetStackTop(void* aGuess) {
-  pthread_t thread = pthread_self();
-  return pthread_get_stackaddr_np(thread);
-}
-
-class PlatformData {
- public:
-  explicit PlatformData(int aThreadId) : mProfiledThread(mach_thread_self()) {
-    MOZ_COUNT_CTOR(PlatformData);
-  }
-
-  ~PlatformData() {
-    // Deallocate Mach port for thread.
-    mach_port_deallocate(mach_task_self(), mProfiledThread);
-
-    MOZ_COUNT_DTOR(PlatformData);
-  }
-
-  thread_act_t ProfiledThread() { return mProfiledThread; }
-
- private:
-  // Note: for mProfiledThread Mach primitives are used instead of pthread's
-  // because the latter doesn't provide thread manipulation primitives required.
-  // For details, consult "Mac OS X Internals" book, Section 7.3.
-  thread_act_t mProfiledThread;
-};
 
 ////////////////////////////////////////////////////////////////////////
 // BEGIN Sampler target specifics
@@ -73,12 +49,66 @@ Sampler::Sampler(PSLockRef aLock) {}
 
 void Sampler::Disable(PSLockRef aLock) {}
 
+static void StreamMetaPlatformSampleUnits(PSLockRef aLock,
+                                          SpliceableJSONWriter& aWriter) {
+  // Microseconds.
+  aWriter.StringProperty("threadCPUDelta", "\u00B5s");
+}
+
+static RunningTimes GetThreadRunningTimesDiff(
+    PSLockRef aLock,
+    ThreadRegistration::UnlockedRWForLockedProfiler& aThreadData) {
+  AUTO_PROFILER_STATS(GetRunningTimes);
+
+  const mozilla::profiler::PlatformData& platformData =
+      aThreadData.PlatformDataCRef();
+
+  const RunningTimes newRunningTimes = GetRunningTimesWithTightTimestamp(
+      [&platformData](RunningTimes& aRunningTimes) {
+        AUTO_PROFILER_STATS(GetRunningTimes_thread_info);
+        thread_basic_info_data_t threadBasicInfo;
+        mach_msg_type_number_t basicCount = THREAD_BASIC_INFO_COUNT;
+        if (thread_info(platformData.ProfiledThread(), THREAD_BASIC_INFO,
+                        reinterpret_cast<thread_info_t>(&threadBasicInfo),
+                        &basicCount) == KERN_SUCCESS &&
+            basicCount == THREAD_BASIC_INFO_COUNT) {
+          uint64_t userTimeUs =
+              uint64_t(threadBasicInfo.user_time.seconds) *
+                  uint64_t(USEC_PER_SEC) +
+              uint64_t(threadBasicInfo.user_time.microseconds);
+          uint64_t systemTimeUs =
+              uint64_t(threadBasicInfo.system_time.seconds) *
+                  uint64_t(USEC_PER_SEC) +
+              uint64_t(threadBasicInfo.system_time.microseconds);
+          aRunningTimes.ResetThreadCPUDelta(userTimeUs + systemTimeUs);
+        } else {
+          aRunningTimes.ClearThreadCPUDelta();
+        }
+      });
+
+  ProfiledThreadData* profiledThreadData =
+      aThreadData.GetProfiledThreadData(aLock);
+  MOZ_ASSERT(profiledThreadData);
+  RunningTimes& previousRunningTimes =
+      profiledThreadData->PreviousThreadRunningTimesRef();
+  const RunningTimes diff = newRunningTimes - previousRunningTimes;
+  previousRunningTimes = newRunningTimes;
+  return diff;
+}
+
+static void DiscardSuspendedThreadRunningTimes(
+    PSLockRef aLock,
+    ThreadRegistration::UnlockedRWForLockedProfiler& aThreadData) {
+  // Nothing to do!
+  // On macOS, suspending a thread doesn't make that thread work.
+}
+
 template <typename Func>
 void Sampler::SuspendAndSampleAndResumeThread(
-    PSLockRef aLock, const RegisteredThread& aRegisteredThread,
+    PSLockRef aLock,
+    const ThreadRegistration::UnlockedReaderAndAtomicRWOnThread& aThreadData,
     const TimeStamp& aNow, const Func& aProcessRegs) {
-  thread_act_t samplee_thread =
-      aRegisteredThread.GetPlatformData()->ProfiledThread();
+  thread_act_t samplee_thread = aThreadData.PlatformDataCRef().ProfiledThread();
 
   //----------------------------------------------------------------//
   // Suspend the samplee thread and get its context.
@@ -101,22 +131,43 @@ void Sampler::SuspendAndSampleAndResumeThread(
   // what we do here, or risk deadlock.  See the corresponding comment in
   // platform-linux-android.cpp for details.
 
+#if defined(__x86_64__)
   thread_state_flavor_t flavor = x86_THREAD_STATE64;
   x86_thread_state64_t state;
   mach_msg_type_number_t count = x86_THREAD_STATE64_COUNT;
-#if __DARWIN_UNIX03
-#  define REGISTER_FIELD(name) __r##name
+#  if __DARWIN_UNIX03
+#    define REGISTER_FIELD(name) __r##name
+#  else
+#    define REGISTER_FIELD(name) r##name
+#  endif  // __DARWIN_UNIX03
+#elif defined(__aarch64__)
+  thread_state_flavor_t flavor = ARM_THREAD_STATE64;
+  arm_thread_state64_t state;
+  mach_msg_type_number_t count = ARM_THREAD_STATE64_COUNT;
+#  if __DARWIN_UNIX03
+#    define REGISTER_FIELD(name) __##name
+#  else
+#    define REGISTER_FIELD(name) name
+#  endif  // __DARWIN_UNIX03
 #else
-#  define REGISTER_FIELD(name) r##name
-#endif  // __DARWIN_UNIX03
+#  error "unknown architecture"
+#endif
 
   if (thread_get_state(samplee_thread, flavor,
                        reinterpret_cast<natural_t*>(&state),
                        &count) == KERN_SUCCESS) {
     Registers regs;
+#if defined(__x86_64__)
     regs.mPC = reinterpret_cast<Address>(state.REGISTER_FIELD(ip));
     regs.mSP = reinterpret_cast<Address>(state.REGISTER_FIELD(sp));
     regs.mFP = reinterpret_cast<Address>(state.REGISTER_FIELD(bp));
+#elif defined(__aarch64__)
+    regs.mPC = reinterpret_cast<Address>(state.REGISTER_FIELD(pc));
+    regs.mSP = reinterpret_cast<Address>(state.REGISTER_FIELD(sp));
+    regs.mFP = reinterpret_cast<Address>(state.REGISTER_FIELD(fp));
+#else
+#  error "unknown architecture"
+#endif
     regs.mLR = 0;
 
     aProcessRegs(regs, aNow);
@@ -147,7 +198,7 @@ static void* ThreadEntry(void* aArg) {
 }
 
 SamplerThread::SamplerThread(PSLockRef aLock, uint32_t aActivityGeneration,
-                             double aIntervalMilliseconds)
+                             double aIntervalMilliseconds, uint32_t aFeatures)
     : mSampler(aLock),
       mActivityGeneration(aActivityGeneration),
       mIntervalMicroseconds(
@@ -184,13 +235,15 @@ static void PlatformInit(PSLockRef aLock) {}
 
 #if defined(HAVE_NATIVE_UNWIND)
 void Registers::SyncPopulate() {
-  asm(
-      // Compute caller's %rsp by adding to %rbp:
-      // 8 bytes for previous %rbp, 8 bytes for return address
-      "leaq 0x10(%%rbp), %0\n\t"
-      // Dereference %rbp to get previous %rbp
-      "movq (%%rbp), %1\n\t"
-      : "=r"(mSP), "=r"(mFP));
+  // Derive the stack pointer from the frame pointer. The 0x10 offset is
+  // 8 bytes for the previous frame pointer and 8 bytes for the return
+  // address both stored on the stack after at the beginning of the current
+  // frame.
+  mSP = reinterpret_cast<Address>(__builtin_frame_address(0)) + 0x10;
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wframe-address"
+  mFP = reinterpret_cast<Address>(__builtin_frame_address(1));
+#  pragma GCC diagnostic pop
   mPC = reinterpret_cast<Address>(
       __builtin_extract_return_addr(__builtin_return_address(0)));
   mLR = 0;

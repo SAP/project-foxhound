@@ -21,6 +21,7 @@
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/SRILogHelper.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsIContent.h"
 #include "mozilla/dom/Document.h"
 #include "nsUnicharUtils.h"
@@ -31,8 +32,7 @@
 #include "nsStyleUtil.h"
 #include "nsQueryObject.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 LinkStyle::SheetInfo::SheetInfo(
     const Document& aDocument, nsIContent* aContent,
@@ -68,6 +68,13 @@ LinkStyle::LinkStyle()
     : mUpdatesEnabled(true), mLineNumber(1), mColumnNumber(1) {}
 
 LinkStyle::~LinkStyle() { LinkStyle::SetStyleSheet(nullptr); }
+
+StyleSheet* LinkStyle::GetSheetForBindings() const {
+  if (mStyleSheet && mStyleSheet->IsComplete()) {
+    return mStyleSheet;
+  }
+  return nullptr;
+}
 
 void LinkStyle::GetTitleAndMediaForElement(const Element& aSelf,
                                            nsString& aTitle, nsString& aMedia) {
@@ -202,14 +209,17 @@ Result<LinkStyle::Update, nsresult> LinkStyle::DoUpdateStyleSheet(
                "there should not be a old document and old "
                "ShadowRoot simultaneously.");
 
-    // We're removing the link element from the document or shadow tree,
-    // unload the stylesheet.  We want to do this even if updates are
-    // disabled, since otherwise a sheet with a stale linking element pointer
-    // will be hanging around -- not good!
-    if (aOldShadowRoot) {
-      aOldShadowRoot->RemoveStyleSheet(*mStyleSheet);
-    } else {
-      aOldDocument->RemoveStyleSheet(*mStyleSheet);
+    // We're removing the link element from the document or shadow tree, unload
+    // the stylesheet.
+    //
+    // We want to do this even if updates are disabled, since otherwise a sheet
+    // with a stale linking element pointer will be hanging around -- not good!
+    if (mStyleSheet->IsComplete()) {
+      if (aOldShadowRoot) {
+        aOldShadowRoot->RemoveStyleSheet(*mStyleSheet);
+      } else {
+        aOldDocument->RemoveStyleSheet(*mStyleSheet);
+      }
     }
 
     SetStyleSheet(nullptr);
@@ -240,17 +250,19 @@ Result<LinkStyle::Update, nsresult> LinkStyle::DoUpdateStyleSheet(
   }
 
   if (mStyleSheet) {
-    if (thisContent.IsInShadowTree()) {
-      ShadowRoot* containingShadow = thisContent.GetContainingShadow();
-      // Could be null only during unlink.
-      if (MOZ_LIKELY(containingShadow)) {
-        containingShadow->RemoveStyleSheet(*mStyleSheet);
+    if (mStyleSheet->IsComplete()) {
+      if (thisContent.IsInShadowTree()) {
+        ShadowRoot* containingShadow = thisContent.GetContainingShadow();
+        // Could be null only during unlink.
+        if (MOZ_LIKELY(containingShadow)) {
+          containingShadow->RemoveStyleSheet(*mStyleSheet);
+        }
+      } else {
+        doc->RemoveStyleSheet(*mStyleSheet);
       }
-    } else {
-      doc->RemoveStyleSheet(*mStyleSheet);
     }
 
-    LinkStyle::SetStyleSheet(nullptr);
+    SetStyleSheet(nullptr);
   }
 
   if (!info) {
@@ -306,5 +318,4 @@ Result<LinkStyle::Update, nsresult> LinkStyle::DoUpdateStyleSheet(
   return resultOrError;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 ta_LK{
-    Version{"37"}
     calendar{
         gregorian{
             DateTimePatterns{
@@ -14,10 +14,20 @@ ta_LK{
                 "d MMM, y",
                 "d/M/yy",
                 "{1}, {0}",
-                "{1} ’அன்று’ {0}",
-                "{1} ’அன்று’ {0}",
+                "{1} அன்று {0}",
+                "{1} அன்று {0}",
                 "{1}, {0}",
                 "{1}, {0}",
+            }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "yMMMMEEEEd",
+                "yMMMMd",
+                "yMMMd",
+                "yyMd",
             }
         }
     }

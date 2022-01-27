@@ -25,7 +25,6 @@ virtual JSContext* createContext() override {
     return nullptr;
   }
   JS_SetGCParameter(cx, JSGC_MAX_BYTES, (uint32_t)-1);
-  setNativeStackQuota(cx);
   return cx;
 }
 END_TEST(testOOM)
@@ -101,10 +100,14 @@ BEGIN_TEST(testHelperThreadOOM) {
 }
 
 bool init() override {
-  js::DestroyHelperThreadsState();
+  JSAPITest::uninit();              // Discard the just-created JSContext.
+  js::DestroyHelperThreadsState();  // The test creates this state.
   return true;
 }
-void uninit() override { js::CreateHelperThreadsState(); }
+void uninit() override {
+  // Leave things initialized after this test finishes.
+  js::CreateHelperThreadsState();
+}
 
 END_TEST(testHelperThreadOOM)
 

@@ -11,12 +11,17 @@
 
 #include "mozilla/Variant.h"
 
+#include "LookAndFeel.h"
 #include "nsITheme.h"
 #include "nsCOMPtr.h"
 #include "nsAtom.h"
 #include "nsNativeTheme.h"
+#include "nsNativeBasicThemeCocoa.h"
+#include "ScrollbarDrawingCocoa.h"
 
-@class CellDrawView;
+@class MOZCellDrawWindow;
+@class MOZCellDrawView;
+@class MOZSearchFieldCell;
 @class NSProgressBarCell;
 class nsDeviceContext;
 struct SegmentedControlRenderSettings;
@@ -28,27 +33,11 @@ class DrawTarget;
 }  // namespace gfx
 }  // namespace mozilla
 
-class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
- public:
-  enum {
-    eThemeGeometryTypeTitlebar = eThemeGeometryTypeUnknown + 1,
-    eThemeGeometryTypeToolbar,
-    eThemeGeometryTypeToolbox,
-    eThemeGeometryTypeWindowButtons,
-    eThemeGeometryTypeFullscreenButton,
-    eThemeGeometryTypeMenu,
-    eThemeGeometryTypeHighlightedMenuItem,
-    eThemeGeometryTypeVibrancyLight,
-    eThemeGeometryTypeVibrancyDark,
-    eThemeGeometryTypeVibrantTitlebarLight,
-    eThemeGeometryTypeVibrantTitlebarDark,
-    eThemeGeometryTypeTooltip,
-    eThemeGeometryTypeSheet,
-    eThemeGeometryTypeSourceList,
-    eThemeGeometryTypeSourceListSelection,
-    eThemeGeometryTypeActiveSourceListSelection
-  };
+class nsNativeThemeCocoa : public nsNativeBasicThemeCocoa {
+ protected:
+  using ScrollbarDrawingCocoa = mozilla::widget::ScrollbarDrawingCocoa;
 
+ public:
   enum class MenuIcon : uint8_t {
     eCheckmark,
     eMenuArrow,
@@ -61,9 +50,6 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
   enum class ButtonType : uint8_t {
     eRegularPushButton,
     eDefaultPushButton,
-    eRegularBevelButton,
-    eDefaultBevelButton,
-    eRoundedBezelPushButton,
     eSquareBezelPushButton,
     eArrowButton,
     eHelpButton,
@@ -90,11 +76,6 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
     bool rtl : 1;
   };
 
-  struct MenuBackgroundParams {
-    bool disabled = false;
-    bool submenuRightOfParent = false;
-  };
-
   struct MenuIconParams {
     MenuIcon icon = MenuIcon::eCheckmark;
     bool disabled = false;
@@ -104,7 +85,6 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
   };
 
   struct MenuItemParams {
-    bool backgroundIsVibrant = false;
     bool checked = false;
     bool disabled = false;
     bool selected = false;
@@ -147,18 +127,7 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
     bool rtl = false;
   };
 
-  struct UnifiedToolbarParams {
-    float unifiedHeight = 0.0f;
-    bool isMain = false;
-  };
-
-  struct TextBoxParams {
-    bool disabled = false;
-    bool focused = false;
-    bool borderless = false;
-  };
-
-  struct SearchFieldParams {
+  struct TextFieldParams {
     float verticalAlignFactor = 0.5f;
     bool insideToolbar = false;
     bool disabled = false;
@@ -203,52 +172,28 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
     bool reverse = false;
   };
 
-  struct ScrollbarParams {
-    ScrollbarParams()
-        : overlay(false),
-          rolledOver(false),
-          small(false),
-          horizontal(false),
-          rtl(false),
-          onDarkBackground(false),
-          custom(false) {}
-
-    bool overlay : 1;
-    bool rolledOver : 1;
-    bool small : 1;
-    bool horizontal : 1;
-    bool rtl : 1;
-    bool onDarkBackground : 1;
-    bool custom : 1;
-    // Two colors only used when custom is true.
-    nscolor trackColor = NS_RGBA(0, 0, 0, 0);
-    nscolor faceColor = NS_RGBA(0, 0, 0, 0);
-  };
+  using ScrollbarParams = mozilla::widget::ScrollbarDrawing::ScrollbarParams;
 
   enum Widget : uint8_t {
-    eColorFill,       // mozilla::gfx::sRGBColor
-    eMenuBackground,  // MenuBackgroundParams
-    eMenuIcon,        // MenuIconParams
-    eMenuItem,        // MenuItemParams
-    eMenuSeparator,   // MenuItemParams
-    eTooltip,
-    eCheckbox,  // CheckboxOrRadioParams
-    eRadio,     // CheckboxOrRadioParams
-    eButton,    // ButtonParams
-    eDropdown,  // DropdownParams
+    eColorFill,      // mozilla::gfx::sRGBColor
+    eMenuIcon,       // MenuIconParams
+    eMenuItem,       // MenuItemParams
+    eMenuSeparator,  // MenuItemParams
+    eCheckbox,       // CheckboxOrRadioParams
+    eRadio,          // CheckboxOrRadioParams
+    eButton,         // ButtonParams
+    eDropdown,       // DropdownParams
     eFocusOutline,
     eSpinButtons,     // SpinButtonParams
     eSpinButtonUp,    // SpinButtonParams
     eSpinButtonDown,  // SpinButtonParams
     eSegment,         // SegmentParams
     eSeparator,
-    eUnifiedToolbar,  // UnifiedToolbarParams
-    eToolbar,         // bool
-    eNativeTitlebar,  // UnifiedToolbarParams
-    eStatusBar,       // bool
+    eToolbar,    // bool
+    eStatusBar,  // bool
     eGroupBox,
-    eTextBox,             // TextBoxParams
-    eSearchField,         // SearchFieldParams
+    eTextField,           // TextFieldParams
+    eSearchField,         // TextFieldParams
     eProgressBar,         // ProgressParams
     eMeter,               // MeterParams
     eTreeHeaderCell,      // TreeHeaderCellParams
@@ -258,7 +203,6 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
     eScrollCorner,        // ScrollbarParams
     eMultilineTextField,  // bool
     eListBox,
-    eSourceList,                   // bool
     eActiveSourceListSelection,    // bool
     eInactiveSourceListSelection,  // bool
     eTabPanel,
@@ -269,9 +213,6 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
     static WidgetInfo ColorFill(const mozilla::gfx::sRGBColor& aParams) {
       return WidgetInfo(Widget::eColorFill, aParams);
     }
-    static WidgetInfo MenuBackground(const MenuBackgroundParams& aParams) {
-      return WidgetInfo(Widget::eMenuBackground, aParams);
-    }
     static WidgetInfo MenuIcon(const MenuIconParams& aParams) {
       return WidgetInfo(Widget::eMenuIcon, aParams);
     }
@@ -281,7 +222,6 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
     static WidgetInfo MenuSeparator(const MenuItemParams& aParams) {
       return WidgetInfo(Widget::eMenuSeparator, aParams);
     }
-    static WidgetInfo Tooltip() { return WidgetInfo(Widget::eTooltip, false); }
     static WidgetInfo Checkbox(const CheckboxOrRadioParams& aParams) {
       return WidgetInfo(Widget::eCheckbox, aParams);
     }
@@ -308,19 +248,13 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
       return WidgetInfo(Widget::eSegment, aParams);
     }
     static WidgetInfo Separator() { return WidgetInfo(Widget::eSeparator, false); }
-    static WidgetInfo UnifiedToolbar(const UnifiedToolbarParams& aParams) {
-      return WidgetInfo(Widget::eUnifiedToolbar, aParams);
-    }
     static WidgetInfo Toolbar(bool aParams) { return WidgetInfo(Widget::eToolbar, aParams); }
-    static WidgetInfo NativeTitlebar(const UnifiedToolbarParams& aParams) {
-      return WidgetInfo(Widget::eNativeTitlebar, aParams);
-    }
     static WidgetInfo StatusBar(bool aParams) { return WidgetInfo(Widget::eStatusBar, aParams); }
     static WidgetInfo GroupBox() { return WidgetInfo(Widget::eGroupBox, false); }
-    static WidgetInfo TextBox(const TextBoxParams& aParams) {
-      return WidgetInfo(Widget::eTextBox, aParams);
+    static WidgetInfo TextField(const TextFieldParams& aParams) {
+      return WidgetInfo(Widget::eTextField, aParams);
     }
-    static WidgetInfo SearchField(const SearchFieldParams& aParams) {
+    static WidgetInfo SearchField(const TextFieldParams& aParams) {
       return WidgetInfo(Widget::eSearchField, aParams);
     }
     static WidgetInfo ProgressBar(const ProgressParams& aParams) {
@@ -348,7 +282,6 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
       return WidgetInfo(Widget::eMultilineTextField, aParams);
     }
     static WidgetInfo ListBox() { return WidgetInfo(Widget::eListBox, false); }
-    static WidgetInfo SourceList(bool aParams) { return WidgetInfo(Widget::eSourceList, aParams); }
     static WidgetInfo ActiveSourceListSelection(bool aParams) {
       return WidgetInfo(Widget::eActiveSourceListSelection, aParams);
     }
@@ -370,9 +303,8 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
     template <typename T>
     WidgetInfo(enum Widget aWidget, const T& aParams) : mVariant(aParams), mWidget(aWidget) {}
 
-    mozilla::Variant<mozilla::gfx::sRGBColor, MenuBackgroundParams, MenuIconParams, MenuItemParams,
-                     CheckboxOrRadioParams, ButtonParams, DropdownParams, SpinButtonParams,
-                     SegmentParams, UnifiedToolbarParams, TextBoxParams, SearchFieldParams,
+    mozilla::Variant<mozilla::gfx::sRGBColor, MenuIconParams, MenuItemParams, CheckboxOrRadioParams,
+                     ButtonParams, DropdownParams, SpinButtonParams, SegmentParams, TextFieldParams,
                      ProgressParams, MeterParams, TreeHeaderCellParams, ScaleParams,
                      ScrollbarParams, bool>
         mVariant;
@@ -380,14 +312,14 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
     enum Widget mWidget;
   };
 
-  nsNativeThemeCocoa();
+  explicit nsNativeThemeCocoa(mozilla::UniquePtr<ScrollbarDrawing>&& aScrollbarDrawingCocoa);
 
   NS_DECL_ISUPPORTS_INHERITED
 
   // The nsITheme interface.
   NS_IMETHOD DrawWidgetBackground(gfxContext* aContext, nsIFrame* aFrame,
                                   StyleAppearance aAppearance, const nsRect& aRect,
-                                  const nsRect& aDirtyRect) override;
+                                  const nsRect& aDirtyRect, DrawOverflow) override;
   bool CreateWebRenderCommandsForWidget(mozilla::wr::DisplayListBuilder& aBuilder,
                                         mozilla::wr::IpcResourceUpdateQueue& aResources,
                                         const mozilla::layers::StackingContextHelper& aSc,
@@ -403,6 +335,7 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
   virtual bool GetWidgetOverflow(nsDeviceContext* aContext, nsIFrame* aFrame,
                                  StyleAppearance aAppearance, nsRect* aOverflowRect) override;
 
+  ScrollbarSizes GetScrollbarSizes(nsPresContext*, StyleScrollbarWidth, Overlay) override;
   NS_IMETHOD GetMinimumWidgetSize(nsPresContext* aPresContext, nsIFrame* aFrame,
                                   StyleAppearance aAppearance,
                                   mozilla::LayoutDeviceIntSize* aResult,
@@ -413,7 +346,7 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
   bool ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame* aFrame,
                            StyleAppearance aAppearance) override;
   bool WidgetIsContainer(StyleAppearance aAppearance) override;
-  bool ThemeDrawsFocusForWidget(StyleAppearance aAppearance) override;
+  bool ThemeDrawsFocusForWidget(nsIFrame*, StyleAppearance) override;
   bool ThemeNeedsComboboxDropmarker() override;
   virtual bool WidgetAppearanceDependsOnWindowFocus(StyleAppearance aAppearance) override;
   virtual ThemeGeometryType ThemeGeometryTypeForWidget(nsIFrame* aFrame,
@@ -424,26 +357,20 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
                                                const nsRect& aRect);
   void DrawProgress(CGContextRef context, const HIRect& inBoxRect, const ProgressParams& aParams);
 
-  static void DrawNativeTitlebar(CGContextRef aContext, CGRect aTitlebarRect,
-                                 CGFloat aUnifiedHeight, BOOL aIsMain, BOOL aIsFlipped);
-
  protected:
   virtual ~nsNativeThemeCocoa();
 
   LayoutDeviceIntMargin DirectionAwareMargin(const LayoutDeviceIntMargin& aMargin,
                                              nsIFrame* aFrame);
   nsIFrame* SeparatorResponsibility(nsIFrame* aBefore, nsIFrame* aAfter);
-  bool IsWindowSheet(nsIFrame* aFrame);
   ControlParams ComputeControlParams(nsIFrame* aFrame, mozilla::EventStates aEventState);
-  MenuBackgroundParams ComputeMenuBackgroundParams(nsIFrame* aFrame,
-                                                   mozilla::EventStates aEventState);
   MenuIconParams ComputeMenuIconParams(nsIFrame* aParams, mozilla::EventStates aEventState,
                                        MenuIcon aIcon);
   MenuItemParams ComputeMenuItemParams(nsIFrame* aFrame, mozilla::EventStates aEventState,
                                        bool aIsChecked);
   SegmentParams ComputeSegmentParams(nsIFrame* aFrame, mozilla::EventStates aEventState,
                                      SegmentType aSegmentType);
-  SearchFieldParams ComputeSearchFieldParams(nsIFrame* aFrame, mozilla::EventStates aEventState);
+  TextFieldParams ComputeTextFieldParams(nsIFrame* aFrame, mozilla::EventStates aEventState);
   ProgressParams ComputeProgressParams(nsIFrame* aFrame, mozilla::EventStates aEventState,
                                        bool aIsHorizontal);
   MeterParams ComputeMeterParams(nsIFrame* aFrame);
@@ -451,28 +378,28 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
                                                    mozilla::EventStates aEventState);
   mozilla::Maybe<ScaleParams> ComputeHTMLScaleParams(nsIFrame* aFrame,
                                                      mozilla::EventStates aEventState);
-  ScrollbarParams ComputeScrollbarParams(nsIFrame* aFrame, bool aIsHorizontal);
 
   // HITheme drawing routines
-  void DrawTextBox(CGContextRef context, const HIRect& inBoxRect, TextBoxParams aParams);
   void DrawMeter(CGContextRef context, const HIRect& inBoxRect, const MeterParams& aParams);
   void DrawSegment(CGContextRef cgContext, const HIRect& inBoxRect, const SegmentParams& aParams);
+  void DrawSegmentBackground(CGContextRef cgContext, const HIRect& inBoxRect,
+                             const SegmentParams& aParams);
   void DrawTabPanel(CGContextRef context, const HIRect& inBoxRect, bool aIsInsideActiveWindow);
   void DrawScale(CGContextRef context, const HIRect& inBoxRect, const ScaleParams& aParams);
   void DrawCheckboxOrRadio(CGContextRef cgContext, bool inCheckbox, const HIRect& inBoxRect,
                            const CheckboxOrRadioParams& aParams);
   void DrawSearchField(CGContextRef cgContext, const HIRect& inBoxRect,
-                       const SearchFieldParams& aParams);
-  void DrawRoundedBezelPushButton(CGContextRef cgContext, const HIRect& inBoxRect,
-                                  ControlParams aControlParams);
+                       const TextFieldParams& aParams);
+  void DrawTextField(CGContextRef cgContext, const HIRect& inBoxRect,
+                     const TextFieldParams& aParams);
+  void DrawPushButton(CGContextRef cgContext, const HIRect& inBoxRect, ButtonType aButtonType,
+                      ControlParams aControlParams);
   void DrawSquareBezelPushButton(CGContextRef cgContext, const HIRect& inBoxRect,
                                  ControlParams aControlParams);
   void DrawHelpButton(CGContextRef cgContext, const HIRect& inBoxRect,
                       ControlParams aControlParams);
   void DrawDisclosureButton(CGContextRef cgContext, const HIRect& inBoxRect,
                             ControlParams aControlParams, NSCellStateValue aState);
-  void DrawMenuBackground(CGContextRef cgContext, const CGRect& inBoxRect,
-                          const MenuBackgroundParams& aParams);
   NSString* GetMenuIconName(const MenuIconParams& aParams);
   NSSize GetMenuIconSize(MenuIcon aIcon);
   void DrawMenuIcon(CGContextRef cgContext, const CGRect& aRect, const MenuIconParams& aParams);
@@ -493,26 +420,15 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
   void DrawSpinButton(CGContextRef context, const HIRect& inBoxRect, SpinButton aDrawnButton,
                       const SpinButtonParams& aParams);
   void DrawToolbar(CGContextRef cgContext, const CGRect& inBoxRect, bool aIsMain);
-  void DrawUnifiedToolbar(CGContextRef cgContext, const HIRect& inBoxRect,
-                          const UnifiedToolbarParams& aParams);
-  void DrawNativeTitlebar(CGContextRef aContext, CGRect aTitlebarRect,
-                          const UnifiedToolbarParams& aParams);
   void DrawStatusBar(CGContextRef cgContext, const HIRect& inBoxRect, bool aIsMain);
   void DrawResizer(CGContextRef cgContext, const HIRect& aRect, bool aIsRTL);
-  void DrawScrollbarThumb(CGContextRef cgContext, const CGRect& inBoxRect, ScrollbarParams aParams);
-  void DrawScrollbarTrack(CGContextRef cgContext, const CGRect& inBoxRect, ScrollbarParams aParams);
-  void DrawScrollCorner(CGContextRef cgContext, const CGRect& inBoxRect, ScrollbarParams aParams);
   void DrawMultilineTextField(CGContextRef cgContext, const CGRect& inBoxRect, bool aIsFocused);
-  void DrawSourceList(CGContextRef cgContext, const CGRect& inBoxRect, bool aIsActive);
   void DrawSourceListSelection(CGContextRef aContext, const CGRect& aRect, bool aWindowIsActive,
                                bool aSelectionIsActive);
 
-  // Scrollbars
-  bool IsParentScrollbarRolledOver(nsIFrame* aFrame);
-
-  void RenderWidget(const WidgetInfo& aWidgetInfo, mozilla::gfx::DrawTarget& aDrawTarget,
-                    const mozilla::gfx::Rect& aWidgetRect, const mozilla::gfx::Rect& aDirtyRect,
-                    float aScale);
+  void RenderWidget(const WidgetInfo& aWidgetInfo, mozilla::LookAndFeel::ColorScheme,
+                    mozilla::gfx::DrawTarget& aDrawTarget, const mozilla::gfx::Rect& aWidgetRect,
+                    const mozilla::gfx::Rect& aDirtyRect, float aScale);
 
  private:
   NSButtonCell* mDisclosureButtonCell;
@@ -520,13 +436,15 @@ class nsNativeThemeCocoa : private nsNativeTheme, public nsITheme {
   NSButtonCell* mPushButtonCell;
   NSButtonCell* mRadioButtonCell;
   NSButtonCell* mCheckboxCell;
-  NSSearchFieldCell* mSearchFieldCell;
-  NSSearchFieldCell* mToolbarSearchFieldCell;
+  NSTextFieldCell* mTextFieldCell;
+  MOZSearchFieldCell* mSearchFieldCell;
   NSPopUpButtonCell* mDropdownCell;
   NSComboBoxCell* mComboBoxCell;
   NSProgressBarCell* mProgressBarCell;
   NSLevelIndicatorCell* mMeterBarCell;
-  CellDrawView* mCellDrawView;
+  NSTableHeaderCell* mTreeHeaderCell;
+  MOZCellDrawWindow* mCellDrawWindow = nil;
+  MOZCellDrawView* mCellDrawView;
 };
 
 #endif  // nsNativeThemeCocoa_h_

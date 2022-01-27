@@ -16,34 +16,37 @@ namespace InspectorUtils {
   sequence<StyleSheet> getAllStyleSheets(Document document, optional boolean documentOnly = false);
   sequence<CSSStyleRule> getCSSStyleRules(
     Element element,
-    optional [TreatNullAs=EmptyString] DOMString pseudo = "",
+    optional [LegacyNullToEmptyString] DOMString pseudo = "",
     optional boolean relevantLinkVisited = false);
   unsigned long getRuleLine(CSSRule rule);
   unsigned long getRuleColumn(CSSRule rule);
   unsigned long getRelativeRuleLine(CSSRule rule);
   boolean hasRulesModifiedByCSSOM(CSSStyleSheet sheet);
   unsigned long getSelectorCount(CSSStyleRule rule);
-  [Throws] DOMString getSelectorText(CSSStyleRule rule,
-                                     unsigned long selectorIndex);
+  [Throws] UTF8String getSelectorText(CSSStyleRule rule,
+                                      unsigned long selectorIndex);
   [Throws] unsigned long long getSpecificity(CSSStyleRule rule,
                                              unsigned long selectorIndex);
   [Throws] boolean selectorMatchesElement(
       Element element,
       CSSStyleRule rule,
       unsigned long selectorIndex,
-      optional [TreatNullAs=EmptyString] DOMString pseudo = "",
+      optional [LegacyNullToEmptyString] DOMString pseudo = "",
       optional boolean includeVisitedStyle = false);
   boolean isInheritedProperty(UTF8String property);
   sequence<DOMString> getCSSPropertyNames(optional PropertyNamesOptions options = {});
   sequence<PropertyPref> getCSSPropertyPrefs();
   [Throws] sequence<DOMString> getCSSValuesForProperty(UTF8String property);
   [Throws] DOMString rgbToColorName(octet r, octet g, octet b);
-  InspectorRGBATuple? colorToRGBA(UTF8String colorString);
+  InspectorRGBATuple? colorToRGBA(UTF8String colorString, optional Document? doc = null);
   boolean isValidCSSColor(UTF8String colorString);
   [Throws] sequence<DOMString> getSubpropertiesForCSSProperty(UTF8String property);
   [Throws] boolean cssPropertyIsShorthand(UTF8String property);
 
   [Throws] boolean cssPropertySupportsType(UTF8String property, InspectorPropertyType type);
+
+  // A version of CSS.supports that allows you to set UA or chrome context.
+  boolean supports(UTF8String conditionText, optional SupportsOptions options = {});
 
   boolean isIgnorableWhitespace(CharacterData dataNode);
   Node? getParentForNode(Node node, boolean showingAnonymousContent);
@@ -74,7 +77,7 @@ namespace InspectorUtils {
   boolean hasPseudoClassLock(Element element, DOMString pseudoClass);
   void clearPseudoClassLocks(Element element);
   [Throws] void parseStyleSheet(CSSStyleSheet sheet, UTF8String input);
-  boolean isCustomElementName([TreatNullAs=EmptyString] DOMString name,
+  boolean isCustomElementName([LegacyNullToEmptyString] DOMString name,
                               DOMString? namespaceURI);
 
   boolean isElementThemed(Element element);
@@ -82,6 +85,12 @@ namespace InspectorUtils {
   Element? containingBlockOf(Element element);
 
   [NewObject] NodeList getOverflowingChildrenOfElement(Element element);
+};
+
+dictionary SupportsOptions {
+  boolean userAgent = false;
+  boolean chrome = false;
+  boolean quirks = false;
 };
 
 dictionary PropertyNamesOptions {

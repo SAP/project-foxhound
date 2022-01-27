@@ -12,16 +12,14 @@ use std::{
     thread::{self, Thread},
 };
 
+use crate::take_unchecked;
+
 #[derive(Debug)]
 pub(crate) struct OnceCell<T> {
     // This `state` word is actually an encoded version of just a pointer to a
     // `Waiter`, so we add the `PhantomData` appropriately.
     state_and_queue: AtomicUsize,
     _marker: PhantomData<*mut Waiter>,
-    // FIXME: switch to `std::mem::MaybeUninit` once we are ready to bump MSRV
-    // that far. It was stabilized in 1.36.0, so, if you are reading this and
-    // it's higher than 1.46.0 outside, please send a PR! ;) (and do the same
-    // for `Lazy`, while we are at it).
     value: UnsafeCell<Option<T>>,
 }
 
@@ -93,7 +91,7 @@ impl<T> OnceCell<T> {
         let mut res: Result<(), E> = Ok(());
         let slot: *mut Option<T> = self.value.get();
         initialize_inner(&self.state_and_queue, &mut || {
-            let f = f.take().unwrap();
+            let f = unsafe { take_unchecked(&mut f) };
             match f() {
                 Ok(value) => {
                     unsafe { *slot = Some(value) };
@@ -148,6 +146,7 @@ impl<T> OnceCell<T> {
 
 // Corresponds to `std::sync::Once::call_inner`
 // Note: this is intentionally monomorphic
+#[inline(never)]
 fn initialize_inner(my_state_and_queue: &AtomicUsize, init: &mut dyn FnMut() -> bool) -> bool {
     let mut state_and_queue = my_state_and_queue.load(Ordering::Acquire);
 
@@ -155,12 +154,13 @@ fn initialize_inner(my_state_and_queue: &AtomicUsize, init: &mut dyn FnMut() -> 
         match state_and_queue {
             COMPLETE => return true,
             INCOMPLETE => {
-                let old = my_state_and_queue.compare_and_swap(
+                let exchange = my_state_and_queue.compare_exchange(
                     state_and_queue,
                     RUNNING,
                     Ordering::Acquire,
+                    Ordering::Acquire,
                 );
-                if old != state_and_queue {
+                if let Err(old) = exchange {
                     state_and_queue = old;
                     continue;
                 }
@@ -197,8 +197,13 @@ fn wait(state_and_queue: &AtomicUsize, mut current_state: usize) {
         };
         let me = &node as *const Waiter as usize;
 
-        let old = state_and_queue.compare_and_swap(current_state, me | RUNNING, Ordering::Release);
-        if old != current_state {
+        let exchange = state_and_queue.compare_exchange(
+            current_state,
+            me | RUNNING,
+            Ordering::Release,
+            Ordering::Relaxed,
+        );
+        if let Err(old) = exchange {
             current_state = old;
             continue;
         }
@@ -257,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore)] // miri doesn't support threads
+    #[cfg(not(miri))]
     fn stampede_once() {
         static O: OnceCell<()> = OnceCell::new();
         static mut RUN: bool = false;
@@ -315,7 +320,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore)] // miri doesn't support threads
     fn wait_for_force_to_finish() {
         static O: OnceCell<()> = OnceCell::new();
 

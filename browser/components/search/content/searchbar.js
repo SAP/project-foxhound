@@ -24,24 +24,22 @@
     static get markup() {
       return `
         <stringbundle src="chrome://browser/locale/search.properties"></stringbundle>
-        <hbox class="searchbar-search-button" tooltiptext="&searchIcon.tooltip;">
+        <hbox class="searchbar-search-button" data-l10n-id="searchbar-icon">
           <image class="searchbar-search-icon"></image>
           <image class="searchbar-search-icon-overlay"></image>
         </hbox>
-        <html:input class="searchbar-textbox" is="autocomplete-input" type="search" placeholder="&searchInput.placeholder;" autocompletepopup="PopupSearchAutoComplete" autocompletesearch="search-autocomplete" autocompletesearchparam="searchbar-history" maxrows="10" completeselectedindex="true" minresultsforpopup="0"/>
+        <html:input class="searchbar-textbox" is="autocomplete-input" type="search" data-l10n-id="searchbar-input" autocompletepopup="PopupSearchAutoComplete" autocompletesearch="search-autocomplete" autocompletesearchparam="searchbar-history" maxrows="10" completeselectedindex="true" minresultsforpopup="0"/>
         <menupopup class="textbox-contextmenu"></menupopup>
         <hbox class="search-go-container">
-          <image class="search-go-button urlbar-icon" hidden="true" onclick="handleSearchCommand(event);" tooltiptext="&contentSearchSubmit.tooltip;"></image>
+          <image class="search-go-button urlbar-icon" hidden="true" onclick="handleSearchCommand(event);" data-l10n-id="searchbar-submit"></image>
         </hbox>
       `;
     }
 
-    static get entities() {
-      return ["chrome://browser/locale/browser.dtd"];
-    }
-
     constructor() {
       super();
+
+      MozXULElement.insertFTLIfNeeded("browser/search.ftl");
 
       this.destroy = this.destroy.bind(this);
       this._setupEventListeners();
@@ -65,6 +63,7 @@
 
       this._ignoreFocus = false;
       this._engines = null;
+      this.telemetrySelectedIndex = -1;
     }
 
     connectedCallback() {
@@ -106,6 +105,10 @@
         "resource://gre/modules/FormHistory.jsm",
         {}
       ).FormHistory;
+      this.SearchSuggestionController = ChromeUtils.import(
+        "resource://gre/modules/SearchSuggestionController.jsm",
+        {}
+      ).SearchSuggestionController;
 
       Services.obs.addObserver(this.observer, "browser-search-engine-modified");
       Services.obs.addObserver(this.observer, "browser-search-service");
@@ -167,7 +170,6 @@
       } else {
         Services.search.defaultEngine = val;
       }
-      return val;
     }
 
     get currentEngine() {
@@ -189,7 +191,7 @@
     }
 
     set value(val) {
-      return (this._textbox.value = val);
+      this._textbox.value = val;
     }
 
     get value() {
@@ -294,6 +296,7 @@
     handleSearchCommand(aEvent, aEngine, aForceNewTab) {
       let where = "current";
       let params;
+      const newTabPref = Services.prefs.getBoolPref("browser.search.openintab");
 
       // Open ctrl/cmd clicks on one-off buttons in a new background tab.
       if (
@@ -304,13 +307,21 @@
           return;
         }
         where = whereToOpenLink(aEvent, false, true);
+        if (
+          newTabPref &&
+          !aEvent.altKey &&
+          !aEvent.getModifierState("AltGraph") &&
+          where == "current" &&
+          !gBrowser.selectedTab.isEmpty
+        ) {
+          where = "tab";
+        }
       } else if (aForceNewTab) {
         where = "tab";
         if (Services.prefs.getBoolPref("browser.tabs.loadInBackground")) {
           where += "-background";
         }
       } else {
-        let newTabPref = Services.prefs.getBoolPref("browser.search.openintab");
         if (
           (aEvent instanceof KeyboardEvent &&
             (aEvent.altKey || aEvent.getModifierState("AltGraph"))) ^
@@ -329,74 +340,62 @@
           };
         }
       }
-
       this.handleSearchCommandWhere(aEvent, aEngine, where, params);
     }
 
-    handleSearchCommandWhere(aEvent, aEngine, aWhere, aParams) {
+    handleSearchCommandWhere(aEvent, aEngine, aWhere, aParams = {}) {
       let textBox = this._textbox;
       let textValue = textBox.value;
 
-      let selection = this.telemetrySearchDetails;
-      let oneOffRecorded = false;
+      let selectedIndex = this.telemetrySelectedIndex;
+      let isOneOff = false;
 
-      BrowserUsageTelemetry.recordSearchbarSelectedResultMethod(
+      BrowserSearchTelemetry.recordSearchSuggestionSelectionMethod(
         aEvent,
-        selection ? selection.index : -1
+        "searchbar",
+        selectedIndex
       );
 
-      if (!selection || selection.index == -1) {
-        oneOffRecorded = this.textbox.popup.oneOffButtons.maybeRecordTelemetry(
+      if (selectedIndex == -1) {
+        isOneOff = this.textbox.popup.oneOffButtons.eventTargetIsAOneOff(
           aEvent
         );
-        if (!oneOffRecorded) {
-          let source = "unknown";
-          let type = "unknown";
-          let target = aEvent.originalTarget;
-          if (aEvent instanceof KeyboardEvent) {
-            type = "key";
-          } else if (aEvent instanceof MouseEvent) {
-            type = "mouse";
-            if (
-              target.classList.contains("search-panel-header") ||
-              target.parentNode.classList.contains("search-panel-header")
-            ) {
-              source = "header";
-            }
-          } else if (aEvent instanceof XULCommandEvent) {
-            if (target.getAttribute("anonid") == "paste-and-search") {
-              source = "paste";
-            }
-          }
-          if (!aEngine) {
-            aEngine = this.currentEngine;
-          }
-          BrowserSearch.recordOneoffSearchInTelemetry(aEngine, source, type);
-        }
+      }
+
+      if (aWhere === "tab" && !!aParams.inBackground) {
+        // Keep the focus in the search bar.
+        aParams.avoidBrowserFocus = true;
+      } else if (
+        aWhere !== "window" &&
+        aEvent.keyCode === KeyEvent.DOM_VK_RETURN
+      ) {
+        // Move the focus to the selected browser when keyup the Enter.
+        aParams.avoidBrowserFocus = true;
+        this._needBrowserFocusAtEnterKeyUp = true;
       }
 
       // This is a one-off search only if oneOffRecorded is true.
-      this.doSearch(textValue, aWhere, aEngine, aParams, oneOffRecorded);
-
-      if (aWhere == "tab" && aParams && aParams.inBackground) {
-        this.focus();
-      }
+      this.doSearch(textValue, aWhere, aEngine, aParams, isOneOff);
     }
 
-    doSearch(aData, aWhere, aEngine, aParams, aOneOff) {
+    doSearch(aData, aWhere, aEngine, aParams, isOneOff = false) {
       let textBox = this._textbox;
+      let engine = aEngine || this.currentEngine;
 
       // Save the current value in the form history
       if (
         aData &&
         !PrivateBrowsingUtils.isWindowPrivate(window) &&
-        this.FormHistory.enabled
+        this.FormHistory.enabled &&
+        aData.length <=
+          this.SearchSuggestionController.SEARCH_HISTORY_MAX_VALUE_LENGTH
       ) {
         this.FormHistory.update(
           {
             op: "bump",
             fieldname: textBox.getAttribute("autocompletesearchparam"),
             value: aData,
+            source: engine.name,
           },
           {
             handleError(aError) {
@@ -408,20 +407,23 @@
         );
       }
 
-      let engine = aEngine || this.currentEngine;
       let submission = engine.getSubmission(aData, null, "searchbar");
-      let telemetrySearchDetails = this.telemetrySearchDetails;
-      this.telemetrySearchDetails = null;
-      if (telemetrySearchDetails && telemetrySearchDetails.index == -1) {
-        telemetrySearchDetails = null;
-      }
+
       // If we hit here, we come either from a one-off, a plain search or a suggestion.
       const details = {
-        isOneOff: aOneOff,
-        isSuggestion: !aOneOff && telemetrySearchDetails,
-        selection: telemetrySearchDetails,
+        isOneOff,
+        isSuggestion: !isOneOff && this.telemetrySelectedIndex != -1,
+        url: submission.uri,
       };
-      BrowserSearch.recordSearchInTelemetry(engine, "searchbar", details);
+
+      this.telemetrySelectedIndex = -1;
+
+      BrowserSearchTelemetry.recordSearch(
+        gBrowser.selectedBrowser,
+        engine,
+        "searchbar",
+        details
+      );
       // null parameter below specifies HTML response for search
       let params = {
         postData: submission.postData,
@@ -481,6 +483,10 @@
       this.addEventListener(
         "blur",
         event => {
+          // Reset the flag since we can't capture enter keyup event if the event happens
+          // after moving the focus.
+          this._needBrowserFocusAtEnterKeyUp = false;
+
           // If the input field is still focused then a different window has
           // received focus, ignore the next focus event.
           this._ignoreFocus = document.activeElement == this._textbox;
@@ -590,6 +596,12 @@
 
         BrowserSearch.searchBar._textbox.closePopup();
 
+        // Make sure the context menu isn't opened via keyboard shortcut. Check for text selection
+        // before updating the state of any menu items.
+        if (event.button) {
+          this._maybeSelectAll();
+        }
+
         // Update disabled state of menu items
         for (let item of this._menupopup.querySelectorAll("menuitem[cmd]")) {
           let command = item.getAttribute("cmd");
@@ -606,10 +618,6 @@
 
         this._menupopup.openPopupAtScreen(event.screenX, event.screenY, true);
 
-        // Make sure the context menu isn't opened via keyboard shortcut.
-        if (event.button) {
-          this._maybeSelectAll();
-        }
         event.preventDefault();
       });
     }
@@ -637,7 +645,6 @@
         },
         set(val) {
           this.setAttribute("autocompletesearchparam", val);
-          return val;
         },
       });
 
@@ -646,7 +653,7 @@
           return this.popup.oneOffButtons.selectedButton;
         },
         set(val) {
-          return (this.popup.oneOffButtons.selectedButton = val);
+          this.popup.oneOffButtons.selectedButton = val;
         },
       });
 
@@ -687,14 +694,22 @@
         }
 
         let popup = this.textbox.popup;
-        if (!popup.popupOpen) {
-          return false;
+        if (popup.popupOpen) {
+          let suggestionsHidden =
+            popup.richlistbox.getAttribute("collapsed") == "true";
+          let numItems = suggestionsHidden ? 0 : popup.matchCount;
+          return popup.oneOffButtons.handleKeyDown(aEvent, numItems, true);
+        } else if (aEvent.keyCode == KeyEvent.DOM_VK_ESCAPE) {
+          let undoCount = this.textbox.editor.transactionManager
+            .numberOfUndoItems;
+          if (undoCount) {
+            this.textbox.editor.undo(undoCount);
+          } else {
+            this.textbox.select();
+          }
+          return true;
         }
-
-        let suggestionsHidden =
-          popup.richlistbox.getAttribute("collapsed") == "true";
-        let numItems = suggestionsHidden ? 0 : popup.matchCount;
-        return popup.oneOffButtons.handleKeyDown(aEvent, numItems, true);
+        return false;
       };
 
       // This method overrides the autocomplete binding's openPopup (essentially
@@ -729,18 +744,16 @@
           // clear any previous selection, see bugs 400671 and 488357
           popup.selectedIndex = -1;
 
-          document.popupNode = null;
-
           // Ensure the panel has a meaningful initial size and doesn't grow
           // unconditionally.
           requestAnimationFrame(() => {
             let { width } = window.windowUtils.getBoundsWithoutFlushing(this);
             if (popup.oneOffButtons) {
               // We have a min-width rule on search-panel-one-offs to show at
-              // least 3 buttons, so take that into account here.
-              width = Math.max(width, popup.oneOffButtons.buttonWidth * 3);
+              // least 4 buttons, so take that into account here.
+              width = Math.max(width, popup.oneOffButtons.buttonWidth * 4);
             }
-            popup.style.width = width + "px";
+            popup.style.setProperty("--panel-width", width + "px");
           });
 
           popup._invalidate();
@@ -776,6 +789,8 @@
 
       // override |onTextEntered| in autocomplete.xml
       this.textbox.onTextEntered = event => {
+        this.textbox.editor.transactionManager.clearUndoStack();
+
         let engine;
         let oneOff = this.textbox.selectedButton;
         if (oneOff) {
@@ -785,24 +800,34 @@
           }
           engine = oneOff.engine;
         }
-        if (this.textbox._selectionDetails) {
-          BrowserSearch.searchBar.telemetrySearchDetails = this.textbox._selectionDetails;
-          this.textbox._selectionDetails = null;
+        if (this.textbox.popupSelectedIndex != -1) {
+          this.telemetrySelectedIndex = this.textbox.popupSelectedIndex;
+          this.textbox.popupSelectedIndex = -1;
         }
         this.handleSearchCommand(event, engine);
+      };
+
+      this.textbox.onkeyup = event => {
+        if (
+          event.keyCode === KeyEvent.DOM_VK_RETURN &&
+          this._needBrowserFocusAtEnterKeyUp
+        ) {
+          this._needBrowserFocusAtEnterKeyUp = false;
+          gBrowser.selectedBrowser.focus();
+        }
       };
     }
 
     _buildContextMenu() {
       const raw = `
         <menuitem data-l10n-id="text-action-undo" cmd="cmd_undo"/>
+        <menuitem data-l10n-id="text-action-redo" cmd="cmd_redo"/>
         <menuseparator/>
         <menuitem data-l10n-id="text-action-cut" cmd="cmd_cut"/>
         <menuitem data-l10n-id="text-action-copy" cmd="cmd_copy"/>
         <menuitem data-l10n-id="text-action-paste" cmd="cmd_paste"/>
         <menuitem class="searchbar-paste-and-search"/>
         <menuitem data-l10n-id="text-action-delete" cmd="cmd_delete"/>
-        <menuseparator/>
         <menuitem data-l10n-id="text-action-select-all" cmd="cmd_selectAll"/>
         <menuseparator/>
         <menuitem class="searchbar-clear-history"/>

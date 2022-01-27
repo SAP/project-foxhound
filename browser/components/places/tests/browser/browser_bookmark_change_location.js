@@ -13,12 +13,39 @@ const TEST_URL3 = "about:credits";
 
 // Setup.
 add_task(async function setup() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.toolbars.bookmarks.visibility", "always"]],
+  });
+
+  // The following initialization code is necessary to avoid a frequent
+  // intermittent failure in verify-fission where, due to timings, we may or
+  // may not import default bookmarks. We also want to avoid the empty toolbar
+  // placeholder shifting stuff around.
+  info("Ensure Places init is complete");
+  let placesInitCompleteObserved = TestUtils.topicObserved(
+    "places-browser-init-complete"
+  );
+  Cc["@mozilla.org/browser/browserglue;1"]
+    .getService(Ci.nsIObserver)
+    .observe(null, "browser-glue-test", "places-browser-init-complete");
+  await placesInitCompleteObserved;
+  info("Add a bookmark to avoid showing the empty toolbar placeholder.");
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+    title: "initial",
+    url: TEST_URL,
+  });
+
   let toolbar = document.getElementById("PersonalToolbar");
   let wasCollapsed = toolbar.collapsed;
-
-  // Uncollapse the personal toolbar if needed.
   if (wasCollapsed) {
+    info("Show the bookmarks toolbar");
     await promiseSetToolbarVisibility(toolbar, true);
+    info("Ensure toolbar visibility was updated");
+    await BrowserTestUtils.waitForEvent(
+      toolbar,
+      "BookmarksToolbarVisibilityUpdated"
+    );
   }
 
   // Cleanup.
@@ -54,8 +81,10 @@ add_task(async function test_change_location_from_Toolbar() {
       });
       await promisePopup;
 
-      let properties = document.getElementById("placesContext_show:info");
-      EventUtils.synthesizeMouseAtCenter(properties, {});
+      let properties = document.getElementById(
+        "placesContext_show_bookmark:info"
+      );
+      placesContext.activateItem(properties);
     },
     async function test(dialogWin) {
       // Check the initial location.
@@ -69,8 +98,9 @@ add_task(async function test_change_location_from_Toolbar() {
       );
 
       let promiseLocationChange = PlacesTestUtils.waitForNotification(
-        "onItemChanged",
-        (id, parentId, index, itemUrl) => itemUrl === TEST_URL2
+        "bookmark-url-changed",
+        events => events.some(e => e.url === TEST_URL2),
+        "places"
       );
       // Update the "location" field.
       fillBookmarkTextField(
@@ -79,7 +109,7 @@ add_task(async function test_change_location_from_Toolbar() {
         dialogWin,
         false
       );
-      await waitForCondition(
+      await TestUtils.waitForCondition(
         () => locationPicker.value === TEST_URL2,
         "The location is correct after update."
       );
@@ -127,8 +157,9 @@ add_task(async function test_change_location_from_Sidebar() {
         );
 
         let promiseLocationChange = PlacesTestUtils.waitForNotification(
-          "onItemChanged",
-          (id, parentId, index, itemUrl) => itemUrl === TEST_URL3
+          "bookmark-url-changed",
+          events => events.some(e => e.url === TEST_URL3),
+          "places"
         );
 
         // Update the "location" field.
@@ -138,7 +169,7 @@ add_task(async function test_change_location_from_Sidebar() {
           dialogWin,
           false
         );
-        await waitForCondition(
+        await TestUtils.waitForCondition(
           () => locationPicker.value === TEST_URL3,
           "The location is correct after update."
         );

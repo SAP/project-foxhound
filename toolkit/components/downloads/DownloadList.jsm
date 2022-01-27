@@ -14,6 +14,136 @@ var EXPORTED_SYMBOLS = [
   "DownloadSummary",
 ];
 
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+const kFileExtensions = [
+  "aac",
+  "adt",
+  "adts",
+  "accdb",
+  "accde",
+  "accdr",
+  "accdt",
+  "aif",
+  "aifc",
+  "aiff",
+  "apng",
+  "aspx",
+  "avi",
+  "avif",
+  "bat",
+  "bin",
+  "bmp",
+  "cab",
+  "cda",
+  "csv",
+  "dif",
+  "dll",
+  "doc",
+  "docm",
+  "docx",
+  "dot",
+  "dotx",
+  "eml",
+  "eps",
+  "exe",
+  "flac",
+  "flv",
+  "gif",
+  "htm",
+  "html",
+  "ico",
+  "ini",
+  "iso",
+  "jar",
+  "jfif",
+  "jpg",
+  "jpeg",
+  "json",
+  "m4a",
+  "mdb",
+  "mid",
+  "midi",
+  "mov",
+  "mp3",
+  "mp4",
+  "mpeg",
+  "mpg",
+  "msi",
+  "mui",
+  "oga",
+  "ogg",
+  "ogv",
+  "opus",
+  "pdf",
+  "pjpeg",
+  "pjp",
+  "png",
+  "pot",
+  "potm",
+  "potx",
+  "ppam",
+  "pps",
+  "ppsm",
+  "ppsx",
+  "ppt",
+  "pptm",
+  "pptx",
+  "psd",
+  "pst",
+  "pub",
+  "rar",
+  "rdf",
+  "rtf",
+  "shtml",
+  "sldm",
+  "sldx",
+  "svg",
+  "swf",
+  "sys",
+  "tif",
+  "tiff",
+  "tmp",
+  "txt",
+  "vob",
+  "vsd",
+  "vsdm",
+  "vsdx",
+  "vss",
+  "vssm",
+  "vst",
+  "vstm",
+  "vstx",
+  "wav",
+  "wbk",
+  "webm",
+  "webp",
+  "wks",
+  "wma",
+  "wmd",
+  "wmv",
+  "wmz",
+  "wms",
+  "wpd",
+  "wp5",
+  "xht",
+  "xhtml",
+  "xla",
+  "xlam",
+  "xll",
+  "xlm",
+  "xls",
+  "xlsm",
+  "xlsx",
+  "xlt",
+  "xltm",
+  "xltx",
+  "xml",
+  "zip",
+];
+
+const TELEMETRY_EVENT_CATEGORY = "downloads";
+
 /**
  * Represents a collection of Download objects that can be viewed and managed by
  * the user interface, and persisted across sessions.
@@ -221,11 +351,23 @@ DownloadList.prototype = {
           // Remove the download first, so that the views don't get the change
           // notifications that may occur during finalization.
           await this.remove(download);
+          // Find if a file with the same path is also downloading.
+          let sameFileIsDownloading = false;
+          for (let otherDownload of await this.getAll()) {
+            if (
+              download !== otherDownload &&
+              download.target.path == otherDownload.target.path &&
+              !otherDownload.error
+            ) {
+              sameFileIsDownloading = true;
+            }
+          }
           // Ensure that the download is stopped and no partial data is kept.
           // This works even if the download state has changed meanwhile.  We
           // don't need to wait for the procedure to be complete before
           // processing the other downloads in the list.
-          download.finalize(true).catch(Cu.reportError);
+          let removePartialData = !sameFileIsDownloading;
+          download.finalize(removePartialData).catch(Cu.reportError);
         }
       }
     })().catch(Cu.reportError);
@@ -282,6 +424,26 @@ DownloadCombinedList.prototype = {
    * @rejects JavaScript exception.
    */
   add(aDownload) {
+    let extension = aDownload.target.path.split(".").pop();
+
+    if (!kFileExtensions.includes(extension)) {
+      extension = "other";
+    }
+
+    try {
+      Services.telemetry.recordEvent(
+        TELEMETRY_EVENT_CATEGORY,
+        "added",
+        "fileExtension",
+        extension,
+        {}
+      );
+    } catch (ex) {
+      Cu.reportError(
+        "DownloadsCommon: error recording telemetry event. " + ex.message
+      );
+    }
+
     if (aDownload.source.isPrivate) {
       return this._privateList.add(aDownload);
     }

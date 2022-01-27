@@ -6,17 +6,23 @@
 #ifndef mozilla_image_Image_h
 #define mozilla_image_Image_h
 
+#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Tuple.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/SizeOfState.h"
+#include "mozilla/ThreadSafeWeakPtr.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/Tuple.h"
 #include "gfx2DGlue.h"
 #include "imgIContainer.h"
 #include "ImageContainer.h"
+#include "ImageRegion.h"
 #include "LookupResult.h"
 #include "nsStringFwd.h"
 #include "ProgressTracker.h"
 #include "SurfaceCache.h"
+#include "WebRenderImageProvider.h"
 
 class imgRequest;
 class nsIRequest;
@@ -80,7 +86,7 @@ struct MemoryCounter {
   uint32_t mSurfaceTypes;
 };
 
-enum class SurfaceMemoryCounterType { NORMAL, COMPOSITING, COMPOSITING_PREV };
+enum class SurfaceMemoryCounterType { NORMAL, CONTAINER };
 
 struct SurfaceMemoryCounter {
   SurfaceMemoryCounter(
@@ -237,7 +243,6 @@ class Image : public imgIContainer {
    * until OnImageDataAvailable is called.
    */
   virtual nsresult OnImageDataAvailable(nsIRequest* aRequest,
-                                        nsISupports* aContext,
                                         nsIInputStream* aInStr,
                                         uint64_t aSourceOffset,
                                         uint32_t aCount) = 0;
@@ -246,12 +251,10 @@ class Image : public imgIContainer {
    * Called from OnStopRequest when the image's underlying request completes.
    *
    * @param aRequest  The completed request.
-   * @param aContext  Context from Necko's OnStopRequest.
    * @param aStatus   A success or failure code.
    * @param aLastPart Whether this is the final part of the underlying request.
    */
-  virtual nsresult OnImageDataComplete(nsIRequest* aRequest,
-                                       nsISupports* aContext, nsresult aStatus,
+  virtual nsresult OnImageDataComplete(nsIRequest* aRequest, nsresult aStatus,
                                        bool aLastPart) = 0;
 
   /**
@@ -315,13 +318,19 @@ class ImageResource : public Image {
    */
   nsIURI* GetURI() const override { return mURI; }
 
+  /*
+   * Should be called by its subclasses after they populate @aCounters so that
+   * we can cross reference against any of our ImageContainers that contain
+   * surfaces not in the cache.
+   */
+  void CollectSizeOfSurfaces(nsTArray<SurfaceMemoryCounter>& aCounters,
+                             MallocSizeOf aMallocSizeOf) const override;
+
+  ImageProviderId GetImageProviderId() const { return mProviderId; }
+
  protected:
   explicit ImageResource(nsIURI* aURI);
   ~ImageResource();
-
-  layers::ContainerProducerID GetImageProducerId() const {
-    return mImageProducerID;
-  }
 
   bool GetSpecTruncatedTo1k(nsCString& aSpec) const;
 
@@ -376,90 +385,35 @@ class ImageResource : public Image {
   bool mAnimating : 1;      // Are we currently animating?
   bool mError : 1;          // Error handling
 
-  /**
-   * Attempt to find a matching cached surface in the SurfaceCache, and if not
-   * available, request the production of such a surface (either synchronously
-   * or asynchronously).
-   *
-   * If the draw result is BAD_IMAGE, BAD_ARGS or NOT_READY, the size will be
-   * the same as aSize. If it is TEMPORARY_ERROR, INCOMPLETE, or SUCCESS, the
-   * size is a hint as to what we expect the surface size to be, once the best
-   * fitting size is available. It may or may not match the size of the surface
-   * returned at this moment. This is useful for choosing how to store the final
-   * result (e.g. if going into an ImageContainer, ideally we would share the
-   * same container for many requested sizes, if they all end up with the same
-   * best fit size in the end).
-   *
-   * A valid surface should only be returned for SUCCESS and INCOMPLETE.
-   *
-   * Any other draw result is invalid.
-   */
-  virtual Tuple<ImgDrawResult, gfx::IntSize, RefPtr<gfx::SourceSurface>>
-  GetFrameInternal(const gfx::IntSize& aSize,
-                   const Maybe<SVGImageContext>& aSVGContext,
-                   uint32_t aWhichFrame, uint32_t aFlags) {
-    return MakeTuple(ImgDrawResult::BAD_IMAGE, aSize,
-                     RefPtr<gfx::SourceSurface>());
-  }
+  class MOZ_RAII AutoProfilerImagePaintMarker {
+   public:
+    explicit AutoProfilerImagePaintMarker(ImageResource* self)
+        : mStartTime(TimeStamp::Now()) {
+      nsAutoCString spec;
+      if (self->mURI && profiler_thread_is_being_profiled_for_markers()) {
+        static const size_t sMaxTruncatedLength = 1024;
+        self->mURI->GetSpec(mSpec);
+        if (mSpec.Length() >= sMaxTruncatedLength) {
+          mSpec.Truncate(sMaxTruncatedLength);
+        }
+      }
+    }
 
-  /**
-   * Calculate the estimated size to use for an image container with the given
-   * parameters. It may not be the same as the given size, and it may not be
-   * the same as the size of the surface in the image container, but it is the
-   * best effort estimate.
-   */
-  virtual Tuple<ImgDrawResult, gfx::IntSize> GetImageContainerSize(
-      layers::LayerManager* aManager, const gfx::IntSize& aSize,
-      uint32_t aFlags) {
-    return MakeTuple(ImgDrawResult::NOT_SUPPORTED, gfx::IntSize(0, 0));
-  }
+    ~AutoProfilerImagePaintMarker() {
+      if (!mSpec.IsEmpty()) {
+        PROFILER_MARKER_TEXT("Image Paint", GRAPHICS,
+                             MarkerTiming::IntervalUntilNowFrom(mStartTime),
+                             mSpec);
+      }
+    }
 
-  ImgDrawResult GetImageContainerImpl(layers::LayerManager* aManager,
-                                      const gfx::IntSize& aSize,
-                                      const Maybe<SVGImageContext>& aSVGContext,
-                                      uint32_t aFlags,
-                                      layers::ImageContainer** aContainer);
-
-  /**
-   * Re-requests the appropriate frames for each image container using
-   * GetFrameInternal.
-   * @returns True if any image containers were updated, else false.
-   */
-  bool UpdateImageContainer(const Maybe<gfx::IntRect>& aDirtyRect);
-
-  void ReleaseImageContainer();
-
- private:
-  void SetCurrentImage(layers::ImageContainer* aContainer,
-                       gfx::SourceSurface* aSurface,
-                       const Maybe<gfx::IntRect>& aDirtyRect);
-
-  struct ImageContainerEntry {
-    ImageContainerEntry(const gfx::IntSize& aSize,
-                        const Maybe<SVGImageContext>& aSVGContext,
-                        layers::ImageContainer* aContainer, uint32_t aFlags)
-        : mSize(aSize),
-          mSVGContext(aSVGContext),
-          mContainer(aContainer),
-          mLastDrawResult(ImgDrawResult::NOT_READY),
-          mFlags(aFlags) {}
-
-    gfx::IntSize mSize;
-    Maybe<SVGImageContext> mSVGContext;
-    // A weak pointer to our ImageContainer, which stays alive only as long as
-    // the layer system needs it.
-    WeakPtr<layers::ImageContainer> mContainer;
-    // If mContainer is non-null, this contains the ImgDrawResult we obtained
-    // the last time we updated it.
-    ImgDrawResult mLastDrawResult;
-    // Cached flags to use for decoding. FLAG_ASYNC_NOTIFY should always be set
-    // but FLAG_HIGH_QUALITY_SCALING may vary.
-    uint32_t mFlags;
+   protected:
+    TimeStamp mStartTime;
+    nsAutoCString mSpec;
   };
 
-  AutoTArray<ImageContainerEntry, 1> mImageContainers;
-  layers::ImageContainer::ProducerID mImageProducerID;
-  layers::ImageContainer::FrameID mLastFrameID;
+ private:
+  ImageProviderId mProviderId;
 };
 
 }  // namespace image

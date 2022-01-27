@@ -41,13 +41,14 @@ class MediaEngine {
    * Populate an array of sources of the requested type in the nsTArray.
    * Also include devices that are currently unavailable.
    */
-  virtual void EnumerateDevices(uint64_t aWindowId, dom::MediaSourceEnum,
-                                MediaSinkEnum,
+  virtual void EnumerateDevices(dom::MediaSourceEnum, MediaSinkEnum,
                                 nsTArray<RefPtr<MediaDevice>>*) = 0;
 
   virtual void Shutdown() = 0;
 
-  virtual void SetFakeDeviceChangeEventsEnabled(bool aEnable) {}
+  virtual void SetFakeDeviceChangeEventsEnabled(bool aEnable) {
+    MOZ_DIAGNOSTIC_ASSERT(false, "Fake events may not have started/stopped");
+  }
 
   virtual MediaEventSource<void>& DeviceListChangeEvent() = 0;
 

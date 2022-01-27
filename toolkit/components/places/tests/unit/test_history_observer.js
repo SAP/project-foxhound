@@ -2,39 +2,6 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
- * Generic nsINavHistoryObserver that doesn't implement anything, but provides
- * dummy methods to prevent errors about an object not having a certain method.
- */
-function NavHistoryObserver() {}
-NavHistoryObserver.prototype = {
-  onBeginUpdateBatch() {},
-  onEndUpdateBatch() {},
-  onTitleChanged() {},
-  onDeleteURI() {},
-  onClearHistory() {},
-  onPageChanged() {},
-  onDeleteVisits() {},
-  QueryInterface: ChromeUtils.generateQI(["nsINavHistoryObserver"]),
-};
-
-/**
- * Registers a one-time history observer for and calls the callback
- * when the specified nsINavHistoryObserver method is called.
- * Returns a promise that is resolved when the callback returns.
- */
-function onNotify(callback) {
-  return new Promise(resolve => {
-    let obs = new NavHistoryObserver();
-    obs[callback.name] = function() {
-      PlacesUtils.history.removeObserver(this);
-      callback.apply(this, arguments);
-      resolve();
-    };
-    PlacesUtils.history.addObserver(obs);
-  });
-}
-
-/**
  * Registers a one-time places observer for 'page-visited',
  * which resolves a promise on being called.
  */
@@ -152,32 +119,34 @@ add_task(async function test_multiple_onVisit() {
   await promiseNotifications;
 });
 
-add_task(async function test_onDeleteURI() {
-  let promiseNotify = onNotify(function onDeleteURI(aURI, aGUID, aReason) {
-    Assert.ok(aURI.equals(testuri));
-    // Can't use do_check_guid_for_uri() here because the visit is already gone.
-    Assert.equal(aGUID, testguid);
-    Assert.equal(aReason, Ci.nsINavHistoryObserver.REASON_DELETED);
-  });
+add_task(async function test_pageRemovedFromStore() {
   let [testuri] = await task_add_visit();
   let testguid = do_get_guid_for_uri(testuri);
+
+  const promiseNotify = PlacesTestUtils.waitForNotification(
+    "page-removed",
+    () => true,
+    "places"
+  );
+
   await PlacesUtils.history.remove(testuri);
-  await promiseNotify;
+
+  const events = await promiseNotify;
+  Assert.equal(events.length, 1, "Right number of page-removed notified");
+  Assert.equal(events[0].type, "page-removed");
+  Assert.ok(events[0].isRemovedFromStore);
+  Assert.equal(events[0].url, testuri.spec);
+  Assert.equal(events[0].pageGuid, testguid);
+  Assert.equal(events[0].reason, PlacesVisitRemoved.REASON_DELETED);
 });
 
-add_task(async function test_onDeleteVisits() {
-  let promiseNotify = onNotify(function onDeleteVisits(
-    aURI,
-    aVisitTime,
-    aGUID,
-    aReason
-  ) {
-    Assert.ok(aURI.equals(testuri));
-    // Can't use do_check_guid_for_uri() here because the visit is already gone.
-    Assert.equal(aGUID, testguid);
-    Assert.equal(aReason, Ci.nsINavHistoryObserver.REASON_DELETED);
-    Assert.equal(aVisitTime, 0); // All visits have been removed.
-  });
+add_task(async function test_pageRemovedAllVisits() {
+  const promiseNotify = PlacesTestUtils.waitForNotification(
+    "page-removed",
+    () => true,
+    "places"
+  );
+
   let msecs24hrsAgo = Date.now() - 86400 * 1000;
   let [testuri] = await task_add_visit(undefined, msecs24hrsAgo * 1000);
   // Add a bookmark so the page is not removed.
@@ -188,50 +157,37 @@ add_task(async function test_onDeleteVisits() {
   });
   let testguid = do_get_guid_for_uri(testuri);
   await PlacesUtils.history.remove(testuri);
-  await promiseNotify;
+
+  const events = await promiseNotify;
+  Assert.equal(events.length, 1, "Right number of page-removed notified");
+  Assert.equal(events[0].type, "page-removed");
+  Assert.ok(!events[0].isRemovedFromStore);
+  Assert.equal(events[0].url, testuri.spec);
+  // Can't use do_check_guid_for_uri() here because the visit is already gone.
+  Assert.equal(events[0].pageGuid, testguid);
+  Assert.equal(events[0].reason, PlacesVisitRemoved.REASON_DELETED);
+  Assert.ok(!events[0].isPartialVisistsRemoval); // All visits have been removed.
 });
 
-add_task(async function test_onTitleChanged() {
-  let promiseNotify = onNotify(function onTitleChanged(aURI, aTitle, aGUID) {
-    Assert.ok(aURI.equals(testuri));
-    Assert.equal(aTitle, title);
-    do_check_guid_for_uri(aURI, aGUID);
-  });
+add_task(async function test_pageTitleChanged() {
+  const [testuri] = await task_add_visit();
+  const title = "test-title";
 
-  let [testuri] = await task_add_visit();
-  let title = "test-title";
+  const promiseNotify = PlacesTestUtils.waitForNotification(
+    "page-title-changed",
+    () => true,
+    "places"
+  );
+
   await PlacesTestUtils.addVisits({
     uri: testuri,
     title,
   });
-  await promiseNotify;
-});
 
-add_task(async function test_onPageChanged() {
-  let promiseNotify = onNotify(function onPageChanged(
-    aURI,
-    aChangedAttribute,
-    aNewValue,
-    aGUID
-  ) {
-    Assert.equal(aChangedAttribute, Ci.nsINavHistoryObserver.ATTRIBUTE_FAVICON);
-    Assert.ok(aURI.equals(testuri));
-    Assert.equal(aNewValue, SMALLPNG_DATA_URI.spec);
-    do_check_guid_for_uri(aURI, aGUID);
-  });
-
-  let [testuri] = await task_add_visit();
-
-  // The new favicon for the page must have data associated with it in order to
-  // receive the onPageChanged notification.  To keep this test self-contained,
-  // we use an URI representing the smallest possible PNG file.
-  PlacesUtils.favicons.setAndFetchFaviconForPage(
-    testuri,
-    SMALLPNG_DATA_URI,
-    false,
-    PlacesUtils.favicons.FAVICON_LOAD_NON_PRIVATE,
-    null,
-    Services.scriptSecurityManager.getSystemPrincipal()
-  );
-  await promiseNotify;
+  const events = await promiseNotify;
+  Assert.equal(events.length, 1, "Right number of title changed notified");
+  Assert.equal(events[0].type, "page-title-changed");
+  Assert.equal(events[0].url, testuri.spec);
+  Assert.equal(events[0].title, title);
+  do_check_guid_for_uri(testuri, events[0].pageGuid);
 });

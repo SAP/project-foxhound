@@ -25,9 +25,13 @@ class BackgroundDataBridgeChild final : public PBackgroundDataBridgeChild {
   RefPtr<HttpBackgroundChannelChild> mBgChild;
 
  public:
-  mozilla::ipc::IPCResult RecvOnTransportAndData(const uint64_t& offset,
-                                                 const uint32_t& count,
-                                                 const nsCString& data);
+  mozilla::ipc::IPCResult RecvOnTransportAndData(
+      const uint64_t& offset, const uint32_t& count,
+      const nsDependentCSubstring& data);
+  mozilla::ipc::IPCResult RecvOnStopRequest(
+      nsresult aStatus, const ResourceTimingStructArgs& aTiming,
+      const TimeStamp& aLastActiveTabOptHit,
+      const nsHttpHeaderArray& aResponseTrailers);
 };
 
 }  // namespace net

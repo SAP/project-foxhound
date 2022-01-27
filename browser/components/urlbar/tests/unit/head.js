@@ -18,6 +18,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
+  SearchTestUtils: "resource://testing-common/SearchTestUtils.jsm",
   Services: "resource://gre/modules/Services.jsm",
   TestUtils: "resource://testing-common/TestUtils.jsm",
   UrlbarController: "resource:///modules/UrlbarController.jsm",
@@ -31,6 +32,15 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 });
 const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 
+XPCOMUtils.defineLazyGetter(this, "QuickSuggestTestUtils", () => {
+  const { QuickSuggestTestUtils: module } = ChromeUtils.import(
+    "resource://testing-common/QuickSuggestTestUtils.jsm"
+  );
+  module.init(this);
+  return module;
+});
+
+SearchTestUtils.init(this);
 AddonTestUtils.init(this, false);
 AddonTestUtils.createAppInfo(
   "xpcshell@tests.mozilla.org",
@@ -38,6 +48,9 @@ AddonTestUtils.createAppInfo(
   "42",
   "42"
 );
+
+const SUGGESTIONS_ENGINE_NAME = "Suggestions";
+const TAIL_SUGGESTIONS_ENGINE_NAME = "Tail Suggestions";
 
 add_task(async function initXPCShellDependencies() {
   await UrlbarTestUtils.initXPCShellDependencies();
@@ -158,7 +171,7 @@ class TestProvider extends UrlbarTestUtils.TestProvider {
     }
   }
   cancelQuery(context) {
-    // If the query was created but didn't run, this_context will be undefined.
+    // If the query was created but didn't run, this._context will be undefined.
     if (this._context) {
       Assert.equal(this._context, context, "cancelQuery: context is the same");
     }
@@ -180,12 +193,17 @@ function convertToUtf8(str) {
  * @param {function} [onCancel] Optional, called when the query provider
  *                              receives a cancel instruction.
  * @param {UrlbarUtils.PROVIDER_TYPE} type The provider type.
- * @returns {string} name of the registered provider
+ * @param {string} [name] Optional, use as the provider name.
+ *                        If none, a default name is chosen.
+ * @returns {UrlbarProvider} The provider
  */
-function registerBasicTestProvider(results = [], onCancel, type) {
-  let provider = new TestProvider({ results, onCancel, type });
+function registerBasicTestProvider(results = [], onCancel, type, name) {
+  let provider = new TestProvider({ results, onCancel, type, name });
   UrlbarProvidersManager.registerProvider(provider);
-  return provider.name;
+  registerCleanupFunction(() =>
+    UrlbarProvidersManager.unregisterProvider(provider)
+  );
+  return provider;
 }
 
 // Creates an HTTP server for the test.
@@ -194,46 +212,6 @@ function makeTestServer(port = -1) {
   httpServer.start(port);
   registerCleanupFunction(() => httpServer.stop(() => {}));
   return httpServer;
-}
-
-/**
- * Adds a search engine to the Search Service.
- *
- * @param {string} basename
- *        Basename for the engine.
- * @param {object} httpServer [optional] HTTP Server to use.
- * @returns {Promise} Resolved once the addition is complete.
- */
-async function addTestEngine(basename, httpServer = undefined) {
-  httpServer = httpServer || makeTestServer();
-  httpServer.registerDirectory("/", do_get_cwd());
-  let dataUrl =
-    "http://localhost:" + httpServer.identity.primaryPort + "/data/";
-
-  // Before initializing the search service, set the geo IP url pref to a dummy
-  // string.  When the search service is initialized, it contacts the URI named
-  // in this pref, causing unnecessary error logs.
-  let geoPref = "browser.search.geoip.url";
-  Services.prefs.setCharPref(geoPref, "");
-  registerCleanupFunction(() => Services.prefs.clearUserPref(geoPref));
-
-  info("Adding engine: " + basename);
-  return new Promise(resolve => {
-    Services.obs.addObserver(function obs(subject, topic, data) {
-      let engine = subject.QueryInterface(Ci.nsISearchEngine);
-      info("Observed " + data + " for " + engine.name);
-      if (data != "engine-added" || engine.name != basename) {
-        return;
-      }
-
-      Services.obs.removeObserver(obs, "browser-search-engine-modified");
-      registerCleanupFunction(() => Services.search.removeEngine(engine));
-      resolve(engine);
-    }, "browser-search-engine-modified");
-
-    info("Adding engine from URL: " + dataUrl + basename);
-    Services.search.addOpenSearchEngine(dataUrl + basename, null);
-  });
 }
 
 /**
@@ -247,11 +225,10 @@ async function addTestEngine(basename, httpServer = undefined) {
  */
 async function addTestSuggestionsEngine(suggestionsFn = null) {
   // This port number should match the number in engine-suggestions.xml.
-  let server = makeTestServer(9000);
+  let server = makeTestServer();
   server.registerPathHandler("/suggest", (req, resp) => {
-    // URL query params are x-www-form-urlencoded, which converts spaces into
-    // plus signs, so un-convert any plus signs back to spaces.
-    let searchStr = decodeURIComponent(req.queryString.replace(/\+/g, " "));
+    let params = new URLSearchParams(req.queryString);
+    let searchStr = params.get("q");
     let suggestions = suggestionsFn
       ? suggestionsFn(searchStr)
       : [searchStr].concat(["foo", "bar"].map(s => searchStr + " " + s));
@@ -259,7 +236,15 @@ async function addTestSuggestionsEngine(suggestionsFn = null) {
     resp.setHeader("Content-Type", "application/json", false);
     resp.write(JSON.stringify(data));
   });
-  let engine = await addTestEngine("engine-suggestions.xml", server);
+  await SearchTestUtils.installSearchExtension({
+    name: SUGGESTIONS_ENGINE_NAME,
+    search_url: `http://localhost:${server.identity.primaryPort}/search`,
+    suggest_url: `http://localhost:${server.identity.primaryPort}/suggest`,
+    suggest_url_get_params: "?q={searchTerms}",
+    // test_search_suggestions_aliases.js uses the search form.
+    search_form: `http://localhost:${server.identity.primaryPort}/search?q={searchTerms}`,
+  });
+  let engine = Services.search.getEngineByName("Suggestions");
   return engine;
 }
 
@@ -276,11 +261,10 @@ async function addTestSuggestionsEngine(suggestionsFn = null) {
  */
 async function addTestTailSuggestionsEngine(suggestionsFn = null) {
   // This port number should match the number in engine-tail-suggestions.xml.
-  let server = makeTestServer(9001);
+  let server = makeTestServer();
   server.registerPathHandler("/suggest", (req, resp) => {
-    // URL query params are x-www-form-urlencoded, which converts spaces into
-    // plus signs, so un-convert any plus signs back to spaces.
-    let searchStr = decodeURIComponent(req.queryString.replace(/\+/g, " "));
+    let params = new URLSearchParams(req.queryString);
+    let searchStr = params.get("q");
     let suggestions = suggestionsFn
       ? suggestionsFn(searchStr)
       : [
@@ -309,8 +293,34 @@ async function addTestTailSuggestionsEngine(suggestionsFn = null) {
     resp.setHeader("Content-Type", "application/json", false);
     resp.write(stringOfUtf8Bytes);
   });
-  let engine = await addTestEngine("engine-tail-suggestions.xml", server);
+  await SearchTestUtils.installSearchExtension({
+    name: TAIL_SUGGESTIONS_ENGINE_NAME,
+    search_url: `http://localhost:${server.identity.primaryPort}/search`,
+    suggest_url: `http://localhost:${server.identity.primaryPort}/suggest`,
+    suggest_url_get_params: "?q={searchTerms}",
+  });
+  let engine = Services.search.getEngineByName("Tail Suggestions");
   return engine;
+}
+
+async function addOpenPages(uri, count = 1, userContextId = 0) {
+  for (let i = 0; i < count; i++) {
+    await UrlbarProviderOpenTabs.registerOpenTab(
+      uri.spec,
+      userContextId,
+      false
+    );
+  }
+}
+
+async function removeOpenPages(aUri, aCount = 1, aUserContextId = 0) {
+  for (let i = 0; i < aCount; i++) {
+    await UrlbarProviderOpenTabs.unregisterOpenTab(
+      aUri.spec,
+      aUserContextId,
+      false
+    );
+  }
 }
 
 /**
@@ -394,11 +404,18 @@ function frecencyForUrl(aURI) {
  */
 function makeBookmarkResult(
   queryContext,
-  { title, uri, iconUri, tags = [], heuristic = false }
+  {
+    title,
+    uri,
+    iconUri,
+    tags = [],
+    heuristic = false,
+    source = UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
+  }
 ) {
   let result = new UrlbarResult(
     UrlbarUtils.RESULT_TYPE.URL,
-    UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
+    source,
     ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
       url: [uri, UrlbarUtils.HIGHLIGHT.TYPED],
       // Check against undefined so consumers can pass in the empty string.
@@ -469,6 +486,31 @@ function makeOmniboxResult(
 }
 
 /**
+ * Creates a UrlbarResult for an switch-to-tab result.
+ * @param {UrlbarQueryContext} queryContext
+ *   The context that this result will be displayed in.
+ * @param {string} options.uri
+ *   The page URI.
+ * @param {string} [options.title]
+ *   The page title.
+ * @param {string} [options.iconUri]
+ *   A URI for the page icon.
+ * @returns {UrlbarResult}
+ */
+function makeTabSwitchResult(queryContext, { uri, title, iconUri }) {
+  return new UrlbarResult(
+    UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+    UrlbarUtils.RESULT_SOURCE.TABS,
+    ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
+      url: [uri, UrlbarUtils.HIGHLIGHT.TYPED],
+      title: [title, UrlbarUtils.HIGHLIGHT.TYPED],
+      // Check against undefined so consumers can pass in the empty string.
+      icon: typeof iconUri != "undefined" ? iconUri : `page-icon:${uri}`,
+    })
+  );
+}
+
+/**
  * Creates a UrlbarResult for a keyword search result.
  * @param {UrlbarQueryContext} queryContext
  *   The context that this result will be displayed in.
@@ -498,7 +540,7 @@ function makeKeywordSearchResult(
       url: [uri, UrlbarUtils.HIGHLIGHT.TYPED],
       keyword: [keyword, UrlbarUtils.HIGHLIGHT.TYPED],
       input: [queryContext.searchString, UrlbarUtils.HIGHLIGHT.TYPED],
-      postData,
+      postData: postData || null,
       icon: typeof iconUri != "undefined" ? iconUri : `page-icon:${uri}`,
     })
   );
@@ -531,13 +573,61 @@ function makePrioritySearchResult(
     UrlbarUtils.RESULT_SOURCE.SEARCH,
     ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
       engine: [engineName, UrlbarUtils.HIGHLIGHT.TYPED],
-      icon: engineIconUri ? engineIconUri : "",
+      icon: engineIconUri,
     })
   );
 
   if (heuristic) {
     result.heuristic = heuristic;
   }
+  return result;
+}
+
+/**
+ * Creates a UrlbarResult for a remote tab result.
+ * @param {UrlbarQueryContext} queryContext
+ *   The context that this result will be displayed in.
+ * @param {string} options.uri
+ *   The page URI.
+ * @param {string} options.device
+ *   The name of the device that the remote tab comes from.
+ * @param {string} [options.title]
+ *   The page title.
+ * @param {number} [options.lastUsed]
+ *   The last time the remote tab was visited, in epoch seconds. Defaults
+ *   to 0.
+ * @param {string} [options.iconUri]
+ *   A URI for the page's icon.
+ * @returns {UrlbarResult}
+ */
+function makeRemoteTabResult(
+  queryContext,
+  { uri, device, title, iconUri, lastUsed = 0 }
+) {
+  let payload = {
+    url: [uri, UrlbarUtils.HIGHLIGHT.TYPED],
+    device: [device, UrlbarUtils.HIGHLIGHT.TYPED],
+    // Check against undefined so consumers can pass in the empty string.
+    icon:
+      typeof iconUri != "undefined"
+        ? iconUri
+        : `moz-anno:favicon:page-icon:${uri}`,
+    lastUsed: lastUsed * 1000,
+  };
+
+  // Check against undefined so consumers can pass in the empty string.
+  if (typeof title != "undefined") {
+    payload.title = [title, UrlbarUtils.HIGHLIGHT.TYPED];
+  } else {
+    payload.title = [uri, UrlbarUtils.HIGHLIGHT.TYPED];
+  }
+
+  let result = new UrlbarResult(
+    UrlbarUtils.RESULT_TYPE.REMOTE_TAB,
+    UrlbarUtils.RESULT_SOURCE.TABS,
+    ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, payload)
+  );
+
   return result;
 }
 
@@ -550,6 +640,8 @@ function makePrioritySearchResult(
  * @param {string} [options.engineName]
  *   The name of the engine providing the suggestion. Leave blank if there
  *   is no suggestion.
+ * @param {string} [options.uri]
+ *   The URI that the search result will navigate to.
  * @param {string} [options.query]
  *   The query that started the search. This overrides
  *   `queryContext.searchString`. This is useful when the query that will show
@@ -561,9 +653,9 @@ function makePrioritySearchResult(
  *   A URI for the engine's icon.
  * @param {boolean} [options.heuristic]
  *   True if this is a heuristic result. Defaults to false.
- * @param {number} [options.keywordOffer]
- *   A value from UrlbarUtils.KEYWORD_OFFER.
- * @param {string} providerName
+ * @param {boolean} [options.providesSearchMode]
+ *   Whether search mode is entered when this result is selected.
+ * @param {string} [options.providerName]
  *   The name of the provider offering this result. The test suite will not
  *   check which provider offered a result unless this option is specified.
  * @returns {UrlbarResult}
@@ -577,50 +669,69 @@ function makeSearchResult(
     tailOffsetIndex,
     engineName,
     alias,
+    uri,
     query,
     engineIconUri,
-    heuristic = false,
-    keywordOffer,
+    providesSearchMode,
     providerName,
+    inPrivateWindow,
+    isPrivateEngine,
+    heuristic = false,
+    type = UrlbarUtils.RESULT_TYPE.SEARCH,
+    source = UrlbarUtils.RESULT_SOURCE.SEARCH,
+    satisfiesAutofillThreshold = false,
   }
 ) {
-  if (!keywordOffer) {
-    keywordOffer = UrlbarUtils.KEYWORD_OFFER.NONE;
-    if (alias && !query.trim() && alias.startsWith("@")) {
-      keywordOffer = heuristic
-        ? UrlbarUtils.KEYWORD_OFFER.HIDE
-        : UrlbarUtils.KEYWORD_OFFER.SHOW;
+  // Tail suggestion common cases, handled here to reduce verbosity in tests.
+  if (tail) {
+    if (!tailPrefix) {
+      tailPrefix = "… ";
+    }
+    if (!tailOffsetIndex) {
+      tailOffsetIndex = suggestion.indexOf(tail);
     }
   }
 
-  // Tail suggestion common cases, handled here to reduce verbosity in tests.
-  if (tail && !tailPrefix) {
-    tailPrefix = "… ";
-  }
+  let payload = {
+    engine: [engineName, UrlbarUtils.HIGHLIGHT.TYPED],
+    suggestion: [suggestion, UrlbarUtils.HIGHLIGHT.SUGGESTED],
+    tailPrefix,
+    tail: [tail, UrlbarUtils.HIGHLIGHT.SUGGESTED],
+    tailOffsetIndex,
+    keyword: [
+      alias,
+      providesSearchMode
+        ? UrlbarUtils.HIGHLIGHT.TYPED
+        : UrlbarUtils.HIGHLIGHT.NONE,
+    ],
+    // Check against undefined so consumers can pass in the empty string.
+    query: [
+      typeof query != "undefined" ? query : queryContext.trimmedSearchString,
+      UrlbarUtils.HIGHLIGHT.TYPED,
+    ],
+    icon: engineIconUri,
+    providesSearchMode,
+    inPrivateWindow,
+    isPrivateEngine,
+  };
 
-  if (!tailOffsetIndex) {
-    tailOffsetIndex = tail ? suggestion.indexOf(tail) : -1;
+  // Passing even an undefined URL in the payload creates a potentially-unwanted
+  // displayUrl parameter, so we add it only if specified.
+  if (uri) {
+    payload.url = uri;
+  }
+  if (providerName == "TabToSearch") {
+    payload.satisfiesAutofillThreshold = satisfiesAutofillThreshold;
+    if (payload.url.startsWith("www.")) {
+      payload.url = payload.url.substring(4);
+    }
+    payload.isGeneralPurposeEngine = false;
   }
 
   let result = new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.SEARCH,
-    UrlbarUtils.RESULT_SOURCE.SEARCH,
-    ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
-      engine: [engineName, UrlbarUtils.HIGHLIGHT.TYPED],
-      suggestion: [suggestion, UrlbarUtils.HIGHLIGHT.SUGGESTED],
-      tailPrefix,
-      tail: [tail, UrlbarUtils.HIGHLIGHT.SUGGESTED],
-      tailOffsetIndex,
-      keyword: [alias, UrlbarUtils.HIGHLIGHT.TYPED],
-      // Check against undefined so consumers can pass in the empty string.
-      query: [
-        typeof query != "undefined" ? query : queryContext.searchString.trim(),
-        UrlbarUtils.HIGHLIGHT.TYPED,
-      ],
-      isSearchHistory: false,
-      icon: [engineIconUri ? engineIconUri : ""],
-      keywordOffer,
-    })
+    type,
+    source,
+    ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, payload)
   );
 
   if (typeof suggestion == "string") {
@@ -656,22 +767,37 @@ function makeSearchResult(
  */
 function makeVisitResult(
   queryContext,
-  { title, uri, iconUri, tags = null, heuristic = false, providerName }
+  {
+    title,
+    uri,
+    iconUri,
+    providerName,
+    tags = [],
+    heuristic = false,
+    source = UrlbarUtils.RESULT_SOURCE.HISTORY,
+  }
 ) {
   let payload = {
     url: [uri, UrlbarUtils.HIGHLIGHT.TYPED],
-    // Check against undefined so consumers can pass in the empty string.
-    icon: [typeof iconUri != "undefined" ? iconUri : `page-icon:${uri}`],
     title: [title, UrlbarUtils.HIGHLIGHT.TYPED],
   };
 
-  if (!heuristic || tags) {
-    payload.tags = [tags || [], UrlbarUtils.HIGHLIGHT.TYPED];
+  if (iconUri) {
+    payload.icon = iconUri;
+  } else if (
+    iconUri === undefined &&
+    source != UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL
+  ) {
+    payload.icon = `page-icon:${uri}`;
+  }
+
+  if (!heuristic && tags) {
+    payload.tags = [tags, UrlbarUtils.HIGHLIGHT.TYPED];
   }
 
   let result = new UrlbarResult(
     UrlbarUtils.RESULT_TYPE.URL,
-    UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+    source,
     ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, payload)
   );
 
@@ -721,12 +847,14 @@ async function check_results({
   let controller = UrlbarTestUtils.newMockController({
     input: {
       isPrivate: context.isPrivate,
+      onFirstResult() {
+        return false;
+      },
       window: {
         location: {
           href: AppConstants.BROWSER_CHROME_URL,
         },
       },
-      autofillFirstResult() {},
     },
   });
 
@@ -758,35 +886,62 @@ async function check_results({
     }
   }
   if (context.results.length != matches.length) {
-    info("Returned results: " + JSON.stringify(context.results));
-    Assert.equal(
-      context.results.length,
-      matches.length,
-      "Found the expected number of results."
-    );
+    info("Actual results: " + JSON.stringify(context.results));
+  }
+  Assert.equal(
+    context.results.length,
+    matches.length,
+    "Found the expected number of results."
+  );
+
+  function getPayload(result) {
+    let payload = {};
+    for (let [key, value] of Object.entries(result.payload)) {
+      if (value !== undefined) {
+        payload[key] = value;
+      }
+    }
+    return payload;
   }
 
-  Assert.deepEqual(
-    matches.map(m => m.payload),
-    context.results.map(m => m.payload),
-    "Payloads are the same."
-  );
-
-  Assert.deepEqual(
-    matches.map(m => m.heuristic),
-    context.results.map(m => m.heuristic),
-    "Heuristic results are correctly flagged."
-  );
-
-  matches.forEach((match, i) => {
-    if (match.providerName) {
+  for (let i = 0; i < matches.length; i++) {
+    let actual = context.results[i];
+    let expected = matches[i];
+    info(
+      `Comparing results at index ${i}:` +
+        " actual=" +
+        JSON.stringify(actual) +
+        " expected=" +
+        JSON.stringify(expected)
+    );
+    Assert.equal(
+      actual.type,
+      expected.type,
+      `result.type at result index ${i}`
+    );
+    Assert.equal(
+      actual.source,
+      expected.source,
+      `result.source at result index ${i}`
+    );
+    Assert.equal(
+      actual.heuristic,
+      expected.heuristic,
+      `result.heuristic at result index ${i}`
+    );
+    if (expected.providerName) {
       Assert.equal(
-        match.providerName,
-        context.results[i].providerName,
-        `The result at index ${i} is from the correct provider.`
+        actual.providerName,
+        expected.providerName,
+        `result.providerName at result index ${i}`
       );
     }
-  });
+    Assert.deepEqual(
+      getPayload(actual),
+      getPayload(expected),
+      `result.payload at result index ${i}`
+    );
+  }
 }
 
 /**

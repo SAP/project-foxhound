@@ -20,11 +20,6 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "DevToolsShim",
   "chrome://devtools-startup/content/DevToolsShim.jsm"
 );
@@ -43,9 +38,9 @@ this.runtime = class extends ExtensionAPI {
               return () => {};
             }
             let listener = () => fire.sync();
-            extension.on("background-page-started", listener);
+            extension.on("background-script-started", listener);
             return () => {
-              extension.off("background-page-started", listener);
+              extension.off("background-script-started", listener);
             };
           },
         }).api(),
@@ -75,9 +70,9 @@ this.runtime = class extends ExtensionAPI {
                   break;
               }
             };
-            extension.on("background-page-started", listener);
+            extension.on("background-script-started", listener);
             return () => {
-              extension.off("background-page-started", listener);
+              extension.off("background-script-started", listener);
             };
           },
         }).api(),

@@ -25,7 +25,6 @@
 #include "DocumentInlines.h"  // for Document and HTMLBodyElement
 #include "nsIScrollableFrame.h"
 #include "nsITimer.h"
-#include "nsPluginFrame.h"
 #include "nsPresContext.h"
 #include "prtime.h"
 #include "Units.h"
@@ -55,11 +54,10 @@ bool WheelHandlingUtils::CanScrollInRange(nscoord aMin, nscoord aValue,
 bool WheelHandlingUtils::CanScrollOn(nsIFrame* aFrame, double aDirectionX,
                                      double aDirectionY) {
   nsIScrollableFrame* scrollableFrame = do_QueryFrame(aFrame);
-  if (scrollableFrame) {
-    return CanScrollOn(scrollableFrame, aDirectionX, aDirectionY);
+  if (!scrollableFrame) {
+    return false;
   }
-  nsPluginFrame* pluginFrame = do_QueryFrame(aFrame);
-  return pluginFrame && pluginFrame->WantsToHandleWheelEventAsDefaultAction();
+  return CanScrollOn(scrollableFrame, aDirectionX, aDirectionY);
 }
 
 /* static */
@@ -71,13 +69,15 @@ bool WheelHandlingUtils::CanScrollOn(nsIScrollableFrame* aScrollFrame,
 
   nsPoint scrollPt = aScrollFrame->GetVisualViewportOffset();
   nsRect scrollRange = aScrollFrame->GetScrollRangeForUserInputEvents();
-  uint32_t directions =
+  layers::ScrollDirections directions =
       aScrollFrame->GetAvailableScrollingDirectionsForUserInputEvents();
 
-  return (aDirectionX && (directions & nsIScrollableFrame::HORIZONTAL) &&
+  return ((aDirectionX != 0.0) &&
+          (directions.contains(layers::ScrollDirection::eHorizontal)) &&
           CanScrollInRange(scrollRange.x, scrollPt.x, scrollRange.XMost(),
                            aDirectionX)) ||
-         (aDirectionY && (directions & nsIScrollableFrame::VERTICAL) &&
+         ((aDirectionY != 0.0) &&
+          (directions.contains(layers::ScrollDirection::eVertical)) &&
           CanScrollInRange(scrollRange.y, scrollPt.y, scrollRange.YMost(),
                            aDirectionY));
 }
@@ -357,17 +357,12 @@ LayoutDeviceIntPoint WheelTransaction::GetScreenPoint(WidgetGUIEvent* aEvent) {
 }
 
 /* static */
-DeltaValues WheelTransaction::AccelerateWheelDelta(
-    WidgetWheelEvent* aEvent, bool aAllowScrollSpeedOverride) {
-  DeltaValues result(aEvent);
+DeltaValues WheelTransaction::AccelerateWheelDelta(WidgetWheelEvent* aEvent) {
+  DeltaValues result = OverrideSystemScrollSpeed(aEvent);
 
   // Don't accelerate the delta values if the event isn't line scrolling.
   if (aEvent->mDeltaMode != dom::WheelEvent_Binding::DOM_DELTA_LINE) {
     return result;
-  }
-
-  if (aAllowScrollSpeedOverride) {
-    result = OverrideSystemScrollSpeed(aEvent);
   }
 
   // Accelerate by the sScrollSeriesCounter
@@ -394,7 +389,6 @@ double WheelTransaction::ComputeAcceleratedWheelDelta(double aDelta,
 DeltaValues WheelTransaction::OverrideSystemScrollSpeed(
     WidgetWheelEvent* aEvent) {
   MOZ_ASSERT(sTargetFrame, "We don't have mouse scrolling transaction");
-  MOZ_ASSERT(aEvent->mDeltaMode == dom::WheelEvent_Binding::DOM_DELTA_LINE);
 
   // If the event doesn't scroll to both X and Y, we don't need to do anything
   // here.
@@ -659,7 +653,7 @@ ESMAutoDirWheelDeltaAdjuster::ESMAutoDirWheelDeltaAdjuster(
     // current document is an HTML document.
     dom::Document* document = aScrollFrame.PresShell()->GetDocument();
     if (document) {
-      Element* bodyElement = document->GetBodyElement();
+      dom::Element* bodyElement = document->GetBodyElement();
       if (bodyElement) {
         honouredFrame = bodyElement->GetPrimaryFrame();
       }
@@ -721,13 +715,13 @@ void ESMAutoDirWheelDeltaAdjuster::OnAdjusted() {
 }
 
 bool ESMAutoDirWheelDeltaAdjuster::CanScrollAlongXAxis() const {
-  return mScrollTargetFrame->GetAvailableScrollingDirections() &
-         nsIScrollableFrame::HORIZONTAL;
+  return mScrollTargetFrame->GetAvailableScrollingDirections().contains(
+      layers::ScrollDirection::eHorizontal);
 }
 
 bool ESMAutoDirWheelDeltaAdjuster::CanScrollAlongYAxis() const {
-  return mScrollTargetFrame->GetAvailableScrollingDirections() &
-         nsIScrollableFrame::VERTICAL;
+  return mScrollTargetFrame->GetAvailableScrollingDirections().contains(
+      layers::ScrollDirection::eVertical);
 }
 
 bool ESMAutoDirWheelDeltaAdjuster::CanScrollUpwards() const {

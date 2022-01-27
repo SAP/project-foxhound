@@ -11,18 +11,6 @@
 <script>
 const utils = SpecialPowers.DOMWindowUtils;
 
-function synthesizeNativeMouseClick(aElement, aScreenX, aScreenY) {
-  return new Promise(resolve => {
-    utils.sendNativeMouseEvent(aScreenX, aScreenY,
-                               nativeMouseDownEventMsg(), 0, aElement, () => {
-      utils.sendNativeMouseEvent(aScreenX, aScreenY,
-                                 nativeMouseUpEventMsg(),
-                                 0,
-                                 aElement, resolve);
-    });
-  });
-}
-
 function getScreenPosition(aElement, aOffsetX, aOffsetY) {
   const rect = aElement.getBoundingClientRect();
   const x = aOffsetX + window.mozInnerScreenX + rect.left;
@@ -31,37 +19,30 @@ function getScreenPosition(aElement, aOffsetX, aOffsetY) {
   return [Math.round(x * scale), Math.round(y * scale)];
 }
 
-add_task(async () => {
-  await SimpleTest.promiseFocus();
-
-  const loadsPromise = new Promise(resolve => {
-    let readyInSameOriginIFrame = false;
-    let readyInCrossOriginIFrame = false;
+function waitForMessage(aMsg, aOrigin) {
+  return new Promise(resolve => {
     window.addEventListener("message", function listener(event) {
-      if (event.data == "ready") {
-        if (event.origin == location.origin) {
-          readyInSameOriginIFrame = true;
-        }
-        if (event.origin == "https://example.com") {
-          readyInCrossOriginIFrame = true;
-        }
-      }
-      if (readyInSameOriginIFrame && readyInCrossOriginIFrame) {
+      if (event.data == "ready" && event.origin == aOrigin) {
         window.removeEventListener("message", listener);
         resolve();
       }
     });
   });
+}
+
+add_task(async () => {
+  await SimpleTest.promiseFocus();
 
   const iframes = document.querySelectorAll("iframe");
   iframes[0].src = "file_event_screenXY.html";
-  iframes[1].src = "https://example.com/tests/dom/events/test/file_event_screenXY.html";
+  await waitForMessage("ready", location.origin);
 
-  await loadsPromise;
+  iframes[1].src = "https://example.com/tests/dom/events/test/file_event_screenXY.html";
+  await waitForMessage("ready", "https://example.com");
 
   // Wait for APZ state stable so that mouse event handling APZ works properly
   // in out-of-process iframes.
-  await new Promise(resolve => waitForApzFlushedRepaints(resolve));
+  await promiseApzFlushedRepaints();
 
   const promiseForSameOrigin = new Promise(resolve => {
     window.addEventListener("message", event => {
@@ -71,10 +52,16 @@ add_task(async () => {
   });
 
   // NOTE: synthesizeMouseAtCenter doesn't work for OOP iframes (bug 1528935),
-  // so we use synthesizeNativeMouseClick instead.
+  // so we use promiseNativeMouseEvent instead.
   const [expectedScreenXInSameOrigin, expectedScreenYInSameOrigin] =
     getScreenPosition(iframes[0], 10, 10);
-  await synthesizeNativeMouseClick(iframes[0], expectedScreenXInSameOrigin, expectedScreenYInSameOrigin);
+  await promiseNativeMouseEvent({
+    type: "click",
+    target: iframes[0],
+    screenX: expectedScreenXInSameOrigin,
+    screenY: expectedScreenYInSameOrigin,
+    scale: "inScreenPixels",
+  });
 
   const eventInSameOrigin = await promiseForSameOrigin;
   is(eventInSameOrigin.screenX, expectedScreenXInSameOrigin,
@@ -84,7 +71,13 @@ add_task(async () => {
 
   const [expectedScreenXInCrossOrigin, expectedScreenYInCrossOrigin] =
     getScreenPosition(iframes[1], 10, 10);
-  await synthesizeNativeMouseClick(iframes[0], expectedScreenXInCrossOrigin, expectedScreenYInCrossOrigin);
+  await promiseNativeMouseEvent({
+    type: "click",
+    target: iframes[0],
+    screenX: expectedScreenXInCrossOrigin,
+    screenY: expectedScreenYInCrossOrigin,
+    scale: "inScreenPixels",
+  });
 
   const promiseForCrossOrigin = new Promise(resolve => {
     window.addEventListener("message", event => {

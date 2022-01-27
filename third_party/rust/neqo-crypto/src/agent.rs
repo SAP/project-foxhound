@@ -12,32 +12,40 @@ pub use crate::cert::CertificateInfo;
 use crate::constants::{
     Alert, Cipher, Epoch, Extension, Group, SignatureScheme, Version, TLS_VERSION_1_3,
 };
+use crate::ech;
 use crate::err::{is_blocked, secstatus_to_res, Error, PRErrorCode, Res};
 use crate::ext::{ExtensionHandler, ExtensionTracker};
-use crate::p11;
+use crate::p11::{self, PrivateKey, PublicKey};
 use crate::prio;
 use crate::replay::AntiReplay;
 use crate::secrets::SecretHolder;
 use crate::ssl::{self, PRBool};
-use crate::time::TimeHolder;
+use crate::time::{Time, TimeHolder};
 
-use neqo_common::{hex_snip_middle, qdebug, qinfo, qtrace, qwarn};
+use neqo_common::{hex_snip_middle, hex_with_len, qdebug, qinfo, qtrace, qwarn};
 use std::cell::RefCell;
 use std::convert::TryFrom;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::mem::{self, MaybeUninit};
 use std::ops::{Deref, DerefMut};
 use std::os::raw::{c_uint, c_void};
 use std::pin::Pin;
-use std::ptr::{null, null_mut, NonNull};
+use std::ptr::{null, null_mut};
 use std::rc::Rc;
 use std::time::Instant;
+
+/// The maximum number of tickets to remember for a given connection.
+const MAX_TICKETS: usize = 4;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum HandshakeState {
     New,
     InProgress,
     AuthenticationPending,
+    /// When encrypted client hello is enabled, the server might engage a fallback.
+    /// This is the status that is returned.  The included value is the public
+    /// name of the server, which should be used to validated the certificate.
+    EchFallbackAuthenticationPending(String),
     Authenticated(PRErrorCode),
     Complete(SecretAgentInfo),
     Failed(Error),
@@ -52,6 +60,14 @@ impl HandshakeState {
     #[must_use]
     pub fn is_final(&self) -> bool {
         matches!(self, Self::Complete(_) | Self::Failed(_))
+    }
+
+    #[must_use]
+    pub fn authentication_needed(&self) -> bool {
+        matches!(
+            self,
+            Self::AuthenticationPending | Self::EchFallbackAuthenticationPending(_)
+        )
     }
 }
 
@@ -76,7 +92,7 @@ fn get_alpn(fd: *mut ssl::PRFileDesc, pre: bool) -> Res<Option<String>> {
             chosen.truncate(usize::try_from(chosen_len)?);
             Some(match String::from_utf8(chosen) {
                 Ok(a) => a,
-                _ => return Err(Error::InternalError),
+                Err(_) => return Err(Error::InternalError),
             })
         }
         _ => None,
@@ -96,7 +112,7 @@ macro_rules! preinfo_arg {
         pub fn $v(&self) -> Option<$t> {
             match self.info.valuesSet & ssl::$m {
                 0 => None,
-                _ => Some($t::from(self.info.$f)),
+                _ => Some($t::try_from(self.info.$f).unwrap()),
             }
         }
     };
@@ -121,24 +137,58 @@ impl SecretAgentPreInfo {
 
     preinfo_arg!(version, ssl_preinfo_version, protocolVersion: Version);
     preinfo_arg!(cipher_suite, ssl_preinfo_cipher_suite, cipherSuite: Cipher);
-    #[must_use]
-    pub fn early_data(&self) -> bool {
-        self.info.canSendEarlyData != 0
-    }
-    #[must_use]
-    pub fn max_early_data(&self) -> usize {
-        usize::try_from(self.info.maxEarlyDataSize).unwrap()
-    }
-    #[must_use]
-    pub fn alpn(&self) -> Option<&String> {
-        self.alpn.as_ref()
-    }
-
     preinfo_arg!(
         early_data_cipher,
         ssl_preinfo_0rtt_cipher_suite,
         zeroRttCipherSuite: Cipher,
     );
+
+    #[must_use]
+    pub fn early_data(&self) -> bool {
+        self.info.canSendEarlyData != 0
+    }
+
+    /// # Panics
+    /// If `usize` is less than 32 bits and the value is too large.
+    #[must_use]
+    pub fn max_early_data(&self) -> usize {
+        usize::try_from(self.info.maxEarlyDataSize).unwrap()
+    }
+
+    /// Was ECH accepted.
+    #[must_use]
+    pub fn ech_accepted(&self) -> Option<bool> {
+        if self.info.valuesSet & ssl::ssl_preinfo_ech == 0 {
+            None
+        } else {
+            Some(self.info.echAccepted != 0)
+        }
+    }
+
+    /// Get the ECH public name that was used.  This will only be available
+    /// (that is, not `None`) if `ech_accepted()` returns `false`.
+    /// In this case, certificate validation needs to use this name rather
+    /// than the original name to validate the certificate.  If
+    /// that validation passes (that is, `SecretAgent::authenticated` is called
+    /// with `AuthenticationStatus::Ok`), then the handshake will still fail.
+    /// After the failed handshake, the state will be `Error::EchRetry`,
+    /// which contains a valid ECH configuration.
+    ///
+    /// # Errors
+    /// When the public name is not valid UTF-8.  (Note: names should be ASCII.)
+    pub fn ech_public_name(&self) -> Res<Option<&str>> {
+        if self.info.valuesSet & ssl::ssl_preinfo_ech == 0 || self.info.echPublicName.is_null() {
+            Ok(None)
+        } else {
+            let n = unsafe { CStr::from_ptr(self.info.echPublicName) };
+            Ok(Some(n.to_str()?))
+        }
+    }
+
+    #[must_use]
+    pub fn alpn(&self) -> Option<&String> {
+        self.alpn.as_ref()
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -148,6 +198,7 @@ pub struct SecretAgentInfo {
     group: Group,
     resumed: bool,
     early_data: bool,
+    ech_accepted: bool,
     alpn: Option<String>,
     signature_scheme: SignatureScheme,
 }
@@ -169,6 +220,7 @@ impl SecretAgentInfo {
             group: Group::try_from(info.keaGroup)?,
             resumed: info.resumed != 0,
             early_data: info.earlyDataAccepted != 0,
+            ech_accepted: info.echAccepted != 0,
             alpn: get_alpn(fd, false)?,
             signature_scheme: SignatureScheme::try_from(info.signatureScheme)?,
         })
@@ -192,6 +244,10 @@ impl SecretAgentInfo {
     #[must_use]
     pub fn early_data_accepted(&self) -> bool {
         self.early_data
+    }
+    #[must_use]
+    pub fn ech_accepted(&self) -> bool {
+        self.ech_accepted
     }
     #[must_use]
     pub fn alpn(&self) -> Option<&String> {
@@ -222,6 +278,10 @@ pub struct SecretAgent {
 
     extension_handlers: Vec<ExtensionTracker>,
     inf: Option<SecretAgentInfo>,
+
+    /// The encrypted client hello (ECH) configuration that is in use.
+    /// Empty if ECH is not enabled.
+    ech_config: Vec<u8>,
 }
 
 impl SecretAgent {
@@ -241,6 +301,8 @@ impl SecretAgent {
 
             extension_handlers: Vec::new(),
             inf: None,
+
+            ech_config: Vec::new(),
         })
     }
 
@@ -261,8 +323,8 @@ impl SecretAgent {
             return Err(Error::CreateSslSocket);
         }
         let fd = unsafe {
-            (*base_fd).secret = as_c_void(io) as *mut _;
-            ssl::SSL_ImportFD(null_mut(), base_fd as *mut ssl::PRFileDesc)
+            (*base_fd).secret = as_c_void(io).cast();
+            ssl::SSL_ImportFD(null_mut(), base_fd.cast())
         };
         if fd.is_null() {
             unsafe { prio::PR_Close(base_fd) };
@@ -277,7 +339,7 @@ impl SecretAgent {
         _check_sig: ssl::PRBool,
         _is_server: ssl::PRBool,
     ) -> ssl::SECStatus {
-        let auth_required_ptr = arg as *mut bool;
+        let auth_required_ptr = arg.cast::<bool>();
         *auth_required_ptr = true;
         // NSS insists on getting SECWouldBlock here rather than accepting
         // the usual combination of PR_WOULD_BLOCK_ERROR and SECFailure.
@@ -292,8 +354,7 @@ impl SecretAgent {
         let alert = alert.as_ref().unwrap();
         if alert.level == 2 {
             // Fatal alerts demand attention.
-            let p = arg as *mut Option<Alert>;
-            let st = p.as_mut().unwrap();
+            let st = arg.cast::<Option<Alert>>().as_mut().unwrap();
             if st.is_none() {
                 *st = Some(alert.description);
             } else {
@@ -427,11 +488,16 @@ impl SecretAgent {
     ///
     /// # Errors
     /// This should always panic rather than return an error.
+    /// # Panics
+    /// If any of the provided `protocols` are more than 255 bytes long.
+    ///
+    /// [RFC7301]: https://datatracker.ietf.org/doc/html/rfc7301
     pub fn set_alpn(&mut self, protocols: &[impl AsRef<str>]) -> Res<()> {
         // Validate and set length.
         let mut encoded_len = protocols.len();
         for v in protocols {
             assert!(v.as_ref().len() < 256);
+            assert!(!v.as_ref().is_empty());
             encoded_len += v.as_ref().len();
         }
 
@@ -533,26 +599,34 @@ impl SecretAgent {
     }
 
     /// Call this function to mark the peer as authenticated.
-    /// Only call this function if `handshake/handshake_raw` returns
-    /// `HandshakeState::AuthenticationPending`, or it will panic.
+    /// # Panics
+    /// If the handshake doesn't need to be authenticated.
     pub fn authenticated(&mut self, status: AuthenticationStatus) {
-        assert_eq!(self.state, HandshakeState::AuthenticationPending);
+        assert!(self.state.authentication_needed());
         *self.auth_required = false;
         self.state = HandshakeState::Authenticated(status.into());
     }
 
     fn capture_error<T>(&mut self, res: Res<T>) -> Res<T> {
-        if let Err(e) = &res {
+        if let Err(e) = res {
+            let e = ech::convert_ech_error(self.fd, e);
             qwarn!([self], "error: {:?}", e);
             self.state = HandshakeState::Failed(e.clone());
+            Err(e)
+        } else {
+            res
         }
-        res
     }
 
     fn update_state(&mut self, res: Res<()>) -> Res<()> {
         self.state = if is_blocked(&res) {
             if *self.auth_required {
-                HandshakeState::AuthenticationPending
+                self.preinfo()?.ech_public_name()?.map_or(
+                    HandshakeState::AuthenticationPending,
+                    |public_name| {
+                        HandshakeState::EchFallbackAuthenticationPending(public_name.to_owned())
+                    },
+                )
             } else {
                 HandshakeState::InProgress
             }
@@ -636,6 +710,7 @@ impl SecretAgent {
         Ok(*Pin::into_inner(records))
     }
 
+    #[allow(unknown_lints, clippy::branches_sharing_code)]
     pub fn close(&mut self) {
         // It should be safe to close multiple times.
         if self.fd.is_null() {
@@ -644,11 +719,11 @@ impl SecretAgent {
         if let Some(true) = self.raw {
             // Need to hold the record list in scope until the close is done.
             let _records = self.setup_raw().expect("Can only close");
-            unsafe { prio::PR_Close(self.fd as *mut prio::PRFileDesc) };
+            unsafe { prio::PR_Close(self.fd.cast()) };
         } else {
             // Need to hold the IO wrapper in scope until the close is done.
             let _io = self.io.wrap(&[]);
-            unsafe { prio::PR_Close(self.fd as *mut prio::PRFileDesc) };
+            unsafe { prio::PR_Close(self.fd.cast()) };
         };
         let _output = self.io.take_output();
         self.fd = null_mut();
@@ -659,15 +734,23 @@ impl SecretAgent {
     pub fn state(&self) -> &HandshakeState {
         &self.state
     }
+
     /// Take a read secret.  This will only return a non-`None` value once.
     #[must_use]
     pub fn read_secret(&mut self, epoch: Epoch) -> Option<p11::SymKey> {
         self.secrets.take_read(epoch)
     }
+
     /// Take a write secret.
     #[must_use]
     pub fn write_secret(&mut self, epoch: Epoch) -> Option<p11::SymKey> {
         self.secrets.take_write(epoch)
+    }
+
+    /// Get the active ECH configuration, which is empty if ECH is disabled.
+    #[must_use]
+    pub fn ech_config(&self) -> &[u8] {
+        &self.ech_config
     }
 }
 
@@ -683,13 +766,41 @@ impl ::std::fmt::Display for SecretAgent {
     }
 }
 
+#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Clone)]
+pub struct ResumptionToken {
+    token: Vec<u8>,
+    expiration_time: Instant,
+}
+
+impl AsRef<[u8]> for ResumptionToken {
+    fn as_ref(&self) -> &[u8] {
+        &self.token
+    }
+}
+
+impl ResumptionToken {
+    #[must_use]
+    pub fn new(token: Vec<u8>, expiration_time: Instant) -> Self {
+        Self {
+            token,
+            expiration_time,
+        }
+    }
+
+    #[must_use]
+    pub fn expiration_time(&self) -> Instant {
+        self.expiration_time
+    }
+}
+
 /// A TLS Client.
 #[derive(Debug)]
+#[allow(clippy::box_vec)] // We need the Box.
 pub struct Client {
     agent: SecretAgent,
 
-    /// Records the last resumption token.
-    resumption: Pin<Box<Option<Vec<u8>>>>,
+    /// Records the resumption tokens we've received.
+    resumption: Pin<Box<Vec<ResumptionToken>>>,
 }
 
 impl Client {
@@ -704,7 +815,7 @@ impl Client {
         agent.ready(false)?;
         let mut client = Self {
             agent,
-            resumption: Box::pin(None),
+            resumption: Box::pin(Vec::new()),
         };
         client.ready()?;
         Ok(client)
@@ -716,8 +827,24 @@ impl Client {
         len: c_uint,
         arg: *mut c_void,
     ) -> ssl::SECStatus {
-        let resumption_ptr = arg as *mut Option<Vec<u8>>;
-        let resumption = resumption_ptr.as_mut().unwrap();
+        let mut info: MaybeUninit<ssl::SSLResumptionTokenInfo> = MaybeUninit::uninit();
+        if ssl::SSL_GetResumptionTokenInfo(
+            token,
+            len,
+            info.as_mut_ptr(),
+            c_uint::try_from(mem::size_of::<ssl::SSLResumptionTokenInfo>()).unwrap(),
+        )
+        .is_err()
+        {
+            // Ignore the token.
+            return ssl::SECSuccess;
+        }
+        let expiration_time = info.assume_init().expirationTime;
+        if ssl::SSL_DestroyResumptionTokenInfo(info.as_mut_ptr()).is_err() {
+            // Ignore the token.
+            return ssl::SECSuccess;
+        }
+        let resumption = arg.cast::<Vec<ResumptionToken>>().as_mut().unwrap();
         let len = usize::try_from(len).unwrap();
         let mut v = Vec::with_capacity(len);
         v.extend_from_slice(std::slice::from_raw_parts(token, len));
@@ -726,7 +853,13 @@ impl Client {
             "Got resumption token {}",
             hex_snip_middle(&v)
         );
-        *resumption = Some(v);
+
+        if resumption.len() >= MAX_TICKETS {
+            resumption.remove(0);
+        }
+        if let Ok(t) = Time::try_from(expiration_time) {
+            resumption.push(ResumptionToken::new(v, *t));
+        }
         ssl::SECSuccess
     }
 
@@ -741,10 +874,16 @@ impl Client {
         }
     }
 
-    /// Return the resumption token.
+    /// Take a resumption token.
     #[must_use]
-    pub fn resumption_token(&self) -> Option<&Vec<u8>> {
-        (*self.resumption).as_ref()
+    pub fn resumption_token(&mut self) -> Option<ResumptionToken> {
+        (*self.resumption).pop()
+    }
+
+    /// Check if there are more resumption tokens.
+    #[must_use]
+    pub fn has_resumption_token(&self) -> bool {
+        !(*self.resumption).is_empty()
     }
 
     /// Enable resumption, using a token previously provided.
@@ -752,13 +891,42 @@ impl Client {
     /// # Errors
     /// Error returned when the resumption token is invalid or
     /// the socket is not able to use the value.
-    pub fn set_resumption_token(&mut self, token: &[u8]) -> Res<()> {
+    pub fn enable_resumption(&mut self, token: impl AsRef<[u8]>) -> Res<()> {
         unsafe {
             ssl::SSL_SetResumptionToken(
                 self.agent.fd,
-                token.as_ptr(),
-                c_uint::try_from(token.len())?,
+                token.as_ref().as_ptr(),
+                c_uint::try_from(token.as_ref().len())?,
             )
+        }
+    }
+
+    /// Enable encrypted client hello (ECH), using the encoded `ECHConfigList`.
+    ///
+    /// When ECH is enabled, a client needs to look for `Error::EchRetry` as a
+    /// failure code.  If `Error::EchRetry` is received when connecting, the
+    /// connection attempt should be retried and the included value provided
+    /// to this function (instead of what is received from DNS).
+    ///
+    /// Calling this function with an empty value for `ech_config_list` enables
+    /// ECH greasing.  When that is done, there is no need to look for `EchRetry`
+    ///
+    /// # Errors
+    /// Error returned when the configuration is invalid.
+    pub fn enable_ech(&mut self, ech_config_list: impl AsRef<[u8]>) -> Res<()> {
+        let config = ech_config_list.as_ref();
+        qdebug!([self], "Enable ECH for a server: {}", hex_with_len(&config));
+        self.ech_config = Vec::from(config);
+        if config.is_empty() {
+            unsafe { ech::SSL_EnableTls13GreaseEch(self.agent.fd, PRBool::from(true)) }
+        } else {
+            unsafe {
+                ech::SSL_SetClientEchConfigs(
+                    self.agent.fd,
+                    config.as_ptr(),
+                    c_uint::try_from(config.len())?,
+                )
+            }
         }
     }
 }
@@ -777,10 +945,16 @@ impl DerefMut for Client {
     }
 }
 
+impl ::std::fmt::Display for Client {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "Client {:p}", self.agent.fd)
+    }
+}
+
 /// `ZeroRttCheckResult` encapsulates the options for handling a `ClientHello`.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ZeroRttCheckResult {
-    /// Accept 0-RTT; the default.
+    /// Accept 0-RTT.
     Accept,
     /// Reject 0-RTT, but continue the handshake normally.
     Reject,
@@ -839,17 +1013,17 @@ impl Server {
 
         for n in certificates {
             let c = CString::new(n.as_ref())?;
-            let cert = match NonNull::new(unsafe {
-                p11::PK11_FindCertFromNickname(c.as_ptr(), null_mut())
-            }) {
-                None => return Err(Error::CertificateLoading),
-                Some(ptr) => p11::Certificate::new(ptr),
+            let cert_ptr = unsafe { p11::PK11_FindCertFromNickname(c.as_ptr(), null_mut()) };
+            let cert = if let Ok(c) = p11::Certificate::from_ptr(cert_ptr) {
+                c
+            } else {
+                return Err(Error::CertificateLoading);
             };
-            let key = match NonNull::new(unsafe {
-                p11::PK11_FindKeyByAnyCert(*cert.deref(), null_mut())
-            }) {
-                None => return Err(Error::CertificateLoading),
-                Some(ptr) => p11::PrivateKey::new(ptr),
+            let key_ptr = unsafe { p11::PK11_FindKeyByAnyCert(*cert.deref(), null_mut()) };
+            let key = if let Ok(k) = p11::PrivateKey::from_ptr(key_ptr) {
+                k
+            } else {
+                return Err(Error::CertificateLoading);
             };
             secstatus_to_res(unsafe {
                 ssl::SSL_ConfigServerCert(agent.fd, *cert.deref(), *key.deref(), null(), 0)
@@ -877,8 +1051,7 @@ impl Server {
             return ssl::SSLHelloRetryRequestAction::ssl_hello_retry_accept;
         }
 
-        let p = arg as *mut ZeroRttCheckState;
-        let check_state = p.as_mut().unwrap();
+        let check_state = arg.cast::<ZeroRttCheckState>().as_mut().unwrap();
         let token = if client_token.is_null() {
             &[]
         } else {
@@ -943,6 +1116,32 @@ impl Server {
 
         Ok(*Pin::into_inner(records))
     }
+
+    /// Enable encrypted client hello (ECH).
+    ///
+    /// # Errors
+    /// Fails when NSS cannot create a key pair.
+    pub fn enable_ech(
+        &mut self,
+        config: u8,
+        public_name: &str,
+        sk: &PrivateKey,
+        pk: &PublicKey,
+    ) -> Res<()> {
+        let cfg = ech::encode_config(config, public_name, pk)?;
+        qdebug!([self], "Enable ECH for a server: {}", hex_with_len(&cfg));
+        unsafe {
+            ech::SSL_SetServerEchConfigs(
+                self.agent.fd,
+                **pk,
+                **sk,
+                cfg.as_ptr(),
+                c_uint::try_from(cfg.len())?,
+            )?;
+        };
+        self.ech_config = cfg;
+        Ok(())
+    }
 }
 
 impl Deref for Server {
@@ -956,6 +1155,12 @@ impl Deref for Server {
 impl DerefMut for Server {
     fn deref_mut(&mut self) -> &mut SecretAgent {
         &mut self.agent
+    }
+}
+
+impl ::std::fmt::Display for Server {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "Server {:p}", self.agent.fd)
     }
 }
 

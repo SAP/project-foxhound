@@ -7,7 +7,6 @@ import argparse
 import os
 import signal
 import sys
-import time
 
 import mozinfo
 import mozlog.commandline
@@ -15,33 +14,84 @@ import mozlog.commandline
 from . import get_playback
 from .utils import LOG, TOOLTOOL_PATHS
 
+EXIT_SUCCESS = 0
+EXIT_EARLY_TERMINATE = 3
+EXIT_EXCEPTION = 4
+
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--local", action="store_true",
-                        help="run this locally (i.e. not in production)")
-    parser.add_argument("--tool", default="mitmproxy",
-                        help="the playback tool to use (default: %(default)s)")
-    parser.add_argument("--host", default="localhost",
-                        help="the host to use for the proxy server")
-    parser.add_argument("--binary", required=True,
-                        help=("the path to the binary being tested (typically "
-                              "firefox)"))
-    parser.add_argument("--topsrcdir", required=True,
-                        help="the top of the source directory for this project")
-    parser.add_argument("--objdir", required=True,
-                        help="the object directory for this build")
-    parser.add_argument("--app", default="firefox",
-                        help="the app being tested (default: %(default)s)")
-    parser.add_argument("playback", nargs="*", help="the playback file to use")
+    parser.add_argument(
+        "--mode",
+        default="playback",
+        choices=["record", "playback"],
+        help="Proxy server mode. Use `playback` to replay from the provided file(s). "
+        "Use `record` to generate a new recording at the path specified by `--file`. "
+        "playback - replay from provided file. "
+        "record - generate a new recording at the specified path.",
+    )
+    parser.add_argument(
+        "file",
+        nargs="+",
+        help="The playback files to replay, or the file that a recording will be saved to. "
+        "For playback, it can be any combination of the following: zip file, manifest file, "
+        "or a URL to zip/manifest file. "
+        "For recording, it's a zip fle.",
+    )
+    parser.add_argument(
+        "--host", default="localhost", help="The host to use for the proxy server."
+    )
+    parser.add_argument(
+        "--tool",
+        default="mitmproxy",
+        help="The playback tool to use (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--tool-version",
+        default="7.0.4",
+        help="The playback tool version to use (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--app", default="firefox", help="The app being tested (default: %(default)s)."
+    )
+    parser.add_argument(
+        "--binary",
+        required=True,
+        help=("The path to the binary being tested (typically firefox)."),
+    )
+    parser.add_argument(
+        "--topsrcdir",
+        required=True,
+        help="The top of the source directory for this project.",
+    )
+    parser.add_argument(
+        "--objdir", required=True, help="The object directory for this build."
+    )
+    parser.add_argument(
+        "--profiledir", default=None, help="Path to the profile directory."
+    )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Run this locally (i.e. not in production).",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Run this locally (i.e. not in production).",
+    )
 
     mozlog.commandline.add_logging_group(parser)
 
     args = parser.parse_args()
     mozlog.commandline.setup_logging("mozproxy", args, {"raw": sys.stdout})
 
-    TOOLTOOL_PATHS.append(os.path.join(args.topsrcdir, "python", "mozbuild",
-                                       "mozbuild", "action", "tooltool.py"))
+    TOOLTOOL_PATHS.append(
+        os.path.join(
+            args.topsrcdir, "python", "mozbuild", "mozbuild", "action", "tooltool.py"
+        )
+    )
 
     if hasattr(signal, "SIGBREAK"):
         # Terminating on windows is slightly different than other platforms.
@@ -54,26 +104,63 @@ def main():
         signal.signal(signal.SIGBREAK, handle_sigbreak)
 
     try:
-        playback = get_playback({
-            "run_local": args.local,
-            "playback_tool": args.tool,
-            "host": args.host,
-            "binary": args.binary,
-            "obj_path": args.objdir,
-            "platform": mozinfo.os,
-            "playback_files": args.playback,
-            "app": args.app
-        })
-        playback.start()
+        if args.mode == "playback":
+            if len(args.file) == 0:
+                raise Exception("Please provide at least one recording file!")
 
-        LOG.info("Proxy running on port %d" % playback.port)
+            # Playback mode
+            proxy_service = get_playback(
+                {
+                    "run_local": args.local,
+                    "host": args.host,
+                    "binary": args.binary,
+                    "obj_path": args.objdir,
+                    "platform": mozinfo.os,
+                    "playback_tool": args.tool,
+                    "playback_version": args.tool_version,
+                    "playback_files": args.file,
+                    "app": args.app,
+                    "local_profile_dir": args.profiledir,
+                    "verbose": args.verbose,
+                }
+            )
+        if args.mode == "record":
+            # Record mode
+            if len(args.file) > 1:
+                raise Exception("Please provide only one recording file!")
+
+            LOG.info("Recording will be saved to: %s" % args.file)
+            proxy_service = get_playback(
+                {
+                    "run_local": args.local,
+                    "host": args.host,
+                    "binary": args.binary,
+                    "obj_path": args.objdir,
+                    "platform": mozinfo.os,
+                    "playback_tool": args.tool,
+                    "playback_version": args.tool_version,
+                    "record": True,
+                    "recording_file": args.file[0],
+                    "app": args.app,
+                    "local_profile_dir": args.profiledir,
+                    "verbose": args.verbose,
+                }
+            )
+        LOG.info("Proxy settings %s" % proxy_service)
+        proxy_service.start()
+        LOG.info("Proxy running on port %d" % proxy_service.port)
         # Wait for a keyboard interrupt from the caller so we know when to
-        # terminate. We wait using this method to allow Windows to respond to
-        # the Ctrl+Break signal so that we can exit cleanly.
-        while True:
-            time.sleep(1)
+        # terminate.
+        proxy_service.wait()
+        return EXIT_EARLY_TERMINATE
     except KeyboardInterrupt:
         LOG.info("Terminating mozproxy")
-        playback.stop()
+        proxy_service.stop()
+        return EXIT_SUCCESS
     except Exception as e:
         LOG.error(str(e), exc_info=True)
+        return EXIT_EXCEPTION
+
+
+if __name__ == "__main__":
+    main()

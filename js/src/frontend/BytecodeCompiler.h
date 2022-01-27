@@ -13,9 +13,9 @@
 #include "NamespaceImports.h"
 
 #include "frontend/FunctionSyntaxKind.h"
-#include "js/CompileOptions.h"
+#include "gc/Rooting.h"
 #include "js/SourceText.h"
-#include "vm/Scope.h"
+#include "js/UniquePtr.h"  // js::UniquePtr
 #include "vm/TraceLogging.h"
 
 /*
@@ -97,6 +97,10 @@
 
 class JSLinearString;
 
+namespace JS {
+class JS_PUBLIC_API ReadOnlyCompileOptions;
+}
+
 namespace js {
 
 class ModuleObject;
@@ -104,9 +108,14 @@ class ScriptSourceObject;
 
 namespace frontend {
 
+struct CompilationInput;
+struct CompilationStencil;
+struct ExtensibleCompilationStencil;
+struct CompilationGCOutput;
 class ErrorReporter;
 class FunctionBox;
 class ParseNode;
+class TaggedParserAtomIndex;
 
 // Compile a module of the given source using the given options.
 ModuleObject* CompileModule(JSContext* cx,
@@ -118,14 +127,17 @@ ModuleObject* CompileModule(JSContext* cx,
 
 // Parse a module of the given source.  This is an internal API; if you want to
 // compile a module as a user, use CompileModule above.
-ModuleObject* ParseModule(JSContext* cx,
-                          const JS::ReadOnlyCompileOptions& options,
-                          JS::SourceText<char16_t>& srcBuf,
-                          ScriptSourceObject** sourceObjectOut);
-ModuleObject* ParseModule(JSContext* cx,
-                          const JS::ReadOnlyCompileOptions& options,
-                          JS::SourceText<mozilla::Utf8Unit>& srcBuf,
-                          ScriptSourceObject** sourceObjectOut);
+UniquePtr<CompilationStencil> ParseModuleToStencil(
+    JSContext* cx, CompilationInput& input, JS::SourceText<char16_t>& srcBuf);
+UniquePtr<CompilationStencil> ParseModuleToStencil(
+    JSContext* cx, CompilationInput& input,
+    JS::SourceText<mozilla::Utf8Unit>& srcBuf);
+
+UniquePtr<ExtensibleCompilationStencil> ParseModuleToExtensibleStencil(
+    JSContext* cx, CompilationInput& input, JS::SourceText<char16_t>& srcBuf);
+UniquePtr<ExtensibleCompilationStencil> ParseModuleToExtensibleStencil(
+    JSContext* cx, CompilationInput& input,
+    JS::SourceText<mozilla::Utf8Unit>& srcBuf);
 
 //
 // Compile a single function. The source in srcBuf must match the ECMA-262
@@ -139,30 +151,36 @@ ModuleObject* ParseModule(JSContext* cx,
 //     Function("/*", "*/x) {")
 //     Function("x){ if (3", "return x;}")
 //
-MOZ_MUST_USE JSFunction* CompileStandaloneFunction(
-    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
-    JS::SourceText<char16_t>& srcBuf,
-    const mozilla::Maybe<uint32_t>& parameterListEnd,
-    frontend::FunctionSyntaxKind syntaxKind,
-    HandleScope enclosingScope = nullptr);
-
-MOZ_MUST_USE JSFunction* CompileStandaloneGenerator(
+[[nodiscard]] JSFunction* CompileStandaloneFunction(
     JSContext* cx, const JS::ReadOnlyCompileOptions& options,
     JS::SourceText<char16_t>& srcBuf,
     const mozilla::Maybe<uint32_t>& parameterListEnd,
     frontend::FunctionSyntaxKind syntaxKind);
 
-MOZ_MUST_USE JSFunction* CompileStandaloneAsyncFunction(
+[[nodiscard]] JSFunction* CompileStandaloneGenerator(
     JSContext* cx, const JS::ReadOnlyCompileOptions& options,
     JS::SourceText<char16_t>& srcBuf,
     const mozilla::Maybe<uint32_t>& parameterListEnd,
     frontend::FunctionSyntaxKind syntaxKind);
 
-MOZ_MUST_USE JSFunction* CompileStandaloneAsyncGenerator(
+[[nodiscard]] JSFunction* CompileStandaloneAsyncFunction(
     JSContext* cx, const JS::ReadOnlyCompileOptions& options,
     JS::SourceText<char16_t>& srcBuf,
     const mozilla::Maybe<uint32_t>& parameterListEnd,
     frontend::FunctionSyntaxKind syntaxKind);
+
+[[nodiscard]] JSFunction* CompileStandaloneAsyncGenerator(
+    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+    JS::SourceText<char16_t>& srcBuf,
+    const mozilla::Maybe<uint32_t>& parameterListEnd,
+    frontend::FunctionSyntaxKind syntaxKind);
+
+// Compile a single function in given enclosing non-syntactic scope.
+[[nodiscard]] JSFunction* CompileStandaloneFunctionInNonSyntacticScope(
+    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+    JS::SourceText<char16_t>& srcBuf,
+    const mozilla::Maybe<uint32_t>& parameterListEnd,
+    frontend::FunctionSyntaxKind syntaxKind, HandleScope enclosingScope);
 
 /*
  * True if str consists of an IdentifierStart character, followed by one or
@@ -183,11 +201,17 @@ bool IsIdentifierNameOrPrivateName(JSLinearString* str);
 bool IsIdentifier(const Latin1Char* chars, size_t length);
 bool IsIdentifier(const char16_t* chars, size_t length);
 
+/*
+ * ASCII variant with known length.
+ */
+bool IsIdentifierASCII(char c);
+bool IsIdentifierASCII(char c1, char c2);
+
 bool IsIdentifierNameOrPrivateName(const Latin1Char* chars, size_t length);
 bool IsIdentifierNameOrPrivateName(const char16_t* chars, size_t length);
 
 /* True if str is a keyword. Defined in TokenStream.cpp. */
-bool IsKeyword(JSLinearString* str);
+bool IsKeyword(TaggedParserAtomIndex atom);
 
 class MOZ_STACK_CLASS AutoFrontendTraceLog {
 #ifdef JS_TRACE_LOGGING

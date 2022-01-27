@@ -7,14 +7,16 @@
 #ifndef mozilla_dom_DataTransferItem_h
 #define mozilla_dom_DataTransferItem_h
 
-#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/DataTransfer.h"
 #include "mozilla/dom/DOMString.h"
 #include "mozilla/dom/File.h"
 
 namespace mozilla {
+class ErrorResult;
+
 namespace dom {
 
+class DataTransfer;
 class FileSystemEntry;
 class FunctionStringCallback;
 

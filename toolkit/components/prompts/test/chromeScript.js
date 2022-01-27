@@ -1,8 +1,22 @@
 /* eslint-env mozilla/frame-script */
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { clearInterval, setInterval } = ChromeUtils.import(
+const { clearInterval, setInterval, setTimeout } = ChromeUtils.import(
   "resource://gre/modules/Timer.jsm"
+);
+
+const { BrowserTestUtils } = ChromeUtils.import(
+  "resource://testing-common/BrowserTestUtils.jsm"
+);
+
+var tabSubDialogsEnabled = Services.prefs.getBoolPref(
+  "prompts.tabChromePromptSubDialog",
+  false
+);
+
+var contentPromptSubdialogsEnabled = Services.prefs.getBoolPref(
+  "prompts.contentPromptSubDialog",
+  false
 );
 
 // Define these to make EventUtils happy.
@@ -16,15 +30,16 @@ Services.scriptloader.loadSubScript(
 );
 
 addMessageListener("handlePrompt", msg => {
-  handlePromptWhenItAppears(msg.action, msg.isTabModal, msg.isSelect);
+  handlePromptWhenItAppears(msg.action, msg.modalType, msg.isSelect);
 });
 
-function handlePromptWhenItAppears(action, isTabModal, isSelect) {
-  let interval = setInterval(() => {
-    if (handlePrompt(action, isTabModal, isSelect)) {
-      clearInterval(interval);
-    }
-  }, 100);
+async function handlePromptWhenItAppears(action, modalType, isSelect) {
+  if (!(await handlePrompt(action, modalType, isSelect))) {
+    setTimeout(
+      () => this.handlePromptWhenItAppears(action, modalType, isSelect),
+      100
+    );
+  }
 }
 
 function checkTabModal(prompt, browser) {
@@ -53,7 +68,7 @@ function checkTabModal(prompt, browser) {
     "Check clicks on the content area don't go to the browser"
   );
   is(
-    doc.elementFromPoint(x - 10, y + 50).parentNode,
+    doc.elementFromPoint(x - 10, y + 50),
     prompt.element,
     "Check clicks on the content area go to the prompt dialog background"
   );
@@ -73,11 +88,15 @@ function checkTabModal(prompt, browser) {
   );
 }
 
-function handlePrompt(action, isTabModal, isSelect) {
+async function handlePrompt(action, modalType, isSelect) {
   let ui;
+  let browserWin = Services.wm.getMostRecentWindow("navigator:browser");
 
-  if (isTabModal) {
-    let browserWin = Services.wm.getMostRecentWindow("navigator:browser");
+  if (
+    (!contentPromptSubdialogsEnabled &&
+      modalType === Services.prompt.MODAL_TYPE_CONTENT) ||
+    (!tabSubDialogsEnabled && modalType === Services.prompt.MODAL_TYPE_TAB)
+  ) {
     let gBrowser = browserWin.gBrowser;
     let promptManager = gBrowser.getTabModalPromptBox(gBrowser.selectedBrowser);
     let prompts = promptManager.listPrompts();
@@ -100,6 +119,11 @@ function handlePrompt(action, isTabModal, isSelect) {
     }
   }
 
+  let dialogClosed = BrowserTestUtils.waitForEvent(
+    browserWin,
+    "DOMModalDialogClosed"
+  );
+
   let promptState;
   if (isSelect) {
     promptState = getSelectState(ui);
@@ -108,6 +132,13 @@ function handlePrompt(action, isTabModal, isSelect) {
     promptState = getPromptState(ui);
     dismissPrompt(ui, action);
   }
+
+  // Wait until the prompt has been closed before sending callback msg.
+  // Unless the test explicitly doesn't request a button click.
+  if (action.buttonClick !== "none") {
+    await dialogClosed;
+  }
+
   sendAsyncMessage("promptHandled", { promptState });
   return true;
 }
@@ -131,13 +162,14 @@ function getSelectState(ui) {
 function getPromptState(ui) {
   let state = {};
   state.msg = ui.infoBody.textContent;
-  state.titleHidden = ui.infoTitle.getAttribute("hidden") == "true";
+  state.infoRowHidden = ui.infoRow?.hidden || false;
+  state.titleHidden = ui.infoTitle.hidden;
   state.textHidden = ui.loginContainer.hidden;
   state.passHidden = ui.password1Container.hidden;
   state.checkHidden = ui.checkboxContainer.hidden;
   state.checkMsg = state.checkHidden ? "" : ui.checkbox.label;
   state.checked = state.checkHidden ? false : ui.checkbox.checked;
-  // tab-modal prompts don't have an infoIcon
+  // TabModalPrompts don't have an infoIcon
   state.iconClass = ui.infoIcon ? ui.infoIcon.className : null;
   state.textValue = ui.loginTextbox.value;
   state.passValue = ui.password1Textbox.value;
@@ -193,6 +225,14 @@ function getPromptState(ui) {
     let wbc = treeOwner.getInterface(Ci.nsIWebBrowserChrome);
     state.isWindowModal = wbc.isWindowModal();
   }
+
+  // Check the dialog is a common dialog document and has been embedded.
+  let isEmbedded = !!ui.prompt?.docShell?.chromeEventHandler;
+  let isCommonDialogDoc = getDialogDoc()?.location.href.includes(
+    "commonDialog.xhtml"
+  );
+  state.isSubDialogPrompt = isCommonDialogDoc && isEmbedded;
+  state.showCallerOrigin = ui.prompt.args.showCallerOrigin;
 
   return state;
 }

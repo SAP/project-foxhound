@@ -14,14 +14,17 @@
 #include "GLContext.h"
 #include "mozilla/Casting.h"
 #include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/Logging.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/dom/HTMLVideoElement.h"
 #include "mozilla/dom/ImageBitmap.h"
 #include "mozilla/dom/ImageData.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Scoped.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/Unused.h"
+#include "nsLayoutUtils.h"
 #include "ScopedGLHelpers.h"
 #include "TexUnpackBlob.h"
 #include "WebGLBuffer.h"
@@ -47,20 +50,30 @@ Maybe<TexUnpackBlobDesc> FromImageBitmap(const GLenum target, uvec3 size,
   }
 
   const RefPtr<gfx::DataSourceSurface> surf = cloneData->mSurface;
+  const auto imageSize = *uvec2::FromSize(surf->GetSize());
 
   if (!size.x) {
-    size.x = surf->GetSize().width;
+    size.x = imageSize.x;
   }
 
   if (!size.y) {
-    size.y = surf->GetSize().height;
+    size.y = imageSize.y;
   }
 
   // WhatWG "HTML Living Standard" (30 October 2015):
   // "The getImageData(sx, sy, sw, sh) method [...] Pixels must be returned as
   // non-premultiplied alpha values."
-  return Some(
-      TexUnpackBlobDesc{target, size, cloneData->mAlphaType, {}, {}, {}, surf});
+  return Some(TexUnpackBlobDesc{target,
+                                size,
+                                cloneData->mAlphaType,
+                                {},
+                                {},
+                                imageSize,
+                                nullptr,
+                                {},
+                                surf,
+                                {},
+                                false});
 }
 
 TexUnpackBlobDesc FromImageData(const GLenum target, uvec3 size,
@@ -71,24 +84,25 @@ TexUnpackBlobDesc FromImageData(const GLenum target, uvec3 size,
   const size_t dataSize = scopedArr->Length();
   const auto data = reinterpret_cast<uint8_t*>(scopedArr->Data());
 
-  const gfx::IntSize imageSize(imageData.Width(), imageData.Height());
-  const size_t stride = imageSize.width * 4;
+  const gfx::IntSize imageISize(imageData.Width(), imageData.Height());
+  const auto imageUSize = *uvec2::FromSize(imageISize);
+  const size_t stride = imageUSize.x * 4;
   const gfx::SurfaceFormat surfFormat = gfx::SurfaceFormat::R8G8B8A8;
-  MOZ_ALWAYS_TRUE(dataSize == stride * imageSize.height);
+  MOZ_ALWAYS_TRUE(dataSize == stride * imageUSize.y);
 
   const RefPtr<gfx::DataSourceSurface> surf =
-      gfx::Factory::CreateWrappingDataSourceSurface(data, stride, imageSize,
+      gfx::Factory::CreateWrappingDataSourceSurface(data, stride, imageISize,
                                                     surfFormat);
   MOZ_ASSERT(surf);
 
   ////
 
   if (!size.x) {
-    size.x = imageData.Width();
+    size.x = imageUSize.x;
   }
 
   if (!size.y) {
-    size.y = imageData.Height();
+    size.y = imageUSize.y;
   }
 
   ////
@@ -96,13 +110,46 @@ TexUnpackBlobDesc FromImageData(const GLenum target, uvec3 size,
   // WhatWG "HTML Living Standard" (30 October 2015):
   // "The getImageData(sx, sy, sw, sh) method [...] Pixels must be returned as
   // non-premultiplied alpha values."
-  return {target, size, gfxAlphaType::NonPremult, {}, {}, {}, surf};
+  return {target, size, gfxAlphaType::NonPremult, {}, {}, imageUSize, nullptr,
+          {},     surf};
+}
+
+static layers::SurfaceDescriptor Flatten(const layers::SurfaceDescriptor& sd) {
+  const auto sdType = sd.type();
+  if (sdType != layers::SurfaceDescriptor::TSurfaceDescriptorGPUVideo) {
+    return sd;
+  }
+  const auto& sdv = sd.get_SurfaceDescriptorGPUVideo();
+  const auto& sdvType = sdv.type();
+  if (sdvType !=
+      layers::SurfaceDescriptorGPUVideo::TSurfaceDescriptorRemoteDecoder) {
+    return sd;
+  }
+
+  const auto& sdrd = sdv.get_SurfaceDescriptorRemoteDecoder();
+  const auto& subdesc = sdrd.subdesc();
+  const auto& subdescType = subdesc.type();
+  switch (subdescType) {
+    case layers::RemoteDecoderVideoSubDescriptor::T__None:
+    case layers::RemoteDecoderVideoSubDescriptor::Tnull_t:
+      return sd;
+
+    case layers::RemoteDecoderVideoSubDescriptor::TSurfaceDescriptorD3D10:
+      return subdesc.get_SurfaceDescriptorD3D10();
+    case layers::RemoteDecoderVideoSubDescriptor::TSurfaceDescriptorDXGIYCbCr:
+      return subdesc.get_SurfaceDescriptorDXGIYCbCr();
+    case layers::RemoteDecoderVideoSubDescriptor::TSurfaceDescriptorDMABuf:
+      return subdesc.get_SurfaceDescriptorDMABuf();
+    case layers::RemoteDecoderVideoSubDescriptor::
+        TSurfaceDescriptorMacIOSurface:
+      return subdesc.get_SurfaceDescriptorMacIOSurface();
+  }
+  MOZ_CRASH("unreachable");
 }
 
 Maybe<webgl::TexUnpackBlobDesc> FromDomElem(const ClientWebGLContext& webgl,
                                             const GLenum target, uvec3 size,
                                             const dom::Element& elem,
-                                            const bool allowBlitImage,
                                             ErrorResult* const out_error) {
   const auto& canvas = *webgl.GetCanvas();
 
@@ -119,8 +166,8 @@ Maybe<webgl::TexUnpackBlobDesc> FromDomElem(const ClientWebGLContext& webgl,
   // animated images. The webgl spec doesn't mention the issue, so we do the
   // same as drawImage.
   uint32_t flags = nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE |
-                   nsLayoutUtils::SFE_WANT_IMAGE_SURFACE |
                    nsLayoutUtils::SFE_USE_ELEMENT_SIZE_IF_VECTOR |
+                   nsLayoutUtils::SFE_EXACT_SIZE_SURFACE |
                    nsLayoutUtils::SFE_ALLOW_NON_PREMULT;
   const auto& unpacking = webgl.State().mPixelUnpackState;
   if (unpacking.mColorspaceConversion == LOCAL_GL_NONE) {
@@ -133,21 +180,26 @@ Maybe<webgl::TexUnpackBlobDesc> FromDomElem(const ClientWebGLContext& webgl,
 
   //////
 
-  uint32_t elemWidth = 0;
-  uint32_t elemHeight = 0;
-  layers::Image* layersImage = nullptr;
+  uvec2 elemSize;
 
-  if (sfer.mLayersImage && allowBlitImage) {
-    layersImage = sfer.mLayersImage;
-    elemWidth = layersImage->GetSize().width;
-    elemHeight = layersImage->GetSize().height;
+  const auto& layersImage = sfer.mLayersImage;
+  Maybe<layers::SurfaceDescriptor> sd;
+  if (layersImage) {
+    elemSize = *uvec2::FromSize(layersImage->GetSize());
+
+    sd = layersImage->GetDesc();
+    if (sd) {
+      sd = Some(Flatten(*sd));
+    }
+    if (!sd) {
+      NS_WARNING("No SurfaceDescriptor for layers::Image!");
+    }
   }
 
   RefPtr<gfx::DataSourceSurface> dataSurf;
-  if (!layersImage && sfer.GetSourceSurface()) {
+  if (!sd && sfer.GetSourceSurface()) {
     const auto surf = sfer.GetSourceSurface();
-    elemWidth = surf->GetSize().width;
-    elemHeight = surf->GetSize().height;
+    elemSize = *uvec2::FromSize(surf->GetSize());
 
     // WARNING: OSX can lose our MakeCurrent here.
     dataSurf = surf->GetDataSurface();
@@ -156,16 +208,17 @@ Maybe<webgl::TexUnpackBlobDesc> FromDomElem(const ClientWebGLContext& webgl,
   //////
 
   if (!size.x) {
-    size.x = elemWidth;
+    size.x = elemSize.x;
   }
 
   if (!size.y) {
-    size.y = elemHeight;
+    size.y = elemSize.y;
   }
 
   ////
 
-  if (!layersImage && !dataSurf) {
+  if (!sd && !dataSurf) {
+    webgl.EnqueueWarning("Resource has no data (yet?). Uploading zeros.");
     return Some(TexUnpackBlobDesc{target, size, gfxAlphaType::NonPremult});
   }
 
@@ -198,14 +251,15 @@ Maybe<webgl::TexUnpackBlobDesc> FromDomElem(const ClientWebGLContext& webgl,
   //////
   // Ok, we're good!
 
-  if (layersImage) {
-    return Some(
-        TexUnpackBlobDesc{target, size, sfer.mAlphaType, {}, {}, layersImage});
-  }
-
-  MOZ_ASSERT(dataSurf);
-  return Some(
-      TexUnpackBlobDesc{target, size, sfer.mAlphaType, {}, {}, {}, dataSurf});
+  return Some(TexUnpackBlobDesc{target,
+                                size,
+                                sfer.mAlphaType,
+                                {},
+                                {},
+                                elemSize,
+                                layersImage,
+                                sd,
+                                dataSurf});
 }
 
 }  // namespace webgl
@@ -652,12 +706,17 @@ static inline GLenum DoCopyTexSubImage(gl::GLContext* gl, TexImageTarget target,
 static bool ValidateCompressedTexImageRestrictions(
     const WebGLContext* webgl, TexImageTarget target, uint32_t level,
     const webgl::FormatInfo* format, const uvec3& size) {
-  const auto fnIsDimValid_S3TC = [level](uint32_t size, uint32_t blockSize) {
-    if (size % blockSize == 0) return true;
-
-    if (level == 0) return false;
-
-    return (size == 0 || size == 1 || size == 2);
+  const auto fnIsDimValid_S3TC = [&](const char* const name, uint32_t levelSize,
+                                     uint32_t blockSize) {
+    const auto impliedBaseSize = levelSize << level;
+    if (impliedBaseSize % blockSize == 0) return true;
+    webgl->ErrorInvalidOperation(
+        "%u is never a valid %s for level %u, because it implies a base mip %s "
+        "of %u."
+        " %s requires that base mip levels have a %s multiple of %u.",
+        levelSize, name, level, name, impliedBaseSize, format->name, name,
+        blockSize);
+    return false;
   };
 
   switch (format->compression->family) {
@@ -676,24 +735,22 @@ static bool ValidateCompressedTexImageRestrictions(
                                  format->name);
         return false;
       }
-
       break;
 
+    case webgl::CompressionFamily::BPTC:
+    case webgl::CompressionFamily::RGTC:
     case webgl::CompressionFamily::S3TC:
-      if (!fnIsDimValid_S3TC(size.x, format->compression->blockWidth) ||
-          !fnIsDimValid_S3TC(size.y, format->compression->blockHeight)) {
-        webgl->ErrorInvalidOperation(
-            "%s requires that width and height are"
-            " block-aligned, or, if level>0, equal to 0, 1,"
-            " or 2.",
-            format->name);
+      if (!fnIsDimValid_S3TC("width", size.x,
+                             format->compression->blockWidth) ||
+          !fnIsDimValid_S3TC("height", size.y,
+                             format->compression->blockHeight)) {
         return false;
       }
-
       break;
 
     // Default: There are no restrictions on CompressedTexImage.
-    default:  // ETC1, ES3
+    case webgl::CompressionFamily::ES3:
+    case webgl::CompressionFamily::ETC1:
       break;
   }
 
@@ -863,9 +920,18 @@ void WebGLTexture::TexImage(uint32_t level, GLenum respecFormat,
   if (src.cpuData) {
     cpuDataView = Some(RawBuffer<>{src.cpuData->Data()});
   }
-  const auto srcViewDesc = webgl::TexUnpackBlobDesc{
-      src.imageTarget, src.size,  src.srcAlphaType, std::move(cpuDataView),
-      src.pboOffset,   src.image, src.surf,         src.unpacking};
+  const auto srcViewDesc = webgl::TexUnpackBlobDesc{src.imageTarget,
+                                                    src.size,
+                                                    src.srcAlphaType,
+                                                    std::move(cpuDataView),
+                                                    src.pboOffset,
+                                                    src.imageSize,
+                                                    src.image,
+                                                    src.sd,
+                                                    src.dataSurf,
+                                                    src.unpacking,
+                                                    src.applyUnpackTransforms};
+
   const auto blob = webgl::TexUnpackBlob::Create(srcViewDesc);
   if (!blob) {
     MOZ_ASSERT(false);
@@ -982,12 +1048,6 @@ void WebGLTexture::TexImage(uint32_t level, GLenum respecFormat,
   ////////////////////////////////////
   // Do the thing!
 
-  blob->mDesc.unpacking.Apply(*mContext->gl, mContext->IsWebGL2(), size);
-  const auto revertUnpacking = MakeScopeExit([&]() {
-    const WebGLPixelStore defaultUnpacking;
-    defaultUnpacking.Apply(*mContext->gl, mContext->IsWebGL2(), size);
-  });
-
   Maybe<webgl::ImageInfo> newImageInfo;
   bool isRespec = false;
   if (respecFormat) {
@@ -1014,8 +1074,16 @@ void WebGLTexture::TexImage(uint32_t level, GLenum respecFormat,
     }
   }
 
+  WebGLPixelStore::AssertDefault(*mContext->gl, mContext->IsWebGL2());
+
+  blob->mDesc.unpacking.Apply(*mContext->gl, mContext->IsWebGL2(), size);
+  const auto revertUnpacking = MakeScopeExit([&]() {
+    const WebGLPixelStore defaultUnpacking;
+    defaultUnpacking.Apply(*mContext->gl, mContext->IsWebGL2(), size);
+  });
+
   const bool isSubImage = !respecFormat;
-  GLenum glError;
+  GLenum glError = 0;
   if (!blob->TexOrSubImage(isSubImage, isRespec, this, level, driverUnpackInfo,
                            offset.x, offset.y, offset.z, pi, &glError)) {
     return;
@@ -1168,7 +1236,8 @@ void WebGLTexture::CompressedTexImage(bool sub, GLenum imageTarget,
         break;
 
       // Full-only: (The ES3 default)
-      default:  // PVRTC
+      case webgl::CompressionFamily::ASTC:
+      case webgl::CompressionFamily::PVRTC:
         if (offset.x || offset.y || size.x != imageInfo->mWidth ||
             size.y != imageInfo->mHeight) {
           mContext->ErrorInvalidOperation(
@@ -1178,6 +1247,22 @@ void WebGLTexture::CompressedTexImage(bool sub, GLenum imageTarget,
         }
         break;
     }
+  }
+
+  switch (usage->format->compression->family) {
+    case webgl::CompressionFamily::BPTC:
+    case webgl::CompressionFamily::RGTC:
+      if (level == 0) {
+        if (size.x % 4 != 0 || size.y % 4 != 0) {
+          mContext->ErrorInvalidOperation(
+              "For level == 0, width and height must be multiples of 4.");
+          return;
+        }
+      }
+      break;
+
+    default:
+      break;
   }
 
   if (!ValidateCompressedTexUnpack(mContext, size, usage->format, imageSize))
@@ -1634,6 +1719,8 @@ static bool DoCopyTexOrSubImage(WebGLContext* webgl, bool isSubImage,
     }
 
     if (!isSubImage || zeros) {
+      WebGLPixelStore::AssertDefault(*gl, webgl->IsWebGL2());
+
       gl->fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT, 1);
       const auto revert = MakeScopeExit(
           [&]() { gl->fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT, 4); });

@@ -4,61 +4,45 @@
 https://bugzilla.mozilla.org/show_bug.cgi?id=
 -->
 <head>
-  <title>Test for Bug </title>
+  <title>Test for Bug 462076</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body onload="nextTest()">
-<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=">Mozilla Bug </a>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=462076">Mozilla Bug 462076</a>
 <p id="display"></p>
 <div id="content" style="display: none">
-  
+
 </div>
 <pre id="test">
-<script type="application/javascript">
+  <script type="application/javascript">
+    var testFiles =
+      [ "file_bug462076_1.html",         // Dynamic frames before onload
+        "file_bug462076_2.html",         // Dynamic frames when handling onload
+        "file_bug462076_3.html",         // Dynamic frames after onload
+      ];
+    var testCount = 0; // Used by the test files.
 
-/** Test for Bug  **/
+    SimpleTest.waitForExplicitFinish();
 
-var testFiles =
-  [ "file_bug462076_1.html",         // Dynamic frames before onload
-    "file_bug462076_2.html",         // Dynamic frames when handling onload
-    "file_bug462076_3.html",         // Dynamic frames after onload
-    "file_bug508537_1.html",         // Dynamic frames and forward-back
-    "file_document_write_1.html",    // Session history + document.write
-    // "file_static_and_dynamic_1.html",// Static and dynamic frames and forward-back
-    "file_bug534178.html",           // Session history entry clean-up.
-    "file_fragment_handling_during_load.html",
-    "file_nested_frames.html",
-    "file_shiftReload_and_pushState.html",
-    "file_scrollRestoration.html",
-    "file_bug1300461.html",
-    "file_bug1326251.html",
-    "file_bug1379762-1.html",
-    "file_bug1609475.html",
-  ];
-var testCount = 0; // Used by the test files.
+    var testWindow;
+    function nextTest_() {
+      if (testFiles.length) {
+        testCount = 0;
+        let nextFile = testFiles.shift();
+        info("Running " + nextFile);
+        testWindow = window.open(nextFile, "", "width=360,height=480");
+        testWindow.onunload = function() { }; // to prevent bfcache
+      } else {
+        SimpleTest.finish();
+      }
+    }
 
-SimpleTest.waitForExplicitFinish();
-SimpleTest.requestFlakyTimeout("untriaged");
+    function nextTest() {
+      setTimeout(nextTest_, 0);
+    }
 
-var testWindow;
-function nextTest_() {
-  if (testFiles.length) {
-    testCount = 0;
-    let nextFile = testFiles.shift();
-    info("Running " + nextFile);
-    testWindow = window.open(nextFile, "", "width=360,height=480");
-    testWindow.onunload = function() { }; // to prevent bfcache
-  } else {
-    SimpleTest.finish();
-  }
-}
-
-function nextTest() {
-  setTimeout(nextTest_, 0);
-}
-
-</script>
+  </script>
 </pre>
 </body>
 </html>

@@ -11,6 +11,7 @@
 #include "mozilla/gfx/RecordedEvent.h"
 #include "mozilla/gfx/RecordingTypes.h"
 #include "mozilla/UniquePtr.h"
+#include "InlineTranslator.h"
 
 using namespace mozilla::gfx;
 

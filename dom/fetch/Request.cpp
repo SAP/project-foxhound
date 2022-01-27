@@ -7,6 +7,7 @@
 #include "Request.h"
 
 #include "nsIURI.h"
+#include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 
 #include "mozilla/ErrorResult.h"
@@ -16,11 +17,11 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/URL.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/Unused.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_ADDREF_INHERITED(Request, FetchBody<Request>)
 NS_IMPL_RELEASE_INHERITED(Request, FetchBody<Request>)
@@ -31,7 +32,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(Request, FetchBody<Request>)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mOwner)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mHeaders)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSignal)
-  tmp->Unfollow();
+  AbortFollower::Unlink(static_cast<AbortFollower*>(tmp));
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -39,7 +40,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(Request, FetchBody<Request>)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOwner)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mHeaders)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSignal)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFollowingSignal)
+  AbortFollower::Traverse(static_cast<AbortFollower*>(tmp), cb);
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(Request, FetchBody<Request>)
@@ -59,8 +60,6 @@ Request::Request(nsIGlobalObject* aOwner, SafeRefPtr<InternalRequest> aRequest,
   MOZ_ASSERT(mRequest->Headers()->Guard() == HeadersGuardEnum::Immutable ||
              mRequest->Headers()->Guard() == HeadersGuardEnum::Request ||
              mRequest->Headers()->Guard() == HeadersGuardEnum::Request_no_cors);
-  SetMimeType();
-
   if (aSignal) {
     // If we don't have a signal as argument, we will create it when required by
     // content, otherwise the Request's signal must follow what has been passed.
@@ -225,7 +224,7 @@ void GetRequestURLFromWorker(nsIGlobalObject* aGlobal, const nsAString& aInput,
     CopyUTF16toUTF8(Substring(fragment, 1), aURLfragment);
   }
 
-  url->SetHash(EmptyString());
+  url->SetHash(u""_ns);
   url->GetHref(aRequestURL);
 }
 
@@ -607,7 +606,6 @@ SafeRefPtr<Request> Request::Constructor(nsIGlobalObject* aGlobal,
 
   auto domRequest =
       MakeSafeRefPtr<Request>(aGlobal, std::move(request), signal);
-  domRequest->SetMimeType();
 
   if (aInput.IsRequest()) {
     RefPtr<Request> inputReq = &aInput.GetAsRequest();
@@ -661,5 +659,4 @@ AbortSignal* Request::GetOrCreateSignal() {
 
 AbortSignalImpl* Request::GetSignalImpl() const { return mSignal; }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

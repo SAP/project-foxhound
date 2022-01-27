@@ -10,35 +10,36 @@
   <script src="/tests/SimpleTest/paint_listener.js"></script>
   <script type="application/javascript">
 
-function* test(testDriver) {
+async function test() {
   var utils = SpecialPowers.getDOMWindowUtils(window);
 
-  var initial_resolution = getResolution();
+  var initial_resolution = await getResolution();
   ok(initial_resolution > 0,
       "The initial_resolution is " + initial_resolution + ", which is some sane value");
 
   var subframe = document.getElementById('bugzilla-body');
 
   // layerize subframe
-  yield synthesizeNativeClickAndWaitForClickEvent(subframe, 10, 10, testDriver);
+  await promiseNativeMouseEventWithAPZAndWaitForEvent({
+    type: "click",
+    target: subframe,
+    offsetX: 10,
+    offsetY: 10,
+  });
 
   // verify layerization
-  yield waitForAllPaints(() => setTimeout(testDriver, 0));
+  await promiseAllPaintsDone();
   ok(isLayerized("bugzilla-body"), "subframe should be layerized at this point");
   var subframeScrollId = utils.getViewId(subframe);
   ok(subframeScrollId > 0, "subframe should have a scroll id");
 
   // wait for the dust to settle
-  yield waitForAllPaints(() => setTimeout(testDriver, 0));
+  await promiseAllPaintsDone();
 
-  var waitForTouchEnd = function(e) {
-    dump("touchend listener hit\n");
-    setTimeout(testDriver, 0);
-  };
-  document.documentElement.addEventListener("touchend", waitForTouchEnd, {passive: true, once: false});
+  let touchEndPromise = promiseTouchEnd(document.documentElement, 2);
 
   // Ensure that APZ gets updated hit-test info
-  yield waitForAllPaints(() => setTimeout(testDriver, 0));
+  await promiseAllPaintsDone();
 
   var zoom_in = [
       [ { x: 130, y: 280 }, { x: 150, y: 300 } ],
@@ -50,68 +51,47 @@ function* test(testDriver) {
   ];
 
   var touchIds = [0, 1];
-  yield* synthesizeNativeTouchSequences(document.body, zoom_in, null, touchIds);
+  synthesizeNativeTouchSequences(document.body, zoom_in, null, touchIds);
 
-  yield; // wait for the touchend listener to fire
-  yield; // wait for the touchend listener to fire
-  document.documentElement.removeEventListener("touchend", waitForTouchEnd);
-
+  await touchEndPromise;
   // Flush state and get the resolution we're at now
-  yield waitForApzFlushedRepaints(testDriver);
-  let final_resolution = getResolution();
+  await promiseApzFlushedRepaints();
+  let final_resolution = await getResolution();
   ok(final_resolution > initial_resolution, "The final resolution (" + final_resolution + ") is greater than the initial resolution");
 
-
-  document.documentElement.addEventListener("touchend", waitForTouchEnd, {passive: true, once: true});
+  touchEndPromise = promiseTouchEnd(document.documentElement);
 
   // pan back up to the top left
-  yield synthesizeNativeTouchDrag(window,
-                                  5,
-                                  5,
-                                  500,
-                                  500,
-                                  testDriver,
-                                  2);
+  await promiseNativeTouchDrag(window,
+                               5,
+                               5,
+                               500,
+                               500,
+                               2);
 
-  yield; // wait for the touchend listener to fire
+  await touchEndPromise; // wait for the touchend listener to fire
+  await promiseApzFlushedRepaints();
+  await promiseAllPaintsDone();
 
-  yield waitForApzFlushedRepaints(testDriver);
-
-  yield waitForAllPaints(() => setTimeout(testDriver, 0));
-
-  document.documentElement.addEventListener("touchend", waitForTouchEnd, {passive: true, once: true});
+  touchEndPromise = promiseTouchEnd(document.documentElement);
 
   // pan right to expose the bug
-  yield synthesizeNativeTouchDrag(window,
-                                  100,
-                                  1,
-                                  -180,
-                                  0,
-                                  testDriver,
-                                  3);
+  await promiseNativeTouchDrag(window,
+                               100,
+                               20,
+                               -180,
+                               0,
+                               3);
 
+  await touchEndPromise; // wait for the touchend listener to fire
+  await promiseApzFlushedRepaints();
 
-  yield; // wait for the touchend listener to fire
-
-  yield waitForApzFlushedRepaints(testDriver);
-
-  var data = utils.getCompositorAPZTestData();
-  //dump(JSON.stringify(data, null, 4));
-
-  var found = false;
-  for (apzcData of data.additionalData) {
-    if (apzcData.key == subframeScrollId) {
-      var checkerboarding = apzcData.value.split(',').includes("checkerboarding");
-      ok(!checkerboarding, "subframe is not checkerboarding");
-      found = true;
-    }
-  }
-  ok(found, "Found the checkerboarding subframe");
-
-  subtestDone();
+  assertNotCheckerboarded(utils, subframeScrollId, "Subframe");
 }
 
-waitUntilApzStable().then(runContinuation(test));
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
 
   </script>
   <style>

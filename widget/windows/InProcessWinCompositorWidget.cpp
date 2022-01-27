@@ -66,11 +66,10 @@ InProcessWinCompositorWidget::InProcessWinCompositorWidget(
 }
 
 void InProcessWinCompositorWidget::OnDestroyWindow() {
-  EnterPresentLock();
+  gfx::CriticalSectionAutoEnter presentLock(&mPresentLock);
   MutexAutoLock lock(mTransparentSurfaceLock);
   mTransparentSurface = nullptr;
   mMemoryDC = nullptr;
-  LeavePresentLock();
 }
 
 bool InProcessWinCompositorWidget::OnWindowResize(
@@ -229,9 +228,6 @@ InProcessWinCompositorWidget::EndBackBufferDrawing() {
 
 bool InProcessWinCompositorWidget::InitCompositor(
     layers::Compositor* aCompositor) {
-  if (aCompositor->GetBackendType() == layers::LayersBackend::LAYERS_BASIC) {
-    DeviceManagerDx::Get()->InitializeDirectDraw();
-  }
   return true;
 }
 
@@ -266,7 +262,7 @@ void InProcessWinCompositorWidget::CreateTransparentSurface(
 
 void InProcessWinCompositorWidget::UpdateTransparency(
     nsTransparencyMode aMode) {
-  EnterPresentLock();
+  gfx::CriticalSectionAutoEnter presentLock(&mPresentLock);
   MutexAutoLock lock(mTransparentSurfaceLock);
   if (mTransparencyMode == aMode) {
     return;
@@ -279,7 +275,22 @@ void InProcessWinCompositorWidget::UpdateTransparency(
   if (mTransparencyMode == eTransparencyTransparent) {
     EnsureTransparentSurface();
   }
-  LeavePresentLock();
+}
+
+void InProcessWinCompositorWidget::NotifyVisibilityUpdated(
+    nsSizeMode aSizeMode, bool aIsFullyOccluded) {
+  mSizeMode = aSizeMode;
+  mIsFullyOccluded = aIsFullyOccluded;
+}
+
+nsSizeMode InProcessWinCompositorWidget::GetWindowSizeMode() const {
+  nsSizeMode sizeMode = mSizeMode;
+  return sizeMode;
+}
+
+bool InProcessWinCompositorWidget::GetWindowIsFullyOccluded() const {
+  bool isFullyOccluded = mIsFullyOccluded;
+  return isFullyOccluded;
 }
 
 bool InProcessWinCompositorWidget::HasGlass() const {
@@ -292,7 +303,7 @@ bool InProcessWinCompositorWidget::HasGlass() const {
 }
 
 void InProcessWinCompositorWidget::ClearTransparentWindow() {
-  EnterPresentLock();
+  gfx::CriticalSectionAutoEnter presentLock(&mPresentLock);
   MutexAutoLock lock(mTransparentSurfaceLock);
   if (!mTransparentSurface) {
     return;
@@ -310,7 +321,6 @@ void InProcessWinCompositorWidget::ClearTransparentWindow() {
     drawTarget->ClearRect(Rect(0, 0, size.width, size.height));
     RedrawTransparentWindow();
   }
-  LeavePresentLock();
 }
 
 bool InProcessWinCompositorWidget::RedrawTransparentWindow() {

@@ -5,7 +5,7 @@
 
 "use strict";
 
-const TEST_URI = `data:text/html;charset=utf-8,Web Console test top-level await when debugger paused`;
+const TEST_URI = `data:text/html;charset=utf-8,<!DOCTYPE html>Web Console test top-level await when debugger paused`;
 
 add_task(async function() {
   // Enable await mapping.
@@ -24,8 +24,7 @@ add_task(async function() {
   execute(hud, pauseExpression);
 
   // wait for the debugger to be opened and paused.
-  const target = await TargetFactory.forTab(gBrowser.selectedTab);
-  const toolbox = gDevTools.getToolbox(target);
+  const toolbox = await gDevTools.getToolboxForTab(gBrowser.selectedTab);
 
   await waitFor(() => toolbox.getPanel("jsdebugger"));
   const dbg = createDebuggerContext(toolbox);

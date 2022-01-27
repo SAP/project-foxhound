@@ -93,26 +93,8 @@ add_task(async function() {
   );
   is(
     contentProcessCount.selectedItem.value,
-    DEFAULT_PROCESS_COUNT,
+    "" + DEFAULT_PROCESS_COUNT,
     "selected item should be the default one"
-  );
-
-  let contentProcessCountEnabledDescription = doc.querySelector(
-    "#contentProcessCountEnabledDescription"
-  );
-  is(
-    contentProcessCountEnabledDescription.hidden,
-    false,
-    "process count enabled description should be shown"
-  );
-
-  let contentProcessCountDisabledDescription = doc.querySelector(
-    "#contentProcessCountDisabledDescription"
-  );
-  is(
-    contentProcessCountDisabledDescription.hidden,
-    true,
-    "process count enabled description should be hidden"
   );
 
   allowHWAccel.click();
@@ -135,7 +117,7 @@ add_task(async function() {
     7,
     "pref value should be 7"
   );
-  is(contentProcessCount.selectedItem.value, 7, "selected item should be 7");
+  is(contentProcessCount.selectedItem.value, "7", "selected item should be 7");
 
   allowHWAccel.click();
   allowHWAccelPref = Services.prefs.getBoolPref("layers.acceleration.disabled");
@@ -159,7 +141,7 @@ add_task(async function() {
   );
   is(
     contentProcessCount.selectedItem.value,
-    DEFAULT_PROCESS_COUNT,
+    "" + DEFAULT_PROCESS_COUNT,
     "selected item should be default one"
   );
 
@@ -276,7 +258,7 @@ add_task(async function() {
     7,
     "pref value should be 7"
   );
-  is(contentProcessCount.selectedItem.value, 7, "selected item should be 7");
+  is(contentProcessCount.selectedItem.value, "7", "selected item should be 7");
 
   Services.prefs.setBoolPref(
     "browser.preferences.defaultPerformanceSettings.enabled",

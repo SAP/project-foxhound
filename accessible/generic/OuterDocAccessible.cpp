@@ -5,14 +5,11 @@
 
 #include "OuterDocAccessible.h"
 
-#include "Accessible-inl.h"
+#include "LocalAccessible-inl.h"
 #include "nsAccUtils.h"
 #include "DocAccessible-inl.h"
 #include "mozilla/a11y/DocAccessibleChild.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
-#if defined(XP_WIN)
-#  include "mozilla/a11y/ProxyWrappers.h"
-#endif
 #include "mozilla/dom/BrowserBridgeChild.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "Role.h"
@@ -68,49 +65,52 @@ void OuterDocAccessible::SendEmbedderAccessible(
 #if defined(XP_WIN)
     ipcDoc->SetEmbedderOnBridge(aBridge, id);
 #else
-    aBridge->SendSetEmbedderAccessible(ipcDoc, id);
+    aBridge->SetEmbedderAccessible(ipcDoc, id);
 #endif
   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Accessible public (DON'T add methods here)
+// LocalAccessible public (DON'T add methods here)
 
 role OuterDocAccessible::NativeRole() const { return roles::INTERNAL_FRAME; }
 
-Accessible* OuterDocAccessible::ChildAtPoint(int32_t aX, int32_t aY,
-                                             EWhichChildAtPoint aWhichChild) {
+LocalAccessible* OuterDocAccessible::LocalChildAtPoint(
+    int32_t aX, int32_t aY, EWhichChildAtPoint aWhichChild) {
   nsIntRect docRect = Bounds();
   if (!docRect.Contains(aX, aY)) return nullptr;
 
   // Always return the inner doc as direct child accessible unless bounds
   // outside of it.
-  Accessible* child = GetChildAt(0);
+  LocalAccessible* child = LocalChildAt(0);
   NS_ENSURE_TRUE(child, nullptr);
 
-  if (aWhichChild == eDeepestChild) {
-#if defined(XP_WIN)
-    // On Windows, OuterDocAccessible::GetChildAt can return a proxy wrapper
-    // for a remote document. These aren't real Accessibles and
-    // shouldn't be returned except to the Windows a11y code (which doesn't use
-    // eDeepestChild). Calling ChildAtPoint on these will crash!
-    return nullptr;
-#else
-    return child->ChildAtPoint(aX, aY, eDeepestChild);
-#endif  // defined(XP_WIN)
+  if (aWhichChild == Accessible::EWhichChildAtPoint::DeepestChild) {
+    return child->LocalChildAtPoint(
+        aX, aY, Accessible::EWhichChildAtPoint::DeepestChild);
   }
   return child;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Accessible public
+// LocalAccessible public
 
 void OuterDocAccessible::Shutdown() {
 #ifdef A11Y_LOG
   if (logging::IsEnabled(logging::eDocDestroy)) logging::OuterDocDestroy(this);
 #endif
 
-  Accessible* child = mChildren.SafeElementAt(0, nullptr);
+  if (auto* bridge = dom::BrowserBridgeChild::GetFrom(mContent)) {
+    uint64_t id = reinterpret_cast<uintptr_t>(UniqueID());
+    if (bridge->GetEmbedderAccessibleID() == id) {
+      // We were the last embedder accessible sent via PBrowserBridge; i.e. a
+      // new embedder accessible hasn't been created yet for this iframe. Clear
+      // the embedder accessible on PBrowserBridge.
+      bridge->SetEmbedderAccessible(nullptr, 0);
+    }
+  }
+
+  LocalAccessible* child = mChildren.SafeElementAt(0, nullptr);
   if (child) {
 #ifdef A11Y_LOG
     if (logging::IsEnabled(logging::eDocDestroy)) {
@@ -137,7 +137,8 @@ void OuterDocAccessible::Shutdown() {
   AccessibleWrap::Shutdown();
 }
 
-bool OuterDocAccessible::InsertChildAt(uint32_t aIdx, Accessible* aAccessible) {
+bool OuterDocAccessible::InsertChildAt(uint32_t aIdx,
+                                       LocalAccessible* aAccessible) {
   MOZ_RELEASE_ASSERT(aAccessible->IsDoc(),
                      "OuterDocAccessible can have a document child only!");
 
@@ -161,8 +162,8 @@ bool OuterDocAccessible::InsertChildAt(uint32_t aIdx, Accessible* aAccessible) {
   return true;
 }
 
-bool OuterDocAccessible::RemoveChild(Accessible* aAccessible) {
-  Accessible* child = mChildren.SafeElementAt(0, nullptr);
+bool OuterDocAccessible::RemoveChild(LocalAccessible* aAccessible) {
+  LocalAccessible* child = mChildren.SafeElementAt(0, nullptr);
   MOZ_ASSERT(child == aAccessible, "Wrong child to remove!");
   if (child != aAccessible) {
     return false;
@@ -190,55 +191,46 @@ bool OuterDocAccessible::IsAcceptableChild(nsIContent* aEl) const {
   return false;
 }
 
-#if defined(XP_WIN)
-
-Accessible* OuterDocAccessible::RemoteChildDocAccessible() const {
-  ProxyAccessible* docProxy = RemoteChildDoc();
-  if (docProxy) {
-    // We're in the parent process, but we're embedding a remote document.
-    return WrapperFor(docProxy);
-  }
-
-  if (IPCAccessibilityActive()) {
-    auto bridge = dom::BrowserBridgeChild::GetFrom(mContent);
-    if (bridge) {
-      // We're an iframe in a content process and we're embedding a remote
-      // document (in another content process). The COM proxy for the embedded
-      // document accessible was sent to us from the parent via PBrowserBridge.
-      return bridge->GetEmbeddedDocAccessible();
-    }
-  }
-
-  return nullptr;
-}
-
-// On Windows e10s, since we don't cache in the chrome process, these next two
-// functions must be implemented so that we properly cross the chrome-to-content
-// boundary when traversing.
+// Accessible
 
 uint32_t OuterDocAccessible::ChildCount() const {
   uint32_t result = mChildren.Length();
-  if (!result && RemoteChildDocAccessible()) {
+  if (!result && RemoteChildDoc()) {
     result = 1;
   }
   return result;
 }
 
-Accessible* OuterDocAccessible::GetChildAt(uint32_t aIndex) const {
-  Accessible* result = AccessibleWrap::GetChildAt(aIndex);
+Accessible* OuterDocAccessible::ChildAt(uint32_t aIndex) const {
+  LocalAccessible* result = LocalChildAt(aIndex);
   if (result || aIndex) {
     return result;
   }
-  // If we are asking for child 0 and GetChildAt doesn't return anything, try
-  // to get the remote child doc and return that instead.
-  return RemoteChildDocAccessible();
+
+  return RemoteChildDoc();
 }
 
-#endif  // defined(XP_WIN)
+Accessible* OuterDocAccessible::ChildAtPoint(int32_t aX, int32_t aY,
+                                             EWhichChildAtPoint aWhichChild) {
+  nsIntRect docRect = Bounds();
+  if (!docRect.Contains(aX, aY)) return nullptr;
+
+  // Always return the inner doc as direct child accessible unless bounds
+  // outside of it.
+  Accessible* child = ChildAt(0);
+  NS_ENSURE_TRUE(child, nullptr);
+
+  if (aWhichChild == EWhichChildAtPoint::DeepestChild) {
+    return child->ChildAtPoint(aX, aY, EWhichChildAtPoint::DeepestChild);
+  }
+  return child;
+}
 
 DocAccessibleParent* OuterDocAccessible::RemoteChildDoc() const {
   dom::BrowserParent* tab = dom::BrowserParent::GetFrom(GetContent());
-  if (!tab) return nullptr;
+  if (!tab) {
+    return nullptr;
+  }
 
   return tab->GetTopLevelDocAccessible();
 }

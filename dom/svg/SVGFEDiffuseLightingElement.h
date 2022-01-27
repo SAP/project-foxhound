@@ -7,7 +7,7 @@
 #ifndef DOM_SVG_SVGFEDIFFUSELIGHTINGELEMENT_H_
 #define DOM_SVG_SVGFEDIFFUSELIGHTINGELEMENT_H_
 
-#include "SVGFilters.h"
+#include "mozilla/dom/SVGFilters.h"
 
 nsresult NS_NewSVGFEDiffuseLightingElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -38,6 +38,8 @@ class SVGFEDiffuseLightingElement : public SVGFEDiffuseLightingElementBase {
                                          nsAtom* aAttribute) const override;
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+
+  virtual nsresult BindToTree(BindContext& aCtx, nsINode& aParent) override;
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedString> In1();

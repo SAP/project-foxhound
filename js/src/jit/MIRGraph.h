@@ -10,14 +10,15 @@
 // This file declares the data structures used to build a control-flow graph
 // containing MIR.
 
+#include "jit/CompileInfo.h"
 #include "jit/FixedList.h"
+#include "jit/InlineScriptTree.h"
 #include "jit/JitAllocPolicy.h"
 #include "jit/MIR.h"
 
 namespace js {
 namespace jit {
 
-class BytecodeAnalysis;
 class MBasicBlock;
 class MIRGraph;
 class MStart;
@@ -36,23 +37,28 @@ class LBlock;
 
 class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
  public:
-  enum Kind { NORMAL, PENDING_LOOP_HEADER, LOOP_HEADER, SPLIT_EDGE, DEAD };
+  enum Kind {
+    NORMAL,
+    PENDING_LOOP_HEADER,
+    LOOP_HEADER,
+    SPLIT_EDGE,
+    FAKE_LOOP_PRED,
+    DEAD
+  };
 
  private:
   MBasicBlock(MIRGraph& graph, const CompileInfo& info, BytecodeSite* site,
               Kind kind);
-  MOZ_MUST_USE bool init();
+  [[nodiscard]] bool init();
   void copySlots(MBasicBlock* from);
-  MOZ_MUST_USE bool inherit(TempAllocator& alloc, size_t stackDepth,
-                            MBasicBlock* maybePred, uint32_t popped);
-  MOZ_MUST_USE bool inheritResumePoint(MBasicBlock* pred);
-  void assertUsesAreNotWithin(MUseIterator use, MUseIterator end);
+  [[nodiscard]] bool inherit(TempAllocator& alloc, size_t stackDepth,
+                             MBasicBlock* maybePred, uint32_t popped);
 
   // This block cannot be reached by any means.
-  bool unreachable_;
+  bool unreachable_ = false;
 
-  // Keeps track if the phis has been type specialized already.
-  bool specialized_;
+  // This block will unconditionally bail out.
+  bool alwaysBails_ = false;
 
   // Pushes a copy of a local variable or argument.
   void pushVariable(uint32_t slot) { push(slots_[slot]); }
@@ -115,16 +121,14 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   static MBasicBlock* NewPopN(MIRGraph& graph, const CompileInfo& info,
                               MBasicBlock* pred, BytecodeSite* site, Kind kind,
                               uint32_t popn);
-  static MBasicBlock* NewWithResumePoint(MIRGraph& graph,
-                                         const CompileInfo& info,
-                                         MBasicBlock* pred, BytecodeSite* site,
-                                         MResumePoint* resumePoint);
   static MBasicBlock* NewPendingLoopHeader(MIRGraph& graph,
                                            const CompileInfo& info,
                                            MBasicBlock* pred,
                                            BytecodeSite* site);
   static MBasicBlock* NewSplitEdge(MIRGraph& graph, MBasicBlock* pred,
                                    size_t predEdgeIdx, MBasicBlock* succ);
+  static MBasicBlock* NewFakeLoopPredecessor(MIRGraph& graph,
+                                             MBasicBlock* header);
 
   bool dominates(const MBasicBlock* other) const {
     return other->domIndex() - domIndex() < numDominated();
@@ -139,6 +143,10 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   }
   void setUnreachableUnchecked() { unreachable_ = true; }
   bool unreachable() const { return unreachable_; }
+
+  void setAlwaysBails() { alwaysBails_ = true; }
+  bool alwaysBails() const { return alwaysBails_; }
+
   // Move the definition to the top of the stack.
   void pick(int32_t depth);
 
@@ -155,6 +163,11 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   MDefinition* peek(int32_t depth) {
     MOZ_ASSERT(depth < 0);
     MOZ_ASSERT(stackPosition_ + depth >= info_.firstStackSlot());
+    return peekUnchecked(depth);
+  }
+
+  MDefinition* peekUnchecked(int32_t depth) {
+    MOZ_ASSERT(depth < 0);
     return getSlot(stackPosition_ + depth);
   }
 
@@ -162,8 +175,8 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   MDefinition* argumentsObject();
 
   // Increase the number of slots available
-  MOZ_MUST_USE bool increaseSlots(size_t num);
-  MOZ_MUST_USE bool ensureHasSlots(size_t num);
+  [[nodiscard]] bool increaseSlots(size_t num);
+  [[nodiscard]] bool ensureHasSlots(size_t num);
 
   // Initializes a slot value; must not be called for normal stack
   // operations, as it will not create new SSA names for copies.
@@ -174,25 +187,11 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
     }
   }
 
-  // Discard the slot at the given depth, lowering all slots above.
-  void shimmySlots(int discardDepth);
-
-  // In an OSR block, set all MOsrValues to use the MResumePoint attached to
-  // the MStart.
-  MOZ_MUST_USE bool linkOsrValues(MStart* start);
-
   // Sets the instruction associated with various slot types. The
   // instruction must lie at the top of the stack.
   void setLocal(uint32_t local) { setVariable(info_.localSlot(local)); }
   void setArg(uint32_t arg) { setVariable(info_.argSlot(arg)); }
   void setSlot(uint32_t slot, MDefinition* ins) { slots_[slot] = ins; }
-
-  // Rewrites a slot directly, bypassing the stack transition. This should
-  // not be used under most circumstances.
-  void rewriteSlot(uint32_t slot, MDefinition* ins) { setSlot(slot, ins); }
-
-  // Rewrites a slot based on its depth (same as argument to peek()).
-  void rewriteAtDepth(int32_t depth, MDefinition* ins);
 
   // Tracks an instruction as being pushed onto the operand stack.
   void push(MDefinition* ins) {
@@ -247,19 +246,19 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   // Adds a predecessor. Every predecessor must have the same exit stack
   // depth as the entry state to this block. Adding a predecessor
   // automatically creates phi nodes and rewrites uses as needed.
-  MOZ_MUST_USE bool addPredecessor(TempAllocator& alloc, MBasicBlock* pred);
-  MOZ_MUST_USE bool addPredecessorPopN(TempAllocator& alloc, MBasicBlock* pred,
-                                       uint32_t popped);
+  [[nodiscard]] bool addPredecessor(TempAllocator& alloc, MBasicBlock* pred);
+  [[nodiscard]] bool addPredecessorPopN(TempAllocator& alloc, MBasicBlock* pred,
+                                        uint32_t popped);
 
   // Add a predecessor which won't introduce any new phis to this block.
   // This may be called after the contents of this block have been built.
-  MOZ_MUST_USE bool addPredecessorSameInputsAs(MBasicBlock* pred,
-                                               MBasicBlock* existingPred);
+  [[nodiscard]] bool addPredecessorSameInputsAs(MBasicBlock* pred,
+                                                MBasicBlock* existingPred);
 
   // Stranger utilities used for inlining.
-  MOZ_MUST_USE bool addPredecessorWithoutPhis(MBasicBlock* pred);
+  [[nodiscard]] bool addPredecessorWithoutPhis(MBasicBlock* pred);
   void inheritSlots(MBasicBlock* parent);
-  MOZ_MUST_USE bool initEntrySlots(TempAllocator& alloc);
+  [[nodiscard]] bool initEntrySlots(TempAllocator& alloc);
 
   // Replaces an edge for a given block with a new block. This is
   // used for critical edge splitting.
@@ -282,11 +281,9 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   void clearDominatorInfo();
 
   // Sets a back edge. This places phi nodes and rewrites instructions within
-  // the current loop as necessary. If the backedge introduces new types for
-  // phis at the loop header, returns a disabling abort.
-  MOZ_MUST_USE AbortReason setBackedge(TempAllocator& alloc,
-                                       MBasicBlock* block);
-  MOZ_MUST_USE bool setBackedgeWasm(MBasicBlock* block, size_t paramCount);
+  // the current loop as necessary.
+  [[nodiscard]] bool setBackedge(MBasicBlock* block);
+  [[nodiscard]] bool setBackedgeWasm(MBasicBlock* block, size_t paramCount);
 
   // Resets a LOOP_HEADER block to a NORMAL block.  This is needed when
   // optimizations remove the backedge.
@@ -297,24 +294,13 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   // with multiple entries.
   void setLoopHeader(MBasicBlock* newBackedge);
 
-  // Propagates phis placed in a loop header down to this successor block.
-  void inheritPhis(MBasicBlock* header);
-
   // Propagates backedge slots into phis operands of the loop header.
-  MOZ_MUST_USE bool inheritPhisFromBackedge(TempAllocator& alloc,
-                                            MBasicBlock* backedge,
-                                            bool* hadTypeChange);
-
-  // Compute the types for phis in this block according to their inputs.
-  MOZ_MUST_USE bool specializePhis(TempAllocator& alloc);
+  [[nodiscard]] bool inheritPhisFromBackedge(MBasicBlock* backedge);
 
   void insertBefore(MInstruction* at, MInstruction* ins);
   void insertAfter(MInstruction* at, MInstruction* ins);
 
   void insertAtEnd(MInstruction* ins);
-
-  // Add an instruction to this block, from elsewhere in the graph.
-  void addFromElsewhere(MInstruction* ins);
 
   // Move an instruction. Movement may cross block boundaries.
   void moveBefore(MInstruction* at, MInstruction* ins);
@@ -332,7 +318,6 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   void discardDef(MDefinition* def);
   void discardAllInstructions();
   void discardAllInstructionsStartingAt(MInstructionIterator iter);
-  void discardAllPhiOperands();
   void discardAllPhis();
   void discardAllResumePoints(bool discardEntry = true);
   void clear();
@@ -363,7 +348,7 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
 
   MIRGraph& graph() { return graph_; }
   const CompileInfo& info() const { return info_; }
-  jsbytecode* pc() const { return pc_; }
+  jsbytecode* pc() const { return trackedSite_->pc(); }
   uint32_t nslots() const { return slots_.length(); }
   uint32_t id() const { return id_; }
   uint32_t numPredecessors() const { return predecessors_.length(); }
@@ -425,11 +410,12 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
 
   bool hasUniqueBackedge() const {
     MOZ_ASSERT(isLoopHeader());
-    MOZ_ASSERT(numPredecessors() >= 2);
-    if (numPredecessors() == 2) {
+    MOZ_ASSERT(numPredecessors() >= 1);
+    if (numPredecessors() == 1 || numPredecessors() == 2) {
       return true;
     }
-    if (numPredecessors() == 3) {  // fixup block added by ValueNumbering phase.
+    if (numPredecessors() == 3) {
+      // fixup block added by NewFakeLoopPredecessor
       return getPredecessor(1)->numPredecessors() == 0;
     }
     return false;
@@ -457,9 +443,9 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   }
   bool isSplitEdge() const { return kind_ == SPLIT_EDGE; }
   bool isDead() const { return kind_ == DEAD; }
+  bool isFakeLoopPred() const { return kind_ == FAKE_LOOP_PRED; }
 
   uint32_t stackDepth() const { return stackPosition_; }
-  void setStackDepth(uint32_t depth) { stackPosition_ = depth; }
   bool isMarked() const { return mark_; }
   void mark() {
     MOZ_ASSERT(!mark_, "Marking already-marked block");
@@ -536,11 +522,6 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   void setCallerResumePoint(MResumePoint* caller) {
     callerResumePoint_ = caller;
   }
-  size_t numEntrySlots() const { return entryResumePoint()->stackDepth(); }
-  MDefinition* getEntrySlot(size_t i) const {
-    MOZ_ASSERT(i < numEntrySlots());
-    return entryResumePoint()->getOperand(i);
-  }
 
   LBlock* lir() const { return lir_; }
   void assignLir(LBlock* lir) {
@@ -584,68 +565,8 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   void dump(GenericPrinter& out);
   void dump();
 
-  // Hit count
-  enum class HitState {
-    // No hit information is attached to this basic block.
-    NotDefined,
-
-    // The hit information is a raw counter. Note that due to inlining this
-    // counter is not guaranteed to be consistent over the graph.
-    Count,
-  };
-  HitState getHitState() const { return hitState_; }
-  void setHitCount(uint64_t count) {
-    hitCount_ = count;
-    hitState_ = HitState::Count;
-  }
-  uint64_t getHitCount() const {
-    MOZ_ASSERT(hitState_ == HitState::Count);
-    return hitCount_;
-  }
-
-  // Track bailouts by storing the current pc in MIR instruction added at
-  // this cycle. This is also used for tracking calls and optimizations when
-  // profiling.
-  void updateTrackedSite(BytecodeSite* site) {
-    MOZ_ASSERT(site->tree() == trackedSite_->tree());
-    trackedSite_ = site;
-  }
   BytecodeSite* trackedSite() const { return trackedSite_; }
-  jsbytecode* trackedPc() const {
-    return trackedSite_ ? trackedSite_->pc() : nullptr;
-  }
-  InlineScriptTree* trackedTree() const {
-    return trackedSite_ ? trackedSite_->tree() : nullptr;
-  }
-
-  // This class is used for reverting the graph within IonBuilder.
-  class BackupPoint {
-    friend MBasicBlock;
-
-    MBasicBlock* current_;
-    MInstruction* lastIns_;
-    uint32_t stackPosition_;
-    FixedList<MDefinition*> slots_;
-#ifdef DEBUG
-    // The following fields should remain identical during IonBuilder
-    // construction, these are used for assertions.
-    MPhi* lastPhi_;
-    uintptr_t predecessorsCheckSum_;
-    HashNumber instructionsCheckSum_;
-    uint32_t id_;
-    MResumePoint* callerResumePoint_;
-    MResumePoint* entryResumePoint_;
-
-    size_t computePredecessorsCheckSum(MBasicBlock* block);
-    HashNumber computeInstructionsCheckSum(MBasicBlock* block);
-#endif
-   public:
-    explicit BackupPoint(MBasicBlock* current);
-    MOZ_MUST_USE bool init(TempAllocator& alloc);
-    MBasicBlock* restore();
-  };
-
-  friend BackupPoint;
+  InlineScriptTree* trackedTree() const { return trackedSite_->tree(); }
 
  private:
   MIRGraph& graph_;
@@ -658,7 +579,6 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   uint32_t id_;
   uint32_t domIndex_;  // Index in the dominator tree.
   uint32_t numDominated_;
-  jsbytecode* pc_;
   LBlock* lir_;
 
   // Copy of a dominator block's outerResumePoint_ which holds the state of
@@ -691,12 +611,10 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   Vector<MBasicBlock*, 1, JitAllocPolicy> immediatelyDominated_;
   MBasicBlock* immediateDominator_;
 
+  // Track bailouts by storing the current pc in MIR instruction added at
+  // this cycle. This is also used for tracking calls and optimizations when
+  // profiling.
   BytecodeSite* trackedSite_;
-
-  // Record the number of times a block got visited. Note, due to inlined
-  // scripts these numbers might not be continuous.
-  uint64_t hitCount_;
-  HitState hitState_;
 
 #if defined(JS_ION_PERF) || defined(DEBUG)
   unsigned lineno_;
@@ -754,7 +672,7 @@ class MIRGraph {
   }
   MIRGraphReturns* returnAccumulator() const { return returnAccumulator_; }
 
-  MOZ_MUST_USE bool addReturn(MBasicBlock* returnBlock) {
+  [[nodiscard]] bool addReturn(MBasicBlock* returnBlock) {
     if (!returnAccumulator_) {
       return true;
     }
@@ -774,9 +692,7 @@ class MIRGraph {
     return blocks_.begin(at);
   }
   ReversePostorderIterator rpoEnd() { return blocks_.end(); }
-  MOZ_MUST_USE bool removeSuccessorBlocks(MBasicBlock* block);
   void removeBlock(MBasicBlock* block);
-  void removeBlockIncludingPhis(MBasicBlock* block);
   void moveBlockToEnd(MBasicBlock* block) {
     blocks_.remove(block);
     MOZ_ASSERT_IF(!blocks_.empty(), block->id());
@@ -791,10 +707,6 @@ class MIRGraph {
     MOZ_ASSERT(block->id());
     blocks_.remove(block);
     blocks_.insertAfter(at, block);
-  }
-  void removeBlockFromList(MBasicBlock* block) {
-    blocks_.remove(block);
-    numBlocks_--;
   }
   size_t numBlocks() const { return numBlocks_; }
   uint32_t numBlockIds() const { return blockIdGen_; }
@@ -828,6 +740,17 @@ class MIRGraph {
     phiFreeListLength_--;
     return phiFreeList_.popBack();
   }
+
+  void removeFakeLoopPredecessors();
+
+#ifdef DEBUG
+  // Dominators can't be built after we remove fake loop predecessors.
+ private:
+  bool canBuildDominators_ = true;
+
+ public:
+  bool canBuildDominators() const { return canBuildDominators_; }
+#endif
 };
 
 class MDefinitionIterator {
@@ -957,10 +880,9 @@ class MNodeIterator {
 
 void MBasicBlock::add(MInstruction* ins) {
   MOZ_ASSERT(!hasLastIns());
-  ins->setBlock(this);
+  ins->setInstructionBlock(this, trackedSite_);
   graph().allocDefinitionId(ins);
   instructions_.pushBack(ins);
-  ins->setTrackedSite(trackedSite_);
 }
 
 }  // namespace jit

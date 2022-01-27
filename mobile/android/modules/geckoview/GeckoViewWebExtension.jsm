@@ -9,6 +9,7 @@ var EXPORTED_SYMBOLS = [
   "GeckoViewConnection",
   "GeckoViewWebExtension",
   "mobileWindowTracker",
+  "DownloadTracker",
 ];
 
 const { XPCOMUtils } = ChromeUtils.import(
@@ -45,7 +46,72 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIMIMEService"
 );
 
-const { debug, warn } = GeckoViewUtils.initLogging("Console"); // eslint-disable-line no-unused-vars
+const { debug, warn } = GeckoViewUtils.initLogging("Console");
+
+// Allows to |await| for AddonManager to startup
+// mostly useful in tests that run super-early when AddonManager is not
+// available yet.
+XPCOMUtils.defineLazyGetter(this, "gAddonManagerStartup", function() {
+  if (AddonManager.isReady) {
+    // Already started up, nothing to do
+    return true;
+  }
+
+  // Wait until AddonManager is ready to accept calls
+  return new Promise(resolve => {
+    AddonManager.addManagerListener({
+      onStartup() {
+        resolve(true);
+      },
+    });
+  });
+});
+
+const DOWNLOAD_CHANGED_MESSAGE = "GeckoView:WebExtension:DownloadChanged";
+
+var DownloadTracker = new (class extends EventEmitter {
+  constructor() {
+    super();
+
+    // maps numeric IDs to DownloadItem objects
+    this._downloads = new Map();
+  }
+
+  onEvent(event, data, callback) {
+    switch (event) {
+      case "GeckoView:WebExtension:DownloadChanged": {
+        const downloadItem = this.getDownloadItemById(data.downloadItemId);
+
+        if (!downloadItem) {
+          callback.onError("Error: Trying to update unknown download");
+          return;
+        }
+
+        const delta = downloadItem.update(data);
+        if (delta) {
+          this.emit("download-changed", {
+            delta,
+            downloadItem,
+          });
+        }
+      }
+    }
+  }
+
+  addDownloadItem(item) {
+    this._downloads.set(item.id, item);
+  }
+
+  /**
+   * Finds and returns a DownloadItem with a certain numeric ID
+   *
+   * @param {number} id
+   * @returns {DownloadItem} download item
+   */
+  getDownloadItemById(id) {
+    return this._downloads.get(id);
+  }
+})();
 
 /** Provides common logic between page and browser actions */
 class ExtensionActionHelper {
@@ -95,14 +161,6 @@ class ExtensionActionHelper {
     return window.WindowEventDispatcher;
   }
 
-  sendRequestForResult(aTabId, aData) {
-    return this.eventDispatcherFor(aTabId).sendRequestForResult({
-      ...aData,
-      aTabId,
-      extensionId: this.extension.id,
-    });
-  }
-
   sendRequest(aTabId, aData) {
     return this.eventDispatcherFor(aTabId).sendRequest({
       ...aData,
@@ -116,23 +174,33 @@ class EmbedderPort {
   constructor(portId, messenger) {
     this.id = portId;
     this.messenger = messenger;
-    EventDispatcher.instance.registerListener(this, [
+    this.dispatcher = EventDispatcher.byName(`port:${portId}`);
+    this.dispatcher.registerListener(this, [
       "GeckoView:WebExtension:PortMessageFromApp",
       "GeckoView:WebExtension:PortDisconnect",
     ]);
   }
   close() {
-    EventDispatcher.instance.unregisterListener(this, [
+    this.dispatcher.unregisterListener(this, [
       "GeckoView:WebExtension:PortMessageFromApp",
       "GeckoView:WebExtension:PortDisconnect",
     ]);
   }
+  onPortDisconnect() {
+    this.dispatcher.sendRequest({
+      type: "GeckoView:WebExtension:Disconnect",
+      sender: this.sender,
+    });
+    this.close();
+  }
+  onPortMessage(holder) {
+    this.dispatcher.sendRequest({
+      type: "GeckoView:WebExtension:PortMessage",
+      data: holder.deserialize({}),
+    });
+  }
   onEvent(aEvent, aData, aCallback) {
     debug`onEvent ${aEvent} ${aData}`;
-
-    if (this.id !== aData.portId) {
-      return;
-    }
 
     switch (aEvent) {
       case "GeckoView:WebExtension:PortMessageFromApp": {
@@ -151,35 +219,23 @@ class EmbedderPort {
 }
 
 class GeckoViewConnection {
-  constructor(sender, nativeApp, allowContentMessaging) {
+  constructor(sender, target, nativeApp, allowContentMessaging) {
     this.sender = sender;
+    this.target = target;
     this.nativeApp = nativeApp;
-    if (allowContentMessaging) {
-      this.allowContentMessaging = allowContentMessaging;
-    } else {
-      const scope = GeckoViewWebExtension.extensionScopes.get(
-        sender.extensionId
-      );
-      if (scope) {
-        this.allowContentMessaging = scope.allowContentMessaging;
-      } else {
-        this.allowContentMessaging = false;
-      }
-    }
+    this.allowContentMessaging = allowContentMessaging;
 
-    if (!this.allowContentMessaging && !sender.verified) {
+    if (!allowContentMessaging && sender.envType !== "addon_child") {
       throw new Error(`Unexpected messaging sender: ${JSON.stringify(sender)}`);
     }
   }
 
   get dispatcher() {
-    const target = this.sender.actor.browsingContext.top.embedderElement;
-
     if (this.sender.envType === "addon_child") {
       // If this is a WebExtension Page we will have a GeckoSession associated
       // to it and thus a dispatcher.
       const dispatcher = GeckoViewUtils.getDispatcherForWindow(
-        target.ownerGlobal
+        this.target.ownerGlobal
       );
       if (dispatcher) {
         return dispatcher;
@@ -195,7 +251,7 @@ class GeckoViewConnection {
       // If this message came from a content script, send the message to
       // the corresponding tab messenger so that GeckoSession can pick it
       // up.
-      return GeckoViewUtils.getDispatcherForWindow(target.ownerGlobal);
+      return GeckoViewUtils.getDispatcherForWindow(this.target.ownerGlobal);
     }
 
     throw new Error(`Uknown sender envType: ${this.sender.envType}`);
@@ -207,6 +263,7 @@ class GeckoViewConnection {
       sender: this.sender,
       data,
       portId,
+      extensionId: this.sender.id,
       nativeApp: this.nativeApp,
     };
 
@@ -222,22 +279,6 @@ class GeckoViewConnection {
 
   onConnect(portId, messenger) {
     const port = new EmbedderPort(portId, messenger);
-
-    port.onPortMessage = holder =>
-      this._sendMessage({
-        type: "GeckoView:WebExtension:PortMessage",
-        portId: port.id,
-        data: holder.deserialize({}),
-      });
-
-    port.onPortDisconnect = () => {
-      EventDispatcher.instance.sendRequest({
-        type: "GeckoView:WebExtension:Disconnect",
-        sender: this.sender,
-        portId: port.id,
-      });
-      port.close();
-    };
 
     this._sendMessage({
       type: "GeckoView:WebExtension:Connect",
@@ -299,6 +340,7 @@ async function exportExtension(aAddon, aPermissions, aSourceURI) {
     blocklistState,
     userDisabled,
     embedderDisabled,
+    temporarilyInstalled,
     isActive,
     isBuiltin,
     id,
@@ -336,6 +378,7 @@ async function exportExtension(aAddon, aPermissions, aSourceURI) {
       promptPermissions,
       description,
       enabled: isActive,
+      temporary: temporarilyInstalled,
       disabledFlags,
       version,
       creatorName,
@@ -518,7 +561,7 @@ class MobileWindowTracker extends EventEmitter {
   }
 
   setTabActive(aWindow, aActive) {
-    const { browser, tab, windowUtils } = aWindow;
+    const { browser, tab, docShell } = aWindow;
     tab.active = aActive;
 
     if (aActive) {
@@ -528,7 +571,7 @@ class MobileWindowTracker extends EventEmitter {
         this._topNonPBWindow = this._topWindow;
       }
       this.emit("tab-activated", {
-        windowId: windowUtils.outerWindowID,
+        windowId: docShell.outerWindowID,
         tabId: tab.id,
         isPrivate,
       });
@@ -601,66 +644,24 @@ var GeckoViewWebExtension = {
     }
   },
 
-  async registerWebExtension(aId, aUri, allowContentMessaging, aCallback) {
-    const params = {
-      id: aId,
-      resourceURI: aUri,
-      temporarilyInstalled: true,
-      builtIn: true,
-    };
-
-    let file;
-    if (aUri instanceof Ci.nsIFileURL) {
-      file = aUri.file;
-    }
-
-    const scope = Extension.getBootstrapScope(aId, file);
-    scope.allowContentMessaging = allowContentMessaging;
-    // Always allow built-in extensions to run in private browsing
-    ExtensionPermissions.add(aId, PRIVATE_BROWSING_PERMISSION);
-    this.extensionScopes.set(aId, scope);
-
-    await scope.startup(params, undefined);
-
-    scope.extension.callOnClose({
-      close: () => this.extensionScopes.delete(aId),
-    });
-  },
-
-  async unregisterWebExtension(aId, aCallback) {
-    try {
-      const scope = this.extensionScopes.get(aId);
-      await scope.shutdown();
-      this.extensionScopes.delete(aId);
-      aCallback.onSuccess();
-    } catch (ex) {
-      aCallback.onError(`Error unregistering WebExtension ${aId}. ${ex}`);
-    }
-  },
-
   async extensionById(aId) {
-    const scope = this.extensionScopes.get(aId);
-    if (!scope) {
-      // Check if this is an installed extension
-      const addon = await AddonManager.getAddonByID(aId);
-      if (!addon) {
-        debug`Could not find extension with id=${aId}`;
-        return null;
-      }
-      return addon;
+    const addon = await AddonManager.getAddonByID(aId);
+    if (!addon) {
+      debug`Could not find extension with id=${aId}`;
+      return null;
     }
-
-    return scope.extension;
+    return addon;
   },
 
   async ensureBuiltIn(aUri, aId) {
+    await gAddonManagerStartup;
     const extensionData = new ExtensionData(aUri);
-    const [manifest, extension] = await Promise.all([
-      extensionData.loadManifest(),
+    const [extensionVersion, extension] = await Promise.all([
+      extensionData.getExtensionVersionWithoutValidation(),
       this.extensionById(aId),
     ]);
 
-    if (!extension || manifest.version != extension.version) {
+    if (!extension || extensionVersion != extension.version) {
       return this.installBuiltIn(aUri);
     }
 
@@ -673,6 +674,7 @@ var GeckoViewWebExtension = {
   },
 
   async installBuiltIn(aUri) {
+    await gAddonManagerStartup;
     const addon = await AddonManager.installBuiltinAddon(aUri.spec);
     const exported = await exportExtension(addon, addon.userPermissions, aUri);
     return { extension: exported };
@@ -731,29 +733,29 @@ var GeckoViewWebExtension = {
   async browserActionClick(aId) {
     const policy = WebExtensionPolicy.getByID(aId);
     if (!policy) {
-      return;
+      return undefined;
     }
 
     const browserAction = this.browserActions.get(policy.extension);
     if (!browserAction) {
-      return;
+      return undefined;
     }
 
-    browserAction.click();
+    return browserAction.triggerClickOrPopup();
   },
 
   async pageActionClick(aId) {
     const policy = WebExtensionPolicy.getByID(aId);
     if (!policy) {
-      return;
+      return undefined;
     }
 
     const pageAction = this.pageActions.get(policy.extension);
     if (!pageAction) {
-      return;
+      return undefined;
     }
 
-    pageAction.click();
+    return pageAction.triggerClickOrPopup();
   },
 
   async actionDelegateAttached(aId) {
@@ -868,11 +870,13 @@ var GeckoViewWebExtension = {
 
     switch (aEvent) {
       case "GeckoView:BrowserAction:Click": {
-        this.browserActionClick(aData.extensionId);
+        const popupUrl = await this.browserActionClick(aData.extensionId);
+        aCallback.onSuccess(popupUrl);
         break;
       }
       case "GeckoView:PageAction:Click": {
-        this.pageActionClick(aData.extensionId);
+        const popupUrl = await this.pageActionClick(aData.extensionId);
+        aCallback.onSuccess(popupUrl);
         break;
       }
       case "GeckoView:WebExtension:MenuClick": {
@@ -888,66 +892,8 @@ var GeckoViewWebExtension = {
         break;
       }
 
-      // TODO: Remove deprecated Bug 1634504
-      case "GeckoView:RegisterWebExtension": {
-        let uri;
-        try {
-          uri = Services.io.newURI(aData.locationUri);
-        } catch (ex) {
-          aCallback.onError(`Could not parse URI: ${aData.locationUri}`);
-          return;
-        }
-        if (
-          !uri ||
-          (!(uri instanceof Ci.nsIFileURL) && !(uri instanceof Ci.nsIJARURI))
-        ) {
-          aCallback.onError(
-            `Extension does not point to a resource URI or a file URL. extension=${aData.locationUri}`
-          );
-          return;
-        }
-
-        if (uri.fileName != "" && uri.fileExtension != "xpi") {
-          aCallback.onError(
-            `Extension does not point to a folder or an .xpi file. Hint: the path needs to end with a "/" to be considered a folder. extension=${aData.locationUri}`
-          );
-          return;
-        }
-
-        if (this.extensionScopes.has(aData.id)) {
-          aCallback.onError(
-            `An extension with id='${aData.id}' has already been registered.`
-          );
-          return;
-        }
-
-        this.registerWebExtension(
-          aData.id,
-          uri,
-          aData.allowContentMessaging
-        ).then(aCallback.onSuccess, error =>
-          aCallback.onError(
-            `An error occurred while registering the WebExtension ${aData.locationUri}: ${error}.`
-          )
-        );
-        break;
-      }
-
       case "GeckoView:ActionDelegate:Attached": {
         this.actionDelegateAttached(aData.extensionId);
-        break;
-      }
-
-      // TODO: Remove deprecated Bug 1634504
-      case "GeckoView:UnregisterWebExtension": {
-        if (!this.extensionScopes.has(aData.id)) {
-          aCallback.onError(
-            `Could not find an extension with id='${aData.id}'.`
-          );
-          return;
-        }
-
-        this.unregisterWebExtension(aData.id, aCallback);
         break;
       }
 
@@ -1103,6 +1049,7 @@ var GeckoViewWebExtension = {
 
       case "GeckoView:WebExtension:List": {
         try {
+          await gAddonManagerStartup;
           const addons = await AddonManager.getAddonsByTypes(["extension"]);
           const extensions = await Promise.all(
             addons.map(addon =>
@@ -1137,12 +1084,7 @@ var GeckoViewWebExtension = {
   },
 };
 
-// TODO: Remove deprecated Bug 1634504
-GeckoViewWebExtension.extensionScopes = new Map();
 // WeakMap[Extension -> BrowserAction]
 GeckoViewWebExtension.browserActions = new WeakMap();
 // WeakMap[Extension -> PageAction]
 GeckoViewWebExtension.pageActions = new WeakMap();
-Services.obs.addObserver(GeckoViewWebExtension, "devtools-installed-addon");
-Services.obs.addObserver(GeckoViewWebExtension, "testing-installed-addon");
-Services.obs.addObserver(GeckoViewWebExtension, "testing-uninstalled-addon");

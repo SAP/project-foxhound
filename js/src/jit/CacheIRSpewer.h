@@ -12,6 +12,9 @@
 #  include "mozilla/Maybe.h"
 
 #  include "jit/CacheIR.h"
+#  include "jit/CacheIRGenerator.h"
+#  include "jit/CacheIRReader.h"
+#  include "jit/CacheIRWriter.h"
 #  include "js/TypeDecls.h"
 #  include "threading/LockGuard.h"
 #  include "vm/JSONPrinter.h"
@@ -74,8 +77,9 @@ class CacheIRSpewer {
 
     ~Guard() {
       if (sp_.enabled()) {
-        if (gen_.writerRef().codeLength() > 0) {
-          CacheIRReader reader(gen_.writerRef());
+        const CacheIRWriter& writer = gen_.writerRef();
+        if (!writer.failed() && writer.codeLength() > 0) {
+          CacheIRReader reader(writer);
           sp_.cacheIRSequence(reader);
         }
         if (name_ != nullptr) {

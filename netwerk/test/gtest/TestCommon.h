@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include "nsThreadUtils.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/SpinEventLoopUntil.h"
 
 //-----------------------------------------------------------------------------
 
@@ -20,7 +21,8 @@ class WaitForCondition final : public nsIRunnable {
     MOZ_ASSERT(mPending == 0);
 
     mPending = pending;
-    mozilla::SpinEventLoopUntil([&]() { return !mPending; });
+    mozilla::SpinEventLoopUntil("TestCommon.h:WaitForCondition::Wait"_ns,
+                                [&]() { return !mPending; });
     NS_ProcessPendingEvents(nullptr);
   }
 

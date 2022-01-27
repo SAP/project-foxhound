@@ -10,13 +10,12 @@ from .base import (Protocol,
                    TestharnessExecutor,
                    TimedRunner,
                    strip_server)
-from ..testrunner import Stop
 from ..webdriver_server import wait_for_service
 
 webdriver = None
 ServoCommandExtensions = None
 
-here = os.path.join(os.path.split(__file__)[0])
+here = os.path.dirname(__file__)
 
 
 def do_delayed_imports():
@@ -71,10 +70,13 @@ class ServoBaseProtocolPart(BaseProtocolPart):
         pass
 
     def wait(self):
-        pass
+        return False
 
     def set_window(self, handle):
         pass
+
+    def window_handles(self):
+        return []
 
     def load(self, url):
         pass
@@ -121,7 +123,8 @@ class ServoWebDriverProtocol(Protocol):
     def wait(self):
         while True:
             try:
-                self.session.execute_async_script("")
+                return self.session.execute_async_script("""let callback = arguments[arguments.length - 1];
+addEventListener("__test_restart", e => {e.preventDefault(); callback(true)})""")
             except webdriver.TimeoutException:
                 pass
             except (socket.timeout, IOError):
@@ -129,6 +132,7 @@ class ServoWebDriverProtocol(Protocol):
             except Exception:
                 self.logger.error(traceback.format_exc())
                 break
+        return False
 
 
 class ServoWebDriverRun(TimedRunner):
@@ -181,8 +185,9 @@ class ServoWebDriverTestharnessExecutor(TestharnessExecutor):
                 self.protocol.session.timeouts.script = timeout
                 self.timeout = timeout
             except IOError:
-                self.logger.error("Lost webdriver connection")
-                return Stop
+                msg = "Lost WebDriver connection"
+                self.logger.error(msg)
+                return ("INTERNAL-ERROR", msg)
 
         success, data = ServoWebDriverRun(self.logger,
                                           self.do_testharness,
@@ -273,8 +278,9 @@ class ServoWebDriverRefTestExecutor(RefTestExecutor):
                 self.protocol.session.timeouts.script = timeout
                 self.timeout = timeout
             except IOError:
-                self.logger.error("Lost webdriver connection")
-                return Stop
+                msg = "Lost webdriver connection"
+                self.logger.error(msg)
+                return ("INTERNAL-ERROR", msg)
 
         return ServoWebDriverRun(self.logger,
                                  self._screenshot,

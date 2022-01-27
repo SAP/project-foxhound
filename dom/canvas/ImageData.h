@@ -16,12 +16,20 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"
 
+class JSObject;
 class nsIGlobalObject;
+struct JSContext;
+struct JSStructuredCloneReader;
+struct JSStructuredCloneWriter;
 
 namespace mozilla {
 class ErrorResult;
 
 namespace dom {
+
+class GlobalObject;
+template <typename T>
+class Optional;
 
 class ImageData final : public nsISupports {
   ~ImageData() { DropData(); }

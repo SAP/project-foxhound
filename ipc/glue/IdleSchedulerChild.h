@@ -37,6 +37,17 @@ class IdleSchedulerChild final : public PIdleSchedulerChild {
   // Returns true if activity state dropped below cpu count.
   bool SetPaused();
 
+  typedef MozPromise<bool, ResponseRejectReason, true> MayGCPromise;
+
+  // Returns null if a GC or GC request is already in progress.
+  RefPtr<MayGCPromise> MayGCNow();
+
+  // Regardless of how a GC is started we get informed via these.
+  void StartedGC();
+  void DoneGC();
+
+  // Returns nullptr if this is the parent process or the IdleSchedulerChild has
+  // already been destroyed, eg if IPC is shutting down.
   static IdleSchedulerChild* GetMainThreadIdleScheduler();
 
  private:
@@ -50,6 +61,12 @@ class IdleSchedulerChild final : public PIdleSchedulerChild {
   IdlePeriodState* mIdlePeriodState = nullptr;
 
   uint32_t mChildId = 0;
+
+  // These fields replicate those in IdleSchedulerParent.  Tracking them here
+  // ensures we don't send confusing information to the parent, while
+  // nsJSEnvironment is free to tell us about any GCs.
+  bool mIsRequestingGC = false;
+  bool mIsDoingGC = false;
 };
 
 }  // namespace ipc

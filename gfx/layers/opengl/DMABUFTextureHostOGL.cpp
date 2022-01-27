@@ -6,7 +6,7 @@
 
 #include "DMABUFTextureHostOGL.h"
 #include "mozilla/widget/DMABufSurface.h"
-#include "mozilla/webrender/RenderDMABUFTextureHostOGL.h"
+#include "mozilla/webrender/RenderDMABUFTextureHost.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "GLContextEGL.h"
@@ -18,67 +18,14 @@ DMABUFTextureHostOGL::DMABUFTextureHostOGL(TextureFlags aFlags,
     : TextureHost(aFlags) {
   MOZ_COUNT_CTOR(DMABUFTextureHostOGL);
 
+  // DMABufSurface::CreateDMABufSurface() can fail, for instance when we're run
+  // out of file descriptors.
   mSurface =
       DMABufSurface::CreateDMABufSurface(aDesc.get_SurfaceDescriptorDMABuf());
 }
 
 DMABUFTextureHostOGL::~DMABUFTextureHostOGL() {
   MOZ_COUNT_DTOR(DMABUFTextureHostOGL);
-}
-
-GLTextureSource* DMABUFTextureHostOGL::CreateTextureSourceForPlane(
-    size_t aPlane) {
-  MOZ_ASSERT(mSurface);
-
-  if (!mSurface->GetTexture(aPlane)) {
-    if (!mSurface->CreateTexture(gl(), aPlane)) {
-      return nullptr;
-    }
-  }
-
-  return new GLTextureSource(
-      mProvider, mSurface->GetTexture(aPlane), LOCAL_GL_TEXTURE_2D,
-      gfx::IntSize(mSurface->GetWidth(aPlane), mSurface->GetHeight(aPlane)),
-      // XXX: This isn't really correct (but isn't used), we should be using the
-      // format of the individual plane, not of the whole buffer.
-      mSurface->GetFormatGL());
-}
-
-bool DMABUFTextureHostOGL::Lock() {
-  if (!gl() || !gl()->MakeCurrent() || !mSurface) {
-    return false;
-  }
-
-  if (!mTextureSource) {
-    mTextureSource = CreateTextureSourceForPlane(0);
-
-    RefPtr<TextureSource> prev = mTextureSource;
-    for (size_t i = 1; i < mSurface->GetTextureCount(); i++) {
-      RefPtr<TextureSource> next = CreateTextureSourceForPlane(i);
-      prev->SetNextSibling(next);
-      prev = next;
-    }
-  }
-
-  mSurface->FenceWait();
-  return true;
-}
-
-void DMABUFTextureHostOGL::Unlock() {}
-
-void DMABUFTextureHostOGL::SetTextureSourceProvider(
-    TextureSourceProvider* aProvider) {
-  if (!aProvider || !aProvider->GetGLContext()) {
-    mTextureSource = nullptr;
-    mProvider = nullptr;
-    return;
-  }
-
-  mProvider = aProvider;
-
-  if (mTextureSource) {
-    mTextureSource->SetTextureSourceProvider(aProvider);
-  }
 }
 
 gfx::SurfaceFormat DMABUFTextureHostOGL::GetFormat() const {
@@ -90,7 +37,7 @@ gfx::SurfaceFormat DMABUFTextureHostOGL::GetFormat() const {
 
 gfx::YUVColorSpace DMABUFTextureHostOGL::GetYUVColorSpace() const {
   if (!mSurface) {
-    return gfx::YUVColorSpace::UNKNOWN;
+    return gfx::YUVColorSpace::Identity;
   }
   return mSurface->GetYUVColorSpace();
 }
@@ -104,7 +51,7 @@ gfx::ColorRange DMABUFTextureHostOGL::GetColorRange() const {
 }
 
 uint32_t DMABUFTextureHostOGL::NumSubTextures() {
-  return mSurface->GetTextureCount();
+  return mSurface ? mSurface->GetTextureCount() : 0;
 }
 
 gfx::IntSize DMABUFTextureHostOGL::GetSize() const {
@@ -114,28 +61,31 @@ gfx::IntSize DMABUFTextureHostOGL::GetSize() const {
   return gfx::IntSize(mSurface->GetWidth(), mSurface->GetHeight());
 }
 
-gl::GLContext* DMABUFTextureHostOGL::gl() const {
-  return mProvider ? mProvider->GetGLContext() : nullptr;
-}
+gl::GLContext* DMABUFTextureHostOGL::gl() const { return nullptr; }
 
 void DMABUFTextureHostOGL::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
+  if (!mSurface) {
+    return;
+  }
   RefPtr<wr::RenderTextureHost> texture =
-      new wr::RenderDMABUFTextureHostOGL(mSurface);
-  wr::RenderThread::Get()->RegisterExternalImage(wr::AsUint64(aExternalImageId),
+      new wr::RenderDMABUFTextureHost(mSurface);
+  wr::RenderThread::Get()->RegisterExternalImage(aExternalImageId,
                                                  texture.forget());
 }
 
 void DMABUFTextureHostOGL::PushResourceUpdates(
     wr::TransactionBuilder& aResources, ResourceUpdateOp aOp,
     const Range<wr::ImageKey>& aImageKeys, const wr::ExternalImageId& aExtID) {
-  MOZ_ASSERT(mSurface);
+  if (!mSurface) {
+    return;
+  }
 
   auto method = aOp == TextureHost::ADD_IMAGE
                     ? &wr::TransactionBuilder::AddExternalImage
                     : &wr::TransactionBuilder::UpdateExternalImage;
   auto imageType =
-      wr::ExternalImageType::TextureHandle(wr::TextureTarget::Default);
+      wr::ExternalImageType::TextureHandle(wr::ImageBufferKind::Texture2D);
 
   switch (mSurface->GetFormat()) {
     case gfx::SurfaceFormat::R8G8B8X8:
@@ -162,6 +112,20 @@ void DMABUFTextureHostOGL::PushResourceUpdates(
       (aResources.*method)(aImageKeys[1], descriptor1, aExtID, imageType, 1);
       break;
     }
+    case gfx::SurfaceFormat::YUV: {
+      MOZ_ASSERT(aImageKeys.length() == 3);
+      MOZ_ASSERT(mSurface->GetTextureCount() == 3);
+      wr::ImageDescriptor descriptor0(
+          gfx::IntSize(mSurface->GetWidth(0), mSurface->GetHeight(0)),
+          gfx::SurfaceFormat::A8);
+      wr::ImageDescriptor descriptor1(
+          gfx::IntSize(mSurface->GetWidth(1), mSurface->GetHeight(1)),
+          gfx::SurfaceFormat::A8);
+      (aResources.*method)(aImageKeys[0], descriptor0, aExtID, imageType, 0);
+      (aResources.*method)(aImageKeys[1], descriptor1, aExtID, imageType, 1);
+      (aResources.*method)(aImageKeys[2], descriptor1, aExtID, imageType, 2);
+      break;
+    }
     default: {
       MOZ_ASSERT_UNREACHABLE("unexpected to be called");
     }
@@ -171,8 +135,12 @@ void DMABUFTextureHostOGL::PushResourceUpdates(
 void DMABUFTextureHostOGL::PushDisplayItems(
     wr::DisplayListBuilder& aBuilder, const wr::LayoutRect& aBounds,
     const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
-    const Range<wr::ImageKey>& aImageKeys,
-    const bool aPreferCompositorSurface) {
+    const Range<wr::ImageKey>& aImageKeys, PushDisplayItemFlagSet aFlags) {
+  if (!mSurface) {
+    return;
+  }
+  bool preferCompositorSurface =
+      aFlags.contains(PushDisplayItemFlag::PREFER_COMPOSITOR_SURFACE);
   switch (mSurface->GetFormat()) {
     case gfx::SurfaceFormat::R8G8B8X8:
     case gfx::SurfaceFormat::R8G8B8A8:
@@ -182,7 +150,7 @@ void DMABUFTextureHostOGL::PushDisplayItems(
       aBuilder.PushImage(aBounds, aClip, true, aFilter, aImageKeys[0],
                          !(mFlags & TextureFlags::NON_PREMULTIPLIED),
                          wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f},
-                         aPreferCompositorSurface);
+                         preferCompositorSurface);
       break;
     }
     case gfx::SurfaceFormat::NV12: {
@@ -194,7 +162,19 @@ void DMABUFTextureHostOGL::PushDisplayItems(
                              wr::ColorDepth::Color8,
                              wr::ToWrYuvColorSpace(GetYUVColorSpace()),
                              wr::ToWrColorRange(GetColorRange()), aFilter,
-                             aPreferCompositorSurface);
+                             preferCompositorSurface);
+      break;
+    }
+    case gfx::SurfaceFormat::YUV: {
+      MOZ_ASSERT(aImageKeys.length() == 3);
+      MOZ_ASSERT(mSurface->GetTextureCount() == 3);
+      // Those images can only be generated at present by the VAAPI vp8 decoder
+      // which only supports 8 bits color depth.
+      aBuilder.PushYCbCrPlanarImage(
+          aBounds, aClip, true, aImageKeys[0], aImageKeys[1], aImageKeys[2],
+          wr::ColorDepth::Color8, wr::ToWrYuvColorSpace(GetYUVColorSpace()),
+          wr::ToWrColorRange(GetColorRange()), aFilter,
+          preferCompositorSurface);
       break;
     }
     default: {

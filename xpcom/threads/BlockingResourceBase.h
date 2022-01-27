@@ -7,13 +7,13 @@
 #ifndef mozilla_BlockingResourceBase_h
 #define mozilla_BlockingResourceBase_h
 
-#include "mozilla/Logging.h"
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/ThreadLocal.h"
 
 #include "nscore.h"
 #include "nsDebug.h"
-#include "nsError.h"
-#include "nsISupportsImpl.h"
+
+#include "prtypes.h"
 
 #ifdef DEBUG
 
@@ -22,13 +22,11 @@
 
 #  include "prinit.h"
 
-#  include "nsString.h"
-
 #  ifndef MOZ_CALLSTACK_DISABLED
+#    include "mozilla/Maybe.h"
 #    include "nsTArray.h"
 #  endif
 
-#  include "nsXPCOM.h"
 #endif
 
 //
@@ -195,12 +193,21 @@ class BlockingResourceBase {
   }  // NS_NEEDS_RESOURCE(this)
 
   /**
-   * GetAcquisitionState
-   * Return whether or not this resource was acquired.
+   * TakeAcquisitionState
+   * Return whether or not this resource was acquired and mark the resource
+   * as not acquired for subsequent uses.
    *
    * *NOT* thread safe.  Requires ownership of underlying resource.
    */
-  AcquisitionState GetAcquisitionState() { return mAcquired; }
+  AcquisitionState TakeAcquisitionState() {
+#  ifdef MOZ_CALLSTACK_DISABLED
+    bool acquired = mAcquired;
+    ClearAcquisitionState();
+    return acquired;
+#  else
+    return mAcquired.take();
+#  endif
+  }
 
   /**
    * SetAcquisitionState
@@ -208,8 +215,8 @@ class BlockingResourceBase {
    *
    * *NOT* thread safe.  Requires ownership of underlying resource.
    */
-  void SetAcquisitionState(const AcquisitionState& aAcquisitionState) {
-    mAcquired = aAcquisitionState;
+  void SetAcquisitionState(AcquisitionState&& aAcquisitionState) {
+    mAcquired = std::move(aAcquisitionState);
   }
 
   /**
@@ -309,7 +316,8 @@ class BlockingResourceBase {
 
   static void StackWalkCallback(uint32_t aFrameNumber, void* aPc, void* aSp,
                                 void* aClosure);
-  static void GetStackTrace(AcquisitionState& aState);
+  static void GetStackTrace(AcquisitionState& aState,
+                            const void* aFirstFramePC);
 
 #  ifdef MOZILLA_INTERNAL_API
   // so it can call BlockingResourceBase::Shutdown()

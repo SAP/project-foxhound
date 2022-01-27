@@ -25,6 +25,12 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
+  "PrivatePropertiesIteratorActor",
+  "devtools/server/actors/object/private-properties-iterator",
+  true
+);
+loader.lazyRequireGetter(
+  this,
   "previewers",
   "devtools/server/actors/object/previewers"
 );
@@ -65,8 +71,6 @@ const proto = {
    *        the caller:
    *          - createValueGrip
    *              Creates a value grip for the given object
-   *          - sources
-   *              TabSources getter that manages the sources of a thread
    *          - createEnvironmentActor
    *              Creates and return an environment actor
    *          - getGripDepth
@@ -75,15 +79,12 @@ const proto = {
    *              Increment the actor's grip depth
    *          - decrementGripDepth
    *              Decrement the actor's grip depth
-   *          - globalDebugObject
-   *              The Debuggee Global Object as given by the ThreadActor
    */
   initialize(
     obj,
     {
       thread,
       createValueGrip: createValueGripHook,
-      sources,
       createEnvironmentActor,
       getGripDepth,
       incrementGripDepth,
@@ -102,7 +103,6 @@ const proto = {
     this.thread = thread;
     this.hooks = {
       createValueGrip: createValueGripHook,
-      sources,
       createEnvironmentActor,
       getGripDepth,
       incrementGripDepth,
@@ -166,13 +166,10 @@ const proto = {
       extensible: this.obj.isExtensible(),
       frozen: this.obj.isFrozen(),
       sealed: this.obj.isSealed(),
+      isError: this.obj.isError,
     });
 
     this.hooks.incrementGripDepth();
-
-    if (g.class == "Promise") {
-      g.promiseState = this._createPromiseState();
-    }
 
     if (g.class == "Function") {
       g.isClassConstructor = this.obj.isClassConstructor;
@@ -197,8 +194,6 @@ const proto = {
   },
 
   _getOwnPropertyLength: function() {
-    // FF40+: Allow to know how many properties an object has to lazily display them
-    // when there is a bunch.
     if (isTypedArray(this.obj)) {
       // Bug 1348761: getOwnPropertyNames is unnecessary slow on TypedArrays
       return getArrayLength(this.obj);
@@ -255,7 +250,7 @@ const proto = {
   /**
    * Returns an object exposing the internal Promise state.
    */
-  _createPromiseState: function() {
+  promiseState: function() {
     const { state, value, reason } = getPromiseState(this.obj);
     const promiseState = { state };
 
@@ -272,33 +267,7 @@ const proto = {
       promiseState.timeToSettle = this.obj.promiseTimeToResolution;
     }
 
-    return promiseState;
-  },
-
-  /**
-   * Handle a protocol request to provide the definition site of this function
-   * object.
-   */
-  definitionSite: function() {
-    if (this.obj.class != "Function") {
-      return this.throwError(
-        "objectNotFunction",
-        this.actorID + " is not a function."
-      );
-    }
-
-    if (!this.obj.script) {
-      return this.throwError(
-        "noScript",
-        this.actorID + " has no Debugger.Script"
-      );
-    }
-
-    return {
-      source: this.hooks.sources().createSourceActor(this.obj.script.source),
-      line: this.obj.script.startLine,
-      column: 0, // TODO bug 901138: use Debugger.Script.prototype.startColumn
-    };
+    return { promiseState };
   },
 
   /**
@@ -340,6 +309,13 @@ const proto = {
    */
   enumSymbols: function() {
     return SymbolIteratorActor(this, this.conn);
+  },
+
+  /**
+   * Creates an actor to iterate over an object private properties.
+   */
+  enumPrivateProperties: function() {
+    return PrivatePropertiesIteratorActor(this, this.conn);
   },
 
   /**

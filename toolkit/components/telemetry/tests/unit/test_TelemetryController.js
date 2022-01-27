@@ -13,18 +13,32 @@ const { CommonUtils } = ChromeUtils.import(
 );
 const { ClientID } = ChromeUtils.import("resource://gre/modules/ClientID.jsm");
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryStorage.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryArchive.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm", this);
+const { TelemetryController } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryController.jsm"
+);
+const { TelemetryStorage } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryStorage.jsm"
+);
+const { TelemetrySend } = ChromeUtils.import(
+  "resource://gre/modules/TelemetrySend.jsm"
+);
+const { TelemetryArchive } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryArchive.jsm"
+);
+const { TelemetryUtils } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryUtils.jsm"
+);
 const { Preferences } = ChromeUtils.import(
   "resource://gre/modules/Preferences.jsm"
 );
-ChromeUtils.import("resource://testing-common/ContentTaskUtils.jsm", this);
+const { ContentTaskUtils } = ChromeUtils.import(
+  "resource://testing-common/ContentTaskUtils.jsm"
+);
 const { TestUtils } = ChromeUtils.import(
   "resource://testing-common/TestUtils.jsm"
+);
+const { TelemetryArchiveTesting } = ChromeUtils.import(
+  "resource://testing-common/TelemetryArchiveTesting.jsm"
 );
 
 ChromeUtils.defineModuleGetter(
@@ -43,14 +57,11 @@ const PING_FORMAT_VERSION = 4;
 const DELETION_REQUEST_PING_TYPE = "deletion-request";
 const TEST_PING_TYPE = "test-ping-type";
 
-const PLATFORM_VERSION = "1.9.2";
-const APP_VERSION = "1";
-const APP_NAME = "XPCShell";
-
 var gClientID = null;
 
-XPCOMUtils.defineLazyGetter(this, "DATAREPORTING_PATH", function() {
-  return OS.Path.join(OS.Constants.Path.profileDir, "datareporting");
+XPCOMUtils.defineLazyGetter(this, "DATAREPORTING_PATH", async function() {
+  let profileDir = await PathUtils.getProfileDir();
+  return PathUtils.join(profileDir, "datareporting");
 });
 
 function sendPing(aSendClientId, aSendEnvironment) {
@@ -127,7 +138,12 @@ function checkPingFormat(aPing, aType, aHasClientId, aHasEnvironment) {
 add_task(async function test_setup() {
   // Addon manager needs a profile directory
   do_get_profile();
-  loadAddonManager("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
+  await loadAddonManager(
+    "xpcshell@tests.mozilla.org",
+    "XPCShell",
+    "1",
+    "1.9.2"
+  );
   finishAddonManagerStartup();
   fakeIntlReady();
   // Make sure we don't generate unexpected pings due to pref changes.
@@ -246,7 +262,6 @@ add_task(async function test_disableDataUpload() {
     secondClientId,
     "The client id must have changed"
   );
-
   // Simulate a failure in sending the deletion-request ping by disabling the HTTP server.
   await PingServer.stop();
 
@@ -653,25 +668,32 @@ add_task(async function test_telemetryCleanFHRDatabase() {
   const DEFAULT_DB_NAME = "healthreport.sqlite";
 
   // Check that we're able to remove a FHR DB with a custom name.
+  const profileDir = await PathUtils.getProfileDir();
   const CUSTOM_DB_PATHS = [
-    OS.Path.join(OS.Constants.Path.profileDir, CUSTOM_DB_NAME),
-    OS.Path.join(OS.Constants.Path.profileDir, CUSTOM_DB_NAME + "-wal"),
-    OS.Path.join(OS.Constants.Path.profileDir, CUSTOM_DB_NAME + "-shm"),
+    PathUtils.join(profileDir, CUSTOM_DB_NAME),
+    PathUtils.join(profileDir, CUSTOM_DB_NAME + "-wal"),
+    PathUtils.join(profileDir, CUSTOM_DB_NAME + "-shm"),
   ];
   Preferences.set(FHR_DBNAME_PREF, CUSTOM_DB_NAME);
 
   // Write fake DB files to the profile directory.
   for (let dbFilePath of CUSTOM_DB_PATHS) {
-    await OS.File.writeAtomic(dbFilePath, "some data");
+    await IOUtils.writeUTF8(dbFilePath, "some data");
   }
 
   // Trigger the cleanup and check that the files were removed.
   await TelemetryStorage.removeFHRDatabase();
   for (let dbFilePath of CUSTOM_DB_PATHS) {
-    Assert.ok(
-      !(await OS.File.exists(dbFilePath)),
-      "The DB must not be on the disk anymore: " + dbFilePath
-    );
+    try {
+      await IOUtils.read(dbFilePath);
+    } catch (e) {
+      Assert.ok(e instanceof DOMException);
+      Assert.equal(
+        e.name,
+        "NotFoundError",
+        "The DB must not be on the disk anymore: " + dbFilePath
+      );
+    }
   }
 
   // We should not break anything if there's no DB file.
@@ -681,23 +703,29 @@ add_task(async function test_telemetryCleanFHRDatabase() {
   Preferences.reset(FHR_DBNAME_PREF);
 
   const DEFAULT_DB_PATHS = [
-    OS.Path.join(OS.Constants.Path.profileDir, DEFAULT_DB_NAME),
-    OS.Path.join(OS.Constants.Path.profileDir, DEFAULT_DB_NAME + "-wal"),
-    OS.Path.join(OS.Constants.Path.profileDir, DEFAULT_DB_NAME + "-shm"),
+    PathUtils.join(profileDir, DEFAULT_DB_NAME),
+    PathUtils.join(profileDir, DEFAULT_DB_NAME + "-wal"),
+    PathUtils.join(profileDir, DEFAULT_DB_NAME + "-shm"),
   ];
 
   // Write fake DB files to the profile directory.
   for (let dbFilePath of DEFAULT_DB_PATHS) {
-    await OS.File.writeAtomic(dbFilePath, "some data");
+    await IOUtils.writeUTF8(dbFilePath, "some data");
   }
 
   // Trigger the cleanup and check that the files were removed.
   await TelemetryStorage.removeFHRDatabase();
   for (let dbFilePath of DEFAULT_DB_PATHS) {
-    Assert.ok(
-      !(await OS.File.exists(dbFilePath)),
-      "The DB must not be on the disk anymore: " + dbFilePath
-    );
+    try {
+      await IOUtils.read(dbFilePath);
+    } catch (e) {
+      Assert.ok(e instanceof DOMException);
+      Assert.equal(
+        e.name,
+        "NotFoundError",
+        "The DB must not be on the disk anymore: " + dbFilePath
+      );
+    }
   }
 });
 
@@ -727,8 +755,11 @@ add_task(async function test_sendNewProfile() {
   await resetTest();
 
   // Make sure to reset all the new-profile ping prefs.
-  const stateFilePath = OS.Path.join(DATAREPORTING_PATH, "session-state.json");
-  await OS.File.remove(stateFilePath, { ignoreAbsent: true });
+  const stateFilePath = PathUtils.join(
+    await DATAREPORTING_PATH,
+    "session-state.json"
+  );
+  await IOUtils.remove(stateFilePath);
   Preferences.set(PREF_NEWPROFILE_DELAY, 1);
   Preferences.set(PREF_NEWPROFILE_ENABLED, true);
 
@@ -757,7 +788,7 @@ add_task(async function test_sendNewProfile() {
 
   // Make sure that the new-profile ping is sent at shutdown if it wasn't sent before.
   await resetTest();
-  await OS.File.remove(stateFilePath, { ignoreAbsent: true });
+  await IOUtils.remove(stateFilePath);
   Preferences.reset(PREF_NEWPROFILE_DELAY);
 
   nextReq = PingServer.promiseNextRequest();
@@ -800,7 +831,7 @@ add_task(async function test_sendNewProfile() {
   // Check that we don't send the new-profile ping if the profile already contains
   // a state file (but no "newProfilePingSent" property).
   await resetTest();
-  await OS.File.remove(stateFilePath, { ignoreAbsent: true });
+  await IOUtils.remove(stateFilePath);
   const sessionState = {
     sessionId: null,
     subsessionId: null,
@@ -1058,6 +1089,75 @@ add_task(async function test_encryptedPing() {
     JSON.parse(new TextDecoder("utf-8").decode(decryptedJWE)),
     payload,
     "decrypted payload should match"
+  );
+});
+
+add_task(async function test_encryptedPing_overrideId() {
+  if (gIsAndroid) {
+    // The underlying jwcrypto module being used here is not currently available on Android.
+    return;
+  }
+  Cu.importGlobalProperties(["crypto"]);
+
+  const publicKey = {
+    crv: "P-256",
+    ext: true,
+    kty: "EC",
+    x: "h12feyTYBZ__wO_AnM1a5-KTDlko3-YyQ_en19jyrs0",
+    y: "6GSfzo14ehDyH5E-xCOedJDAYlN0AGPMCtIgFbheLko",
+  };
+
+  const prefPioneerId = "12345";
+  const overriddenPioneerId = "c0ffeeaa-bbbb-abab-baba-eeff0ceeff0c";
+  const schemaName = "abc";
+  const schemaNamespace = "def";
+  const schemaVersion = 2;
+
+  Services.prefs.setStringPref("toolkit.telemetry.pioneerId", prefPioneerId);
+
+  let archiveTester = new TelemetryArchiveTesting.Checker();
+  await archiveTester.promiseInit();
+
+  // Submit a ping with a custom payload, which will be encrypted.
+  let payload = { canary: "test" };
+  let pingPromise = TelemetryController.submitExternalPing(
+    "test-pioneer-study-override",
+    payload,
+    {
+      studyName: "pioneer-dev-1@allizom.org",
+      addPioneerId: true,
+      overridePioneerId: overriddenPioneerId,
+      useEncryption: true,
+      encryptionKeyId: "pioneer-dev-20200423",
+      publicKey,
+      schemaName,
+      schemaNamespace,
+      schemaVersion,
+    }
+  );
+
+  // Wait for the ping to be submitted, to have the ping id to scan the
+  // archive for.
+  const pingId = await pingPromise;
+
+  // And then wait for the ping to be available in the archive.
+  await TestUtils.waitForCondition(
+    () => archiveTester.promiseFindPing("test-pioneer-study-override", []),
+    "Failed to find the pioneer ping"
+  );
+
+  let archivedCopy = await TelemetryArchive.promiseArchivedPingById(pingId);
+
+  Assert.notEqual(
+    archivedCopy.payload.encryptedData,
+    payload,
+    "The encrypted payload must not match the plaintext."
+  );
+
+  Assert.equal(
+    archivedCopy.payload.pioneerId,
+    overriddenPioneerId,
+    "Pioneer ID in ping must match the provided override."
   );
 });
 

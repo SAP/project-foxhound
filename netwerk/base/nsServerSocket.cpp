@@ -22,7 +22,7 @@ namespace net {
 
 //-----------------------------------------------------------------------------
 
-typedef void (nsServerSocket::*nsServerSocketFunc)(void);
+using nsServerSocketFunc = void (nsServerSocket::*)();
 
 static nsresult PostEvent(nsServerSocket* s, nsServerSocketFunc func) {
   nsCOMPtr<nsIRunnable> ev = NewRunnableMethod("net::PostEvent", s, func);
@@ -35,20 +35,7 @@ static nsresult PostEvent(nsServerSocket* s, nsServerSocketFunc func) {
 // nsServerSocket
 //-----------------------------------------------------------------------------
 
-nsServerSocket::nsServerSocket()
-    : mFD(nullptr),
-      mLock("nsServerSocket.mLock"),
-      mAttached(false),
-      mKeepWhenOffline(false) {
-  this->mAddr.raw.family = 0;
-  this->mAddr.inet.family = 0;
-  this->mAddr.inet.port = 0;
-  this->mAddr.inet.ip = 0;
-  this->mAddr.ipv6.family = 0;
-  this->mAddr.ipv6.port = 0;
-  this->mAddr.ipv6.flowinfo = 0;
-  this->mAddr.ipv6.scope_id = 0;
-  this->mAddr.local.family = 0;
+nsServerSocket::nsServerSocket() {
   // we want to be able to access the STS directly, and it may not have been
   // constructed yet.  the STS constructor sets gSocketTransportService.
   if (!gSocketTransportService) {
@@ -170,7 +157,6 @@ void nsServerSocket::OnSocketReady(PRFileDesc* fd, int16_t outFlags) {
 
   PRFileDesc* clientFD;
   PRNetAddr prClientAddr;
-  NetAddr clientAddr;
 
   // NSPR doesn't tell us the peer address's length (as provided by the
   // 'accept' system call), so we can't distinguish between named,
@@ -180,13 +166,14 @@ void nsServerSocket::OnSocketReady(PRFileDesc* fd, int16_t outFlags) {
   memset(&prClientAddr, 0, sizeof(prClientAddr));
 
   clientFD = PR_Accept(mFD, &prClientAddr, PR_INTERVAL_NO_WAIT);
-  PRNetAddrToNetAddr(&prClientAddr, &clientAddr);
   if (!clientFD) {
     NS_WARNING("PR_Accept failed");
     mCondition = NS_ERROR_UNEXPECTED;
     return;
   }
+  PR_SetFDInheritable(clientFD, false);
 
+  NetAddr clientAddr(&prClientAddr);
   // Accept succeeded, create socket transport and notify consumer
   CreateClientTransport(clientFD, clientAddr);
 }
@@ -284,8 +271,9 @@ nsServerSocket::InitWithFilename(nsIFile* aPath, uint32_t aPermissions,
 
   // Create a Unix domain PRNetAddr referring to the given path.
   PRNetAddr addr;
-  if (path.Length() > sizeof(addr.local.path) - 1)
+  if (path.Length() > sizeof(addr.local.path) - 1) {
     return NS_ERROR_FILE_NAME_TOO_LONG;
+  }
   addr.local.family = PR_AF_LOCAL;
   memcpy(addr.local.path, path.get(), path.Length());
   addr.local.path[path.Length()] = '\0';
@@ -328,10 +316,11 @@ nsServerSocket::InitSpecialConnection(int32_t aPort, nsServerSocketFlag aFlags,
   PRNetAddr addr;
 
   if (aPort < 0) aPort = 0;
-  if (aFlags & nsIServerSocket::LoopbackOnly)
+  if (aFlags & nsIServerSocket::LoopbackOnly) {
     val = PR_IpAddrLoopback;
-  else
+  } else {
     val = PR_IpAddrAny;
+  }
   PR_SetNetAddr(val, PR_AF_INET, aPort, &addr);
 
   mKeepWhenOffline = ((aFlags & nsIServerSocket::KeepWhenOffline) != 0);
@@ -352,6 +341,8 @@ nsServerSocket::InitWithAddress(const PRNetAddr* aAddr, int32_t aBackLog) {
     NS_WARNING("unable to create server socket");
     return ErrorAccordingToNSPR(PR_GetError());
   }
+
+  PR_SetFDInheritable(mFD, false);
 
   PRSocketOptionData opt;
 
@@ -526,12 +517,13 @@ NS_IMETHODIMP
 nsServerSocket::GetPort(int32_t* aResult) {
   // no need to enter the lock here
   uint16_t port;
-  if (mAddr.raw.family == PR_AF_INET)
+  if (mAddr.raw.family == PR_AF_INET) {
     port = mAddr.inet.port;
-  else if (mAddr.raw.family == PR_AF_INET6)
+  } else if (mAddr.raw.family == PR_AF_INET6) {
     port = mAddr.ipv6.port;
-  else
+  } else {
     return NS_ERROR_FAILURE;
+  }
 
   *aResult = static_cast<int32_t>(NetworkEndian::readUint16(&port));
   return NS_OK;

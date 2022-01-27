@@ -19,9 +19,7 @@ AddonTestUtils.initMochitest(this);
 function get_test_items() {
   var items = {};
 
-  for (let item of gManagerWindow
-    .getHtmlBrowser()
-    .contentDocument.querySelectorAll("addon-card")) {
+  for (let item of gManagerWindow.document.querySelectorAll("addon-card")) {
     items[item.getAttribute("addon-id")] = item;
   }
 
@@ -29,9 +27,7 @@ function get_test_items() {
 }
 
 function getHtmlElem(selector) {
-  return gManagerWindow
-    .getHtmlBrowser()
-    .contentDocument.querySelector(selector);
+  return gManagerWindow.document.querySelector(selector);
 }
 
 function getPrivateBrowsingBadge(card) {
@@ -63,19 +59,18 @@ async function setPrivateBrowsingValue(value, id) {
         // Let's make sure we received the right message
         let { permissions } = value == "0" ? removed : added;
         ok(permissions.includes("internal:privateBrowsingAllowed"));
+        Management.off("change-permissions", listener);
         resolve();
       }
     };
-    Management.once("change-permissions", listener);
+    Management.on("change-permissions", listener);
   });
   let radio = getHtmlElem(
     `input[type="radio"][name="private-browsing"][value="${value}"]`
   );
-  EventUtils.synthesizeMouseAtCenter(
-    radio,
-    { clickCount: 1 },
-    radio.ownerGlobal
-  );
+  // NOTE: not using EventUtils.synthesizeMouseAtCenter here because it
+  // does make this test to fail intermittently in some jobs (e.g. TV jobs)
+  radio.click();
   // Let's make sure we wait until the change has peristed in the database
   return changePromise;
 }
@@ -140,10 +135,7 @@ function checkHelpRow(selector, expected) {
 
 async function hasPrivateAllowed(id) {
   let perms = await ExtensionPermissions.get(id);
-  return (
-    perms.permissions.length == 1 &&
-    perms.permissions[0] == "internal:privateBrowsingAllowed"
-  );
+  return perms.permissions.includes("internal:privateBrowsingAllowed");
 }
 
 add_task(function clearInitialTelemetry() {
@@ -152,10 +144,6 @@ add_task(function clearInitialTelemetry() {
 });
 
 add_task(async function test_badge_and_toggle_incognito() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.allowPrivateBrowsingByDefault", false]],
-  });
-
   let addons = new Map([
     [
       "@test-default",
@@ -299,10 +287,6 @@ add_task(async function test_badge_and_toggle_incognito() {
 });
 
 add_task(async function test_addon_preferences_button() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.allowPrivateBrowsingByDefault", false]],
-  });
-
   let addons = new Map([
     [
       "test-inline-options@mozilla.com",
@@ -436,10 +420,7 @@ add_task(async function test_addon_preferences_button() {
       // details page.
       info(`Opening addon details for ${id}`);
       const hasInlinePrefs = !definition.manifest.options_ui.open_in_tab;
-      const onceViewChanged = BrowserTestUtils.waitForEvent(
-        gManagerWindow,
-        "ViewChanged"
-      );
+      const onceViewChanged = wait_for_view_load(gManagerWindow, null, true);
       gManagerWindow.loadView(`addons://detail/${encodeURIComponent(id)}`);
       await onceViewChanged;
 
@@ -471,10 +452,7 @@ add_task(async function test_addon_preferences_button() {
 
 add_task(async function test_addon_postinstall_incognito_hidden_checkbox() {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["extensions.allowPrivateBrowsingByDefault", false],
-      ["extensions.langpacks.signatures.required", false],
-    ],
+    set: [["extensions.langpacks.signatures.required", false]],
   });
 
   const TEST_ADDONS = [

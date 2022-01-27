@@ -17,7 +17,7 @@
 #include "nsTArray.h"
 
 #define SERVICEWORKERREGISTRAR_FILE u"serviceworker.txt"
-#define SERVICEWORKERREGISTRAR_VERSION "8"
+#define SERVICEWORKERREGISTRAR_VERSION "9"
 #define SERVICEWORKERREGISTRAR_TERMINATOR "#"
 #define SERVICEWORKERREGISTRAR_TRUE "true"
 #define SERVICEWORKERREGISTRAR_FALSE "false"
@@ -62,6 +62,8 @@ class ServiceWorkerRegistrar : public nsIObserver,
       const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
       const nsACString& aScope);
   void RemoveAll();
+
+  bool ReloadDataForTest();
 
  protected:
   // These methods are protected because we test this class using gTest

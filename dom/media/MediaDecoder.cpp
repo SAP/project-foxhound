@@ -15,6 +15,8 @@
 #include "MediaFormatReader.h"
 #include "MediaResource.h"
 #include "MediaShutdownManager.h"
+#include "MediaTrackGraph.h"
+#include "TelemetryProbesReporter.h"
 #include "VideoFrameContainer.h"
 #include "VideoUtils.h"
 #include "mozilla/AbstractThread.h"
@@ -25,14 +27,15 @@
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Telemetry.h"
-#include "Visibility.h"
 #include "mozilla/Unused.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsError.h"
 #include "nsIMemoryReporter.h"
 #include "nsPrintfCString.h"
+#include "nsServiceManagerUtils.h"
 #include "nsTArray.h"
+#include "WindowRenderer.h"
 #include <algorithm>
 #include <limits>
 
@@ -47,6 +50,7 @@ namespace mozilla {
 #undef DUMP
 
 LazyLogModule gMediaDecoderLog("MediaDecoder");
+
 #define LOG(x, ...) \
   DDMOZ_LOG(gMediaDecoderLog, LogLevel::Debug, x, ##__VA_ARGS__)
 
@@ -56,8 +60,6 @@ LazyLogModule gMediaDecoderLog("MediaDecoder");
 
 static const char* ToPlayStateStr(MediaDecoder::PlayState aState) {
   switch (aState) {
-    case MediaDecoder::PLAY_STATE_START:
-      return "START";
     case MediaDecoder::PLAY_STATE_LOADING:
       return "LOADING";
     case MediaDecoder::PLAY_STATE_PAUSED:
@@ -95,7 +97,7 @@ class MediaMemoryTracker : public nsIMemoryReporter {
     return sUniqueInstance;
   }
 
-  typedef nsTArray<MediaDecoder*> DecodersArray;
+  using DecodersArray = nsTArray<MediaDecoder*>;
   static DecodersArray& Decoders() { return UniqueInstance()->mDecoders; }
 
   DecodersArray mDecoders;
@@ -149,35 +151,6 @@ class MediaMemoryTracker : public nsIMemoryReporter {
   }
 };
 
-// When media is looping back to the head position, the spec [1] mentions that
-// MediaElement should dispatch `seeking` first, `timeupdate`, and `seeked` in
-// the end. This guard should be created before we fire `timeupdate` so that it
-// can ensure the event order.
-// [1]
-// https://html.spec.whatwg.org/multipage/media.html#playing-the-media-resource:attr-media-loop-2
-// https://html.spec.whatwg.org/multipage/media.html#seeking:dom-media-seek
-class MOZ_RAII SeekEventsGuard {
- public:
-  explicit SeekEventsGuard(MediaDecoderOwner* aOwner, bool aIsLoopingBack)
-      : mOwner(aOwner), mIsLoopingBack(aIsLoopingBack) {
-    MOZ_ASSERT(mOwner);
-    if (mIsLoopingBack) {
-      mOwner->SeekStarted();
-    }
-  }
-
-  ~SeekEventsGuard() {
-    MOZ_ASSERT(mOwner);
-    if (mIsLoopingBack) {
-      mOwner->SeekCompleted();
-    }
-  }
-
- private:
-  MediaDecoderOwner* mOwner;
-  bool mIsLoopingBack;
-};
-
 StaticRefPtr<MediaMemoryTracker> MediaMemoryTracker::sUniqueInstance;
 
 RefPtr<MediaMemoryPromise> GetMediaMemorySizes() {
@@ -196,13 +169,11 @@ void MediaDecoder::InitStatics() {
 
 NS_IMPL_ISUPPORTS(MediaMemoryTracker, nsIMemoryReporter)
 
-void MediaDecoder::NotifyOwnerActivityChanged(bool aIsDocumentVisible,
-                                              Visibility aElementVisibility,
-                                              bool aIsElementInTree) {
+void MediaDecoder::NotifyOwnerActivityChanged(bool aIsOwnerInvisible,
+                                              bool aIsOwnerConnected) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
-  SetElementVisibility(aIsDocumentVisible, aElementVisibility,
-                       aIsElementInTree);
+  SetElementVisibility(aIsOwnerInvisible, aIsOwnerConnected);
 
   NotifyCompositor();
 }
@@ -210,6 +181,7 @@ void MediaDecoder::NotifyOwnerActivityChanged(bool aIsDocumentVisible,
 void MediaDecoder::Pause() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
+  LOG("Pause");
   if (mPlayState == PLAY_STATE_LOADING || IsEnded()) {
     mNextState = PLAY_STATE_PAUSED;
     return;
@@ -228,10 +200,17 @@ RefPtr<GenericPromise> MediaDecoder::SetSink(AudioDeviceInfo* aSinkDevice) {
   return GetStateMachine()->InvokeSetSink(aSinkDevice);
 }
 
-void MediaDecoder::SetOutputCaptured(bool aCaptured) {
+void MediaDecoder::SetOutputCaptureState(OutputCaptureState aState,
+                                         SharedDummyTrack* aDummyTrack) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mDecoderStateMachine, "Must be called after Load().");
-  mOutputCaptured = aCaptured;
+  MOZ_ASSERT_IF(aState == OutputCaptureState::Capture, aDummyTrack);
+  mOutputCaptureState = aState;
+  if (mOutputDummyTrack.Ref().get() != aDummyTrack) {
+    mOutputDummyTrack = nsMainThreadPtrHandle<SharedDummyTrack>(
+        MakeAndAddRef<nsMainThreadPtrHolder<SharedDummyTrack>>(
+            "MediaDecoder::mOutputDummyTrack", aDummyTrack));
+  }
 }
 
 void MediaDecoder::AddOutputTrack(RefPtr<ProcessedMediaTrack> aTrack) {
@@ -285,9 +264,8 @@ MediaDecoder::MediaDecoder(MediaDecoderInit& aInit)
       mVideoFrameContainer(aInit.mOwner->GetVideoFrameContainer()),
       mMinimizePreroll(aInit.mMinimizePreroll),
       mFiredMetadataLoaded(false),
-      mIsDocumentVisible(false),
-      mElementVisibility(Visibility::Untracked),
-      mIsElementInTree(false),
+      mIsOwnerInvisible(false),
+      mIsOwnerConnected(false),
       mForcedHidden(false),
       mHasSuspendTaint(aInit.mHasSuspendTaint),
       mPlaybackRate(aInit.mPlaybackRate),
@@ -299,9 +277,11 @@ MediaDecoder::MediaDecoder(MediaDecoderInit& aInit)
       INIT_CANONICAL(mVolume, aInit.mVolume),
       INIT_CANONICAL(mPreservesPitch, aInit.mPreservesPitch),
       INIT_CANONICAL(mLooping, aInit.mLooping),
+      INIT_CANONICAL(mStreamName, aInit.mStreamName),
       INIT_CANONICAL(mSinkDevice, nullptr),
       INIT_CANONICAL(mSecondaryVideoContainer, nullptr),
-      INIT_CANONICAL(mOutputCaptured, false),
+      INIT_CANONICAL(mOutputCaptureState, OutputCaptureState::None),
+      INIT_CANONICAL(mOutputDummyTrack, nullptr),
       INIT_CANONICAL(mOutputTracks, nsTArray<RefPtr<ProcessedMediaTrack>>()),
       INIT_CANONICAL(mOutputPrincipal, PRINCIPAL_HANDLE_NONE),
       INIT_CANONICAL(mPlayState, PLAY_STATE_LOADING),
@@ -310,7 +290,9 @@ MediaDecoder::MediaDecoder(MediaDecoderInit& aInit)
           new BackgroundVideoDecodingPermissionObserver(this)),
       mIsBackgroundVideoDecodingAllowed(false),
       mTelemetryReported(false),
-      mContainerType(aInit.mContainerType) {
+      mContainerType(aInit.mContainerType),
+      mTelemetryProbesReporter(
+          new TelemetryProbesReporter(aInit.mReporterOwner)) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mAbstractMainThread);
   MediaMemoryTracker::AddMediaDecoder(this);
@@ -335,6 +317,8 @@ MediaDecoder::MediaDecoder(MediaDecoderInit& aInit)
 
   mWatchManager.Watch(mIsAudioDataAudible,
                       &MediaDecoder::NotifyAudibleStateChanged);
+
+  mWatchManager.Watch(mVolume, &MediaDecoder::NotifyVolumeChanged);
 
   mVideoDecodingOberver->RegisterEvent();
 }
@@ -392,7 +376,7 @@ void MediaDecoder::NotifyXPCOMShutdown() {
   // NotifyXPCOMShutdown will clear its reference to mDecoder. So we must ensure
   // that this MediaDecoder stays alive until completion.
   RefPtr<MediaDecoder> kungFuDeathGrip = this;
-  if (auto owner = GetOwner()) {
+  if (auto* owner = GetOwner()) {
     owner->NotifyXPCOMShutdown();
   } else if (!IsShutdown()) {
     Shutdown();
@@ -419,10 +403,12 @@ void MediaDecoder::OnPlaybackEvent(MediaPlaybackEvent&& aEvent) {
       break;
     case MediaPlaybackEvent::EnterVideoSuspend:
       GetOwner()->DispatchAsyncEvent(u"mozentervideosuspend"_ns);
+      mTelemetryProbesReporter->OnDecodeSuspended();
       mIsVideoDecodingSuspended = true;
       break;
     case MediaPlaybackEvent::ExitVideoSuspend:
       GetOwner()->DispatchAsyncEvent(u"mozexitvideosuspend"_ns);
+      mTelemetryProbesReporter->OnDecodeResumed();
       mIsVideoDecodingSuspended = false;
       break;
     case MediaPlaybackEvent::StartVideoSuspendTimer:
@@ -588,6 +574,7 @@ void MediaDecoder::Play() {
   MOZ_ASSERT(NS_IsMainThread());
 
   NS_ASSERTION(mDecoderStateMachine != nullptr, "Should have state machine.");
+  LOG("Play");
   if (mPlaybackRate == 0) {
     return;
   }
@@ -595,7 +582,9 @@ void MediaDecoder::Play() {
   if (IsEnded()) {
     Seek(0, SeekTarget::PrevSyncPoint);
     return;
-  } else if (mPlayState == PLAY_STATE_LOADING) {
+  }
+
+  if (mPlayState == PLAY_STATE_LOADING) {
     mNextState = PLAY_STATE_PLAYING;
     return;
   }
@@ -609,6 +598,7 @@ void MediaDecoder::Seek(double aTime, SeekTarget::Type aSeekType) {
 
   MOZ_ASSERT(aTime >= 0.0, "Cannot seek to a negative value.");
 
+  LOG("Seek");
   auto time = TimeUnit::FromSeconds(aTime);
 
   mLogicalPosition = aTime;
@@ -685,6 +675,9 @@ void MediaDecoder::MetadataLoaded(
       aInfo->mMediaSeekableOnlyInBufferedRanges;
   mInfo = std::move(aInfo);
 
+  mTelemetryProbesReporter->OnMediaContentChanged(
+      TelemetryProbesReporter::MediaInfoToMediaContent(*mInfo));
+
   // Make sure the element and the frame (if any) are told about
   // our new size.
   if (aEventVisibility != MediaDecoderEventVisibility::Suppressed) {
@@ -748,6 +741,8 @@ void MediaDecoder::FirstFrameLoaded(
       aInfo->HasVideo(), PlayStateStr(), IsTransportSeekable());
 
   mInfo = std::move(aInfo);
+  mTelemetryProbesReporter->OnMediaContentChanged(
+      TelemetryProbesReporter::MediaInfoToMediaContent(*mInfo));
 
   Invalidate();
 
@@ -865,14 +860,46 @@ void MediaDecoder::ChangeState(PlayState aState) {
 
   if (mPlayState != aState) {
     DDLOG(DDLogCategory::Property, "play_state", ToPlayStateStr(aState));
+    LOG("Play state changes from %s to %s", ToPlayStateStr(mPlayState),
+        ToPlayStateStr(aState));
+    mPlayState = aState;
+    UpdateTelemetryHelperBasedOnPlayState(aState);
   }
-  mPlayState = aState;
 }
 
-bool MediaDecoder::IsLoopingBack(double aPrevPos, double aCurPos) const {
-  // If current position is early than previous position and we didn't do seek,
-  // that means we looped back to the start position.
-  return mLooping && !mSeekRequest.Exists() && aCurPos < aPrevPos;
+TelemetryProbesReporter::Visibility MediaDecoder::OwnerVisibility() const {
+  return GetOwner()->IsActuallyInvisible() || mForcedHidden
+             ? TelemetryProbesReporter::Visibility::eInvisible
+             : TelemetryProbesReporter::Visibility::eVisible;
+}
+
+void MediaDecoder::UpdateTelemetryHelperBasedOnPlayState(
+    PlayState aState) const {
+  if (aState == PlayState::PLAY_STATE_PLAYING) {
+    mTelemetryProbesReporter->OnPlay(
+        OwnerVisibility(),
+        TelemetryProbesReporter::MediaInfoToMediaContent(*mInfo),
+        mVolume == 0.f);
+  } else if (aState == PlayState::PLAY_STATE_PAUSED ||
+             aState == PlayState::PLAY_STATE_ENDED) {
+    mTelemetryProbesReporter->OnPause(OwnerVisibility());
+  } else if (aState == PLAY_STATE_SHUTDOWN) {
+    mTelemetryProbesReporter->OnShutdown();
+  }
+}
+
+MediaDecoder::PositionUpdate MediaDecoder::GetPositionUpdateReason(
+    double aPrevPos, double aCurPos) const {
+  MOZ_ASSERT(NS_IsMainThread());
+  // If current position is earlier than previous position and we didn't do
+  // seek, that means we looped back to the start position, which currently
+  // happens on audio only.
+  const bool notSeeking = !mSeekRequest.Exists();
+  if (mLooping && notSeeking && aCurPos < aPrevPos) {
+    return PositionUpdate::eSeamlessLoopingSeeking;
+  }
+  return aPrevPos != aCurPos && notSeeking ? PositionUpdate::ePeriodicUpdate
+                                           : PositionUpdate::eOther;
 }
 
 void MediaDecoder::UpdateLogicalPositionInternal() {
@@ -883,21 +910,46 @@ void MediaDecoder::UpdateLogicalPositionInternal() {
   if (mPlayState == PLAY_STATE_ENDED) {
     currentPosition = std::max(currentPosition, mDuration);
   }
-  bool logicalPositionChanged = mLogicalPosition != currentPosition;
-  SeekEventsGuard guard(GetOwner(),
-                        IsLoopingBack(mLogicalPosition, currentPosition));
-  mLogicalPosition = currentPosition;
-  DDLOG(DDLogCategory::Property, "currentTime", mLogicalPosition);
+
+  const PositionUpdate reason =
+      GetPositionUpdateReason(mLogicalPosition, currentPosition);
+  switch (reason) {
+    case PositionUpdate::ePeriodicUpdate:
+      SetLogicalPosition(currentPosition);
+      // This is actually defined in `TimeMarchesOn`, but we do that in decoder.
+      // https://html.spec.whatwg.org/multipage/media.html#playing-the-media-resource:event-media-timeupdate-7
+      // TODO (bug 1688137): should we move it back to `TimeMarchesOn`?
+      GetOwner()->MaybeQueueTimeupdateEvent();
+      break;
+    case PositionUpdate::eSeamlessLoopingSeeking:
+      // When seamless seeking occurs, seeking was performed on the demuxer so
+      // the decoder doesn't know. That means decoder still thinks it's in
+      // playing. Therefore, we have to manually call those methods to notify
+      // the owner about seeking.
+      GetOwner()->SeekStarted();
+      SetLogicalPosition(currentPosition);
+      GetOwner()->SeekCompleted();
+      break;
+    default:
+      MOZ_ASSERT(reason == PositionUpdate::eOther);
+      SetLogicalPosition(currentPosition);
+      break;
+  }
 
   // Invalidate the frame so any video data is displayed.
   // Do this before the timeupdate event so that if that
   // event runs JavaScript that queries the media size, the
   // frame has reflowed and the size updated beforehand.
   Invalidate();
+}
 
-  if (logicalPositionChanged) {
-    FireTimeUpdate();
+void MediaDecoder::SetLogicalPosition(double aNewPosition) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (mLogicalPosition == aNewPosition) {
+    return;
   }
+  mLogicalPosition = aNewPosition;
+  DDLOG(DDLogCategory::Property, "currentTime", mLogicalPosition);
 }
 
 void MediaDecoder::DurationChanged() {
@@ -935,10 +987,10 @@ void MediaDecoder::DurationChanged() {
 already_AddRefed<KnowsCompositor> MediaDecoder::GetCompositor() {
   MediaDecoderOwner* owner = GetOwner();
   Document* ownerDoc = owner ? owner->GetDocument() : nullptr;
-  RefPtr<LayerManager> layerManager =
-      ownerDoc ? nsContentUtils::LayerManagerForDocument(ownerDoc) : nullptr;
+  WindowRenderer* renderer =
+      ownerDoc ? nsContentUtils::WindowRendererForDocument(ownerDoc) : nullptr;
   RefPtr<KnowsCompositor> knows =
-      layerManager ? layerManager->AsKnowsCompositor() : nullptr;
+      renderer ? renderer->AsKnowsCompositor() : nullptr;
   return knows ? knows->GetForMedia().forget() : nullptr;
 }
 
@@ -953,19 +1005,19 @@ void MediaDecoder::NotifyCompositor() {
   }
 }
 
-void MediaDecoder::SetElementVisibility(bool aIsDocumentVisible,
-                                        Visibility aElementVisibility,
-                                        bool aIsElementInTree) {
+void MediaDecoder::SetElementVisibility(bool aIsOwnerInvisible,
+                                        bool aIsOwnerConnected) {
   MOZ_ASSERT(NS_IsMainThread());
-  mIsDocumentVisible = aIsDocumentVisible;
-  mElementVisibility = aElementVisibility;
-  mIsElementInTree = aIsElementInTree;
+  mIsOwnerInvisible = aIsOwnerInvisible;
+  mIsOwnerConnected = aIsOwnerConnected;
+  mTelemetryProbesReporter->OnVisibilityChanged(OwnerVisibility());
   UpdateVideoDecodeMode();
 }
 
 void MediaDecoder::SetForcedHidden(bool aForcedHidden) {
   MOZ_ASSERT(NS_IsMainThread());
   mForcedHidden = aForcedHidden;
+  mTelemetryProbesReporter->OnVisibilityChanged(OwnerVisibility());
   UpdateVideoDecodeMode();
 }
 
@@ -1008,8 +1060,8 @@ void MediaDecoder::UpdateVideoDecodeMode() {
     return;
   }
 
-  // Don't suspend elements that is not in tree.
-  if (!mIsElementInTree) {
+  // Don't suspend elements that is not in a connected tree.
+  if (!mIsOwnerConnected) {
     LOG("UpdateVideoDecodeMode(), set Normal because the element is not in "
         "tree.");
     mDecoderStateMachine->SetVideoDecodeMode(VideoDecodeMode::Normal);
@@ -1032,27 +1084,12 @@ void MediaDecoder::UpdateVideoDecodeMode() {
     return;
   }
 
-  // If the element is in-tree with UNTRACKED visibility, that means the element
-  // is not close enough to the viewport so we have not start to update its
-  // visibility. In this case, it's equals to invisible.
-  if (mIsElementInTree && mElementVisibility == Visibility::Untracked) {
-    LOG("UpdateVideoDecodeMode(), set Suspend because element hasn't be "
-        "updated visibility state.");
+  if (mIsOwnerInvisible) {
+    LOG("UpdateVideoDecodeMode(), set Suspend because of invisible element.");
     mDecoderStateMachine->SetVideoDecodeMode(VideoDecodeMode::Suspend);
-    return;
-  }
-
-  // Otherwise, depends on the owner's visibility state.
-  // A element is visible only if its document is visible and the element
-  // itself is visible.
-  if (mIsDocumentVisible &&
-      mElementVisibility == Visibility::ApproximatelyVisible) {
-    LOG("UpdateVideoDecodeMode(), set Normal because the element visible.");
-    mDecoderStateMachine->SetVideoDecodeMode(VideoDecodeMode::Normal);
   } else {
-    LOG("UpdateVideoDecodeMode(), set Suspend because the element is not "
-        "visible.");
-    mDecoderStateMachine->SetVideoDecodeMode(VideoDecodeMode::Suspend);
+    LOG("UpdateVideoDecodeMode(), set Normal because of visible element.");
+    mDecoderStateMachine->SetVideoDecodeMode(VideoDecodeMode::Normal);
   }
 }
 
@@ -1067,12 +1104,12 @@ bool MediaDecoder::HasSuspendTaint() const {
 }
 
 void MediaDecoder::SetSecondaryVideoContainer(
-    RefPtr<VideoFrameContainer> aSecondaryVideoContainer) {
+    const RefPtr<VideoFrameContainer>& aSecondaryVideoContainer) {
   MOZ_ASSERT(NS_IsMainThread());
   if (mSecondaryVideoContainer.Ref() == aSecondaryVideoContainer) {
     return;
   }
-  mSecondaryVideoContainer = std::move(aSecondaryVideoContainer);
+  mSecondaryVideoContainer = aSecondaryVideoContainer;
   UpdateVideoDecodeMode();
 }
 
@@ -1095,15 +1132,16 @@ media::TimeIntervals MediaDecoder::GetSeekable() {
   // server supports range requests, etc.) or in cue-less WebMs
   if (mMediaSeekableOnlyInBufferedRanges) {
     return GetBuffered();
-  } else if (!IsMediaSeekable()) {
-    return media::TimeIntervals();
-  } else if (!IsTransportSeekable()) {
-    return GetBuffered();
-  } else {
-    return media::TimeIntervals(media::TimeInterval(
-        TimeUnit::Zero(), IsInfinite() ? TimeUnit::FromInfinity()
-                                       : TimeUnit::FromSeconds(GetDuration())));
   }
+  if (!IsMediaSeekable()) {
+    return media::TimeIntervals();
+  }
+  if (!IsTransportSeekable()) {
+    return GetBuffered();
+  }
+  return media::TimeIntervals(media::TimeInterval(
+      TimeUnit::Zero(), IsInfinite() ? TimeUnit::FromInfinity()
+                                     : TimeUnit::FromSeconds(GetDuration())));
 }
 
 void MediaDecoder::SetFragmentEndTime(double aTime) {
@@ -1143,6 +1181,11 @@ void MediaDecoder::SetPreservesPitch(bool aPreservesPitch) {
 void MediaDecoder::SetLooping(bool aLooping) {
   MOZ_ASSERT(NS_IsMainThread());
   mLooping = aLooping;
+}
+
+void MediaDecoder::SetStreamName(const nsAutoString& aStreamName) {
+  MOZ_ASSERT(NS_IsMainThread());
+  mStreamName = aStreamName;
 }
 
 void MediaDecoder::ConnectMirrors(MediaDecoderStateMachine* aObject) {
@@ -1244,12 +1287,6 @@ MediaDecoderStateMachine* MediaDecoder::GetStateMachine() const {
   return mDecoderStateMachine;
 }
 
-void MediaDecoder::FireTimeUpdate() {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
-  GetOwner()->FireTimeUpdate(true);
-}
-
 bool MediaDecoder::CanPlayThrough() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
@@ -1286,8 +1323,8 @@ MediaMemoryTracker::CollectReports(nsIHandleReportCallback* aHandleReport,
       AbstractThread::MainThread(), __func__,
       [handleReport, data](size_t size) {
         handleReport->Callback(
-            EmptyCString(), "explicit/media/resources"_ns, KIND_HEAP,
-            UNITS_BYTES, size,
+            ""_ns, "explicit/media/resources"_ns, KIND_HEAP, UNITS_BYTES,
+            static_cast<int64_t>(size),
             nsLiteralCString("Memory used by media resources including "
                              "streaming buffers, caches, etc."),
             data);
@@ -1306,8 +1343,8 @@ MediaMemoryTracker::CollectReports(nsIHandleReportCallback* aHandleReport,
   DecodersArray& decoders = Decoders();
   for (size_t i = 0; i < decoders.Length(); ++i) {
     MediaDecoder* decoder = decoders[i];
-    video += decoder->SizeOfVideoQueue();
-    audio += decoder->SizeOfAudioQueue();
+    video += static_cast<int64_t>(decoder->SizeOfVideoQueue());
+    audio += static_cast<int64_t>(decoder->SizeOfAudioQueue());
     decoder->AddSizeOfResources(resourceSizes);
   }
 
@@ -1339,12 +1376,12 @@ MediaDecoderOwner::NextFrameStatus MediaDecoder::NextFrameBufferedStatus() {
 }
 
 void MediaDecoder::GetDebugInfo(dom::MediaDecoderDebugInfo& aInfo) {
-  aInfo.mInstance = NS_ConvertUTF8toUTF16(nsPrintfCString("%p", this));
+  CopyUTF8toUTF16(nsPrintfCString("%p", this), aInfo.mInstance);
   aInfo.mChannels = mInfo ? mInfo->mAudio.mChannels : 0;
   aInfo.mRate = mInfo ? mInfo->mAudio.mRate : 0;
   aInfo.mHasAudio = mInfo ? mInfo->HasAudio() : false;
   aInfo.mHasVideo = mInfo ? mInfo->HasVideo() : false;
-  aInfo.mPlayState = NS_ConvertUTF8toUTF16(PlayStateStr());
+  CopyUTF8toUTF16(MakeStringSpan(PlayStateStr()), aInfo.mPlayState);
   aInfo.mContainerType =
       NS_ConvertUTF8toUTF16(ContainerType().Type().AsString());
   mReader->GetDebugInfo(aInfo.mReader);
@@ -1373,6 +1410,46 @@ RefPtr<GenericPromise> MediaDecoder::RequestDebugInfo(
 void MediaDecoder::NotifyAudibleStateChanged() {
   MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
   GetOwner()->SetAudibleState(mIsAudioDataAudible);
+  mTelemetryProbesReporter->OnAudibleChanged(
+      mIsAudioDataAudible ? TelemetryProbesReporter::AudibleState::eAudible
+                          : TelemetryProbesReporter::AudibleState::eNotAudible);
+}
+
+void MediaDecoder::NotifyVolumeChanged() {
+  MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
+  mTelemetryProbesReporter->OnMutedChanged(mVolume == 0.f);
+}
+
+double MediaDecoder::GetTotalVideoPlayTimeInSeconds() const {
+  return mTelemetryProbesReporter->GetTotalVideoPlayTimeInSeconds();
+}
+
+double MediaDecoder::GetVisibleVideoPlayTimeInSeconds() const {
+  return mTelemetryProbesReporter->GetVisibleVideoPlayTimeInSeconds();
+}
+
+double MediaDecoder::GetInvisibleVideoPlayTimeInSeconds() const {
+  return mTelemetryProbesReporter->GetInvisibleVideoPlayTimeInSeconds();
+}
+
+double MediaDecoder::GetVideoDecodeSuspendedTimeInSeconds() const {
+  return mTelemetryProbesReporter->GetVideoDecodeSuspendedTimeInSeconds();
+}
+
+double MediaDecoder::GetTotalAudioPlayTimeInSeconds() const {
+  return mTelemetryProbesReporter->GetTotalAudioPlayTimeInSeconds();
+}
+
+double MediaDecoder::GetAudiblePlayTimeInSeconds() const {
+  return mTelemetryProbesReporter->GetAudiblePlayTimeInSeconds();
+}
+
+double MediaDecoder::GetInaudiblePlayTimeInSeconds() const {
+  return mTelemetryProbesReporter->GetInaudiblePlayTimeInSeconds();
+}
+
+double MediaDecoder::GetMutedPlayTimeInSeconds() const {
+  return mTelemetryProbesReporter->GetMutedPlayTimeInSeconds();
 }
 
 MediaMemoryTracker::MediaMemoryTracker() = default;

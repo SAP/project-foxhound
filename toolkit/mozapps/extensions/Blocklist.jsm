@@ -136,51 +136,39 @@ const PREF_BLOCKLIST_ITEM_URL = "extensions.blocklist.itemURL";
 const PREF_BLOCKLIST_ADDONITEM_URL = "extensions.blocklist.addonItemURL";
 const PREF_BLOCKLIST_ENABLED = "extensions.blocklist.enabled";
 const PREF_BLOCKLIST_LEVEL = "extensions.blocklist.level";
-const PREF_BLOCKLIST_SUPPRESSUI = "extensions.blocklist.suppressUI";
 const PREF_BLOCKLIST_USE_MLBF = "extensions.blocklist.useMLBF";
-const PREF_BLOCKLIST_USE_MLBF_STASHES = "extensions.blocklist.useMLBF.stashes";
 const PREF_EM_LOGGING_ENABLED = "extensions.logging.enabled";
-const URI_BLOCKLIST_DIALOG =
-  "chrome://mozapps/content/extensions/blocklist.xhtml";
 const DEFAULT_SEVERITY = 3;
 const DEFAULT_LEVEL = 2;
 const MAX_BLOCK_LEVEL = 3;
-const SEVERITY_OUTDATED = 0;
-const VULNERABILITYSTATUS_NONE = 0;
-const VULNERABILITYSTATUS_UPDATE_AVAILABLE = 1;
-const VULNERABILITYSTATUS_NO_UPDATE = 2;
 
 // Remote Settings blocklist constants
 const PREF_BLOCKLIST_BUCKET = "services.blocklist.bucket";
 const PREF_BLOCKLIST_GFX_COLLECTION = "services.blocklist.gfx.collection";
 const PREF_BLOCKLIST_GFX_CHECKED_SECONDS = "services.blocklist.gfx.checked";
 const PREF_BLOCKLIST_GFX_SIGNER = "services.blocklist.gfx.signer";
-const PREF_BLOCKLIST_PLUGINS_COLLECTION =
-  "services.blocklist.plugins.collection";
-const PREF_BLOCKLIST_PLUGINS_CHECKED_SECONDS =
-  "services.blocklist.plugins.checked";
-const PREF_BLOCKLIST_PLUGINS_SIGNER = "services.blocklist.plugins.signer";
-// Blocklist v2 - legacy JSON format.
+
 const PREF_BLOCKLIST_ADDONS_COLLECTION = "services.blocklist.addons.collection";
 const PREF_BLOCKLIST_ADDONS_CHECKED_SECONDS =
   "services.blocklist.addons.checked";
 const PREF_BLOCKLIST_ADDONS_SIGNER = "services.blocklist.addons.signer";
 // Blocklist v3 - MLBF format.
-const PREF_BLOCKLIST_ADDONS3_COLLECTION =
-  "services.blocklist.addons-mlbf.collection";
 const PREF_BLOCKLIST_ADDONS3_CHECKED_SECONDS =
   "services.blocklist.addons-mlbf.checked";
-const PREF_BLOCKLIST_ADDONS3_SIGNER = "services.blocklist.addons-mlbf.signer";
 
 const BlocklistTelemetry = {
+  init() {
+    // Used by BlocklistTelemetry.recordAddonBlockChangeTelemetry.
+    Services.telemetry.setEventRecordingEnabled("blocklist", true);
+  },
+
   /**
    * Record the RemoteSettings Blocklist lastModified server time into the
    * "blocklist.lastModified_rs keyed scalar (or "Missing Date" when unable
    * to retrieve a valid timestamp).
    *
    * @param {string} blocklistType
-   *        The blocklist type that has been updated (one of "addons" or "plugins",
-   *        or "addons_mlbf";
+   *        The blocklist type that has been updated ("addons" or "addons_mlbf");
    *        the "gfx" blocklist is not covered by this telemetry).
    * @param {RemoteSettingsClient} remoteSettingsClient
    *        The RemoteSettings client to retrieve the lastModified timestamp from.
@@ -218,6 +206,48 @@ const BlocklistTelemetry = {
     } else {
       Services.telemetry.scalarSet("blocklist." + telemetryKey, "Missing Date");
     }
+  },
+
+  /**
+   * Record whether an add-on is blocked and the parameters that guided the
+   * decision to block or unblock the add-on.
+   *
+   * @param {AddonWrapper|object} addon
+   *        The blocked or unblocked add-on. Not necessarily installed.
+   *        Could be an object with the id, version and blocklistState
+   *        properties when the AddonWrapper is not available (e.g. during
+   *        update checks).
+   * @param {string} reason
+   *        The reason for recording the event,
+   *        "addon_install", "addon_update", "addon_update_check",
+   *        "addon_db_modified", "blocklist_update".
+   */
+  recordAddonBlockChangeTelemetry(addon, reason) {
+    // Reduce the timer resolution for anonymity.
+    let hoursSinceInstall = -1;
+    if (reason === "blocklist_update" || reason === "addon_db_modified") {
+      hoursSinceInstall = Math.round(
+        (Date.now() - addon.installDate.getTime()) / 3600000
+      );
+    }
+
+    const value = addon.id;
+    const extra = {
+      blocklistState: `${addon.blocklistState}`,
+      addon_version: addon.version,
+      signed_date: `${addon.signedDate?.getTime() || 0}`,
+      hours_since: `${hoursSinceInstall}`,
+
+      ...ExtensionBlocklistMLBF.getBlocklistMetadataForTelemetry(),
+    };
+
+    Services.telemetry.recordEvent(
+      "blocklist",
+      "addonBlockChange",
+      reason,
+      value,
+      extra
+    );
   },
 };
 
@@ -328,7 +358,7 @@ const Utils = {
 
   /**
    * Given a blocklist JS object entry, ensure it has a versionRange property, where
-   * each versionRange property has valid severity and vulnerabilityStatus properties,
+   * each versionRange property has a valid severity property
    * and at least 1 valid targetApplication.
    * If it didn't have a valid targetApplication array before and/or it was empty,
    * fill it with an entry with null min/maxVersion properties, which will match
@@ -348,10 +378,6 @@ const Utils = {
       if (!vr.hasOwnProperty("severity")) {
         vr.severity = DEFAULT_SEVERITY;
       }
-      if (!vr.hasOwnProperty("vulnerabilityStatus")) {
-        vr.vulnerabilityStatus = VULNERABILITYSTATUS_NONE;
-      }
-
       if (!Array.isArray(vr.targetApplication)) {
         vr.targetApplication = [];
       }
@@ -614,446 +640,6 @@ this.GfxBlocklistRS = {
     }
     // The return value is only used by tests.
     return entries;
-  },
-};
-
-/**
- * The plugins blocklist implementation. The JSON objects for plugin blocks look
- * something like:
- *
- *  {
- *    "blockID":"p906",
- *    "details": {
- *      "bug":"https://bugzilla.mozilla.org/show_bug.cgi?id=1159917",
- *      "who":"Which users it affects",
- *      "why":"Why it's being blocklisted",
- *      "name":"Java Plugin 7 update 45 to 78 (click-to-play), Windows",
- *      "created":"2015-05-19T09:02:45Z"
- *    },
- *    "enabled":true,
- *    "infoURL":"https://java.com/",
- *    "matchName":"Java\\(TM\\) Platform SE 7 U(4[5-9]|(5|6)\\d|7[0-8])(\\s[^\\d\\._U]|$)",
- *    "versionRange":[
- *      {
- *        "severity":0,
- *        "targetApplication":[
- *          {
- *            "guid":"{ec8030f7-c20a-464f-9b0e-13a3a9e97384}",
- *            "maxVersion":"57.0.*",
- *            "minVersion":"0"
- *          }
- *        ],
- *        "vulnerabilityStatus":1
- *      }
- *    ],
- *    "matchFilename":"npjp2\\.dll",
- *    "id":"f254e5bc-12c7-7954-fe6b-8f1fdab0ae88",
- *    "last_modified":1519390914542,
- *  }
- *
- * Note: we assign to the global to allow tests to reach the object directly.
- */
-this.PluginBlocklistRS = {
-  _matchProps: {
-    matchDescription: "description",
-    matchFilename: "filename",
-    matchName: "name",
-  },
-
-  async _ensureEntries() {
-    await this.ensureInitialized();
-    if (!this._entries && gBlocklistEnabled) {
-      await this._updateEntries();
-
-      // Dispatch to mainthread because consumers may try to construct nsIPluginHost
-      // again based on this notification, while we were called from nsIPluginHost
-      // anyway, leading to re-entrancy.
-      Services.tm.dispatchToMainThread(function() {
-        Services.obs.notifyObservers(null, "plugin-blocklist-loaded");
-      });
-    }
-  },
-
-  async _updateEntries() {
-    if (!gBlocklistEnabled) {
-      this._entries = [];
-      return;
-    }
-    this._entries = await this._client.get().catch(ex => Cu.reportError(ex));
-    // Handle error silently. This can happen if our request to fetch data is aborted,
-    // e.g. by application shutdown.
-    if (!this._entries) {
-      this._entries = [];
-      return;
-    }
-    this._entries.forEach(entry => {
-      entry.matches = {};
-      for (let k of Object.keys(this._matchProps)) {
-        if (entry[k]) {
-          try {
-            entry.matches[this._matchProps[k]] = new RegExp(entry[k], "m");
-          } catch (ex) {
-            /* Ignore invalid regexes */
-          }
-        }
-      }
-      Utils.ensureVersionRangeIsSane(entry);
-    });
-
-    BlocklistTelemetry.recordRSBlocklistLastModified("plugins", this._client);
-  },
-
-  async _filterItem(entry, environment) {
-    if (!(await targetAppFilter(entry, environment))) {
-      return null;
-    }
-    if (!Utils.matchesOSABI(entry)) {
-      return null;
-    }
-    if (!entry.matchFilename && !entry.matchName && !entry.matchDescription) {
-      let blockID = entry.blockID || entry.id;
-      Cu.reportError(new Error(`Nothing to filter plugin item ${blockID}`));
-      return null;
-    }
-    return entry;
-  },
-
-  sync() {
-    this.ensureInitialized();
-    return this._client.sync();
-  },
-
-  ensureInitialized() {
-    if (!gBlocklistEnabled || this._initialized) {
-      return;
-    }
-    this._initialized = true;
-    this._client = RemoteSettings(
-      Services.prefs.getCharPref(PREF_BLOCKLIST_PLUGINS_COLLECTION),
-      {
-        bucketNamePref: PREF_BLOCKLIST_BUCKET,
-        lastCheckTimePref: PREF_BLOCKLIST_PLUGINS_CHECKED_SECONDS,
-        signerName: Services.prefs.getCharPref(PREF_BLOCKLIST_PLUGINS_SIGNER),
-        filterFunc: this._filterItem,
-      }
-    );
-    this._onUpdate = this._onUpdate.bind(this);
-    this._client.on("sync", this._onUpdate);
-  },
-
-  shutdown() {
-    if (this._client) {
-      this._client.off("sync", this._onUpdate);
-    }
-  },
-
-  async _onUpdate() {
-    let oldEntries = this._entries || [];
-    this.ensureInitialized();
-    await this._updateEntries();
-    const pluginHost = Cc["@mozilla.org/plugin/host;1"].getService(
-      Ci.nsIPluginHost
-    );
-    const plugins = pluginHost.getPluginTags();
-
-    let blockedItems = [];
-
-    for (let plugin of plugins) {
-      let oldState = this._getState(plugin, oldEntries);
-      let state = this._getState(plugin, this._entries);
-      LOG(
-        "Blocklist state for " +
-          plugin.name +
-          " changed from " +
-          oldState +
-          " to " +
-          state
-      );
-      // We don't want to re-warn about items
-      if (state == oldState) {
-        continue;
-      }
-
-      if (oldState == Ci.nsIBlocklistService.STATE_BLOCKED) {
-        if (state == Ci.nsIBlocklistService.STATE_SOFTBLOCKED) {
-          plugin.enabledState = Ci.nsIPluginTag.STATE_DISABLED;
-        }
-      } else if (
-        !plugin.disabled &&
-        state != Ci.nsIBlocklistService.STATE_NOT_BLOCKED
-      ) {
-        if (
-          state != Ci.nsIBlocklistService.STATE_OUTDATED &&
-          state != Ci.nsIBlocklistService.STATE_VULNERABLE_UPDATE_AVAILABLE &&
-          state != Ci.nsIBlocklistService.STATE_VULNERABLE_NO_UPDATE
-        ) {
-          blockedItems.push({
-            name: plugin.name,
-            version: plugin.version,
-            icon: "chrome://mozapps/skin/plugins/pluginGeneric.svg",
-            disable: false,
-            blocked: state == Ci.nsIBlocklistService.STATE_BLOCKED,
-            item: plugin,
-            url: await this.getURL(plugin),
-          });
-        }
-      }
-    }
-
-    if (blockedItems.length) {
-      this._showBlockedPluginsPrompt(blockedItems);
-    } else {
-      this._notifyUpdate();
-    }
-  },
-
-  _showBlockedPluginsPrompt(blockedPlugins) {
-    if ("@mozilla.org/addons/blocklist-prompt;1" in Cc) {
-      try {
-        let blockedPrompter = Cc[
-          "@mozilla.org/addons/blocklist-prompt;1"
-        ].getService().wrappedJSObject;
-        blockedPrompter.prompt(blockedPlugins);
-      } catch (e) {
-        LOG(e);
-      }
-      this._notifyUpdate();
-      return;
-    }
-
-    let args = {
-      restart: false,
-      list: blockedPlugins,
-    };
-    // This lets the dialog get the raw js object
-    args.wrappedJSObject = args;
-
-    /*
-      Some tests run without UI, so the async code listens to a message
-      that can be sent programatically
-    */
-    let applyBlocklistChanges = async () => {
-      Services.obs.removeObserver(
-        applyBlocklistChanges,
-        "addon-blocklist-closed"
-      );
-
-      for (let blockedData of blockedPlugins) {
-        if (!blockedData.disable) {
-          continue;
-        }
-
-        // This will disable all the plugins immediately.
-        if (blockedData.item instanceof Ci.nsIPluginTag) {
-          blockedData.item.enabledState = Ci.nsIPluginTag.STATE_DISABLED;
-        }
-      }
-
-      if (!args.restart) {
-        this._notifyUpdate();
-        return;
-      }
-
-      // We need to ensure the new blocklist state is written to disk before restarting.
-      // We'll notify about the blocklist update, then wait for nsIPluginHost
-      // to finish processing it, then restart the browser.
-      let pluginUpdatesFinishedPromise = new Promise(resolve => {
-        Services.obs.addObserver(function updatesFinished() {
-          Services.obs.removeObserver(
-            updatesFinished,
-            "plugin-blocklist-updates-finished"
-          );
-          resolve();
-        }, "plugin-blocklist-updates-finished");
-      });
-      this._notifyUpdate();
-      await pluginUpdatesFinishedPromise;
-
-      // Notify all windows that an application quit has been requested.
-      var cancelQuit = Cc["@mozilla.org/supports-PRBool;1"].createInstance(
-        Ci.nsISupportsPRBool
-      );
-      Services.obs.notifyObservers(cancelQuit, "quit-application-requested");
-
-      // Something aborted the quit process.
-      if (cancelQuit.data) {
-        return;
-      }
-
-      Services.startup.quit(
-        Ci.nsIAppStartup.eRestart | Ci.nsIAppStartup.eAttemptQuit
-      );
-    };
-
-    Services.obs.addObserver(applyBlocklistChanges, "addon-blocklist-closed");
-
-    if (Services.prefs.getBoolPref(PREF_BLOCKLIST_SUPPRESSUI, false)) {
-      applyBlocklistChanges();
-      return;
-    }
-
-    function blocklistUnloadHandler(event) {
-      if (event.target.location == URI_BLOCKLIST_DIALOG) {
-        applyBlocklistChanges();
-        blocklistWindow.removeEventListener("unload", blocklistUnloadHandler);
-      }
-    }
-
-    let blocklistWindow = Services.ww.openWindow(
-      null,
-      URI_BLOCKLIST_DIALOG,
-      "",
-      "chrome,centerscreen,dialog,titlebar",
-      args
-    );
-    if (blocklistWindow) {
-      blocklistWindow.addEventListener("unload", blocklistUnloadHandler);
-    }
-  },
-
-  _notifyUpdate() {
-    Services.obs.notifyObservers(null, "plugin-blocklist-updated");
-  },
-
-  async getURL(plugin) {
-    await this._ensureEntries();
-    let r = this._getEntry(plugin, this._entries);
-    if (!r) {
-      return null;
-    }
-    let blockEntry = r.entry;
-    let blockID = blockEntry.blockID || blockEntry.id;
-    return blockEntry.infoURL || Utils._createBlocklistURL(blockID);
-  },
-
-  async getState(plugin, appVersion, toolkitVersion) {
-    if (AppConstants.platform == "android") {
-      return Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
-    }
-    await this._ensureEntries();
-    return this._getState(plugin, this._entries, appVersion, toolkitVersion);
-  },
-
-  /**
-   * Private helper to get the blocklist entry for a plugin given a set of
-   * blocklist entries and versions.
-   *
-   * @param {nsIPluginTag} plugin
-   *        The nsIPluginTag to get the blocklist state for.
-   * @param {object[]} pluginEntries
-   *        The plugin blocklist entries to compare against.
-   * @param {string?} appVersion
-   *        The application version to compare to, will use the current
-   *        version if null.
-   * @param {string?} toolkitVersion
-   *        The toolkit version to compare to, will use the current version if
-   *        null.
-   * @returns {object?}
-   *        {entry: blocklistEntry, version: blocklistEntryVersion},
-   *        or null if there is no matching entry.
-   */
-  _getEntry(plugin, pluginEntries, appVersion, toolkitVersion) {
-    if (!gBlocklistEnabled) {
-      return null;
-    }
-
-    // Not all applications implement nsIXULAppInfo (e.g. xpcshell doesn't).
-    if (!appVersion && !gApp.version) {
-      return Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
-    }
-
-    if (!appVersion) {
-      appVersion = gApp.version;
-    }
-    if (!toolkitVersion) {
-      toolkitVersion = gApp.platformVersion;
-    }
-
-    const pluginProperties = {
-      description: plugin.description,
-      filename: plugin.filename,
-      name: plugin.name,
-      version: plugin.version,
-    };
-    if (!pluginEntries) {
-      Cu.reportError(
-        new Error("There are no plugin entries. This should never happen.")
-      );
-    }
-    for (let blockEntry of pluginEntries) {
-      var matchFailed = false;
-      for (var name in blockEntry.matches) {
-        let pluginProperty = pluginProperties[name];
-        if (
-          typeof pluginProperty != "string" ||
-          !blockEntry.matches[name].test(pluginProperty)
-        ) {
-          matchFailed = true;
-          break;
-        }
-      }
-
-      if (matchFailed) {
-        continue;
-      }
-
-      for (let versionRange of blockEntry.versionRange) {
-        if (
-          Utils.versionsMatch(
-            versionRange,
-            pluginProperties.version,
-            appVersion,
-            toolkitVersion
-          )
-        ) {
-          return { entry: blockEntry, version: versionRange };
-        }
-      }
-    }
-
-    return null;
-  },
-
-  /**
-   * Private version of getState that allows the caller to pass in
-   * the plugin blocklist entries.
-   *
-   * @param {nsIPluginTag} plugin
-   *        The nsIPluginTag to get the blocklist state for.
-   * @param {object[]} pluginEntries
-   *        The plugin blocklist entries to compare against.
-   * @param {string?} appVersion
-   *        The application version to compare to, will use the current
-   *        version if null.
-   * @param {string?} toolkitVersion
-   *        The toolkit version to compare to, will use the current version if
-   *        null.
-   * @returns {integer}
-   *        The blocklist state for the item, one of the STATE constants as
-   *        defined in nsIBlocklistService.
-   */
-  _getState(plugin, pluginEntries, appVersion, toolkitVersion) {
-    let r = this._getEntry(plugin, pluginEntries, appVersion, toolkitVersion);
-    if (!r) {
-      return Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
-    }
-
-    let { version: versionRange } = r;
-
-    if (versionRange.severity >= gBlocklistLevel) {
-      return Ci.nsIBlocklistService.STATE_BLOCKED;
-    }
-    if (versionRange.severity == SEVERITY_OUTDATED) {
-      let vulnerabilityStatus = versionRange.vulnerabilityStatus;
-      if (vulnerabilityStatus == VULNERABILITYSTATUS_UPDATE_AVAILABLE) {
-        return Ci.nsIBlocklistService.STATE_VULNERABLE_UPDATE_AVAILABLE;
-      }
-      if (vulnerabilityStatus == VULNERABILITYSTATUS_NO_UPDATE) {
-        return Ci.nsIBlocklistService.STATE_VULNERABLE_NO_UPDATE;
-      }
-      return Ci.nsIBlocklistService.STATE_OUTDATED;
-    }
-    return Ci.nsIBlocklistService.STATE_SOFTBLOCKED;
   },
 };
 
@@ -1348,14 +934,6 @@ this.ExtensionBlocklistRS = {
  *   "attachment_type": "bloomfilter-base",
  * }
  *
- * To update the blocklist, a replacement MLBF is published:
- *
- * {
- *   "generation_time": 1585692000000,
- *   "attachment": { ... RemoteSettings attachment ... }
- *   "attachment_type": "bloomfilter-full",
- * }
- *
  * The collection can also contain stashes:
  *
  * {
@@ -1367,8 +945,6 @@ this.ExtensionBlocklistRS = {
  *
  * Stashes can be used to update the blocklist without forcing the whole MLBF
  * to be downloaded again. These stashes are applied on top of the base MLBF.
- * The use of stashes is currently optional, and toggled via the
- * extensions.blocklist.useMLBF.stashes preference (true = use stashes).
  *
  * Note: we assign to the global to allow tests to reach the object directly.
  */
@@ -1395,6 +971,7 @@ this.ExtensionBlocklistMLBF = {
     const {
       buffer,
       record: actualRecord,
+      _source: rsAttachmentSource,
     } = await this._client.attachments.download(record, {
       attachmentId: this.RS_ATTACHMENT_ID,
       useCache: true,
@@ -1409,6 +986,8 @@ this.ExtensionBlocklistMLBF = {
       // should be in sync with the signing service's clock.
       // In contrast, last_modified does not have such strong requirements.
       generationTime: actualRecord.generation_time,
+      // Used for telemetry.
+      rsAttachmentSource,
     };
   },
 
@@ -1428,7 +1007,7 @@ this.ExtensionBlocklistMLBF = {
         this._stashes = null;
         return;
       }
-      let records = await this._client.get();
+      let records = await this._client.get({ loadDumpIfNewer: true });
       if (isUpdateReplaced()) {
         return;
       }
@@ -1437,36 +1016,26 @@ this.ExtensionBlocklistMLBF = {
         .filter(r => r.attachment)
         // Newest attachments first.
         .sort((a, b) => b.generation_time - a.generation_time);
-      let mlbfRecord;
-      if (this.stashesEnabled) {
-        mlbfRecord = mlbfRecords.find(
-          r => r.attachment_type == "bloomfilter-base"
-        );
-        this._stashes = records
-          .filter(({ stash }) => {
-            return (
-              // Exclude non-stashes, e.g. MLBF attachments.
-              stash &&
-              // Sanity check for type.
-              Array.isArray(stash.blocked) &&
-              Array.isArray(stash.unblocked)
-            );
-          })
-          // Sort by stash time - newest first.
-          .sort((a, b) => b.stash_time - a.stash_time)
-          .map(({ stash, stash_time }) => ({
-            blocked: new Set(stash.blocked),
-            unblocked: new Set(stash.unblocked),
-            stash_time,
-          }));
-      } else {
-        mlbfRecord = mlbfRecords.find(
-          r =>
-            r.attachment_type == "bloomfilter-full" ||
-            r.attachment_type == "bloomfilter-base"
-        );
-        this._stashes = null;
-      }
+      const mlbfRecord = mlbfRecords.find(
+        r => r.attachment_type == "bloomfilter-base"
+      );
+      this._stashes = records
+        .filter(({ stash }) => {
+          return (
+            // Exclude non-stashes, e.g. MLBF attachments.
+            stash &&
+            // Sanity check for type.
+            Array.isArray(stash.blocked) &&
+            Array.isArray(stash.unblocked)
+          );
+        })
+        // Sort by stash time - newest first.
+        .sort((a, b) => b.stash_time - a.stash_time)
+        .map(({ stash, stash_time }) => ({
+          blocked: new Set(stash.blocked),
+          unblocked: new Set(stash.unblocked),
+          stash_time,
+        }));
 
       let mlbf = await this._fetchMLBF(mlbfRecord);
       // When a MLBF dump is packaged with the browser, mlbf will always be
@@ -1497,6 +1066,10 @@ this.ExtensionBlocklistMLBF = {
       "addons_mlbf",
       this._client
     );
+    Services.telemetry.scalarSet(
+      "blocklist.mlbf_source",
+      this._mlbfData?.rsAttachmentSource || "unknown"
+    );
     BlocklistTelemetry.recordTimeScalar(
       "mlbf_generation_time",
       this._mlbfData?.generationTime
@@ -1513,26 +1086,35 @@ this.ExtensionBlocklistMLBF = {
     );
   },
 
+  // Used by BlocklistTelemetry.recordAddonBlockChangeTelemetry.
+  getBlocklistMetadataForTelemetry() {
+    // Blocklist telemetry can only be reported when a blocklist decision
+    // has been made. That implies that the blocklist has been loaded, so
+    // ExtensionBlocklistMLBF should have been initialized.
+    // (except when the blocklist is disabled, or blocklist v2 is used)
+    const generationTime = this._mlbfData?.generationTime ?? 0;
+
+    // Keys to include in the blocklist.addonBlockChange telemetry event.
+    return {
+      mlbf_last_time:
+        // stashes are sorted, newest first. Stashes are newer than the MLBF.
+        `${this._stashes?.[0]?.stash_time ?? generationTime}`,
+      mlbf_generation: `${generationTime}`,
+      mlbf_source: this._mlbfData?.rsAttachmentSource ?? "unknown",
+    };
+  },
+
   ensureInitialized() {
     if (!gBlocklistEnabled || this._initialized) {
       return;
     }
     this._initialized = true;
-    this._client = RemoteSettings(
-      Services.prefs.getCharPref(PREF_BLOCKLIST_ADDONS3_COLLECTION),
-      {
-        bucketNamePref: PREF_BLOCKLIST_BUCKET,
-        lastCheckTimePref: PREF_BLOCKLIST_ADDONS3_CHECKED_SECONDS,
-        signerName: Services.prefs.getCharPref(PREF_BLOCKLIST_ADDONS3_SIGNER),
-      }
-    );
+    this._client = RemoteSettings("addons-bloomfilters", {
+      bucketName: "blocklists",
+      lastCheckTimePref: PREF_BLOCKLIST_ADDONS3_CHECKED_SECONDS,
+    });
     this._onUpdate = this._onUpdate.bind(this);
     this._client.on("sync", this._onUpdate);
-    this.stashesEnabled = Services.prefs.getBoolPref(
-      PREF_BLOCKLIST_USE_MLBF_STASHES,
-      false
-    );
-    Services.telemetry.scalarSet("blocklist.mlbf_stashes", this.stashesEnabled);
   },
 
   shutdown() {
@@ -1581,6 +1163,11 @@ this.ExtensionBlocklistMLBF = {
       if (state != Ci.nsIBlocklistService.STATE_SOFTBLOCKED) {
         await addon.setSoftDisabled(false);
       }
+
+      BlocklistTelemetry.recordAddonBlockChangeTelemetry(
+        addon,
+        "blocklist_update"
+      );
     }
 
     AddonManagerPrivate.updateAddonAppDisabledStates();
@@ -1592,13 +1179,18 @@ this.ExtensionBlocklistMLBF = {
   },
 
   async getEntry(addon) {
-    if (!this._mlbfData) {
+    if (!this._stashes) {
       this.ensureInitialized();
       await this._updateMLBF(false);
+    } else if (this._updatePromise) {
+      // _stashes has been initialized, but the initialization of _mlbfData is
+      // still pending.
+      await this._updatePromise;
     }
 
     let blockKey = addon.id + ":" + addon.version;
 
+    // _stashes will be unset if !gBlocklistEnabled.
     if (this._stashes) {
       // Stashes are ordered by newest first.
       for (let stash of this._stashes) {
@@ -1627,7 +1219,7 @@ this.ExtensionBlocklistMLBF = {
       // - The RemoteSettings backend is unreachable, and this client was built
       //   without including a dump of the MLBF.
       //
-      // ... in other words, this shouldn't happen in practice.
+      // ... in other words, this is unlikely to happen in practice.
       return null;
     }
     let { cascadeFilter, generationTime } = this._mlbfData;
@@ -1662,6 +1254,15 @@ this.ExtensionBlocklistMLBF = {
       // The bloom filter only reports 100% accurate results for known add-ons.
       // Since the add-on was unknown when the bloom filter was generated, the
       // block decision is incorrect and should be treated as unblocked.
+      return null;
+    }
+
+    if (AppConstants.NIGHTLY_BUILD && addon.type === "locale") {
+      // Only Mozilla can create langpacks with a valid signature.
+      // Langpacks for Release, Beta and ESR are submitted to AMO.
+      // DevEd does not support external langpacks (bug 1563923), only builtins.
+      //   (and built-in addons are not subjected to the blocklist).
+      // Langpacks for Nightly are not known to AMO, so the MLBF cannot be used.
       return null;
     }
 
@@ -1776,24 +1377,12 @@ let Blocklist = {
     this._chooseExtensionBlocklistImplementationFromPref();
     Services.prefs.addObserver("extensions.blocklist.", this);
     Services.prefs.addObserver(PREF_EM_LOGGING_ENABLED, this);
-
-    // If the stub blocklist service deferred any queries because we
-    // weren't loaded yet, execute them now.
-    for (let entry of Services.blocklist.pluginQueries.splice(0)) {
-      entry.resolve(
-        this.getPluginBlocklistState(
-          entry.plugin,
-          entry.appVersion,
-          entry.toolkitVersion
-        )
-      );
-    }
+    BlocklistTelemetry.init();
   },
   isLoaded: true,
 
   shutdown() {
     GfxBlocklistRS.shutdown();
-    PluginBlocklistRS.shutdown();
     this.ExtensionBlocklist.shutdown();
 
     Services.obs.removeObserver(this, "xpcom-shutdown");
@@ -1831,27 +1420,12 @@ let Blocklist = {
           case PREF_BLOCKLIST_USE_MLBF:
             let oldImpl = this.ExtensionBlocklist;
             this._chooseExtensionBlocklistImplementationFromPref();
-            if (oldImpl._initialized) {
+            // The implementation may be unchanged when the pref is ignored.
+            if (oldImpl != this.ExtensionBlocklist && oldImpl._initialized) {
               oldImpl.shutdown();
               this.ExtensionBlocklist.undoShutdown();
               this.ExtensionBlocklist._onUpdate();
             } // else neither has been initialized yet. Wait for it to happen.
-            break;
-          case PREF_BLOCKLIST_USE_MLBF_STASHES:
-            ExtensionBlocklistMLBF.stashesEnabled = Services.prefs.getBoolPref(
-              PREF_BLOCKLIST_USE_MLBF_STASHES,
-              false
-            );
-            if (
-              ExtensionBlocklistMLBF._initialized &&
-              !ExtensionBlocklistMLBF._didShutdown
-            ) {
-              Services.telemetry.scalarSet(
-                "blocklist.mlbf_stashes",
-                ExtensionBlocklistMLBF.stashesEnabled
-              );
-              ExtensionBlocklistMLBF._onUpdate();
-            }
             break;
         }
         break;
@@ -1862,15 +1436,6 @@ let Blocklist = {
     // Need to ensure we notify gfx of new stuff.
     GfxBlocklistRS.checkForEntries();
     this.ExtensionBlocklist.ensureInitialized();
-    PluginBlocklistRS.ensureInitialized();
-  },
-
-  getPluginBlocklistState(plugin, appVersion, toolkitVersion) {
-    return PluginBlocklistRS.getState(plugin, appVersion, toolkitVersion);
-  },
-
-  getPluginBlockURL(plugin) {
-    return PluginBlocklistRS.getURL(plugin);
   },
 
   getAddonBlocklistState(addon, appVersion, toolkitVersion) {
@@ -1883,19 +1448,29 @@ let Blocklist = {
     return this.ExtensionBlocklist.getEntry(addon, appVersion, toolkitVersion);
   },
 
+  recordAddonBlockChangeTelemetry(addon, reason) {
+    BlocklistTelemetry.recordAddonBlockChangeTelemetry(addon, reason);
+  },
+
+  // TODO bug 1649906, bug 1639050: Remove blocklist v2.
+  // Allow blocklist for Android and unit tests only.
+  allowDeprecatedBlocklistV2: AppConstants.platform === "android",
+
   _chooseExtensionBlocklistImplementationFromPref() {
-    if (Services.prefs.getBoolPref(PREF_BLOCKLIST_USE_MLBF, false)) {
-      this.ExtensionBlocklist = ExtensionBlocklistMLBF;
-      Services.telemetry.scalarSet("blocklist.mlbf_enabled", true);
-    } else {
+    if (
+      this.allowDeprecatedBlocklistV2 &&
+      !Services.prefs.getBoolPref(PREF_BLOCKLIST_USE_MLBF, false)
+    ) {
       this.ExtensionBlocklist = ExtensionBlocklistRS;
       Services.telemetry.scalarSet("blocklist.mlbf_enabled", false);
+    } else {
+      this.ExtensionBlocklist = ExtensionBlocklistMLBF;
+      Services.telemetry.scalarSet("blocklist.mlbf_enabled", true);
     }
   },
 
   _blocklistUpdated() {
     this.ExtensionBlocklist._onUpdate();
-    PluginBlocklistRS._onUpdate();
   },
 };
 

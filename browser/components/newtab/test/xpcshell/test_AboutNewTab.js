@@ -10,10 +10,6 @@
  * the default URL values.
  */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
@@ -69,7 +65,6 @@ function setExpectedUrlsWithoutScripts() {
 function nextChangeNotificationPromise(aNewURL, testMessage) {
   return new Promise(resolve => {
     Services.obs.addObserver(function observer(aSubject, aTopic, aData) {
-      // jshint unused:false
       Services.obs.removeObserver(observer, aTopic);
       Assert.equal(aData, aNewURL, testMessage);
       resolve();
@@ -112,7 +107,6 @@ function addTestsWithPrivilegedContentProcessPref(test) {
 function setBoolPrefAndWaitForChange(pref, value, testMessage) {
   return new Promise(resolve => {
     Services.obs.addObserver(function observer(aSubject, aTopic, aData) {
-      // jshint unused:false
       Services.obs.removeObserver(observer, aTopic);
       Assert.equal(aData, AboutNewTab.newTabURL, testMessage);
       resolve();
@@ -288,7 +282,7 @@ addTestsWithPrivilegedContentProcessPref(async function test_default_url() {
 });
 
 addTestsWithPrivilegedContentProcessPref(async function test_welcome_url() {
-  // Set about:welcome to use trailhead flow
+  // Disable about:welcome to load newtab
   Services.prefs.setBoolPref(SIMPLIFIED_WELCOME_ENABLED_PREF, false);
   Assert.equal(
     aboutNewTabService.welcomeURL,

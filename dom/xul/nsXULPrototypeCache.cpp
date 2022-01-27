@@ -20,47 +20,28 @@
 
 #include "nsAppDirectoryServiceDefs.h"
 
+#include "js/experimental/JSStencil.h"
 #include "js/TracingAPI.h"
 
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_nglayout.h"
 #include "mozilla/scache/StartupCache.h"
 #include "mozilla/scache/StartupCacheUtils.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/intl/LocaleService.h"
 
 using namespace mozilla;
 using namespace mozilla::scache;
 using mozilla::intl::LocaleService;
 
-#define XUL_CACHE_DISABLED_DEFAULT false
-
-static bool gDisableXULCache =
-    XUL_CACHE_DISABLED_DEFAULT;  // enabled by default
-static const char kDisableXULCachePref[] = "nglayout.debug.disable_xul_cache";
 static const char kXULCacheInfoKey[] = "nsXULPrototypeCache.startupCache";
 static const char kXULCachePrefix[] = "xulcache";
 
-//----------------------------------------------------------------------
-
-static void UpdategDisableXULCache() {
-  // Get the value of "nglayout.debug.disable_xul_cache" preference
-  gDisableXULCache =
-      Preferences::GetBool(kDisableXULCachePref, XUL_CACHE_DISABLED_DEFAULT);
-
-  // Sets the flag if the XUL cache is disabled
-  if (gDisableXULCache) {
-    Telemetry::Accumulate(Telemetry::XUL_CACHE_DISABLED, true);
-  }
-}
-
 static void DisableXULCacheChangedCallback(const char* aPref, void* aClosure) {
-  bool wasEnabled = !gDisableXULCache;
-  UpdategDisableXULCache();
-
-  if (wasEnabled && gDisableXULCache) {
-    nsXULPrototypeCache* cache = nsXULPrototypeCache::GetInstance();
-    if (cache) {
+  if (nsXULPrototypeCache* cache = nsXULPrototypeCache::GetInstance()) {
+    if (!cache->IsEnabled()) {
       // AbortCaching() calls Flush() for us.
       cache->AbortCaching();
     }
@@ -73,8 +54,6 @@ nsXULPrototypeCache* nsXULPrototypeCache::sInstance = nullptr;
 
 nsXULPrototypeCache::nsXULPrototypeCache() = default;
 
-nsXULPrototypeCache::~nsXULPrototypeCache() { FlushScripts(); }
-
 NS_IMPL_ISUPPORTS(nsXULPrototypeCache, nsIObserver)
 
 /* static */
@@ -82,10 +61,10 @@ nsXULPrototypeCache* nsXULPrototypeCache::GetInstance() {
   if (!sInstance) {
     NS_ADDREF(sInstance = new nsXULPrototypeCache());
 
-    UpdategDisableXULCache();
-
-    Preferences::RegisterCallback(DisableXULCacheChangedCallback,
-                                  kDisableXULCachePref);
+    Preferences::RegisterCallback(
+        DisableXULCacheChangedCallback,
+        nsDependentCString(
+            StaticPrefs::GetPrefName_nglayout_debug_disable_xul_cache()));
 
     nsCOMPtr<nsIObserverService> obsSvc =
         mozilla::services::GetObserverService();
@@ -160,31 +139,23 @@ nsresult nsXULPrototypeCache::PutPrototype(nsXULPrototypeDocument* aDocument) {
   NS_GetURIWithoutRef(aDocument->GetURI(), getter_AddRefs(uri));
 
   // Put() releases any old value
-  mPrototypeTable.Put(uri, RefPtr{aDocument});
+  mPrototypeTable.InsertOrUpdate(uri, RefPtr{aDocument});
 
   return NS_OK;
 }
 
-mozilla::StyleSheet* nsXULPrototypeCache::GetStyleSheet(nsIURI* aURI) {
-  return mStyleSheetTable.GetWeak(aURI);
+JS::Stencil* nsXULPrototypeCache::GetStencil(nsIURI* aURI) {
+  if (auto* entry = mStencilTable.GetEntry(aURI)) {
+    return entry->mStencil;
+  }
+  return nullptr;
 }
 
-nsresult nsXULPrototypeCache::PutStyleSheet(RefPtr<StyleSheet>&& aStyleSheet) {
-  nsIURI* uri = aStyleSheet->GetSheetURI();
-  mStyleSheetTable.Put(uri, std::move(aStyleSheet));
-  return NS_OK;
-}
-
-JSScript* nsXULPrototypeCache::GetScript(nsIURI* aURI) {
-  return mScriptTable.Get(aURI);
-}
-
-nsresult nsXULPrototypeCache::PutScript(nsIURI* aURI,
-                                        JS::Handle<JSScript*> aScriptObject) {
-  MOZ_ASSERT(aScriptObject, "Need a non-NULL script");
+nsresult nsXULPrototypeCache::PutStencil(nsIURI* aURI, JS::Stencil* aStencil) {
+  MOZ_ASSERT(aStencil, "Need a non-NULL stencil");
 
 #ifdef DEBUG_BUG_392650
-  if (mScriptTable.Get(aURI)) {
+  if (mStencilTable.Get(aURI)) {
     nsAutoCString scriptName;
     aURI->GetSpec(scriptName);
     nsAutoCString message("Loaded script ");
@@ -194,26 +165,21 @@ nsresult nsXULPrototypeCache::PutScript(nsIURI* aURI,
   }
 #endif
 
-  mScriptTable.Put(aURI, aScriptObject);
+  mStencilTable.PutEntry(aURI)->mStencil = aStencil;
 
   return NS_OK;
 }
 
-void nsXULPrototypeCache::FlushScripts() { mScriptTable.Clear(); }
-
 void nsXULPrototypeCache::Flush() {
   mPrototypeTable.Clear();
-  mScriptTable.Clear();
-  mStyleSheetTable.Clear();
+  mStencilTable.Clear();
 }
 
-bool nsXULPrototypeCache::IsEnabled() { return !gDisableXULCache; }
+bool nsXULPrototypeCache::IsEnabled() {
+  return !StaticPrefs::nglayout_debug_disable_xul_cache();
+}
 
 void nsXULPrototypeCache::AbortCaching() {
-#ifdef DEBUG_brendan
-  NS_BREAK();
-#endif
-
   // Flush the XUL cache for good measure, in case we cached a bogus/downrev
   // script, somehow.
   Flush();
@@ -258,7 +224,7 @@ nsresult nsXULPrototypeCache::GetInputStream(nsIURI* uri,
   rv = NewObjectInputStreamFromBuffer(buf, len, getter_AddRefs(ois));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  mInputStreamTable.Put(uri, ois);
+  mInputStreamTable.InsertOrUpdate(uri, ois);
 
   ois.forget(stream);
   return NS_OK;
@@ -289,7 +255,7 @@ nsresult nsXULPrototypeCache::GetOutputStream(nsIURI* uri,
     rv = NewObjectOutputWrappedStorageStream(
         getter_AddRefs(objectOutput), getter_AddRefs(storageStream), false);
     NS_ENSURE_SUCCESS(rv, rv);
-    mOutputStreamTable.Put(uri, storageStream);
+    mOutputStreamTable.InsertOrUpdate(uri, storageStream);
   }
   objectOutput.forget(stream);
   return NS_OK;
@@ -360,7 +326,9 @@ nsresult nsXULPrototypeCache::BeginCaching(nsIURI* aURI) {
   StartupCache* startupCache = StartupCache::GetSingleton();
   if (!startupCache) return NS_ERROR_FAILURE;
 
-  if (gDisableXULCache) return NS_ERROR_NOT_AVAILABLE;
+  if (StaticPrefs::nglayout_debug_disable_xul_cache()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 
   // Get the chrome directory to validate against the one stored in the
   // cache file, or to store there if we're generating a new file.
@@ -464,15 +432,8 @@ nsresult nsXULPrototypeCache::BeginCaching(nsIURI* aURI) {
 }
 
 void nsXULPrototypeCache::MarkInCCGeneration(uint32_t aGeneration) {
-  for (auto iter = mPrototypeTable.Iter(); !iter.Done(); iter.Next()) {
-    iter.Data()->MarkInCCGeneration(aGeneration);
-  }
-}
-
-void nsXULPrototypeCache::MarkInGC(JSTracer* aTrc) {
-  for (auto iter = mScriptTable.Iter(); !iter.Done(); iter.Next()) {
-    JS::Heap<JSScript*>& script = iter.Data();
-    JS::TraceEdge(aTrc, &script, "nsXULPrototypeCache script");
+  for (const auto& prototype : mPrototypeTable.Values()) {
+    prototype->MarkInCCGeneration(aGeneration);
   }
 }
 
@@ -484,7 +445,7 @@ static void ReportSize(const nsCString& aPath, size_t aAmount,
                        nsISupports* aData) {
   nsAutoCString path("explicit/xul-prototype-cache/");
   path += aPath;
-  aHandleReport->Callback(EmptyCString(), path, nsIMemoryReporter::KIND_HEAP,
+  aHandleReport->Callback(""_ns, path, nsIMemoryReporter::KIND_HEAP,
                           nsIMemoryReporter::UNITS_BYTES, aAmount, aDescription,
                           aData);
 }
@@ -505,17 +466,8 @@ void nsXULPrototypeCache::CollectMemoryReports(
   other += sInstance->mPrototypeTable.ShallowSizeOfExcludingThis(mallocSizeOf);
   // TODO Report content in mPrototypeTable?
 
-  other += sInstance->mStyleSheetTable.ShallowSizeOfExcludingThis(mallocSizeOf);
-  for (auto iter = sInstance->mStyleSheetTable.ConstIter(); !iter.Done();
-       iter.Next()) {
-    // NOTE: If Loader::DoSheetComplete() is ever modified to stop clongin
-    // sheets before inserting into this cache, we will need to stop using
-    // SizeOfIncludingThis()
-    other += iter.Data()->SizeOfIncludingThis(mallocSizeOf);
-  }
-
-  other += sInstance->mScriptTable.ShallowSizeOfExcludingThis(mallocSizeOf);
-  // TODO Report content inside mScriptTable?
+  other += sInstance->mStencilTable.ShallowSizeOfExcludingThis(mallocSizeOf);
+  // TODO Report content inside mStencilTable?
 
   other +=
       sInstance->mStartupCacheURITable.ShallowSizeOfExcludingThis(mallocSizeOf);

@@ -8,6 +8,7 @@
 #define mozilla_dom_serviceworkerchild_h__
 
 #include "mozilla/dom/PServiceWorkerChild.h"
+#include "mozilla/dom/WorkerRef.h"
 
 namespace mozilla {
 namespace dom {
@@ -22,13 +23,15 @@ class ServiceWorkerChild final : public PServiceWorkerChild {
 
   ServiceWorkerChild();
 
+  ~ServiceWorkerChild() = default;
+
   // PServiceWorkerChild
   void ActorDestroy(ActorDestroyReason aReason) override;
 
  public:
-  static ServiceWorkerChild* Create();
+  NS_INLINE_DECL_REFCOUNTING(ServiceWorkerChild, override);
 
-  ~ServiceWorkerChild() = default;
+  static RefPtr<ServiceWorkerChild> Create();
 
   void SetOwner(RemoteServiceWorkerImpl* aOwner);
 

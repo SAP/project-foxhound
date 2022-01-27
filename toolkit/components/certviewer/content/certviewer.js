@@ -6,8 +6,24 @@
 
 "use strict";
 
-import { parse } from "./certDecoder.js";
-import { pemToDER, normalizeToKebabCase } from "./utils.js";
+import { normalizeToKebabCase } from "./components/utils.js";
+
+import "chrome://global/content/certviewer/pvutils_bundle.js";
+import "chrome://global/content/certviewer/asn1js_bundle.js";
+import "chrome://global/content/certviewer/pkijs_bundle.js";
+import "chrome://global/content/certviewer/certDecoder.js";
+
+const { Integer, fromBER } = globalThis.asn1js.asn1js;
+const { Certificate } = globalThis.pkijs.pkijs;
+const { fromBase64, stringToArrayBuffer } = globalThis.pvutils.pvutils;
+const { parse, pemToDER } = globalThis.certDecoderInitializer(
+  Integer,
+  fromBER,
+  Certificate,
+  fromBase64,
+  stringToArrayBuffer,
+  crypto
+);
 
 document.addEventListener("DOMContentLoaded", async e => {
   let url = new URL(document.URL);
@@ -37,7 +53,7 @@ export const updateSelectedItem = (() => {
   };
 })();
 
-const createEntryItem = (labelId, info) => {
+const createEntryItem = (labelId, info, isHex = false) => {
   if (
     labelId == null ||
     info == null ||
@@ -48,6 +64,7 @@ const createEntryItem = (labelId, info) => {
   return {
     labelId,
     info,
+    isHex,
   };
 };
 
@@ -76,7 +93,11 @@ const getElementByPathOrFalse = (obj, pathString) => {
 
 export const adjustCertInformation = cert => {
   let certItems = [];
-  let tabName = cert.subject ? cert.subject.cn || "" : "";
+  let tabName = cert?.subject?.cn || "";
+  if (cert && !tabName) {
+    // No common name, use the value of the last item in the cert's entries.
+    tabName = cert.subject?.entries?.slice(-1)[0]?.[1] || "";
+  }
 
   if (!cert) {
     return {
@@ -166,9 +187,9 @@ export const adjustCertInformation = cert => {
           createEntryItem("algorithm", cert.subjectPublicKeyInfo.kty),
           createEntryItem("key-size", cert.subjectPublicKeyInfo.keysize),
           createEntryItem("curve", cert.subjectPublicKeyInfo.crv),
-          createEntryItem("public-value", cert.subjectPublicKeyInfo.xy),
+          createEntryItem("public-value", cert.subjectPublicKeyInfo.xy, true),
           createEntryItem("exponent", cert.subjectPublicKeyInfo.e),
-          createEntryItem("modulus", cert.subjectPublicKeyInfo.n),
+          createEntryItem("modulus", cert.subjectPublicKeyInfo.n, true),
         ].filter(elem => elem != null);
       }
       return items;
@@ -181,7 +202,7 @@ export const adjustCertInformation = cert => {
   addToResultUsing(
     () => {
       let items = [
-        createEntryItem("serial-number", cert.serialNumber),
+        createEntryItem("serial-number", cert.serialNumber, true),
         createEntryItem(
           "signature-algorithm",
           cert.signature ? cert.signature.name : null
@@ -201,8 +222,8 @@ export const adjustCertInformation = cert => {
       let items = [];
       if (cert.fingerprint) {
         items = [
-          createEntryItem("sha-256", cert.fingerprint.sha256),
-          createEntryItem("sha-1", cert.fingerprint.sha1),
+          createEntryItem("sha-256", cert.fingerprint.sha256, true),
+          createEntryItem("sha-1", cert.fingerprint.sha1, true),
         ].filter(elem => elem != null);
       }
       return items;
@@ -284,7 +305,7 @@ export const adjustCertInformation = cert => {
     () => {
       let items = [];
       if (cert.ext.sKID) {
-        items = [createEntryItem("key-id", cert.ext.sKID.id)].filter(
+        items = [createEntryItem("key-id", cert.ext.sKID.id, true)].filter(
           elem => elem != null
         );
       }
@@ -299,7 +320,7 @@ export const adjustCertInformation = cert => {
     () => {
       let items = [];
       if (cert.ext.aKID) {
-        items = [createEntryItem("key-id", cert.ext.aKID.id)].filter(
+        items = [createEntryItem("key-id", cert.ext.aKID.id, true)].filter(
           elem => elem != null
         );
       }
@@ -387,8 +408,12 @@ export const adjustCertInformation = cert => {
             if (key.includes("timestamp")) {
               timestamps[key.includes("UTC") ? "utc" : "local"] = entry[key];
             } else {
+              let isHex = false;
+              if (key == "logId") {
+                isHex = true;
+              }
               items.push(
-                createEntryItem(normalizeToKebabCase(key), entry[key])
+                createEntryItem(normalizeToKebabCase(key), entry[key], isHex)
               );
             }
           }

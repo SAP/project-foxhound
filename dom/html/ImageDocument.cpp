@@ -14,6 +14,7 @@
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "nsRect.h"
 #include "nsIImageLoadingContent.h"
@@ -48,8 +49,7 @@ static bool IsSiteSpecific() {
          mozilla::Preferences::GetBool("browser.zoom.siteSpecific", false);
 }
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ImageListener : public MediaDocumentStreamListener {
  public:
@@ -562,7 +562,7 @@ nsresult ImageDocument::CreateSyntheticDocument() {
   mImageContent->SetAttr(kNameSpaceID_None, nsGkAtoms::src, srcString, false);
   mImageContent->SetAttr(kNameSpaceID_None, nsGkAtoms::alt, srcString, false);
 
-  body->AppendChildTo(mImageContent, false);
+  body->AppendChildTo(mImageContent, false, IgnoreErrors());
   mImageContent->SetLoadingEnabled(true);
 
   return NS_OK;
@@ -680,7 +680,8 @@ void ImageDocument::ResetZoomLevel() {
   }
 
   if (RefPtr<BrowsingContext> bc = GetBrowsingContext()) {
-    bc->SetFullZoom(mOriginalZoomLevel);
+    // Resetting the zoom level on a discarded browsing context has no effect.
+    Unused << bc->SetFullZoom(mOriginalZoomLevel);
   }
 }
 
@@ -698,8 +699,7 @@ float ImageDocument::GetResolution() {
   return mOriginalResolution;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 nsresult NS_NewImageDocument(mozilla::dom::Document** aResult) {
   auto* doc = new mozilla::dom::ImageDocument();

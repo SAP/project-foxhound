@@ -21,13 +21,15 @@ namespace dom {
 NS_IMPL_CYCLE_COLLECTION_CLASS(XULFrameElement)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(XULFrameElement, nsXULElement)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFrameLoader);
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFrameLoader)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOpenWindowInfo)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(XULFrameElement, nsXULElement)
   if (tmp->mFrameLoader) {
     tmp->mFrameLoader->Destroy();
   }
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mOpenWindowInfo)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(XULFrameElement, nsXULElement,
@@ -78,21 +80,24 @@ uint64_t XULFrameElement::BrowserId() {
   return 0;
 }
 
+nsIOpenWindowInfo* XULFrameElement::GetOpenWindowInfo() const {
+  return mOpenWindowInfo;
+}
+
+void XULFrameElement::SetOpenWindowInfo(nsIOpenWindowInfo* aInfo) {
+  mOpenWindowInfo = aInfo;
+}
+
 void XULFrameElement::LoadSrc() {
   if (!IsInUncomposedDoc() || !OwnerDoc()->GetRootElement()) {
     return;
   }
   RefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
   if (!frameLoader) {
-    // We may have had a nsIOpenWindowInfo set on our nsIBrowser by browser
-    // chrome, due to being used as the target for a `window.open` call. Fetch
-    // that information if it's available, and clear it out so we don't read it
-    // again.
-    nsCOMPtr<nsIOpenWindowInfo> openWindowInfo;
-    if (nsCOMPtr<nsIBrowser> browser = AsBrowser()) {
-      browser->GetOpenWindowInfo(getter_AddRefs(openWindowInfo));
-      browser->SetOpenWindowInfo(nullptr);
-    }
+    // We may have had a nsIOpenWindowInfo set on us by browser chrome, due to
+    // being used as the target for a `window.open` call. Fetch that information
+    // if it's available, and clear it out so we don't read it again.
+    nsCOMPtr<nsIOpenWindowInfo> openWindowInfo = mOpenWindowInfo.forget();
 
     // false as the networkCreated parameter so that xul:iframe/browser/editor
     // session history handling works like dynamic html:iframes. Usually xul
@@ -157,8 +162,7 @@ nsresult XULFrameElement::BindToTree(BindContext& aContext, nsINode& aParent) {
 }
 
 void XULFrameElement::UnbindFromTree(bool aNullParent) {
-  RefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
-  if (frameLoader) {
+  if (RefPtr<nsFrameLoader> frameLoader = GetFrameLoader()) {
     frameLoader->Destroy();
   }
   mFrameLoader = nullptr;
@@ -186,7 +190,7 @@ nsresult XULFrameElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
       LoadSrc();
     } else if (aName == nsGkAtoms::disablefullscreen && mFrameLoader) {
       if (auto* bc = mFrameLoader->GetExtantBrowsingContext()) {
-        bc->SetFullscreenAllowedByOwner(!aValue);
+        MOZ_ALWAYS_SUCCEEDS(bc->SetFullscreenAllowedByOwner(!aValue));
       }
     }
   }

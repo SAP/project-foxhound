@@ -1,6 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+from __future__ import absolute_import
 import os
 from mozperftest.test.browsertime import add_options, add_option
 
@@ -19,7 +20,6 @@ get_site = next_site()
 
 options = [
     ("firefox.preference", "network.http.speculative-parallel-limit:6"),
-    ("firefox.preference", "gfx.webrender.force-disabled:true"),
     # XXX potentially move those as first class options in mozperf?
     ("pageCompleteWaitTime", "10000"),
     ("visualMetrics", "true"),

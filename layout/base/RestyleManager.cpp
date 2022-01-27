@@ -21,6 +21,7 @@
 #include "mozilla/layout/ScrollAnchorContainer.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
+#include "mozilla/ProfilerLabels.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ServoStyleSetInlines.h"
 #include "mozilla/StaticPrefs_layout.h"
@@ -39,7 +40,7 @@
 #include "Layers.h"
 #include "nsAnimationManager.h"
 #include "nsBlockFrame.h"
-#include "nsBulletFrame.h"
+#include "nsIScrollableFrame.h"
 #include "nsContentUtils.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsCSSRendering.h"
@@ -467,15 +468,16 @@ static bool StateChangeMayAffectFrame(const Element& aElement,
                                       const nsIFrame& aFrame,
                                       EventStates aStates) {
   if (aFrame.IsGeneratedContentFrame()) {
-    // If it's generated content, ignore LOADING/etc state changes on it.
+    if (aElement.IsHTMLElement(nsGkAtoms::mozgeneratedcontentimage)) {
+      return aStates.HasState(NS_EVENT_STATE_BROKEN);
+    }
+
+    // If it's other generated content, ignore LOADING/etc state changes on it.
     return false;
   }
 
-  const bool brokenChanged = aStates.HasAtLeastOneOfStates(
-      NS_EVENT_STATE_BROKEN | NS_EVENT_STATE_USERDISABLED |
-      NS_EVENT_STATE_SUPPRESSED);
-  const bool loadingChanged =
-      aStates.HasAtLeastOneOfStates(NS_EVENT_STATE_LOADING);
+  const bool brokenChanged = aStates.HasState(NS_EVENT_STATE_BROKEN);
+  const bool loadingChanged = aStates.HasState(NS_EVENT_STATE_LOADING);
 
   if (!brokenChanged && !loadingChanged) {
     return false;
@@ -531,6 +533,12 @@ static nsChangeHint ChangeForContentStateChange(const Element& aElement,
     // visited or not isn't really something we can worry about here.
     // FIXME: We could probably do this a bit better.
     changeHint |= nsChangeHint_RepaintFrame;
+  }
+
+  // This changes the applicable text-transform in the editor root.
+  if (aStateMask.HasState(NS_EVENT_STATE_REVEALED)) {
+    // This is the same change hint as tweaking text-transform.
+    changeHint |= NS_STYLE_HINT_REFLOW;
   }
 
   return changeHint;
@@ -698,9 +706,23 @@ static bool RecomputePosition(nsIFrame* aFrame) {
     return false;
   }
 
-  // Flexbox and Grid layout supports CSS Align and the optimizations below
-  // don't support that yet.
   if (aFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) {
+    // If the frame has an intrinsic block-size, we resolve its 'auto' margins
+    // after doing layout, since we need to know the frame's block size. See
+    // nsAbsoluteContainingBlock::ResolveAutoMarginsAfterLayout().
+    //
+    // Since the size of the frame doesn't change, we could modify the below
+    // computation to compute the margin correctly without doing a full reflow,
+    // however we decided to try doing a full reflow for now.
+    if (aFrame->HasIntrinsicKeywordForBSize()) {
+      WritingMode wm = aFrame->GetWritingMode();
+      const auto* styleMargin = aFrame->StyleMargin();
+      if (styleMargin->HasBlockAxisAuto(wm)) {
+        return false;
+      }
+    }
+    // Flexbox and Grid layout supports CSS Align and the optimizations below
+    // don't support that yet.
     nsIFrame* ph = aFrame->GetPlaceholderFrame();
     if (ph && ph->HasAnyStateBits(PLACEHOLDER_STATICPOS_NEEDS_CSSALIGN)) {
       return false;
@@ -749,14 +771,11 @@ static bool RecomputePosition(nsIFrame* aFrame) {
       for (nsIFrame* cont = aFrame; cont;
            cont = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
         nsIFrame* cb = cont->GetContainingBlock();
-        nsMargin newOffsets;
         WritingMode wm = cb->GetWritingMode();
-        const LogicalSize size = cb->ContentSize();
-
-        ReflowInput::ComputeRelativeOffsets(wm, cont, size, newOffsets);
-        NS_ASSERTION(newOffsets.left == -newOffsets.right &&
-                         newOffsets.top == -newOffsets.bottom,
-                     "ComputeRelativeOffsets should return valid results");
+        const LogicalSize cbSize = cb->ContentSize();
+        const LogicalMargin newLogicalOffsets =
+            ReflowInput::ComputeRelativeOffsets(wm, cont, cbSize);
+        const nsMargin newOffsets = newLogicalOffsets.GetPhysicalMargin(wm);
 
         // ReflowInput::ApplyRelativePositioning would work here, but
         // since we've already checked mPosition and aren't changing the frame's
@@ -765,8 +784,7 @@ static bool RecomputePosition(nsIFrame* aFrame) {
         bool hasProperty;
         nsPoint normalPosition = cont->GetNormalPosition(&hasProperty);
         if (!hasProperty) {
-          cont->AddProperty(nsIFrame::NormalPositionProperty(),
-                            new nsPoint(normalPosition));
+          cont->AddProperty(nsIFrame::NormalPositionProperty(), normalPosition);
         }
         cont->SetPosition(normalPosition +
                           nsPoint(newOffsets.left, newOffsets.top));
@@ -808,12 +826,15 @@ static bool RecomputePosition(nsIFrame* aFrame) {
   nsIFrame* cbFrame = parentFrame->GetContainingBlock();
   if (cbFrame && (aFrame->GetContainingBlock() != parentFrame ||
                   parentFrame->IsTableFrame())) {
+    const auto cbWM = cbFrame->GetWritingMode();
     LogicalSize cbSize = cbFrame->GetLogicalSize();
     cbReflowInput.emplace(cbFrame->PresContext(), cbFrame, rc, cbSize);
-    cbReflowInput->ComputedPhysicalMargin() = cbFrame->GetUsedMargin();
-    cbReflowInput->ComputedPhysicalPadding() = cbFrame->GetUsedPadding();
-    cbReflowInput->ComputedPhysicalBorderPadding() =
-        cbFrame->GetUsedBorderAndPadding();
+    cbReflowInput->SetComputedLogicalMargin(
+        cbWM, cbFrame->GetLogicalUsedMargin(cbWM));
+    cbReflowInput->SetComputedLogicalPadding(
+        cbWM, cbFrame->GetLogicalUsedPadding(cbWM));
+    cbReflowInput->SetComputedLogicalBorderPadding(
+        cbWM, cbFrame->GetLogicalUsedBorderAndPadding(cbWM));
     parentReflowInput.mCBReflowInput = cbReflowInput.ptr();
   }
 
@@ -822,11 +843,12 @@ static bool RecomputePosition(nsIFrame* aFrame) {
                        "parentSize should be valid");
   parentReflowInput.SetComputedISize(std::max(parentSize.ISize(parentWM), 0));
   parentReflowInput.SetComputedBSize(std::max(parentSize.BSize(parentWM), 0));
-  parentReflowInput.ComputedPhysicalMargin().SizeTo(0, 0, 0, 0);
+  parentReflowInput.SetComputedLogicalMargin(parentWM, LogicalMargin(parentWM));
 
-  parentReflowInput.ComputedPhysicalPadding() = parentFrame->GetUsedPadding();
-  parentReflowInput.ComputedPhysicalBorderPadding() =
-      parentFrame->GetUsedBorderAndPadding();
+  parentReflowInput.SetComputedLogicalPadding(
+      parentWM, parentFrame->GetLogicalUsedPadding(parentWM));
+  parentReflowInput.SetComputedLogicalBorderPadding(
+      parentWM, parentFrame->GetLogicalUsedBorderAndPadding(parentWM));
   LogicalSize availSize = parentSize.ConvertTo(frameWM, parentWM);
   availSize.BSize(frameWM) = NS_UNCONSTRAINEDSIZE;
 
@@ -844,11 +866,10 @@ static bool RecomputePosition(nsIFrame* aFrame) {
                           availSize, Some(lcbSize));
   nscoord computedISize = reflowInput.ComputedISize();
   nscoord computedBSize = reflowInput.ComputedBSize();
-  computedISize +=
-      reflowInput.ComputedLogicalBorderPadding().IStartEnd(frameWM);
+  const auto frameBP = reflowInput.ComputedLogicalBorderPadding(frameWM);
+  computedISize += frameBP.IStartEnd(frameWM);
   if (computedBSize != NS_UNCONSTRAINEDSIZE) {
-    computedBSize +=
-        reflowInput.ComputedLogicalBorderPadding().BStartEnd(frameWM);
+    computedBSize += frameBP.BStartEnd(frameWM);
   }
   LogicalSize logicalSize = aFrame->GetLogicalSize(frameWM);
   nsSize size = aFrame->GetSize();
@@ -865,26 +886,26 @@ static bool RecomputePosition(nsIFrame* aFrame) {
     // match the reflow code path.
     //
     // TODO(emilio): It'd be nice if this did logical math instead, but it seems
-    // to me the math should work out on vertical writing modes as well.
-    if (NS_AUTOOFFSET == reflowInput.ComputedPhysicalOffsets().left) {
-      reflowInput.ComputedPhysicalOffsets().left =
-          cbSize.width - reflowInput.ComputedPhysicalOffsets().right -
-          reflowInput.ComputedPhysicalMargin().right - size.width -
-          reflowInput.ComputedPhysicalMargin().left;
+    // to me the math should work out on vertical writing modes as well. See Bug
+    // 1675861 for some hints.
+    const nsMargin offset = reflowInput.ComputedPhysicalOffsets();
+    const nsMargin margin = reflowInput.ComputedPhysicalMargin();
+
+    nscoord left = offset.left;
+    if (left == NS_AUTOOFFSET) {
+      left =
+          cbSize.width - offset.right - margin.right - size.width - margin.left;
     }
 
-    if (NS_AUTOOFFSET == reflowInput.ComputedPhysicalOffsets().top) {
-      reflowInput.ComputedPhysicalOffsets().top =
-          cbSize.height - reflowInput.ComputedPhysicalOffsets().bottom -
-          reflowInput.ComputedPhysicalMargin().bottom - size.height -
-          reflowInput.ComputedPhysicalMargin().top;
+    nscoord top = offset.top;
+    if (top == NS_AUTOOFFSET) {
+      top = cbSize.height - offset.bottom - margin.bottom - size.height -
+            margin.top;
     }
 
     // Move the frame
-    nsPoint pos(parentBorder.left + reflowInput.ComputedPhysicalOffsets().left +
-                    reflowInput.ComputedPhysicalMargin().left,
-                parentBorder.top + reflowInput.ComputedPhysicalOffsets().top +
-                    reflowInput.ComputedPhysicalMargin().top);
+    nsPoint pos(parentBorder.left + left + margin.left,
+                parentBorder.top + top + margin.top);
     aFrame->SetPosition(pos);
 
     if (aFrame->IsInScrollAnchorChain()) {
@@ -980,7 +1001,38 @@ static bool ContainingBlockChangeAffectsDescendants(
   return false;
 }
 
-static bool NeedToReframeToUpdateContainingBlock(nsIFrame* aFrame) {
+// Returns the frame that would serve as the containing block for aFrame's
+// positioned descendants, if aFrame had styles to make it a CB for such
+// descendants. (Typically this is just aFrame itself, or its insertion frame).
+//
+// Returns nullptr if this frame can't be easily determined.
+static nsIFrame* ContainingBlockForFrame(nsIFrame* aFrame) {
+  if (aFrame->IsFieldSetFrame()) {
+    // FIXME: This should be easily implementable.
+    return nullptr;
+  }
+  nsIFrame* insertionFrame = aFrame->GetContentInsertionFrame();
+  if (insertionFrame == aFrame) {
+    return insertionFrame;
+  }
+  // Generally frames with a different insertion frame are hard to deal with,
+  // but scrollframes are easy because the containing block is just the
+  // insertion frame.
+  if (aFrame->IsScrollFrame()) {
+    return insertionFrame;
+  }
+  // Combobox frames are easy as well because they can't have positioned
+  // children anyways.
+  // Button frames are also easy because the containing block is the frame
+  // itself.
+  if (aFrame->IsComboboxControlFrame() || aFrame->IsHTMLButtonControlFrame()) {
+    return aFrame;
+  }
+  return nullptr;
+}
+
+static bool NeedToReframeToUpdateContainingBlock(nsIFrame* aFrame,
+                                                 nsIFrame* aMaybeChangingCB) {
   // NOTE: This looks at the new style.
   const bool isFixedContainingBlock = aFrame->IsFixedPosContainingBlock();
   MOZ_ASSERT_IF(isFixedContainingBlock, aFrame->IsAbsPosContainingBlock());
@@ -990,8 +1042,9 @@ static bool NeedToReframeToUpdateContainingBlock(nsIFrame* aFrame) {
 
   for (nsIFrame* f = aFrame; f;
        f = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(f)) {
-    if (ContainingBlockChangeAffectsDescendants(
-            aFrame, f, isAbsPosContainingBlock, isFixedContainingBlock)) {
+    if (ContainingBlockChangeAffectsDescendants(aMaybeChangingCB, f,
+                                                isAbsPosContainingBlock,
+                                                isFixedContainingBlock)) {
       return true;
     }
   }
@@ -1056,22 +1109,7 @@ static void DoApplyRenderingChangeToTree(nsIFrame* aFrame,
       // layer activity index, so does the restyle count. Therefore, using
       // eCSSProperty_transform should be fine.
       ActiveLayerTracker::NotifyRestyle(aFrame, eCSSProperty_transform);
-      // If we're not already going to do an invalidating paint, see
-      // if we can get away with only updating the transform on a
-      // layer for this frame, and not scheduling an invalidating
-      // paint.
-      if (!needInvalidatingPaint) {
-        nsDisplayItem::Layer* layer;
-        needInvalidatingPaint |= !aFrame->TryUpdateTransformOnly(&layer);
-
-        if (!needInvalidatingPaint) {
-          // Since we're not going to paint, we need to resend animation
-          // data to the layer.
-          MOZ_ASSERT(layer, "this can't happen if there's no layer");
-          nsDisplayListBuilder::AddAnimationsAndTransitionsToLayer(
-              layer, nullptr, nullptr, aFrame, DisplayItemType::TYPE_TRANSFORM);
-        }
-      }
+      needInvalidatingPaint = true;
     }
     if (aChange & nsChangeHint_ChildrenOnlyTransform) {
       needInvalidatingPaint = true;
@@ -1253,6 +1291,139 @@ static nsIContent* NextSiblingWhichMayHaveFrame(nsIContent* aContent) {
   return nullptr;
 }
 
+// If |aFrame| is dirty or has dirty children, then we can skip updating
+// overflows since that will happen when it's reflowed.
+static inline bool CanSkipOverflowUpdates(const nsIFrame* aFrame) {
+  return aFrame->HasAnyStateBits(NS_FRAME_IS_DIRTY |
+                                 NS_FRAME_HAS_DIRTY_CHILDREN);
+}
+
+static inline void TryToDealWithScrollbarChange(nsChangeHint& aHint,
+                                                nsIContent* aContent,
+                                                nsIFrame* aFrame,
+                                                nsPresContext* aPc) {
+  if (!(aHint & nsChangeHint_ScrollbarChange)) {
+    return;
+  }
+  aHint &= ~nsChangeHint_ScrollbarChange;
+  if (aHint & nsChangeHint_ReconstructFrame) {
+    return;
+  }
+
+  MOZ_ASSERT(aFrame, "If we're not reframing, we ought to have a frame");
+
+  // Only bother with this if we're html/body, since:
+  //  (a) It'd be *expensive* to reframe these particular nodes.  They're
+  //      at the root, so reframing would mean rebuilding the world.
+  //  (b) It's often *unnecessary* to reframe for "overflow" changes on
+  //      these particular nodes.  In general, the only reason we reframe
+  //      for "overflow" changes is so we can construct (or destroy) a
+  //      scrollframe & scrollbars -- and the html/body nodes often don't
+  //      need their own scrollframe/scrollbars because they coopt the ones
+  //      on the viewport (which always exist). So depending on whether
+  //      that's happening, we can skip the reframe for these nodes.
+  if (aContent->IsAnyOfHTMLElements(nsGkAtoms::body, nsGkAtoms::html)) {
+    // If the restyled element provided/provides the scrollbar styles for
+    // the viewport before and/or after this restyle, AND it's not coopting
+    // that responsibility from some other element (which would need
+    // reconstruction to make its own scrollframe now), THEN: we don't need
+    // to reconstruct - we can just reflow, because no scrollframe is being
+    // added/removed.
+    nsIContent* prevOverrideNode =
+        aPc->GetViewportScrollStylesOverrideElement();
+    nsIContent* newOverrideNode = aPc->UpdateViewportScrollStylesOverride();
+
+    if (aContent == prevOverrideNode || aContent == newOverrideNode) {
+      // If we get here, the restyled element provided the scrollbar styles
+      // for viewport before this restyle, OR it will provide them after.
+      if (!prevOverrideNode || !newOverrideNode ||
+          prevOverrideNode == newOverrideNode) {
+        // If we get here, the restyled element is NOT replacing (or being
+        // replaced by) some other element as the viewport's
+        // scrollbar-styles provider. (If it were, we'd potentially need to
+        // reframe to create a dedicated scrollframe for whichever element
+        // is being booted from providing viewport scrollbar styles.)
+        //
+        // Under these conditions, we're OK to assume that this "overflow"
+        // change only impacts the root viewport's scrollframe, which
+        // already exists, so we can simply reflow instead of reframing.
+        if (nsIScrollableFrame* sf = do_QueryFrame(aFrame)) {
+          sf->MarkScrollbarsDirtyForReflow();
+        } else if (nsIScrollableFrame* sf =
+                       aPc->PresShell()->GetRootScrollFrameAsScrollable()) {
+          sf->MarkScrollbarsDirtyForReflow();
+        }
+        aHint |= nsChangeHint_ReflowHintsForScrollbarChange;
+        return;
+      }
+    }
+  }
+
+  if (nsIScrollableFrame* sf = do_QueryFrame(aFrame)) {
+    if (aFrame->StyleDisplay()->IsScrollableOverflow() &&
+        sf->HasAllNeededScrollbars()) {
+      sf->MarkScrollbarsDirtyForReflow();
+      // Once we've created scrollbars for a frame, don't bother reconstructing
+      // it just to remove them if we still need a scroll frame.
+      aHint |= nsChangeHint_ReflowHintsForScrollbarChange;
+      return;
+    }
+  }
+
+  // Oh well, we couldn't optimize it out, just reconstruct frames for the
+  // subtree.
+  aHint |= nsChangeHint_ReconstructFrame;
+}
+
+static void TryToHandleContainingBlockChange(nsChangeHint& aHint,
+                                             nsIFrame* aFrame) {
+  if (!(aHint & nsChangeHint_UpdateContainingBlock)) {
+    return;
+  }
+  if (aHint & nsChangeHint_ReconstructFrame) {
+    return;
+  }
+  MOZ_ASSERT(aFrame, "If we're not reframing, we ought to have a frame");
+  nsIFrame* containingBlock = ContainingBlockForFrame(aFrame);
+  if (!containingBlock ||
+      NeedToReframeToUpdateContainingBlock(aFrame, containingBlock)) {
+    // The frame has positioned children that need to be reparented, or it can't
+    // easily be converted to/from being an abs-pos container correctly.
+    aHint |= nsChangeHint_ReconstructFrame;
+    return;
+  }
+  const bool isCb = aFrame->IsAbsPosContainingBlock();
+
+  // The absolute container should be containingBlock.
+  for (nsIFrame* cont = containingBlock; cont;
+       cont = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
+    // Normally frame construction would set state bits as needed,
+    // but we're not going to reconstruct the frame so we need to set
+    // them. It's because we need to set this state on each affected frame
+    // that we can't coalesce nsChangeHint_UpdateContainingBlock hints up
+    // to ancestors (i.e. it can't be an change hint that is handled for
+    // descendants).
+    if (isCb) {
+      if (!cont->IsAbsoluteContainer() &&
+          cont->HasAnyStateBits(NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN)) {
+        cont->MarkAsAbsoluteContainingBlock();
+      }
+    } else if (cont->IsAbsoluteContainer()) {
+      if (cont->HasAbsolutelyPositionedChildren()) {
+        // If |cont| still has absolutely positioned children,
+        // we can't call MarkAsNotAbsoluteContainingBlock.  This
+        // will remove a frame list that still has children in
+        // it that we need to keep track of.
+        // The optimization of removing it isn't particularly
+        // important, although it does mean we skip some tests.
+        NS_WARNING("skipping removal of absolute containing block");
+      } else {
+        cont->MarkAsNotAbsoluteContainingBlock();
+      }
+    }
+  }
+}
+
 void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
   NS_ASSERTION(!nsContentUtils::IsSafeToRunScript(),
                "Someone forgot a script blocker");
@@ -1294,70 +1465,13 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
 
   MaybeClearDestroyedFrames maybeClear(mDestroyedFrames);
   if (!mDestroyedFrames) {
-    mDestroyedFrames = MakeUnique<nsTHashtable<nsPtrHashKey<const nsIFrame>>>();
+    mDestroyedFrames = MakeUnique<nsTHashSet<const nsIFrame*>>();
   }
 
   AUTO_PROFILER_LABEL("RestyleManager::ProcessRestyledFrames", LAYOUT);
 
   nsPresContext* presContext = PresContext();
   nsCSSFrameConstructor* frameConstructor = presContext->FrameConstructor();
-
-  // Handle nsChangeHint_ScrollbarChange, by either updating the
-  // scrollbars on the viewport, or upgrading the change hint to
-  // frame-reconstruct.
-  for (nsStyleChangeData& data : aChangeList) {
-    if (data.mHint & nsChangeHint_ScrollbarChange) {
-      data.mHint &= ~nsChangeHint_ScrollbarChange;
-      bool doReconstruct = true;  // assume the worst
-
-      // Only bother with this if we're html/body, since:
-      //  (a) It'd be *expensive* to reframe these particular nodes.  They're
-      //      at the root, so reframing would mean rebuilding the world.
-      //  (b) It's often *unnecessary* to reframe for "overflow" changes on
-      //      these particular nodes.  In general, the only reason we reframe
-      //      for "overflow" changes is so we can construct (or destroy) a
-      //      scrollframe & scrollbars -- and the html/body nodes often don't
-      //      need their own scrollframe/scrollbars because they coopt the ones
-      //      on the viewport (which always exist). So depending on whether
-      //      that's happening, we can skip the reframe for these nodes.
-      if (data.mContent->IsAnyOfHTMLElements(nsGkAtoms::body,
-                                             nsGkAtoms::html)) {
-        // If the restyled element provided/provides the scrollbar styles for
-        // the viewport before and/or after this restyle, AND it's not coopting
-        // that responsibility from some other element (which would need
-        // reconstruction to make its own scrollframe now), THEN: we don't need
-        // to reconstruct - we can just reflow, because no scrollframe is being
-        // added/removed.
-        nsIContent* prevOverrideNode =
-            presContext->GetViewportScrollStylesOverrideElement();
-        nsIContent* newOverrideNode =
-            presContext->UpdateViewportScrollStylesOverride();
-
-        if (data.mContent == prevOverrideNode ||
-            data.mContent == newOverrideNode) {
-          // If we get here, the restyled element provided the scrollbar styles
-          // for viewport before this restyle, OR it will provide them after.
-          if (!prevOverrideNode || !newOverrideNode ||
-              prevOverrideNode == newOverrideNode) {
-            // If we get here, the restyled element is NOT replacing (or being
-            // replaced by) some other element as the viewport's
-            // scrollbar-styles provider. (If it were, we'd potentially need to
-            // reframe to create a dedicated scrollframe for whichever element
-            // is being booted from providing viewport scrollbar styles.)
-            //
-            // Under these conditions, we're OK to assume that this "overflow"
-            // change only impacts the root viewport's scrollframe, which
-            // already exists, so we can simply reflow instead of reframing.
-            data.mHint |= nsChangeHint_ReflowHintsForScrollbarChange;
-            doReconstruct = false;
-          }
-        }
-      }
-      if (doReconstruct) {
-        data.mHint |= nsChangeHint_ReconstructFrame;
-      }
-    }
-  }
 
   bool didUpdateCursor = false;
 
@@ -1419,60 +1533,8 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
       }
     }
 
-    if ((hint & nsChangeHint_UpdateContainingBlock) && frame &&
-        !(hint & nsChangeHint_ReconstructFrame)) {
-      if (NeedToReframeToUpdateContainingBlock(frame) ||
-          frame->IsFieldSetFrame() ||
-          frame->GetContentInsertionFrame() != frame) {
-        // The frame has positioned children that need to be reparented, or
-        // it can't easily be converted to/from being an abs-pos container
-        // correctly.
-        hint |= nsChangeHint_ReconstructFrame;
-      } else {
-        for (nsIFrame* cont = frame; cont;
-             cont = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
-          // Normally frame construction would set state bits as needed,
-          // but we're not going to reconstruct the frame so we need to set
-          // them. It's because we need to set this state on each affected frame
-          // that we can't coalesce nsChangeHint_UpdateContainingBlock hints up
-          // to ancestors (i.e. it can't be an change hint that is handled for
-          // descendants).
-          if (cont->IsAbsPosContainingBlock()) {
-            if (!cont->IsAbsoluteContainer() &&
-                cont->HasAnyStateBits(NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN)) {
-              cont->MarkAsAbsoluteContainingBlock();
-            }
-          } else {
-            if (cont->IsAbsoluteContainer()) {
-              if (cont->HasAbsolutelyPositionedChildren()) {
-                // If |cont| still has absolutely positioned children,
-                // we can't call MarkAsNotAbsoluteContainingBlock.  This
-                // will remove a frame list that still has children in
-                // it that we need to keep track of.
-                // The optimization of removing it isn't particularly
-                // important, although it does mean we skip some tests.
-                NS_WARNING("skipping removal of absolute containing block");
-              } else {
-                cont->MarkAsNotAbsoluteContainingBlock();
-              }
-            }
-          }
-        }
-      }
-    }
-
-    if ((hint & nsChangeHint_AddOrRemoveTransform) && frame &&
-        !(hint & nsChangeHint_ReconstructFrame)) {
-      for (nsIFrame* cont = frame; cont;
-           cont = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
-        if (cont->StyleDisplay()->HasTransform(cont)) {
-          cont->AddStateBits(NS_FRAME_MAY_BE_TRANSFORMED);
-        }
-        // Don't remove NS_FRAME_MAY_BE_TRANSFORMED since it may still be
-        // transformed by other means. It's OK to have the bit even if it's
-        // not needed.
-      }
-    }
+    TryToDealWithScrollbarChange(hint, content, frame, presContext);
+    TryToHandleContainingBlockChange(hint, frame);
 
     if (hint & nsChangeHint_ReconstructFrame) {
       // If we ever start passing true here, be careful of restyles
@@ -1486,242 +1548,241 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
       // the reconstruction happening synchronously.
       frameConstructor->RecreateFramesForContent(
           content, nsCSSFrameConstructor::InsertionKind::Sync);
-      frame = content->GetPrimaryFrame();
-    } else {
-      NS_ASSERTION(frame, "This shouldn't happen");
+      continue;
+    }
 
-      if (!frame->FrameMaintainsOverflow()) {
-        // frame does not maintain overflow rects, so avoid calling
-        // FinishAndStoreOverflow on it:
-        hint &=
-            ~(nsChangeHint_UpdateOverflow | nsChangeHint_ChildrenOnlyTransform |
-              nsChangeHint_UpdatePostTransformOverflow |
-              nsChangeHint_UpdateParentOverflow |
-              nsChangeHint_UpdateSubtreeOverflow);
+    MOZ_ASSERT(frame, "This shouldn't happen");
+    if (hint & nsChangeHint_AddOrRemoveTransform) {
+      for (nsIFrame* cont = frame; cont;
+           cont = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
+        if (cont->StyleDisplay()->HasTransform(cont)) {
+          cont->AddStateBits(NS_FRAME_MAY_BE_TRANSFORMED);
+        }
+        // Don't remove NS_FRAME_MAY_BE_TRANSFORMED since it may still be
+        // transformed by other means. It's OK to have the bit even if it's
+        // not needed.
       }
+    }
 
-      if (!frame->HasAnyStateBits(NS_FRAME_MAY_BE_TRANSFORMED)) {
-        // Frame can not be transformed, and thus a change in transform will
-        // have no effect and we should not use either
-        // nsChangeHint_UpdatePostTransformOverflow or
-        // nsChangeHint_UpdateTransformLayerhint.
-        hint &= ~(nsChangeHint_UpdatePostTransformOverflow |
-                  nsChangeHint_UpdateTransformLayer);
-      }
+    if (!frame->FrameMaintainsOverflow()) {
+      // frame does not maintain overflow rects, so avoid calling
+      // FinishAndStoreOverflow on it:
+      hint &=
+          ~(nsChangeHint_UpdateOverflow | nsChangeHint_ChildrenOnlyTransform |
+            nsChangeHint_UpdatePostTransformOverflow |
+            nsChangeHint_UpdateParentOverflow |
+            nsChangeHint_UpdateSubtreeOverflow);
+    }
 
-      if (hint & nsChangeHint_AddOrRemoveTransform) {
-        // When dropping a running transform animation we will first add an
-        // nsChangeHint_UpdateTransformLayer hint as part of the animation-only
-        // restyle. During the subsequent regular restyle, if the animation was
-        // the only reason the element had any transform applied, we will add
-        // nsChangeHint_AddOrRemoveTransform as part of the regular restyle.
-        //
-        // With the Gecko backend, these two change hints are processed
-        // after each restyle but when using the Servo backend they accumulate
-        // and are processed together after we have already removed the
-        // transform as part of the regular restyle. Since we don't actually
-        // need the nsChangeHint_UpdateTransformLayer hint if we already have
-        // a nsChangeHint_AddOrRemoveTransform hint, and since we
-        // will fail an assertion in ApplyRenderingChangeToTree if we try
-        // specify nsChangeHint_UpdateTransformLayer but don't have any
-        // transform style, we just drop the unneeded hint here.
-        hint &= ~nsChangeHint_UpdateTransformLayer;
-      }
+    if (!frame->HasAnyStateBits(NS_FRAME_MAY_BE_TRANSFORMED)) {
+      // Frame can not be transformed, and thus a change in transform will
+      // have no effect and we should not use either
+      // nsChangeHint_UpdatePostTransformOverflow or
+      // nsChangeHint_UpdateTransformLayerhint.
+      hint &= ~(nsChangeHint_UpdatePostTransformOverflow |
+                nsChangeHint_UpdateTransformLayer);
+    }
 
-      if ((hint & nsChangeHint_UpdateEffects) &&
-          frame == nsLayoutUtils::FirstContinuationOrIBSplitSibling(frame)) {
-        SVGObserverUtils::UpdateEffects(frame);
+    if (hint & nsChangeHint_AddOrRemoveTransform) {
+      // When dropping a running transform animation we will first add an
+      // nsChangeHint_UpdateTransformLayer hint as part of the animation-only
+      // restyle. During the subsequent regular restyle, if the animation was
+      // the only reason the element had any transform applied, we will add
+      // nsChangeHint_AddOrRemoveTransform as part of the regular restyle.
+      //
+      // With the Gecko backend, these two change hints are processed
+      // after each restyle but when using the Servo backend they accumulate
+      // and are processed together after we have already removed the
+      // transform as part of the regular restyle. Since we don't actually
+      // need the nsChangeHint_UpdateTransformLayer hint if we already have
+      // a nsChangeHint_AddOrRemoveTransform hint, and since we
+      // will fail an assertion in ApplyRenderingChangeToTree if we try
+      // specify nsChangeHint_UpdateTransformLayer but don't have any
+      // transform style, we just drop the unneeded hint here.
+      hint &= ~nsChangeHint_UpdateTransformLayer;
+    }
+
+    if ((hint & nsChangeHint_UpdateEffects) &&
+        frame == nsLayoutUtils::FirstContinuationOrIBSplitSibling(frame)) {
+      SVGObserverUtils::UpdateEffects(frame);
+    }
+    if ((hint & nsChangeHint_InvalidateRenderingObservers) ||
+        ((hint & nsChangeHint_UpdateOpacityLayer) &&
+         frame->IsFrameOfType(nsIFrame::eSVG) &&
+         !frame->IsSVGOuterSVGFrame())) {
+      SVGObserverUtils::InvalidateRenderingObservers(frame);
+      frame->SchedulePaint();
+    }
+    if (hint & nsChangeHint_NeedReflow) {
+      StyleChangeReflow(frame, hint);
+      didReflowThisFrame = true;
+    }
+
+    // Here we need to propagate repaint frame change hint instead of update
+    // opacity layer change hint when we do opacity optimization for SVG.
+    // We can't do it in nsStyleEffects::CalcDifference() just like we do
+    // for the optimization for 0.99 over opacity values since we have no way
+    // to call SVGUtils::CanOptimizeOpacity() there.
+    if ((hint & nsChangeHint_UpdateOpacityLayer) &&
+        SVGUtils::CanOptimizeOpacity(frame)) {
+      hint &= ~nsChangeHint_UpdateOpacityLayer;
+      hint |= nsChangeHint_RepaintFrame;
+    }
+
+    if ((hint & nsChangeHint_UpdateUsesOpacity) &&
+        frame->IsFrameOfType(nsIFrame::eTablePart)) {
+      NS_ASSERTION(hint & nsChangeHint_UpdateOpacityLayer,
+                   "should only return UpdateUsesOpacity hint "
+                   "when also returning UpdateOpacityLayer hint");
+      // When an internal table part (including cells) changes between
+      // having opacity 1 and non-1, it changes whether its
+      // backgrounds (and those of table parts inside of it) are
+      // painted as part of the table's nsDisplayTableBorderBackground
+      // display item, or part of its own display item.  That requires
+      // invalidation, so change UpdateOpacityLayer to RepaintFrame.
+      hint &= ~nsChangeHint_UpdateOpacityLayer;
+      hint |= nsChangeHint_RepaintFrame;
+    }
+
+    // Opacity disables preserve-3d, so if we toggle it, then we also need
+    // to update the overflow areas of all potentially affected frames.
+    if ((hint & nsChangeHint_UpdateUsesOpacity) &&
+        frame->StyleDisplay()->mTransformStyle ==
+            StyleTransformStyle::Preserve3d) {
+      hint |= nsChangeHint_UpdateSubtreeOverflow;
+    }
+
+    if (hint & nsChangeHint_UpdateBackgroundPosition) {
+      // For most frame types, DLBI can detect background position changes,
+      // so we only need to schedule a paint.
+      hint |= nsChangeHint_SchedulePaint;
+      if (frame->IsFrameOfType(nsIFrame::eTablePart) ||
+          frame->IsFrameOfType(nsIFrame::eMathML)) {
+        // Table parts and MathML frames don't build display items for their
+        // backgrounds, so DLBI can't detect background-position changes for
+        // these frames. Repaint the whole frame.
+        hint |= nsChangeHint_RepaintFrame;
       }
-      if ((hint & nsChangeHint_InvalidateRenderingObservers) ||
-          ((hint & nsChangeHint_UpdateOpacityLayer) &&
-           frame->IsFrameOfType(nsIFrame::eSVG) &&
-           !frame->IsSVGOuterSVGFrame())) {
-        SVGObserverUtils::InvalidateRenderingObservers(frame);
-        frame->SchedulePaint();
-      }
-      if (hint & nsChangeHint_NeedReflow) {
-        StyleChangeReflow(frame, hint);
+    }
+
+    if (hint &
+        (nsChangeHint_RepaintFrame | nsChangeHint_UpdateOpacityLayer |
+         nsChangeHint_UpdateTransformLayer |
+         nsChangeHint_ChildrenOnlyTransform | nsChangeHint_SchedulePaint)) {
+      ApplyRenderingChangeToTree(presContext->PresShell(), frame, hint);
+    }
+    if ((hint & nsChangeHint_RecomputePosition) && !didReflowThisFrame) {
+      ActiveLayerTracker::NotifyOffsetRestyle(frame);
+      // It is possible for this to fall back to a reflow
+      if (!RecomputePosition(frame)) {
+        StyleChangeReflow(frame, nsChangeHint_NeedReflow |
+                                     nsChangeHint_ReflowChangesSizeOrPosition);
         didReflowThisFrame = true;
       }
-
-      // Here we need to propagate repaint frame change hint instead of update
-      // opacity layer change hint when we do opacity optimization for SVG.
-      // We can't do it in nsStyleEffects::CalcDifference() just like we do
-      // for the optimization for 0.99 over opacity values since we have no way
-      // to call SVGUtils::CanOptimizeOpacity() there.
-      if ((hint & nsChangeHint_UpdateOpacityLayer) &&
-          SVGUtils::CanOptimizeOpacity(frame)) {
-        hint &= ~nsChangeHint_UpdateOpacityLayer;
-        hint |= nsChangeHint_RepaintFrame;
+    }
+    NS_ASSERTION(!(hint & nsChangeHint_ChildrenOnlyTransform) ||
+                     (hint & nsChangeHint_UpdateOverflow),
+                 "nsChangeHint_UpdateOverflow should be passed too");
+    if (!didReflowThisFrame &&
+        (hint & (nsChangeHint_UpdateOverflow |
+                 nsChangeHint_UpdatePostTransformOverflow |
+                 nsChangeHint_UpdateParentOverflow |
+                 nsChangeHint_UpdateSubtreeOverflow))) {
+      if (hint & nsChangeHint_UpdateSubtreeOverflow) {
+        for (nsIFrame* cont = frame; cont;
+             cont = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
+          AddSubtreeToOverflowTracker(cont, mOverflowChangedTracker);
+        }
+        // The work we just did in AddSubtreeToOverflowTracker
+        // subsumes some of the other hints:
+        hint &= ~(nsChangeHint_UpdateOverflow |
+                  nsChangeHint_UpdatePostTransformOverflow);
       }
+      if (hint & nsChangeHint_ChildrenOnlyTransform) {
+        // We need to update overflows. The correct frame(s) to update depends
+        // on whether the ChangeHint came from an outer or an inner svg.
+        nsIFrame* hintFrame = GetFrameForChildrenOnlyTransformHint(frame);
+        NS_ASSERTION(!nsLayoutUtils::GetNextContinuationOrIBSplitSibling(frame),
+                     "SVG frames should not have continuations "
+                     "or ib-split siblings");
+        NS_ASSERTION(
+            !nsLayoutUtils::GetNextContinuationOrIBSplitSibling(hintFrame),
+            "SVG frames should not have continuations "
+            "or ib-split siblings");
+        if (hintFrame->IsSVGOuterSVGAnonChildFrame()) {
+          // The children only transform of an outer svg frame is applied to
+          // the outer svg's anonymous child frame (instead of to the
+          // anonymous child's children).
 
-      if ((hint & nsChangeHint_UpdateUsesOpacity) &&
-          frame->IsFrameOfType(nsIFrame::eTablePart)) {
-        NS_ASSERTION(hint & nsChangeHint_UpdateOpacityLayer,
-                     "should only return UpdateUsesOpacity hint "
-                     "when also returning UpdateOpacityLayer hint");
-        // When an internal table part (including cells) changes between
-        // having opacity 1 and non-1, it changes whether its
-        // backgrounds (and those of table parts inside of it) are
-        // painted as part of the table's nsDisplayTableBorderBackground
-        // display item, or part of its own display item.  That requires
-        // invalidation, so change UpdateOpacityLayer to RepaintFrame.
-        hint &= ~nsChangeHint_UpdateOpacityLayer;
-        hint |= nsChangeHint_RepaintFrame;
-      }
-
-      // Opacity disables preserve-3d, so if we toggle it, then we also need
-      // to update the overflow areas of all potentially affected frames.
-      if ((hint & nsChangeHint_UpdateUsesOpacity) &&
-          frame->StyleDisplay()->mTransformStyle ==
-              StyleTransformStyle::Preserve3d) {
-        hint |= nsChangeHint_UpdateSubtreeOverflow;
-      }
-
-      if (hint & nsChangeHint_UpdateBackgroundPosition) {
-        // For most frame types, DLBI can detect background position changes,
-        // so we only need to schedule a paint.
-        hint |= nsChangeHint_SchedulePaint;
-        if (frame->IsFrameOfType(nsIFrame::eTablePart) ||
-            frame->IsFrameOfType(nsIFrame::eMathML)) {
-          // Table parts and MathML frames don't build display items for their
-          // backgrounds, so DLBI can't detect background-position changes for
-          // these frames. Repaint the whole frame.
-          hint |= nsChangeHint_RepaintFrame;
+          if (!CanSkipOverflowUpdates(hintFrame)) {
+            mOverflowChangedTracker.AddFrame(
+                hintFrame, OverflowChangedTracker::CHILDREN_CHANGED);
+          }
+        } else {
+          // The children only transform is applied to the child frames of an
+          // inner svg frame, so update the child overflows.
+          nsIFrame* childFrame = hintFrame->PrincipalChildList().FirstChild();
+          for (; childFrame; childFrame = childFrame->GetNextSibling()) {
+            MOZ_ASSERT(childFrame->IsFrameOfType(nsIFrame::eSVG),
+                       "Not expecting non-SVG children");
+            if (!CanSkipOverflowUpdates(childFrame)) {
+              mOverflowChangedTracker.AddFrame(
+                  childFrame, OverflowChangedTracker::CHILDREN_CHANGED);
+            }
+            NS_ASSERTION(
+                !nsLayoutUtils::GetNextContinuationOrIBSplitSibling(childFrame),
+                "SVG frames should not have continuations "
+                "or ib-split siblings");
+            NS_ASSERTION(
+                childFrame->GetParent() == hintFrame,
+                "SVG child frame not expected to have different parent");
+          }
         }
       }
-
-      if (hint &
-          (nsChangeHint_RepaintFrame | nsChangeHint_UpdateOpacityLayer |
-           nsChangeHint_UpdateTransformLayer |
-           nsChangeHint_ChildrenOnlyTransform | nsChangeHint_SchedulePaint)) {
-        ApplyRenderingChangeToTree(presContext->PresShell(), frame, hint);
-      }
-      if ((hint & nsChangeHint_RecomputePosition) && !didReflowThisFrame) {
-        ActiveLayerTracker::NotifyOffsetRestyle(frame);
-        // It is possible for this to fall back to a reflow
-        if (!RecomputePosition(frame)) {
-          StyleChangeReflow(frame,
-                            nsChangeHint_NeedReflow |
-                                nsChangeHint_ReflowChangesSizeOrPosition);
-          didReflowThisFrame = true;
-        }
-      }
-      NS_ASSERTION(!(hint & nsChangeHint_ChildrenOnlyTransform) ||
-                       (hint & nsChangeHint_UpdateOverflow),
-                   "nsChangeHint_UpdateOverflow should be passed too");
-      if (!didReflowThisFrame &&
-          (hint & (nsChangeHint_UpdateOverflow |
-                   nsChangeHint_UpdatePostTransformOverflow |
-                   nsChangeHint_UpdateParentOverflow |
-                   nsChangeHint_UpdateSubtreeOverflow))) {
-        if (hint & nsChangeHint_UpdateSubtreeOverflow) {
+      if (!CanSkipOverflowUpdates(frame)) {
+        if (hint & (nsChangeHint_UpdateOverflow |
+                    nsChangeHint_UpdatePostTransformOverflow)) {
+          OverflowChangedTracker::ChangeKind changeKind;
+          // If we have both nsChangeHint_UpdateOverflow and
+          // nsChangeHint_UpdatePostTransformOverflow,
+          // CHILDREN_CHANGED is selected as it is
+          // strictly stronger.
+          if (hint & nsChangeHint_UpdateOverflow) {
+            changeKind = OverflowChangedTracker::CHILDREN_CHANGED;
+          } else {
+            changeKind = OverflowChangedTracker::TRANSFORM_CHANGED;
+          }
           for (nsIFrame* cont = frame; cont;
                cont =
                    nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
-            AddSubtreeToOverflowTracker(cont, mOverflowChangedTracker);
-          }
-          // The work we just did in AddSubtreeToOverflowTracker
-          // subsumes some of the other hints:
-          hint &= ~(nsChangeHint_UpdateOverflow |
-                    nsChangeHint_UpdatePostTransformOverflow);
-        }
-        if (hint & nsChangeHint_ChildrenOnlyTransform) {
-          // We need to update overflows. The correct frame(s) to update depends
-          // on whether the ChangeHint came from an outer or an inner svg.
-          nsIFrame* hintFrame = GetFrameForChildrenOnlyTransformHint(frame);
-          NS_ASSERTION(
-              !nsLayoutUtils::GetNextContinuationOrIBSplitSibling(frame),
-              "SVG frames should not have continuations "
-              "or ib-split siblings");
-          NS_ASSERTION(
-              !nsLayoutUtils::GetNextContinuationOrIBSplitSibling(hintFrame),
-              "SVG frames should not have continuations "
-              "or ib-split siblings");
-          if (hintFrame->IsSVGOuterSVGAnonChildFrame()) {
-            // The children only transform of an outer svg frame is applied to
-            // the outer svg's anonymous child frame (instead of to the
-            // anonymous child's children).
-
-            // If |hintFrame| is dirty or has dirty children, we don't bother
-            // updating overflows since that will happen when it's reflowed.
-            if (!hintFrame->HasAnyStateBits(NS_FRAME_IS_DIRTY |
-                                            NS_FRAME_HAS_DIRTY_CHILDREN)) {
-              mOverflowChangedTracker.AddFrame(
-                  hintFrame, OverflowChangedTracker::CHILDREN_CHANGED);
-            }
-          } else {
-            // The children only transform is applied to the child frames of an
-            // inner svg frame, so update the child overflows.
-            nsIFrame* childFrame = hintFrame->PrincipalChildList().FirstChild();
-            for (; childFrame; childFrame = childFrame->GetNextSibling()) {
-              MOZ_ASSERT(childFrame->IsFrameOfType(nsIFrame::eSVG),
-                         "Not expecting non-SVG children");
-              // If |childFrame| is dirty or has dirty children, we don't bother
-              // updating overflows since that will happen when it's reflowed.
-              if (!childFrame->HasAnyStateBits(NS_FRAME_IS_DIRTY |
-                                               NS_FRAME_HAS_DIRTY_CHILDREN)) {
-                mOverflowChangedTracker.AddFrame(
-                    childFrame, OverflowChangedTracker::CHILDREN_CHANGED);
-              }
-              NS_ASSERTION(!nsLayoutUtils::GetNextContinuationOrIBSplitSibling(
-                               childFrame),
-                           "SVG frames should not have continuations "
-                           "or ib-split siblings");
-              NS_ASSERTION(
-                  childFrame->GetParent() == hintFrame,
-                  "SVG child frame not expected to have different parent");
-            }
+            mOverflowChangedTracker.AddFrame(cont, changeKind);
           }
         }
-        // If |frame| is dirty or has dirty children, we don't bother updating
-        // overflows since that will happen when it's reflowed.
-        if (!frame->HasAnyStateBits(NS_FRAME_IS_DIRTY |
-                                    NS_FRAME_HAS_DIRTY_CHILDREN)) {
-          if (hint & (nsChangeHint_UpdateOverflow |
-                      nsChangeHint_UpdatePostTransformOverflow)) {
-            OverflowChangedTracker::ChangeKind changeKind;
-            // If we have both nsChangeHint_UpdateOverflow and
-            // nsChangeHint_UpdatePostTransformOverflow,
-            // CHILDREN_CHANGED is selected as it is
-            // strictly stronger.
-            if (hint & nsChangeHint_UpdateOverflow) {
-              changeKind = OverflowChangedTracker::CHILDREN_CHANGED;
-            } else {
-              changeKind = OverflowChangedTracker::TRANSFORM_CHANGED;
-            }
-            for (nsIFrame* cont = frame; cont;
-                 cont =
-                     nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
-              mOverflowChangedTracker.AddFrame(cont, changeKind);
-            }
-          }
-          // UpdateParentOverflow hints need to be processed in addition
-          // to the above, since if the processing of the above hints
-          // yields no change, the update will not propagate to the
-          // parent.
-          if (hint & nsChangeHint_UpdateParentOverflow) {
-            MOZ_ASSERT(frame->GetParent(),
-                       "shouldn't get style hints for the root frame");
-            for (nsIFrame* cont = frame; cont;
-                 cont =
-                     nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
-              mOverflowChangedTracker.AddFrame(
-                  cont->GetParent(), OverflowChangedTracker::CHILDREN_CHANGED);
-            }
+        // UpdateParentOverflow hints need to be processed in addition
+        // to the above, since if the processing of the above hints
+        // yields no change, the update will not propagate to the
+        // parent.
+        if (hint & nsChangeHint_UpdateParentOverflow) {
+          MOZ_ASSERT(frame->GetParent(),
+                     "shouldn't get style hints for the root frame");
+          for (nsIFrame* cont = frame; cont;
+               cont =
+                   nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
+            mOverflowChangedTracker.AddFrame(
+                cont->GetParent(), OverflowChangedTracker::CHILDREN_CHANGED);
           }
         }
       }
-      if ((hint & nsChangeHint_UpdateCursor) && !didUpdateCursor) {
-        presContext->PresShell()->SynthesizeMouseMove(false);
-        didUpdateCursor = true;
-      }
-      if (hint & nsChangeHint_UpdateTableCellSpans) {
-        frameConstructor->UpdateTableCellSpans(content);
-      }
-      if (hint & nsChangeHint_VisibilityChange) {
-        frame->UpdateVisibleDescendantsState();
-      }
+    }
+    if ((hint & nsChangeHint_UpdateCursor) && !didUpdateCursor) {
+      presContext->PresShell()->SynthesizeMouseMove(false);
+      didUpdateCursor = true;
+    }
+    if (hint & nsChangeHint_UpdateTableCellSpans) {
+      frameConstructor->UpdateTableCellSpans(content);
+    }
+    if (hint & nsChangeHint_VisibilityChange) {
+      frame->UpdateVisibleDescendantsState();
     }
   }
 
@@ -1954,7 +2015,7 @@ static const nsIFrame* ExpectedOwnerForChild(const nsIFrame* aFrame) {
 
   parent = FirstContinuationOrPartOfIBSplit(parent);
 
-  // We've handled already anon boxes and bullet frames, so now we're looking at
+  // We've handled already anon boxes, so now we're looking at
   // a frame of a DOM element or pseudo. Hop through anon and line-boxes
   // generated by our DOM parent, and go find the owner frame for it.
   while (parent && (IsAnonBox(parent) || parent->IsLineFrame())) {
@@ -2924,7 +2985,8 @@ ServoElementSnapshot& RestyleManager::SnapshotFor(Element& aElement) {
   MOZ_ASSERT(aElement.HasServoData());
   MOZ_ASSERT(!aElement.HasFlag(ELEMENT_HANDLED_SNAPSHOT));
 
-  ServoElementSnapshot* snapshot = mSnapshots.LookupOrAdd(&aElement, aElement);
+  ServoElementSnapshot* snapshot =
+      mSnapshots.GetOrInsertNew(&aElement, aElement);
   aElement.SetFlags(ELEMENT_HAS_SNAPSHOT);
 
   // Now that we have a snapshot, make sure a restyle is triggered.
@@ -3123,11 +3185,11 @@ void RestyleManager::ProcessAllPendingAttributeAndStateInvalidations() {
   if (mSnapshots.IsEmpty()) {
     return;
   }
-  for (auto iter = mSnapshots.Iter(); !iter.Done(); iter.Next()) {
+  for (const auto& key : mSnapshots.Keys()) {
     // Servo data for the element might have been dropped. (e.g. by removing
     // from its document)
-    if (iter.Key()->HasFlag(ELEMENT_HAS_SNAPSHOT)) {
-      Servo_ProcessInvalidations(StyleSet()->RawSet(), iter.Key(), &mSnapshots);
+    if (key->HasFlag(ELEMENT_HAS_SNAPSHOT)) {
+      Servo_ProcessInvalidations(StyleSet()->RawSet(), key, &mSnapshots);
     }
   }
   ClearSnapshots();

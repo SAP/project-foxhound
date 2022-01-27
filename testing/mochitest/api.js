@@ -2,12 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* globals ExtensionAPI */
-
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+/* globals AppConstants, ExtensionAPI, Services */
 
 function loadChromeScripts(win) {
   Services.scriptloader.loadSubScript(
@@ -49,9 +44,6 @@ const windowTracker = {
 };
 
 function androidStartup() {
-  // Bug 1526086 - we shouldn't need to do this, but otherwise we hang at
-  // shutdown trying to write the startup cache.
-  Services.obs.notifyObservers(null, "startupcache-invalidate");
   // Only browser chrome tests need help starting.
   let testRoot = Services.prefs.getStringPref("mochitest.testRoot", "");
   if (testRoot.endsWith("/chrome")) {

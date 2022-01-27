@@ -3,11 +3,18 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 # Required Plugins:
-# AppAssocReg http://nsis.sourceforge.net/Application_Association_Registration_plug-in
-# BitsUtils   http://dxr.mozilla.org/mozilla-central/source/other-licenses/nsis/Contrib/BitsUtils
-# CityHash    http://dxr.mozilla.org/mozilla-central/source/other-licenses/nsis/Contrib/CityHash
-# ShellLink   http://nsis.sourceforge.net/ShellLink_plug-in
-# UAC         http://nsis.sourceforge.net/UAC_plug-in
+# AppAssocReg
+#   http://nsis.sourceforge.net/Application_Association_Registration_plug-in
+# BitsUtils
+#   http://searchfox.org/mozilla-central/source/other-licenses/nsis/Contrib/BitsUtils
+# CityHash
+#   http://searchfox.org/mozilla-central/source/other-licenses/nsis/Contrib/CityHash
+# HttpPostFile
+#   http://searchfox.org/mozilla-central/source/other-licenses/nsis/Contrib/HttpPostFile
+# ShellLink
+#   http://nsis.sourceforge.net/ShellLink_plug-in
+# UAC
+#   http://nsis.sourceforge.net/UAC_plug-in
 
 ; Set verbosity to 3 (e.g. no script) to lessen the noise in the build logs
 !verbose 3
@@ -39,6 +46,9 @@ ManifestDPIAware true
 Var TmpVal
 Var MaintCertKey
 Var ShouldOpenSurvey
+Var ShouldSendPing
+Var InstalledVersion
+Var InstalledBuildID
 Var ShouldPromptForRefresh
 Var RefreshRequested
 ; AddTaskbarSC is defined here in order to silence warnings from inside
@@ -241,7 +251,7 @@ Function un.UninstallServiceIfNotUsed
   ; Restore back the registry view
   ${If} ${RunningX64}
   ${OrIf} ${IsNativeARM64}
-    SetRegView lastUsed
+    SetRegView lastused
   ${EndIf}
 
   ${If} $0 == 0
@@ -317,6 +327,92 @@ Function un.OpenRefreshHelpURL
   ExecShell "open" "${URLProfileRefreshHelp}"
 FunctionEnd
 
+; Returns the common directory (typically "C:\ProgramData\Mozilla") on the stack.
+Function un.GetCommonDirectory
+  Push $0   ; Save $0
+
+  ; This gets C:\ProgramData or the equivalent.
+  ${GetCommonAppDataFolder} $0
+
+  ; Add our subdirectory, this is hardcoded as grandparent of the update directory in
+  ; several other places.
+  StrCpy $0 "$0\Mozilla"
+
+  Exch $0   ; Restore original $0 and put our $0 on the stack.
+FunctionEnd
+
+Function un.SendUninstallPing
+  ${If} $AppUserModelID == ""
+    Return
+  ${EndIf}
+
+  Push $0   ; $0 = Find handle
+  Push $1   ; $1 = Found ping file name
+  Push $2   ; $2 = Directory containing the pings
+  Push $3   ; $3 = Ping file name filespec
+  Push $4   ; $4 = Offset of ID in file name
+  Push $5   ; $5 = URL, POST result
+  Push $6   ; $6 = Full path to the ping file
+
+  Call un.GetCommonDirectory
+  Pop $2
+
+  ; The ping ID is in the file name, so that we can get it for the submission URL
+  ; without having to parse the ping. Since we don't know the exact name, use FindFirst
+  ; to locate the file.
+  ; Format is uninstall_ping_$AppUserModelID_$PingUUID.json
+
+  ; File name base
+  StrCpy $3 "uninstall_ping_$AppUserModelID_"
+  ; Get length of the fixed prefix, this is the offset of ping ID in the file name
+  StrLen $4 $3
+  ; Finish building filespec
+  StrCpy $3 "$2\$3*.json"
+
+  ClearErrors
+  FindFirst $0 $1 $3
+  ; Build the full path
+  StrCpy $6 "$2\$1"
+
+  ${IfNot} ${Errors}
+    ; Copy the ping ID, starting after $AppUserModelID_, ending 5 from the end to remove .json
+    StrCpy $5 $1 -5 $4
+
+    ; Build the full submission URL from the ID
+    ; https://docs.telemetry.mozilla.org/concepts/pipeline/http_edge_spec.html#special-handling-for-firefox-desktop-telemetry
+    ; It's possible for the path components to disagree with the contents of the ping,
+    ; but this should be rare, and shouldn't affect the collection.
+    StrCpy $5 "${TELEMETRY_BASE_URL}/${TELEMETRY_UNINSTALL_PING_NAMESPACE}/$5/${TELEMETRY_UNINSTALL_PING_DOCTYPE}/${AppName}/$InstalledVersion/${UpdateChannel}/$InstalledBuildID?v=4"
+
+    HttpPostFile::Post $6 "Content-Type: application/json$\r$\n" $5
+    ; Pop the result. This could indicate an error if it's something other than
+    ; "success", but we don't have any recovery path here anyway.
+    Pop $5
+
+    ${Do}
+      Delete $6
+
+      ; Continue to delete any other pings from this install. Only the first found will be sent:
+      ; there should only be one ping, if there are more than one then something has gone wrong,
+      ; it seems preferable to not try to send them all.
+      ClearErrors
+      FindNext $0 $1
+      ; Build the full path
+      StrCpy $6 "$2\$1"
+    ${LoopUntil} ${Errors}
+
+    FindClose $0
+  ${Endif}
+
+  Pop $6
+  Pop $5
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+FunctionEnd
+
 ################################################################################
 # Install Sections
 ; Empty section required for the installer to compile as an uninstaller
@@ -355,6 +451,13 @@ Section "Uninstall"
     ApplicationID::UninstallJumpLists "$AppUserModelID"
   ${EndIf}
 
+  ; Remove the update sync manager's multi-instance lock file
+  ${If} "$AppUserModelID" != ""
+    Call un.GetCommonDirectory
+    Pop $0
+    Delete /REBOOTOK "$0\UpdateLock-$AppUserModelID"
+  ${EndIf}
+
   ; Remove the updates directory
   ${un.CleanUpdateDirectories} "Mozilla\Firefox" "Mozilla\updates"
 
@@ -378,11 +481,6 @@ Section "Uninstall"
 
   ${un.RegCleanAppHandler} "FirefoxURL-$AppUserModelID"
   ${un.RegCleanAppHandler} "FirefoxHTML-$AppUserModelID"
-!ifndef NIGHTLY_BUILD
-  ; Keep the compile-time conditional synchronized with the
-  ; "network.ftp.enabled" compile-time conditional.
-  ${un.RegCleanProtocolHandler} "ftp"
-!endif ; NIGHTLY_BUILD
   ${un.RegCleanProtocolHandler} "http"
   ${un.RegCleanProtocolHandler} "https"
   ${un.RegCleanProtocolHandler} "mailto"
@@ -398,6 +496,7 @@ Section "Uninstall"
   ${un.RegCleanFileHandler}  ".webm"  "FirefoxHTML-$AppUserModelID"
   ${un.RegCleanFileHandler}  ".svg"   "FirefoxHTML-$AppUserModelID"
   ${un.RegCleanFileHandler}  ".webp"  "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler}  ".avif"  "FirefoxHTML-$AppUserModelID"
 
   SetShellVarContext all  ; Set SHCTX to HKLM
   ${un.GetSecondInstallPath} "Software\Mozilla" $R9
@@ -502,6 +601,9 @@ Section "Uninstall"
     ${UnregisterDLL} "$INSTDIR\AccessibleHandler.dll"
   ${EndIf}
 
+  ; Remove the Windows Reporter Module entry
+  DeleteRegValue HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\RuntimeExceptionHelperModules" "$INSTDIR\mozwer.dll"
+
 !ifdef MOZ_LAUNCHER_PROCESS
   DeleteRegValue HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Launcher"
   DeleteRegValue HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Browser"
@@ -509,14 +611,14 @@ Section "Uninstall"
   DeleteRegValue HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Telemetry"
 !endif
 
-!ifdef MOZ_UPDATE_AGENT
-  ; Unregister the update agent
-  nsExec::Exec '"$INSTDIR\updateagent.exe" unregister-task "${UpdateAgentFullName} $AppUserModelID"'
-!endif
-
-  ; Uninstall the default browser agent scheduled task.
-  ; This also removes the registry entries it creates.
+  ; Uninstall the default browser agent scheduled task and all other scheduled
+  ; tasks registered by Firefox.
+  ; This also removes the registry entries that the WDBA creates.
+  ; One of the scheduled tasks that this will remove is the Background Update
+  ; Task. Ideally, this will eventually be changed so that it doesn't rely on
+  ; the WDBA. See Bug 1710143.
   ExecWait '"$INSTDIR\default-browser-agent.exe" uninstall $AppUserModelID'
+  ${RemoveDefaultBrowserAgentShortcut}
 
   ${un.RemovePrecompleteEntries} "false"
 
@@ -534,6 +636,9 @@ Section "Uninstall"
   ${EndIf}
   ${If} ${FileExists} "$INSTDIR\update-settings.ini"
     Delete /REBOOTOK "$INSTDIR\update-settings.ini"
+  ${EndIf}
+  ${If} ${FileExists} "$INSTDIR\installation_telemetry.json"
+    Delete /REBOOTOK "$INSTDIR\installation_telemetry.json"
   ${EndIf}
 
   ; Explicitly remove empty webapprt dir in case it exists (bug 757978).
@@ -637,6 +742,10 @@ Function un.preWelcome
   ShowWindow $0 ${SW_HIDE}
 
   ${If} $ShouldPromptForRefresh == "1"
+    ; Note: INI strings added here (rather than overwriting an existing value)
+    ; should be removed in un.leaveWelcome, since ioSpecial.ini is reused
+    ; for the Finish page.
+
     ; Replace title and body text
     WriteINIStr "$PLUGINSDIR\ioSpecial.ini" "Field 2" Text "$(UN_REFRESH_PAGE_TITLE)"
     ; Convert to translate newlines, this includes $PLUGINSDIR internally.
@@ -749,6 +858,13 @@ Function un.leaveWelcome
     Quit
   ${EndIf}
 
+  ${If} $ShouldPromptForRefresh == "1"
+    ; Remove the custom controls.
+    WriteINIStr "$PLUGINSDIR\ioSpecial.ini" "Settings" NumFields 3
+    DeleteIniSec "$PLUGINSDIR\ioSpecial.ini" "Field 4"
+    DeleteIniSec "$PLUGINSDIR\ioSpecial.ini" "Field 5"
+  ${EndIf}
+
   ; Bring back the header bitmap for the next pages.
   GetDlgItem $0 $HWNDPARENT 1046
   ShowWindow $0 ${SW_SHOW}
@@ -811,6 +927,16 @@ Function un.preConfirm
   ${MUI_INSTALLOPTIONS_READ} $1 "unconfirm.ini" "Field 2" "HWND"
   SendMessage $1 ${WM_SETTEXT} 0 "STR:$INSTDIR"
   !insertmacro MUI_INSTALLOPTIONS_SHOW
+FunctionEnd
+
+Function un.onUninstSuccess
+  ; Send a ping at un.onGUIEnd, to avoid freezing the GUI.
+  StrCpy $ShouldSendPing "1"
+
+  ${If} ${Silent}
+    ; If this is a silent uninstall then un.onGUIEnd doesn't run, so do it now.
+    Call un.SendUninstallPing
+  ${EndIf}
 FunctionEnd
 
 Function un.preFinish
@@ -894,6 +1020,10 @@ Function un.onInit
     StrCpy $ShouldPromptForRefresh "1"
   ${EndIf}
 
+  ; Load version info for uninstall ping (sent after uninstall is complete)
+  ReadINIStr $InstalledVersion "$INSTDIR\application.ini" "App" "Version"
+  ReadINIStr $InstalledBuildID "$INSTDIR\application.ini" "App" "BuildID"
+
   !insertmacro InitInstallOptionsFile "unconfirm.ini"
 FunctionEnd
 
@@ -950,5 +1080,10 @@ Function un.onGUIEnd
     ${Else}
       ExecInExplorer::Exec "iexplore.exe" /cmdargs "$R1"
     ${EndIf}
+  ${EndIf}
+
+  ; Finally send the ping, there's no GUI to freeze in case it is slow.
+  ${If} $ShouldSendPing == "1"
+    Call un.SendUninstallPing
   ${EndIf}
 FunctionEnd

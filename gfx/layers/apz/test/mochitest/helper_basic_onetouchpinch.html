@@ -10,7 +10,7 @@
   <script src="/tests/SimpleTest/EventUtils.js"></script>
   <script type="application/javascript">
 
-function* test(testDriver) {
+async function test() {
   let visResEvt = new EventCounter(window.visualViewport, "resize");
   let visScrEvt = new EventCounter(window.visualViewport, "scroll");
   // Our internal visual viewport events aren't restricted to the visual view-
@@ -23,13 +23,13 @@ function* test(testDriver) {
   let visResEvtContent = new EventCounter(window, "mozvisualresize");
   let visScrEvtContent = new EventCounter(window, "mozvisualscroll");
 
-  var initial_resolution = getResolution();
+  var initial_resolution = await getResolution();
   ok(initial_resolution > 0,
       "The initial_resolution is " + initial_resolution + ", which is some sane value");
 
   // This listener will trigger the test to continue once APZ is done with
   // processing the scroll.
-  SpecialPowers.Services.obs.addObserver(testDriver, "APZ:TransformEnd");
+  let transformEndPromise = promiseTransformEnd();
 
   var zoom_in = [
       [ { x: 150, y: 300 } ],
@@ -43,18 +43,14 @@ function* test(testDriver) {
   ];
 
   var touchIds = [0];
-  yield* synthesizeNativeTouchSequences(document.body, zoom_in, null, touchIds);
+  synthesizeNativeTouchSequences(document.body, zoom_in, null, touchIds);
 
   // Wait for the APZ:TransformEnd to be fired after touch events are processed.
-  yield true;
-
-  // We get here once the APZ:TransformEnd has fired, so we don't need that
-  // observer any more.
-  SpecialPowers.Services.obs.removeObserver(testDriver, "APZ:TransformEnd");
+  await transformEndPromise;
 
   // Flush state and get the resolution we're at now
-  yield waitForApzFlushedRepaints(testDriver);
-  let final_resolution = getResolution();
+  await promiseApzFlushedRepaints();
+  let final_resolution = await getResolution();
   ok(final_resolution > initial_resolution, "The final resolution (" + final_resolution + ") is greater after zooming in");
 
   // Check we've got the expected events.
@@ -81,8 +77,8 @@ function* test(testDriver) {
 }
 
 waitUntilApzStable()
-.then(runContinuation(test))
-.then(subtestDone);
+.then(test)
+.then(subtestDone, subtestFailed);
 
   </script>
 </head>

@@ -85,9 +85,18 @@ class FunctionFlags {
     RESOLVED_NAME = 1 << 13,
     RESOLVED_LENGTH = 1 << 14,
 
-    // For a function used as an interpreted constructor, whether a 'new' type
-    // had constructor information cleared.
-    NEW_SCRIPT_CLEARED = 1 << 15,
+    // This function is kept only for skipping it over during delazification.
+    //
+    // This function is inside arrow function's parameter expression, and
+    // parsed twice, once before finding "=>" token, and once after finding
+    // "=>" and rewinding to the beginning of the parameters.
+    // ScriptStencil is created for both case, and the first one is kept only
+    // for delazification, to make sure delazification sees the same sequence
+    // of inner function to skip over.
+    //
+    // We call the first one "ghost".
+    // It should be kept lazy, and shouldn't be exposed to debugger.
+    GHOST_FUNCTION = 1 << 15,
 
     // Shifted form of FunctionKinds.
     NORMAL_KIND = NormalFunction << FUNCTION_KIND_SHIFT,
@@ -116,15 +125,11 @@ class FunctionFlags {
     INTERPRETED_METHOD = BASESCRIPT | METHOD_KIND,
 
     // Flags that XDR ignores. See also: js::BaseScript::MutableFlags.
-    MUTABLE_FLAGS = RESOLVED_NAME | RESOLVED_LENGTH | NEW_SCRIPT_CLEARED,
+    MUTABLE_FLAGS = RESOLVED_NAME | RESOLVED_LENGTH,
 
-    // Flags preserved when cloning a function. (Exception:
-    // js::MakeDefaultConstructor produces default constructors for ECMAScript
-    // classes by cloning self-hosted functions, and then clearing their
-    // SELF_HOSTED bit, setting their CONSTRUCTOR bit, and otherwise munging
-    // them to look like they originated with the class definition.) */
+    // Flags preserved when cloning a function.
     STABLE_ACROSS_CLONES =
-        CONSTRUCTOR | LAMBDA | SELF_HOSTED | FUNCTION_KIND_MASK
+        CONSTRUCTOR | LAMBDA | SELF_HOSTED | FUNCTION_KIND_MASK | GHOST_FUNCTION
   };
 
   uint16_t flags_;
@@ -150,14 +155,21 @@ class FunctionFlags {
 
   // For flag combinations the type is int.
   bool hasFlags(uint16_t flags) const { return flags_ & flags; }
-  void setFlags(uint16_t flags) { flags_ |= flags; }
-  void clearFlags(uint16_t flags) { flags_ &= ~flags; }
-  void setFlags(uint16_t flags, bool set) {
+  FunctionFlags& setFlags(uint16_t flags) {
+    flags_ |= flags;
+    return *this;
+  }
+  FunctionFlags& clearFlags(uint16_t flags) {
+    flags_ &= ~flags;
+    return *this;
+  }
+  FunctionFlags& setFlags(uint16_t flags, bool set) {
     if (set) {
       setFlags(flags);
     } else {
       clearFlags(flags);
     }
+    return *this;
   }
 
   FunctionKind kind() const {
@@ -169,17 +181,24 @@ class FunctionFlags {
   bool isInterpreted() const {
     return hasFlags(BASESCRIPT) || hasFlags(SELFHOSTLAZY);
   }
-  bool isNative() const { return !isInterpreted(); }
+  bool isNativeFun() const { return !isInterpreted(); }
 
   bool isConstructor() const { return hasFlags(CONSTRUCTOR); }
 
+  bool isNonBuiltinConstructor() const {
+    // Note: keep this in sync with branchIfNotFunctionIsNonBuiltinCtor in
+    // MacroAssembler.cpp.
+    return hasFlags(BASESCRIPT) && hasFlags(CONSTRUCTOR) &&
+           !hasFlags(SELF_HOSTED);
+  }
+
   /* Possible attributes of a native function: */
   bool isAsmJSNative() const {
-    MOZ_ASSERT_IF(kind() == AsmJS, isNative());
+    MOZ_ASSERT_IF(kind() == AsmJS, isNativeFun());
     return kind() == AsmJS;
   }
   bool isWasm() const {
-    MOZ_ASSERT_IF(kind() == Wasm, isNative());
+    MOZ_ASSERT_IF(kind() == Wasm, isNativeFun());
     return kind() == Wasm;
   }
   bool isWasmWithJitEntry() const {
@@ -187,11 +206,11 @@ class FunctionFlags {
     return hasFlags(WASM_JIT_ENTRY);
   }
   bool isNativeWithoutJitEntry() const {
-    MOZ_ASSERT_IF(!hasJitEntry(), isNative());
+    MOZ_ASSERT_IF(!hasJitEntry(), isNativeFun());
     return !hasJitEntry();
   }
   bool isBuiltinNative() const {
-    return isNative() && !isAsmJSNative() && !isWasm();
+    return isNativeFun() && !isAsmJSNative() && !isWasm();
   }
   bool hasJitEntry() const {
     return hasBaseScript() || hasSelfHostedLazyScript() || isWasmWithJitEntry();
@@ -247,74 +266,80 @@ class FunctionFlags {
 
   bool isSelfHostedOrIntrinsic() const { return hasFlags(SELF_HOSTED); }
   bool isSelfHostedBuiltin() const {
-    return isSelfHostedOrIntrinsic() && !isNative();
+    return isSelfHostedOrIntrinsic() && !isNativeFun();
   }
-  bool isIntrinsic() const { return isSelfHostedOrIntrinsic() && isNative(); }
+  bool isIntrinsic() const {
+    return isSelfHostedOrIntrinsic() && isNativeFun();
+  }
 
-  void setKind(FunctionKind kind) {
+  FunctionFlags& setKind(FunctionKind kind) {
     this->flags_ &= ~FUNCTION_KIND_MASK;
     this->flags_ |= static_cast<uint16_t>(kind) << FUNCTION_KIND_SHIFT;
+    return *this;
   }
 
   // Make the function constructible.
-  void setIsConstructor() {
+  FunctionFlags& setIsConstructor() {
     MOZ_ASSERT(!isConstructor());
     MOZ_ASSERT(isSelfHostedBuiltin());
-    setFlags(CONSTRUCTOR);
+    return setFlags(CONSTRUCTOR);
   }
 
-  void setIsClassConstructor() {
-    MOZ_ASSERT(!isClassConstructor());
-    MOZ_ASSERT(isConstructor());
-
-    setKind(ClassConstructor);
-  }
-
-  void setIsBoundFunction() {
+  FunctionFlags& setIsBoundFunction() {
     MOZ_ASSERT(!isBoundFunction());
-    setFlags(BOUND_FUN);
+    return setFlags(BOUND_FUN);
   }
 
-  void setIsSelfHostedBuiltin() {
+  FunctionFlags& setIsSelfHostedBuiltin() {
     MOZ_ASSERT(isInterpreted());
     MOZ_ASSERT(!isSelfHostedBuiltin());
     setFlags(SELF_HOSTED);
     // Self-hosted functions should not be constructable.
-    clearFlags(CONSTRUCTOR);
+    return clearFlags(CONSTRUCTOR);
   }
-  void setIsIntrinsic() {
-    MOZ_ASSERT(isNative());
+  FunctionFlags& setIsIntrinsic() {
+    MOZ_ASSERT(isNativeFun());
     MOZ_ASSERT(!isIntrinsic());
-    setFlags(SELF_HOSTED);
+    return setFlags(SELF_HOSTED);
   }
 
-  void setResolvedLength() { setFlags(RESOLVED_LENGTH); }
-  void setResolvedName() { setFlags(RESOLVED_NAME); }
+  FunctionFlags& setResolvedLength() { return setFlags(RESOLVED_LENGTH); }
+  FunctionFlags& setResolvedName() { return setFlags(RESOLVED_NAME); }
 
-  // Mark a function as having its 'new' script information cleared.
-  bool wasNewScriptCleared() const { return hasFlags(NEW_SCRIPT_CLEARED); }
-  void setNewScriptCleared() { setFlags(NEW_SCRIPT_CLEARED); }
+  FunctionFlags& setInferredName() { return setFlags(HAS_INFERRED_NAME); }
 
-  void setInferredName() { setFlags(HAS_INFERRED_NAME); }
-  void clearInferredName() { clearFlags(HAS_INFERRED_NAME); }
+  FunctionFlags& setGuessedAtom() { return setFlags(HAS_GUESSED_ATOM); }
 
-  void setGuessedAtom() { setFlags(HAS_GUESSED_ATOM); }
-
-  void setPrefixedBoundFunctionName() {
-    setFlags(HAS_BOUND_FUNCTION_NAME_PREFIX);
+  FunctionFlags& setPrefixedBoundFunctionName() {
+    return setFlags(HAS_BOUND_FUNCTION_NAME_PREFIX);
   }
 
-  void setSelfHostedLazy() { setFlags(SELFHOSTLAZY); }
-  void clearSelfHostedLazy() { clearFlags(SELFHOSTLAZY); }
-  void setBaseScript() { setFlags(BASESCRIPT); }
-  void clearBaseScript() { clearFlags(BASESCRIPT); }
+  FunctionFlags& setSelfHostedLazy() { return setFlags(SELFHOSTLAZY); }
+  FunctionFlags& clearSelfHostedLazy() { return clearFlags(SELFHOSTLAZY); }
+  FunctionFlags& setBaseScript() { return setFlags(BASESCRIPT); }
+  FunctionFlags& clearBaseScript() { return clearFlags(BASESCRIPT); }
 
-  void setWasmJitEntry() { setFlags(WASM_JIT_ENTRY); }
+  FunctionFlags& setWasmJitEntry() { return setFlags(WASM_JIT_ENTRY); }
 
   bool isExtended() const { return hasFlags(EXTENDED); }
-  void setIsExtended() { setFlags(EXTENDED); }
+  FunctionFlags& setIsExtended() { return setFlags(EXTENDED); }
 
   bool isNativeConstructor() const { return hasFlags(NATIVE_CTOR); }
+
+  FunctionFlags& setIsGhost() { return setFlags(GHOST_FUNCTION); }
+  bool isGhost() const { return hasFlags(GHOST_FUNCTION); }
+
+  static uint16_t HasJitEntryFlags(bool isConstructing) {
+    uint16_t flags = BASESCRIPT | SELFHOSTLAZY;
+    if (!isConstructing) {
+      flags |= WASM_JIT_ENTRY;
+    }
+    return flags;
+  }
+
+  static FunctionFlags clearMutableflags(FunctionFlags flags) {
+    return FunctionFlags(flags.toRaw() & ~FunctionFlags::MUTABLE_FLAGS);
+  }
 };
 
 } /* namespace js */

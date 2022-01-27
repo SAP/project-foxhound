@@ -25,6 +25,9 @@
   <link rel="stylesheet" href="chrome://devtools/content/shared/components/splitter/SplitBox.css"/>
   <link rel="stylesheet" href="chrome://devtools/content/shared/components/Accordion.css"/>
   <link rel="stylesheet" href="chrome://devtools/content/shared/components/reps/reps.css"/>
+  <!-- Needed for the ObjectInspector -->
+  <link rel="stylesheet" href="chrome://devtools/content/shared/components/Tree.css"/>
+  <link rel="stylesheet" href="chrome://devtools/content/shared/components/object-inspector/components/ObjectInspector.css"/>
   <link rel="stylesheet" href="chrome://devtools/content/shared/components/tree/TreeView.css"/>
 
   <script src="chrome://devtools/content/shared/theme-switching.js"></script>
@@ -33,8 +36,8 @@
     var isInChrome = window.location.href.includes("chrome:");
     if (isInChrome) {
       var exports = {};
-      var { require, loader } = Cu.import("resource://devtools/shared/Loader.jsm");
-      var { BrowserLoader } = Cu.import("resource://devtools/client/shared/browser-loader.js");
+      var { require, loader } = Cu.import("resource://devtools/shared/loader/Loader.jsm");
+      var { BrowserLoader } = Cu.import("resource://devtools/shared/loader/browser-loader.js");
     }
   </script>
 
@@ -52,9 +55,9 @@
           <input id="inspector-searchbox" class="devtools-searchinput"
                  type="search"
                  data-localization="placeholder=inspectorSearchHTML.label3"/>
-          <button id="inspector-searchinput-clear" class="devtools-searchinput-clear" hidden="true" tabindex="-1"></button>
+          <button id="inspector-searchinput-clear" class="devtools-searchinput-clear" hidden="" tabindex="-1"></button>
         </div>
-        <div id="inspector-searchlabel-container" hidden="true">
+        <div id="inspector-searchlabel-container" hidden="">
           <div class="devtools-separator"></div>
           <span id="inspector-searchlabel"></span>
         </div>
@@ -77,12 +80,12 @@
 
     <!-- Split Sidebar Container -->
     <div id="inspector-rules-container">
-      <div id="inspector-rules-sidebar" hidden="true"></div>
+      <div id="inspector-rules-sidebar" hidden=""></div>
     </div>
 
     <!-- Sidebar Container -->
     <div id="inspector-sidebar-container">
-      <div id="inspector-sidebar" hidden="true"></div>
+      <div id="inspector-sidebar" hidden=""></div>
     </div>
 
     <!-- Sidebar Panel Definitions -->
@@ -102,14 +105,15 @@
               <button id="pseudo-class-panel-toggle" data-localization="title=inspector.togglePseudo.tooltip" class="devtools-button"></button>
               <button id="class-panel-toggle" data-localization="title=inspector.classPanel.toggleClass.tooltip" class="devtools-button"></button>
               <button id="ruleview-add-rule-button" data-localization="title=inspector.addRule.tooltip" class="devtools-button"></button>
-              <button id="color-scheme-simulation-toggle" data-localization="title=inspector.colorSchemeSimulation.tooltip" class="devtools-button" hidden="true"></button>
-              <button id="print-simulation-toggle" data-localization="title=inspector.printSimulation.tooltip" class="devtools-button" hidden="true"></button>
+              <button id="color-scheme-simulation-light-toggle" data-localization="title=inspector.colorSchemeSimulationLight.tooltip" class="devtools-button" hidden=""></button>
+              <button id="color-scheme-simulation-dark-toggle" data-localization="title=inspector.colorSchemeSimulationDark.tooltip" class="devtools-button" hidden=""></button>
+              <button id="print-simulation-toggle" data-localization="title=inspector.printSimulation.tooltip" class="devtools-button" hidden=""></button>
             </div>
           </div>
-          <div id="pseudo-class-panel" class="theme-toolbar ruleview-reveal-panel" hidden="true">
+          <div id="pseudo-class-panel" class="theme-toolbar ruleview-reveal-panel" hidden="">
             <!-- Populated with checkbox inputs once the Rules view is instantiated -->
           </div>
-          <div id="ruleview-class-panel" class="theme-toolbar ruleview-reveal-panel" hidden="true"></div>
+          <div id="ruleview-class-panel" class="theme-toolbar ruleview-reveal-panel" hidden=""></div>
         </div>
 
         <div id="ruleview-container" class="ruleview" role="document">

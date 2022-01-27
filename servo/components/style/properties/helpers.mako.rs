@@ -9,7 +9,7 @@
 %>
 
 <%def name="predefined_type(name, type, initial_value, parse_method='parse',
-            needs_context=True, vector=False,
+            vector=False,
             computed_type=None, initial_specified_value=None,
             allow_quirks='No', allow_empty=False, **kwargs)">
     <%def name="predefined_type_inner(name, type, initial_value, parse_method)">
@@ -45,10 +45,10 @@
         ) -> Result<SpecifiedValue, ParseError<'i>> {
             % if allow_quirks != "No":
             specified::${type}::${parse_method}_quirky(context, input, AllowQuirks::${allow_quirks})
-            % elif needs_context:
+            % elif parse_method != "parse":
             specified::${type}::${parse_method}(context, input)
             % else:
-            specified::${type}::${parse_method}(input)
+            <specified::${type} as crate::parser::Parse>::parse(context, input)
             % endif
         }
     </%def>
@@ -170,9 +170,6 @@
             /// Making this type generic allows the compiler to figure out the
             /// animated value for us, instead of having to implement it
             /// manually for every type we care about.
-            % if separator == "Comma":
-            #[css(comma)]
-            % endif
             #[derive(
                 Clone,
                 Debug,
@@ -182,6 +179,9 @@
                 ToResolvedValue,
                 ToCss,
             )]
+            % if separator == "Comma":
+            #[css(comma)]
+            % endif
             pub struct OwnedList<T>(
                 % if not allow_empty:
                 #[css(iterable)]
@@ -198,9 +198,6 @@
             % else:
             pub use self::ComputedList as List;
 
-            % if separator == "Comma":
-            #[css(comma)]
-            % endif
             #[derive(
                 Clone,
                 Debug,
@@ -208,6 +205,9 @@
                 PartialEq,
                 ToCss,
             )]
+            % if separator == "Comma":
+            #[css(comma)]
+            % endif
             pub struct ComputedList(
                 % if not allow_empty:
                 #[css(iterable)]
@@ -324,10 +324,10 @@
         }
 
         /// The specified value of ${name}.
+        #[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
         % if separator == "Comma":
         #[css(comma)]
         % endif
-        #[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
         pub struct SpecifiedValue(
             % if not allow_empty:
             #[css(iterable)]
@@ -554,7 +554,7 @@
         keyword = keyword=Keyword(name, values, **keyword_kwargs)
     %>
     <%call expr="longhand(name, keyword=Keyword(name, values, **keyword_kwargs), **kwargs)">
-        use crate::properties::longhands::system_font::SystemFont;
+        use crate::values::specified::font::SystemFont;
 
         pub mod computed_value {
             #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
@@ -707,8 +707,7 @@
 </%def>
 
 <%def name="single_keyword(name, values, vector=False,
-            extra_specified=None, needs_conversion=False,
-            gecko_pref_controlled_initial_value=None, **kwargs)">
+            needs_conversion=False, **kwargs)">
     <%
         keyword_kwargs = {a: kwargs.pop(a, None) for a in [
             'gecko_constant_prefix',
@@ -725,11 +724,13 @@
         ]}
     %>
 
-    <%def name="inner_body(keyword, extra_specified=None, needs_conversion=False,
-                           gecko_pref_controlled_initial_value=None)">
-        <%def name="variants(variants, include_aliases)">
-            % for variant in variants:
-            % if include_aliases:
+    <%def name="inner_body(keyword, needs_conversion=False)">
+        pub use self::computed_value::T as SpecifiedValue;
+        pub mod computed_value {
+            #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
+            #[derive(Clone, Copy, Debug, Eq, FromPrimitive, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
+            pub enum T {
+            % for variant in keyword.values_for(engine):
             <%
                 aliases = []
                 for alias, v in keyword.aliases_for(engine).items():
@@ -739,56 +740,16 @@
             % if aliases:
             #[parse(aliases = "${','.join(sorted(aliases))}")]
             % endif
-            % endif
             ${to_camel_case(variant)},
             % endfor
-        </%def>
-        % if extra_specified:
-            #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
-            #[derive(
-                Clone,
-                Copy,
-                Debug,
-                Eq,
-                MallocSizeOf,
-                Parse,
-                PartialEq,
-                SpecifiedValueInfo,
-                ToCss,
-                ToShmem,
-            )]
-            pub enum SpecifiedValue {
-                ${variants(keyword.values_for(engine) + extra_specified.split(), bool(extra_specified))}
-            }
-        % else:
-            pub use self::computed_value::T as SpecifiedValue;
-        % endif
-        pub mod computed_value {
-            #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
-            #[derive(Clone, Copy, Debug, Eq, FromPrimitive, MallocSizeOf, PartialEq, ToCss, ToResolvedValue)]
-            % if not extra_specified:
-            #[derive(Parse, SpecifiedValueInfo, ToComputedValue, ToShmem)]
-            % endif
-            pub enum T {
-                ${variants(data.longhands_by_name[name].keyword.values_for(engine), not extra_specified)}
             }
         }
         #[inline]
         pub fn get_initial_value() -> computed_value::T {
-            % if engine == "gecko" and gecko_pref_controlled_initial_value:
-            if static_prefs::pref!("${gecko_pref_controlled_initial_value.split('=')[0]}") {
-                return computed_value::T::${to_camel_case(gecko_pref_controlled_initial_value.split('=')[1])};
-            }
-            % endif
             computed_value::T::${to_camel_case(values.split()[0])}
         }
         #[inline]
         pub fn get_initial_specified_value() -> SpecifiedValue {
-            % if engine == "gecko" and gecko_pref_controlled_initial_value:
-            if static_prefs::pref!("${gecko_pref_controlled_initial_value.split('=')[0]}") {
-                return SpecifiedValue::${to_camel_case(gecko_pref_controlled_initial_value.split('=')[1])};
-            }
-            % endif
             SpecifiedValue::${to_camel_case(values.split()[0])}
         }
         #[inline]
@@ -799,10 +760,7 @@
 
         % if needs_conversion:
             <%
-                conversion_values = keyword.values_for(engine)
-                if extra_specified:
-                    conversion_values += extra_specified.split()
-                conversion_values += keyword.aliases_for(engine).keys()
+                conversion_values = keyword.values_for(engine) + list(keyword.aliases_for(engine).keys())
             %>
             ${gecko_keyword_conversion(keyword, values=conversion_values)}
         % endif
@@ -817,8 +775,7 @@
     % else:
         <%call expr="longhand(name, keyword=Keyword(name, values, **keyword_kwargs), **kwargs)">
             ${inner_body(Keyword(name, values, **keyword_kwargs),
-                         extra_specified=extra_specified, needs_conversion=needs_conversion,
-                         gecko_pref_controlled_initial_value=gecko_pref_controlled_initial_value)}
+                         needs_conversion=needs_conversion)}
             % if caller:
             ${caller.body()}
             % endif
@@ -888,10 +845,7 @@
         impl<'a> LonghandsToSerialize<'a> {
             /// Tries to get a serializable set of longhands given a set of
             /// property declarations.
-            pub fn from_iter<I>(iter: I) -> Result<Self, ()>
-            where
-                I: Iterator<Item=&'a PropertyDeclaration>,
-            {
+            pub fn from_iter(iter: impl Iterator<Item = &'a PropertyDeclaration>) -> Result<Self, ()> {
                 // Define all of the expected variables that correspond to the shorthand
                 % for sub_property in shorthand.sub_properties:
                     let mut ${sub_property.ident} =
@@ -899,8 +853,8 @@
                 % endfor
 
                 // Attempt to assign the incoming declarations to the expected variables
-                for longhand in iter {
-                    match *longhand {
+                for declaration in iter {
+                    match *declaration {
                         % for sub_property in shorthand.sub_properties:
                             PropertyDeclaration::${sub_property.camel_case}(ref value) => {
                                 ${sub_property.ident} = Some(value)
@@ -948,7 +902,8 @@
             input.parse_entirely(|input| parse_value(context, input)).map(|longhands| {
                 % for sub_property in shorthand.sub_properties:
                 % if sub_property.may_be_disabled_in(shorthand, engine):
-                if NonCustomPropertyId::from(LonghandId::${sub_property.camel_case}).allowed_in(context) {
+                if NonCustomPropertyId::from(LonghandId::${sub_property.camel_case})
+                    .allowed_in_ignoring_rule_type(context) {
                 % endif
                     declarations.push(PropertyDeclaration::${sub_property.camel_case}(
                         longhands.${sub_property.ident}
@@ -958,6 +913,14 @@
                 % endif
                 % endfor
             })
+        }
+
+        /// Try to serialize a given shorthand to a string.
+        pub fn to_css(declarations: &[&PropertyDeclaration], dest: &mut crate::str::CssStringWriter) -> fmt::Result {
+            match LonghandsToSerialize::from_iter(declarations.iter().cloned()) {
+                Ok(longhands) => longhands.to_css(&mut CssWriter::new(dest)),
+                Err(_) => Ok(())
+            }
         }
 
         ${caller.body()}
@@ -971,25 +934,24 @@
     name,
     first_property,
     second_property,
-    parser_function,
-    needs_context=True,
+    parser_function='crate::parser::Parse::parse',
     **kwargs
 )">
 <%call expr="self.shorthand(name, sub_properties=' '.join([first_property, second_property]), **kwargs)">
     #[allow(unused_imports)]
     use crate::parser::Parse;
+    #[allow(unused_imports)]
     use crate::values::specified;
 
-    pub fn parse_value<'i, 't>(
+    fn parse_value<'i, 't>(
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Longhands, ParseError<'i>> {
-        let parse_one = |_c: &ParserContext, input: &mut Parser<'i, 't>| {
-            % if needs_context:
-            ${parser_function}(_c, input)
-            % else:
-            ${parser_function}(input)
-            % endif
+        let parse_one = |c: &ParserContext, input: &mut Parser<'i, 't>| -> Result<
+            crate::properties::longhands::${to_rust_ident(first_property)}::SpecifiedValue,
+            ParseError<'i>
+        > {
+            ${parser_function}(c, input)
         };
 
         let first = parse_one(context, input)?;
@@ -1017,26 +979,29 @@
 </%call>
 </%def>
 
-<%def name="four_sides_shorthand(name, sub_property_pattern, parser_function,
-                                 needs_context=True, allow_quirks='No', **kwargs)">
+<%def name="four_sides_shorthand(name, sub_property_pattern,
+                                 parser_function='crate::parser::Parse::parse',
+                                 allow_quirks='No', **kwargs)">
     <% sub_properties=' '.join(sub_property_pattern % side for side in PHYSICAL_SIDES) %>
     <%call expr="self.shorthand(name, sub_properties=sub_properties, **kwargs)">
         #[allow(unused_imports)]
         use crate::parser::Parse;
         use crate::values::generics::rect::Rect;
+        #[allow(unused_imports)]
         use crate::values::specified;
 
-        pub fn parse_value<'i, 't>(
+        fn parse_value<'i, 't>(
             context: &ParserContext,
             input: &mut Parser<'i, 't>,
         ) -> Result<Longhands, ParseError<'i>> {
-            let rect = Rect::parse_with(context, input, |_c, i| {
+            let rect = Rect::parse_with(context, input, |c, i| -> Result<
+                crate::properties::longhands::${to_rust_ident(sub_property_pattern % "top")}::SpecifiedValue,
+                ParseError<'i>
+            > {
             % if allow_quirks != "No":
-                ${parser_function}_quirky(_c, i, specified::AllowQuirks::${allow_quirks})
-            % elif needs_context:
-                ${parser_function}(_c, i)
+                ${parser_function}_quirky(c, i, specified::AllowQuirks::${allow_quirks})
             % else:
-                ${parser_function}(i)
+                ${parser_function}(c, i)
             % endif
             })?;
             Ok(expanded! {

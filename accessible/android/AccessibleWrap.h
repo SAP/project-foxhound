@@ -6,8 +6,8 @@
 #ifndef mozilla_a11y_AccessibleWrap_h_
 #define mozilla_a11y_AccessibleWrap_h_
 
-#include "Accessible.h"
-#include "mozilla/a11y/ProxyAccessible.h"
+#include "LocalAccessible.h"
+#include "mozilla/a11y/RemoteAccessible.h"
 #include "mozilla/java/GeckoBundleWrappers.h"
 #include "mozilla/java/SessionAccessibilityWrappers.h"
 #include "nsCOMPtr.h"
@@ -15,7 +15,7 @@
 namespace mozilla {
 namespace a11y {
 
-class AccessibleWrap : public Accessible {
+class AccessibleWrap : public LocalAccessible {
  public:
   AccessibleWrap(nsIContent* aContent, DocAccessible* aDoc);
   virtual ~AccessibleWrap();
@@ -36,7 +36,7 @@ class AccessibleWrap : public Accessible {
 
   virtual bool GetSelectionBounds(int32_t* aStartOffset, int32_t* aEndOffset);
 
-  virtual void Pivot(int32_t aGranularity, bool aForward, bool aInclusive);
+  virtual void PivotTo(int32_t aGranularity, bool aForward, bool aInclusive);
 
   virtual void ExploreByTouch(float aX, float aY);
 
@@ -63,7 +63,7 @@ class AccessibleWrap : public Accessible {
       const double& aMinVal = UnspecifiedNaN<double>(),
       const double& aMaxVal = UnspecifiedNaN<double>(),
       const double& aStep = UnspecifiedNaN<double>(),
-      nsIPersistentProperties* aAttributes = nullptr);
+      AccAttributes* aAttributes = nullptr);
 
   virtual void WrapperDOMNodeID(nsString& aDOMNodeID);
 
@@ -71,9 +71,6 @@ class AccessibleWrap : public Accessible {
     return mID == kNoID ? java::SessionAccessibility::CLASSNAME_WEBVIEW
                         : GetAndroidClass(WrapperRole());
   }
-
-  static already_AddRefed<nsIPersistentProperties> AttributeArrayToProperties(
-      const nsTArray<Attribute>& aAttributes);
 
   static const int32_t kNoID = -1;
 
@@ -90,7 +87,7 @@ class AccessibleWrap : public Accessible {
 
  private:
   virtual AccessibleWrap* WrapperParent() {
-    return static_cast<AccessibleWrap*>(Parent());
+    return static_cast<AccessibleWrap*>(LocalParent());
   }
 
   virtual bool WrapperRangeInfo(double* aCurVal, double* aMinVal,
@@ -104,15 +101,14 @@ class AccessibleWrap : public Accessible {
 
   void GetSelectionOrCaret(int32_t* aStartOffset, int32_t* aEndOffset);
 
-  static void GetRoleDescription(role aRole,
-                                 nsIPersistentProperties* aAttributes,
+  static void GetRoleDescription(role aRole, AccAttributes* aAttributes,
                                  nsAString& aGeckoRole,
                                  nsAString& aRoleDescription);
 
   static uint32_t GetFlags(role aRole, uint64_t aState, uint8_t aActionCount);
 };
 
-static inline AccessibleWrap* WrapperFor(const ProxyAccessible* aProxy) {
+static inline AccessibleWrap* WrapperFor(const RemoteAccessible* aProxy) {
   return reinterpret_cast<AccessibleWrap*>(aProxy->GetWrapper());
 }
 

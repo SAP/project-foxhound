@@ -9,7 +9,7 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
-XPCOMUtils.defineLazyGetter(this, "DevtoolsStartup", () => {
+XPCOMUtils.defineLazyGetter(this, "DevToolsStartup", () => {
   return Cc["@mozilla.org/devtools/startup-clh;1"].getService(
     Ci.nsICommandLineHandler
   ).wrappedJSObject;
@@ -19,7 +19,7 @@ XPCOMUtils.defineLazyGetter(this, "DevtoolsStartup", () => {
 // our own lazy require.
 XPCOMUtils.defineLazyGetter(this, "Telemetry", function() {
   const { require } = ChromeUtils.import(
-    "resource://devtools/shared/Loader.jsm"
+    "resource://devtools/shared/loader/Loader.jsm"
   );
   // eslint-disable-next-line no-shadow
   const Telemetry = require("devtools/client/shared/telemetry");
@@ -191,6 +191,10 @@ const DevToolsShim = {
     this._gDevTools.restoreDevToolsSession(session);
   },
 
+  isDevToolsUser() {
+    return DevToolsStartup.isDevToolsUser();
+  },
+
   /**
    * Called from nsContextMenu.js in mozilla-central when using the Inspect Accessibility
    * context menu item.
@@ -207,14 +211,14 @@ const DevToolsShim = {
   inspectA11Y: function(tab, domReference) {
     if (!this.isEnabled()) {
       if (!this.isDisabledByPolicy()) {
-        DevtoolsStartup.openInstallPage("ContextMenu");
+        DevToolsStartup.openInstallPage("ContextMenu");
       }
       return Promise.resolve();
     }
 
     // Record the timing at which this event started in order to compute later in
     // gDevTools.showToolbox, the complete time it takes to open the toolbox.
-    // i.e. especially take `DevtoolsStartup.initDevTools` into account.
+    // i.e. especially take `DevToolsStartup.initDevTools` into account.
     const startTime = Cu.now();
 
     this.initDevTools("ContextMenu");
@@ -237,14 +241,14 @@ const DevToolsShim = {
   inspectNode: function(tab, domReference) {
     if (!this.isEnabled()) {
       if (!this.isDisabledByPolicy()) {
-        DevtoolsStartup.openInstallPage("ContextMenu");
+        DevToolsStartup.openInstallPage("ContextMenu");
       }
       return Promise.resolve();
     }
 
     // Record the timing at which this event started in order to compute later in
     // gDevTools.showToolbox, the complete time it takes to open the toolbox.
-    // i.e. especially take `DevtoolsStartup.initDevTools` into account.
+    // i.e. especially take `DevToolsStartup.initDevTools` into account.
     const startTime = Cu.now();
 
     this.initDevTools("ContextMenu");
@@ -264,7 +268,7 @@ const DevToolsShim = {
   /**
    * Initialize DevTools via DevToolsStartup if needed. This method throws if DevTools are
    * not enabled.. If the entry point is supposed to trigger the onboarding, call it
-   * explicitly via DevtoolsStartup.openInstallPage().
+   * explicitly via DevToolsStartup.openInstallPage().
    *
    * @param {String} reason
    *        optional, if provided should be a valid entry point for DEVTOOLS_ENTRY_POINT
@@ -297,7 +301,7 @@ const DevToolsShim = {
     }
 
     if (!this.isInitialized()) {
-      DevtoolsStartup.initDevTools(reason);
+      DevToolsStartup.initDevTools(reason);
     }
   },
 };
@@ -309,14 +313,21 @@ const DevToolsShim = {
  * therefore DevTools should always be available when they are called.
  */
 const webExtensionsMethods = [
-  "createTargetForTab",
-  "createWebExtensionInspectedWindowFront",
-  "getTargetForTab",
+  "createCommandsForTabForWebExtension",
   "getTheme",
   "openBrowserConsole",
 ];
 
-for (const method of webExtensionsMethods) {
+/**
+ * Compatibility layer for other third parties.
+ */
+const otherToolMethods = [
+  // gDevTools.showToolboxForTab is used by wptrunner to start devtools
+  // https://github.com/web-platform-tests/wpt
+  "showToolboxForTab",
+];
+
+for (const method of [...webExtensionsMethods, ...otherToolMethods]) {
   DevToolsShim[method] = function() {
     if (!this.isEnabled()) {
       throw new Error(

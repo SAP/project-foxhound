@@ -5,12 +5,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/KeyboardEvent.h"
+
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
+#include "nsIPrincipal.h"
+#include "nsRFPService.h"
 #include "prtime.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 KeyboardEvent::KeyboardEvent(EventTarget* aOwner, nsPresContext* aPresContext,
                              WidgetKeyboardEvent* aEvent)
@@ -245,9 +249,7 @@ uint32_t KeyboardEvent::Which(CallerType aCallerType) {
 
   switch (mEvent->mMessage) {
     case eKeyDown:
-    case eKeyDownOnPlugin:
     case eKeyUp:
-    case eKeyUpOnPlugin:
       return KeyCode(aCallerType);
     case eKeyPress:
       // Special case for 4xp bug 62878.  Try to make value of which
@@ -310,6 +312,18 @@ void KeyboardEvent::InitWithKeyboardEventInit(EventTarget* aOwner,
   }
 }
 
+// static
+bool KeyboardEvent::IsInitKeyEventAvailable(JSContext* aCx, JSObject*) {
+  if (StaticPrefs::dom_keyboardevent_init_key_event_enabled()) {
+    return true;
+  }
+  if (!StaticPrefs::dom_keyboardevent_init_key_event_enabled_in_addons()) {
+    return false;
+  }
+  nsIPrincipal* principal = nsContentUtils::SubjectPrincipal(aCx);
+  return principal && principal->GetIsAddonOrExpandedAddonPrincipal();
+}
+
 void KeyboardEvent::InitKeyEventJS(const nsAString& aType, bool aCanBubble,
                                    bool aCancelable, nsGlobalWindowInner* aView,
                                    bool aCtrlKey, bool aAltKey, bool aShiftKey,
@@ -362,7 +376,7 @@ bool KeyboardEvent::ShouldResistFingerprinting(CallerType aCallerType) {
 
   nsCOMPtr<Document> doc = GetDocument();
 
-  return doc && !nsContentUtils::IsChromeDoc(doc);
+  return nsContentUtils::ShouldResistFingerprinting(doc);
 }
 
 bool KeyboardEvent::GetSpoofedModifierStates(const Modifiers aModifierKey,
@@ -378,8 +392,7 @@ bool KeyboardEvent::GetSpoofedModifierStates(const Modifiers aModifierKey,
   return aRawModifierState;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 using namespace mozilla;
 using namespace mozilla::dom;

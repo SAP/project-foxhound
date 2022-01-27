@@ -3,23 +3,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 :root {
-  --toolbarbutton-hover-transition-duration: 150ms;
-
+  --toolbar-start-end-padding: 8px;
   --toolbarbutton-outer-padding: 2px;
-  --toolbarbutton-inner-padding: 6px;
+  --toolbarbutton-inner-padding: 8px;
 
-  --toolbarbutton-focus-outline: 2px solid currentColor;
+  --toolbarbutton-hover-background: var(--button-hover-bgcolor);
+  --toolbarbutton-active-background: var(--button-active-bgcolor);
 
-  /* These hover and active colors should work on both light and dark
-     backgrounds. We'll later set colors that cater for light and dark
-     backgrounds specifically when we can detect them. */
-  --toolbarbutton-hover-background: var(--lwt-toolbarbutton-hover-background, hsla(0,0%,70%,.4));
-  --toolbarbutton-active-background: var(--lwt-toolbarbutton-active-background, hsla(0,0%,70%,.6));
+  --toolbarseparator-color: color-mix(in srgb, currentColor 20%, transparent);
 
-  --backbutton-background: hsla(0,100%,100%,.8);
-  --backbutton-hover-background: var(--backbutton-background);
-  --backbutton-active-background: var(--toolbarbutton-active-background);
-  --backbutton-border-color: hsla(240,5%,5%,.3);
+  --bookmark-block-padding: 4px;
 
   /* This default value of --toolbarbutton-height is defined to prevent
      CSS errors for an invalid variable. The value should not get used,
@@ -27,30 +20,25 @@
   --toolbarbutton-height: 0;
 }
 
+:root {
+  --toolbarbutton-focus-outline: var(--focus-outline);
+}
+
 :root[uidensity=compact] {
-  --toolbarbutton-outer-padding: 1px;
+  --toolbarbutton-outer-padding: 3px;
+  --toolbarbutton-inner-padding: 6px;
+  --bookmark-block-padding: 1px;
 }
 
 :root[uidensity=touch] {
   --toolbarbutton-inner-padding: 9px;
+  --bookmark-block-padding: 7px;
 }
 
-/* We use :-moz-lwtheme-* for toolbarbuttons that aren't inside a toolbar, and
-   [brighttext] to cater for OS themes where :-moz-lwtheme-* doesn't apply. */
-:root:-moz-lwtheme-darktext,
-toolbar:not([brighttext]) {
-  --toolbarbutton-hover-background: var(--lwt-toolbarbutton-hover-background, hsla(240,5%,5%,.1));
-  --toolbarbutton-active-background: var(--lwt-toolbarbutton-active-background, hsla(240,5%,5%,.15));
-}
-
-:root:-moz-lwtheme-brighttext,
-toolbar[brighttext] {
-  --toolbarbutton-hover-background: var(--lwt-toolbarbutton-hover-background, hsla(0,0%,70%,.4));
-  --toolbarbutton-active-background: var(--lwt-toolbarbutton-active-background, hsla(0,0%,70%,.6));
-
-  --backbutton-background: var(--toolbarbutton-hover-background);
-  --backbutton-hover-background: var(--toolbarbutton-active-background);
-  --backbutton-active-background: hsla(0,0%,100%,.4);
+#TabsToolbar {
+  /* Override the inner padding to ensure the dimensions match the tabs, but also making sure
+     different types of buttons (combined-buttons-dropmarker or text) still look correct. */
+  --toolbarbutton-inner-padding: calc((var(--tab-min-height) - 16px) / 2);
 }
 
 /* ::::: primary toolbar buttons ::::: */
@@ -73,16 +61,8 @@ toolbar[brighttext] {
   width: 16px;
 }
 
-#TabsToolbar .toolbarbutton-1,
-#tabbrowser-arrowscrollbox::part(scrollbutton-up),
-#tabbrowser-arrowscrollbox::part(scrollbutton-down) {
-  margin: 0 0 var(--tabs-navbar-shadow-size) !important;
-}
-
-#tabbrowser-arrowscrollbox::part(scrollbutton-up),
-#tabbrowser-arrowscrollbox::part(scrollbutton-down) {
-  appearance: none;
-  padding: 0 var(--toolbarbutton-inner-padding) !important;
+.toolbarbutton-combined-buttons-dropmarker > .toolbarbutton-icon {
+  width: 12px;
 }
 
 #navigator-toolbox:not(:hover) #tabbrowser-arrowscrollbox:not([highlight])::part(scrollbutton-down) {
@@ -90,12 +70,7 @@ toolbar[brighttext] {
 }
 
 #tabbrowser-arrowscrollbox[highlight]::part(scrollbutton-down) {
-  background-color: Highlight;
-}
-
-.findbar-button {
-  appearance: none;
-  color: inherit;
+  background-color: SelectedItem;
 }
 
 toolbar .toolbarbutton-1 {
@@ -105,20 +80,29 @@ toolbar .toolbarbutton-1 {
   -moz-box-pack: center;
 }
 
-:root:not([uidensity=compact]) #PanelUI-button {
-  padding-inline-start: 5px;
+#TabsToolbar .toolbarbutton-1 {
+  margin: 0 0 var(--tabs-navbar-shadow-size) !important;
 }
 
-:root:not([uidensity=compact]) #PanelUI-menu-button {
-  padding-inline-end: 5px;
+#tabbrowser-arrowscrollbox::part(scrollbutton-up),
+#tabbrowser-arrowscrollbox::part(scrollbutton-down) {
+  appearance: none;
+  background-clip: padding-box;
+  border: 4px solid transparent;
+  border-radius: calc(var(--tab-border-radius) + 4px);
+  margin: 0;
+  padding: var(--toolbarbutton-inner-padding) calc(var(--toolbarbutton-inner-padding) - 6px);
+}
+
+/*** Adds padding to end of toolbar while making that space click the first button ***/
+#PanelUI-menu-button {
+  padding-inline-end: var(--toolbar-start-end-padding);
 }
 
 toolbar .toolbarbutton-1 > menupopup {
   margin-top: -3px;
 }
 
-.findbar-button,
-toolbarbutton.bookmark-item:not(.subviewbutton),
 toolbar .toolbarbutton-1 > .toolbarbutton-icon,
 toolbar .toolbarbutton-1 > .toolbarbutton-text,
 toolbar .toolbarbutton-1 > .toolbarbutton-badge-stack {
@@ -126,10 +110,23 @@ toolbar .toolbarbutton-1 > .toolbarbutton-badge-stack {
   border-radius: var(--toolbarbutton-border-radius);
 }
 
+#TabsToolbar .toolbarbutton-1 > .toolbarbutton-icon,
+#TabsToolbar .toolbarbutton-1 > .toolbarbutton-text,
+#TabsToolbar .toolbarbutton-1 > .toolbarbutton-badge-stack {
+  border-radius: var(--tab-border-radius);
+}
+
 toolbar .toolbarbutton-1 > .toolbarbutton-icon {
   /* horizontal padding + actual icon width */
   width: calc(2 * var(--toolbarbutton-inner-padding) + 16px);
   height: calc(2 * var(--toolbarbutton-inner-padding) + 16px);
+}
+
+toolbar .toolbarbutton-combined-buttons-dropmarker > .toolbarbutton-icon {
+  /* same height as regular buttons, but narrower, and for a 12x12 image */
+  padding-inline: 2px;
+  padding-block: calc(var(--toolbarbutton-inner-padding) + (16px - 12px) / 2);
+  width: calc(2 * 2px + 12px);
 }
 
 toolbar .toolbarbutton-1 > .toolbarbutton-text {
@@ -167,37 +164,31 @@ toolbar[brighttext] .toolbaritem-combined-buttons > separator {
   opacity: .3;
 }
 
-#PersonalToolbar .toolbarbutton-1:not([disabled=true]):not([checked]):not([open]):not(:active):hover,
+#PersonalToolbar .toolbarbutton-1:not([disabled=true], [checked], [open], :active):hover,
 #tabbrowser-arrowscrollbox:not([scrolledtostart=true])::part(scrollbutton-up):hover,
 #tabbrowser-arrowscrollbox:not([scrolledtoend=true])::part(scrollbutton-down):hover,
-.findbar-button:not(:-moz-any([checked="true"],[disabled="true"])):hover,
-toolbarbutton.bookmark-item:not(.subviewbutton):hover:not([disabled="true"]):not([open]),
-toolbar .toolbarbutton-1:not([disabled=true]):not([checked]):not([open]):not(:active):hover > .toolbarbutton-icon,
-toolbar .toolbarbutton-1:not([disabled=true]):not([checked]):not([open]):not(:active):hover > .toolbarbutton-text,
-toolbar .toolbarbutton-1:not([disabled=true]):not([checked]):not([open]):not(:active):hover > .toolbarbutton-badge-stack {
+toolbarbutton.bookmark-item:not(.subviewbutton, [disabled=true], [open]):hover,
+toolbar .toolbarbutton-1:not([disabled=true], [checked], [open], :active):hover > .toolbarbutton-icon,
+toolbar .toolbarbutton-1:not([disabled=true], [checked], [open], :active):hover > .toolbarbutton-text,
+toolbar .toolbarbutton-1:not([disabled=true], [checked], [open], :active):hover > .toolbarbutton-badge-stack {
   background-color: var(--toolbarbutton-hover-background);
   color: inherit;
 }
 
-#PersonalToolbar .toolbarbutton-1:not([disabled=true]):-moz-any([open],[checked],:hover:active),
-.findbar-button:not([disabled=true]):-moz-any([checked="true"],:hover:active),
-toolbarbutton.bookmark-item:not(.subviewbutton):hover:active:not([disabled="true"]),
+#PersonalToolbar .toolbarbutton-1:not([disabled=true]):is([open],[checked],:hover:active),
+#tabbrowser-arrowscrollbox:not([scrolledtostart=true])::part(scrollbutton-up):hover:active,
+#tabbrowser-arrowscrollbox:not([scrolledtoend=true])::part(scrollbutton-down):hover:active,
+toolbarbutton.bookmark-item:hover:active:not(.subviewbutton, [disabled="true"]),
 toolbarbutton.bookmark-item[open="true"],
-toolbar .toolbarbutton-1:not([disabled=true]):-moz-any([open],[checked],:hover:active) > .toolbarbutton-icon,
-toolbar .toolbarbutton-1:not([disabled=true]):-moz-any([open],[checked],:hover:active) > .toolbarbutton-text,
-toolbar .toolbarbutton-1:not([disabled=true]):-moz-any([open],[checked],:hover:active) > .toolbarbutton-badge-stack {
+toolbar .toolbarbutton-1:not([disabled=true]):is([open],[checked],:hover:active) > .toolbarbutton-icon,
+toolbar .toolbarbutton-1:not([disabled=true]):is([open],[checked],:hover:active) > .toolbarbutton-text,
+toolbar .toolbarbutton-1:not([disabled=true]):is([open],[checked],:hover:active) > .toolbarbutton-badge-stack {
   background-color: var(--toolbarbutton-active-background);
   color: inherit;
 }
 
-toolbar .toolbarbutton-1[checked]:not(:active):hover > .toolbarbutton-icon {
-  background-color: var(--toolbarbutton-hover-background);
-  transition: background-color .4s;
-}
-
 /* Keyboard focus styling */
 #PersonalToolbar .toolbarbutton-1:-moz-focusring,
-.findbar-button:-moz-focusring,
 findbar toolbarbutton.tabbable:-moz-focusring,
 toolbarbutton.bookmark-item:not(.subviewbutton):-moz-focusring,
 toolbar:not(#PersonalToolbar) .toolbarbutton-1:-moz-focusring > .toolbarbutton-icon,
@@ -205,16 +196,14 @@ toolbar:not(#PersonalToolbar) .toolbarbutton-1:-moz-focusring > .toolbarbutton-t
 toolbar:not(#PersonalToolbar) .toolbarbutton-1:-moz-focusring > .toolbarbutton-badge-stack {
   color: inherit;
   outline: var(--toolbarbutton-focus-outline);
-  -moz-outline-radius: var(--toolbarbutton-border-radius);
-  outline-offset: unset;
+  outline-offset: calc(var(--focus-outline-width) * -1);
 }
 
-:root[uidensity=compact] .findbar-button:-moz-focusring,
 :root[uidensity=compact] findbar toolbarbutton.tabbable:-moz-focusring,
 :root[uidensity=compact] toolbar:not(#PersonalToolbar) .toolbarbutton-1:-moz-focusring > .toolbarbutton-icon,
 :root[uidensity=compact] toolbar:not(#PersonalToolbar) .toolbarbutton-1:-moz-focusring > .toolbarbutton-text,
 :root[uidensity=compact] toolbar:not(#PersonalToolbar) .toolbarbutton-1:-moz-focusring > .toolbarbutton-badge-stack {
-  outline-offset: -1px;
+  outline-offset: calc(var(--focus-outline-width) * -1 - 1px);
 }
 
 #PersonalToolbar .toolbarbutton-1:-moz-focusring,
@@ -224,66 +213,6 @@ toolbarbutton.bookmark-item:not(.subviewbutton):-moz-focusring {
 
 toolbar .toolbarbutton-1:-moz-focusring {
   outline: none;
-}
-
-:root:not([uidensity=compact]) #back-button {
-  padding-block: 3px;
-  padding-inline: 3px 0;
-  position: relative !important;
-  z-index: 1 !important;
-  border-radius: 0 10000px 10000px 0;
-}
-
-:root:not([uidensity=compact]) #back-button:-moz-locale-dir(rtl) {
-  border-radius: 10000px 0 0 10000px;
-}
-
-#back-button > menupopup {
-  margin-top: -1px !important;
-}
-
-:root:not([uidensity=compact]) #back-button > .toolbarbutton-icon {
-  background-color: var(--backbutton-background);
-  background-origin: padding-box;
-  background-clip: padding-box;
-  border: 1px solid var(--backbutton-border-color);
-  border-radius: 10000px;
-  width: 34px;
-  height: 34px;
-  padding: 8px;
-  transition-property: box-shadow;
-  transition-duration: var(--toolbarbutton-hover-transition-duration);
-}
-
-:root:not([uidensity=compact]) #back-button:-moz-focusring > .toolbarbutton-icon {
-  -moz-outline-radius: 10000px;
-}
-
-:root[uidensity=touch] #back-button:-moz-focusring > .toolbarbutton-icon {
-  outline-offset: -2px;
-}
-
-:root[uidensity=touch] #back-button {
-  padding-block: 1px;
-  padding-inline-start: 1px;
-}
-
-:root[uidensity=touch] #back-button > .toolbarbutton-icon {
-  width: 38px;
-  height: 38px;
-  padding: 10px;
-}
-
-:root:not([uidensity=compact]) #back-button:not([disabled]):not([open]):hover > .toolbarbutton-icon {
-  background-color: var(--backbutton-hover-background) !important;
-  box-shadow: 0 1px 6px hsla(0,0%,0%,.1);
-  border-color: hsla(240,5%,5%,.35);
-}
-
-:root:not([uidensity=compact]) #back-button[open] > .toolbarbutton-icon,
-:root:not([uidensity=compact]) #back-button:not([disabled]):hover:active > .toolbarbutton-icon {
-  background-color: var(--backbutton-active-background) !important;
-  border-color: hsla(240,5%,5%,.40);
 }
 
 /* bookmarks menu button */
@@ -300,20 +229,34 @@ toolbar .toolbarbutton-1:-moz-focusring {
 
 /* ::::: bookmark buttons ::::: */
 
+#personal-toolbar-empty-description,
+#PersonalToolbar .toolbarbutton-1,
+toolbarbutton.bookmark-item:not(.subviewbutton) {
+  margin: 2px;
+  padding: var(--bookmark-block-padding) 4px;
+}
+
+#PersonalToolbar .toolbarbutton-1,
+toolbarbutton.bookmark-item:not(.subviewbutton) {
+  border-radius: var(--toolbarbutton-border-radius);
+}
+
+:root[uidensity=compact] #PersonalToolbar .toolbarbutton-1,
+:root[uidensity=compact] toolbarbutton.bookmark-item:not(.subviewbutton) {
+  margin-inline: 1px;
+}
+
 toolbarbutton.bookmark-item:not(.subviewbutton) {
   max-width: 13em;
-  margin: 0 2px;
-  padding: 4px;
   appearance: none;
 }
 
-:root[uidensity=compact] toolbarbutton.bookmark-item:not(.subviewbutton) {
-  margin-inline: 1px;
-  padding-block: 1px;
-}
-
-:root[uidensity=touch] toolbarbutton.bookmark-item:not(.subviewbutton) {
-  padding-block: 7px;
+/**
+ * Ensure that the description is always at least as big as a bookmarks item,
+ * where its icon is 16px (which may be more than inline text height);
+ */
+#personal-toolbar-empty-description {
+  min-height: calc(16px + 2 * var(--bookmark-block-padding));
 }
 
 #bookmarks-toolbar-placeholder {
@@ -327,7 +270,8 @@ toolbarbutton.bookmark-item:not(.subviewbutton) {
   height: 16px;
 }
 
-/* Force the display of the label for bookmarks */
+/* Force the display of the label for bookmarks and the import button */
+#PersonalToolbar #import-button > .toolbarbutton-text,
 .bookmark-item > .toolbarbutton-text {
   display: -moz-box !important;
 }
@@ -336,9 +280,50 @@ toolbarbutton.bookmark-item:not(.subviewbutton) {
   margin-inline-end: 0;
 }
 
+#managed-bookmarks > .toolbarbutton-icon,
 #bookmarks-toolbar-placeholder > .toolbarbutton-icon,
-#PlacesToolbarItems > .bookmark-item > .toolbarbutton-icon[label]:not([label=""]) {
+#PlacesToolbarItems > .bookmark-item > .toolbarbutton-icon[label]:not([label=""]),
+#OtherBookmarks.bookmark-item[container] > .toolbarbutton-icon {
   margin-inline-end: 4px;
+}
+
+/* Import button styling in the bookmarks toolbar */
+
+#PersonalToolbar #import-button > .toolbarbutton-text {
+  min-height: unset; /* override the .toolbarbutton-1 .toolbarbutton-text rule */
+}
+
+#PersonalToolbar #import-button > .toolbarbutton-icon {
+  margin-inline-end: 4px !important; /* Overrides the styling for .toolbarbutton-1 */
+}
+
+/* Separators */
+
+/* Override the toolkit styles, and make sure separators are draggable by
+ * making them wider, and using a pseudo-element for the visual separator. */
+#PlacesToolbarItems > toolbarseparator {
+  margin: 0;
+  padding-inline: 4px;
+  appearance: none;
+}
+
+/* When adjacent to the bookmarks items, give the bookmarks items a leading separator. */
+#PlacesToolbarItems > toolbarseparator::before {
+  content: "";
+  display: block;
+  border-inline-start: 1px solid;
+  border-image-source: linear-gradient(
+    transparent 3.75px,
+    var(--toolbarseparator-color) 3.75px,
+    var(--toolbarseparator-color) calc(100% - 3.75px),
+    transparent calc(100% - 3.75px) );
+  border-image-slice: 1;
+}
+
+@media (min-resolution: 2dppx) {
+  #PlacesToolbarItems > toolbarseparator::before {
+    border-inline-start-width: 0.5px;
+  }
 }
 
 /* The bookmarks toolbar is smaller than the other toolbars, so we
@@ -369,11 +354,6 @@ toolbarbutton.bookmark-item:not(.subviewbutton) {
   min-height: 16px;
 }
 
-#PersonalToolbar .toolbarbutton-1 {
-  padding: 1px var(--toolbarbutton-inner-padding);
-  border-radius: var(--toolbarbutton-border-radius);
-}
-
 /* Alternative style for .toolbarbutton-badge used by CFR notifications */
 .toolbarbutton-badge.feature-callout {
   width: 14px;
@@ -385,5 +365,5 @@ toolbarbutton.bookmark-item:not(.subviewbutton) {
   display: block;
   margin: -7px 0 0 !important;
   margin-inline-end: -6px !important;
-  background: url(chrome://browser/skin/badge-blue.svg);
+  background: url(chrome://global/skin/icons/badge-blue.svg);
 }

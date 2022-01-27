@@ -51,7 +51,7 @@ add_task(async function testTabSwitchContext() {
     },
 
     getTests: function(tabs) {
-      let defaultIcon = "chrome://browser/content/extension.svg";
+      let defaultIcon = "chrome://mozapps/skin/extensions/extensionGeneric.svg";
       let details = [
         {
           icon: browser.runtime.getURL("default.png"),
@@ -345,11 +345,11 @@ add_task(async function testNavigationClearsData() {
   let default_title = "Default title";
   let tab_title = "Tab title";
 
-  let {
+  const {
     Management: {
       global: { tabTracker },
     },
-  } = ChromeUtils.import("resource://gre/modules/Extension.jsm", null);
+  } = ChromeUtils.import("resource://gre/modules/Extension.jsm");
   let extension,
     tabs = [];
   async function addTab(...args) {

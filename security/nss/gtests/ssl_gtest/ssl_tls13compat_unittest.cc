@@ -214,6 +214,29 @@ TEST_F(Tls13CompatTest, EnabledHrrZeroRtt) {
   CheckForCompatHandshake();
 }
 
+TEST_F(Tls13CompatTest, EnabledAcceptedEch) {
+  EnsureTlsSetup();
+  SetupEch(client_, server_);
+  EnableCompatMode();
+  InstallFilters();
+  Connect();
+  CheckForCompatHandshake();
+}
+
+TEST_F(Tls13CompatTest, EnabledRejectedEch) {
+  EnsureTlsSetup();
+  // Configure ECH on the client only, and expect CCS.
+  SetupEch(client_, server_, HpkeDhKemX25519Sha256, false, true, false);
+  EnableCompatMode();
+  InstallFilters();
+  ExpectAlert(client_, kTlsAlertEchRequired);
+  ConnectExpectFailOneSide(TlsAgent::CLIENT);
+  client_->CheckErrorCode(SSL_ERROR_ECH_RETRY_WITHOUT_ECH);
+  CheckForCompatHandshake();
+  // Reset expectations for the TlsAgent dtor.
+  server_->ExpectReceiveAlert(kTlsAlertCloseNotify, kTlsAlertWarning);
+}
+
 class TlsSessionIDEchoFilter : public TlsHandshakeFilter {
  public:
   TlsSessionIDEchoFilter(const std::shared_ptr<TlsAgent>& a)
@@ -346,6 +369,85 @@ TEST_F(TlsConnectStreamTls13, ChangeCipherSpecBeforeClientHelloTwice) {
   ConnectExpectAlert(server_, kTlsAlertUnexpectedMessage);
   server_->CheckErrorCode(SSL_ERROR_RX_UNEXPECTED_CHANGE_CIPHER);
   client_->CheckErrorCode(SSL_ERROR_HANDSHAKE_UNEXPECTED_ALERT);
+}
+
+// The server accepts a ChangeCipherSpec even if the client advertises
+// an empty session ID.
+TEST_F(TlsConnectStreamTls13, ChangeCipherSpecAfterClientHelloEmptySid) {
+  EnsureTlsSetup();
+  ConfigureVersion(SSL_LIBRARY_VERSION_TLS_1_3);
+
+  StartConnect();
+  client_->Handshake();  // Send ClientHello
+  client_->SendDirect(DataBuffer(kCannedCcs, sizeof(kCannedCcs)));  // Send CCS
+
+  Handshake();
+  CheckConnected();
+}
+
+// The server rejects multiple ChangeCipherSpec even if the client
+// indicates compatibility mode with non-empty session ID.
+TEST_F(Tls13CompatTest, ChangeCipherSpecAfterClientHelloTwice) {
+  EnsureTlsSetup();
+  ConfigureVersion(SSL_LIBRARY_VERSION_TLS_1_3);
+  EnableCompatMode();
+
+  StartConnect();
+  client_->Handshake();  // Send ClientHello
+  // Send CCS twice in a row
+  client_->SendDirect(DataBuffer(kCannedCcs, sizeof(kCannedCcs)));
+  client_->SendDirect(DataBuffer(kCannedCcs, sizeof(kCannedCcs)));
+
+  server_->ExpectSendAlert(kTlsAlertUnexpectedMessage);
+  server_->Handshake();  // Consume ClientHello and CCS.
+  server_->CheckErrorCode(SSL_ERROR_RX_MALFORMED_CHANGE_CIPHER);
+}
+
+// The client accepts a ChangeCipherSpec even if it advertises an empty
+// session ID.
+TEST_F(TlsConnectStreamTls13, ChangeCipherSpecAfterServerHelloEmptySid) {
+  EnsureTlsSetup();
+  ConfigureVersion(SSL_LIBRARY_VERSION_TLS_1_3);
+
+  // To replace Finished with a CCS below
+  auto filter = MakeTlsFilter<TlsHandshakeDropper>(server_);
+  filter->SetHandshakeTypes({kTlsHandshakeFinished});
+  filter->EnableDecryption();
+
+  StartConnect();
+  client_->Handshake();  // Send ClientHello
+  server_->Handshake();  // Consume ClientHello, and
+                         // send ServerHello..CertificateVerify
+  // Send CCS
+  server_->SendDirect(DataBuffer(kCannedCcs, sizeof(kCannedCcs)));
+
+  // No alert is sent from the client. As Finished is dropped, we
+  // can't use Handshake() and CheckConnected().
+  client_->Handshake();
+}
+
+// The client rejects multiple ChangeCipherSpec in a row even if the
+// client indicates compatibility mode with non-empty session ID.
+TEST_F(Tls13CompatTest, ChangeCipherSpecAfterServerHelloTwice) {
+  EnsureTlsSetup();
+  ConfigureVersion(SSL_LIBRARY_VERSION_TLS_1_3);
+  EnableCompatMode();
+
+  // To replace Finished with a CCS below
+  auto filter = MakeTlsFilter<TlsHandshakeDropper>(server_);
+  filter->SetHandshakeTypes({kTlsHandshakeFinished});
+  filter->EnableDecryption();
+
+  StartConnect();
+  client_->Handshake();  // Send ClientHello
+  server_->Handshake();  // Consume ClientHello, and
+                         // send ServerHello..CertificateVerify
+                         // the ServerHello is followed by CCS
+  // Send another CCS
+  server_->SendDirect(DataBuffer(kCannedCcs, sizeof(kCannedCcs)));
+  client_->ExpectSendAlert(kTlsAlertUnexpectedMessage);
+  client_->Handshake();  // Consume ClientHello and CCS
+  client_->CheckErrorCode(SSL_ERROR_RX_MALFORMED_CHANGE_CIPHER);
 }
 
 // If we negotiate 1.2, we abort.

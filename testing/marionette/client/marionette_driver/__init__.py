@@ -4,7 +4,7 @@
 
 from __future__ import absolute_import
 
-__version__ = '3.1.0'
+__version__ = "3.1.0"
 
 from marionette_driver import (
     addons,
@@ -14,7 +14,6 @@ from marionette_driver import (
     errors,
     expected,
     geckoinstance,
-    gestures,
     keys,
     localization,
     marionette,
@@ -22,5 +21,4 @@ from marionette_driver import (
 )
 from marionette_driver.by import By
 from marionette_driver.date_time_value import DateTimeValue
-from marionette_driver.gestures import smooth_scroll, pinch
 from marionette_driver.wait import Wait

@@ -9,8 +9,7 @@
 #include "mozilla/Base64.h"
 #include "mozilla/dom/UnionTypes.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 uint8_t* CryptoBuffer::Assign(const CryptoBuffer& aData) {
   // Same as in nsTArray_Impl::operator=, but return the value
@@ -51,7 +50,8 @@ uint8_t* CryptoBuffer::Assign(const ArrayBufferView& aData) {
 uint8_t* CryptoBuffer::Assign(const ArrayBufferViewOrArrayBuffer& aData) {
   if (aData.IsArrayBufferView()) {
     return Assign(aData.GetAsArrayBufferView());
-  } else if (aData.IsArrayBuffer()) {
+  }
+  if (aData.IsArrayBuffer()) {
     return Assign(aData.GetAsArrayBuffer());
   }
 
@@ -64,7 +64,8 @@ uint8_t* CryptoBuffer::Assign(const ArrayBufferViewOrArrayBuffer& aData) {
 uint8_t* CryptoBuffer::Assign(const OwningArrayBufferViewOrArrayBuffer& aData) {
   if (aData.IsArrayBufferView()) {
     return Assign(aData.GetAsArrayBufferView());
-  } else if (aData.IsArrayBuffer()) {
+  }
+  if (aData.IsArrayBuffer()) {
     return Assign(aData.GetAsArrayBuffer());
   }
 
@@ -169,5 +170,4 @@ bool CryptoBuffer::GetBigIntValue(unsigned long& aRetVal) {
   return true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

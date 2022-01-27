@@ -14,12 +14,15 @@
 #include "ProfilerParent.h"
 #include "js/Array.h"  // JS::NewArrayObject
 #include "js/JSON.h"
+#include "js/PropertyAndElement.h"  // JS_SetElement
 #include "js/Value.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/Services.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/TypedArray.h"
+#include "mozilla/Preferences.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIFileStreams.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -85,7 +88,10 @@ nsProfiler::Observe(nsISupports* aSubject, const char* aTopic,
     if (loadContext && loadContext->UsePrivateBrowsing() &&
         !mLockedForPrivateBrowsing) {
       mLockedForPrivateBrowsing = true;
-      profiler_stop();
+      // Allow profiling tests that trigger private browsing.
+      if (!xpc::IsInAutomation()) {
+        profiler_stop();
+      }
     }
   } else if (strcmp(aTopic, "last-pb-context-exited") == 0) {
     mLockedForPrivateBrowsing = false;
@@ -114,7 +120,7 @@ NS_IMETHODIMP
 nsProfiler::StartProfiler(uint32_t aEntries, double aInterval,
                           const nsTArray<nsCString>& aFeatures,
                           const nsTArray<nsCString>& aFilters,
-                          uint64_t aActiveBrowsingContextID, double aDuration) {
+                          uint64_t aActiveTabID, double aDuration) {
   if (mLockedForPrivateBrowsing) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -137,7 +143,7 @@ nsProfiler::StartProfiler(uint32_t aEntries, double aInterval,
   }
   profiler_start(PowerOfTwo32(aEntries), aInterval, features,
                  filterStringVector.begin(), filterStringVector.length(),
-                 aActiveBrowsingContextID, duration);
+                 aActiveTabID, duration);
 
   return NS_OK;
 }
@@ -184,12 +190,6 @@ nsProfiler::PauseSampling() {
 NS_IMETHODIMP
 nsProfiler::ResumeSampling() {
   profiler_resume_sampling();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsProfiler::AddMarker(const char* aMarker) {
-  PROFILER_ADD_MARKER(aMarker, OTHER);
   return NS_OK;
 }
 
@@ -288,12 +288,8 @@ struct StringWriteFunc : public JSONWriteFunc {
   nsAString& mBuffer;  // This struct must not outlive this buffer
   explicit StringWriteFunc(nsAString& buffer) : mBuffer(buffer) {}
 
-  void Write(const char* aStr) override {
-    mBuffer.Append(NS_ConvertUTF8toUTF16(aStr));
-  }
-
-  void Write(const char* aStr, size_t aLen) override {
-    mBuffer.Append(NS_ConvertUTF8toUTF16(aStr, aLen));
+  void Write(const Span<const char>& aStr) override {
+    mBuffer.Append(NS_ConvertUTF8toUTF16(aStr.data(), aStr.size()));
   }
 };
 }  // namespace
@@ -813,7 +809,8 @@ void nsProfiler::GatheredOOPProfile(const nsACString& aProfile) {
                      "Should always have a writer if mGathering is true");
 
   if (!aProfile.IsEmpty()) {
-    mWriter->Splice(PromiseFlatCString(aProfile).get());
+    // TODO: Remove PromiseFlatCString, see bug 1657033.
+    mWriter->Splice(PromiseFlatCString(aProfile));
   }
 
   mPendingProfiles--;
@@ -838,11 +835,6 @@ void nsProfiler::GatheredOOPProfile(const nsACString& aProfile) {
           GetMainThreadSerialEventTarget());
     }
   }
-}
-
-void nsProfiler::ReceiveShutdownProfile(const nsCString& aProfile) {
-  MOZ_RELEASE_ASSERT(NS_IsMainThread());
-  profiler_received_exit_profile(aProfile);
 }
 
 RefPtr<nsProfiler::GatheringPromise> nsProfiler::StartGathering(
@@ -873,7 +865,7 @@ RefPtr<nsProfiler::GatheringPromise> nsProfiler::StartGathering(
 
   mWriter.emplace();
 
-  TimeStamp streamingStart = TimeStamp::NowUnfuzzed();
+  TimeStamp streamingStart = TimeStamp::Now();
 
   UniquePtr<ProfilerCodeAddressService> service =
       profiler_code_address_service_for_presymbolication();
@@ -896,7 +888,7 @@ RefPtr<nsProfiler::GatheringPromise> nsProfiler::StartGathering(
   Vector<nsCString> exitProfiles = profiler_move_exit_profiles();
   for (auto& exitProfile : exitProfiles) {
     if (!exitProfile.IsEmpty()) {
-      mWriter->Splice(exitProfile.get());
+      mWriter->Splice(exitProfile);
     }
   }
 
@@ -912,14 +904,33 @@ RefPtr<nsProfiler::GatheringPromise> nsProfiler::StartGathering(
   if (mPendingProfiles != 0) {
     // There *are* pending profiles, let's add handlers for their promises.
 
-    // We know how long it took this parent process to stream its profile, give
-    // the slowest child twice as long, plus a bit more. (The timer will be
-    // restarted after each response.)
+    // We want a reasonable timeout value while waiting for child profiles.
+    // We know how long the parent process took to serialize its profile:
+    const uint32_t parentTimeMs = static_cast<uint32_t>(
+        (TimeStamp::Now() - streamingStart).ToMilliseconds());
+    // We will multiply this by the number of children, to cover the worst case
+    // where all processes take the same time, but because they are working in
+    // parallel on a potential single CPU, they all finish around the same later
+    // time.
+    // And multiply again by 2, for the extra processing and comms, and other
+    // work that may happen.
+    const uint32_t parentToChildrenFactor = mPendingProfiles * 2;
+    // And we add a number seconds by default. In some lopsided cases, the
+    // parent-to-child serializing ratio could be much greater than expected,
+    // so the user could force it to be a bigger number if needed.
+    uint32_t childTimeoutS = Preferences::GetUint(
+        "devtools.performance.recording.child.timeout_s", 0u);
+    if (childTimeoutS == 0) {
+      // If absent or 0, use hard-coded default.
+      childTimeoutS = 1;
+    }
+    // And this gives us a timeout value. The timer will be restarted after we
+    // receive each response.
+    // TODO: Instead of a timeout to cover the whole request-to-response time,
+    // there should be more of a continuous dialog between processes, to only
+    // give up if some processes are really unresponsive. See bug 1673513.
     const uint32_t streamingTimeoutMs =
-        static_cast<uint32_t>(
-            (TimeStamp::NowUnfuzzed() - streamingStart).ToMilliseconds()) *
-            2 +
-        1000;
+        parentTimeMs * parentToChildrenFactor + childTimeoutS * 1000;
     Unused << NS_NewTimerWithFuncCallback(
         getter_AddRefs(mGatheringTimer), GatheringTimerCallback, this,
         streamingTimeoutMs, nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY, "",
@@ -997,7 +1008,7 @@ void nsProfiler::FinishGathering() {
   // Close the root object of the generated JSON.
   mWriter->End();
 
-  UniquePtr<char[]> buf = mWriter->WriteFunc()->CopyData();
+  UniquePtr<char[]> buf = mWriter->ChunkedWriteFunc().CopyData();
   size_t len = strlen(buf.get());
   nsCString result;
   result.Adopt(buf.release(), len);

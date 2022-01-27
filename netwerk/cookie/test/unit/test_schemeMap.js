@@ -5,13 +5,6 @@ var { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-XPCOMUtils.defineLazyServiceGetter(
-  Services,
-  "cookiemgr",
-  "@mozilla.org/cookiemanager;1",
-  "nsICookieManager"
-);
-
 function inChildProcess() {
   return Services.appinfo.processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
 }
@@ -96,6 +89,7 @@ add_task(async _ => {
 [true, false].forEach(schemefulComparison => {
   add_task(async () => {
     do_get_profile();
+    Services.prefs.setBoolPref("dom.security.https_first", false);
 
     maybeInitializeCookieXPCShellUtils();
 
@@ -157,11 +151,13 @@ add_task(async _ => {
     }
 
     Services.cookies.removeAll();
+    Services.prefs.clearUserPref("dom.security.https_first");
   });
 });
 
 add_task(async _ => {
   do_get_profile();
+  Services.prefs.setBoolPref("dom.security.https_first", false);
 
   // Allow all cookies if the pref service is available in this process.
   if (!inChildProcess()) {
@@ -173,7 +169,7 @@ add_task(async _ => {
   }
 
   info("Let's set a cookie without scheme");
-  Services.cookiemgr.add(
+  Services.cookies.add(
     "example.org",
     "/",
     "a",
@@ -209,6 +205,7 @@ add_task(async _ => {
   });
 
   Services.cookies.removeAll();
+  Services.prefs.clearUserPref("dom.security.https_first");
 });
 
 [
@@ -223,6 +220,7 @@ add_task(async _ => {
 ].forEach(test => {
   add_task(async () => {
     do_get_profile();
+    Services.prefs.setBoolPref("dom.security.https_first", false);
 
     maybeInitializeCookieXPCShellUtils();
 
@@ -283,5 +281,6 @@ add_task(async _ => {
 
     await consolePromise;
     Services.cookies.removeAll();
+    Services.prefs.clearUserPref("dom.security.https_first");
   });
 });

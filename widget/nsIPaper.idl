@@ -9,37 +9,34 @@
 interface nsIPaper : nsISupports
 {
   /**
-   * The name of the paper.
+   * The internal name of the paper (a fixed, non-localized ID).
+   * (For CUPS, this is the PWG-standardized name as used internally by CUPS;
+   * on Windows, it is the integer paper ID as a string.)
+   */
+  readonly attribute AString id;
+
+  /**
+   * The human-readable (potentially localized) name of the paper.
    */
   readonly attribute AString name;
 
   /**
-   * The width of the paper in points.
+   * The width of the paper assuming portrait orientation, in points.
+   * That is, the length of the shorter edges of the paper.
    */
   readonly attribute double width;
 
   /**
-   * The height of the paper in points.
+   * The height of the paper assuming portrait orientation, in points.
+   * That is, the length of the longer edges of the paper.
    */
   readonly attribute double height;
 
   /**
-   * The unwritable margin at the top of the paper in points.
+   * The Promise resolves with an nsIPaperMargin object. The margin widths contained
+   * in that object's top/bottom/left/right properties are relative to the paper in
+   * portrait orientation. That is, top and bottom are the margins for the short edges,
+   * and left and right are the margins for the long edges.
    */
-  readonly attribute double unwriteableMarginTop;
-
-  /**
-   * The unwritable margin at the bottom of the paper in points.
-   */
-  readonly attribute double unwriteableMarginBottom;
-
-  /**
-   * The unwritable margin at the left of the paper in points.
-   */
-  readonly attribute double unwriteableMarginLeft;
-
-  /**
-   * The unwritable margin at the right of the paper in points.
-   */
-  readonly attribute double unwriteableMarginRight;
+  [implicit_jscontext] readonly attribute Promise unwriteableMargin;
 };

@@ -1,15 +1,15 @@
 //! Filtering for log records.
-//! 
+//!
 //! This module contains the log filtering used by `env_logger` to match records.
-//! You can use the `Filter` type in your own logger implementation to use the same 
-//! filter parsing and matching as `env_logger`. For more details about the format 
+//! You can use the `Filter` type in your own logger implementation to use the same
+//! filter parsing and matching as `env_logger`. For more details about the format
 //! for directive strings see [Enabling Logging].
-//! 
+//!
 //! ## Using `env_logger` in your own logger
 //!
 //! You can use `env_logger`'s filtering functionality with your own logger.
-//! Call [`Builder::parse`] to parse directives from a string when constructing 
-//! your logger. Call [`Filter::matches`] to check whether a record should be 
+//! Call [`Builder::parse`] to parse directives from a string when constructing
+//! your logger. Call [`Filter::matches`] to check whether a record should be
 //! logged based on the parsed filters when log records are received.
 //!
 //! ```
@@ -52,17 +52,17 @@
 //!
 //!     fn flush(&self) {}
 //! }
-//! # fn main() {}
 //! ```
-//! 
+//!
 //! [Enabling Logging]: ../index.html#enabling-logging
 //! [`Builder::parse`]: struct.Builder.html#method.parse
 //! [`Filter::matches`]: struct.Filter.html#method.matches
 
+use log::{Level, LevelFilter, Metadata, Record};
+use std::collections::HashMap;
 use std::env;
-use std::mem;
 use std::fmt;
-use log::{Level, LevelFilter, Record, Metadata};
+use std::mem;
 
 #[cfg(feature = "regex")]
 #[path = "regex.rs"]
@@ -73,11 +73,11 @@ mod inner;
 mod inner;
 
 /// A log filter.
-/// 
+///
 /// This struct can be used to determine whether or not a log record
 /// should be written to the output.
 /// Use the [`Builder`] type to parse and construct a `Filter`.
-/// 
+///
 /// [`Builder`]: struct.Builder.html
 pub struct Filter {
     directives: Vec<Directive>,
@@ -85,36 +85,30 @@ pub struct Filter {
 }
 
 /// A builder for a log filter.
-/// 
+///
 /// It can be used to parse a set of directives from a string before building
 /// a [`Filter`] instance.
-/// 
+///
 /// ## Example
 ///
 /// ```
-/// #[macro_use]
-/// extern crate log;
-/// extern crate env_logger;
-///
-/// use std::env;
-/// use std::io;
+/// # #[macro_use] extern crate log;
+/// # use std::env;
 /// use env_logger::filter::Builder;
 ///
-/// fn main() {
-///     let mut builder = Builder::new();
+/// let mut builder = Builder::new();
 ///
-///     // Parse a logging filter from an environment variable.
-///     if let Ok(rust_log) = env::var("RUST_LOG") {
-///        builder.parse(&rust_log);
-///     }
-///
-///     let filter = builder.build();
+/// // Parse a logging filter from an environment variable.
+/// if let Ok(rust_log) = env::var("RUST_LOG") {
+///     builder.parse(&rust_log);
 /// }
+///
+/// let filter = builder.build();
 /// ```
-/// 
+///
 /// [`Filter`]: struct.Filter.html
 pub struct Builder {
-    directives: Vec<Directive>,
+    directives: HashMap<Option<String>, LevelFilter>,
     filter: Option<inner::Filter>,
     built: bool,
 }
@@ -132,23 +126,19 @@ impl Filter {
     /// # Example
     ///
     /// ```rust
-    /// extern crate log;
-    /// extern crate env_logger;
-    ///
     /// use log::LevelFilter;
     /// use env_logger::filter::Builder;
     ///
-    /// fn main() {
-    ///     let mut builder = Builder::new();
-    ///     builder.filter(Some("module1"), LevelFilter::Info);
-    ///     builder.filter(Some("module2"), LevelFilter::Error);
+    /// let mut builder = Builder::new();
+    /// builder.filter(Some("module1"), LevelFilter::Info);
+    /// builder.filter(Some("module2"), LevelFilter::Error);
     ///
-    ///     let filter = builder.build();
-    ///     assert_eq!(filter.filter(), LevelFilter::Info);
-    /// }
+    /// let filter = builder.build();
+    /// assert_eq!(filter.filter(), LevelFilter::Info);
     /// ```
     pub fn filter(&self) -> LevelFilter {
-        self.directives.iter()
+        self.directives
+            .iter()
             .map(|d| d.level)
             .max()
             .unwrap_or(LevelFilter::Off)
@@ -182,7 +172,7 @@ impl Builder {
     /// Initializes the filter builder with defaults.
     pub fn new() -> Builder {
         Builder {
-            directives: Vec::new(),
+            directives: HashMap::new(),
             filter: None,
             built: false,
         }
@@ -213,20 +203,15 @@ impl Builder {
     ///
     /// The given module (if any) will log at most the specified level provided.
     /// If no module is provided then the filter will apply to all log messages.
-    pub fn filter(&mut self,
-                  module: Option<&str>,
-                  level: LevelFilter) -> &mut Self {
-        self.directives.push(Directive {
-            name: module.map(|s| s.to_string()),
-            level,
-        });
+    pub fn filter(&mut self, module: Option<&str>, level: LevelFilter) -> &mut Self {
+        self.directives.insert(module.map(|s| s.to_string()), level);
         self
     }
 
     /// Parses the directives string.
     ///
     /// See the [Enabling Logging] section for more details.
-    /// 
+    ///
     /// [Enabling Logging]: ../index.html#enabling-logging
     pub fn parse(&mut self, filters: &str) -> &mut Self {
         let (directives, filter) = parse_spec(filters);
@@ -234,7 +219,7 @@ impl Builder {
         self.filter = filter;
 
         for directive in directives {
-            self.directives.push(directive);
+            self.directives.insert(directive.name, directive.level);
         }
         self
     }
@@ -244,16 +229,23 @@ impl Builder {
         assert!(!self.built, "attempt to re-use consumed builder");
         self.built = true;
 
+        let mut directives = Vec::new();
         if self.directives.is_empty() {
             // Adds the default filter if none exist
-            self.directives.push(Directive {
+            directives.push(Directive {
                 name: None,
                 level: LevelFilter::Error,
             });
         } else {
+            // Consume map of directives.
+            let directives_map = mem::replace(&mut self.directives, HashMap::new());
+            directives = directives_map
+                .into_iter()
+                .map(|(name, level)| Directive { name, level })
+                .collect();
             // Sort the directives by length of their name, this allows a
             // little more efficient lookup at runtime.
-            self.directives.sort_by(|a, b| {
+            directives.sort_by(|a, b| {
                 let alen = a.name.as_ref().map(|a| a.len()).unwrap_or(0);
                 let blen = b.name.as_ref().map(|b| b.len()).unwrap_or(0);
                 alen.cmp(&blen)
@@ -261,7 +253,7 @@ impl Builder {
         }
 
         Filter {
-            directives: mem::replace(&mut self.directives, Vec::new()),
+            directives: mem::replace(&mut directives, Vec::new()),
             filter: mem::replace(&mut self.filter, None),
         }
     }
@@ -274,7 +266,7 @@ impl Default for Builder {
 }
 
 impl fmt::Debug for Filter {
-    fn fmt(&self, f: &mut fmt::Formatter)->fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Filter")
             .field("filter", &self.filter)
             .field("directives", &self.directives)
@@ -283,16 +275,14 @@ impl fmt::Debug for Filter {
 }
 
 impl fmt::Debug for Builder {
-    fn fmt(&self, f: &mut fmt::Formatter)->fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.built {
-            f.debug_struct("Filter")
-            .field("built", &true)
-            .finish()
+            f.debug_struct("Filter").field("built", &true).finish()
         } else {
             f.debug_struct("Filter")
-            .field("filter", &self.filter)
-            .field("directives", &self.directives)
-            .finish()
+                .field("filter", &self.filter)
+                .field("directives", &self.directives)
+                .finish()
         }
     }
 }
@@ -306,68 +296,75 @@ fn parse_spec(spec: &str) -> (Vec<Directive>, Option<inner::Filter>) {
     let mods = parts.next();
     let filter = parts.next();
     if parts.next().is_some() {
-        eprintln!("warning: invalid logging spec '{}', \
-                  ignoring it (too many '/'s)", spec);
+        eprintln!(
+            "warning: invalid logging spec '{}', \
+             ignoring it (too many '/'s)",
+            spec
+        );
         return (dirs, None);
     }
-    mods.map(|m| { for s in m.split(',') {
-        if s.len() == 0 { continue }
-        let mut parts = s.split('=');
-        let (log_level, name) = match (parts.next(), parts.next().map(|s| s.trim()), parts.next()) {
-            (Some(part0), None, None) => {
-                // if the single argument is a log-level string or number,
-                // treat that as a global fallback
-                match part0.parse() {
-                    Ok(num) => (num, None),
-                    Err(_) => (LevelFilter::max(), Some(part0)),
-                }
+    if let Some(m) = mods {
+        for s in m.split(',').map(|ss| ss.trim()) {
+            if s.is_empty() {
+                continue;
             }
-            (Some(part0), Some(""), None) => (LevelFilter::max(), Some(part0)),
-            (Some(part0), Some(part1), None) => {
-                match part1.parse() {
-                    Ok(num) => (num, Some(part0)),
-                    _ => {
-                        eprintln!("warning: invalid logging spec '{}', \
-                                  ignoring it", part1);
-                        continue
+            let mut parts = s.split('=');
+            let (log_level, name) =
+                match (parts.next(), parts.next().map(|s| s.trim()), parts.next()) {
+                    (Some(part0), None, None) => {
+                        // if the single argument is a log-level string or number,
+                        // treat that as a global fallback
+                        match part0.parse() {
+                            Ok(num) => (num, None),
+                            Err(_) => (LevelFilter::max(), Some(part0)),
+                        }
                     }
-                }
-            },
-            _ => {
-                eprintln!("warning: invalid logging spec '{}', \
-                          ignoring it", s);
-                continue
-            }
-        };
-        dirs.push(Directive {
-            name: name.map(|s| s.to_string()),
-            level: log_level,
-        });
-    }});
+                    (Some(part0), Some(""), None) => (LevelFilter::max(), Some(part0)),
+                    (Some(part0), Some(part1), None) => match part1.parse() {
+                        Ok(num) => (num, Some(part0)),
+                        _ => {
+                            eprintln!(
+                                "warning: invalid logging spec '{}', \
+                                 ignoring it",
+                                part1
+                            );
+                            continue;
+                        }
+                    },
+                    _ => {
+                        eprintln!(
+                            "warning: invalid logging spec '{}', \
+                             ignoring it",
+                            s
+                        );
+                        continue;
+                    }
+                };
+            dirs.push(Directive {
+                name: name.map(|s| s.to_string()),
+                level: log_level,
+            });
+        }
+    }
 
-    let filter = filter.map_or(None, |filter| {
-        match inner::Filter::new(filter) {
-            Ok(re) => Some(re),
-            Err(e) => {
-                eprintln!("warning: invalid regex filter - {}", e);
-                None
-            }
+    let filter = filter.and_then(|filter| match inner::Filter::new(filter) {
+        Ok(re) => Some(re),
+        Err(e) => {
+            eprintln!("warning: invalid regex filter - {}", e);
+            None
         }
     });
 
-    return (dirs, filter);
+    (dirs, filter)
 }
-
 
 // Check whether a level and target are enabled by the set of directives.
 fn enabled(directives: &[Directive], level: Level, target: &str) -> bool {
     // Search for the longest match, the vector is assumed to be pre-sorted.
     for directive in directives.iter().rev() {
         match directive.name {
-            Some(ref name) if !target.starts_with(&**name) => {},
-            Some(..) | None => {
-                return level <= directive.level
-            }
+            Some(ref name) if !target.starts_with(&**name) => {}
+            Some(..) | None => return level <= directive.level,
         }
     }
     false
@@ -377,7 +374,7 @@ fn enabled(directives: &[Directive], level: Level, target: &str) -> bool {
 mod tests {
     use log::{Level, LevelFilter};
 
-    use super::{Builder, Filter, Directive, parse_spec, enabled};
+    use super::{enabled, parse_spec, Builder, Directive, Filter};
 
     fn make_logger_filter(dirs: Vec<Directive>) -> Filter {
         let mut logger = Builder::new().build();
@@ -395,12 +392,32 @@ mod tests {
     #[test]
     fn filter_beginning_longest_match() {
         let logger = Builder::new()
-                        .filter(Some("crate2"), LevelFilter::Info)
-                        .filter(Some("crate2::mod"), LevelFilter::Debug)
-                        .filter(Some("crate1::mod1"), LevelFilter::Warn)
-                        .build();
+            .filter(Some("crate2"), LevelFilter::Info)
+            .filter(Some("crate2::mod"), LevelFilter::Debug)
+            .filter(Some("crate1::mod1"), LevelFilter::Warn)
+            .build();
         assert!(enabled(&logger.directives, Level::Debug, "crate2::mod1"));
         assert!(!enabled(&logger.directives, Level::Debug, "crate2"));
+    }
+
+    // Some of our tests are only correct or complete when they cover the full
+    // universe of variants for log::Level. In the unlikely event that a new
+    // variant is added in the future, this test will detect the scenario and
+    // alert us to the need to review and update the tests. In such a
+    // situation, this test will fail to compile, and the error message will
+    // look something like this:
+    //
+    //     error[E0004]: non-exhaustive patterns: `NewVariant` not covered
+    //        --> src/filter/mod.rs:413:15
+    //         |
+    //     413 |         match level_universe {
+    //         |               ^^^^^^^^^^^^^^ pattern `NewVariant` not covered
+    #[test]
+    fn ensure_tests_cover_level_universe() {
+        let level_universe: Level = Level::Trace; // use of trace variant is arbitrary
+        match level_universe {
+            Level::Error | Level::Warn | Level::Info | Level::Debug | Level::Trace => (),
+        }
     }
 
     #[test]
@@ -411,16 +428,176 @@ mod tests {
     }
 
     #[test]
+    fn parse_default_bare_level_off_lc() {
+        let logger = Builder::new().parse("off").build();
+        assert!(!enabled(&logger.directives, Level::Error, ""));
+        assert!(!enabled(&logger.directives, Level::Warn, ""));
+        assert!(!enabled(&logger.directives, Level::Info, ""));
+        assert!(!enabled(&logger.directives, Level::Debug, ""));
+        assert!(!enabled(&logger.directives, Level::Trace, ""));
+    }
+
+    #[test]
+    fn parse_default_bare_level_off_uc() {
+        let logger = Builder::new().parse("OFF").build();
+        assert!(!enabled(&logger.directives, Level::Error, ""));
+        assert!(!enabled(&logger.directives, Level::Warn, ""));
+        assert!(!enabled(&logger.directives, Level::Info, ""));
+        assert!(!enabled(&logger.directives, Level::Debug, ""));
+        assert!(!enabled(&logger.directives, Level::Trace, ""));
+    }
+
+    #[test]
+    fn parse_default_bare_level_error_lc() {
+        let logger = Builder::new().parse("error").build();
+        assert!(enabled(&logger.directives, Level::Error, ""));
+        assert!(!enabled(&logger.directives, Level::Warn, ""));
+        assert!(!enabled(&logger.directives, Level::Info, ""));
+        assert!(!enabled(&logger.directives, Level::Debug, ""));
+        assert!(!enabled(&logger.directives, Level::Trace, ""));
+    }
+
+    #[test]
+    fn parse_default_bare_level_error_uc() {
+        let logger = Builder::new().parse("ERROR").build();
+        assert!(enabled(&logger.directives, Level::Error, ""));
+        assert!(!enabled(&logger.directives, Level::Warn, ""));
+        assert!(!enabled(&logger.directives, Level::Info, ""));
+        assert!(!enabled(&logger.directives, Level::Debug, ""));
+        assert!(!enabled(&logger.directives, Level::Trace, ""));
+    }
+
+    #[test]
+    fn parse_default_bare_level_warn_lc() {
+        let logger = Builder::new().parse("warn").build();
+        assert!(enabled(&logger.directives, Level::Error, ""));
+        assert!(enabled(&logger.directives, Level::Warn, ""));
+        assert!(!enabled(&logger.directives, Level::Info, ""));
+        assert!(!enabled(&logger.directives, Level::Debug, ""));
+        assert!(!enabled(&logger.directives, Level::Trace, ""));
+    }
+
+    #[test]
+    fn parse_default_bare_level_warn_uc() {
+        let logger = Builder::new().parse("WARN").build();
+        assert!(enabled(&logger.directives, Level::Error, ""));
+        assert!(enabled(&logger.directives, Level::Warn, ""));
+        assert!(!enabled(&logger.directives, Level::Info, ""));
+        assert!(!enabled(&logger.directives, Level::Debug, ""));
+        assert!(!enabled(&logger.directives, Level::Trace, ""));
+    }
+
+    #[test]
+    fn parse_default_bare_level_info_lc() {
+        let logger = Builder::new().parse("info").build();
+        assert!(enabled(&logger.directives, Level::Error, ""));
+        assert!(enabled(&logger.directives, Level::Warn, ""));
+        assert!(enabled(&logger.directives, Level::Info, ""));
+        assert!(!enabled(&logger.directives, Level::Debug, ""));
+        assert!(!enabled(&logger.directives, Level::Trace, ""));
+    }
+
+    #[test]
+    fn parse_default_bare_level_info_uc() {
+        let logger = Builder::new().parse("INFO").build();
+        assert!(enabled(&logger.directives, Level::Error, ""));
+        assert!(enabled(&logger.directives, Level::Warn, ""));
+        assert!(enabled(&logger.directives, Level::Info, ""));
+        assert!(!enabled(&logger.directives, Level::Debug, ""));
+        assert!(!enabled(&logger.directives, Level::Trace, ""));
+    }
+
+    #[test]
+    fn parse_default_bare_level_debug_lc() {
+        let logger = Builder::new().parse("debug").build();
+        assert!(enabled(&logger.directives, Level::Error, ""));
+        assert!(enabled(&logger.directives, Level::Warn, ""));
+        assert!(enabled(&logger.directives, Level::Info, ""));
+        assert!(enabled(&logger.directives, Level::Debug, ""));
+        assert!(!enabled(&logger.directives, Level::Trace, ""));
+    }
+
+    #[test]
+    fn parse_default_bare_level_debug_uc() {
+        let logger = Builder::new().parse("DEBUG").build();
+        assert!(enabled(&logger.directives, Level::Error, ""));
+        assert!(enabled(&logger.directives, Level::Warn, ""));
+        assert!(enabled(&logger.directives, Level::Info, ""));
+        assert!(enabled(&logger.directives, Level::Debug, ""));
+        assert!(!enabled(&logger.directives, Level::Trace, ""));
+    }
+
+    #[test]
+    fn parse_default_bare_level_trace_lc() {
+        let logger = Builder::new().parse("trace").build();
+        assert!(enabled(&logger.directives, Level::Error, ""));
+        assert!(enabled(&logger.directives, Level::Warn, ""));
+        assert!(enabled(&logger.directives, Level::Info, ""));
+        assert!(enabled(&logger.directives, Level::Debug, ""));
+        assert!(enabled(&logger.directives, Level::Trace, ""));
+    }
+
+    #[test]
+    fn parse_default_bare_level_trace_uc() {
+        let logger = Builder::new().parse("TRACE").build();
+        assert!(enabled(&logger.directives, Level::Error, ""));
+        assert!(enabled(&logger.directives, Level::Warn, ""));
+        assert!(enabled(&logger.directives, Level::Info, ""));
+        assert!(enabled(&logger.directives, Level::Debug, ""));
+        assert!(enabled(&logger.directives, Level::Trace, ""));
+    }
+
+    // In practice, the desired log level is typically specified by a token
+    // that is either all lowercase (e.g., 'trace') or all uppercase (.e.g,
+    // 'TRACE'), but this tests serves as a reminder that
+    // log::Level::from_str() ignores all case variants.
+    #[test]
+    fn parse_default_bare_level_debug_mixed() {
+        {
+            let logger = Builder::new().parse("Debug").build();
+            assert!(enabled(&logger.directives, Level::Error, ""));
+            assert!(enabled(&logger.directives, Level::Warn, ""));
+            assert!(enabled(&logger.directives, Level::Info, ""));
+            assert!(enabled(&logger.directives, Level::Debug, ""));
+            assert!(!enabled(&logger.directives, Level::Trace, ""));
+        }
+        {
+            let logger = Builder::new().parse("debuG").build();
+            assert!(enabled(&logger.directives, Level::Error, ""));
+            assert!(enabled(&logger.directives, Level::Warn, ""));
+            assert!(enabled(&logger.directives, Level::Info, ""));
+            assert!(enabled(&logger.directives, Level::Debug, ""));
+            assert!(!enabled(&logger.directives, Level::Trace, ""));
+        }
+        {
+            let logger = Builder::new().parse("deBug").build();
+            assert!(enabled(&logger.directives, Level::Error, ""));
+            assert!(enabled(&logger.directives, Level::Warn, ""));
+            assert!(enabled(&logger.directives, Level::Info, ""));
+            assert!(enabled(&logger.directives, Level::Debug, ""));
+            assert!(!enabled(&logger.directives, Level::Trace, ""));
+        }
+        {
+            let logger = Builder::new().parse("DeBuG").build(); // LaTeX flavor!
+            assert!(enabled(&logger.directives, Level::Error, ""));
+            assert!(enabled(&logger.directives, Level::Warn, ""));
+            assert!(enabled(&logger.directives, Level::Info, ""));
+            assert!(enabled(&logger.directives, Level::Debug, ""));
+            assert!(!enabled(&logger.directives, Level::Trace, ""));
+        }
+    }
+
+    #[test]
     fn match_full_path() {
         let logger = make_logger_filter(vec![
             Directive {
                 name: Some("crate2".to_string()),
-                level: LevelFilter::Info
+                level: LevelFilter::Info,
             },
             Directive {
                 name: Some("crate1::mod1".to_string()),
-                level: LevelFilter::Warn
-            }
+                level: LevelFilter::Warn,
+            },
         ]);
         assert!(enabled(&logger.directives, Level::Warn, "crate1::mod1"));
         assert!(!enabled(&logger.directives, Level::Info, "crate1::mod1"));
@@ -431,8 +608,14 @@ mod tests {
     #[test]
     fn no_match() {
         let logger = make_logger_filter(vec![
-            Directive { name: Some("crate2".to_string()), level: LevelFilter::Info },
-            Directive { name: Some("crate1::mod1".to_string()), level: LevelFilter::Warn }
+            Directive {
+                name: Some("crate2".to_string()),
+                level: LevelFilter::Info,
+            },
+            Directive {
+                name: Some("crate1::mod1".to_string()),
+                level: LevelFilter::Warn,
+            },
         ]);
         assert!(!enabled(&logger.directives, Level::Warn, "crate3"));
     }
@@ -440,8 +623,14 @@ mod tests {
     #[test]
     fn match_beginning() {
         let logger = make_logger_filter(vec![
-            Directive { name: Some("crate2".to_string()), level: LevelFilter::Info },
-            Directive { name: Some("crate1::mod1".to_string()), level: LevelFilter::Warn }
+            Directive {
+                name: Some("crate2".to_string()),
+                level: LevelFilter::Info,
+            },
+            Directive {
+                name: Some("crate1::mod1".to_string()),
+                level: LevelFilter::Warn,
+            },
         ]);
         assert!(enabled(&logger.directives, Level::Info, "crate2::mod1"));
     }
@@ -449,9 +638,18 @@ mod tests {
     #[test]
     fn match_beginning_longest_match() {
         let logger = make_logger_filter(vec![
-            Directive { name: Some("crate2".to_string()), level: LevelFilter::Info },
-            Directive { name: Some("crate2::mod".to_string()), level: LevelFilter::Debug },
-            Directive { name: Some("crate1::mod1".to_string()), level: LevelFilter::Warn }
+            Directive {
+                name: Some("crate2".to_string()),
+                level: LevelFilter::Info,
+            },
+            Directive {
+                name: Some("crate2::mod".to_string()),
+                level: LevelFilter::Debug,
+            },
+            Directive {
+                name: Some("crate1::mod1".to_string()),
+                level: LevelFilter::Warn,
+            },
         ]);
         assert!(enabled(&logger.directives, Level::Debug, "crate2::mod1"));
         assert!(!enabled(&logger.directives, Level::Debug, "crate2"));
@@ -460,8 +658,14 @@ mod tests {
     #[test]
     fn match_default() {
         let logger = make_logger_filter(vec![
-            Directive { name: None, level: LevelFilter::Info },
-            Directive { name: Some("crate1::mod1".to_string()), level: LevelFilter::Warn }
+            Directive {
+                name: None,
+                level: LevelFilter::Info,
+            },
+            Directive {
+                name: Some("crate1::mod1".to_string()),
+                level: LevelFilter::Warn,
+            },
         ]);
         assert!(enabled(&logger.directives, Level::Warn, "crate1::mod1"));
         assert!(enabled(&logger.directives, Level::Info, "crate2::mod2"));
@@ -470,8 +674,14 @@ mod tests {
     #[test]
     fn zero_level() {
         let logger = make_logger_filter(vec![
-            Directive { name: None, level: LevelFilter::Info },
-            Directive { name: Some("crate1::mod1".to_string()), level: LevelFilter::Off }
+            Directive {
+                name: None,
+                level: LevelFilter::Info,
+            },
+            Directive {
+                name: Some("crate1::mod1".to_string()),
+                level: LevelFilter::Off,
+            },
         ]);
         assert!(!enabled(&logger.directives, Level::Error, "crate1::mod1"));
         assert!(enabled(&logger.directives, Level::Info, "crate2::mod2"));
@@ -533,6 +743,55 @@ mod tests {
     }
 
     #[test]
+    fn parse_spec_empty_level_isolated() {
+        // test parse_spec with "" as log level (and the entire spec str)
+        let (dirs, filter) = parse_spec(""); // should be ignored
+        assert_eq!(dirs.len(), 0);
+        assert!(filter.is_none());
+    }
+
+    #[test]
+    fn parse_spec_blank_level_isolated() {
+        // test parse_spec with a white-space-only string specified as the log
+        // level (and the entire spec str)
+        let (dirs, filter) = parse_spec("     "); // should be ignored
+        assert_eq!(dirs.len(), 0);
+        assert!(filter.is_none());
+    }
+
+    #[test]
+    fn parse_spec_blank_level_isolated_comma_only() {
+        // The spec should contain zero or more comma-separated string slices,
+        // so a comma-only string should be interpretted as two empty strings
+        // (which should both be treated as invalid, so ignored).
+        let (dirs, filter) = parse_spec(","); // should be ignored
+        assert_eq!(dirs.len(), 0);
+        assert!(filter.is_none());
+    }
+
+    #[test]
+    fn parse_spec_blank_level_isolated_comma_blank() {
+        // The spec should contain zero or more comma-separated string slices,
+        // so this bogus spec should be interpretted as containing one empty
+        // string and one blank string. Both should both be treated as
+        // invalid, so ignored.
+        let (dirs, filter) = parse_spec(",     "); // should be ignored
+        assert_eq!(dirs.len(), 0);
+        assert!(filter.is_none());
+    }
+
+    #[test]
+    fn parse_spec_blank_level_isolated_blank_comma() {
+        // The spec should contain zero or more comma-separated string slices,
+        // so this bogus spec should be interpretted as containing one blank
+        // string and one empty string. Both should both be treated as
+        // invalid, so ignored.
+        let (dirs, filter) = parse_spec("     ,"); // should be ignored
+        assert_eq!(dirs.len(), 0);
+        assert!(filter.is_none());
+    }
+
+    #[test]
     fn parse_spec_global() {
         // test parse_spec with no crate
         let (dirs, filter) = parse_spec("warn,crate2=debug");
@@ -541,6 +800,36 @@ mod tests {
         assert_eq!(dirs[0].level, LevelFilter::Warn);
         assert_eq!(dirs[1].name, Some("crate2".to_string()));
         assert_eq!(dirs[1].level, LevelFilter::Debug);
+        assert!(filter.is_none());
+    }
+
+    #[test]
+    fn parse_spec_global_bare_warn_lc() {
+        // test parse_spec with no crate, in isolation, all lowercase
+        let (dirs, filter) = parse_spec("warn");
+        assert_eq!(dirs.len(), 1);
+        assert_eq!(dirs[0].name, None);
+        assert_eq!(dirs[0].level, LevelFilter::Warn);
+        assert!(filter.is_none());
+    }
+
+    #[test]
+    fn parse_spec_global_bare_warn_uc() {
+        // test parse_spec with no crate, in isolation, all uppercase
+        let (dirs, filter) = parse_spec("WARN");
+        assert_eq!(dirs.len(), 1);
+        assert_eq!(dirs[0].name, None);
+        assert_eq!(dirs[0].level, LevelFilter::Warn);
+        assert!(filter.is_none());
+    }
+
+    #[test]
+    fn parse_spec_global_bare_warn_mixed() {
+        // test parse_spec with no crate, in isolation, mixed case
+        let (dirs, filter) = parse_spec("wArN");
+        assert_eq!(dirs.len(), 1);
+        assert_eq!(dirs[0].name, None);
+        assert_eq!(dirs[0].level, LevelFilter::Warn);
         assert!(filter.is_none());
     }
 

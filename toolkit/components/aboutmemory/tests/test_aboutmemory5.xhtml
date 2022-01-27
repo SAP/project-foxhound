@@ -36,12 +36,11 @@
     ["memory.report_concurrency", 2]        // Cover more child handling cases
   ];
 
-  SpecialPowers.pushPrefEnv({"set": prefs}, function() {
+  SpecialPowers.pushPrefEnv({"set": prefs}).then(function() {
     for (let i = 0; i < numRemotes; i++) {
       let w = remotes[i] = window.browsingContext.topChromeWindow.open("remote.xhtml", "", "chrome");
 
       w.addEventListener("load", function loadHandler() {
-        w.removeEventListener("load", loadHandler);
         let remoteBrowser = w.document.getElementById("remote");
         let mm = remoteBrowser.messageManager;
         mm.addMessageListener("test:ready", function readyHandler() {
@@ -64,9 +63,7 @@
     frame.focus();
 
     function getFilePath(aFilename) {
-      let file = Cc["@mozilla.org/file/directory_service;1"]
-                 .getService(Ci.nsIProperties)
-                 .get("CurWorkD", Ci.nsIFile);
+      let file = SpecialPowers.Services.dirsvc.get("CurWorkD", Ci.nsIFile);
       file.append("chrome");
       file.append("toolkit");
       file.append("components");
@@ -84,7 +81,8 @@
     let dumper = Cc["@mozilla.org/memory-info-dumper;1"].
                     getService(Ci.nsIMemoryInfoDumper);
     dumper.dumpMemoryReportsToNamedFile(filePath, loadAndCheck, null,
-                                        /* anonymize = */ false);
+                                        /* anonymize = */ false,
+                                        /* minimize memory usage = */ false);
 
     function loadAndCheck() {
       // Load the file.
@@ -130,9 +128,7 @@
           }
 
           let socketProcessRunning = 0;
-          let ios = Cc["@mozilla.org/network/io-service;1"].
-                    getService(Ci.nsIIOService);
-          if (ios.socketProcessLaunched) {
+          if (SpecialPowers.Services.io.socketProcessLaunched) {
             socketProcessRunning = 1;
           }
 

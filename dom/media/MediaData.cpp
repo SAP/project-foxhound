@@ -8,6 +8,7 @@
 
 #include "ImageContainer.h"
 #include "MediaInfo.h"
+#include "PerformanceRecorder.h"
 #include "VideoUtils.h"
 #include "YCbCrUtils.h"
 #include "mozilla/layers/ImageBridgeChild.h"
@@ -19,6 +20,9 @@
 #ifdef XP_WIN
 #  include "mozilla/WindowsVersion.h"
 #  include "mozilla/layers/D3D11YCbCrImage.h"
+#elif XP_MACOSX
+#  include "MacIOSurfaceImage.h"
+#  include "mozilla/gfx/gfxVars.h"
 #endif
 
 namespace mozilla {
@@ -31,14 +35,6 @@ using media::TimeUnit;
 
 const char* AudioData::sTypeName = "audio";
 const char* VideoData::sTypeName = "video";
-
-bool IsDataLoudnessHearable(const AudioDataValue aData) {
-  // We can transfer the digital value to dBFS via following formula. According
-  // to American SMPTE standard, 0 dBu equals -20 dBFS. In theory 0 dBu is still
-  // hearable, so we choose a smaller value as our threshold. If the loudness
-  // is under this threshold, it might not be hearable.
-  return 20.0f * std::log10(AudioSampleToFloat(aData)) > -100;
-}
 
 AudioData::AudioData(int64_t aOffset, const media::TimeUnit& aTime,
                      AlignedAudioBuffer&& aData, uint32_t aChannels,
@@ -53,15 +49,26 @@ AudioData::AudioData(int64_t aOffset, const media::TimeUnit& aTime,
       mFrames(mAudioData.Length() / aChannels) {}
 
 Span<AudioDataValue> AudioData::Data() const {
-  return MakeSpan(GetAdjustedData(), mFrames * mChannels);
+  return Span{GetAdjustedData(), mFrames * mChannels};
+}
+
+void AudioData::SetOriginalStartTime(const media::TimeUnit& aStartTime) {
+  MOZ_ASSERT(mTime == mOriginalTime,
+             "Do not call this if data has been trimmed!");
+  mTime = aStartTime;
+  mOriginalTime = aStartTime;
 }
 
 bool AudioData::AdjustForStartTime(const media::TimeUnit& aStartTime) {
   mOriginalTime -= aStartTime;
+  mTime -= aStartTime;
   if (mTrimWindow) {
     *mTrimWindow -= aStartTime;
   }
-  return MediaData::AdjustForStartTime(aStartTime) && mOriginalTime.IsValid();
+  if (mTime.IsNegative()) {
+    NS_WARNING("Negative audio start time after time-adjustment!");
+  }
+  return mTime.IsValid() && mOriginalTime.IsValid();
 }
 
 bool AudioData::SetTrimWindow(const media::TimeInterval& aTrim) {
@@ -138,23 +145,6 @@ size_t AudioData::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
     size += mAudioBuffer->SizeOfIncludingThis(aMallocSizeOf);
   }
   return size;
-}
-
-bool AudioData::IsAudible() const {
-  if (!mAudioData) {
-    return false;
-  }
-
-  const AudioDataValue* data = GetAdjustedData();
-
-  for (uint32_t frame = 0; frame < mFrames; ++frame) {
-    for (uint32_t channel = 0; channel < mChannels; ++channel) {
-      if (IsDataLoudnessHearable(data[frame * mChannels + channel])) {
-        return true;
-      }
-    }
-  }
-  return false;
 }
 
 AlignedAudioBuffer AudioData::MoveableData() {
@@ -255,6 +245,14 @@ void VideoData::UpdateTimestamp(const TimeUnit& aTimestamp) {
   mDuration = updatedDuration;
 }
 
+bool VideoData::AdjustForStartTime(const media::TimeUnit& aStartTime) {
+  mTime -= aStartTime;
+  if (mTime.IsNegative()) {
+    NS_WARNING("Negative video start time after time-adjustment!");
+  }
+  return mTime.IsValid();
+}
+
 PlanarYCbCrData ConstructPlanarYCbCrData(const VideoInfo& aInfo,
                                          const VideoData::YCbCrBuffer& aBuffer,
                                          const IntRect& aPicture) {
@@ -279,6 +277,7 @@ PlanarYCbCrData ConstructPlanarYCbCrData(const VideoInfo& aInfo,
   data.mStereoMode = aInfo.mStereoMode;
   data.mYUVColorSpace = aBuffer.mYUVColorSpace;
   data.mColorDepth = aBuffer.mColorDepth;
+  data.mColorRange = aBuffer.mColorRange;
   return data;
 }
 
@@ -290,9 +289,6 @@ bool VideoData::SetVideoDataToImage(PlanarYCbCrImage* aVideoImage,
   if (!aVideoImage) {
     return false;
   }
-
-  MOZ_ASSERT(aBuffer.mYUVColorSpace != gfx::YUVColorSpace::UNKNOWN,
-             "We must know the colorframe at this point");
 
   PlanarYCbCrData data = ConstructPlanarYCbCrData(aInfo, aBuffer, aPicture);
 
@@ -322,9 +318,9 @@ already_AddRefed<VideoData> VideoData::CreateAndCopyData(
     return nullptr;
   }
 
-  MOZ_ASSERT(aBuffer.mYUVColorSpace != gfx::YUVColorSpace::UNKNOWN,
-             "We must know the colorframe at this point");
-
+  PerformanceRecorder perfRecorder(PerformanceRecorder::Stage::CopyDecodedVideo,
+                                   aInfo.mImage.height);
+  perfRecorder.Start();
   RefPtr<VideoData> v(new VideoData(aOffset, aTime, aDuration, aKeyframe,
                                     aTimecode, aInfo.mDisplay, 0));
 
@@ -345,6 +341,19 @@ already_AddRefed<VideoData> VideoData::CreateAndCopyData(
                                 : aAllocator,
                             aContainer, data)) {
       v->mImage = d3d11Image;
+      perfRecorder.End();
+      return v.forget();
+    }
+  }
+#elif XP_MACOSX
+  if (aAllocator && aAllocator->GetWebRenderCompositorType() !=
+                        layers::WebRenderCompositor::SOFTWARE) {
+    RefPtr<layers::MacIOSurfaceImage> ioImage =
+        new layers::MacIOSurfaceImage(nullptr);
+    PlanarYCbCrData data = ConstructPlanarYCbCrData(aInfo, aBuffer, aPicture);
+    if (ioImage->SetData(aContainer, data)) {
+      v->mImage = ioImage;
+      perfRecorder.End();
       return v.forget();
     }
   }
@@ -366,6 +375,7 @@ already_AddRefed<VideoData> VideoData::CreateAndCopyData(
     return nullptr;
   }
 
+  perfRecorder.End();
   return v.forget();
 }
 
@@ -426,11 +436,11 @@ already_AddRefed<VideoData> VideoData::CreateAndCopyData(
 
   // The naming convention for libyuv and associated utils is word-order.
   // The naming convention in the gfx stack is byte-order.
-  ConvertYCbCrAToARGB(aBuffer.mPlanes[0].mData, aBuffer.mPlanes[1].mData,
-                      aBuffer.mPlanes[2].mData, aAlphaPlane.mData,
-                      aBuffer.mPlanes[0].mStride, aBuffer.mPlanes[1].mStride,
-                      buffer.data, buffer.stride, buffer.size.width,
-                      buffer.size.height);
+  ConvertI420AlphaToARGB(aBuffer.mPlanes[0].mData, aBuffer.mPlanes[1].mData,
+                         aBuffer.mPlanes[2].mData, aAlphaPlane.mData,
+                         aBuffer.mPlanes[0].mStride, aBuffer.mPlanes[1].mStride,
+                         buffer.data, buffer.stride, buffer.size.width,
+                         buffer.size.height);
 
   return v.forget();
 }
@@ -461,7 +471,26 @@ MediaRawData::MediaRawData(const uint8_t* aData, size_t aSize,
       mBuffer(aData, aSize),
       mAlphaBuffer(aAlphaData, aAlphaSize) {}
 
+MediaRawData::MediaRawData(AlignedByteBuffer&& aData)
+    : MediaData(Type::RAW_DATA),
+      mCrypto(mCryptoInternal),
+      mBuffer(std::move(aData)) {}
+
+MediaRawData::MediaRawData(AlignedByteBuffer&& aData,
+                           AlignedByteBuffer&& aAlphaData)
+    : MediaData(Type::RAW_DATA),
+      mCrypto(mCryptoInternal),
+      mBuffer(std::move(aData)),
+      mAlphaBuffer(std::move(aAlphaData)) {}
+
 already_AddRefed<MediaRawData> MediaRawData::Clone() const {
+  int32_t sampleHeight = 0;
+  if (mTrackInfo && mTrackInfo->GetAsVideoInfo()) {
+    sampleHeight = mTrackInfo->GetAsVideoInfo()->mImage.height;
+  }
+  PerformanceRecorder perfRecorder(PerformanceRecorder::Stage::CopyDemuxedData,
+                                   sampleHeight);
+  perfRecorder.Start();
   RefPtr<MediaRawData> s = new MediaRawData;
   s->mTimecode = mTimecode;
   s->mTime = mTime;
@@ -479,6 +508,7 @@ already_AddRefed<MediaRawData> MediaRawData::Clone() const {
   if (!s->mAlphaBuffer.Append(mAlphaBuffer.Data(), mAlphaBuffer.Length())) {
     return nullptr;
   }
+  perfRecorder.End();
   return s.forget();
 }
 

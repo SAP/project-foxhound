@@ -66,13 +66,13 @@ function InfallibleGetBoolPref(key) {
 /**
  * Represents the Options Panel in the Toolbox.
  */
-function OptionsPanel(iframeWindow, toolbox) {
+function OptionsPanel(iframeWindow, toolbox, commands) {
   this.panelDoc = iframeWindow.document;
   this.panelWin = iframeWindow;
 
   this.toolbox = toolbox;
+  this.commands = commands;
   this.telemetry = toolbox.telemetry;
-  this.isReady = false;
 
   this.setupToolsList = this.setupToolsList.bind(this);
   this._prefChanged = this._prefChanged.bind(this);
@@ -101,8 +101,6 @@ OptionsPanel.prototype = {
     this.setupThemeList();
     this.setupAdditionalOptions();
     await this.populatePreferences();
-    this.isReady = true;
-    this.emit("ready");
     return this;
   },
 
@@ -289,7 +287,10 @@ OptionsPanel.prototype = {
       checkboxLabel.appendChild(checkboxInput);
       checkboxLabel.appendChild(checkboxSpanLabel);
 
-      // TODO: remove in Firefox 71, with bug #1519103
+      // We shouldn't have deprecated tools anymore, but we might have one in the future,
+      // when migrating the storage inspector to the application panel (Bug 1681059).
+      // Let's keep this code for now so we keep the l10n property around and avoid
+      // unnecessary translation work if we need it again in the future.
       if (tool.deprecated) {
         const deprecationURL = this.panelDoc.createElement("a");
         deprecationURL.title = deprecationURL.href = tool.deprecationURL;
@@ -408,6 +409,13 @@ OptionsPanel.prototype = {
     };
 
     // Populating the default theme list
+    themeBox.appendChild(
+      createThemeOption({
+        id: "auto",
+        label: L10N.getStr("options.autoTheme.label"),
+      })
+    );
+
     const themes = gDevTools.getThemeDefinitionArray();
     for (const theme of themes) {
       themeBox.appendChild(createThemeOption(theme));
@@ -422,18 +430,20 @@ OptionsPanel.prototype = {
   setupAdditionalOptions: function() {
     const prefDefinitions = [];
 
-    const isNightly = AppConstants.NIGHTLY_BUILD;
-    if (isNightly) {
-      // Labels are hardcoded in english because this checkbox is Nightly only.
+    // New performance panel can be used in NIGHTLY or DEV_EDITION. We keep the
+    // setting hidden in RELEASE or BETA. Should be removed in Bug 1693316.
+    const isNewPerfAllowed =
+      AppConstants.NIGHTLY_BUILD || AppConstants.MOZ_DEV_EDITION;
+    if (isNewPerfAllowed) {
       prefDefinitions.push({
         pref: "devtools.performance.new-panel-enabled",
-        label: "Enable new performance recorder (then re-open DevTools)",
+        label: L10N.getStr("options.enableNewPerformancePanel"),
         id: "devtools-new-performance",
         parentId: "context-options",
       });
     }
 
-    if (this.target.isParentProcess) {
+    if (this.toolbox.isBrowserToolbox) {
       // The Multiprocess Browser Toolbox is only displayed in the settings
       // panel for the Browser Toolbox, or when debugging the main process in
       // remote debugging.
@@ -447,7 +457,7 @@ OptionsPanel.prototype = {
         // custom behavior for the Browser Toolbox, so we pass an additional
         // onChange callback.
         onChange: async checked => {
-          if (!this.toolbox.isBrowserToolbox()) {
+          if (!this.toolbox.isBrowserToolbox) {
             // If we are debugging a parent process, but the toolbox is not a
             // Browser Toolbox, it means we are remote debugging another
             // browser. In this case, the value of devtools.browsertoolbox.fission
@@ -461,7 +471,7 @@ OptionsPanel.prototype = {
           // regular Firefox Profile to the Browser Toolbox profile.
           // If the preference is not updated on the regular Firefox profile, the
           // new value will be lost on the next Browser Toolbox restart.
-          const { mainRoot } = this.target.client;
+          const { mainRoot } = this.commands.client;
           const preferenceFront = await mainRoot.getFront("preference");
           preferenceFront.setBoolPref(
             "devtools.browsertoolbox.fission",
@@ -567,8 +577,8 @@ OptionsPanel.prototype = {
     }
 
     if (!this.target.chrome) {
-      this.disableJSNode.checked = !this.target.configureOptions
-        .javascriptEnabled;
+      const isJavascriptEnabled = await this.commands.targetConfigurationCommand.isJavascriptEnabled();
+      this.disableJSNode.checked = !isJavascriptEnabled;
       this.disableJSNode.addEventListener("click", this._disableJSClicked);
     } else {
       // Hide the checkbox and label
@@ -589,9 +599,9 @@ OptionsPanel.prototype = {
     if (themeRadioInput) {
       themeRadioInput.checked = true;
     } else {
-      // If the current theme does not exist anymore, switch to light theme
-      const lightThemeInputRadio = themeBox.querySelector("[value=light]");
-      lightThemeInputRadio.checked = true;
+      // If the current theme does not exist anymore, switch to auto theme
+      const autoThemeInputRadio = themeBox.querySelector("[value=auto]");
+      autoThemeInputRadio.checked = true;
     }
   },
 
@@ -604,10 +614,10 @@ OptionsPanel.prototype = {
 
   /**
    * Disables JavaScript for the currently loaded tab. We force a page refresh
-   * here because setting docShell.allowJavascript to true fails to block JS
-   * execution from event listeners added using addEventListener(), AJAX calls
-   * and timers. The page refresh prevents these things from being added in the
-   * first place.
+   * here because setting browsingContext.allowJavascript to true fails to block
+   * JS execution from event listeners added using addEventListener(), AJAX
+   * calls and timers. The page refresh prevents these things from being added
+   * in the first place.
    *
    * @param {Event} event
    *        The event sent by checking / unchecking the disable JS checkbox.
@@ -615,11 +625,9 @@ OptionsPanel.prototype = {
   _disableJSClicked: function(event) {
     const checked = event.target.checked;
 
-    const options = {
+    this.commands.targetConfigurationCommand.updateConfiguration({
       javascriptEnabled: !checked,
-    };
-
-    this.target.reconfigure({ options });
+    });
   },
 
   destroy: function() {

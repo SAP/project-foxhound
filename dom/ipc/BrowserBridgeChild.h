@@ -13,10 +13,6 @@
 
 namespace mozilla {
 
-namespace a11y {
-class RemoteIframeDocProxyAccessibleWrap;
-}
-
 namespace dom {
 class BrowsingContext;
 class ContentChild;
@@ -49,19 +45,29 @@ class BrowserBridgeChild : public PBrowserBridgeChild {
 
   void NavigateByKey(bool aForward, bool aForDocumentNavigation);
 
-  void Activate();
+  void Activate(uint64_t aActionId);
 
-  void Deactivate(bool aWindowLowering);
+  void Deactivate(bool aWindowLowering, uint64_t aActionId);
 
   void SetIsUnderHiddenEmbedderElement(bool aIsUnderHiddenEmbedderElement);
 
   already_AddRefed<BrowserBridgeHost> FinishInit(nsFrameLoader* aFrameLoader);
 
-#if defined(ACCESSIBILITY) && defined(XP_WIN)
-  a11y::RemoteIframeDocProxyAccessibleWrap* GetEmbeddedDocAccessible() {
-    return mEmbeddedDocAccessible;
+#if defined(ACCESSIBILITY)
+  void SetEmbedderAccessible(PDocAccessibleChild* aDoc, uint64_t aID) {
+    MOZ_ASSERT((aDoc && aID) || (!aDoc && !aID));
+    mEmbedderAccessibleID = aID;
+    Unused << SendSetEmbedderAccessible(aDoc, aID);
   }
-#endif
+
+  uint64_t GetEmbedderAccessibleID() { return mEmbedderAccessibleID; }
+
+#  if defined(XP_WIN)
+  already_AddRefed<IDispatch> GetEmbeddedDocAccessible() {
+    return RefPtr{mEmbeddedDocAccessible}.forget();
+  }
+#  endif  // defined(XP_WIN)
+#endif    // defined(ACCESSIBILITY)
 
   static BrowserBridgeChild* GetFrom(nsFrameLoader* aFrameLoader);
 
@@ -86,6 +92,10 @@ class BrowserBridgeChild : public PBrowserBridgeChild {
   mozilla::ipc::IPCResult RecvMaybeFireEmbedderLoadEvents(
       EmbedderElementEventType aFireEventAtEmbeddingElement);
 
+  mozilla::ipc::IPCResult RecvIntrinsicSizeOrRatioChanged(
+      const Maybe<IntrinsicSize>& aIntrinsicSize,
+      const Maybe<AspectRatio>& aIntrinsicRatio);
+
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvScrollRectIntoView(
       const nsRect& aRect, const ScrollAxis& aVertical,
@@ -106,9 +116,14 @@ class BrowserBridgeChild : public PBrowserBridgeChild {
   bool mHadInitialLoad = false;
   RefPtr<nsFrameLoader> mFrameLoader;
   RefPtr<BrowsingContext> mBrowsingContext;
-#if defined(ACCESSIBILITY) && defined(XP_WIN)
-  RefPtr<a11y::RemoteIframeDocProxyAccessibleWrap> mEmbeddedDocAccessible;
-#endif
+#if defined(ACCESSIBILITY)
+  // We need to keep track of the embedder accessible id we last sent to the
+  // parent process.
+  uint64_t mEmbedderAccessibleID = 0;
+#  if defined(XP_WIN)
+  RefPtr<IDispatch> mEmbeddedDocAccessible;
+#  endif  // defined(XP_WIN)
+#endif    // defined(ACCESSIBILITY)
 };
 
 }  // namespace dom

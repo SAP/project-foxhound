@@ -12,9 +12,9 @@ from __future__ import absolute_import
 
 def test(mod, path, entity=None):
     import re
+
     # ignore anything but mobile, which is our local repo checkout name
-    if mod not in ("dom", "toolkit", "mobile",
-                   "mobile/android/base",  "mobile/android"):
+    if mod not in ("dom", "toolkit", "mobile", "mobile/android"):
         return "ignore"
 
     if mod == "toolkit":
@@ -24,9 +24,6 @@ def test(mod, path, entity=None):
             "chrome/global/commonDialogs.properties",
             "chrome/global/intl.properties",
             "chrome/global/intl.css",
-            "chrome/search/search.properties",
-            "chrome/pluginproblem/pluginproblem.dtd",
-            "chrome/global/aboutWebrtc.properties",
         ):
             return "error"
         if re.match(r"crashreporter/[^/]*.ftl", path):
@@ -50,6 +47,9 @@ def test(mod, path, entity=None):
         if re.match(r"toolkit/about/[^/]*Support.ftl", path):
             # error on toolkit/about/*Support.ftl
             return "error"
+        if re.match(r"toolkit/about/[^/]*Webrtc.ftl", path):
+            # error on toolkit/about/*Webrtc.ftl
+            return "error"
         return "ignore"
 
     if mod == "dom":
@@ -58,7 +58,7 @@ def test(mod, path, entity=None):
             "chrome/global.dtd",
             "chrome/accessibility/AccessFu.properties",
             "chrome/dom/dom.properties",
-            "chrome/plugins.properties"):
+        ):
             return "error"
         return "ignore"
 
@@ -67,8 +67,7 @@ def test(mod, path, entity=None):
         return "error"
     if mod == "mobile/android":
         if entity is None:
-            if (re.match(r"mobile-l10n.js", path) or
-                re.match(r"defines.inc", path)):
+            if re.match(r"mobile-l10n.js", path) or re.match(r"defines.inc", path):
                 return "ignore"
         if path == "defines.inc":
             if entity == "MOZ_LANGPACK_CONTRIBUTORS":
@@ -78,10 +77,12 @@ def test(mod, path, entity=None):
     # we're in mod == "mobile"
     if path == "chrome/region.properties":
         # only region.properties exceptions remain
-        if (re.match(r"browser\.contentHandlers\.types\.[0-5]", entity) or
-            re.match(r"gecko\.handlerService\.schemes\.", entity) or
-            re.match(r"gecko\.handlerService\.defaultHandlersVersion", entity) or
-            re.match(r"browser\.suggestedsites\.", entity)):
+        if (
+            re.match(r"browser\.contentHandlers\.types\.[0-5]", entity)
+            or re.match(r"gecko\.handlerService\.schemes\.", entity)
+            or re.match(r"gecko\.handlerService\.defaultHandlersVersion", entity)
+            or re.match(r"browser\.suggestedsites\.", entity)
+        ):
             return "ignore"
 
     return "error"

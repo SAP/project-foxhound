@@ -19,7 +19,6 @@
 #include "wasm/WasmSignalHandlers.h"
 
 #include "mozilla/DebugOnly.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/ThreadLocal.h"
 
 #include "threading/Thread.h"
@@ -29,8 +28,8 @@
 #include "wasm/WasmInstance.h"
 
 #if defined(XP_WIN)
-#  include <winternl.h>  // must include before util/Windows.h's `#undef`s
-#  include "util/Windows.h"
+#  include <winternl.h>  // must include before util/WindowsWrapper.h's `#undef`s
+#  include "util/WindowsWrapper.h"
 #elif defined(XP_DARWIN)
 #  include <mach/exc.h>
 #  include <mach/mach.h>
@@ -43,216 +42,201 @@ using namespace js::wasm;
 
 using mozilla::DebugOnly;
 
+#if !defined(JS_CODEGEN_NONE)
+
 // =============================================================================
 // This following pile of macros and includes defines the ToRegisterState() and
 // the ContextTo{PC,FP,SP,LR}() functions from the (highly) platform-specific
 // CONTEXT struct which is provided to the signal handler.
 // =============================================================================
 
-#if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
-#  include <sys/ucontext.h>  // for ucontext_t, mcontext_t
-#endif
+#  if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+#    include <sys/ucontext.h>  // for ucontext_t, mcontext_t
+#  endif
 
-#if defined(__x86_64__)
-#  if defined(__DragonFly__)
-#    include <machine/npx.h>  // for union savefpu
-#  elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || \
-      defined(__NetBSD__) || defined(__OpenBSD__)
-#    include <machine/fpu.h>  // for struct savefpu/fxsave64
+#  if defined(__x86_64__)
+#    if defined(__DragonFly__)
+#      include <machine/npx.h>  // for union savefpu
+#    elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || \
+        defined(__NetBSD__) || defined(__OpenBSD__)
+#      include <machine/fpu.h>  // for struct savefpu/fxsave64
+#    endif
 #  endif
-#endif
 
-#if defined(XP_WIN)
-#  define EIP_sig(p) ((p)->Eip)
-#  define EBP_sig(p) ((p)->Ebp)
-#  define ESP_sig(p) ((p)->Esp)
-#  define RIP_sig(p) ((p)->Rip)
-#  define RSP_sig(p) ((p)->Rsp)
-#  define RBP_sig(p) ((p)->Rbp)
-#  define R11_sig(p) ((p)->R11)
-#  define R13_sig(p) ((p)->R13)
-#  define R14_sig(p) ((p)->R14)
-#  define R15_sig(p) ((p)->R15)
-#  define EPC_sig(p) ((p)->Pc)
-#  define RFP_sig(p) ((p)->Fp)
-#  define R31_sig(p) ((p)->Sp)
-#  define RLR_sig(p) ((p)->Lr)
-#elif defined(__OpenBSD__)
-#  define EIP_sig(p) ((p)->sc_eip)
-#  define EBP_sig(p) ((p)->sc_ebp)
-#  define ESP_sig(p) ((p)->sc_esp)
-#  define RIP_sig(p) ((p)->sc_rip)
-#  define RSP_sig(p) ((p)->sc_rsp)
-#  define RBP_sig(p) ((p)->sc_rbp)
-#  define R11_sig(p) ((p)->sc_r11)
-#  if defined(__arm__)
-#    define R13_sig(p) ((p)->sc_usr_sp)
-#    define R14_sig(p) ((p)->sc_usr_lr)
-#    define R15_sig(p) ((p)->sc_pc)
-#  else
-#    define R13_sig(p) ((p)->sc_r13)
-#    define R14_sig(p) ((p)->sc_r14)
-#    define R15_sig(p) ((p)->sc_r15)
-#  endif
-#  if defined(__aarch64__)
-#    define EPC_sig(p) ((p)->sc_elr)
-#    define RFP_sig(p) ((p)->sc_x[29])
-#    define RLR_sig(p) ((p)->sc_lr)
-#    define R31_sig(p) ((p)->sc_sp)
-#  endif
-#  if defined(__mips__)
-#    define EPC_sig(p) ((p)->sc_pc)
-#    define RFP_sig(p) ((p)->sc_regs[30])
-#  endif
-#  if defined(__ppc64__) || defined(__PPC64__) || defined(__ppc64le__) || \
-      defined(__PPC64LE__)
-#    define R01_sig(p) ((p)->sc_frame.fixreg[1])
-#    define R32_sig(p) ((p)->sc_frame.srr0)
-#  endif
-#elif defined(__linux__) || defined(__sun)
-#  if defined(__linux__)
-#    define EIP_sig(p) ((p)->uc_mcontext.gregs[REG_EIP])
-#    define EBP_sig(p) ((p)->uc_mcontext.gregs[REG_EBP])
-#    define ESP_sig(p) ((p)->uc_mcontext.gregs[REG_ESP])
-#  else
-#    define EIP_sig(p) ((p)->uc_mcontext.gregs[REG_PC])
-#    define EBP_sig(p) ((p)->uc_mcontext.gregs[REG_EBP])
-#    define ESP_sig(p) ((p)->uc_mcontext.gregs[REG_ESP])
-#  endif
-#  define RIP_sig(p) ((p)->uc_mcontext.gregs[REG_RIP])
-#  define RSP_sig(p) ((p)->uc_mcontext.gregs[REG_RSP])
-#  define RBP_sig(p) ((p)->uc_mcontext.gregs[REG_RBP])
-#  if defined(__linux__) && defined(__arm__)
-#    define R11_sig(p) ((p)->uc_mcontext.arm_fp)
-#    define R13_sig(p) ((p)->uc_mcontext.arm_sp)
-#    define R14_sig(p) ((p)->uc_mcontext.arm_lr)
-#    define R15_sig(p) ((p)->uc_mcontext.arm_pc)
-#  else
-#    define R11_sig(p) ((p)->uc_mcontext.gregs[REG_R11])
-#    define R13_sig(p) ((p)->uc_mcontext.gregs[REG_R13])
-#    define R14_sig(p) ((p)->uc_mcontext.gregs[REG_R14])
-#    define R15_sig(p) ((p)->uc_mcontext.gregs[REG_R15])
-#  endif
-#  if defined(__linux__) && defined(__aarch64__)
-#    define EPC_sig(p) ((p)->uc_mcontext.pc)
-#    define RFP_sig(p) ((p)->uc_mcontext.regs[29])
-#    define RLR_sig(p) ((p)->uc_mcontext.regs[30])
-#    define R31_sig(p) ((p)->uc_mcontext.sp)
-#  endif
-#  if defined(__linux__) && defined(__mips__)
-#    define EPC_sig(p) ((p)->uc_mcontext.pc)
-#    define RFP_sig(p) ((p)->uc_mcontext.gregs[30])
-#    define RSP_sig(p) ((p)->uc_mcontext.gregs[29])
-#    define R31_sig(p) ((p)->uc_mcontext.gregs[31])
-#  endif
-#  if defined(__linux__) && (defined(__sparc__) && defined(__arch64__))
-#    define PC_sig(p) ((p)->uc_mcontext.mc_gregs[MC_PC])
-#    define FP_sig(p) ((p)->uc_mcontext.mc_fp)
-#    define SP_sig(p) ((p)->uc_mcontext.mc_i7)
-#  endif
-#  if defined(__linux__) && (defined(__ppc64__) || defined(__PPC64__) || \
-                             defined(__ppc64le__) || defined(__PPC64LE__))
-#    define R01_sig(p) ((p)->uc_mcontext.gp_regs[1])
-#    define R32_sig(p) ((p)->uc_mcontext.gp_regs[32])
-#  endif
-#elif defined(__NetBSD__)
-#  define EIP_sig(p) ((p)->uc_mcontext.__gregs[_REG_EIP])
-#  define EBP_sig(p) ((p)->uc_mcontext.__gregs[_REG_EBP])
-#  define ESP_sig(p) ((p)->uc_mcontext.__gregs[_REG_ESP])
-#  define RIP_sig(p) ((p)->uc_mcontext.__gregs[_REG_RIP])
-#  define RSP_sig(p) ((p)->uc_mcontext.__gregs[_REG_RSP])
-#  define RBP_sig(p) ((p)->uc_mcontext.__gregs[_REG_RBP])
-#  define R11_sig(p) ((p)->uc_mcontext.__gregs[_REG_R11])
-#  define R13_sig(p) ((p)->uc_mcontext.__gregs[_REG_R13])
-#  define R14_sig(p) ((p)->uc_mcontext.__gregs[_REG_R14])
-#  define R15_sig(p) ((p)->uc_mcontext.__gregs[_REG_R15])
-#  if defined(__aarch64__)
-#    define EPC_sig(p) ((p)->uc_mcontext.__gregs[_REG_PC])
-#    define RFP_sig(p) ((p)->uc_mcontext.__gregs[_REG_X29])
-#    define RLR_sig(p) ((p)->uc_mcontext.__gregs[_REG_X30])
-#    define R31_sig(p) ((p)->uc_mcontext.__gregs[_REG_SP])
-#  endif
-#  if defined(__mips__)
-#    define EPC_sig(p) ((p)->uc_mcontext.__gregs[_REG_EPC])
-#    define RFP_sig(p) ((p)->uc_mcontext.__gregs[_REG_S8])
-#  endif
-#  if defined(__ppc64__) || defined(__PPC64__) || defined(__ppc64le__) || \
-      defined(__PPC64LE__)
-#    define R01_sig(p) ((p)->uc_mcontext.__gregs[_REG_R1])
-#    define R32_sig(p) ((p)->uc_mcontext.__gregs[_REG_PC])
-#  endif
-#elif defined(__DragonFly__) || defined(__FreeBSD__) || \
-    defined(__FreeBSD_kernel__)
-#  define EIP_sig(p) ((p)->uc_mcontext.mc_eip)
-#  define EBP_sig(p) ((p)->uc_mcontext.mc_ebp)
-#  define ESP_sig(p) ((p)->uc_mcontext.mc_esp)
-#  define RIP_sig(p) ((p)->uc_mcontext.mc_rip)
-#  define RSP_sig(p) ((p)->uc_mcontext.mc_rsp)
-#  define RBP_sig(p) ((p)->uc_mcontext.mc_rbp)
-#  if defined(__FreeBSD__) && defined(__arm__)
+#  if defined(XP_WIN)
+#    define EIP_sig(p) ((p)->Eip)
+#    define EBP_sig(p) ((p)->Ebp)
+#    define ESP_sig(p) ((p)->Esp)
+#    define RIP_sig(p) ((p)->Rip)
+#    define RSP_sig(p) ((p)->Rsp)
+#    define RBP_sig(p) ((p)->Rbp)
+#    define R11_sig(p) ((p)->R11)
+#    define R13_sig(p) ((p)->R13)
+#    define R14_sig(p) ((p)->R14)
+#    define R15_sig(p) ((p)->R15)
+#    define EPC_sig(p) ((p)->Pc)
+#    define RFP_sig(p) ((p)->Fp)
+#    define R31_sig(p) ((p)->Sp)
+#    define RLR_sig(p) ((p)->Lr)
+#  elif defined(__OpenBSD__)
+#    define EIP_sig(p) ((p)->sc_eip)
+#    define EBP_sig(p) ((p)->sc_ebp)
+#    define ESP_sig(p) ((p)->sc_esp)
+#    define RIP_sig(p) ((p)->sc_rip)
+#    define RSP_sig(p) ((p)->sc_rsp)
+#    define RBP_sig(p) ((p)->sc_rbp)
+#    define R11_sig(p) ((p)->sc_r11)
+#    if defined(__arm__)
+#      define R13_sig(p) ((p)->sc_usr_sp)
+#      define R14_sig(p) ((p)->sc_usr_lr)
+#      define R15_sig(p) ((p)->sc_pc)
+#    else
+#      define R13_sig(p) ((p)->sc_r13)
+#      define R14_sig(p) ((p)->sc_r14)
+#      define R15_sig(p) ((p)->sc_r15)
+#    endif
+#    if defined(__aarch64__)
+#      define EPC_sig(p) ((p)->sc_elr)
+#      define RFP_sig(p) ((p)->sc_x[29])
+#      define RLR_sig(p) ((p)->sc_lr)
+#      define R31_sig(p) ((p)->sc_sp)
+#    endif
+#    if defined(__mips__)
+#      define EPC_sig(p) ((p)->sc_pc)
+#      define RFP_sig(p) ((p)->sc_regs[30])
+#    endif
+#    if defined(__ppc64__) || defined(__PPC64__) || defined(__ppc64le__) || \
+        defined(__PPC64LE__)
+#      define R01_sig(p) ((p)->sc_frame.fixreg[1])
+#      define R32_sig(p) ((p)->sc_frame.srr0)
+#    endif
+#  elif defined(__linux__) || defined(__sun)
+#    if defined(__linux__)
+#      define EIP_sig(p) ((p)->uc_mcontext.gregs[REG_EIP])
+#      define EBP_sig(p) ((p)->uc_mcontext.gregs[REG_EBP])
+#      define ESP_sig(p) ((p)->uc_mcontext.gregs[REG_ESP])
+#    else
+#      define EIP_sig(p) ((p)->uc_mcontext.gregs[REG_PC])
+#      define EBP_sig(p) ((p)->uc_mcontext.gregs[REG_EBP])
+#      define ESP_sig(p) ((p)->uc_mcontext.gregs[REG_ESP])
+#    endif
+#    define RIP_sig(p) ((p)->uc_mcontext.gregs[REG_RIP])
+#    define RSP_sig(p) ((p)->uc_mcontext.gregs[REG_RSP])
+#    define RBP_sig(p) ((p)->uc_mcontext.gregs[REG_RBP])
+#    if defined(__linux__) && defined(__arm__)
+#      define R11_sig(p) ((p)->uc_mcontext.arm_fp)
+#      define R13_sig(p) ((p)->uc_mcontext.arm_sp)
+#      define R14_sig(p) ((p)->uc_mcontext.arm_lr)
+#      define R15_sig(p) ((p)->uc_mcontext.arm_pc)
+#    else
+#      define R11_sig(p) ((p)->uc_mcontext.gregs[REG_R11])
+#      define R13_sig(p) ((p)->uc_mcontext.gregs[REG_R13])
+#      define R14_sig(p) ((p)->uc_mcontext.gregs[REG_R14])
+#      define R15_sig(p) ((p)->uc_mcontext.gregs[REG_R15])
+#    endif
+#    if defined(__linux__) && defined(__aarch64__)
+#      define EPC_sig(p) ((p)->uc_mcontext.pc)
+#      define RFP_sig(p) ((p)->uc_mcontext.regs[29])
+#      define RLR_sig(p) ((p)->uc_mcontext.regs[30])
+#      define R31_sig(p) ((p)->uc_mcontext.sp)
+#    endif
+#    if defined(__linux__) && defined(__mips__)
+#      define EPC_sig(p) ((p)->uc_mcontext.pc)
+#      define RFP_sig(p) ((p)->uc_mcontext.gregs[30])
+#      define RSP_sig(p) ((p)->uc_mcontext.gregs[29])
+#      define R31_sig(p) ((p)->uc_mcontext.gregs[31])
+#    endif
+#    if defined(__linux__) && (defined(__sparc__) && defined(__arch64__))
+#      define PC_sig(p) ((p)->uc_mcontext.mc_gregs[MC_PC])
+#      define FP_sig(p) ((p)->uc_mcontext.mc_fp)
+#      define SP_sig(p) ((p)->uc_mcontext.mc_i7)
+#    endif
+#    if defined(__linux__) && (defined(__ppc64__) || defined(__PPC64__) || \
+                               defined(__ppc64le__) || defined(__PPC64LE__))
+#      define R01_sig(p) ((p)->uc_mcontext.gp_regs[1])
+#      define R32_sig(p) ((p)->uc_mcontext.gp_regs[32])
+#    endif
+#  elif defined(__NetBSD__)
+#    define EIP_sig(p) ((p)->uc_mcontext.__gregs[_REG_EIP])
+#    define EBP_sig(p) ((p)->uc_mcontext.__gregs[_REG_EBP])
+#    define ESP_sig(p) ((p)->uc_mcontext.__gregs[_REG_ESP])
+#    define RIP_sig(p) ((p)->uc_mcontext.__gregs[_REG_RIP])
+#    define RSP_sig(p) ((p)->uc_mcontext.__gregs[_REG_RSP])
+#    define RBP_sig(p) ((p)->uc_mcontext.__gregs[_REG_RBP])
 #    define R11_sig(p) ((p)->uc_mcontext.__gregs[_REG_R11])
 #    define R13_sig(p) ((p)->uc_mcontext.__gregs[_REG_R13])
 #    define R14_sig(p) ((p)->uc_mcontext.__gregs[_REG_R14])
 #    define R15_sig(p) ((p)->uc_mcontext.__gregs[_REG_R15])
+#    if defined(__aarch64__)
+#      define EPC_sig(p) ((p)->uc_mcontext.__gregs[_REG_PC])
+#      define RFP_sig(p) ((p)->uc_mcontext.__gregs[_REG_X29])
+#      define RLR_sig(p) ((p)->uc_mcontext.__gregs[_REG_X30])
+#      define R31_sig(p) ((p)->uc_mcontext.__gregs[_REG_SP])
+#    endif
+#    if defined(__mips__)
+#      define EPC_sig(p) ((p)->uc_mcontext.__gregs[_REG_EPC])
+#      define RFP_sig(p) ((p)->uc_mcontext.__gregs[_REG_S8])
+#    endif
+#    if defined(__ppc64__) || defined(__PPC64__) || defined(__ppc64le__) || \
+        defined(__PPC64LE__)
+#      define R01_sig(p) ((p)->uc_mcontext.__gregs[_REG_R1])
+#      define R32_sig(p) ((p)->uc_mcontext.__gregs[_REG_PC])
+#    endif
+#  elif defined(__DragonFly__) || defined(__FreeBSD__) || \
+      defined(__FreeBSD_kernel__)
+#    define EIP_sig(p) ((p)->uc_mcontext.mc_eip)
+#    define EBP_sig(p) ((p)->uc_mcontext.mc_ebp)
+#    define ESP_sig(p) ((p)->uc_mcontext.mc_esp)
+#    define RIP_sig(p) ((p)->uc_mcontext.mc_rip)
+#    define RSP_sig(p) ((p)->uc_mcontext.mc_rsp)
+#    define RBP_sig(p) ((p)->uc_mcontext.mc_rbp)
+#    if defined(__FreeBSD__) && defined(__arm__)
+#      define R11_sig(p) ((p)->uc_mcontext.__gregs[_REG_R11])
+#      define R13_sig(p) ((p)->uc_mcontext.__gregs[_REG_R13])
+#      define R14_sig(p) ((p)->uc_mcontext.__gregs[_REG_R14])
+#      define R15_sig(p) ((p)->uc_mcontext.__gregs[_REG_R15])
+#    else
+#      define R11_sig(p) ((p)->uc_mcontext.mc_r11)
+#      define R13_sig(p) ((p)->uc_mcontext.mc_r13)
+#      define R14_sig(p) ((p)->uc_mcontext.mc_r14)
+#      define R15_sig(p) ((p)->uc_mcontext.mc_r15)
+#    endif
+#    if defined(__FreeBSD__) && defined(__aarch64__)
+#      define EPC_sig(p) ((p)->uc_mcontext.mc_gpregs.gp_elr)
+#      define RFP_sig(p) ((p)->uc_mcontext.mc_gpregs.gp_x[29])
+#      define RLR_sig(p) ((p)->uc_mcontext.mc_gpregs.gp_lr)
+#      define R31_sig(p) ((p)->uc_mcontext.mc_gpregs.gp_sp)
+#    endif
+#    if defined(__FreeBSD__) && defined(__mips__)
+#      define EPC_sig(p) ((p)->uc_mcontext.mc_pc)
+#      define RFP_sig(p) ((p)->uc_mcontext.mc_regs[30])
+#    endif
+#    if defined(__FreeBSD__) && (defined(__ppc64__) || defined(__PPC64__) || \
+                                 defined(__ppc64le__) || defined(__PPC64LE__))
+#      define R01_sig(p) ((p)->uc_mcontext.mc_gpr[1])
+#      define R32_sig(p) ((p)->uc_mcontext.mc_srr0)
+#    endif
+#  elif defined(XP_DARWIN)
+#    define EIP_sig(p) ((p)->thread.uts.ts32.__eip)
+#    define EBP_sig(p) ((p)->thread.uts.ts32.__ebp)
+#    define ESP_sig(p) ((p)->thread.uts.ts32.__esp)
+#    define RIP_sig(p) ((p)->thread.__rip)
+#    define RBP_sig(p) ((p)->thread.__rbp)
+#    define RSP_sig(p) ((p)->thread.__rsp)
+#    define R11_sig(p) ((p)->thread.__r[11])
+#    define R13_sig(p) ((p)->thread.__sp)
+#    define R14_sig(p) ((p)->thread.__lr)
+#    define R15_sig(p) ((p)->thread.__pc)
+#    define EPC_sig(p) ((p)->thread.__pc)
+#    define RFP_sig(p) ((p)->thread.__fp)
+#    define R31_sig(p) ((p)->thread.__sp)
+#    define RLR_sig(p) ((p)->thread.__lr)
 #  else
-#    define R11_sig(p) ((p)->uc_mcontext.mc_r11)
-#    define R13_sig(p) ((p)->uc_mcontext.mc_r13)
-#    define R14_sig(p) ((p)->uc_mcontext.mc_r14)
-#    define R15_sig(p) ((p)->uc_mcontext.mc_r15)
+#    error \
+        "Don't know how to read/write to the thread state via the mcontext_t."
 #  endif
-#  if defined(__FreeBSD__) && defined(__aarch64__)
-#    define EPC_sig(p) ((p)->uc_mcontext.mc_gpregs.gp_elr)
-#    define RFP_sig(p) ((p)->uc_mcontext.mc_gpregs.gp_x[29])
-#    define RLR_sig(p) ((p)->uc_mcontext.mc_gpregs.gp_lr)
-#    define R31_sig(p) ((p)->uc_mcontext.mc_gpregs.gp_sp)
-#  endif
-#  if defined(__FreeBSD__) && defined(__mips__)
-#    define EPC_sig(p) ((p)->uc_mcontext.mc_pc)
-#    define RFP_sig(p) ((p)->uc_mcontext.mc_regs[30])
-#  endif
-#  if defined(__FreeBSD__) && (defined(__ppc64__) || defined(__PPC64__) || \
-                               defined(__ppc64le__) || defined(__PPC64LE__))
-#    define R01_sig(p) ((p)->uc_mcontext.mc_gpr[1])
-#    define R32_sig(p) ((p)->uc_mcontext.mc_srr0)
-#  endif
-#elif defined(XP_DARWIN)
-#  define EIP_sig(p) ((p)->thread.uts.ts32.__eip)
-#  define EBP_sig(p) ((p)->thread.uts.ts32.__ebp)
-#  define ESP_sig(p) ((p)->thread.uts.ts32.__esp)
-#  define RIP_sig(p) ((p)->thread.__rip)
-#  define RBP_sig(p) ((p)->thread.__rbp)
-#  define RSP_sig(p) ((p)->thread.__rsp)
-#  define R11_sig(p) ((p)->thread.__r[11])
-#  define R13_sig(p) ((p)->thread.__sp)
-#  define R14_sig(p) ((p)->thread.__lr)
-#  define R15_sig(p) ((p)->thread.__pc)
-#else
-#  error "Don't know how to read/write to the thread state via the mcontext_t."
-#endif
 
-// On ARM Linux, including Android, unaligned FP accesses that were not flagged
-// as unaligned will tend to trap (with SIGBUS) and will need to be emulated.
-//
-// We can only perform this emulation if the system header files provide access
-// to the FP registers.  In particular, <sys/user.h> must have definitions of
-// `struct user_vfp` and `struct user_vfp_exc`, as it does on Android.
-//
-// Those definitions are however not present in the headers of every Linux
-// distro - Raspbian is known to be a problem, for example.  However those
-// distros are tier-3 platforms.
-//
-// If you run into compile problems on a tier-3 platform, you can disable the
-// emulation here.
-
-#if defined(__linux__) && defined(__arm__)
-#  define WASM_EMULATE_ARM_UNALIGNED_FP_ACCESS
-#endif
-
-#ifdef WASM_EMULATE_ARM_UNALIGNED_FP_ACCESS
-#  include <sys/user.h>
-#endif
-
-#if defined(ANDROID)
+#  if defined(ANDROID)
 // Not all versions of the Android NDK define ucontext_t or mcontext_t.
 // Detect this and provide custom but compatible definitions. Note that these
 // follow the GLibc naming convention to access register values from
@@ -260,14 +244,14 @@ using mozilla::DebugOnly;
 //
 // See: https://chromiumcodereview.appspot.com/10829122/
 // See: http://code.google.com/p/android/issues/detail?id=34784
-#  if !defined(__BIONIC_HAVE_UCONTEXT_T)
-#    if defined(__arm__)
+#    if !defined(__BIONIC_HAVE_UCONTEXT_T)
+#      if defined(__arm__)
 
 // GLibc on ARM defines mcontext_t has a typedef for 'struct sigcontext'.
 // Old versions of the C library <signal.h> didn't define the type.
-#      if !defined(__BIONIC_HAVE_STRUCT_SIGCONTEXT)
-#        include <asm/sigcontext.h>
-#      endif
+#        if !defined(__BIONIC_HAVE_STRUCT_SIGCONTEXT)
+#          include <asm/sigcontext.h>
+#        endif
 
 typedef struct sigcontext mcontext_t;
 
@@ -279,7 +263,7 @@ typedef struct ucontext {
   // Other fields are not used so don't define them here.
 } ucontext_t;
 
-#    elif defined(__mips__)
+#      elif defined(__mips__)
 
 typedef struct {
   uint32_t regmask;
@@ -310,7 +294,7 @@ typedef struct ucontext {
   // Other fields are not used so don't define them here.
 } ucontext_t;
 
-#    elif defined(__i386__)
+#      elif defined(__i386__)
 // x86 version for Android.
 typedef struct {
   uint32_t gregs[19];
@@ -328,107 +312,113 @@ typedef struct ucontext {
   // Other fields are not used by V8, don't define them here.
 } ucontext_t;
 enum { REG_EIP = 14 };
-#    endif  // defined(__i386__)
-#  endif    // !defined(__BIONIC_HAVE_UCONTEXT_T)
-#endif      // defined(ANDROID)
+#      endif  // defined(__i386__)
+#    endif    // !defined(__BIONIC_HAVE_UCONTEXT_T)
+#  endif      // defined(ANDROID)
 
-#if defined(XP_DARWIN)
-#  if defined(__x86_64__)
+#  if defined(XP_DARWIN)
+#    if defined(__x86_64__)
 struct macos_x64_context {
   x86_thread_state64_t thread;
   x86_float_state64_t float_;
 };
-#    define CONTEXT macos_x64_context
-#  elif defined(__i386__)
+#      define CONTEXT macos_x64_context
+#    elif defined(__i386__)
 struct macos_x86_context {
   x86_thread_state_t thread;
   x86_float_state_t float_;
 };
-#    define CONTEXT macos_x86_context
-#  elif defined(__arm__)
+#      define CONTEXT macos_x86_context
+#    elif defined(__arm__)
 struct macos_arm_context {
   arm_thread_state_t thread;
   arm_neon_state_t float_;
 };
-#    define CONTEXT macos_arm_context
-#  else
-#    error Unsupported architecture
+#      define CONTEXT macos_arm_context
+#    elif defined(__aarch64__)
+struct macos_aarch64_context {
+  arm_thread_state64_t thread;
+  arm_neon_state64_t float_;
+};
+#      define CONTEXT macos_aarch64_context
+#    else
+#      error Unsupported architecture
+#    endif
+#  elif !defined(XP_WIN)
+#    define CONTEXT ucontext_t
 #  endif
-#elif !defined(XP_WIN)
-#  define CONTEXT ucontext_t
-#endif
 
-#if defined(_M_X64) || defined(__x86_64__)
-#  define PC_sig(p) RIP_sig(p)
-#  define FP_sig(p) RBP_sig(p)
-#  define SP_sig(p) RSP_sig(p)
-#elif defined(_M_IX86) || defined(__i386__)
-#  define PC_sig(p) EIP_sig(p)
-#  define FP_sig(p) EBP_sig(p)
-#  define SP_sig(p) ESP_sig(p)
-#elif defined(__arm__)
-#  define FP_sig(p) R11_sig(p)
-#  define SP_sig(p) R13_sig(p)
-#  define LR_sig(p) R14_sig(p)
-#  define PC_sig(p) R15_sig(p)
-#elif defined(_M_ARM64) || defined(__aarch64__)
-#  define PC_sig(p) EPC_sig(p)
-#  define FP_sig(p) RFP_sig(p)
-#  define SP_sig(p) R31_sig(p)
-#  define LR_sig(p) RLR_sig(p)
-#elif defined(__mips__)
-#  define PC_sig(p) EPC_sig(p)
-#  define FP_sig(p) RFP_sig(p)
-#  define SP_sig(p) RSP_sig(p)
-#  define LR_sig(p) R31_sig(p)
-#elif defined(__ppc64__) || defined(__PPC64__) || defined(__ppc64le__) || \
-    defined(__PPC64LE__)
-#  define PC_sig(p) R32_sig(p)
-#  define SP_sig(p) R01_sig(p)
-#  define FP_sig(p) R01_sig(p)
-#endif
+#  if defined(_M_X64) || defined(__x86_64__)
+#    define PC_sig(p) RIP_sig(p)
+#    define FP_sig(p) RBP_sig(p)
+#    define SP_sig(p) RSP_sig(p)
+#  elif defined(_M_IX86) || defined(__i386__)
+#    define PC_sig(p) EIP_sig(p)
+#    define FP_sig(p) EBP_sig(p)
+#    define SP_sig(p) ESP_sig(p)
+#  elif defined(__arm__)
+#    define FP_sig(p) R11_sig(p)
+#    define SP_sig(p) R13_sig(p)
+#    define LR_sig(p) R14_sig(p)
+#    define PC_sig(p) R15_sig(p)
+#  elif defined(_M_ARM64) || defined(__aarch64__)
+#    define PC_sig(p) EPC_sig(p)
+#    define FP_sig(p) RFP_sig(p)
+#    define SP_sig(p) R31_sig(p)
+#    define LR_sig(p) RLR_sig(p)
+#  elif defined(__mips__)
+#    define PC_sig(p) EPC_sig(p)
+#    define FP_sig(p) RFP_sig(p)
+#    define SP_sig(p) RSP_sig(p)
+#    define LR_sig(p) R31_sig(p)
+#  elif defined(__ppc64__) || defined(__PPC64__) || defined(__ppc64le__) || \
+      defined(__PPC64LE__)
+#    define PC_sig(p) R32_sig(p)
+#    define SP_sig(p) R01_sig(p)
+#    define FP_sig(p) R01_sig(p)
+#  endif
 
 static void SetContextPC(CONTEXT* context, uint8_t* pc) {
-#ifdef PC_sig
+#  ifdef PC_sig
   *reinterpret_cast<uint8_t**>(&PC_sig(context)) = pc;
-#else
+#  else
   MOZ_CRASH();
-#endif
+#  endif
 }
 
 static uint8_t* ContextToPC(CONTEXT* context) {
-#ifdef PC_sig
+#  ifdef PC_sig
   return reinterpret_cast<uint8_t*>(PC_sig(context));
-#else
-  MOZ_CRASH();
-#endif
-}
-
-static uint8_t* ContextToFP(CONTEXT* context) {
-#ifdef FP_sig
-  return reinterpret_cast<uint8_t*>(FP_sig(context));
-#else
-  MOZ_CRASH();
-#endif
-}
-
-static uint8_t* ContextToSP(CONTEXT* context) {
-#ifdef SP_sig
-  return reinterpret_cast<uint8_t*>(SP_sig(context));
-#else
-  MOZ_CRASH();
-#endif
-}
-
-#if defined(__arm__) || defined(__aarch64__) || defined(__mips__)
-static uint8_t* ContextToLR(CONTEXT* context) {
-#  ifdef LR_sig
-  return reinterpret_cast<uint8_t*>(LR_sig(context));
 #  else
   MOZ_CRASH();
 #  endif
 }
-#endif
+
+static uint8_t* ContextToFP(CONTEXT* context) {
+#  ifdef FP_sig
+  return reinterpret_cast<uint8_t*>(FP_sig(context));
+#  else
+  MOZ_CRASH();
+#  endif
+}
+
+static uint8_t* ContextToSP(CONTEXT* context) {
+#  ifdef SP_sig
+  return reinterpret_cast<uint8_t*>(SP_sig(context));
+#  else
+  MOZ_CRASH();
+#  endif
+}
+
+#  if defined(__arm__) || defined(__aarch64__) || defined(__mips__)
+static uint8_t* ContextToLR(CONTEXT* context) {
+#    ifdef LR_sig
+  return reinterpret_cast<uint8_t*>(LR_sig(context));
+#    else
+  MOZ_CRASH();
+#    endif
+}
+#  endif
 
 static JS::ProfilingFrameIterator::RegisterState ToRegisterState(
     CONTEXT* context) {
@@ -436,11 +426,11 @@ static JS::ProfilingFrameIterator::RegisterState ToRegisterState(
   state.fp = ContextToFP(context);
   state.pc = ContextToPC(context);
   state.sp = ContextToSP(context);
-#if defined(__arm__) || defined(__aarch64__) || defined(__mips__)
+#  if defined(__arm__) || defined(__aarch64__) || defined(__mips__)
   state.lr = ContextToLR(context);
-#else
+#  else
   state.lr = (void*)UINTPTR_MAX;
-#endif
+#  endif
   return state;
 }
 
@@ -476,216 +466,8 @@ struct AutoHandlingTrap {
   }
 };
 
-#ifdef WASM_EMULATE_ARM_UNALIGNED_FP_ACCESS
-
-// Code to handle SIGBUS for unaligned floating point accesses on 32-bit ARM.
-
-static uintptr_t ReadGPR(CONTEXT* context, uint32_t rn) {
-  switch (rn) {
-    case 0:
-      return context->uc_mcontext.arm_r0;
-    case 1:
-      return context->uc_mcontext.arm_r1;
-    case 2:
-      return context->uc_mcontext.arm_r2;
-    case 3:
-      return context->uc_mcontext.arm_r3;
-    case 4:
-      return context->uc_mcontext.arm_r4;
-    case 5:
-      return context->uc_mcontext.arm_r5;
-    case 6:
-      return context->uc_mcontext.arm_r6;
-    case 7:
-      return context->uc_mcontext.arm_r7;
-    case 8:
-      return context->uc_mcontext.arm_r8;
-    case 9:
-      return context->uc_mcontext.arm_r9;
-    case 10:
-      return context->uc_mcontext.arm_r10;
-    case 11:
-      return context->uc_mcontext.arm_fp;
-    case 12:
-      return context->uc_mcontext.arm_ip;
-    case 13:
-      return context->uc_mcontext.arm_sp;
-    case 14:
-      return context->uc_mcontext.arm_lr;
-    case 15:
-      return context->uc_mcontext.arm_pc;
-    default:
-      MOZ_CRASH();
-  }
-}
-
-// Linux kernel data structures.
-//
-// The vfp_sigframe is a kernel type overlaid on the uc_regspace field of the
-// ucontext_t if the first word of the uc_regspace is VFP_MAGIC.  (user_vfp and
-// user_vfp_exc are defined in sys/user.h and are stable.)
-//
-// VFP_MAGIC appears to have been stable since a commit to Linux on 2010-04-11,
-// when it was changed from being 0x56465001 on ARMv6 and earlier and 0x56465002
-// on ARMv7 and later, to being 0x56465001 on all CPU versions.  This was in
-// Kernel 2.6.34-rc5.
-//
-// My best interpretation of the Android commit history is that Android has had
-// vfp_sigframe and VFP_MAGIC in this form since at least Android 3.4 / 2012;
-// Firefox requires Android 4.0 at least and we're probably safe here.
-
-struct vfp_sigframe {
-  unsigned long magic;
-  unsigned long size;
-  struct user_vfp ufp;
-  struct user_vfp_exc ufp_exc;
-};
-
-#  define VFP_MAGIC 0x56465001
-
-static vfp_sigframe* GetVFPFrame(CONTEXT* context) {
-  if (context->uc_regspace[0] != VFP_MAGIC) {
-    return nullptr;
-  }
-  return (vfp_sigframe*)&context->uc_regspace;
-}
-
-static bool ReadFPR64(CONTEXT* context, uint32_t vd, double* val) {
-  MOZ_ASSERT(vd < 32);
-  vfp_sigframe* frame = GetVFPFrame(context);
-  if (frame) {
-    *val = ((double*)frame->ufp.fpregs)[vd];
-    return true;
-  }
-  return false;
-}
-
-static bool WriteFPR64(CONTEXT* context, uint32_t vd, double val) {
-  MOZ_ASSERT(vd < 32);
-  vfp_sigframe* frame = GetVFPFrame(context);
-  if (frame) {
-    ((double*)frame->ufp.fpregs)[vd] = val;
-    return true;
-  }
-  return false;
-}
-
-static bool ReadFPR32(CONTEXT* context, uint32_t vd, float* val) {
-  MOZ_ASSERT(vd < 32);
-  vfp_sigframe* frame = GetVFPFrame(context);
-  if (frame) {
-    *val = ((float*)frame->ufp.fpregs)[vd];
-    return true;
-  }
-  return false;
-}
-
-static bool WriteFPR32(CONTEXT* context, uint32_t vd, float val) {
-  MOZ_ASSERT(vd < 32);
-  vfp_sigframe* frame = GetVFPFrame(context);
-  if (frame) {
-    ((float*)frame->ufp.fpregs)[vd] = val;
-    return true;
-  }
-  return false;
-}
-
-static bool HandleUnalignedTrap(CONTEXT* context, uint8_t* pc,
-                                Instance* instance) {
-  // ARM only, no Thumb.
-  MOZ_RELEASE_ASSERT(uintptr_t(pc) % 4 == 0);
-
-  // wasmLoadImpl() and wasmStoreImpl() in MacroAssembler-arm.cpp emit plain,
-  // unconditional VLDR and VSTR instructions that do not use the PC as the base
-  // register.
-  uint32_t instr = *(uint32_t*)pc;
-  uint32_t masked = instr & 0x0F300E00;
-  bool isVLDR = masked == 0x0D100A00;
-  bool isVSTR = masked == 0x0D000A00;
-
-  if (!isVLDR && !isVSTR) {
-    // Three obvious cases if we don't get our expected instructions:
-    // - masm is generating other FP access instructions than it should
-    // - we're encountering a device that traps on new kinds of accesses,
-    //   perhaps unaligned integer accesses
-    // - general code generation bugs that lead to SIGBUS
-#  ifdef ANDROID
-    __android_log_print(ANDROID_LOG_ERROR, "WASM", "Bad SIGBUS instr %08x",
-                        instr);
-#  endif
-#  ifdef DEBUG
-    MOZ_CRASH("Unexpected instruction");
-#  endif
-    return false;
-  }
-
-  bool isUnconditional = (instr >> 28) == 0xE;
-  bool isDouble = (instr & 0x00000100) != 0;
-  bool isAdd = (instr & 0x00800000) != 0;
-  uint32_t dBit = (instr >> 22) & 1;
-  uint32_t offs = (instr & 0xFF) << 2;
-  uint32_t rn = (instr >> 16) & 0xF;
-
-  MOZ_RELEASE_ASSERT(isUnconditional);
-  MOZ_RELEASE_ASSERT(rn != 15);
-
-  uint8_t* p = (uint8_t*)ReadGPR(context, rn) + (isAdd ? offs : -offs);
-
-  if (!instance->memoryAccessInBounds(
-          p, isDouble ? sizeof(double) : sizeof(float))) {
-    return false;
-  }
-
-  if (isDouble) {
-    uint32_t vd = ((instr >> 12) & 0xF) | (dBit << 4);
-    double val;
-    if (isVLDR) {
-      memcpy(&val, p, sizeof(val));
-      if (WriteFPR64(context, vd, val)) {
-        SetContextPC(context, pc + 4);
-        return true;
-      }
-    } else {
-      if (ReadFPR64(context, vd, &val)) {
-        memcpy(p, &val, sizeof(val));
-        SetContextPC(context, pc + 4);
-        return true;
-      }
-    }
-  } else {
-    uint32_t vd = ((instr >> 11) & (0xF << 1)) | dBit;
-    float val;
-    if (isVLDR) {
-      memcpy(&val, p, sizeof(val));
-      if (WriteFPR32(context, vd, val)) {
-        SetContextPC(context, pc + 4);
-        return true;
-      }
-    } else {
-      if (ReadFPR32(context, vd, &val)) {
-        memcpy(p, &val, sizeof(val));
-        SetContextPC(context, pc + 4);
-        return true;
-      }
-    }
-  }
-
-#  ifdef DEBUG
-  MOZ_CRASH(
-      "SIGBUS handler could not access FP register, incompatible kernel?");
-#  endif
-  return false;
-}
-#else   // WASM_EMULATE_ARM_UNALIGNED_FP_ACCESS
-static bool HandleUnalignedTrap(CONTEXT* context, uint8_t* pc,
-                                Instance* instance) {
-  return false;
-}
-#endif  // WASM_EMULATE_ARM_UNALIGNED_FP_ACCESS
-
-static MOZ_MUST_USE bool HandleTrap(CONTEXT* context,
-                                    bool isUnalignedSignal = false,
-                                    JSContext* assertCx = nullptr) {
+[[nodiscard]] static bool HandleTrap(CONTEXT* context,
+                                     JSContext* assertCx = nullptr) {
   MOZ_ASSERT(sAlreadyHandlingTrap.get());
 
   uint8_t* pc = ContextToPC(context);
@@ -707,18 +489,11 @@ static MOZ_MUST_USE bool HandleTrap(CONTEXT* context,
   // due to this trap occurring in the indirect call prologue, while fp points
   // to the caller's Frame which can be in a different Module. In any case,
   // though, the containing JSContext is the same.
-  Instance* instance = ((Frame*)ContextToFP(context))->instance();
+
+  auto* frame = reinterpret_cast<Frame*>(ContextToFP(context));
+  Instance* instance = GetNearestEffectiveTls(frame)->instance;
   MOZ_RELEASE_ASSERT(&instance->code() == &segment.code() ||
                      trap == Trap::IndirectCallBadSig);
-
-  if (isUnalignedSignal) {
-    if (trap != Trap::OutOfBounds) {
-      return false;
-    }
-    if (HandleUnalignedTrap(context, pc, instance)) {
-      return true;
-    }
-  }
 
   JSContext* cx =
       instance->realm()->runtimeFromAnyThread()->mainContextFromAnyThread();
@@ -738,7 +513,7 @@ static MOZ_MUST_USE bool HandleTrap(CONTEXT* context,
 // the shared HandleTrap() above.
 // =============================================================================
 
-#if defined(XP_WIN)
+#  if defined(XP_WIN)
 // Obtained empirically from thread_local codegen on x86/x64/arm64.
 // Compiled in all user binaries, so should be stable over time.
 static const unsigned sThreadLocalArrayPointerIndex = 11;
@@ -760,21 +535,22 @@ static LONG WINAPI WasmTrapHandler(LPEXCEPTION_POINTERS exception) {
     return EXCEPTION_CONTINUE_SEARCH;
   }
 
-  if (!HandleTrap(exception->ContextRecord, false, TlsContext.get())) {
+  JSContext* cx = TlsContext.get();  // Cold signal handling code
+  if (!HandleTrap(exception->ContextRecord, cx)) {
     return EXCEPTION_CONTINUE_SEARCH;
   }
 
   return EXCEPTION_CONTINUE_EXECUTION;
 }
 
-#elif defined(XP_DARWIN)
+#  elif defined(XP_DARWIN)
 // On OSX we are forced to use the lower-level Mach exception mechanism instead
 // of Unix signals because breakpad uses Mach exceptions and would otherwise
 // report a crash before wasm gets a chance to handle the exception.
 
 // This definition was generated by mig (the Mach Interface Generator) for the
 // routine 'exception_raise' (exc.defs).
-#  pragma pack(4)
+#    pragma pack(4)
 typedef struct {
   mach_msg_header_t Head;
   /* start of the kernel processed data */
@@ -787,7 +563,7 @@ typedef struct {
   mach_msg_type_number_t codeCnt;
   int64_t code[2];
 } Request__mach_exception_raise_t;
-#  pragma pack()
+#    pragma pack()
 
 // The full Mach message also includes a trailer.
 struct ExceptionRequest {
@@ -801,24 +577,29 @@ static bool HandleMachException(const ExceptionRequest& request) {
 
   // Read out the JSRuntime thread's register state.
   CONTEXT context;
-#  if defined(__x86_64__)
+#    if defined(__x86_64__)
   unsigned int thread_state_count = x86_THREAD_STATE64_COUNT;
   unsigned int float_state_count = x86_FLOAT_STATE64_COUNT;
   int thread_state = x86_THREAD_STATE64;
   int float_state = x86_FLOAT_STATE64;
-#  elif defined(__i386__)
+#    elif defined(__i386__)
   unsigned int thread_state_count = x86_THREAD_STATE_COUNT;
   unsigned int float_state_count = x86_FLOAT_STATE_COUNT;
   int thread_state = x86_THREAD_STATE;
   int float_state = x86_FLOAT_STATE;
-#  elif defined(__arm__)
+#    elif defined(__arm__)
   unsigned int thread_state_count = ARM_THREAD_STATE_COUNT;
   unsigned int float_state_count = ARM_NEON_STATE_COUNT;
   int thread_state = ARM_THREAD_STATE;
   int float_state = ARM_NEON_STATE;
-#  else
-#    error Unsupported architecture
-#  endif
+#    elif defined(__aarch64__)
+  unsigned int thread_state_count = ARM_THREAD_STATE64_COUNT;
+  unsigned int float_state_count = ARM_NEON_STATE64_COUNT;
+  int thread_state = ARM_THREAD_STATE64;
+  int float_state = ARM_NEON_STATE64;
+#    else
+#      error Unsupported architecture
+#    endif
   kern_return_t kret;
   kret = thread_get_state(cxThread, thread_state,
                           (thread_state_t)&context.thread, &thread_state_count);
@@ -862,6 +643,8 @@ static bool HandleMachException(const ExceptionRequest& request) {
 static mach_port_t sMachDebugPort = MACH_PORT_NULL;
 
 static void MachExceptionHandlerThread() {
+  ThisThread::SetName("JS Wasm MachExceptionHandler");
+
   // Taken from mach_exc in /usr/include/mach/mach_exc.defs.
   static const unsigned EXCEPTION_MSG_ID = 2405;
 
@@ -911,13 +694,13 @@ static void MachExceptionHandlerThread() {
   }
 }
 
-#else  // If not Windows or Mac, assume Unix
+#  else  // If not Windows or Mac, assume Unix
 
-#  ifdef __mips__
+#    ifdef __mips__
 static const uint32_t kWasmTrapSignal = SIGFPE;
-#  else
+#    else
 static const uint32_t kWasmTrapSignal = SIGILL;
-#  endif
+#    endif
 
 static struct sigaction sPrevSEGVHandler;
 static struct sigaction sPrevSIGBUSHandler;
@@ -928,7 +711,8 @@ static void WasmTrapHandler(int signum, siginfo_t* info, void* context) {
     AutoHandlingTrap aht;
     MOZ_RELEASE_ASSERT(signum == SIGSEGV || signum == SIGBUS ||
                        signum == kWasmTrapSignal);
-    if (HandleTrap((CONTEXT*)context, signum == SIGBUS, TlsContext.get())) {
+    JSContext* cx = TlsContext.get();  // Cold signal handling code
+    if (HandleTrap((CONTEXT*)context, cx)) {
       return;
     }
   }
@@ -968,11 +752,13 @@ static void WasmTrapHandler(int signum, siginfo_t* info, void* context) {
     previousSignal->sa_handler(signum);
   }
 }
-#endif  // XP_WIN || XP_DARWIN || assume unix
+#  endif  // XP_WIN || XP_DARWIN || assume unix
 
-#if defined(ANDROID) && defined(MOZ_LINKER)
+#  if defined(ANDROID) && defined(MOZ_LINKER)
 extern "C" MFBT_API bool IsSignalHandlingBroken();
-#endif
+#  endif
+
+#endif  // !(JS_CODEGEN_NONE)
 
 struct InstallState {
   bool tried;
@@ -995,40 +781,40 @@ void wasm::EnsureEagerProcessSignalHandlers() {
 #if defined(JS_CODEGEN_NONE)
   // If there is no JIT, then there should be no Wasm signal handlers.
   return;
-#endif
+#else
 
-#if defined(ANDROID) && defined(MOZ_LINKER)
+#  if defined(ANDROID) && defined(MOZ_LINKER)
   // Signal handling is broken on some android systems.
   if (IsSignalHandlingBroken()) {
     return;
   }
-#endif
+#  endif
 
   sAlreadyHandlingTrap.infallibleInit();
 
   // Install whatever exception/signal handler is appropriate for the OS.
-#if defined(XP_WIN)
+#  if defined(XP_WIN)
 
-#  if defined(MOZ_ASAN)
+#    if defined(MOZ_ASAN)
   // Under ASan we need to let the ASan runtime's ShadowExceptionHandler stay
   // in the first handler position. This requires some coordination with
   // MemoryProtectionExceptionHandler::isDisabled().
   const bool firstHandler = false;
-#  else
+#    else
   // Otherwise, WasmTrapHandler needs to go first, so that we can recover
   // from wasm faults and continue execution without triggering handlers
   // such as MemoryProtectionExceptionHandler that assume we are crashing.
   const bool firstHandler = true;
-#  endif
+#    endif
   if (!AddVectoredExceptionHandler(firstHandler, WasmTrapHandler)) {
     // Windows has all sorts of random security knobs for disabling things
     // so make this a dynamic failure that disables wasm, not a MOZ_CRASH().
     return;
   }
 
-#elif defined(XP_DARWIN)
+#  elif defined(XP_DARWIN)
   // All the Mach setup in EnsureLazyProcessSignalHandlers.
-#else
+#  else
   // SA_NODEFER allows us to reenter the signal handler if we crash while
   // handling the signal, and fall through to the Breakpad handler by testing
   // handlingSegFault.
@@ -1042,7 +828,7 @@ void wasm::EnsureEagerProcessSignalHandlers() {
     MOZ_CRASH("unable to install segv handler");
   }
 
-#  if defined(JS_CODEGEN_ARM)
+#    if defined(JS_CODEGEN_ARM)
   // On Arm Handle Unaligned Accesses
   struct sigaction busHandler;
   busHandler.sa_flags = SA_SIGINFO | SA_NODEFER | SA_ONSTACK;
@@ -1051,7 +837,7 @@ void wasm::EnsureEagerProcessSignalHandlers() {
   if (sigaction(SIGBUS, &busHandler, &sPrevSIGBUSHandler)) {
     MOZ_CRASH("unable to install sigbus handler");
   }
-#  endif
+#    endif
 
   // Install a handler to handle the instructions that are emitted to implement
   // wasm traps.
@@ -1062,9 +848,10 @@ void wasm::EnsureEagerProcessSignalHandlers() {
   if (sigaction(kWasmTrapSignal, &wasmTrapHandler, &sPrevWasmTrapHandler)) {
     MOZ_CRASH("unable to install wasm trap handler");
   }
-#endif
+#  endif
 
   eagerInstallState->success = true;
+#endif
 }
 
 static ExclusiveData<InstallState> sLazyInstallState(
@@ -1108,12 +895,12 @@ static bool EnsureLazyProcessSignalHandlers() {
 }
 
 bool wasm::EnsureFullSignalHandlers(JSContext* cx) {
-  if (cx->wasmTriedToInstallSignalHandlers) {
-    return cx->wasmHaveSignalHandlers;
+  if (cx->wasm().triedToInstallSignalHandlers) {
+    return cx->wasm().haveSignalHandlers;
   }
 
-  cx->wasmTriedToInstallSignalHandlers = true;
-  MOZ_RELEASE_ASSERT(!cx->wasmHaveSignalHandlers);
+  cx->wasm().triedToInstallSignalHandlers = true;
+  MOZ_RELEASE_ASSERT(!cx->wasm().haveSignalHandlers);
 
   {
     auto eagerInstallState = sEagerInstallState.lock();
@@ -1147,7 +934,7 @@ bool wasm::EnsureFullSignalHandlers(JSContext* cx) {
   }
 #endif
 
-  cx->wasmHaveSignalHandlers = true;
+  cx->wasm().haveSignalHandlers = true;
   return true;
 }
 
@@ -1167,14 +954,16 @@ bool wasm::MemoryAccessTraps(const RegisterState& regs, uint8_t* addr,
     return false;
   }
 
-  Instance& instance = *Frame::fromUntaggedWasmExitFP(regs.fp)->instance();
+  Instance& instance =
+      *GetNearestEffectiveTls(Frame::fromUntaggedWasmExitFP(regs.fp))->instance;
   MOZ_ASSERT(&instance.code() == &segment.code());
 
   if (!instance.memoryAccessInGuardRegion((uint8_t*)addr, numBytes)) {
     return false;
   }
 
-  jit::JitActivation* activation = TlsContext.get()->activation()->asJit();
+  JSContext* cx = TlsContext.get();  // Cold simulator helper function
+  jit::JitActivation* activation = cx->activation()->asJit();
   activation->startWasmTrap(Trap::OutOfBounds, bytecode.offset(), regs);
   *newPC = segment.trapCode();
   return true;
@@ -1195,10 +984,9 @@ bool wasm::HandleIllegalInstruction(const RegisterState& regs,
     return false;
   }
 
-  jit::JitActivation* activation = TlsContext.get()->activation()->asJit();
+  JSContext* cx = TlsContext.get();  // Cold simulator helper function
+  jit::JitActivation* activation = cx->activation()->asJit();
   activation->startWasmTrap(trap, bytecode.offset(), regs);
   *newPC = segment.trapCode();
   return true;
 }
-
-#undef WASM_EMULATE_ARM_UNALIGNED_FP_ACCESS

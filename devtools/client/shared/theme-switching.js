@@ -6,13 +6,19 @@
 "use strict";
 (function() {
   const { require } = ChromeUtils.import(
-    "resource://devtools/shared/Loader.jsm"
+    "resource://devtools/shared/loader/Loader.jsm"
   );
-  const Services = require("Services");
   const { gDevTools } = require("devtools/client/framework/devtools");
   const {
     appendStyleSheet,
   } = require("devtools/client/shared/stylesheet-utils");
+
+  const {
+    getTheme,
+    getAutoTheme,
+    addThemeObserver,
+    removeThemeObserver,
+  } = require("devtools/client/shared/theme");
 
   const documentElement = document.documentElement;
 
@@ -61,7 +67,7 @@
     // The theme might not be available anymore (e.g. uninstalled)
     // Use the default one.
     if (!newThemeDef) {
-      newThemeDef = gDevTools.getThemeDefinition("light");
+      newThemeDef = gDevTools.getThemeDefinition(getAutoTheme());
     }
 
     // Store the sheets in a WeakMap for access later when the theme gets
@@ -108,20 +114,26 @@
     }, console.error);
   }
 
-  function handlePrefChange() {
-    switchTheme(Services.prefs.getCharPref("devtools.theme"));
+  function handleThemeChange() {
+    switchTheme(getTheme());
   }
 
-  if (documentElement.hasAttribute("force-theme")) {
-    switchTheme(documentElement.getAttribute("force-theme"));
-  } else {
-    switchTheme(Services.prefs.getCharPref("devtools.theme"));
+  // Check if the current document or the embedder of the document enforces a
+  // theme.
+  const forcedTheme =
+    documentElement.getAttribute("force-theme") ||
+    window.top.document.documentElement.getAttribute("force-theme");
 
-    Services.prefs.addObserver("devtools.theme", handlePrefChange);
+  if (forcedTheme) {
+    switchTheme(forcedTheme);
+  } else {
+    switchTheme(getTheme());
+
+    addThemeObserver(handleThemeChange);
     window.addEventListener(
       "unload",
       function() {
-        Services.prefs.removeObserver("devtools.theme", handlePrefChange);
+        removeThemeObserver(handleThemeChange);
       },
       { once: true }
     );

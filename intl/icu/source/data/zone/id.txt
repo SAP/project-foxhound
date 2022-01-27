@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 id{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"Abidjan"}
@@ -1318,6 +1318,9 @@ id{
             ld{"Waktu Musim Panas Alaska"}
             lg{"Waktu Alaska"}
             ls{"Waktu Standar Alaska"}
+            sd{"AKDT"}
+            sg{"AKT"}
+            ss{"AKST"}
         }
         "meta:Almaty"{
             ld{"Waktu Musim Panas Almaty"}
@@ -1333,21 +1336,33 @@ id{
             ld{"Waktu Musim Panas Tengah"}
             lg{"Waktu Tengah"}
             ls{"Waktu Standar Tengah"}
+            sd{"CDT"}
+            sg{"CT"}
+            ss{"CST"}
         }
         "meta:America_Eastern"{
             ld{"Waktu Musim Panas Timur"}
             lg{"Waktu Timur"}
             ls{"Waktu Standar Timur"}
+            sd{"EDT"}
+            sg{"ET"}
+            ss{"EST"}
         }
         "meta:America_Mountain"{
             ld{"Waktu Musim Panas Pegunungan"}
             lg{"Waktu Pegunungan"}
             ls{"Waktu Standar Pegunungan"}
+            sd{"MDT"}
+            sg{"MT"}
+            ss{"MST"}
         }
         "meta:America_Pacific"{
             ld{"Waktu Musim Panas Pasifik"}
             lg{"Waktu Pasifik"}
             ls{"Waktu Standar Pasifik"}
+            sd{"PDT"}
+            sg{"PT"}
+            ss{"PST"}
         }
         "meta:Anadyr"{
             ld{"Waktu Musim Panas Anadyr"}
@@ -1393,6 +1408,9 @@ id{
             ld{"Waktu Musim Panas Atlantik"}
             lg{"Waktu Atlantik"}
             ls{"Waktu Standar Atlantik"}
+            sd{"ADT"}
+            sg{"AT"}
+            ss{"AST"}
         }
         "meta:Australia_Central"{
             ld{"Waktu Musim Panas Tengah Australia"}
@@ -1494,6 +1512,9 @@ id{
             ld{"Waktu Musim Panas Kuba"}
             lg{"Waktu Kuba"}
             ls{"Waktu Standar Kuba"}
+            sd{"CDT (Kuba)"}
+            sg{"CT (Kuba)"}
+            ss{"CST (Kuba)"}
         }
         "meta:Davis"{
             ls{"Waktu Davis"}
@@ -1567,6 +1588,9 @@ id{
             ld{"Waktu Musim Panas Greenland Timur"}
             lg{"Waktu Greenland Timur"}
             ls{"Waktu Standar Greenland Timur"}
+            sd{"EGDT"}
+            sg{"EGT"}
+            ss{"EGST"}
         }
         "meta:Greenland_Western"{
             ld{"Waktu Musim Panas Greenland Barat"}
@@ -1586,6 +1610,9 @@ id{
             ld{"Waktu Musim Panas Hawaii-Aleutian"}
             lg{"Waktu Hawaii-Aleutian"}
             ls{"Waktu Standar Hawaii-Aleutian"}
+            sd{"HADT"}
+            sg{"HAT"}
+            ss{"HAST"}
         }
         "meta:Hong_Kong"{
             ld{"Waktu Musim Panas Hong Kong"}
@@ -1663,7 +1690,7 @@ id{
             ls{"Waktu Standar Krasnoyarsk"}
         }
         "meta:Kyrgystan"{
-            ls{"Waktu Kirghizia"}
+            ls{"Waktu Kirgizstan"}
         }
         "meta:Lanka"{
             ls{"Waktu Lanka"}
@@ -1725,9 +1752,9 @@ id{
             ls{"Waktu Standar Ulan Bator"}
         }
         "meta:Moscow"{
-            ld{"Waktu Musim Panas Moskwa"}
-            lg{"Waktu Moskwa"}
-            ls{"Waktu Standar Moskwa"}
+            ld{"Waktu Musim Panas Moskow"}
+            lg{"Waktu Moskow"}
+            ls{"Waktu Standar Moskow"}
         }
         "meta:Myanmar"{
             ls{"Waktu Myanmar"}
@@ -1752,14 +1779,17 @@ id{
             ld{"Waktu Musim Panas Newfoundland"}
             lg{"Waktu Newfoundland"}
             ls{"Waktu Standar Newfoundland"}
+            sd{"NDT"}
+            sg{"NT"}
+            ss{"NST"}
         }
         "meta:Niue"{
             ls{"Waktu Niue"}
         }
         "meta:Norfolk"{
-            ld{"Waktu Musim Panas Kepulauan Norfolk"}
-            lg{"Waktu Kepulauan Norfolk"}
-            ls{"Waktu Standar Kepulauan Norfolk"}
+            ld{"Waktu Musim Panas Pulau Norfolk"}
+            lg{"Waktu Pulau Norfolk"}
+            ls{"Waktu Standar Pulau Norfolk"}
         }
         "meta:Noronha"{
             ld{"Waktu Musim Panas Fernando de Noronha"}
@@ -1812,6 +1842,9 @@ id{
             ld{"Waktu Musim Panas Saint Pierre dan Miquelon"}
             lg{"Waktu Saint Pierre dan Miquelon"}
             ls{"Waktu Standar Saint Pierre dan Miquelon"}
+            sd{"PMDT"}
+            sg{"PMT"}
+            ss{"PMST"}
         }
         "meta:Pitcairn"{
             ls{"Waktu Pitcairn"}
@@ -1942,6 +1975,9 @@ id{
             ld{"Waktu Musim Panas Yekaterinburg"}
             lg{"Waktu Yekaterinburg"}
             ls{"Waktu Standar Yekaterinburg"}
+        }
+        "meta:Yukon"{
+            ls{"Waktu Yukon"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

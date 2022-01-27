@@ -9,7 +9,10 @@
  */
 
 add_task(async function() {
-  const { tab, monitor } = await initNetMonitor(CYRILLIC_URL, {
+  // Using https-first for this test is blocked on Bug 1733420.
+  await pushPref("dom.security.https_first", false);
+
+  const { monitor } = await initNetMonitor(CYRILLIC_URL, {
     requestCount: 1,
   });
   info("Starting test... ");
@@ -23,7 +26,7 @@ add_task(async function() {
   store.dispatch(Actions.batchEnable(false));
 
   let wait = waitForNetworkEvents(monitor, 1);
-  tab.linkedBrowser.reload();
+  await reloadBrowser();
   await wait;
 
   const requestItem = document.querySelectorAll(".request-list-item")[0];
@@ -52,16 +55,13 @@ add_task(async function() {
   );
   await wait;
 
-  wait = waitForDOM(document, "#response-panel .accordion-item", 2);
-  EventUtils.sendMouseEvent(
-    { type: "click" },
-    document.querySelector("#response-tab")
-  );
+  wait = waitForDOM(document, "#response-panel .data-header");
+  clickOnSidebarTab(document, "response");
   await wait;
 
   wait = waitForDOM(document, "#response-panel .CodeMirror-code");
   const header = document.querySelector(
-    "#response-panel .accordion-item:last-child .accordion-header"
+    "#response-panel .raw-data-toggle-input .devtools-checkbox-toggle"
   );
   clickElement(header, monitor);
   await wait;

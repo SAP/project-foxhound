@@ -3,7 +3,7 @@
 <!DOCTYPE html [
   <!ENTITY % htmlDTD
     PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
-    "DTD/xhtml1-strict.dtd">
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
   %htmlDTD;
   <!ENTITY % netErrorAppDTD
     SYSTEM "chrome://global/locale/netErrorApp.dtd">
@@ -27,7 +27,7 @@
     <link rel="stylesheet" href="chrome://global/skin/netError.css" type="text/css" media="all" />
     <!-- If the location of the favicon is changed here, the FAVICON_ERRORPAGE_URL symbol in
          toolkit/components/places/src/nsFaviconService.h should be updated. -->
-    <link rel="icon" id="favicon" href="chrome://global/skin/icons/warning.svg"/>
+    <link rel="icon" id="favicon" href="chrome://global/skin/icons/info.svg"/>
   </head>
 
   <body dir="&locale.dir;">
@@ -58,7 +58,6 @@
         <h1 id="et_nssBadCert">&nssBadCert.title;</h1>
         <h1 id="et_cspBlocked">&cspBlocked.title;</h1>
         <h1 id="et_xfoBlocked">&xfoBlocked.title;</h1>
-        <h1 id="et_remoteXUL">&remoteXUL.title;</h1>
         <h1 id="et_corruptedContentErrorv2">&corruptedContentErrorv2.title;</h1>
         <h1 id="et_inadequateSecurityError">&inadequateSecurityError.title;</h1>
         <h1 id="et_blockedByPolicy">&blockedByPolicy.title;</h1>
@@ -88,7 +87,6 @@
         <div id="ed_nssBadCert">&nssBadCert.longDesc2;</div>
         <div id="ed_cspBlocked">&cspBlocked.longDesc;</div>
         <div id="ed_xfoBlocked">&xfoBlocked.longDesc;</div>
-        <div id="ed_remoteXUL">&remoteXUL.longDesc;</div>
         <div id="ed_corruptedContentErrorv2">&corruptedContentErrorv2.longDesc;</div>
         <div id="ed_inadequateSecurityError">&inadequateSecurityError.longDesc;</div>
         <div id="ed_blockedByPolicy"></div>

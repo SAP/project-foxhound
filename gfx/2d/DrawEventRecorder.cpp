@@ -81,47 +81,16 @@ void DrawEventRecorderPrivate::DecrementUnscaledFontRefCount(
   }
 }
 
-void DrawEventRecorderFile::RecordEvent(const RecordedEvent& aEvent) {
-  aEvent.RecordToStream(mOutputStream);
-
-  Flush();
-}
-
 void DrawEventRecorderMemory::RecordEvent(const RecordedEvent& aEvent) {
   aEvent.RecordToStream(mOutputStream);
 }
 
 void DrawEventRecorderMemory::AddDependentSurface(uint64_t aDependencyId) {
-  mDependentSurfaces.PutEntry(aDependencyId);
+  mDependentSurfaces.Insert(aDependencyId);
 }
 
-nsTHashtable<nsUint64HashKey>&&
-DrawEventRecorderMemory::TakeDependentSurfaces() {
+nsTHashSet<uint64_t>&& DrawEventRecorderMemory::TakeDependentSurfaces() {
   return std::move(mDependentSurfaces);
-}
-
-DrawEventRecorderFile::DrawEventRecorderFile(const char_type* aFilename)
-    : mOutputStream(aFilename, std::ofstream::binary) {
-  WriteHeader(mOutputStream);
-}
-
-DrawEventRecorderFile::~DrawEventRecorderFile() { mOutputStream.close(); }
-
-void DrawEventRecorderFile::Flush() { mOutputStream.flush(); }
-
-bool DrawEventRecorderFile::IsOpen() { return mOutputStream.is_open(); }
-
-void DrawEventRecorderFile::OpenNew(const char_type* aFilename) {
-  MOZ_ASSERT(!mOutputStream.is_open());
-
-  mOutputStream.open(aFilename, std::ofstream::binary);
-  WriteHeader(mOutputStream);
-}
-
-void DrawEventRecorderFile::Close() {
-  MOZ_ASSERT(mOutputStream.is_open());
-
-  mOutputStream.close();
 }
 
 DrawEventRecorderMemory::DrawEventRecorderMemory() {
@@ -168,7 +137,7 @@ bool DrawEventRecorderMemory::Finish() {
   // write out the index
   mOutputStream.write(mIndex.mData, mIndex.mLength);
   bool hasItems = mIndex.mLength != 0;
-  mIndex = MemStream();
+  mIndex.reset();
   // write out the offset of the Index to the end of the output stream
   WriteElement(mOutputStream, indexOffset);
   ClearResources();
@@ -180,8 +149,8 @@ size_t DrawEventRecorderMemory::RecordingSize() {
 }
 
 void DrawEventRecorderMemory::WipeRecording() {
-  mOutputStream = MemStream();
-  mIndex = MemStream();
+  mOutputStream.reset();
+  mIndex.reset();
 
   WriteHeader(mOutputStream);
 }

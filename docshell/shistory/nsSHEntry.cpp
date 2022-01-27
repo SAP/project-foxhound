@@ -28,14 +28,12 @@
 
 extern mozilla::LazyLogModule gPageCacheLog;
 
-namespace dom = mozilla::dom;
-
 static uint32_t gEntryID = 0;
 
 nsSHEntry::nsSHEntry()
     : mShared(new nsSHEntryShared()),
       mLoadType(0),
-      mID(gEntryID++),
+      mID(++gEntryID),  // SessionStore has special handling for 0 values.
       mScrollPositionX(0),
       mScrollPositionY(0),
       mParent(nullptr),
@@ -45,7 +43,8 @@ nsSHEntry::nsSHEntry()
       mScrollRestorationIsManual(false),
       mLoadedInThisProcess(false),
       mPersist(true),
-      mHasUserInteraction(false) {}
+      mHasUserInteraction(false),
+      mHasUserActivation(false) {}
 
 nsSHEntry::nsSHEntry(const nsSHEntry& aOther)
     : mShared(aOther.mShared),
@@ -72,7 +71,8 @@ nsSHEntry::nsSHEntry(const nsSHEntry& aOther)
       mScrollRestorationIsManual(false),
       mLoadedInThisProcess(aOther.mLoadedInThisProcess),
       mPersist(aOther.mPersist),
-      mHasUserInteraction(false) {}
+      mHasUserInteraction(false),
+      mHasUserActivation(aOther.mHasUserActivation) {}
 
 nsSHEntry::~nsSHEntry() {
   // Null out the mParent pointers on all our kids.
@@ -209,6 +209,18 @@ nsSHEntry::SetTitle(const nsAString& aTitle) {
 }
 
 NS_IMETHODIMP
+nsSHEntry::GetName(nsAString& aName) {
+  aName = mName;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSHEntry::SetName(const nsAString& aName) {
+  mName = aName;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsSHEntry::GetPostData(nsIInputStream** aResult) {
   *aResult = mPostData;
   NS_IF_ADDREF(*aResult);
@@ -290,13 +302,14 @@ nsSHEntry::SetIsSubFrame(bool aFlag) {
 
 NS_IMETHODIMP
 nsSHEntry::GetHasUserInteraction(bool* aFlag) {
-  // We can't assert that this getter isn't accessed only on root
-  // entries because there's JS code that will iterate over entries
-  // for serialization etc., so let's assert the next best thing.
-  MOZ_ASSERT(!mParent || !mHasUserInteraction,
-             "User interaction can only be set on root entries");
-
-  *aFlag = mHasUserInteraction;
+  // The back button and menulist deal with root/top-level
+  // session history entries, thus we annotate only the root entry.
+  if (!mParent) {
+    *aFlag = mHasUserInteraction;
+  } else {
+    nsCOMPtr<nsISHEntry> root = nsSHistory::GetRootSHEntry(this);
+    root->GetHasUserInteraction(aFlag);
+  }
   return NS_OK;
 }
 
@@ -310,6 +323,18 @@ nsSHEntry::SetHasUserInteraction(bool aFlag) {
     nsCOMPtr<nsISHEntry> root = nsSHistory::GetRootSHEntry(this);
     root->SetHasUserInteraction(aFlag);
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSHEntry::GetHasUserActivation(bool* aFlag) {
+  *aFlag = mHasUserActivation;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSHEntry::SetHasUserActivation(bool aFlag) {
+  mHasUserActivation = aFlag;
   return NS_OK;
 }
 
@@ -349,7 +374,7 @@ nsSHEntry::Create(nsIURI* aURI, const nsAString& aTitle,
                   nsIURI* aResultPrincipalURI, bool aLoadReplace,
                   nsIReferrerInfo* aReferrerInfo, const nsAString& aSrcdocData,
                   bool aSrcdocEntry, nsIURI* aBaseURI, bool aSaveLayoutState,
-                  bool aExpired) {
+                  bool aExpired, bool aUserActivation) {
   MOZ_ASSERT(
       aTriggeringPrincipal,
       "need a valid triggeringPrincipal to create a session history entry");
@@ -390,6 +415,8 @@ nsSHEntry::Create(nsIURI* aURI, const nsAString& aTitle,
   mResultPrincipalURI = aResultPrincipalURI;
   mLoadReplace = aLoadReplace;
   mReferrerInfo = aReferrerInfo;
+
+  mHasUserActivation = aUserActivation;
 
   mShared->mLayoutHistoryState = nullptr;
 
@@ -904,10 +931,18 @@ nsSHEntry::CreateLoadInfo(nsDocShellLoadState** aLoadState) {
   }
   loadState->SetSrcdocData(srcdoc);
   loadState->SetBaseURI(baseURI);
-  loadState->SetLoadFlags(flags);
+  loadState->SetInternalLoadFlags(flags);
 
   loadState->SetFirstParty(true);
+
+  loadState->SetHasValidUserGestureActivation(GetHasUserActivation());
+
   loadState->SetSHEntry(this);
+
+  // When we create a load state from the history entry we already know if
+  // https-first was able to upgrade the request from http to https. There is no
+  // point in re-retrying to upgrade.
+  loadState->SetIsExemptFromHTTPSOnlyMode(true);
 
   loadState.forget(aLoadState);
   return NS_OK;
@@ -917,6 +952,9 @@ NS_IMETHODIMP_(void)
 nsSHEntry::SyncTreesForSubframeNavigation(
     nsISHEntry* aEntry, mozilla::dom::BrowsingContext* aTopBC,
     mozilla::dom::BrowsingContext* aIgnoreBC) {
+  // XXX Keep this in sync with
+  // SessionHistoryEntry::SyncTreesForSubframeNavigation
+  //
   // We need to sync up the browsing context and session history trees for
   // subframe navigation.  If the load was in a subframe, we forward up to
   // the top browsing context, which will then recursively sync up all browsing
@@ -960,6 +998,12 @@ NS_IMETHODIMP
 nsSHEntry::GetContentViewer(nsIContentViewer** aResult) {
   *aResult = GetState()->mContentViewer;
   NS_IF_ADDREF(*aResult);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSHEntry::GetIsInBFCache(bool* aResult) {
+  *aResult = !!GetState()->mContentViewer;
   return NS_OK;
 }
 
@@ -1045,8 +1089,9 @@ bool nsSHEntry::HasDetachedEditor() {
   return GetState()->mEditorData != nullptr;
 }
 
-bool nsSHEntry::HasBFCacheEntry(nsIBFCacheEntry* aEntry) {
-  return static_cast<nsIBFCacheEntry*>(GetState()) == aEntry;
+bool nsSHEntry::HasBFCacheEntry(
+    mozilla::dom::SHEntrySharedParentState* aEntry) {
+  return GetState() == aEntry;
 }
 
 NS_IMETHODIMP
@@ -1057,6 +1102,6 @@ nsSHEntry::AbandonBFCacheEntry() {
 
 NS_IMETHODIMP
 nsSHEntry::GetBfcacheID(uint64_t* aBFCacheID) {
-  *aBFCacheID = mShared->GetID();
+  *aBFCacheID = mShared->GetId();
   return NS_OK;
 }

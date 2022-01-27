@@ -5,7 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "frontend/ParseContext-inl.h"
-#include "vm/EnvironmentObject-inl.h"
+
+#include "frontend/CompilationStencil.h"  // ScopeContext
+#include "frontend/Parser.h"              // ParserBase
+#include "js/friend/ErrorMessages.h"      // JSMSG_*
+#include "vm/WellKnownAtom.h"             // js_*_str
 
 using mozilla::Maybe;
 using mozilla::Nothing;
@@ -46,6 +50,10 @@ const char* DeclarationKindString(DeclarationKind kind) {
       return "catch parameter";
     case DeclarationKind::PrivateName:
       return "private name";
+    case DeclarationKind::Synthetic:
+      return "synthetic";
+    case DeclarationKind::PrivateMethod:
+      return "private method";
   }
 
   MOZ_CRASH("Bad DeclarationKind");
@@ -62,7 +70,7 @@ bool DeclarationKindIsParameter(DeclarationKind kind) {
          kind == DeclarationKind::FormalParameter;
 }
 
-bool UsedNameTracker::noteUse(JSContext* cx, JSAtom* name,
+bool UsedNameTracker::noteUse(JSContext* cx, TaggedParserAtomIndex name,
                               NameVisibility visibility, uint32_t scriptId,
                               uint32_t scopeId,
                               mozilla::Maybe<TokenPos> tokenPosition) {
@@ -74,6 +82,12 @@ bool UsedNameTracker::noteUse(JSContext* cx, JSAtom* name,
     // We need a token position precisely where we have private visibility.
     MOZ_ASSERT(tokenPosition.isSome() ==
                (visibility == NameVisibility::Private));
+
+    if (visibility == NameVisibility::Private) {
+      // We have seen at least one private name
+      hasPrivateNames_ = true;
+    }
+
     UsedNameInfo info(cx, visibility, tokenPosition);
 
     if (!info.noteUsedInScope(scriptId, scopeId)) {
@@ -89,6 +103,11 @@ bool UsedNameTracker::noteUse(JSContext* cx, JSAtom* name,
 
 bool UsedNameTracker::getUnboundPrivateNames(
     Vector<UnboundPrivateName, 8>& unboundPrivateNames) {
+  // We never saw any private names, so can just return early
+  if (!hasPrivateNames_) {
+    return true;
+  }
+
   for (auto iter = map_.iter(); !iter.done(); iter.next()) {
     // Don't care about public;
     if (iter.get().value().isPublic()) {
@@ -118,13 +137,17 @@ bool UsedNameTracker::getUnboundPrivateNames(
 
 bool UsedNameTracker::hasUnboundPrivateNames(
     JSContext* cx, mozilla::Maybe<UnboundPrivateName>& maybeUnboundName) {
+  // We never saw any private names, so can just return early
+  if (!hasPrivateNames_) {
+    return true;
+  }
+
   Vector<UnboundPrivateName, 8> unboundPrivateNames(cx);
   if (!getUnboundPrivateNames(unboundPrivateNames)) {
     return false;
   }
 
   if (unboundPrivateNames.empty()) {
-    maybeUnboundName = mozilla::Nothing();
     return true;
   }
 
@@ -154,14 +177,15 @@ void UsedNameTracker::rewind(RewindToken token) {
   }
 }
 
-void ParseContext::Scope::dump(ParseContext* pc) {
+void ParseContext::Scope::dump(ParseContext* pc, ParserBase* parser) {
   JSContext* cx = pc->sc()->cx_;
 
   fprintf(stdout, "ParseScope %p", this);
 
   fprintf(stdout, "\n  decls:\n");
   for (DeclaredNameMap::Range r = declared_->all(); !r.empty(); r.popFront()) {
-    UniqueChars bytes = AtomToPrintableString(cx, r.front().key());
+    auto index = r.front().key();
+    UniqueChars bytes = parser->parserAtoms().toPrintableString(cx, index);
     if (!bytes) {
       return;
     }
@@ -185,7 +209,7 @@ bool ParseContext::Scope::addPossibleAnnexBFunctionBox(ParseContext* pc,
 }
 
 bool ParseContext::Scope::propagateAndMarkAnnexBFunctionBoxes(
-    ParseContext* pc) {
+    ParseContext* pc, ParserBase* parser) {
   // Strict mode doesn't have wack Annex B function semantics.
   if (pc->sc()->strict() || !possibleAnnexBFunctionBoxes_ ||
       possibleAnnexBFunctionBoxes_->empty()) {
@@ -195,15 +219,19 @@ bool ParseContext::Scope::propagateAndMarkAnnexBFunctionBoxes(
   if (this == &pc->varScope()) {
     // Base case: actually declare the Annex B vars and mark applicable
     // function boxes as Annex B.
-    RootedPropertyName name(pc->sc()->cx_);
     Maybe<DeclarationKind> redeclaredKind;
     uint32_t unused;
     for (FunctionBox* funbox : *possibleAnnexBFunctionBoxes_) {
-      if (pc->annexBAppliesToLexicalFunctionInInnermostScope(funbox)) {
-        name = funbox->explicitName()->asPropertyName();
-        if (!pc->tryDeclareVar(
-                name, DeclarationKind::VarForAnnexBLexicalFunction,
-                DeclaredNameInfo::npos, &redeclaredKind, &unused)) {
+      bool annexBApplies;
+      if (!pc->computeAnnexBAppliesToLexicalFunctionInInnermostScope(
+              funbox, parser, &annexBApplies)) {
+        return false;
+      }
+      if (annexBApplies) {
+        if (!pc->tryDeclareVar(funbox->explicitName(), parser,
+                               DeclarationKind::VarForAnnexBLexicalFunction,
+                               DeclaredNameInfo::npos, &redeclaredKind,
+                               &unused)) {
           return false;
         }
 
@@ -215,7 +243,12 @@ bool ParseContext::Scope::propagateAndMarkAnnexBFunctionBoxes(
     // Inner scope case: propagate still applicable function boxes to the
     // enclosing scope.
     for (FunctionBox* funbox : *possibleAnnexBFunctionBoxes_) {
-      if (pc->annexBAppliesToLexicalFunctionInInnermostScope(funbox)) {
+      bool annexBApplies;
+      if (!pc->computeAnnexBAppliesToLexicalFunctionInInnermostScope(
+              funbox, parser, &annexBApplies)) {
+        return false;
+      }
+      if (annexBApplies) {
         if (!enclosing()->addPossibleAnnexBFunctionBox(pc, funbox)) {
           return false;
         }
@@ -242,7 +275,7 @@ bool ParseContext::Scope::addCatchParameters(ParseContext* pc,
     DeclarationKind kind = r.front().value()->kind();
     uint32_t pos = r.front().value()->pos();
     MOZ_ASSERT(DeclarationKindIsCatchParameter(kind));
-    JSAtom* name = r.front().key();
+    auto name = r.front().key();
     AddDeclaredNamePtr p = lookupDeclaredNameForAdd(name);
     MOZ_ASSERT(!p);
     if (!addDeclaredName(pc, p, name, kind, pos)) {
@@ -261,7 +294,8 @@ void ParseContext::Scope::removeCatchParameters(ParseContext* pc,
 
   for (DeclaredNameMap::Range r = catchParamScope.declared_->all(); !r.empty();
        r.popFront()) {
-    DeclaredNamePtr p = declared_->lookup(r.front().key());
+    auto name = r.front().key();
+    DeclaredNamePtr p = declared_->lookup(name);
     MOZ_ASSERT(p);
 
     // This check is needed because the catch body could have declared
@@ -274,7 +308,7 @@ void ParseContext::Scope::removeCatchParameters(ParseContext* pc,
 
 ParseContext::ParseContext(JSContext* cx, ParseContext*& parent,
                            SharedContext* sc, ErrorReporter& errorReporter,
-                           CompilationInfo& compilationInfo,
+                           CompilationState& compilationState,
                            Directives* newDirectives, bool isFull)
     : Nestable<ParseContext>(&parent),
       traceLog_(sc->cx_,
@@ -291,13 +325,13 @@ ParseContext::ParseContext(JSContext* cx, ParseContext*& parent,
       newDirectives(newDirectives),
       lastYieldOffset(NoYieldOffset),
       lastAwaitOffset(NoAwaitOffset),
-      scriptId_(compilationInfo.usedNames.nextScriptId()),
+      scriptId_(compilationState.usedNames.nextScriptId()),
       superScopeNeedsHomeObject_(false) {
   if (isFunctionBox()) {
     if (functionBox()->isNamedLambda()) {
-      namedLambdaScope_.emplace(cx, parent, compilationInfo.usedNames);
+      namedLambdaScope_.emplace(cx, parent, compilationState.usedNames);
     }
-    functionScope_.emplace(cx, parent, compilationInfo.usedNames);
+    functionScope_.emplace(cx, parent, compilationState.usedNames);
   }
 }
 
@@ -344,13 +378,17 @@ bool ParseContext::init() {
   return true;
 }
 
-bool ParseContext::annexBAppliesToLexicalFunctionInInnermostScope(
-    FunctionBox* funbox) {
+bool ParseContext::computeAnnexBAppliesToLexicalFunctionInInnermostScope(
+    FunctionBox* funbox, ParserBase* parser, bool* annexBApplies) {
   MOZ_ASSERT(!sc()->strict());
 
-  RootedPropertyName name(sc()->cx_, funbox->explicitName()->asPropertyName());
-  Maybe<DeclarationKind> redeclaredKind = isVarRedeclaredInInnermostScope(
-      name, DeclarationKind::VarForAnnexBLexicalFunction);
+  TaggedParserAtomIndex name = funbox->explicitName();
+  Maybe<DeclarationKind> redeclaredKind;
+  if (!isVarRedeclaredInInnermostScope(
+          name, parser, DeclarationKind::VarForAnnexBLexicalFunction,
+          &redeclaredKind)) {
+    return false;
+  }
 
   if (!redeclaredKind && isFunctionBox()) {
     Scope& funScope = functionScope();
@@ -373,77 +411,61 @@ bool ParseContext::annexBAppliesToLexicalFunctionInInnermostScope(
 
   // If an early error would have occurred already, this function should not
   // exhibit Annex B.3.3 semantics.
-  return !redeclaredKind;
+  *annexBApplies = !redeclaredKind;
+  return true;
 }
 
-Maybe<DeclarationKind> ParseContext::isVarRedeclaredInInnermostScope(
-    HandlePropertyName name, DeclarationKind kind) {
-  Maybe<DeclarationKind> redeclaredKind;
+bool ParseContext::isVarRedeclaredInInnermostScope(
+    TaggedParserAtomIndex name, ParserBase* parser, DeclarationKind kind,
+    mozilla::Maybe<DeclarationKind>* out) {
   uint32_t unused;
-  MOZ_ALWAYS_TRUE(tryDeclareVarHelper<DryRunInnermostScopeOnly>(
-      name, kind, DeclaredNameInfo::npos, &redeclaredKind, &unused));
-  return redeclaredKind;
+  return tryDeclareVarHelper<DryRunInnermostScopeOnly>(
+      name, parser, kind, DeclaredNameInfo::npos, out, &unused);
 }
 
-Maybe<DeclarationKind> ParseContext::isVarRedeclaredInEval(
-    HandlePropertyName name, DeclarationKind kind) {
-  MOZ_ASSERT(DeclarationKindIsVar(kind));
-  MOZ_ASSERT(sc()->isEvalContext());
-
-  // In the case of eval, we also need to check enclosing VM scopes to see
-  // if the var declaration is allowed in the context.
-  js::Scope* enclosingScope = sc()->compilationInfo().enclosingScope;
-  js::Scope* varScope = EvalScope::nearestVarScopeForDirectEval(enclosingScope);
-  MOZ_ASSERT(varScope);
-  for (ScopeIter si(enclosingScope); si; si++) {
-    for (js::BindingIter bi(si.scope()); bi; bi++) {
-      if (bi.name() != name) {
-        continue;
-      }
-
-      switch (bi.kind()) {
-        case BindingKind::Let: {
-          // Annex B.3.5 allows redeclaring simple (non-destructured)
-          // catch parameters with var declarations.
-          bool annexB35Allowance = si.kind() == ScopeKind::SimpleCatch;
-          if (!annexB35Allowance) {
-            return Some(ScopeKindIsCatch(si.kind())
-                            ? DeclarationKind::CatchParameter
-                            : DeclarationKind::Let);
-          }
-          break;
-        }
-
-        case BindingKind::Const:
-          return Some(DeclarationKind::Const);
-
-        case BindingKind::Import:
-        case BindingKind::FormalParameter:
-        case BindingKind::Var:
-        case BindingKind::NamedLambdaCallee:
-          break;
-      }
-    }
-
-    if (si.scope() == varScope) {
-      break;
-    }
+bool ParseContext::isVarRedeclaredInEval(TaggedParserAtomIndex name,
+                                         ParserBase* parser,
+                                         DeclarationKind kind,
+                                         Maybe<DeclarationKind>* out) {
+  auto maybeKind = parser->getCompilationState()
+                       .scopeContext.lookupLexicalBindingInEnclosingScope(name);
+  if (!maybeKind) {
+    *out = Nothing();
+    return true;
   }
 
-  return Nothing();
+  switch (*maybeKind) {
+    case ScopeContext::EnclosingLexicalBindingKind::Let:
+      *out = Some(DeclarationKind::Let);
+      break;
+    case ScopeContext::EnclosingLexicalBindingKind::Const:
+      *out = Some(DeclarationKind::Const);
+      break;
+    case ScopeContext::EnclosingLexicalBindingKind::CatchParameter:
+      *out = Some(DeclarationKind::CatchParameter);
+      break;
+    case ScopeContext::EnclosingLexicalBindingKind::Synthetic:
+      *out = Some(DeclarationKind::Synthetic);
+      break;
+    case ScopeContext::EnclosingLexicalBindingKind::PrivateMethod:
+      *out = Some(DeclarationKind::PrivateMethod);
+      break;
+  }
+  return true;
 }
 
-bool ParseContext::tryDeclareVar(HandlePropertyName name, DeclarationKind kind,
-                                 uint32_t beginPos,
+bool ParseContext::tryDeclareVar(TaggedParserAtomIndex name, ParserBase* parser,
+                                 DeclarationKind kind, uint32_t beginPos,
                                  Maybe<DeclarationKind>* redeclaredKind,
                                  uint32_t* prevPos) {
-  return tryDeclareVarHelper<NotDryRun>(name, kind, beginPos, redeclaredKind,
-                                        prevPos);
+  return tryDeclareVarHelper<NotDryRun>(name, parser, kind, beginPos,
+                                        redeclaredKind, prevPos);
 }
 
 template <ParseContext::DryRunOption dryRunOption>
-bool ParseContext::tryDeclareVarHelper(HandlePropertyName name,
-                                       DeclarationKind kind, uint32_t beginPos,
+bool ParseContext::tryDeclareVarHelper(TaggedParserAtomIndex name,
+                                       ParserBase* parser, DeclarationKind kind,
+                                       uint32_t beginPos,
                                        Maybe<DeclarationKind>* redeclaredKind,
                                        uint32_t* prevPos) {
   MOZ_ASSERT(DeclarationKindIsVar(kind));
@@ -512,7 +534,9 @@ bool ParseContext::tryDeclareVarHelper(HandlePropertyName name,
 
   if (!sc()->strict() && sc()->isEvalContext() &&
       (dryRunOption == NotDryRun || innermostScope() == &varScope())) {
-    *redeclaredKind = isVarRedeclaredInEval(name, kind);
+    if (!isVarRedeclaredInEval(name, parser, kind, redeclaredKind)) {
+      return false;
+    }
     // We don't have position information at runtime.
     *prevPos = DeclaredNameInfo::npos;
   }
@@ -521,7 +545,7 @@ bool ParseContext::tryDeclareVarHelper(HandlePropertyName name,
 }
 
 bool ParseContext::hasUsedName(const UsedNameTracker& usedNames,
-                               HandlePropertyName name) {
+                               TaggedParserAtomIndex name) {
   if (auto p = usedNames.lookup(name)) {
     return p->value().isUsedInScript(scriptId());
   }
@@ -529,9 +553,9 @@ bool ParseContext::hasUsedName(const UsedNameTracker& usedNames,
 }
 
 bool ParseContext::hasUsedFunctionSpecialName(const UsedNameTracker& usedNames,
-                                              HandlePropertyName name) {
-  MOZ_ASSERT(name == sc()->cx_->parserNames().arguments ||
-             name == sc()->cx_->parserNames().dotThis);
+                                              TaggedParserAtomIndex name) {
+  MOZ_ASSERT(name == TaggedParserAtomIndex::WellKnown::arguments() ||
+             name == TaggedParserAtomIndex::WellKnown::dotThis());
   return hasUsedName(usedNames, name) ||
          functionBox()->bindingsAccessedDynamically();
 }
@@ -547,7 +571,7 @@ bool ParseContext::declareFunctionThis(const UsedNameTracker& usedNames,
   // Derived class constructors emit JSOp::CheckReturn, which requires
   // '.this' to be bound.
   FunctionBox* funbox = functionBox();
-  HandlePropertyName dotThis = sc()->cx_->parserNames().dotThis;
+  auto dotThis = TaggedParserAtomIndex::WellKnown::dotThis();
 
   bool declareThis;
   if (canSkipLazyClosedOverBindings) {
@@ -581,7 +605,7 @@ bool ParseContext::declareFunctionArgumentsObject(
   bool hasExtraBodyVarScope = &funScope != &_varScope;
 
   // Time to implement the odd semantics of 'arguments'.
-  HandlePropertyName argumentsName = sc()->cx_->parserNames().arguments;
+  auto argumentsName = TaggedParserAtomIndex::WellKnown::arguments();
 
   bool tryDeclareArguments;
   if (canSkipLazyClosedOverBindings) {
@@ -626,33 +650,40 @@ bool ParseContext::declareFunctionArgumentsObject(
   }
 
   if (usesArguments) {
-    // There is an 'arguments' binding. Is the arguments object definitely
-    // needed?
-    //
-    // Also see the flags' comments in ContextFlags.
-    funbox->setArgumentsHasVarBinding();
-
-    // Dynamic scope access destroys all hope of optimization.
-    if (sc()->bindingsAccessedDynamically()) {
-      funbox->setAlwaysNeedsArgsObj();
-    }
+    funbox->setNeedsArgsObj();
   }
 
   return true;
 }
 
 bool ParseContext::declareDotGeneratorName() {
-  // The special '.generator' binding must be on the function scope, as
-  // generators expect to find it on the CallObject.
+  // The special '.generator' binding must be on the function scope, and must
+  // be marked closed-over, as generators expect to find it on the CallObject.
   ParseContext::Scope& funScope = functionScope();
-  HandlePropertyName dotGenerator = sc()->cx_->parserNames().dotGenerator;
+  auto dotGenerator = TaggedParserAtomIndex::WellKnown::dotGenerator();
   AddDeclaredNamePtr p = funScope.lookupDeclaredNameForAdd(dotGenerator);
-  if (!p &&
-      !funScope.addDeclaredName(this, p, dotGenerator, DeclarationKind::Var,
-                                DeclaredNameInfo::npos)) {
-    return false;
+  if (!p) {
+    if (!funScope.addDeclaredName(this, p, dotGenerator, DeclarationKind::Var,
+                                  DeclaredNameInfo::npos, ClosedOver::Yes)) {
+      return false;
+    }
   }
   return true;
+}
+
+bool ParseContext::declareTopLevelDotGeneratorName() {
+  // Provide a .generator binding on the module scope for compatibility with
+  // generator code, which expect to find it on the CallObject for normal
+  // generators.
+  MOZ_ASSERT(
+      sc()->isModuleContext(),
+      "Tried to declare top level dot generator in a non-module context.");
+  ParseContext::Scope& modScope = varScope();
+  auto dotGenerator = TaggedParserAtomIndex::WellKnown::dotGenerator();
+  AddDeclaredNamePtr p = modScope.lookupDeclaredNameForAdd(dotGenerator);
+  return p ||
+         modScope.addDeclaredName(this, p, dotGenerator, DeclarationKind::Var,
+                                  DeclaredNameInfo::npos, ClosedOver::Yes);
 }
 
 }  // namespace frontend

@@ -12,8 +12,9 @@
 #include "xpcAccessibleSelectable.h"
 #include "xpcAccessibleValue.h"
 
-#include "Accessible.h"
-#include "AccessibleOrProxy.h"
+#include "LocalAccessible.h"
+#include "mozilla/a11y/Accessible.h"
+#include "mozilla/a11y/RemoteAccessible.h"
 
 namespace mozilla {
 namespace a11y {
@@ -33,13 +34,11 @@ class xpcAccessibleGeneric : public xpcAccessible,
     if (aInternal->IsLink()) mSupportedIfaces |= eHyperLink;
   }
 
-  xpcAccessibleGeneric(ProxyAccessible* aProxy, uint8_t aInterfaces)
-      : mIntl(aProxy), mSupportedIfaces(aInterfaces) {}
-
   NS_DECL_ISUPPORTS
 
   // nsIAccessible
-  Accessible* ToInternalAccessible() const final;
+  LocalAccessible* ToInternalAccessible() const final;
+  Accessible* ToInternalGeneric() const final { return mIntl; }
 
   // xpcAccessibleGeneric
   virtual void Shutdown();
@@ -47,7 +46,7 @@ class xpcAccessibleGeneric : public xpcAccessible,
  protected:
   virtual ~xpcAccessibleGeneric();
 
-  AccessibleOrProxy mIntl;
+  Accessible* mIntl;
 
   enum {
     eSelectable = 1 << 0,
@@ -58,7 +57,7 @@ class xpcAccessibleGeneric : public xpcAccessible,
   uint8_t mSupportedIfaces;
 
  private:
-  friend class Accessible;
+  friend class LocalAccessible;
   friend class xpcAccessible;
   friend class xpcAccessibleHyperLink;
   friend class xpcAccessibleSelectable;
@@ -68,23 +67,29 @@ class xpcAccessibleGeneric : public xpcAccessible,
   xpcAccessibleGeneric& operator=(const xpcAccessibleGeneric&) = delete;
 };
 
-inline Accessible* xpcAccessible::Intl() {
-  return static_cast<xpcAccessibleGeneric*>(this)->mIntl.AsAccessible();
+inline LocalAccessible* xpcAccessible::Intl() {
+  if (!static_cast<xpcAccessibleGeneric*>(this)->mIntl) {
+    return nullptr;
+  }
+  return static_cast<xpcAccessibleGeneric*>(this)->mIntl->AsLocal();
 }
 
-inline AccessibleOrProxy xpcAccessible::IntlGeneric() {
+inline Accessible* xpcAccessible::IntlGeneric() {
   return static_cast<xpcAccessibleGeneric*>(this)->mIntl;
 }
 
-inline AccessibleOrProxy xpcAccessibleHyperLink::Intl() {
+inline Accessible* xpcAccessibleHyperLink::Intl() {
   return static_cast<xpcAccessibleGeneric*>(this)->mIntl;
 }
 
-inline Accessible* xpcAccessibleSelectable::Intl() {
-  return static_cast<xpcAccessibleGeneric*>(this)->mIntl.AsAccessible();
+inline LocalAccessible* xpcAccessibleSelectable::Intl() {
+  if (!static_cast<xpcAccessibleGeneric*>(this)->mIntl) {
+    return nullptr;
+  }
+  return static_cast<xpcAccessibleGeneric*>(this)->mIntl->AsLocal();
 }
 
-inline AccessibleOrProxy xpcAccessibleValue::Intl() {
+inline Accessible* xpcAccessibleValue::Intl() {
   return static_cast<xpcAccessibleGeneric*>(this)->mIntl;
 }
 

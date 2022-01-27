@@ -13,14 +13,14 @@
 #include "nsIPopupContainer.h"
 #include "nsIContent.h"
 #include "nsFrameManager.h"
+#include "nsLayoutUtils.h"
 #include "mozilla/BasicEvents.h"
+#include "mozilla/DisplayPortUtils.h"
 #include "mozilla/PresShell.h"
 
 using namespace mozilla;
 
 // Interface IDs
-
-//#define DEBUG_REFLOW
 
 // static
 nsIPopupContainer* nsIPopupContainer::GetPopupContainer(PresShell* aPresShell) {
@@ -142,10 +142,6 @@ void nsRootBoxFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
   }
 }
 
-#ifdef DEBUG_REFLOW
-int32_t gReflows = 0;
-#endif
-
 void nsRootBoxFrame::Reflow(nsPresContext* aPresContext,
                             ReflowOutput& aDesiredSize,
                             const ReflowInput& aReflowInput,
@@ -153,10 +149,6 @@ void nsRootBoxFrame::Reflow(nsPresContext* aPresContext,
   DO_GLOBAL_REFLOW_COUNT("nsRootBoxFrame");
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
-#ifdef DEBUG_REFLOW
-  gReflows++;
-  printf("----Reflow %d----\n", gReflows);
-#endif
   return nsBoxFrame::Reflow(aPresContext, aDesiredSize, aReflowInput, aStatus);
 }
 
@@ -168,7 +160,7 @@ void nsRootBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     // base rect.
     nsRect displayPortBase =
         aBuilder->GetVisibleRect().Intersect(nsRect(nsPoint(0, 0), GetSize()));
-    nsLayoutUtils::SetDisplayPortBase(mContent, displayPortBase);
+    DisplayPortUtils::SetDisplayPortBase(mContent, displayPortBase);
   }
 
   // root boxes don't need a debug border/outline or a selection overlay...

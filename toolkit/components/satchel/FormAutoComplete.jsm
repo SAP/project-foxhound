@@ -293,13 +293,16 @@ FormAutoComplete.prototype = {
   /*
    * autoCompleteSearchAsync
    *
-   * aInputName    -- |name| attribute from the form input being autocompleted.
+   * aInputName -- |name| or |id| attribute value from the form input being
+   *               autocompleted
    * aUntrimmedSearchString -- current value of the input
    * aField -- HTMLInputElement being autocompleted (may be null if from chrome)
    * aPreviousResult -- previous search result, if any.
    * aDatalistResult -- results from list=datalist for aField.
    * aListener -- nsIFormAutoCompleteObserver that listens for the nsIAutoCompleteResult
    *              that may be returned asynchronously.
+   *  options -- an optional nsIPropertyBag2 containing additional search
+   *             parameters.
    */
   autoCompleteSearchAsync(
     aInputName,
@@ -307,12 +310,9 @@ FormAutoComplete.prototype = {
     aField,
     aPreviousResult,
     aDatalistResult,
-    aListener
+    aListener,
+    aOptions
   ) {
-    function sortBytotalScore(a, b) {
-      return b.totalScore - a.totalScore;
-    }
-
     // Guard against void DOM strings filtering into this code.
     if (typeof aInputName === "object") {
       aInputName = "";
@@ -320,11 +320,28 @@ FormAutoComplete.prototype = {
     if (typeof aUntrimmedSearchString === "object") {
       aUntrimmedSearchString = "";
     }
+    let params = {};
+    if (aOptions) {
+      try {
+        aOptions.QueryInterface(Ci.nsIPropertyBag2);
+        for (let { name, value } of aOptions.enumerator) {
+          params[name] = value;
+        }
+      } catch (ex) {
+        Cu.reportError("Invalid options object: " + ex);
+      }
+    }
 
     let client = new FormHistoryClient({
       formField: aField,
       inputName: aInputName,
     });
+
+    function maybeNotifyListener(result) {
+      if (aListener) {
+        aListener.onSearchCompletion(result);
+      }
+    }
 
     // If we have datalist results, they become our "empty" result.
     let emptyResult =
@@ -336,28 +353,23 @@ FormAutoComplete.prototype = {
         aUntrimmedSearchString
       );
     if (!this._enabled) {
-      if (aListener) {
-        aListener.onSearchCompletion(emptyResult);
-      }
+      maybeNotifyListener(emptyResult);
       return;
     }
 
-    // don't allow form inputs (aField != null) to get results from search bar history
+    // Don't allow form inputs (aField != null) to get results from
+    // search bar history.
     if (aInputName == "searchbar-history" && aField) {
       this.log(
         'autoCompleteSearch for input name "' + aInputName + '" is denied'
       );
-      if (aListener) {
-        aListener.onSearchCompletion(emptyResult);
-      }
+      maybeNotifyListener(emptyResult);
       return;
     }
 
     if (aField && isAutocompleteDisabled(aField)) {
       this.log("autoCompleteSearch not allowed due to autcomplete=off");
-      if (aListener) {
-        aListener.onSearchCompletion(emptyResult);
-      }
+      maybeNotifyListener(emptyResult);
       return;
     }
 
@@ -386,27 +398,27 @@ FormAutoComplete.prototype = {
       // in mergeResults).
       // If there were datalist results result is a FormAutoCompleteResult
       // as defined in nsFormAutoCompleteResult.jsm with the entire list
-      // of results in wrappedResult._values and only the results from
+      // of results in wrappedResult._items and only the results from
       // form history in wrappedResult.entries.
       // First, grab the entire list of old results.
-      let allResults = wrappedResult._labels;
-      let datalistResults, datalistLabels;
+      let allResults = wrappedResult._items;
+      let datalistItems;
       if (allResults) {
         // We have datalist results, extract them from the values array.
         // Both allResults and values arrays are in the form of:
         // |--wR.entries--|
         // <history entries><datalist entries>
-        let oldLabels = allResults.slice(wrappedResult.entries.length);
-        let oldValues = wrappedResult._values.slice(
-          wrappedResult.entries.length
-        );
+        let oldItems = allResults.slice(wrappedResult.entries.length);
 
-        datalistLabels = [];
-        datalistResults = [];
-        for (let i = 0; i < oldLabels.length; ++i) {
-          if (oldLabels[i].toLowerCase().includes(searchString)) {
-            datalistLabels.push(oldLabels[i]);
-            datalistResults.push(oldValues[i]);
+        datalistItems = [];
+        for (let i = 0; i < oldItems.length; ++i) {
+          if (oldItems[i].label.toLowerCase().includes(searchString)) {
+            datalistItems.push({
+              value: oldItems[i].value,
+              label: oldItems[i].label,
+              comment: "",
+              removable: oldItems[i].removable,
+            });
           }
         }
       }
@@ -435,33 +447,27 @@ FormAutoComplete.prototype = {
         );
         filteredEntries.push(entry);
       }
-      filteredEntries.sort(sortBytotalScore);
+      filteredEntries.sort((a, b) => b.totalScore - a.totalScore);
       wrappedResult.entries = filteredEntries;
 
       // If we had datalistResults, re-merge them back into the filtered
       // entries.
-      if (datalistResults) {
-        filteredEntries = filteredEntries.map(elt => elt.text);
+      if (datalistItems) {
+        filteredEntries = filteredEntries.map(elt => ({
+          value: elt.text,
+          // History entries don't have labels (their labels would be read
+          // from their values).
+          label: "",
+          comment: "",
+          removable: true,
+        }));
 
-        let comments = new Array(
-          filteredEntries.length + datalistResults.length
-        ).fill("");
-        comments[filteredEntries.length] = "separator";
+        datalistItems[0].comment = "separator";
 
-        // History entries don't have labels (their labels would be read
-        // from their values). Pad out the labels array so the datalist
-        // results (which do have separate values and labels) line up.
-        datalistLabels = new Array(filteredEntries.length)
-          .fill("")
-          .concat(datalistLabels);
-        wrappedResult._values = filteredEntries.concat(datalistResults);
-        wrappedResult._labels = datalistLabels;
-        wrappedResult._comments = comments;
+        wrappedResult._items = filteredEntries.concat(datalistItems);
       }
 
-      if (aListener) {
-        aListener.onSearchCompletion(result);
-      }
+      maybeNotifyListener(result);
     } else {
       this.log("Creating new autocomplete search result.");
 
@@ -488,35 +494,34 @@ FormAutoComplete.prototype = {
           result = this.mergeResults(result, aDatalistResult);
         }
 
-        if (aListener) {
-          aListener.onSearchCompletion(result);
-        }
+        maybeNotifyListener(result);
       };
 
       this.getAutoCompleteValues(
         client,
         aInputName,
         searchString,
+        params,
         processEntry
       );
     }
   },
 
   mergeResults(historyResult, datalistResult) {
-    let values = datalistResult.wrappedJSObject._values;
-    let labels = datalistResult.wrappedJSObject._labels;
-    let comments = new Array(values.length).fill("");
+    let items = datalistResult.wrappedJSObject._items;
 
     // historyResult will be null if form autocomplete is disabled. We
     // still want the list values to display.
     let entries = historyResult.wrappedJSObject.entries;
-    let historyResults = entries.map(entry => entry.text);
-    let historyComments = new Array(entries.length).fill("");
+    let historyResults = entries.map(entry => ({
+      value: entry.text,
+      label: entry.text,
+      comment: "",
+      removable: true,
+    }));
 
     // now put the history results above the datalist suggestions
-    let finalValues = historyResults.concat(values);
-    let finalLabels = historyResults.concat(labels);
-    let finalComments = historyComments.concat(comments);
+    let finalItems = historyResults.concat(items);
 
     // This is ugly: there are two FormAutoCompleteResult classes in the
     // tree, one in a module and one in this file. Datalist results need to
@@ -532,9 +537,7 @@ FormAutoComplete.prototype = {
       Ci.nsIAutoCompleteResult.RESULT_SUCCESS,
       0,
       "",
-      finalValues,
-      finalLabels,
-      finalComments,
+      finalItems,
       historyResult
     );
   },
@@ -552,21 +555,26 @@ FormAutoComplete.prototype = {
    *  client - a FormHistoryClient instance to perform the search with
    *  fieldName - fieldname field within form history (the form input name)
    *  searchString - string to search for
+   *  params - object containing additional properties to query autocomplete.
    *  callback - called when the values are available. Passed an array of objects,
    *             containing properties for each result. The callback is only called
    *             when successful.
    */
-  getAutoCompleteValues(client, fieldName, searchString, callback) {
-    let params = {
-      agedWeight: this._agedWeight,
-      bucketSize: this._bucketSize,
-      expiryDate: 1000 * (Date.now() - this._expireDays * 24 * 60 * 60 * 1000),
-      fieldname: fieldName,
-      maxTimeGroupings: this._maxTimeGroupings,
-      timeGroupingSize: this._timeGroupingSize,
-      prefixWeight: this._prefixWeight,
-      boundaryWeight: this._boundaryWeight,
-    };
+  getAutoCompleteValues(client, fieldName, searchString, params, callback) {
+    params = Object.assign(
+      {
+        agedWeight: this._agedWeight,
+        bucketSize: this._bucketSize,
+        expiryDate:
+          1000 * (Date.now() - this._expireDays * 24 * 60 * 60 * 1000),
+        fieldname: fieldName,
+        maxTimeGroupings: this._maxTimeGroupings,
+        timeGroupingSize: this._timeGroupingSize,
+        prefixWeight: this._prefixWeight,
+        boundaryWeight: this._boundaryWeight,
+      },
+      params
+    );
 
     this.stopAutoCompleteSearch();
     client.requestAutoCompleteResults(searchString, params, entries => {
@@ -685,6 +693,10 @@ FormAutoCompleteResult.prototype = {
 
   getFinalCompleteValueAt(index) {
     return this.getValueAt(index);
+  },
+
+  isRemovableAt(index) {
+    return true;
   },
 
   removeValueAt(index) {

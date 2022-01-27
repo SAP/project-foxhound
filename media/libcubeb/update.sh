@@ -14,6 +14,7 @@ cp $1/src/android/sles_definitions.h src/android
 cp $1/src/cubeb-internal.h src
 cp $1/src/cubeb-speex-resampler.h src
 cp $1/src/cubeb.c src
+cp $1/src/cubeb_aaudio.cpp src
 cp $1/src/cubeb_alsa.c src
 cp $1/src/cubeb_array_queue.h src
 cp $1/src/cubeb_audiounit.cpp src
@@ -23,10 +24,12 @@ cp $1/src/cubeb_log.h src
 cp $1/src/cubeb_mixer.cpp src
 cp $1/src/cubeb_mixer.h src
 cp $1/src/cubeb_opensl.c src
+cp $1/src/cubeb_android.h src
 cp $1/src/cubeb-jni.cpp src
 cp $1/src/cubeb-jni.h src
 cp $1/src/android/cubeb-output-latency.h src/android
 cp $1/src/android/cubeb_media_library.h src/android
+cp $1/src/cubeb_oss.c src
 cp $1/src/cubeb_osx_run_loop.h src
 cp $1/src/cubeb_resampler.cpp src
 cp $1/src/cubeb_resampler.h src
@@ -78,11 +81,8 @@ if [ -n "$rev" ]; then
     echo "Updating moz.yaml failed."
     exit 1
   fi
-  rm moz.yaml.bak
+  rm -f moz.yaml.bak
   [[ -n "$commits" ]] && echo -e "Pick commits:\n$commits"
 else
   echo "Remember to update moz.yaml with the version details."
 fi
-
-echo "Applying a patch on top of $rev"
-patch -p3 < ./disable-assert.patch

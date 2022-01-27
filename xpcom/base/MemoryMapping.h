@@ -7,9 +7,10 @@
 #ifndef mozilla_MemoryMapping_h
 #define mozilla_MemoryMapping_h
 
+#include <cstdint>
 #include "mozilla/EnumSet.h"
 #include "nsString.h"
-#include "nsTArray.h"
+#include "nsTArrayForwardDeclare.h"
 
 /**
  * MemoryMapping is a helper class which describes an entry in the Linux
@@ -121,7 +122,8 @@ class MemoryMapping final {
   bool operator<(const void* aPtr) const { return mStart < uintptr_t(aPtr); }
 
  private:
-  friend nsresult GetMemoryMappings(nsTArray<MemoryMapping>& aMappings);
+  friend nsresult GetMemoryMappings(nsTArray<MemoryMapping>& aMappings,
+                                    pid_t aPid);
 
   uintptr_t mStart = 0;
   uintptr_t mEnd = 0;
@@ -174,7 +176,7 @@ class MemoryMapping final {
   }
 };
 
-nsresult GetMemoryMappings(nsTArray<MemoryMapping>& aMappings);
+nsresult GetMemoryMappings(nsTArray<MemoryMapping>& aMappings, pid_t aPid = 0);
 
 }  // namespace mozilla
 

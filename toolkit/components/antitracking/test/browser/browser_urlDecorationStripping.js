@@ -41,7 +41,7 @@ add_task(async _ => {
   let records = [
     {
       id: "1",
-      last_modified: 100000000000000000001,
+      last_modified: 1000000000000001,
       schema: Date.now(),
       token: TOKEN_1,
     },
@@ -87,19 +87,19 @@ add_task(async _ => {
   records.push(
     {
       id: "2",
-      last_modified: 100000000000000000002,
+      last_modified: 1000000000000002,
       schema: Date.now(),
       token: TOKEN_2,
     },
     {
       id: "3",
-      last_modified: 100000000000000000003,
+      last_modified: 1000000000000003,
       schema: Date.now(),
       token: TOKEN_3,
     },
     {
       id: "4",
-      last_modified: 100000000000000000004,
+      last_modified: 1000000000000005,
       schema: Date.now(),
       token: TOKEN_4,
     }
@@ -143,7 +143,10 @@ AntiTracking._createTask({
       ok(false, "No query parameters should be found");
     }
   },
-  extraPrefs: [["network.http.referer.defaultPolicy.trackers", 3]],
+  extraPrefs: [
+    ["network.http.referer.defaultPolicy", 3], // Ensure we don't downgrade because of the default policy.
+    ["network.http.referer.defaultPolicy.trackers", 3],
+  ],
   expectedBlockingNotifications: 0,
   runInPrivateWindow: false,
   iframeSandbox: null,
@@ -199,7 +202,10 @@ AntiTracking._createTask({
       ok(false, "No query parameters should be found");
     }
   },
-  extraPrefs: [["network.http.referer.defaultPolicy.trackers", 3]],
+  extraPrefs: [
+    ["network.http.referer.defaultPolicy", 3], // Ensure we don't downgrade because of the default policy.
+    ["network.http.referer.defaultPolicy.trackers", 3],
+  ],
   expectedBlockingNotifications: 0,
   runInPrivateWindow: false,
   iframeSandbox: null,

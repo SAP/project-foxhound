@@ -17,7 +17,9 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/FetchService.h"
 #include "mozilla/dom/RemoteWorkerController.h"
 #include "mozilla/dom/RemoteWorkerTypes.h"
 #include "mozilla/dom/ServiceWorkerOpArgs.h"
@@ -106,6 +108,10 @@ class ServiceWorkerPrivateImpl final : public ServiceWorkerPrivate::Inner,
 
   void ErrorReceived(const ErrorValue& aError) override;
 
+  void LockNotified(bool aCreated) final {
+    // no-op for service workers
+  }
+
   void Terminated() override;
 
   // Refreshes only the parts of mRemoteWorkerData that may change over time.
@@ -118,8 +124,9 @@ class ServiceWorkerPrivateImpl final : public ServiceWorkerPrivate::Inner,
 
   nsresult SendFetchEventInternal(
       RefPtr<ServiceWorkerRegistrationInfo>&& aRegistration,
-      ServiceWorkerFetchEventOpArgs&& aArgs,
-      nsCOMPtr<nsIInterceptedChannel>&& aChannel);
+      ParentToParentServiceWorkerFetchEventOpArgs&& aArgs,
+      nsCOMPtr<nsIInterceptedChannel>&& aChannel,
+      RefPtr<FetchServiceResponsePromise>&& aPreloadResponseReadyPromise);
 
   void Shutdown();
 
@@ -160,18 +167,27 @@ class ServiceWorkerPrivateImpl final : public ServiceWorkerPrivate::Inner,
 
   class PendingFetchEvent final : public PendingFunctionalEvent {
    public:
-    PendingFetchEvent(ServiceWorkerPrivateImpl* aOwner,
-                      RefPtr<ServiceWorkerRegistrationInfo>&& aRegistration,
-                      ServiceWorkerFetchEventOpArgs&& aArgs,
-                      nsCOMPtr<nsIInterceptedChannel>&& aChannel);
+    PendingFetchEvent(
+        ServiceWorkerPrivateImpl* aOwner,
+        RefPtr<ServiceWorkerRegistrationInfo>&& aRegistration,
+        ParentToParentServiceWorkerFetchEventOpArgs&& aArgs,
+        nsCOMPtr<nsIInterceptedChannel>&& aChannel,
+        RefPtr<FetchServiceResponsePromise>&& aPreloadResponseReadyPromise);
 
     nsresult Send() override;
 
     ~PendingFetchEvent();
 
    private:
-    ServiceWorkerFetchEventOpArgs mArgs;
+    ParentToParentServiceWorkerFetchEventOpArgs mArgs;
     nsCOMPtr<nsIInterceptedChannel> mChannel;
+    // The promise from FetchService. It indicates if the preload response is
+    // ready or not. The promise's resolve/reject value should be handled in
+    // FetchEventOpChild, such that the preload result can be propagated to the
+    // ServiceWorker through IPC. However, FetchEventOpChild creation could be
+    // pending here, so this member is needed. And it will be forwarded to
+    // FetchEventOpChild when crearting the FetchEventOpChild.
+    RefPtr<FetchServiceResponsePromise> mPreloadResponseReadyPromise;
   };
 
   nsTArray<UniquePtr<PendingFunctionalEvent>> mPendingFunctionalEvents;
@@ -225,6 +241,8 @@ class ServiceWorkerPrivateImpl final : public ServiceWorkerPrivate::Inner,
   RefPtr<ServiceWorkerPrivate> mOuter;
 
   RemoteWorkerData mRemoteWorkerData;
+
+  TimeStamp mServiceWorkerLaunchTimeStart;
 };
 
 }  // namespace dom

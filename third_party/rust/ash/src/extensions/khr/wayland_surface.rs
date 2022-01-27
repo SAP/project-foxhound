@@ -1,8 +1,7 @@
-#![allow(dead_code)]
 use crate::prelude::*;
-use crate::version::{EntryV1_0, InstanceV1_0};
 use crate::vk;
 use crate::RawPtr;
+use crate::{EntryCustom, Instance};
 use std::ffi::CStr;
 use std::mem;
 
@@ -13,11 +12,11 @@ pub struct WaylandSurface {
 }
 
 impl WaylandSurface {
-    pub fn new<E: EntryV1_0, I: InstanceV1_0>(entry: &E, instance: &I) -> WaylandSurface {
+    pub fn new<L>(entry: &EntryCustom<L>, instance: &Instance) -> Self {
         let surface_fn = vk::KhrWaylandSurfaceFn::load(|name| unsafe {
             mem::transmute(entry.get_instance_proc_addr(instance.handle(), name.as_ptr()))
         });
-        WaylandSurface {
+        Self {
             handle: instance.handle(),
             wayland_surface_fn: surface_fn,
         }
@@ -34,19 +33,17 @@ impl WaylandSurface {
         allocation_callbacks: Option<&vk::AllocationCallbacks>,
     ) -> VkResult<vk::SurfaceKHR> {
         let mut surface = mem::zeroed();
-        let err_code = self.wayland_surface_fn.create_wayland_surface_khr(
-            self.handle,
-            create_info,
-            allocation_callbacks.as_raw_ptr(),
-            &mut surface,
-        );
-        match err_code {
-            vk::Result::SUCCESS => Ok(surface),
-            _ => Err(err_code),
-        }
+        self.wayland_surface_fn
+            .create_wayland_surface_khr(
+                self.handle,
+                create_info,
+                allocation_callbacks.as_raw_ptr(),
+                &mut surface,
+            )
+            .result_with_success(surface)
     }
 
-    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/vkGetPhysicalDeviceWaylandPresentationSupportKHR.html"]
+    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/vkGetPhysicalDeviceWaylandPresentationSupportKHR.html>"]
     pub unsafe fn get_physical_device_wayland_presentation_support(
         &self,
         physical_device: vk::PhysicalDevice,

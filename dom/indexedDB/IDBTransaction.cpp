@@ -67,8 +67,7 @@ ThreadLocal* GetIndexedDBThreadLocal() {
 }
 }  // namespace
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace mozilla::dom::indexedDB;
 using namespace mozilla::ipc;
@@ -156,7 +155,6 @@ IDBTransaction::~IDBTransaction() {
   MOZ_ASSERT(!HasTransactionChild(),
              "SendDeleteMeInternal should have cleared!");
 
-  ReleaseWrapper(this);
   mozilla::DropJSObjects(this);
 }
 
@@ -299,18 +297,16 @@ BackgroundRequestChild* IDBTransaction::StartRequest(
   return actor;
 }
 
-void IDBTransaction::OpenCursor(
-    PBackgroundIDBCursorChild* const aBackgroundActor,
-    const OpenCursorParams& aParams) {
+void IDBTransaction::OpenCursor(PBackgroundIDBCursorChild& aBackgroundActor,
+                                const OpenCursorParams& aParams) {
   AssertIsOnOwningThread();
-  MOZ_ASSERT(aBackgroundActor);
   MOZ_ASSERT(aParams.type() != OpenCursorParams::T__None);
 
-  DoWithTransactionChild([aBackgroundActor, &aParams](auto& actor) {
-    actor.SendPBackgroundIDBCursorConstructor(aBackgroundActor, aParams);
+  DoWithTransactionChild([&aBackgroundActor, &aParams](auto& actor) {
+    actor.SendPBackgroundIDBCursorConstructor(&aBackgroundActor, aParams);
   });
 
-  MOZ_ASSERT(aBackgroundActor->GetActorEventTarget(),
+  MOZ_ASSERT(aBackgroundActor.GetActorEventTarget(),
              "The event target shall be inherited from its manager actor.");
 
   // Balanced in BackgroundCursorChild::RecvResponse().
@@ -837,21 +833,21 @@ int64_t IDBTransaction::NextIndexId() {
 void IDBTransaction::InvalidateCursorCaches() {
   AssertIsOnOwningThread();
 
-  for (auto* const cursor : mCursors) {
+  for (const auto& cursor : mCursors) {
     cursor->InvalidateCachedResponses();
   }
 }
 
-void IDBTransaction::RegisterCursor(IDBCursor* const aCursor) {
+void IDBTransaction::RegisterCursor(IDBCursor& aCursor) {
   AssertIsOnOwningThread();
 
-  mCursors.AppendElement(aCursor);
+  mCursors.AppendElement(WrapNotNullUnchecked(&aCursor));
 }
 
-void IDBTransaction::UnregisterCursor(IDBCursor* const aCursor) {
+void IDBTransaction::UnregisterCursor(IDBCursor& aCursor) {
   AssertIsOnOwningThread();
 
-  DebugOnly<bool> removed = mCursors.RemoveElement(aCursor);
+  DebugOnly<bool> removed = mCursors.RemoveElement(&aCursor);
   MOZ_ASSERT(removed);
 }
 
@@ -1033,5 +1029,4 @@ void IDBTransaction::CommitIfNotStarted() {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

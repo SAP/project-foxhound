@@ -32,8 +32,12 @@ impl MetricType for TimespanMetric {
     }
 }
 
+// IMPORTANT:
+//
+// When changing this implementation, make sure all the operations are
+// also declared in the related trait in `../traits/`.
 impl TimespanMetric {
-    /// Create a new timespan metric.
+    /// Creates a new timespan metric.
     pub fn new(meta: CommonMetricData, time_unit: TimeUnit) -> Self {
         Self {
             meta,
@@ -42,11 +46,12 @@ impl TimespanMetric {
         }
     }
 
-    /// Start tracking time for the provided metric.
+    /// Starts tracking time for the provided metric.
     ///
-    /// This records an error if it's already tracking time (i.e. start was already
-    /// called with no corresponding `stop`): in that case the original
-    /// start time will be preserved.
+    /// This records an error if it's already tracking time (i.e. start was
+    /// already called with no corresponding
+    /// [`set_stop`](TimespanMetric::set_stop)): in that case the original start
+    /// time will be preserved.
     pub fn set_start(&mut self, glean: &Glean, start_time: u64) {
         if !self.should_record(glean) {
             return;
@@ -66,9 +71,9 @@ impl TimespanMetric {
         self.start_time = Some(start_time);
     }
 
-    /// Stop tracking time for the provided metric. Sets the metric to the elapsed time.
+    /// Stops tracking time for the provided metric. Sets the metric to the elapsed time.
     ///
-    /// This will record an error if no `start` was called.
+    /// This will record an error if no [`set_start`](TimespanMetric::set_start) was called.
     pub fn set_stop(&mut self, glean: &Glean, stop_time: u64) {
         if !self.should_record(glean) {
             // Reset timer when disabled, so that we don't record timespans across
@@ -88,30 +93,46 @@ impl TimespanMetric {
             return;
         }
 
-        let duration = stop_time - self.start_time.take().unwrap();
+        let start_time = self.start_time.take().unwrap();
+        let duration = match stop_time.checked_sub(start_time) {
+            Some(duration) => duration,
+            None => {
+                record_error(
+                    glean,
+                    &self.meta,
+                    ErrorType::InvalidValue,
+                    "Timespan was negative",
+                    None,
+                );
+                return;
+            }
+        };
         let duration = Duration::from_nanos(duration);
-        self.set_raw(glean, duration, false);
+        self.set_raw(glean, duration);
     }
 
-    /// Abort a previous `start` call. No error is recorded if no `start` was called.
+    /// Aborts a previous [`set_start`](TimespanMetric::set_start) call. No
+    /// error is recorded if no [`set_start`](TimespanMetric::set_start) was
+    /// called.
     pub fn cancel(&mut self) {
         self.start_time = None;
     }
 
-    /// Explicitly set the timespan value.
+    /// Explicitly sets the timespan value.
     ///
-    /// This API should only be used if your library or application requires recording
-    /// times in a way that can not make use of `start`/`stop`/`cancel`.
+    /// This API should only be used if your library or application requires
+    /// recording times in a way that can not make use of
+    /// [`set_start`](TimespanMetric::set_start)/[`set_stop`](TimespanMetric::set_stop)/[`cancel`](TimespanMetric::cancel).
     ///
-    /// Care should be taken using this if the ping lifetime might contain more than one
-    /// timespan measurement. To be safe, `set_raw` should generally be followed by
+    /// Care should be taken using this if the ping lifetime might contain more
+    /// than one timespan measurement. To be safe,
+    /// [`set_raw`](TimespanMetric::set_raw) should generally be followed by
     /// sending a custom ping containing the timespan.
     ///
-    /// ## Arguments
+    /// # Arguments
     ///
     /// * `elapsed` - The elapsed time to record.
-    /// * `overwrite` - Whether or not to overwrite existing data.
-    pub fn set_raw(&self, glean: &Glean, elapsed: Duration, overwrite: bool) {
+    pub fn set_raw(&self, glean: &Glean, elapsed: Duration) {
         if !self.should_record(glean) {
             return;
         }
@@ -129,19 +150,15 @@ impl TimespanMetric {
 
         let mut report_value_exists: bool = false;
         glean.storage().record_with(glean, &self.meta, |old_value| {
-            if overwrite {
-                Metric::Timespan(elapsed, self.time_unit)
-            } else {
-                match old_value {
-                    Some(old @ Metric::Timespan(..)) => {
-                        // If some value already exists, report an error.
-                        // We do this out of the storage since recording an
-                        // error accesses the storage as well.
-                        report_value_exists = true;
-                        old
-                    }
-                    _ => Metric::Timespan(elapsed, self.time_unit),
+            match old_value {
+                Some(old @ Metric::Timespan(..)) => {
+                    // If some value already exists, report an error.
+                    // We do this out of the storage since recording an
+                    // error accesses the storage as well.
+                    report_value_exists = true;
+                    old
                 }
+                _ => Metric::Timespan(elapsed, self.time_unit),
             }
         });
 
@@ -158,14 +175,15 @@ impl TimespanMetric {
 
     /// **Test-only API (exported for FFI purposes).**
     ///
-    /// Get the currently stored value as an integer.
+    /// Gets the currently stored value as an integer.
     ///
     /// This doesn't clear the stored value.
     pub fn test_get_value(&self, glean: &Glean, storage_name: &str) -> Option<u64> {
-        match StorageManager.snapshot_metric(
+        match StorageManager.snapshot_metric_for_test(
             glean.storage(),
             storage_name,
             &self.meta.identifier(glean),
+            self.meta.lifetime,
         ) {
             Some(Metric::Timespan(time, time_unit)) => Some(time_unit.duration_convert(time)),
             _ => None,

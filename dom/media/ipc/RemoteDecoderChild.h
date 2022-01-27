@@ -5,11 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef include_dom_media_ipc_RemoteDecoderChild_h
 #define include_dom_media_ipc_RemoteDecoderChild_h
-#include "mozilla/PRemoteDecoderChild.h"
 
 #include <functional>
-#include "IRemoteDecoderChild.h"
-#include "mozilla/ShmemPool.h"
+
+#include "mozilla/PRemoteDecoderChild.h"
+#include "mozilla/RemoteDecoderManagerChild.h"
+#include "mozilla/ShmemRecycleAllocator.h"
 
 namespace mozilla {
 
@@ -17,27 +18,30 @@ class RemoteDecoderManagerChild;
 using mozilla::MediaDataDecoder;
 using mozilla::ipc::IPCResult;
 
-class RemoteDecoderChild : public PRemoteDecoderChild,
-                           public IRemoteDecoderChild {
+class RemoteDecoderChild : public ShmemRecycleAllocator<RemoteDecoderChild>,
+                           public PRemoteDecoderChild {
   friend class PRemoteDecoderChild;
 
  public:
-  explicit RemoteDecoderChild(bool aRecreatedOnCrash = false);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RemoteDecoderChild);
+
+  explicit RemoteDecoderChild(RemoteDecodeIn aLocation);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
-  // IRemoteDecoderChild
-  RefPtr<MediaDataDecoder::InitPromise> Init() override;
+  // This interface closely mirrors the MediaDataDecoder plus a bit
+  // (DestroyIPDL) to allow proxying to a remote decoder in RemoteDecoderModule.
+  RefPtr<MediaDataDecoder::InitPromise> Init();
   RefPtr<MediaDataDecoder::DecodePromise> Decode(
-      const nsTArray<RefPtr<MediaRawData>>& aSamples) override;
-  RefPtr<MediaDataDecoder::DecodePromise> Drain() override;
-  RefPtr<MediaDataDecoder::FlushPromise> Flush() override;
-  RefPtr<mozilla::ShutdownPromise> Shutdown() override;
-  bool IsHardwareAccelerated(nsACString& aFailureReason) const override;
-  nsCString GetDescriptionName() const override;
-  void SetSeekThreshold(const media::TimeUnit& aTime) override;
-  MediaDataDecoder::ConversionRequired NeedsConversion() const override;
-  void DestroyIPDL() override;
+      const nsTArray<RefPtr<MediaRawData>>& aSamples);
+  RefPtr<MediaDataDecoder::DecodePromise> Drain();
+  RefPtr<MediaDataDecoder::FlushPromise> Flush();
+  RefPtr<mozilla::ShutdownPromise> Shutdown();
+  bool IsHardwareAccelerated(nsACString& aFailureReason) const;
+  nsCString GetDescriptionName() const;
+  void SetSeekThreshold(const media::TimeUnit& aTime);
+  MediaDataDecoder::ConversionRequired NeedsConversion() const;
+  void DestroyIPDL();
 
   // Called from IPDL when our actor has been destroyed
   void IPDLActorDestroyed();
@@ -45,14 +49,15 @@ class RemoteDecoderChild : public PRemoteDecoderChild,
   RemoteDecoderManagerChild* GetManager();
 
  protected:
-  virtual ~RemoteDecoderChild() = default;
+  virtual ~RemoteDecoderChild();
   void AssertOnManagerThread() const;
 
-  virtual MediaResult ProcessOutput(const DecodedOutputIPDL& aDecodedData) = 0;
+  virtual MediaResult ProcessOutput(DecodedOutputIPDL&& aDecodedData) = 0;
   virtual void RecordShutdownTelemetry(bool aForAbnormalShutdown) {}
 
   RefPtr<RemoteDecoderChild> mIPDLSelfRef;
   MediaDataDecoder::DecodedData mDecodedData;
+  const RemoteDecodeIn mLocation;
 
  private:
   const nsCOMPtr<nsISerialEventTarget> mThread;
@@ -67,15 +72,12 @@ class RemoteDecoderChild : public PRemoteDecoderChild,
   void HandleRejectionError(
       const ipc::ResponseRejectReason& aReason,
       std::function<void(const MediaResult&)>&& aCallback);
-  TimeStamp mRemoteProcessCrashTime;
 
   nsCString mHardwareAcceleratedReason;
   nsCString mDescription;
   bool mIsHardwareAccelerated = false;
-  const bool mRecreatedOnCrash;
   MediaDataDecoder::ConversionRequired mConversion =
       MediaDataDecoder::ConversionRequired::kNeedNone;
-  ShmemPool mRawFramePool;
 };
 
 }  // namespace mozilla

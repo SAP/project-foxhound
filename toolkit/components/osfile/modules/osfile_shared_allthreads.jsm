@@ -30,13 +30,14 @@
  * @constructor
  */
 var Meta;
+let Services;
 if (typeof Components != "undefined") {
   // Global definition of |exports|, to keep everybody happy.
   // In non-main thread, |exports| is provided by the module
   // loader.
   this.exports = {};
-
-  ChromeUtils.import("resource://gre/modules/Services.jsm", this);
+  ({ Services } = ChromeUtils.import("resource://gre/modules/Services.jsm"));
+  this.Services = Services;
   Meta = ChromeUtils.import("resource://gre/modules/PromiseWorker.jsm", {})
     .BasePromiseWorker.Meta;
 } else {
@@ -1166,6 +1167,14 @@ var declareFFI = function declareFFI(
         "Missing type for argument " + (i - 3) + " of symbol " + symbol
       );
     }
+    // Ellipsis for variadic arguments.
+    if (current == "...") {
+      if (i != arguments.length - 1) {
+        throw new TypeError("Variadic ellipsis must be the last argument");
+      }
+      signature.push(current);
+      continue;
+    }
     if (!current.implementation) {
       throw new TypeError(
         "Missing implementation for argument " +
@@ -1338,7 +1347,7 @@ Object.defineProperty(exports.OS.Shared, "DEBUG", {
     return Config.DEBUG;
   },
   set(x) {
-    return (Config.DEBUG = x);
+    Config.DEBUG = x;
   },
 });
 Object.defineProperty(exports.OS.Shared, "TEST", {
@@ -1346,7 +1355,7 @@ Object.defineProperty(exports.OS.Shared, "TEST", {
     return Config.TEST;
   },
   set(x) {
-    return (Config.TEST = x);
+    Config.TEST = x;
   },
 });
 

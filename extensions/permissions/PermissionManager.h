@@ -85,6 +85,7 @@ class PermissionManager final : public nsIPermissionManager,
    public:
     static PermissionKey* CreateFromPrincipal(nsIPrincipal* aPrincipal,
                                               bool aForceStripOA,
+                                              bool aScopeToSite,
                                               nsresult& aResult);
     static PermissionKey* CreateFromURI(nsIURI* aURI, nsresult& aResult);
     static PermissionKey* CreateFromURIAndOriginAttributes(
@@ -135,6 +136,9 @@ class PermissionManager final : public nsIPermissionManager,
     enum { ALLOW_MEMMOVE = false };
 
     inline nsTArray<PermissionEntry>& GetPermissions() { return mPermissions; }
+    inline const nsTArray<PermissionEntry>& GetPermissions() const {
+      return mPermissions;
+    }
 
     inline int32_t GetPermissionIndex(uint32_t aType) const {
       for (uint32_t i = 0; i < mPermissions.Length(); ++i)
@@ -213,11 +217,15 @@ class PermissionManager final : public nsIPermissionManager,
    * @param aPrincipal  The Principal which the key is to be extracted from.
    * @param aForceStripOA Whether to force stripping the principals origin
    *        attributes prior to generating the key.
+   * @param aSiteScopePermissions  Whether to prepare the key for permissions
+   *        scoped to the Principal's site, rather than origin. These are looked
+   *        up independently. Scoping of a permission is fully determined by its
+   *        type and determined by calls to the function IsSiteScopedPermission.
    * @param aKey  A string which will be filled with the permission
    * key.
    */
   static void GetKeyForPrincipal(nsIPrincipal* aPrincipal, bool aForceStripOA,
-                                 nsACString& aKey);
+                                 bool aSiteScopePermissions, nsACString& aKey);
 
   /**
    * See `nsIPermissionManager::GetPermissionsWithKey` for more info on
@@ -233,11 +241,15 @@ class PermissionManager final : public nsIPermissionManager,
    * @param aOrigin  The origin which the key is to be extracted from.
    * @param aForceStripOA Whether to force stripping the origins attributes
    *        prior to generating the key.
+   * @param aSiteScopePermissions  Whether to prepare the key for permissions
+   *        scoped to the Principal's site, rather than origin. These are looked
+   *        up independently. Scoping of a permission is fully determined by its
+   *        type and determined by calls to the function IsSiteScopedPermission.
    * @param aKey  A string which will be filled with the permission
    * key.
    */
   static void GetKeyForOrigin(const nsACString& aOrigin, bool aForceStripOA,
-                              nsACString& aKey);
+                              bool aSiteScopePermissions, nsACString& aKey);
 
   /**
    * See `nsIPermissionManager::GetPermissionsWithKey` for more info on
@@ -349,6 +361,16 @@ class PermissionManager final : public nsIPermissionManager,
   void WhenPermissionsAvailable(nsIPrincipal* aPrincipal,
                                 nsIRunnable* aRunnable);
 
+  /**
+   * Strip origin attributes for permissions, depending on permission isolation
+   * pref state.
+   * @param aForceStrip If true, strips user context and private browsing id,
+   * ignoring permission isolation prefs.
+   * @param aOriginAttributes object to strip.
+   */
+  static void MaybeStripOriginAttributes(bool aForceStrip,
+                                         OriginAttributes& aOriginAttributes);
+
  private:
   ~PermissionManager();
 
@@ -358,8 +380,12 @@ class PermissionManager final : public nsIPermissionManager,
    * attributes stripped before perm db lookup. This is currently only affects
    * the "cookie" permission.
    * @param aPrincipal Used for creating the permission key.
+   * @param aSiteScopePermissions Used to specify whether to get strip perms for
+   * site scoped permissions (defined in IsSiteScopedPermission) or all other
+   * permissions. Also used to create the permission key.
    */
   nsresult GetStripPermsForPrincipal(nsIPrincipal* aPrincipal,
+                                     bool aSiteScopePermissions,
                                      nsTArray<PermissionEntry>& aResult);
 
   // Returns -1 on failure
@@ -368,6 +394,14 @@ class PermissionManager final : public nsIPermissionManager,
   // Returns whether the given combination of expire type and expire time are
   // expired. Note that EXPIRE_SESSION only honors expireTime if it is nonzero.
   bool HasExpired(uint32_t aExpireType, int64_t aExpireTime);
+
+  // Appends the permissions associated with this principal to aResult.
+  // If the onlySiteScopePermissions argument is true, the permissions searched
+  // are those for the site of the principal and only the permissions that are
+  // site-scoped are used.
+  nsresult GetAllForPrincipalHelper(nsIPrincipal* aPrincipal,
+                                    bool aSiteScopePermissions,
+                                    nsTArray<RefPtr<nsIPermission>>& aResult);
 
   // Returns PermissionHashKey for a given { host, isInBrowserElement } tuple.
   // This is not simply using PermissionKey because we will walk-up domains in
@@ -471,6 +505,10 @@ class PermissionManager final : public nsIPermissionManager,
   template <class T>
   nsresult RemovePermissionEntries(T aCondition);
 
+  template <class T>
+  nsresult GetPermissionEntries(T aCondition,
+                                nsTArray<RefPtr<nsIPermission>>& aResult);
+
   // This method must be called before doing any operation to be sure that the
   // DB reading has been completed. This method is also in charge to complete
   // the migrations if needed.
@@ -482,7 +520,8 @@ class PermissionManager final : public nsIPermissionManager,
                        NotifyOperationType aNotifyOperation,
                        DBOperationType aDBOperation,
                        const bool aIgnoreSessionPermissions = false,
-                       const nsACString* aOriginString = nullptr);
+                       const nsACString* aOriginString = nullptr,
+                       const bool aAllowPersistInPrivateBrowsing = false);
 
   void MaybeAddReadEntryFromMigration(const nsACString& aOrigin,
                                       const nsCString& aType,

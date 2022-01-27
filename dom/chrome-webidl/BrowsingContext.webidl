@@ -3,8 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+interface URI;
 interface nsIDocShell;
 interface nsISecureBrowserUI;
+interface nsIPrintSettings;
 interface nsIWebProgress;
 
 interface mixin LoadContextMixin {
@@ -23,11 +25,40 @@ interface mixin LoadContextMixin {
 
   readonly attribute boolean useRemoteSubframes;
 
-  [BinaryName="useTrackingProtectionWebIDL"]
+  [BinaryName="useTrackingProtectionWebIDL", SetterThrows]
   attribute boolean useTrackingProtection;
 
   [NewObject, Throws]
   readonly attribute any originAttributes;
+};
+
+/**
+ * Allowed CSS display modes. This needs to be kept in
+ * sync with similar values in ServoStyleConsts.h
+ */
+enum DisplayMode {
+  "browser",
+  "minimal-ui",
+  "standalone",
+  "fullscreen",
+};
+
+/**
+ * CSS prefers-color-scheme values.
+ */
+enum PrefersColorSchemeOverride {
+  "none",
+  "light",
+  "dark",
+};
+
+/**
+ * Allowed overrides of platform/pref default behaviour for touch events.
+ */
+enum TouchEventsOverride {
+  "disabled", // Force-disable touch events.
+  "enabled", // Force-enable touch events.
+  "none", // Don't override behaviour for touch events.
 };
 
 [Exposed=Window, ChromeOnly]
@@ -35,6 +66,10 @@ interface BrowsingContext {
   static BrowsingContext? get(unsigned long long aId);
 
   static BrowsingContext? getFromWindow(WindowProxy window);
+
+  static BrowsingContext? getCurrentTopByBrowserId(unsigned long long aId);
+
+  sequence<BrowsingContext> getAllBrowsingContextsInSubtree();
 
   BrowsingContext? findChildWithName(DOMString name, BrowsingContext accessor);
   BrowsingContext? findWithName(DOMString name);
@@ -66,11 +101,17 @@ interface BrowsingContext {
 
   readonly attribute WindowContext? topWindowContext;
 
-  attribute [TreatNullAs=EmptyString] DOMString customPlatform;
+  readonly attribute boolean ancestorsAreCurrent;
 
-  attribute [TreatNullAs=EmptyString] DOMString customUserAgent;
+  [SetterThrows] attribute [LegacyNullToEmptyString] DOMString customPlatform;
+
+  [SetterThrows] attribute [LegacyNullToEmptyString] DOMString customUserAgent;
 
   readonly attribute DOMString embedderElementType;
+
+  readonly attribute boolean createdDynamically;
+
+  readonly attribute boolean isInBFCache;
 
   /**
    * The sandbox flags on the browsing context. These reflect the value of the
@@ -84,32 +125,58 @@ interface BrowsingContext {
    * browsing context and of its parent document, if any.
    * See nsSandboxFlags.h for the possible flags.
    */
-  attribute unsigned long sandboxFlags;
+  [SetterThrows] attribute unsigned long sandboxFlags;
+
+  [SetterThrows] attribute boolean isActive;
 
   // The inRDMPane flag indicates whether or not Responsive Design Mode is
   // active for the browsing context.
-  attribute boolean inRDMPane;
+  [SetterThrows] attribute boolean inRDMPane;
 
-  attribute float fullZoom;
+  [SetterThrows] attribute float fullZoom;
 
-  attribute float textZoom;
+  [SetterThrows] attribute float textZoom;
+
+  // Override the dots-per-CSS-pixel scaling factor in this BrowsingContext
+  // and all of its descendants. May only be set on the top BC, and should
+  // only be set from the parent process.
+  //
+  // A value of 0.0 causes us to use the global default scaling factor.
+  [SetterThrows] attribute float overrideDPPX;
+
+  [SetterThrows] attribute boolean suspendMediaWhenInactive;
+
+  // Default value for nsIContentViewer::authorStyleDisabled in any new
+  // browsing contexts created as a descendant of this one.
+  //
+  // Valid only for top browsing contexts.
+  [SetterThrows] attribute boolean authorStyleDisabledDefault;
 
   /**
    * Whether this docshell should save entries in global history.
    */
-  attribute boolean useGlobalHistory;
+  [SetterThrows] attribute boolean useGlobalHistory;
 
   // Extension to give chrome JS the ability to set the window screen
   // orientation while in RDM.
-  void setRDMPaneOrientation(OrientationType type, float rotationAngle);
+  [Throws] void setRDMPaneOrientation(OrientationType type, float rotationAngle);
 
   // Extension to give chrome JS the ability to set a maxTouchPoints override
   // while in RDM.
-  void setRDMPaneMaxTouchPoints(octet maxTouchPoints);
+  [Throws] void setRDMPaneMaxTouchPoints(octet maxTouchPoints);
 
   // The watchedByDevTools flag indicates whether or not DevTools are currently
   // debugging this browsing context.
   [SetterThrows] attribute boolean watchedByDevTools;
+
+  // Enable some service workers testing features, for DevTools.
+  [SetterThrows] attribute boolean serviceWorkersTestingEnabled;
+
+  // Enable media query medium override, for DevTools.
+  [SetterThrows] attribute DOMString mediumOverride;
+
+  // Color-scheme simulation, for DevTools.
+  [SetterThrows] attribute PrefersColorSchemeOverride prefersColorSchemeOverride;
 
   /**
    * A unique identifier for the browser element that is hosting this
@@ -119,7 +186,44 @@ interface BrowsingContext {
    * another browser element this ID will remain the same but hosted under the
    * under the new browser element.
    */
-  attribute unsigned long long browserId;
+  [SetterThrows] attribute unsigned long long browserId;
+
+  [SetterThrows] attribute DisplayMode displayMode;
+
+  /**
+   * This allows chrome to override the default choice of whether touch events
+   * are available in a specific BrowsingContext and its descendents.
+   */
+  readonly attribute TouchEventsOverride touchEventsOverride;
+
+  /**
+   * Partially determines whether script execution is allowed in this
+   * BrowsingContext. Script execution will be permitted only if this
+   * attribute is true and script execution is allowed in the parent
+   * WindowContext.
+   *
+   * May only be set in the parent process.
+   */
+  [SetterThrows] attribute boolean allowJavascript;
+
+  /*
+   * Default load flags (as defined in nsIRequest) that will be set on all
+   * requests made by this BrowsingContext.
+   */
+  [SetterThrows] attribute long defaultLoadFlags;
+
+  /**
+   * The nsID of the browsing context in the session history.
+   */
+  [NewObject, Throws]
+  readonly attribute any historyID;
+
+  readonly attribute ChildSHistory? childSessionHistory;
+
+  // Resets the location change rate limit. Used for testing.
+  void resetLocationChangeRateLimit();
+
+  readonly attribute long childOffset;
 };
 
 BrowsingContext includes LoadContextMixin;
@@ -141,7 +245,7 @@ interface CanonicalBrowsingContext : BrowsingContext {
   readonly attribute WindowGlobalParent? embedderWindowGlobal;
 
   void notifyStartDelayedAutoplayMedia();
-  void notifyMediaMutedChanged(boolean muted);
+  [Throws] void notifyMediaMutedChanged(boolean muted);
 
   readonly attribute nsISecureBrowserUI? secureBrowserUI;
 
@@ -173,18 +277,69 @@ interface CanonicalBrowsingContext : BrowsingContext {
   [Throws]
   void loadURI(DOMString aURI, optional LoadURIOptions aOptions = {});
 
+   /**
+    * Print the current document.
+    *
+    * @param aOuterWindowID the ID of the outer window to print
+    * @param aPrintSettings print settings to use; printSilent can be
+    *                       set to prevent prompting.
+    * @return A Promise that resolves once printing is finished.
+    */
+  [Throws]
+  Promise<void> print(nsIPrintSettings aPrintSettings);
+
   /**
    * These methods implement the nsIWebNavigation methods of the same names
    */
-  void goBack(optional long aCancelContentJSEpoch, optional boolean aRequireUserInteraction = false);
-  void goForward(optional long aCancelContentJSEpoch, optional boolean aRequireUserInteraction  = false);
-  void goToIndex(long aIndex, optional long aCancelContentJSEpoch);
+  void goBack(optional long aCancelContentJSEpoch, optional boolean aRequireUserInteraction = false, optional boolean aUserActivation = false);
+  void goForward(optional long aCancelContentJSEpoch, optional boolean aRequireUserInteraction  = false, optional boolean aUserActivation = false);
+  void goToIndex(long aIndex, optional long aCancelContentJSEpoch, optional boolean aUserActivation = false);
   void reload(unsigned long aReloadFlags);
   void stop(unsigned long aStopFlags);
 
   readonly attribute nsISHistory? sessionHistory;
 
   readonly attribute MediaController? mediaController;
+
+  void resetScalingZoom();
+
+  // The current URI loaded in this BrowsingContext according to nsDocShell.
+  // This may not match the current window global's document URI in some cases.
+  readonly attribute URI? currentURI;
+
+  void clearRestoreState();
+
+  /**
+   * This allows chrome to override the default choice of whether touch events
+   * are available in a specific BrowsingContext and its descendents.
+   */
+  [SetterThrows] inherit attribute TouchEventsOverride touchEventsOverride;
+
+  readonly attribute boolean isReplaced;
+
+
+  /**
+   * Notify APZ to start autoscrolling.
+   *
+   * (aAnchorX, aAnchorY) are the coordinates of the autoscroll anchor, in CSS
+   *                      coordinates relative to the screen.
+   * aScrollId and aPresShellId identify the scroll frame that content chose to
+   *                            scroll.
+   *
+   * Returns whether we were successfully able to notify APZ.
+   * If this function returns true, APZ (which may live in another process)
+   * may still reject the autoscroll, but it's then APZ's reponsibility
+   * to notify content via an "autoscroll-rejected-by-apz" message.
+   */
+  boolean startApzAutoscroll(float aAnchorX, float aAnchorY,
+                             unsigned long long aScrollId,
+                             unsigned long aPresShellId);
+
+  /**
+   * Notify APZ to stop autoscrolling.
+   */
+  void stopApzAutoscroll(unsigned long long aScrollId,
+                         unsigned long aPresShellId);
 };
 
 [Exposed=Window, ChromeOnly]

@@ -23,17 +23,15 @@ export function setKeyboardAccessForNonDialogElements(enableKeyboardAccess) {
     "login-item, login-list, menu-button, login-filter, fxaccounts-button, [tabindex]"
   );
 
+  let { activeElement: docActiveElement } = document;
   if (
     !enableKeyboardAccess &&
-    document.activeElement &&
-    !document.activeElement.closest("confirmation-dialog")
+    docActiveElement &&
+    !docActiveElement.closest("confirmation-dialog")
   ) {
-    let { activeElement } = document;
-    if (activeElement.shadowRoot && activeElement.shadowRoot.activeElement) {
-      activeElement.shadowRoot.activeElement.blur();
-    } else {
-      document.activeElement.blur();
-    }
+    let elementToBlur =
+      docActiveElement?.shadowRoot?.activeElement ?? docActiveElement;
+    elementToBlur.blur();
   }
 
   pageElements.forEach(el => {
@@ -55,4 +53,18 @@ export function promptForMasterPassword(messageId) {
   return new Promise(resolve => {
     window.AboutLoginsUtils.promptForMasterPassword(resolve, messageId);
   });
+}
+
+/**
+ * Initializes a dialog based on a template using shadow dom.
+ * @param {HTMLElement} element The element to attach the shadow dom to.
+ * @param {string} templateSelector The selector of the template to be used.
+ * @returns {object} The shadow dom that is attached.
+ */
+export function initDialog(element, templateSelector) {
+  let template = document.querySelector(templateSelector);
+  let shadowRoot = element.attachShadow({ mode: "open" });
+  document.l10n.connectRoot(shadowRoot);
+  shadowRoot.appendChild(template.content.cloneNode(true));
+  return shadowRoot;
 }

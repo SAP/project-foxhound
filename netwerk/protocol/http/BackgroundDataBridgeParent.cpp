@@ -11,11 +11,15 @@ namespace net {
 
 BackgroundDataBridgeParent::BackgroundDataBridgeParent(uint64_t aChannelID)
     : mChannelID(aChannelID), mBackgroundThread(NS_GetCurrentThread()) {
-  SocketProcessChild::GetSingleton()->AddDataBridgeToMap(aChannelID, this);
+  if (SocketProcessChild* child = SocketProcessChild::GetSingleton()) {
+    child->AddDataBridgeToMap(aChannelID, this);
+  }
 }
 
 void BackgroundDataBridgeParent::ActorDestroy(ActorDestroyReason aWhy) {
-  SocketProcessChild::GetSingleton()->RemoveDataBridgeFromMap(mChannelID);
+  if (SocketProcessChild* child = SocketProcessChild::GetSingleton()) {
+    child->RemoveDataBridgeFromMap(mChannelID);
+  }
 }
 
 already_AddRefed<nsIThread> BackgroundDataBridgeParent::GetBackgroundThread() {
@@ -32,6 +36,24 @@ void BackgroundDataBridgeParent::Destroy() {
                                  Unused << self->Send__delete__(self);
                                }
                              }),
+      NS_DISPATCH_NORMAL));
+}
+
+void BackgroundDataBridgeParent::OnStopRequest(
+    nsresult aStatus, const ResourceTimingStructArgs& aTiming,
+    const TimeStamp& aLastActiveTabOptHit,
+    const nsHttpHeaderArray& aResponseTrailers) {
+  RefPtr<BackgroundDataBridgeParent> self = this;
+  MOZ_ALWAYS_SUCCEEDS(mBackgroundThread->Dispatch(
+      NS_NewRunnableFunction(
+          "BackgroundDataBridgeParent::OnStopRequest",
+          [self, aStatus, aTiming, aLastActiveTabOptHit, aResponseTrailers]() {
+            if (self->CanSend()) {
+              Unused << self->SendOnStopRequest(
+                  aStatus, aTiming, aLastActiveTabOptHit, aResponseTrailers);
+              Unused << self->Send__delete__(self);
+            }
+          }),
       NS_DISPATCH_NORMAL));
 }
 

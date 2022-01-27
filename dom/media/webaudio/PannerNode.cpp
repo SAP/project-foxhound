@@ -19,8 +19,7 @@
 using WebCore::HRTFDatabaseLoader;
 using WebCore::HRTFPanner;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(PannerNode)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(PannerNode, AudioNode)
@@ -281,15 +280,15 @@ PannerNode::PannerNode(AudioContext* aContext)
       mConeInnerAngle(360.),
       mConeOuterAngle(360.),
       mConeOuterGain(0.) {
-  CreateAudioParam(mPositionX, PannerNode::POSITIONX, u"PositionX", 0.f);
-  CreateAudioParam(mPositionY, PannerNode::POSITIONY, u"PositionY", 0.f);
-  CreateAudioParam(mPositionZ, PannerNode::POSITIONZ, u"PositionZ", 0.f);
-  CreateAudioParam(mOrientationX, PannerNode::ORIENTATIONX, u"OrientationX",
-                   1.0f);
-  CreateAudioParam(mOrientationY, PannerNode::ORIENTATIONY, u"OrientationY",
-                   0.f);
-  CreateAudioParam(mOrientationZ, PannerNode::ORIENTATIONZ, u"OrientationZ",
-                   0.f);
+  mPositionX = CreateAudioParam(PannerNode::POSITIONX, u"PositionX"_ns, 0.f);
+  mPositionY = CreateAudioParam(PannerNode::POSITIONY, u"PositionY"_ns, 0.f);
+  mPositionZ = CreateAudioParam(PannerNode::POSITIONZ, u"PositionZ"_ns, 0.f);
+  mOrientationX =
+      CreateAudioParam(PannerNode::ORIENTATIONX, u"OrientationX"_ns, 1.0f);
+  mOrientationY =
+      CreateAudioParam(PannerNode::ORIENTATIONY, u"OrientationY"_ns, 0.f);
+  mOrientationZ =
+      CreateAudioParam(PannerNode::ORIENTATIONZ, u"OrientationZ"_ns, 0.f);
   mTrack = AudioNodeTrack::Create(
       aContext,
       new PannerNodeEngine(this, aContext->Destination(),
@@ -310,10 +309,12 @@ already_AddRefed<PannerNode> PannerNode::Create(AudioContext& aAudioContext,
 
   audioNode->SetPanningModel(aOptions.mPanningModel);
   audioNode->SetDistanceModel(aOptions.mDistanceModel);
-  audioNode->SetPosition(aOptions.mPositionX, aOptions.mPositionY,
-                         aOptions.mPositionZ);
-  audioNode->SetOrientation(aOptions.mOrientationX, aOptions.mOrientationY,
-                            aOptions.mOrientationZ);
+  audioNode->mPositionX->SetInitialValue(aOptions.mPositionX);
+  audioNode->mPositionY->SetInitialValue(aOptions.mPositionY);
+  audioNode->mPositionZ->SetInitialValue(aOptions.mPositionZ);
+  audioNode->mOrientationX->SetInitialValue(aOptions.mOrientationX);
+  audioNode->mOrientationY->SetInitialValue(aOptions.mOrientationY);
+  audioNode->mOrientationZ->SetInitialValue(aOptions.mOrientationZ);
   audioNode->SetRefDistance(aOptions.mRefDistance, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
@@ -345,6 +346,39 @@ void PannerNode::SetPanningModel(PanningModelType aPanningModel) {
     static_cast<PannerNodeEngine*>(mTrack->Engine())->CreateHRTFPanner();
   }
   SendInt32ParameterToTrack(PANNING_MODEL, int32_t(mPanningModel));
+}
+
+static bool SetParamFromDouble(AudioParam* aParam, double aValue,
+                               const char (&aParamName)[2], ErrorResult& aRv) {
+  float value = static_cast<float>(aValue);
+  if (!mozilla::IsFinite(value)) {
+    aRv.ThrowTypeError<MSG_NOT_FINITE>(aParamName);
+    return false;
+  }
+  aParam->SetValue(value, aRv);
+  return !aRv.Failed();
+}
+
+void PannerNode::SetPosition(double aX, double aY, double aZ,
+                             ErrorResult& aRv) {
+  if (!SetParamFromDouble(mPositionX, aX, "x", aRv)) {
+    return;
+  }
+  if (!SetParamFromDouble(mPositionY, aY, "y", aRv)) {
+    return;
+  }
+  SetParamFromDouble(mPositionZ, aZ, "z", aRv);
+}
+
+void PannerNode::SetOrientation(double aX, double aY, double aZ,
+                                ErrorResult& aRv) {
+  if (!SetParamFromDouble(mOrientationX, aX, "x", aRv)) {
+    return;
+  }
+  if (!SetParamFromDouble(mOrientationY, aY, "y", aRv)) {
+    return;
+  }
+  SetParamFromDouble(mOrientationZ, aZ, "z", aRv);
 }
 
 size_t PannerNode::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
@@ -686,5 +720,4 @@ double PannerNodeEngine::ComputeDistanceGain(const ThreeDPoint& position) {
   return std::max(0.0f, (this->*mDistanceModelFunction)(distance));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

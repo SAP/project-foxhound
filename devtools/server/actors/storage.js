@@ -9,7 +9,6 @@ const protocol = require("devtools/shared/protocol");
 const { LongStringActor } = require("devtools/server/actors/string");
 const { DevToolsServer } = require("devtools/server/devtools-server");
 const Services = require("Services");
-const defer = require("devtools/shared/defer");
 const { isWindowIncluded } = require("devtools/shared/layout/utils");
 const specs = require("devtools/shared/specs/storage");
 const { parseItemValue } = require("devtools/shared/storage/utils");
@@ -27,8 +26,6 @@ loader.lazyGetter(
   () => Cu.getGlobalForObject(ExtensionProcessScript).WebExtensionPolicy
 );
 
-const CHROME_ENABLED_PREF = "devtools.chrome.enabled";
-const REMOTE_ENABLED_PREF = "devtools.debugger.remote-enabled";
 const EXTENSION_STORAGE_ENABLED_PREF =
   "devtools.storage.extensionStorage.enabled";
 
@@ -101,6 +98,7 @@ var ILLEGAL_CHAR_REGEX = new RegExp(illegalFileNameCharacters, "g");
 
 // Holder for all the registered storage actors.
 var storageTypePool = new Map();
+exports.storageTypePool = storageTypePool;
 
 /**
  * An async method equivalent to setTimeout but using Promises
@@ -109,13 +107,11 @@ var storageTypePool = new Map();
  *        The wait time in milliseconds.
  */
 function sleep(time) {
-  const deferred = defer();
-
-  setTimeout(() => {
-    deferred.resolve(null);
-  }, time);
-
-  return deferred.promise;
+  return new Promise(resolve => {
+    setTimeout(() => {
+      resolve(null);
+    }, time);
+  });
 }
 
 // Helper methods to create a storage actor.
@@ -194,6 +190,10 @@ StorageActors.defaults = function(typeName, observationTopics) {
         return null;
       }
 
+      if (this.storageActor.getHostName) {
+        return this.storageActor.getHostName(location);
+      }
+
       switch (location.protocol) {
         case "about:":
           return `${location.protocol}${location.pathname}`;
@@ -235,6 +235,10 @@ StorageActors.defaults = function(typeName, observationTopics) {
     },
 
     destroy() {
+      if (!this.storageActor) {
+        return;
+      }
+
       if (observationTopics) {
         observationTopics.forEach(observationTopic => {
           Services.obs.removeObserver(this, observationTopic);
@@ -273,6 +277,9 @@ StorageActors.defaults = function(typeName, observationTopics) {
      *        The window which was added.
      */
     async onWindowReady(window) {
+      if (!this.hostVsStores) {
+        return;
+      }
       const host = this.getHostName(window.location);
       if (host && !this.hostVsStores.has(host)) {
         await this.populateStoresForHost(host, window);
@@ -293,14 +300,23 @@ StorageActors.defaults = function(typeName, observationTopics) {
      *
      * @param {window} window
      *        The window which was removed.
+     * @param {Object} options
+     * @param {Boolean} options.dontCheckHost
+     *        If set to true, the function won't check if the host still is in this.hosts.
+     *        This is helpful in the case of the StorageActorMock, as the `hosts` getter
+     *        uses its `windows` getter, and at this point in time the window which is
+     *        going to be destroyed still exists.
      */
-    onWindowDestroyed(window) {
+    onWindowDestroyed(window, { dontCheckHost } = {}) {
+      if (!this.hostVsStores) {
+        return;
+      }
       if (!window.location) {
         // Nothing can be done if location object is null
         return;
       }
       const host = this.getHostName(window.location);
-      if (host && !this.hosts.has(host)) {
+      if (host && (!this.hosts.has(host) || dontCheckHost)) {
         this.hostVsStores.delete(host);
         const data = {};
         data[host] = [];
@@ -324,10 +340,6 @@ StorageActors.defaults = function(typeName, observationTopics) {
     // Share getTraits for child classes overriding form()
     _getTraits() {
       return {
-        // The hasSupportsTraits can be removed when Firefox 80 hits the release
-        // channel. Allows the client to know if the various supportsXXX traits
-        // are defined or if actorHasMethod should be used instead.
-        hasSupportsTraits: true,
         // The supportsXXX traits are not related to backward compatibility
         // Different storage actor types implement different APIs, the traits
         // help the client to know what is supported or not.
@@ -639,12 +651,9 @@ StorageActors.createActor(
 
     populateStoresForHost(host) {
       this.hostVsStores.set(host, new Map());
-      const doc = this.storageActor.document;
 
-      const cookies = this.getCookiesFromHost(
-        host,
-        doc.effectiveStoragePrincipal.originAttributes
-      );
+      const originAttributes = this.getOriginAttributesFromHost(host);
+      const cookies = this.getCookiesFromHost(host, originAttributes);
 
       for (const cookie of cookies) {
         if (this.isCookieAtHost(cookie, host)) {
@@ -655,6 +664,22 @@ StorageActors.createActor(
           this.hostVsStores.get(host).set(uniqueKey, cookie);
         }
       }
+    },
+
+    getOriginAttributesFromHost(host) {
+      const win = this.storageActor.getWindowFromHost(host);
+      let originAttributes;
+      if (win) {
+        originAttributes =
+          win.document.effectiveStoragePrincipal.originAttributes;
+      } else {
+        // If we can't find the window by host, fallback to the top window
+        // origin attributes.
+        originAttributes = this.storageActor.document?.effectiveStoragePrincipal
+          .originAttributes;
+      }
+
+      return originAttributes;
     },
 
     /**
@@ -767,44 +792,29 @@ StorageActors.createActor(
      *        See editCookie() for format details.
      */
     async editItem(data) {
-      const doc = this.storageActor.document;
-      data.originAttributes = doc.effectiveStoragePrincipal.originAttributes;
+      data.originAttributes = this.getOriginAttributesFromHost(data.host);
       this.editCookie(data);
     },
 
-    async addItem(guid) {
-      const doc = this.storageActor.document;
-      const time = new Date().getTime();
-      const expiry = new Date(time + 3600 * 24 * 1000).toGMTString();
-
-      doc.cookie = `${guid}=${DEFAULT_VALUE};expires=${expiry}`;
+    async addItem(guid, host) {
+      const window = this.storageActor.getWindowFromHost(host);
+      const principal = window.document.effectiveStoragePrincipal;
+      this.addCookie(guid, principal);
     },
 
     async removeItem(host, name) {
-      const doc = this.storageActor.document;
-      this.removeCookie(
-        host,
-        name,
-        doc.effectiveStoragePrincipal.originAttributes
-      );
+      const originAttributes = this.getOriginAttributesFromHost(host);
+      this.removeCookie(host, name, originAttributes);
     },
 
     async removeAll(host, domain) {
-      const doc = this.storageActor.document;
-      this.removeAllCookies(
-        host,
-        domain,
-        doc.effectiveStoragePrincipal.originAttributes
-      );
+      const originAttributes = this.getOriginAttributesFromHost(host);
+      this.removeAllCookies(host, domain, originAttributes);
     },
 
     async removeAllSessionCookies(host, domain) {
-      const doc = this.storageActor.document;
-      this.removeAllSessionCookies(
-        host,
-        domain,
-        doc.effectiveStoragePrincipal.originAttributes
-      );
+      const originAttributes = this.getOriginAttributesFromHost(host);
+      this.removeAllSessionCookies(host, domain, originAttributes);
     },
 
     maybeSetupChildProcess() {
@@ -820,6 +830,7 @@ StorageActors.createActor(
         this.removeCookieObservers = cookieHelpers.removeCookieObservers.bind(
           cookieHelpers
         );
+        this.addCookie = cookieHelpers.addCookie.bind(cookieHelpers);
         this.editCookie = cookieHelpers.editCookie.bind(cookieHelpers);
         this.removeCookie = cookieHelpers.removeCookie.bind(cookieHelpers);
         this.removeAllCookies = cookieHelpers.removeAllCookies.bind(
@@ -851,6 +862,7 @@ StorageActors.createActor(
         null,
         "removeCookieObservers"
       );
+      this.addCookie = callParentProcess.bind(null, "addCookie");
       this.editCookie = callParentProcess.bind(null, "editCookie");
       this.removeCookie = callParentProcess.bind(null, "removeCookie");
       this.removeAllCookies = callParentProcess.bind(null, "removeAllCookies");
@@ -903,6 +915,37 @@ var cookieHelpers = {
     host = trimHttpHttpsPort(host);
 
     return Services.cookies.getCookiesFromHost(host, originAttributes);
+  },
+
+  addCookie(guid, principal) {
+    // Set expiry time for cookie 1 day into the future
+    // NOTE: Services.cookies.add expects the time in seconds.
+    const ONE_DAY_IN_SECONDS = 60 * 60 * 24;
+    const time = Math.floor(Date.now() / 1000);
+    const expiry = time + ONE_DAY_IN_SECONDS;
+
+    // principal throws an error when we try to access principal.host if it
+    // does not exist (which happens at about: pages).
+    // We check for asciiHost instead, which is always present, and has a
+    // value of "" when the host is not available.
+    const domain = principal.asciiHost ? principal.host : principal.baseDomain;
+    const path = principal.filePath.startsWith("/") ? principal.filePath : "/";
+
+    Services.cookies.add(
+      domain,
+      path,
+      guid, // name
+      DEFAULT_VALUE, // value
+      false, // isSecure
+      false, // isHttpOnly,
+      false, // isSession,
+      expiry, // expires,
+      principal.originAttributes, // originAttributes
+      Ci.nsICookie.SAMESITE_LAX, // sameSite
+      principal.scheme === "https" // schemeMap
+        ? Ci.nsICookie.SCHEME_HTTPS
+        : Ci.nsICookie.SCHEME_HTTP
+    );
   },
 
   /**
@@ -1148,6 +1191,11 @@ var cookieHelpers = {
       case "removeCookieObservers": {
         return cookieHelpers.removeCookieObservers();
       }
+      case "addCookie": {
+        const guid = msg.data.args[0];
+        const principal = msg.data.args[1];
+        return cookieHelpers.addCookie(guid, principal);
+      }
       case "editCookie": {
         const rowdata = msg.data.args[0];
         return cookieHelpers.editCookie(rowdata);
@@ -1198,7 +1246,10 @@ exports.setupParentProcessForCookies = function({ mm, prefix }) {
   );
 
   // listen for director-script requests from the child process
-  setMessageManager(mm);
+  mm.addMessageListener(
+    "debug:storage-cookie-request-parent",
+    cookieHelpers.handleChildRequest
+  );
 
   function callChildProcess(methodName, ...args) {
     if (methodName === "onCookieChanged") {
@@ -1216,31 +1267,17 @@ exports.setupParentProcessForCookies = function({ mm, prefix }) {
     }
   }
 
-  function setMessageManager(newMM) {
-    if (mm) {
-      mm.removeMessageListener(
-        "debug:storage-cookie-request-parent",
-        cookieHelpers.handleChildRequest
-      );
-    }
-    mm = newMM;
-    if (mm) {
-      mm.addMessageListener(
-        "debug:storage-cookie-request-parent",
-        cookieHelpers.handleChildRequest
-      );
-    }
-  }
-
   return {
-    onBrowserSwap: setMessageManager,
     onDisconnected: () => {
       // Although "disconnected-from-child" implies that the child is already
       // disconnected this is not the case. The disconnection takes place after
       // this method has finished. This gives us chance to clean up items within
       // the parent process e.g. observers.
       cookieHelpers.removeCookieObservers();
-      setMessageManager(null);
+      mm.removeMessageListener(
+        "debug:storage-cookie-request-parent",
+        cookieHelpers.handleChildRequest
+      );
     },
   };
 };
@@ -1640,10 +1677,10 @@ const extensionStorageHelpers = {
     switch (msg.json.method) {
       case "backToChild": {
         const [func, rv] = msg.json.args;
-        const deferred = this.unresolvedPromises.get(func);
-        if (deferred) {
+        const resolve = this.unresolvedPromises.get(func);
+        if (resolve) {
           this.unresolvedPromises.delete(func);
-          deferred.resolve(rv);
+          resolve(rv);
         }
         break;
       }
@@ -1666,9 +1703,9 @@ const extensionStorageHelpers = {
   },
 
   callParentProcessAsync(methodName, ...args) {
-    const deferred = defer();
-
-    this.unresolvedPromises.set(methodName, deferred);
+    const promise = new Promise(resolve => {
+      this.unresolvedPromises.set(methodName, resolve);
+    });
 
     this.ppmm.sendAsyncMessage(
       "debug:storage-extensionStorage-request-parent",
@@ -1678,7 +1715,7 @@ const extensionStorageHelpers = {
       }
     );
 
-    return deferred.promise;
+    return promise;
   },
 };
 
@@ -1689,32 +1726,21 @@ const extensionStorageHelpers = {
  */
 exports.setupParentProcessForExtensionStorage = function({ mm, prefix }) {
   // listen for director-script requests from the child process
-  setMessageManager(mm);
-
-  function setMessageManager(newMM) {
-    if (mm) {
-      mm.removeMessageListener(
-        "debug:storage-extensionStorage-request-parent",
-        extensionStorageHelpers.handleChildRequest
-      );
-    }
-    mm = newMM;
-    if (mm) {
-      mm.addMessageListener(
-        "debug:storage-extensionStorage-request-parent",
-        extensionStorageHelpers.handleChildRequest
-      );
-    }
-  }
+  mm.addMessageListener(
+    "debug:storage-extensionStorage-request-parent",
+    extensionStorageHelpers.handleChildRequest
+  );
 
   return {
-    onBrowserSwap: setMessageManager,
     onDisconnected: () => {
       // Although "disconnected-from-child" implies that the child is already
       // disconnected this is not the case. The disconnection takes place after
       // this method has finished. This gives us chance to clean up items within
       // the parent process e.g. observers.
-      setMessageManager(null);
+      mm.removeMessageListener(
+        "debug:storage-extensionStorage-request-parent",
+        extensionStorageHelpers.handleChildRequest
+      );
       extensionStorageHelpers.onDisconnected();
     },
   };
@@ -1779,7 +1805,6 @@ if (Services.prefs.getBoolPref(EXTENSION_STORAGE_ENABLED_PREF, false)) {
         this.storageActor.off("window-destroyed", this.onWindowDestroyed);
 
         this.hostVsStores.clear();
-
         protocol.Actor.prototype.destroy.call(this);
 
         this.storageActor = null;
@@ -2155,6 +2180,27 @@ StorageActors.createActor(
 
     async getValuesForHost(host, name) {
       if (!name) {
+        // if we get here, we most likely clicked on the refresh button
+        // which called getStoreObjects, itself calling this method,
+        // all that, without having selected any particular cache name.
+        //
+        // Try to detect if a new cache has been added and notify the client
+        // asynchronously, via a RDP event.
+        const previousCaches = [...this.hostVsStores.get(host).keys()];
+        await this.preListStores();
+        const updatedCaches = [...this.hostVsStores.get(host).keys()];
+        const newCaches = updatedCaches.filter(
+          cacheName => !previousCaches.includes(cacheName)
+        );
+        newCaches.forEach(cacheName =>
+          this.onItemUpdated("added", host, [cacheName])
+        );
+        const removedCaches = previousCaches.filter(
+          cacheName => !updatedCaches.includes(cacheName)
+        );
+        removedCaches.forEach(cacheName =>
+          this.onItemUpdated("deleted", host, [cacheName])
+        );
         return [];
       }
       // UI is weird and expect a JSON stringified array... and pass it back :/
@@ -2443,7 +2489,12 @@ StorageActors.createActor(
       // the this.hosts getter. Because this.hosts is a property on the default
       // storage actor and inherited by all storage actors we have to do it this
       // way.
-      this._internalHosts = await this.getInternalHosts();
+      // Only look up internal hosts if we are in the browser toolbox
+      const isBrowserToolbox = this.storageActor.parentActor.isRootActor;
+
+      this._internalHosts = isBrowserToolbox
+        ? await this.getInternalHosts()
+        : [];
 
       return this.hosts;
     },
@@ -2493,9 +2544,14 @@ StorageActors.createActor(
     populateStoresForHosts() {},
 
     getNamesForHost(host) {
+      const storesForHost = this.hostVsStores.get(host);
+      if (!storesForHost) {
+        return [];
+      }
+
       const names = [];
 
-      for (const [dbName, { objectStores }] of this.hostVsStores.get(host)) {
+      for (const [dbName, { objectStores }] of storesForHost) {
         if (objectStores.size) {
           for (const objectStore of objectStores.keys()) {
             names.push(JSON.stringify([dbName, objectStore]));
@@ -2504,6 +2560,7 @@ StorageActors.createActor(
           names.push(JSON.stringify([dbName]));
         }
       }
+
       return names;
     },
 
@@ -2568,7 +2625,6 @@ StorageActors.createActor(
      */
     async preListStores() {
       this.hostVsStores = new Map();
-
       for (const host of await this.getHosts()) {
         await this.populateStoresForHost(host);
       }
@@ -2720,10 +2776,10 @@ StorageActors.createActor(
         switch (msg.json.method) {
           case "backToChild": {
             const [func, rv] = msg.json.args;
-            const deferred = unresolvedPromises.get(func);
-            if (deferred) {
+            const resolve = unresolvedPromises.get(func);
+            if (resolve) {
               unresolvedPromises.delete(func);
-              deferred.resolve(rv);
+              resolve(rv);
             }
             break;
           }
@@ -2736,16 +2792,16 @@ StorageActors.createActor(
 
       const unresolvedPromises = new Map();
       function callParentProcessAsync(methodName, ...args) {
-        const deferred = defer();
-
-        unresolvedPromises.set(methodName, deferred);
+        const promise = new Promise(resolve => {
+          unresolvedPromises.set(methodName, resolve);
+        });
 
         mm.sendAsyncMessage("debug:storage-indexedDB-request-parent", {
           method: methodName,
           args: args,
         });
 
-        return deferred.promise;
+        return promise;
       }
     },
 
@@ -2804,23 +2860,22 @@ var indexedDBHelpers = {
    */
   async getDBMetaData(host, principal, name, storage) {
     const request = this.openWithPrincipal(principal, name, storage);
-    const success = defer();
+    return new Promise(resolve => {
+      request.onsuccess = event => {
+        const db = event.target.result;
+        const dbData = new DatabaseMetadata(host, db, storage);
+        db.close();
 
-    request.onsuccess = event => {
-      const db = event.target.result;
-      const dbData = new DatabaseMetadata(host, db, storage);
-      db.close();
-
-      success.resolve(this.backToChild("getDBMetaData", dbData));
-    };
-    request.onerror = ({ target }) => {
-      console.error(
-        `Error opening indexeddb database ${name} for host ${host}`,
-        target.error
-      );
-      success.resolve(this.backToChild("getDBMetaData", null));
-    };
-    return success.promise;
+        resolve(this.backToChild("getDBMetaData", dbData));
+      };
+      request.onerror = ({ target }) => {
+        console.error(
+          `Error opening indexeddb database ${name} for host ${host}`,
+          target.error
+        );
+        resolve(this.backToChild("getDBMetaData", null));
+      };
+    });
   },
 
   splitNameAndStorage: function(name) {
@@ -2840,14 +2895,6 @@ var indexedDBHelpers = {
    * the browser.
    */
   async getInternalHosts() {
-    // Return an empty array if the browser toolbox is not enabled.
-    if (
-      !Services.prefs.getBoolPref(CHROME_ENABLED_PREF) ||
-      !Services.prefs.getBoolPref(REMOTE_ENABLED_PREF)
-    ) {
-      return this.backToChild("getInternalHosts", []);
-    }
-
     const profileDir = OS.Constants.Path.profileDir;
     const storagePath = OS.Path.join(profileDir, "storage", "permanent");
     const iterator = new OS.File.DirectoryIterator(storagePath);
@@ -3218,70 +3265,72 @@ var indexedDBHelpers = {
   getObjectStoreData(host, principal, dbName, storage, requestOptions) {
     const { name } = this.splitNameAndStorage(dbName);
     const request = this.openWithPrincipal(principal, name, storage);
-    const success = defer();
-    let { objectStore, id, index, offset, size } = requestOptions;
-    const data = [];
-    let db;
 
-    if (!size || size > MAX_STORE_OBJECT_COUNT) {
-      size = MAX_STORE_OBJECT_COUNT;
-    }
+    return new Promise((resolve, reject) => {
+      let { objectStore, id, index, offset, size } = requestOptions;
+      const data = [];
+      let db;
 
-    request.onsuccess = event => {
-      db = event.target.result;
-
-      const transaction = db.transaction(objectStore, "readonly");
-      let source = transaction.objectStore(objectStore);
-      if (index && index != "name") {
-        source = source.index(index);
+      if (!size || size > MAX_STORE_OBJECT_COUNT) {
+        size = MAX_STORE_OBJECT_COUNT;
       }
 
-      source.count().onsuccess = event2 => {
-        const objectsSize = [];
-        const count = event2.target.result;
-        objectsSize.push({
-          key: host + dbName + objectStore + index,
-          count: count,
-        });
+      request.onsuccess = event => {
+        db = event.target.result;
 
-        if (!offset) {
-          offset = 0;
-        } else if (offset > count) {
-          db.close();
-          success.resolve([]);
-          return;
+        const transaction = db.transaction(objectStore, "readonly");
+        let source = transaction.objectStore(objectStore);
+        if (index && index != "name") {
+          source = source.index(index);
         }
 
-        if (id) {
-          source.get(id).onsuccess = event3 => {
+        source.count().onsuccess = event2 => {
+          const objectsSize = [];
+          const count = event2.target.result;
+          objectsSize.push({
+            key: host + dbName + objectStore + index,
+            count: count,
+          });
+
+          if (!offset) {
+            offset = 0;
+          } else if (offset > count) {
             db.close();
-            success.resolve([{ name: id, value: event3.target.result }]);
-          };
-        } else {
-          source.openCursor().onsuccess = event4 => {
-            const cursor = event4.target.result;
+            resolve([]);
+            return;
+          }
 
-            if (!cursor || data.length >= size) {
+          if (id) {
+            source.get(id).onsuccess = event3 => {
               db.close();
-              success.resolve({
-                data: data,
-                objectsSize: objectsSize,
-              });
-              return;
-            }
-            if (offset-- <= 0) {
-              data.push({ name: cursor.key, value: cursor.value });
-            }
-            cursor.continue();
-          };
-        }
+              resolve([{ name: id, value: event3.target.result }]);
+            };
+          } else {
+            source.openCursor().onsuccess = event4 => {
+              const cursor = event4.target.result;
+
+              if (!cursor || data.length >= size) {
+                db.close();
+                resolve({
+                  data: data,
+                  objectsSize: objectsSize,
+                });
+                return;
+              }
+              if (offset-- <= 0) {
+                data.push({ name: cursor.key, value: cursor.value });
+              }
+              cursor.continue();
+            };
+          }
+        };
       };
-    };
-    request.onerror = () => {
-      db.close();
-      success.resolve([]);
-    };
-    return success.promise;
+
+      request.onerror = () => {
+        db.close();
+        resolve([]);
+      };
+    });
   },
 
   /**
@@ -3369,28 +3418,18 @@ var indexedDBHelpers = {
  */
 
 exports.setupParentProcessForIndexedDB = function({ mm, prefix }) {
-  // listen for director-script requests from the child process
-  setMessageManager(mm);
+  mm.addMessageListener(
+    "debug:storage-indexedDB-request-parent",
+    indexedDBHelpers.handleChildRequest
+  );
 
-  function setMessageManager(newMM) {
-    if (mm) {
+  return {
+    onDisconnected: () => {
       mm.removeMessageListener(
         "debug:storage-indexedDB-request-parent",
         indexedDBHelpers.handleChildRequest
       );
-    }
-    mm = newMM;
-    if (mm) {
-      mm.addMessageListener(
-        "debug:storage-indexedDB-request-parent",
-        indexedDBHelpers.handleChildRequest
-      );
-    }
-  }
-
-  return {
-    onBrowserSwap: setMessageManager,
-    onDisconnected: () => setMessageManager(null),
+    },
   };
 };
 
@@ -3414,6 +3453,11 @@ function trimHttpHttpsPort(url) {
 
 /**
  * The main Storage Actor.
+ *
+ * This class is meant to be dropped once we implement all storage
+ * types via a Watcher class. (bug 1644192)
+ * listStores will have been replaced by the ResourceCommand API
+ * which will distribute all storage type specific actors.
  */
 const StorageActor = protocol.ActorClassWithSpec(specs.storageSpec, {
   typeName: "storage",
@@ -3441,13 +3485,34 @@ const StorageActor = protocol.ActorClassWithSpec(specs.storageSpec, {
     // Fetch all the inner iframe windows in this tab.
     this.fetchChildWindows(this.parentActor.docShell);
 
+    // Skip initializing storage actors already instanced as Resources
+    // by the watcher. This happens when the target is a tab.
+    const isAddonTarget = !!this.parentActor.addonId;
+    const isWatcherEnabled = !isAddonTarget && !this.parentActor.isRootActor;
+    const shallUseLegacyActors = Services.prefs.getBoolPref(
+      "devtools.storage.test.forceLegacyActors",
+      false
+    );
+    const resourcesInWatcher = {
+      Cache: isWatcherEnabled,
+      cookies: isWatcherEnabled,
+      indexedDB: isWatcherEnabled,
+      localStorage: isWatcherEnabled,
+      sessionStorage: isWatcherEnabled,
+    };
+
     // Initialize the registered store types
     for (const [store, ActorConstructor] of storageTypePool) {
       // Only create the extensionStorage actor when the debugging target
       // is an extension.
-      if (store === "extensionStorage" && !this.parentActor.addonId) {
+      if (store === "extensionStorage" && !isAddonTarget) {
         continue;
       }
+      // Skip resource actors
+      if (resourcesInWatcher[store] && !shallUseLegacyActors) {
+        continue;
+      }
+
       this.childActorPool.set(store, new ActorConstructor(this));
     }
 
@@ -3542,7 +3607,7 @@ const StorageActor = protocol.ActorClassWithSpec(specs.storageSpec, {
   getWindowFromInnerWindowID(innerID) {
     innerID = innerID.QueryInterface(Ci.nsISupportsPRUint64).data;
     for (const win of this.childWindowPool.values()) {
-      const id = win.windowUtils.currentInnerWindowID;
+      const id = win.windowGlobalChild.innerWindowId;
       if (id == innerID) {
         return win;
       }
@@ -3630,22 +3695,31 @@ const StorageActor = protocol.ActorClassWithSpec(specs.storageSpec, {
    * Lists the available hosts for all the registered storage types.
    *
    * @returns {object} An object containing with the following structure:
-   *  - <storageType> : [{
-   *      actor: <actorId>,
-   *      host: <hostname>
-   *    }]
+   *  - <storageType> : StorageActor's form specific to the storage type, which looks like this:
+   *                    {
+   *                      actor: <actorId>,
+   *                      host: <hostname>
+   *                    }
    */
   async listStores() {
-    const toReturn = {};
-
-    for (const [name, value] of this.childActorPool) {
-      if (value.preListStores) {
-        await value.preListStores();
-      }
-      toReturn[name] = value;
+    // Avoid trying to compute the list of storage actors more than once.
+    // `preListStores` is subject to issues if called more than once.
+    if (this._cachedStores) {
+      return this._cachedStores;
     }
+    this._cachedStores = (async () => {
+      const toReturn = {};
 
-    return toReturn;
+      for (const [name, value] of this.childActorPool) {
+        if (value.preListStores) {
+          await value.preListStores();
+        }
+        toReturn[name] = value;
+      }
+
+      return toReturn;
+    })();
+    return this._cachedStores;
   },
 
   /**

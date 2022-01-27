@@ -46,10 +46,6 @@ enum class ResizeReflowOptions : uint32_t {
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(ResizeReflowOptions)
 
-// This is actually pref-controlled, but we use this value if we fail to get
-// the pref for any reason.
-#define PAINTLOCK_EVENT_DELAY 5
-
 enum class IntrinsicDirty {
   // XXXldb eResize should be renamed
   Resize,       // don't mark any intrinsic widths dirty
@@ -141,15 +137,13 @@ enum class ScrollFlags {
   ScrollSmooth = 1 << 3,
   ScrollSmoothAuto = 1 << 4,
   ScrollSnap = 1 << 5,
-  IgnoreMarginAndPadding = 1 << 6,
+  TriggeredByScript = 1 << 6,
   // ScrollOverflowHidden | ScrollNoParentFrames
   AnchorScrollFlags = (1 << 1) | (1 << 2),
   ALL_BITS = (1 << 7) - 1,
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(ScrollFlags)
-
-enum class ScrollableDirection { Horizontal, Vertical, Either };
 
 // See comment at declaration of RenderDocument() for the detail.
 enum class RenderDocumentFlags {
@@ -162,6 +156,7 @@ enum class RenderDocumentFlags {
   DocumentRelative = 1 << 5,
   DrawWindowNotFlushing = 1 << 6,
   UseHighQualityScaling = 1 << 7,
+  ResetViewportScrolling = 1 << 8,
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(RenderDocumentFlags)
@@ -194,20 +189,21 @@ MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(AddCanvasBackgroundColorFlags)
 
 enum class PaintFlags {
   None = 0,
-  /* Update the layer tree and paint PaintedLayers. If this is not specified,
-   * we may still have to do it if the layer tree lost PaintedLayer contents
-   * we need for compositing. */
-  PaintLayers = 1 << 0,
-  /* Composite layers to the window. */
-  PaintComposite = 1 << 1,
   /* Sync-decode images. */
-  PaintSyncDecodeImages = 1 << 2,
+  PaintSyncDecodeImages = 1 << 1,
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(PaintFlags)
 
-// See comment at declaration of ScheduleViewManagerFlush() for the detail.
-enum class PaintType { Default, DelayedCompress };
+enum class PaintInternalFlags {
+  None = 0,
+  /* Sync-decode images. */
+  PaintSyncDecodeImages = 1 << 1,
+  /* Composite layers to the window. */
+  PaintComposite = 1 << 2,
+};
+
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(PaintInternalFlags)
 
 // This is a private enum class of PresShell, but currently,
 // MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS isn't available in class definition.

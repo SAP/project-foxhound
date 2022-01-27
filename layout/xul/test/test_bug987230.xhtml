@@ -51,30 +51,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=987230
 
   SimpleTest.requestCompleteLog();
 
-  let platform = navigator.platform.toLowerCase();
-  let isWindows = platform.startsWith("win");
-  let mouseDown = isWindows ? 2 : 1;
-  let mouseUp = isWindows ? 4 : 2;
-  let mouseMove = isWindows ? 1 : 5;
-  let utils = window.windowUtils;
-  let scale = utils.screenPixelsPerCSSPixel;
-
-
-  function synthesizeNativeMouseClick(aElement, aOffsetX, aOffsetY) {
-    let rect = aElement.getBoundingClientRect();
-    let win = aElement.ownerGlobal;
-    let x = aOffsetX + win.mozInnerScreenX + rect.left;
-    let y = aOffsetY + win.mozInnerScreenY + rect.top;
-
-    info("Sending mousedown+up for offsets: " + aOffsetX + ", " + aOffsetY +
-         "; innerscreen: " + win.mozInnerScreenX + ", " + win.mozInnerScreenY +
-         "; rect: " + rect.left + ", " + rect.top + ".");
-    info("Resulting x, y, scale: " + x + ", " + y + ", " + scale);
-    info("Final params: " + (x * scale) + ", " + (y * scale));
-    utils.sendNativeMouseEvent(x * scale, y * scale, mouseDown, 0, null);
-    utils.sendNativeMouseEvent(x * scale, y * scale, mouseUp, 0, null);
-  }
-
   function onMyPopupHidden(e) {
     ok(true, "Popup hidden");
     if (outerAnchor.id == "toolbarbutton-anchor") {
@@ -85,13 +61,21 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=987230
     } else {
       //XXXgijs set mouse position back outside the iframe:
       let frameRect = window.frameElement.getBoundingClientRect();
+      let utils = window.windowUtils;
+      let scale = utils.screenPixelsPerCSSPixel;
       let outsideOfFrameX = (window.mozInnerScreenX + frameRect.width + 100) * scale;
       let outsideOfFrameY = Math.max(0, window.mozInnerScreenY - 100) * scale;
 
       info("Mousemove: " + outsideOfFrameX + ", " + outsideOfFrameY +
            " (from innerscreen " + window.mozInnerScreenX + ", " + window.mozInnerScreenY +
            " and rect width " + frameRect.width + " and scale " + scale + ")");
-      utils.sendNativeMouseEvent(outsideOfFrameX, outsideOfFrameY, mouseMove, 0, null);
+      synthesizeNativeMouseEvent({
+        type: "mousemove",
+        screenX: outsideOfFrameX,
+        screenY: outsideOfFrameY,
+        scale: "inScreenPixels",
+        elementOnWidget: null,
+      });
       SimpleTest.finish();
     }
   }
@@ -99,7 +83,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=987230
   let popupHasShown = false;
   function onMyPopupShown(e) {
     popupHasShown = true;
-    synthesizeNativeMouseClick(outerAnchor, 5, 5);
+    synthesizeNativeMouseEvent({ type: "click", target: outerAnchor, offsetX: 5, offsetY: 5 });
   }
 
   function onAnchorClick(e) {

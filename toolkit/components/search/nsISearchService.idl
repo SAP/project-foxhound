@@ -51,6 +51,24 @@ interface nsISearchEngine : nsISupports
                                     [optional] in AString purpose);
 
   /**
+   * Returns the name of the parameter used for the search terms for a submission
+   * URL of type `SearchUtils.URL_TYPE.SEARCH`.
+   *
+   * @returns A string which is the name of the parameter, or empty string
+   *          if no parameter cannot be found or is not supported (e.g. POST).
+   */
+  readonly attribute AString searchUrlQueryParamName;
+
+  /**
+   * Returns the public suffix for the submission URL of type
+   * `SearchUtils.URL_TYPE.SEARCH`.
+   *
+   * @returns A string which is a known public suffix, or empty string
+   *          if one cannot be found.
+   */
+  readonly attribute AString searchUrlPublicSuffix;
+
+  /**
    * Determines whether the engine can return responses in the given
    * MIME type.  Returns true if the engine spec has a URL with the
    * given responseType, false otherwise.
@@ -95,9 +113,15 @@ interface nsISearchEngine : nsISupports
 
   /**
    * An optional shortcut alias for the engine.
-   * When non-null, this is a unique identifier.
+   * When not an empty string, this is a unique identifier.
    */
   attribute AString alias;
+
+  /**
+   * An array of aliases including the user defined alias and
+   * ones specified by the webextensions keywords field.
+   */
+  readonly attribute Array<AString> aliases;
 
   /**
    * A text description describing the engine.
@@ -125,6 +149,12 @@ interface nsISearchEngine : nsISupports
   readonly attribute AString searchForm;
 
   /**
+   * A boolean to indicate if we should send an attribution request to Mozilla's
+   * server.
+   */
+  readonly attribute boolean sendAttributionRequest;
+
+  /**
    * The identifier to use for this engine when submitting to telemetry.
    */
   readonly attribute AString telemetryId;
@@ -136,11 +166,18 @@ interface nsISearchEngine : nsISupports
   readonly attribute AString identifier;
 
   /**
-   * Whether or not this extension is provided by the application, e.g. it is
+   * Whether or not this engine is provided by the application, e.g. it is
    * in the list of configured search engines, or provided by a distribution
    * set-up.
    */
   readonly attribute boolean isAppProvided;
+
+  /**
+   * Whether or not this engine is a "general" search engine, e.g. is it for
+   * generally searching the web, or does it have a specific purpose like
+   * shopping.
+   */
+  readonly attribute boolean isGeneralPurposeEngine;
 
   /**
    * Gets a string representing the hostname from which search results for a
@@ -195,8 +232,9 @@ interface nsISearchParseSubmissionResult : nsISupports
 [scriptable, uuid(0301834b-2630-440e-8b98-db8dc55f34b9)]
 interface nsISearchService : nsISupports
 {
-  const unsigned long ERROR_UNKNOWN_FAILURE = 0x1;
+  const unsigned long ERROR_DOWNLOAD_FAILURE = 0x1;
   const unsigned long ERROR_DUPLICATE_ENGINE = 0x2;
+  const unsigned long ERROR_ENGINE_CORRUPTED = 0x3;
 
   /**
    * Start asynchronous initialization.
@@ -208,11 +246,6 @@ interface nsISearchService : nsISupports
    * full initialization of the search service.
    */
   Promise init();
-
-  /**
-   * Exposed for testing.
-   */
-  void reInit();
 
   /**
    * Determine whether initialization has been completed.
@@ -227,6 +260,11 @@ interface nsISearchService : nsISupports
    * initialization has not been triggered yet.
    */
   readonly attribute bool isInitialized;
+
+  /**
+   * Runs background checks; Designed to be run on idle.
+   */
+  Promise runBackgroundChecks();
 
   /**
    * Resets the default engine to its original value.
@@ -264,10 +302,33 @@ interface nsISearchService : nsISupports
   Promise addPolicyEngine(in jsval details);
 
   /**
-   * Test-only function for adding an engine. This should be considered obsolete,
-   * and will be replaced soon (bug 1649186).
+   * Updates an existing engine for enterprises.
+   *
+   * @param details
+   *        An object that simulates the WebExtension manifest structure:
+   *
+   *        {iconURL} Optional
+   *        {description} Optional
+   *        {chrome_settings_overrides} This should contain a {search_provider}
+   *                                    structure that mimics the WebExtension
+   *                                    manifest structure.
    */
-  Promise addEngineWithDetails(in AString name, in jsval details);
+  Promise updatePolicyEngine(in jsval details);
+
+  /**
+   * Adds a new search engine defined by the user.
+   *
+   * @param name
+   *        The name of the engine.
+   * @param url
+   *        The url of the engine with %s denoting where to
+   *        replace the search term.
+   * @param alias [optional]
+   *        The alias to refer to the engine.
+   */
+  Promise addUserEngine(in AString name,
+                        in AString url,
+                        [optional] in AString alias);
 
   /**
    * Adds search providers to the search service.  If the search
@@ -282,7 +343,7 @@ interface nsISearchService : nsISupports
   Promise addEnginesFromExtension(in jsval extension);
 
   /**
-   * Un-hides all engines in the set of engines returned by getDefaultEngines.
+   * Un-hides all engines in the set of engines returned by getAppProvidedEngines.
    */
   void restoreDefaultEngines();
 
@@ -294,7 +355,7 @@ interface nsISearchService : nsISupports
    * @returns The corresponding nsISearchEngine object, or null if it doesn't
    *          exist.
    */
-  nsISearchEngine getEngineByAlias(in AString alias);
+  Promise getEngineByAlias(in AString alias);
 
   /**
    * Returns an engine with the specified name.
@@ -330,7 +391,7 @@ interface nsISearchService : nsISupports
    *
    * @returns an array of nsISearchEngine objects.
    */
-  Promise getDefaultEngines();
+  Promise getAppProvidedEngines();
 
   /**
    * Returns an array of search engines installed by a given extension.

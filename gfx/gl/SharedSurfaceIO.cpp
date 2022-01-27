@@ -10,6 +10,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/gfx/MacIOSurface.h"
 #include "mozilla/layers/LayersSurfaces.h"  // for SurfaceDescriptor, etc
+#include "mozilla/layers/LayersTypes.h"
 #include "ScopedGLHelpers.h"
 
 namespace mozilla {
@@ -53,7 +54,7 @@ UniquePtr<SharedSurface_IOSurface> SharedSurface_IOSurface::Create(
     const SharedSurfaceDesc& desc) {
   const auto& size = desc.size;
   const RefPtr<MacIOSurface> ioSurf =
-      MacIOSurface::CreateIOSurface(size.width, size.height, 1.0, true);
+      MacIOSurface::CreateIOSurface(size.width, size.height, true);
   if (!ioSurf) {
     NS_WARNING("Failed to create MacIOSurface.");
     return nullptr;
@@ -91,33 +92,7 @@ Maybe<layers::SurfaceDescriptor>
 SharedSurface_IOSurface::ToSurfaceDescriptor() {
   const bool isOpaque = false;  // RGBA
   return Some(layers::SurfaceDescriptorMacIOSurface(
-      mIOSurf->GetIOSurfaceID(), mIOSurf->GetContentsScaleFactor(), isOpaque,
-      mIOSurf->GetYUVColorSpace()));
-}
-
-bool SharedSurface_IOSurface::ReadbackBySharedHandle(
-    gfx::DataSourceSurface* out_surface) {
-  MOZ_ASSERT(out_surface);
-  mIOSurf->Lock();
-  size_t bytesPerRow = mIOSurf->GetBytesPerRow();
-  size_t ioWidth = mIOSurf->GetDevicePixelWidth();
-  size_t ioHeight = mIOSurf->GetDevicePixelHeight();
-
-  const unsigned char* ioData = (unsigned char*)mIOSurf->GetBaseAddress();
-  gfx::DataSourceSurface::ScopedMap map(out_surface,
-                                        gfx::DataSourceSurface::WRITE);
-  if (!map.IsMapped()) {
-    mIOSurf->Unlock();
-    return false;
-  }
-
-  for (size_t i = 0; i < ioHeight; i++) {
-    memcpy(map.GetData() + i * map.GetStride(), ioData + i * bytesPerRow,
-           ioWidth * 4);
-  }
-
-  mIOSurf->Unlock();
-  return true;
+      mIOSurf->GetIOSurfaceID(), isOpaque, mIOSurf->GetYUVColorSpace()));
 }
 
 }  // namespace gl

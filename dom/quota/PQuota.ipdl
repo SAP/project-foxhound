@@ -46,12 +46,21 @@ struct InitTemporaryStorageParams
 {
 };
 
-struct InitStorageAndOriginParams
+struct InitializePersistentOriginParams
 {
   PrincipalInfo principalInfo;
+};
+
+struct InitializeTemporaryOriginParams
+{
   PersistenceType persistenceType;
-  Type clientType;
-  bool clientTypeIsExplicit;
+  PrincipalInfo principalInfo;
+};
+
+struct GetFullOriginMetadataParams
+{
+  PersistenceType persistenceType;
+  PrincipalInfo principalInfo;
 };
 
 struct AllUsageParams
@@ -130,7 +139,9 @@ union RequestParams
   TemporaryStorageInitializedParams;
   InitParams;
   InitTemporaryStorageParams;
-  InitStorageAndOriginParams;
+  InitializePersistentOriginParams;
+  InitializeTemporaryOriginParams;
+  GetFullOriginMetadataParams;
   ClearOriginParams;
   ResetOriginParams;
   ClearDataParams;

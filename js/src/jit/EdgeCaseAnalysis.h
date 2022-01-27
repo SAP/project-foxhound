@@ -7,11 +7,10 @@
 #ifndef jit_EdgeCaseAnalysis_h
 #define jit_EdgeCaseAnalysis_h
 
-#include "jit/MIRGenerator.h"
-
 namespace js {
 namespace jit {
 
+class MIRGenerator;
 class MIRGraph;
 
 class EdgeCaseAnalysis {
@@ -20,7 +19,7 @@ class EdgeCaseAnalysis {
 
  public:
   EdgeCaseAnalysis(MIRGenerator* mir, MIRGraph& graph);
-  MOZ_MUST_USE bool analyzeLate();
+  [[nodiscard]] bool analyzeLate();
 };
 
 }  // namespace jit

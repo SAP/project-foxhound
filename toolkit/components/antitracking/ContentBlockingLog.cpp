@@ -8,18 +8,17 @@
 #include "ContentBlockingLog.h"
 
 #include "nsITrackingDBService.h"
-#include "nsStringStream.h"
+#include "nsServiceManagerUtils.h"
 #include "nsTArray.h"
-#include "mozilla/dom/ContentChild.h"
 #include "mozilla/HashFunctions.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/RandomNum.h"
+#include "mozilla/ReverseIterator.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StaticPrefs_telemetry.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/Unused.h"
 #include "mozilla/XorShift128PlusRNG.h"
-#include "mozilla/ipc/IPCStreamUtils.h"
 
 namespace mozilla {
 
@@ -156,6 +155,11 @@ Maybe<uint32_t> ContentBlockingLog::RecordLogParent(
     case nsIWebProgressListener::STATE_COOKIES_BLOCKED_SOCIALTRACKER:
       RecordLogInternal(aOrigin, aType, blockedValue, aReason,
                         aTrackingFullHashes);
+      break;
+
+    case nsIWebProgressListener::STATE_REPLACED_TRACKING_CONTENT:
+    case nsIWebProgressListener::STATE_ALLOWED_TRACKING_CONTENT:
+      RecordLogInternal(aOrigin, aType, blockedValue);
       break;
 
     default:

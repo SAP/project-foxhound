@@ -13,12 +13,11 @@
 #include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/SnappyUncompressInputStream.h"
 #include "nsIAsyncInputStream.h"
+#include "nsIThread.h"
 #include "nsStringStream.h"
 #include "nsTArray.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 using mozilla::Unused;
 using mozilla::ipc::AutoIPCStream;
@@ -45,8 +44,6 @@ class ReadStream::Inner final : public ReadStream::Controllable {
   virtual void CloseStream() override;
 
   virtual void CloseStreamWithoutReporting() override;
-
-  virtual bool MatchId(const nsID& aId) const override;
 
   virtual bool HasEverBeenRead() const override;
 
@@ -239,17 +236,12 @@ void ReadStream::Inner::Serialize(
 
 void ReadStream::Inner::CloseStream() {
   MOZ_ASSERT(mOwningEventTarget->IsOnCurrentThread());
-  Close();
+  MOZ_ALWAYS_SUCCEEDS(Close());
 }
 
 void ReadStream::Inner::CloseStreamWithoutReporting() {
   MOZ_ASSERT(mOwningEventTarget->IsOnCurrentThread());
   Forget();
-}
-
-bool ReadStream::Inner::MatchId(const nsID& aId) const {
-  MOZ_ASSERT(mOwningEventTarget->IsOnCurrentThread());
-  return mId.Equals(aId);
 }
 
 bool ReadStream::Inner::HasEverBeenRead() const {
@@ -493,7 +485,7 @@ void ReadStream::Inner::OpenStreamFailed() {
   MOZ_DIAGNOSTIC_ASSERT(!mStream);
   MOZ_DIAGNOSTIC_ASSERT(!mSnappyStream);
   mMutex.AssertCurrentThreadOwns();
-  Unused << NS_NewCStringInputStream(getter_AddRefs(mStream), EmptyCString());
+  Unused << NS_NewCStringInputStream(getter_AddRefs(mStream), ""_ns);
   mSnappyStream = mStream;
   mStream->Close();
   NoteClosed();
@@ -615,6 +607,4 @@ ReadStream::IsNonBlocking(bool* aNonBlockingOut) {
   return mInner->IsNonBlocking(aNonBlockingOut);
 }
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

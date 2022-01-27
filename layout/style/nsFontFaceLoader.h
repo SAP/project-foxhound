@@ -22,12 +22,13 @@
 #include "nsTHashtable.h"
 
 class nsIPrincipal;
+class nsITimer;
 
 class nsFontFaceLoader final : public nsIStreamLoaderObserver,
                                public nsIRequestObserver,
                                public nsIFontLoadCompleteCallback {
  public:
-  nsFontFaceLoader(gfxUserFontEntry* aFontToLoad, nsIURI* aFontURI,
+  nsFontFaceLoader(gfxUserFontEntry* aUserFontEntry, uint32_t aSrcIndex,
                    mozilla::dom::FontFaceSet* aFontFaceSet,
                    nsIChannel* aChannel);
 
@@ -65,6 +66,7 @@ class nsFontFaceLoader final : public nsIStreamLoaderObserver,
   nsCOMPtr<nsITimer> mLoadTimer;
   mozilla::TimeStamp mStartTime;
   nsIStreamLoader* mStreamLoader;
+  uint32_t mSrcIndex;
   bool mInStreamComplete = false;
   bool mInLoadTimerCallback = false;
 };

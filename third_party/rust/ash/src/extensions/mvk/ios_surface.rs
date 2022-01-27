@@ -1,8 +1,7 @@
-#![allow(dead_code)]
 use crate::prelude::*;
-use crate::version::{EntryV1_0, InstanceV1_0};
 use crate::vk;
 use crate::RawPtr;
+use crate::{EntryCustom, Instance};
 use std::ffi::CStr;
 use std::mem;
 
@@ -13,11 +12,11 @@ pub struct IOSSurface {
 }
 
 impl IOSSurface {
-    pub fn new<E: EntryV1_0, I: InstanceV1_0>(entry: &E, instance: &I) -> IOSSurface {
+    pub fn new<L>(entry: &EntryCustom<L>, instance: &Instance) -> Self {
         let surface_fn = vk::MvkIosSurfaceFn::load(|name| unsafe {
             mem::transmute(entry.get_instance_proc_addr(instance.handle(), name.as_ptr()))
         });
-        IOSSurface {
+        Self {
             handle: instance.handle(),
             ios_surface_fn: surface_fn,
         }
@@ -28,22 +27,20 @@ impl IOSSurface {
     }
 
     #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/vkCreateIOSSurfaceMVK.html>"]
-    pub unsafe fn create_ios_surface_mvk(
+    pub unsafe fn create_ios_surface(
         &self,
         create_info: &vk::IOSSurfaceCreateInfoMVK,
         allocation_callbacks: Option<&vk::AllocationCallbacks>,
     ) -> VkResult<vk::SurfaceKHR> {
         let mut surface = mem::zeroed();
-        let err_code = self.ios_surface_fn.create_ios_surface_mvk(
-            self.handle,
-            create_info,
-            allocation_callbacks.as_raw_ptr(),
-            &mut surface,
-        );
-        match err_code {
-            vk::Result::SUCCESS => Ok(surface),
-            _ => Err(err_code),
-        }
+        self.ios_surface_fn
+            .create_ios_surface_mvk(
+                self.handle,
+                create_info,
+                allocation_callbacks.as_raw_ptr(),
+                &mut surface,
+            )
+            .result_with_success(surface)
     }
 
     pub fn fp(&self) -> &vk::MvkIosSurfaceFn {

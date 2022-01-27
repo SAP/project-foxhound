@@ -8,9 +8,9 @@
 #define js_Promise_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/GuardObjects.h"
 
-#include "jspubtd.h"
+#include "jstypes.h"
+
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/UniquePtr.h"
@@ -48,6 +48,10 @@ class JS_PUBLIC_API JobQueue {
    * Enqueue a reaction job `job` for `promise`, which was allocated at
    * `allocationSite`. Provide `incumbentGlobal` as the incumbent global for
    * the reaction job's execution.
+   *
+   * `promise` can be null if the promise is optimized out.
+   * `promise` is guaranteed not to be optimized out if the promise has
+   * non-default user-interaction flag.
    */
   virtual bool enqueuePromiseJob(JSContext* cx, JS::HandleObject promise,
                                  JS::HandleObject job,
@@ -136,7 +140,7 @@ extern JS_PUBLIC_API void SetJobQueue(JSContext* cx, JobQueue* queue);
  * interruption began must wait for the debuggee to be continued - and thus run
  * after microtasks enqueued after they were.
  *
- * Fortunately, this reordering is visible olny at the global level: when
+ * Fortunately, this reordering is visible only at the global level: when
  * implemented correctly, it is not detectable by an individual debuggee. Note
  * that a debuggee should generally be a complete unit of similar-origin related
  * browsing contexts. Since non-debuggee activity falls outside that unit, it
@@ -223,8 +227,7 @@ extern JS_PUBLIC_API void SetJobQueue(JSContext* cx, JobQueue* queue);
  */
 class MOZ_RAII JS_PUBLIC_API AutoDebuggerJobQueueInterruption {
  public:
-  explicit AutoDebuggerJobQueueInterruption(
-      MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM);
+  explicit AutoDebuggerJobQueueInterruption();
   ~AutoDebuggerJobQueueInterruption();
 
   bool init(JSContext* cx);
@@ -252,7 +255,6 @@ class MOZ_RAII JS_PUBLIC_API AutoDebuggerJobQueueInterruption {
   void runJobs();
 
  private:
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER;
   JSContext* cx;
   js::UniquePtr<JobQueue::SavedJobQueue> saved;
 };

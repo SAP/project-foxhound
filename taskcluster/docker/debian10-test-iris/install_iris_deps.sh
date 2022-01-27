@@ -17,7 +17,6 @@ apt_packages+=('autoconf-archive')
 apt_packages+=('automake')
 apt_packages+=('fluxbox')
 apt_packages+=('libcairo2-dev')
-apt_packages+=('libgtk2.0-dev')
 apt_packages+=('libicu-dev')
 apt_packages+=('libjpeg62-turbo-dev')
 apt_packages+=('libopencv-contrib-dev')
@@ -43,17 +42,15 @@ apt_packages+=('zlib1g-dev')
 
 apt-get update
 # This allows packages to be installed without human interaction
-export DEBIAN_FRONTEND=noninteractive
-apt-get install -y -f "${apt_packages[@]}"
+apt-get install "${apt_packages[@]}"
 
 python3.7 -m pip install pipenv
 python3.7 -m pip install psutil
-python3.7 -m pip install zstandard
 
 mkdir -p /setup
 cd /setup
 
-wget http://www.leptonica.org/source/leptonica-1.76.0.tar.gz
+wget https://github.com/DanBloomberg/leptonica/releases/download/1.76.0/leptonica-1.76.0.tar.gz
 tar xopf leptonica-1.76.0.tar.gz
 cd leptonica-1.76.0
 ./configure && make && make install
@@ -85,6 +82,4 @@ ls ~/.cache
 
 rm -rf ~/.npm
 
-apt-get clean
-apt-get autoclean
 rm -f "$0"

@@ -43,3 +43,37 @@ addAccessibleTask(
     is(fieldset.getAttributeValue("AXDescription"), "Fields");
   }
 );
+
+/**
+ * Test to see that list items don't get titled groups
+ */
+addAccessibleTask(
+  `<ul style="list-style: none;"><li id="unstyled-item">Hello</li></ul>
+   <ul><li id="styled-item">World</li></ul>`,
+  (browser, accDoc) => {
+    let unstyledItem = getNativeInterface(accDoc, "unstyled-item");
+    is(unstyledItem.getAttributeValue("AXTitle"), "");
+
+    let styledItem = getNativeInterface(accDoc, "unstyled-item");
+    is(styledItem.getAttributeValue("AXTitle"), "");
+  }
+);
+
+/**
+ * Test that we fire a title changed notification
+ */
+addAccessibleTask(
+  `<article id="article" aria-label="Hello world"></article>`,
+  async (browser, accDoc) => {
+    let article = getNativeInterface(accDoc, "article");
+    is(article.getAttributeValue("AXTitle"), "Hello world");
+    let evt = waitForMacEvent("AXTitleChanged", "article");
+    await SpecialPowers.spawn(browser, [], () => {
+      content.document
+        .getElementById("article")
+        .setAttribute("aria-label", "Hello universe");
+    });
+    await evt;
+    is(article.getAttributeValue("AXTitle"), "Hello universe");
+  }
+);

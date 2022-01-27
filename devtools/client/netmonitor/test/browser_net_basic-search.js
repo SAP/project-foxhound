@@ -11,7 +11,7 @@
 add_task(async function() {
   await pushPref("devtools.netmonitor.features.search", true);
 
-  const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL, {
+  const { tab, monitor } = await initNetMonitor(HTTPS_CUSTOM_GET_URL, {
     requestCount: 1,
   });
   info("Starting test... ");
@@ -23,7 +23,7 @@ add_task(async function() {
   store.dispatch(Actions.batchEnable(false));
 
   // Execute two XHRs (the same URL) and wait till it's finished.
-  const URL = SEARCH_SJS + "?value=test";
+  const URL = HTTPS_SEARCH_SJS + "?value=test";
   const wait = waitForNetworkEvents(monitor, 2);
 
   await SpecialPowers.spawn(tab.linkedBrowser, [URL], async function(url) {
@@ -54,10 +54,16 @@ add_task(async function() {
   );
 
   // Click on the first resource to expand it
+  AccessibilityUtils.setEnv({
+    // Keyboard users use arrow keys to expand/collapse tree items.
+    // Accessibility is handled on the container level.
+    mustHaveAccessibleRule: false,
+  });
   EventUtils.sendMouseEvent(
     { type: "click" },
     document.querySelector(".search-panel-content .treeRow .treeIcon")
   );
+  AccessibilityUtils.resetEnv();
 
   // Check that there is 5 matches.
   const matches = document.querySelectorAll(

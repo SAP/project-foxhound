@@ -8,6 +8,7 @@
 
 #include "nsGkAtoms.h"
 #include "nsCOMPtr.h"
+#include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/NodeInfo.h"
 #include "mozilla/dom/Element.h"
@@ -23,9 +24,11 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/TextEditor.h"
 #include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsContentUtils.h"
+#include "nsIFile.h"
 #include "nsUnicodeProperties.h"
 #include "mozilla/EventStates.h"
 #include "nsTextNode.h"
@@ -165,10 +168,12 @@ void nsFileControlFrame::Reflow(nsPresContext* aPresContext,
         labelBP +=
             lastLabelCont->GetLogicalUsedBorderAndPadding(wm).IStartEnd(wm);
       }
-      auto* buttonFrame = mBrowseFilesOrDirs->GetPrimaryFrame();
-      nscoord availableISizeForLabel =
-          contentISize - buttonFrame->ISize(wm) -
-          buttonFrame->GetLogicalUsedMargin(wm).IStartEnd(wm);
+      nscoord availableISizeForLabel = contentISize;
+      if (auto* buttonFrame = mBrowseFilesOrDirs->GetPrimaryFrame()) {
+        availableISizeForLabel -=
+            buttonFrame->ISize(wm) +
+            buttonFrame->GetLogicalUsedMargin(wm).IStartEnd(wm);
+      }
       if (CropTextToWidth(*aReflowInput.mRenderingContext, labelFrame,
                           availableISizeForLabel - labelBP, filename)) {
         nsBlockFrame::DidReflow(aPresContext, &aReflowInput);
@@ -210,7 +215,7 @@ static already_AddRefed<Element> MakeAnonButton(Document* aDoc,
   // NOTE: SetIsNativeAnonymousRoot() has to be called before setting any
   // attribute.
   button->SetIsNativeAnonymousRoot();
-  button->SetPseudoElementType(PseudoStyleType::fileChooserButton);
+  button->SetPseudoElementType(PseudoStyleType::fileSelectorButton);
 
   // Set the file picking button text depending on the current locale.
   nsAutoString buttonTxt;
@@ -224,8 +229,9 @@ static already_AddRefed<Element> MakeAnonButton(Document* aDoc,
 
   textContent->SetText(buttonTxt, false);
 
-  nsresult rv = button->AppendChildTo(textContent, false);
-  if (NS_FAILED(rv)) {
+  IgnoredErrorResult error;
+  button->AppendChildTo(textContent, false, error);
+  if (error.Failed()) {
     return nullptr;
   }
 
@@ -269,7 +275,7 @@ nsresult nsFileControlFrame::CreateAnonymousContent(
   mTextContent->SetIsNativeAnonymousRoot();
   RefPtr<nsTextNode> text =
       new (doc->NodeInfoManager()) nsTextNode(doc->NodeInfoManager());
-  mTextContent->AppendChildTo(text, false);
+  mTextContent->AppendChildTo(text, false, IgnoreErrors());
 
   // Update the displayed text to reflect the current element's value.
   nsAutoString value;
@@ -536,8 +542,8 @@ nscoord nsFileControlFrame::GetPrefISize(gfxContext* aRenderingContext) {
 void nsFileControlFrame::SyncDisabledState() {
   EventStates eventStates = mContent->AsElement()->State();
   if (eventStates.HasState(NS_EVENT_STATE_DISABLED)) {
-    mBrowseFilesOrDirs->SetAttr(kNameSpaceID_None, nsGkAtoms::disabled,
-                                EmptyString(), true);
+    mBrowseFilesOrDirs->SetAttr(kNameSpaceID_None, nsGkAtoms::disabled, u""_ns,
+                                true);
   } else {
     mBrowseFilesOrDirs->UnsetAttr(kNameSpaceID_None, nsGkAtoms::disabled, true);
   }

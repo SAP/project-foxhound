@@ -30,6 +30,12 @@ loader.lazyImporter(
   "ExtensionParent",
   "resource://gre/modules/ExtensionParent.jsm"
 );
+loader.lazyRequireGetter(
+  this,
+  "WatcherActor",
+  "devtools/server/actors/watcher",
+  true
+);
 
 /**
  * Creates the actor that represents the addon in the parent process, which connects
@@ -59,11 +65,8 @@ const WebExtensionDescriptorActor = protocol.ActorClassWithSpec(
       this.addonId = addon.id;
       this._childFormPromise = null;
 
-      // Called when the debug browser element has been destroyed
-      this._extensionFrameDisconnect = this._extensionFrameDisconnect.bind(
-        this
-      );
       this._onChildExit = this._onChildExit.bind(this);
+      this.destroy = this.destroy.bind(this);
       AddonManager.addAddonListener(this);
     },
 
@@ -71,7 +74,10 @@ const WebExtensionDescriptorActor = protocol.ActorClassWithSpec(
       const policy = ExtensionParent.WebExtensionPolicy.getByID(this.addonId);
       return {
         actor: this.actorID,
-        debuggable: this.addon.isDebuggable,
+        // Note that until the policy becomes active,
+        // getTarget/connectToFrame will fail attaching to the web extension:
+        // https://searchfox.org/mozilla-central/rev/526a5089c61db85d4d43eb0e46edaf1f632e853a/toolkit/components/extensions/WebExtensionPolicy.cpp#551-553
+        debuggable: policy?.active && this.addon.isDebuggable,
         hidden: this.addon.hidden,
         // iconDataURL is available after calling loadIconDataURL
         iconDataURL: this._iconDataURL,
@@ -82,12 +88,40 @@ const WebExtensionDescriptorActor = protocol.ActorClassWithSpec(
         manifestURL: policy && policy.getURL("manifest.json"),
         name: this.addon.name,
         temporarilyInstalled: this.addon.temporarilyInstalled,
-        traits: {},
+        traits: {
+          supportsReloadDescriptor: true,
+          // @backward-compat { added in 95 } Support has been added to WebExtension descriptors
+          watcher: true,
+        },
         url: this.addon.sourceURI ? this.addon.sourceURI.spec : undefined,
         warnings: ExtensionParent.DebugUtils.getExtensionManifestWarnings(
           this.addonId
         ),
       };
+    },
+
+    /**
+     * Return a Watcher actor, allowing to keep track of targets which
+     * already exists or will be created. It also helps knowing when they
+     * are destroyed.
+     */
+    async getWatcher(config = {}) {
+      if (!this.watcher) {
+        // Ensure connecting to the webextension frame in order to populate this._form
+        await this._extensionFrameConnect();
+        this.watcher = new WatcherActor(
+          this.conn,
+          {
+            type: "webextension",
+            addonId: this.addonId,
+            addonBrowsingContextID: this._form.browsingContextID,
+            addonInnerWindowId: this._form.innerWindowId,
+          },
+          config
+        );
+        this.manage(this.watcher);
+      }
+      return this.watcher;
     },
 
     async getTarget() {
@@ -108,10 +142,8 @@ const WebExtensionDescriptorActor = protocol.ActorClassWithSpec(
     },
 
     async _extensionFrameConnect() {
-      if (this._browser) {
-        throw new Error(
-          "This actor is already connected to the extension process"
-        );
+      if (this._form) {
+        return this._form;
       }
 
       this._browser = await ExtensionParent.DebugUtils.getExtensionProcessBrowser(
@@ -121,9 +153,19 @@ const WebExtensionDescriptorActor = protocol.ActorClassWithSpec(
       this._form = await connectToFrame(
         this.conn,
         this._browser,
-        this._extensionFrameDisconnect,
-        { addonId: this.addonId }
+        this.destroy,
+        {
+          addonId: this.addonId,
+        }
       );
+
+      // connectToFrame may resolve to a null form,
+      // in case the browser element is destroyed before it is fully connected to it.
+      if (!this._form) {
+        throw new Error(
+          "browser element destroyed while connecting to it: " + this.addon.name
+        );
+      }
 
       this._childActorID = this._form.actor;
 
@@ -131,6 +173,17 @@ const WebExtensionDescriptorActor = protocol.ActorClassWithSpec(
       this._mm.addMessageListener("debug:webext_child_exit", this._onChildExit);
 
       return this._form;
+    },
+
+    /**
+     * Note that reloadDescriptor is the common API name for descriptors
+     * which support to be reloaded, while WebExtensionDescriptorActor::reload
+     * is a legacy API which is for instance used from web-ext.
+     *
+     * bypassCache has no impact for addon reloads.
+     */
+    reloadDescriptor({ bypassCache }) {
+      return this.reload();
     },
 
     /** WebExtension Actor Methods **/
@@ -192,7 +245,36 @@ const WebExtensionDescriptorActor = protocol.ActorClassWithSpec(
       );
     },
 
-    _extensionFrameDisconnect() {
+    /**
+     * Handle the child actor exit.
+     */
+    _onChildExit(msg) {
+      if (msg.json.actor !== this._childActorID) {
+        return;
+      }
+
+      this.destroy();
+    },
+
+    // AddonManagerListener callbacks.
+    onInstalled(addon) {
+      if (addon.id != this.addonId) {
+        return;
+      }
+
+      // Update the AddonManager's addon object on reload/update.
+      this.addon = addon;
+    },
+
+    onUninstalled(addon) {
+      if (addon != this.addon) {
+        return;
+      }
+
+      this.destroy();
+    },
+
+    destroy() {
       AddonManager.removeAddonListener(this);
 
       this.addon = null;
@@ -211,39 +293,9 @@ const WebExtensionDescriptorActor = protocol.ActorClassWithSpec(
 
       this._browser = null;
       this._childActorID = null;
-    },
 
-    /**
-     * Handle the child actor exit.
-     */
-    _onChildExit(msg) {
-      if (msg.json.actor !== this._childActorID) {
-        return;
-      }
+      this.emit("descriptor-destroyed");
 
-      this._extensionFrameDisconnect();
-    },
-
-    // AddonManagerListener callbacks.
-    onInstalled(addon) {
-      if (addon.id != this.addonId) {
-        return;
-      }
-
-      // Update the AddonManager's addon object on reload/update.
-      this.addon = addon;
-    },
-
-    onUninstalled(addon) {
-      if (addon != this.addon) {
-        return;
-      }
-
-      this._extensionFrameDisconnect();
-    },
-
-    destroy() {
-      this._extensionFrameDisconnect();
       protocol.Actor.prototype.destroy.call(this);
     },
   }

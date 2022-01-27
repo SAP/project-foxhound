@@ -739,12 +739,15 @@ fn bench(args: &SimpleArgs) -> Result<(), Error> {
         "Unable to serialize benchmark script path".into(),
     ))?;
 
-    run_mach(&["run", "-f", cmp_parsers, "--", "--", realjs_path], args)
+    run_mach(
+        &["run", "-f", cmp_parsers, "--", "--", "--dir", realjs_path],
+        args,
+    )
 }
 
 fn test(args: &SimpleArgs) -> Result<(), Error> {
-    run_mach(&["jstests", "--args=-smoosh"], args)?;
-    run_mach(&["jit-test", "--args=-smoosh"], args)
+    run_mach(&["jstests", "--args=--smoosh"], args)?;
+    run_mach(&["jit-test", "--args=--smoosh"], args)
 }
 
 fn vendor(moz: &MozillaTree) -> Result<(), Error> {

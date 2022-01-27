@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { normalizeToKebabCase } from "../utils.js";
+import { normalizeToKebabCase } from "./utils.js";
 import { updateSelectedItem } from "../certviewer.js";
 
 export class CertificateTabsSection extends HTMLElement {
@@ -32,7 +32,14 @@ export class CertificateTabsSection extends HTMLElement {
 
   createTabSection(tabName, i) {
     let tab = document.createElement("button");
-    tab.textContent = tabName;
+    if (tabName) {
+      tab.textContent = tabName;
+    } else {
+      tab.setAttribute(
+        "data-l10n-id",
+        "certificate-viewer-unknown-group-label"
+      );
+    }
     tab.setAttribute("id", normalizeToKebabCase(tabName));
     tab.setAttribute("aria-controls", "panel" + i);
     tab.setAttribute("idnumber", i);
@@ -41,6 +48,12 @@ export class CertificateTabsSection extends HTMLElement {
     tab.classList.add("tab");
     if (this.isAboutCertificate) {
       tab.setAttribute("data-l10n-id", tabName);
+    } else {
+      // Display tabs on `about:certificate?cert=` pages as dir=auto
+      // to avoid text like `mozilla.org.*` in RTL.
+      // Not needed in the standalone version of about:certificate
+      // because the tab text there should be localized.
+      tab.dir = "auto";
     }
     this.tabsElement.appendChild(tab);
 

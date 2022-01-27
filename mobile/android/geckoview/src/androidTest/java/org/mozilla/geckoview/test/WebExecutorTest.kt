@@ -32,7 +32,6 @@ import java.lang.IllegalStateException
 import java.math.BigInteger
 import java.net.UnknownHostException
 import java.nio.ByteBuffer
-import java.nio.CharBuffer
 import java.nio.charset.Charset
 import java.security.MessageDigest
 import java.util.*
@@ -77,14 +76,6 @@ class WebExecutorTest {
         return executor.fetch(request, flags).pollDefault()!!
     }
 
-    fun String.toDirectByteBuffer(): ByteBuffer {
-        val chars = CharBuffer.wrap(this)
-        val buffer = ByteBuffer.allocateDirect(this.length)
-        Charset.forName("UTF-8").newEncoder().encode(chars, buffer, true)
-
-        return buffer
-    }
-
     fun WebResponse.getBodyBytes(): ByteBuffer {
         body!!.use {
             return ByteBuffer.wrap(it.readBytes())
@@ -123,7 +114,7 @@ class WebExecutorTest {
                 .addHeader("Header2", "Value2")
                 .referrer(referrer)
                 .header("Content-Type", "text/plain")
-                .body(bodyString.toDirectByteBuffer())
+                .body(bodyString)
                 .build()
 
         val response = fetch(request)
@@ -139,7 +130,7 @@ class WebExecutorTest {
         assertThat("Headers should match", body.getJSONObject("headers").getString("Header1"), equalTo("Value"))
         assertThat("Headers should match", body.getJSONObject("headers").getString("Header2"), equalTo("Value1, Value2"))
         assertThat("Headers should match", body.getJSONObject("headers").getString("Content-Type"), equalTo("text/plain"))
-        assertThat("Referrer should match", body.getJSONObject("headers").getString("Referer"), equalTo(referrer))
+        assertThat("Referrer should match", body.getJSONObject("headers").getString("Referer"), equalTo("http://foo/"))
         assertThat("Data should match", body.getString("data"), equalTo(bodyString));
     }
 
@@ -252,9 +243,24 @@ class WebExecutorTest {
     }
 
     @Test
-    fun testAnonymous() {
+    fun testAnonymousSendCookies() {
+        val uptimeMillis = SystemClock.uptimeMillis()
+        val response = fetch(WebRequest("$TEST_ENDPOINT/cookies/set/uptimeMillis/$uptimeMillis"), GeckoWebExecutor.FETCH_FLAGS_ANONYMOUS)
+
+        // We get redirected to /cookies which returns the cookies that were sent in the request
+        assertThat("URI should match", response.uri, equalTo("$TEST_ENDPOINT/cookies"))
+        assertThat("Status code should match", response.statusCode, equalTo(200))
+
+        val body = response.getJSONBody()
+        assertThat("Cookies should not be set for the test server",
+                body.getJSONObject("cookies").length(),
+                equalTo(0))
+    }
+
+    @Test
+    fun testAnonymousGetCookies() {
         // Ensure a cookie is set for the test server
-        testCookies();
+        testCookies()
 
         val response = fetch(WebRequest("$TEST_ENDPOINT/cookies"),
                 GeckoWebExecutor.FETCH_FLAGS_ANONYMOUS)
@@ -262,6 +268,31 @@ class WebExecutorTest {
         assertThat("Status code should match", response.statusCode, equalTo(200))
         val cookies = response.getJSONBody().getJSONObject("cookies")
         assertThat("Cookies should be empty", cookies.length(), equalTo(0))
+    }
+
+    @Test
+    fun testPrivateCookies() {
+        val uptimeMillis = SystemClock.uptimeMillis()
+        val response = fetch(WebRequest("$TEST_ENDPOINT/cookies/set/uptimeMillis/$uptimeMillis"), GeckoWebExecutor.FETCH_FLAGS_PRIVATE)
+
+        // We get redirected to /cookies which returns the cookies that were sent in the request
+        assertThat("URI should match", response.uri, equalTo("$TEST_ENDPOINT/cookies"))
+        assertThat("Status code should match", response.statusCode, equalTo(200))
+
+        val body = response.getJSONBody()
+        assertThat("Cookies should be set for the test server",
+                body.getJSONObject("cookies").getString("uptimeMillis"),
+                equalTo(uptimeMillis.toString()))
+
+        val anotherBody = fetch(WebRequest("$TEST_ENDPOINT/cookies"), GeckoWebExecutor.FETCH_FLAGS_PRIVATE).getJSONBody()
+        assertThat("Body should match",
+                anotherBody.getJSONObject("cookies").getString("uptimeMillis"),
+                equalTo(uptimeMillis.toString()))
+
+        val yetAnotherBody = fetch(WebRequest("$TEST_ENDPOINT/cookies")).getJSONBody()
+        assertThat("Cookies set in private session are not supposed to be seen in normal download",
+                yetAnotherBody.getJSONObject("cookies").length(),
+                equalTo(0))
     }
 
     @Test
@@ -387,5 +418,49 @@ class WebExecutorTest {
         assertThat("Stream should still have 0 bytes available", stream.available(), equalTo(0));
 
         stream.close()
+    }
+
+    @Test
+    fun unsupportedUriScheme() {
+        val illegal = mapOf(
+            "" to "",
+            "a" to "a",
+            "ab" to "ab",
+            "abc" to "abc",
+            "htt" to "htt",
+            "123456789" to "123456789",
+            "1234567890" to "1234567890",
+            "12345678901" to "1234567890",
+            "file://test" to "file://tes",
+            "moz-extension://what" to "moz-extens"
+        )
+
+        for ((uri, truncated) in illegal) {
+            try {
+                fetch(WebRequest(uri))
+                throw IllegalStateException("fetch() should have thrown")
+            } catch (e: IllegalArgumentException) {
+                assertThat("Message should match",
+                        e.message,
+                        equalTo("Unsupported URI scheme: $truncated"))
+            }
+        }
+
+        val legal = listOf(
+            "http://$TEST_ENDPOINT\n",
+            "http://$TEST_ENDPOINT/🥲",
+            "http://$TEST_ENDPOINT/abc"
+        )
+
+        for (uri in legal) {
+            try {
+                fetch(WebRequest(uri))
+                throw IllegalStateException("fetch() should have thrown")
+            } catch (e: WebRequestError) {
+                assertThat("Request should pass initial validation.",
+                        true,
+                        equalTo(true))
+            }
+        }
     }
 }

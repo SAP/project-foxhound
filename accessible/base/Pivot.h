@@ -13,9 +13,10 @@
 namespace mozilla {
 namespace a11y {
 
-class Accessible;
+class LocalAccessible;
 class HyperTextAccessible;
 class DocAccessible;
+class Accessible;
 
 class PivotRule {
  public:
@@ -23,7 +24,7 @@ class PivotRule {
   // nsIAccessibleTraversalRule: FILTER_IGNORE (0x0): Don't match this
   // accessible. FILTER_MATCH (0x1): Match this accessible FILTER_IGNORE_SUBTREE
   // (0x2): Ignore accessible's subtree.
-  virtual uint16_t Match(Accessible* aAccessible) = 0;
+  virtual uint16_t Match(Accessible* aAcc) = 0;
 };
 
 // The Pivot class is used for searching for accessible nodes in a given subtree
@@ -55,12 +56,12 @@ class Pivot final {
   Accessible* Last(PivotRule& aRule);
 
   // Return the next range of text according to the boundary type.
-  Accessible* NextText(Accessible* aAnchor, int32_t* aStartOffset,
-                       int32_t* aEndOffset, int32_t aBoundaryType);
+  LocalAccessible* NextText(LocalAccessible* aAnchor, int32_t* aStartOffset,
+                            int32_t* aEndOffset, int32_t aBoundaryType);
 
   // Return the previous range of text according to the boundary type.
-  Accessible* PrevText(Accessible* aAnchor, int32_t* aStartOffset,
-                       int32_t* aEndOffset, int32_t aBoundaryType);
+  LocalAccessible* PrevText(LocalAccessible* aAnchor, int32_t* aStartOffset,
+                            int32_t* aEndOffset, int32_t aBoundaryType);
 
   // Return the accessible at the given screen coordinate if it matches the
   // pivot rule.
@@ -79,22 +80,35 @@ class Pivot final {
                              bool aSearchCurrent);
 
   // Search in preorder for the first text accessible.
-  HyperTextAccessible* SearchForText(Accessible* aAnchor, bool aBackward);
+  HyperTextAccessible* SearchForText(LocalAccessible* aAnchor, bool aBackward);
 
   Accessible* mRoot;
 };
 
 /**
- * This rule matches accessibles on a given role.
+ * This rule matches accessibles on a given role, filtering out non-direct
+ * descendants if necessary.
  */
-class PivotRoleRule final : public PivotRule {
+class PivotRoleRule : public PivotRule {
  public:
   explicit PivotRoleRule(role aRole);
+  explicit PivotRoleRule(role aRole, Accessible* aDirectDescendantsFrom);
 
-  virtual uint16_t Match(Accessible* aAccessible) override;
+  virtual uint16_t Match(Accessible* aAcc) override;
 
- private:
+ protected:
   role mRole;
+  Accessible* mDirectDescendantsFrom;
+};
+
+/**
+ * This rule matches any local LocalAccessible (i.e. not RemoteAccessible) in
+ * the same document as the anchor. That is, it includes any descendant
+ * OuterDocAccessible, but not its descendants.
+ */
+class LocalAccInSameDocRule : public PivotRule {
+ public:
+  virtual uint16_t Match(Accessible* aAcc) override;
 };
 
 }  // namespace a11y

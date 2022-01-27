@@ -12,6 +12,14 @@ const nsLoginInfo = new Components.Constructor(
   "init"
 );
 
+XPCOMUtils.defineLazyModuleGetters(this, {
+  Region: "resource://gre/modules/Region.jsm",
+});
+
+const { SearchTestUtils } = ChromeUtils.import(
+  "resource://testing-common/SearchTestUtils.jsm"
+);
+
 const TEST_LOGIN1 = new nsLoginInfo(
   "https://example.com/",
   "https://example.com/",
@@ -39,11 +47,15 @@ async function reloadTab(tab) {
 }
 
 // Used to replace AboutProtectionsHandler.getLoginData in front-end tests.
-const mockGetLoginDataWithSyncedDevices = (mobileDeviceConnected = false) => {
+const mockGetLoginDataWithSyncedDevices = (
+  mobileDeviceConnected = false,
+  potentiallyBreachedLogins = 0
+) => {
   return {
     getLoginData: () => {
       return {
         numLogins: Services.logins.countLogins("", "", ""),
+        potentiallyBreachedLogins,
         mobileDeviceConnected,
       };
     },
@@ -62,11 +74,32 @@ const mockGetMonitorData = data => {
         monitoredEmails: 1,
         numBreaches: data.numBreaches,
         passwords: 8,
-        potentiallyBreachedLogins: data.potentiallyBreachedLogins,
         numBreachesResolved: data.numBreachesResolved,
         passwordsResolved: 1,
         error: false,
       };
     },
   };
+};
+
+registerCleanupFunction(function head_cleanup() {
+  Services.logins.removeAllUserFacingLogins();
+});
+
+// Used to replace AboutProtectionsParent.VPNSubStatus and Region.current
+const getVPNOverrides = (hasSubscription = false, location = "us") => {
+  return {
+    vpnOverrides: () => {
+      return {
+        hasSubscription,
+        location,
+      };
+    },
+  };
+};
+
+const promiseSetHomeRegion = async region => {
+  let promise = SearchTestUtils.promiseSearchNotification("engines-reloaded");
+  Region._setHomeRegion(region);
+  await promise;
 };

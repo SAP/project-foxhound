@@ -105,6 +105,10 @@ class BrowserAction extends BrowserActionBase {
     }
     return null;
   }
+
+  dispatchClick(tab, clickInfo) {
+    this.buttonDelegate.emit("click", tab, clickInfo);
+  }
 }
 
 this.browserAction = class extends ExtensionAPI {
@@ -115,7 +119,8 @@ this.browserAction = class extends ExtensionAPI {
   async onManifestEntry(entryName) {
     let { extension } = this;
 
-    let options = extension.manifest.browser_action;
+    let options =
+      extension.manifest.browser_action || extension.manifest.action;
 
     this.action = new BrowserAction(extension, this);
     await this.action.loadIconData();
@@ -148,7 +153,7 @@ this.browserAction = class extends ExtensionAPI {
   }
 
   static onUpdate(id, manifest) {
-    if (!("browser_action" in manifest)) {
+    if (!("browser_action" in manifest || "action" in manifest)) {
       // If the new version has no browser action then mark this widget as
       // hidden in the telemetry. If it is already marked hidden then this will
       // do nothing.
@@ -262,12 +267,8 @@ this.browserAction = class extends ExtensionAPI {
         let tabbrowser = document.defaultView.gBrowser;
 
         let tab = tabbrowser.selectedTab;
-        let popupURL = this.action.getProperty(tab, "popup");
-        this.tabManager.addActiveTabPermission(tab);
+        let popupURL = this.action.triggerClickOrPopup(tab, this.lastClickInfo);
 
-        // Popups are shown only if a popup URL is defined; otherwise
-        // a "click" event is dispatched. This is done for compatibility with the
-        // Google Chrome onClicked extension API.
         if (popupURL) {
           try {
             let popup = this.getPopup(document.defaultView, popupURL);
@@ -301,7 +302,6 @@ this.browserAction = class extends ExtensionAPI {
           // This isn't not a hack, but it seems to provide the correct behavior
           // with the fewest complications.
           event.preventDefault();
-          this.emit("click", tabbrowser.selectedBrowser);
           // Ensure we close any popups this node was in:
           CustomizableUI.hidePanelForNode(event.target);
         }
@@ -343,14 +343,15 @@ this.browserAction = class extends ExtensionAPI {
     let widget = this.widget.forWindow(window);
     let tab = window.gBrowser.selectedTab;
 
-    if (!widget.node || !this.action.getProperty(tab, "enabled")) {
+    if (!widget.node) {
       return;
     }
 
-    // Popups are shown only if a popup URL is defined; otherwise
-    // a "click" event is dispatched. This is done for compatibility with the
-    // Google Chrome onClicked extension API.
-    if (this.action.getProperty(tab, "popup")) {
+    let popupUrl = this.action.triggerClickOrPopup(tab, {
+      button: 0,
+      modifiers: [],
+    });
+    if (popupUrl) {
       if (this.widget.areaType == CustomizableUI.TYPE_MENU_PANEL) {
         await window.document.getElementById("nav-bar").overflowable.show();
       }
@@ -360,10 +361,6 @@ this.browserAction = class extends ExtensionAPI {
         cancelable: true,
       });
       widget.node.dispatchEvent(event);
-    } else {
-      this.tabManager.addActiveTabPermission(tab);
-      this.lastClickInfo = { button: 0, modifiers: [] };
-      this.emit("click");
     }
   }
 
@@ -374,25 +371,18 @@ this.browserAction = class extends ExtensionAPI {
     switch (event.type) {
       case "mousedown":
         if (event.button == 0) {
+          let tab = window.gBrowser.selectedTab;
+
           // Begin pre-loading the browser for the popup, so it's more likely to
           // be ready by the time we get a complete click.
-          let tab = window.gBrowser.selectedTab;
-          let popupURL = this.action.getProperty(tab, "popup");
-          let enabled = this.action.getProperty(tab, "enabled");
-
+          let popupURL = this.action.getPopupUrl(tab);
           if (
             popupURL &&
-            enabled &&
             (this.pendingPopup || !ViewPopup.for(this.extension, window))
           ) {
-            this.eventQueue.push("Mousedown");
             // Add permission for the active tab so it will exist for the popup.
-            // Store the tab to revoke the permission during clearPopup.
-            if (!this.tabManager.hasActiveTabPermission(tab)) {
-              this.tabManager.addActiveTabPermission(tab);
-              this.tabToRevokeDuringClearPopup = tab;
-            }
-
+            this.action.setActiveTabForPreload(tab);
+            this.eventQueue.push("Mousedown");
             this.pendingPopup = this.getPopup(window, popupURL);
             window.addEventListener("mouseup", this, true);
           } else {
@@ -424,12 +414,10 @@ this.browserAction = class extends ExtensionAPI {
         // Begin pre-loading the browser for the popup, so it's more likely to
         // be ready by the time we get a complete click.
         let tab = window.gBrowser.selectedTab;
-        let popupURL = this.action.getProperty(tab, "popup");
-        let enabled = this.action.getProperty(tab, "enabled");
+        let popupURL = this.action.getPopupUrl(tab);
 
         if (
           popupURL &&
-          enabled &&
           (this.pendingPopup || !ViewPopup.for(this.extension, window))
         ) {
           this.eventQueue.push("Hover");
@@ -461,9 +449,11 @@ this.browserAction = class extends ExtensionAPI {
         ];
 
         if (contexts.includes(menu.id) && node && node.contains(trigger)) {
+          const action =
+            this.extension.manifestVersion < 3 ? "onBrowserAction" : "onAction";
           global.actionContextMenu({
             extension: this.extension,
-            onBrowserAction: true,
+            [action]: true,
             menu: menu,
           });
         }
@@ -476,12 +466,10 @@ this.browserAction = class extends ExtensionAPI {
 
         let { gBrowser } = window;
         if (this.action.getProperty(gBrowser.selectedTab, "enabled")) {
-          this.lastClickInfo = {
+          this.action.dispatchClick(gBrowser.selectedTab, {
             button: 1,
             modifiers: clickModifiersFromEvent(event),
-          };
-
-          this.emit("click", gBrowser.selectedBrowser);
+          });
           // Ensure we close any popups this node was in:
           CustomizableUI.hidePanelForNode(event.target);
         }
@@ -542,16 +530,11 @@ this.browserAction = class extends ExtensionAPI {
    */
   clearPopup() {
     this.clearPopupTimeout();
+    this.action.setActiveTabForPreload(null);
     if (this.pendingPopup) {
-      if (this.tabToRevokeDuringClearPopup) {
-        this.tabManager.revokeActiveTabPermission(
-          this.tabToRevokeDuringClearPopup
-        );
-      }
       this.pendingPopup.destroy();
       this.pendingPopup = null;
     }
-    this.tabToRevokeDuringClearPopup = null;
   }
 
   /**
@@ -652,22 +635,20 @@ this.browserAction = class extends ExtensionAPI {
     let { extension } = context;
     let { tabManager } = extension;
     let { action } = this;
+    let namespace = extension.manifestVersion < 3 ? "browserAction" : "action";
 
     return {
-      browserAction: {
+      [namespace]: {
         ...action.api(context),
 
         onClicked: new EventManager({
           context,
-          name: "browserAction.onClicked",
+          name: `${namespace}.onClicked`,
           inputHandling: true,
           register: fire => {
-            let listener = (event, browser) => {
-              context.withPendingBrowser(browser, () =>
-                fire.sync(
-                  tabManager.convert(tabTracker.activeTab),
-                  this.lastClickInfo
-                )
+            let listener = (event, tab, clickInfo) => {
+              context.withPendingBrowser(tab.linkedBrowser, () =>
+                fire.sync(tabManager.convert(tab), clickInfo)
               );
             };
             this.on("click", listener);

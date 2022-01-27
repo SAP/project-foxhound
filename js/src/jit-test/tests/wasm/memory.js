@@ -113,7 +113,7 @@ function testStore(type, ext, base, offset, align, value) {
 function testStoreOOB(type, ext, base, offset, align, value) {
     if (type === 'i64') {
         assertErrorMessage(() => wasmAssert(
-            storeModuleSrc(type, ext, offset, align, value),
+            storeModuleSrc(type, ext, offset, align),
             [{type, func: '$store', args: [`i32.const ${base}`, `i64.const ${value}`]}]
         ), RuntimeError, /index out of bounds/);
     } else {
@@ -122,11 +122,11 @@ function testStoreOOB(type, ext, base, offset, align, value) {
 }
 
 function badLoadModule(type, ext) {
-    wasmFailValidateText( `(module (func (param i32) (${type}.load${ext} (local.get 0))) (export "" (func 0)))`, /can't touch memory/);
+    wasmFailValidateText( `(module (func (param i32) (${type}.load${ext} (local.get 0))) (export "" (func 0)))`, /(can't touch memory)|(unknown memory 0)/);
 }
 
 function badStoreModule(type, ext) {
-    wasmFailValidateText(`(module (func (param i32) (${type}.store${ext} (local.get 0) (${type}.const 0))) (export "" (func 0)))`, /can't touch memory/);
+    wasmFailValidateText(`(module (func (param i32) (${type}.store${ext} (local.get 0) (${type}.const 0))) (export "" (func 0)))`, /(can't touch memory)|(unknown memory 0)/);
 }
 
 // Can't touch memory.
@@ -266,7 +266,7 @@ for (var foldOffsets = 0; foldOffsets <= 1; foldOffsets++) {
         }
 
         // Ensure wrapping doesn't apply.
-        offset = 0x7fffffff; // maximum allowed offset that doesn't always throw.
+        offset = 0x7fffffff;
         for (let index of [0, 1, 2, 3, 0x7fffffff, 0x80000000, 0x80000001]) {
             if (align < 2) {
                 testLoadOOB('i32', '8_s', index, offset, align);
@@ -470,3 +470,37 @@ assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(`(module (memor
 assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(`(module (memory 1) (data 1 (i32.const 0) ""))`)),
                    WebAssembly.CompileError,
                    /memory index must be zero/);
+
+
+// Make sure we handle memory instructions without memory
+
+var nomem = /(can't touch memory without memory)|(unknown memory)/;
+
+assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(`(module (func (result i32) memory.size))`)),
+                   WebAssembly.CompileError,
+                   nomem);
+
+assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(`(module (func (result i32) (memory.grow (i32.const 1))))`)),
+                   WebAssembly.CompileError,
+                   nomem);
+
+assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(`
+(module (func (param i32 i32 i32)
+  (memory.copy (local.get 0) (local.get 1) (local.get 2))))`)),
+                   WebAssembly.CompileError,
+                   nomem);
+
+assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(`
+(module (func (param i32 i32 i32)
+  (memory.fill (local.get 0) (local.get 1) (local.get 2))))`)),
+                   WebAssembly.CompileError,
+                   nomem);
+
+assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(`
+(module
+  (data $d passive "01234")
+  (func (param i32 i32)
+    (memory.init $d (local.get 0) (local.get 1))))`)),
+                   WebAssembly.CompileError,
+                   nomem);
+

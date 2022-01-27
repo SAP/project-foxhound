@@ -5,14 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CompositableHost.h"
-#include <map>            // for _Rb_tree_iterator, map, etc
-#include <utility>        // for pair
-#include "ContentHost.h"  // for ContentHostDoubleBuffered, etc
-#include "Effects.h"      // for EffectMask, Effect, etc
+#include <map>        // for _Rb_tree_iterator, map, etc
+#include <utility>    // for pair
+#include "Effects.h"  // for EffectMask, Effect, etc
 #include "gfxUtils.h"
-#include "ImageHost.h"  // for ImageHostBuffered, etc
 #include "Layers.h"
-#include "TiledContentHost.h"  // for TiledContentHost
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/LayersSurfaces.h"  // for SurfaceDescriptor
 #include "mozilla/layers/TextureHost.h"     // for TextureHost, etc
@@ -32,107 +29,24 @@ namespace layers {
 class Compositor;
 
 CompositableHost::CompositableHost(const TextureInfo& aTextureInfo)
-    : mTextureInfo(aTextureInfo),
-      mCompositorBridgeID(0),
-      mLayer(nullptr),
-      mFlashCounter(0),
-      mAttached(false),
-      mKeepAttached(false) {
+    : mTextureInfo(aTextureInfo), mCompositorBridgeID(0) {
   MOZ_COUNT_CTOR(CompositableHost);
 }
 
 CompositableHost::~CompositableHost() { MOZ_COUNT_DTOR(CompositableHost); }
 
 void CompositableHost::UseTextureHost(const nsTArray<TimedTexture>& aTextures) {
-  if (mTextureSourceProvider) {
-    for (auto& texture : aTextures) {
-      texture.mTexture->SetTextureSourceProvider(mTextureSourceProvider);
-    }
-  }
-}
-
-void CompositableHost::UseComponentAlphaTextures(TextureHost* aTextureOnBlack,
-                                                 TextureHost* aTextureOnWhite) {
-  MOZ_ASSERT(aTextureOnBlack && aTextureOnWhite);
-  if (mTextureSourceProvider) {
-    aTextureOnBlack->SetTextureSourceProvider(mTextureSourceProvider);
-    aTextureOnWhite->SetTextureSourceProvider(mTextureSourceProvider);
-  }
 }
 
 void CompositableHost::RemoveTextureHost(TextureHost* aTexture) {}
 
-void CompositableHost::SetTextureSourceProvider(
-    TextureSourceProvider* aProvider) {
-  MOZ_ASSERT(aProvider);
-  mTextureSourceProvider = aProvider;
-}
-
-bool CompositableHost::AddMaskEffect(EffectChain& aEffects,
-                                     const gfx::Matrix4x4& aTransform) {
-  CompositableTextureSourceRef source;
-  RefPtr<TextureHost> host = GetAsTextureHost();
-
-  if (!host) {
-    NS_WARNING("Using compositable with no valid TextureHost as mask");
-    return false;
-  }
-
-  if (!host->Lock()) {
-    NS_WARNING("Failed to lock the mask texture");
-    return false;
-  }
-
-  if (!host->BindTextureSource(source)) {
-    NS_WARNING(
-        "The TextureHost was successfully locked but can't provide a "
-        "TextureSource");
-    host->Unlock();
-    return false;
-  }
-  MOZ_ASSERT(source);
-
-  RefPtr<EffectMask> effect =
-      new EffectMask(source, source->GetSize(), aTransform);
-  aEffects.mSecondaryEffects[EffectTypes::MASK] = effect;
-  return true;
-}
-
-void CompositableHost::RemoveMaskEffect() {
-  RefPtr<TextureHost> host = GetAsTextureHost();
-  if (host) {
-    host->Unlock();
-  }
-}
-
 /* static */
 already_AddRefed<CompositableHost> CompositableHost::Create(
-    const TextureInfo& aTextureInfo, bool aUseWebRender) {
+    const TextureInfo& aTextureInfo) {
   RefPtr<CompositableHost> result;
   switch (aTextureInfo.mCompositableType) {
-    case CompositableType::IMAGE_BRIDGE:
-      NS_ERROR("Cannot create an image bridge compositable this way");
-      break;
-    case CompositableType::CONTENT_TILED:
-      result = new TiledContentHost(aTextureInfo);
-      break;
     case CompositableType::IMAGE:
-      if (aUseWebRender) {
-        result = new WebRenderImageHost(aTextureInfo);
-      } else {
-        result = new ImageHost(aTextureInfo);
-      }
-      break;
-    case CompositableType::CONTENT_SINGLE:
-      if (aUseWebRender) {
-        result = new WebRenderImageHost(aTextureInfo);
-      } else {
-        result = new ContentHostSingleBuffered(aTextureInfo);
-      }
-      break;
-    case CompositableType::CONTENT_DOUBLE:
-      MOZ_ASSERT(!aUseWebRender);
-      result = new ContentHostDoubleBuffered(aTextureInfo);
+      result = new WebRenderImageHost(aTextureInfo);
       break;
     default:
       NS_ERROR("Unknown CompositableType");
@@ -150,17 +64,6 @@ void CompositableHost::DumpTextureHost(std::stringstream& aStream,
     return;
   }
   aStream << gfxUtils::GetAsDataURI(dSurf).get();
-}
-
-HostLayerManager* CompositableHost::GetLayerManager() const {
-  if (!mLayer || !mLayer->Manager()) {
-    return nullptr;
-  }
-  return mLayer->Manager()->AsHostLayerManager();
-}
-
-TextureSourceProvider* CompositableHost::GetTextureSourceProvider() const {
-  return mTextureSourceProvider;
 }
 
 }  // namespace layers

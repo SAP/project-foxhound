@@ -67,18 +67,45 @@ class LIRGeneratorNone : public LIRGeneratorShared {
                                MDefinition*) {
     MOZ_CRASH();
   }
+  void lowerForCompareI64AndBranch(MTest*, MCompare*, JSOp, MDefinition*,
+                                   MDefinition*, MBasicBlock*, MBasicBlock*) {
+    MOZ_CRASH();
+  }
 
   void lowerConstantDouble(double, MInstruction*) { MOZ_CRASH(); }
   void lowerConstantFloat32(float, MInstruction*) { MOZ_CRASH(); }
   void lowerTruncateDToInt32(MTruncateToInt32*) { MOZ_CRASH(); }
   void lowerTruncateFToInt32(MTruncateToInt32*) { MOZ_CRASH(); }
+  void lowerBuiltinInt64ToFloatingPoint(MBuiltinInt64ToFloatingPoint* ins) {
+    MOZ_CRASH();
+  }
+  void lowerWasmBuiltinTruncateToInt64(MWasmBuiltinTruncateToInt64* ins) {
+    MOZ_CRASH();
+  }
+  void lowerWasmBuiltinTruncateToInt32(MWasmBuiltinTruncateToInt32* ins) {
+    MOZ_CRASH();
+  }
   void lowerDivI(MDiv*) { MOZ_CRASH(); }
   void lowerModI(MMod*) { MOZ_CRASH(); }
   void lowerDivI64(MDiv*) { MOZ_CRASH(); }
+  void lowerWasmBuiltinDivI64(MWasmBuiltinDivI64* div) { MOZ_CRASH(); }
   void lowerModI64(MMod*) { MOZ_CRASH(); }
+  void lowerWasmBuiltinModI64(MWasmBuiltinModI64* mod) { MOZ_CRASH(); }
+  void lowerNegI(MInstruction*, MDefinition*) { MOZ_CRASH(); }
+  void lowerNegI64(MInstruction*, MDefinition*) { MOZ_CRASH(); }
   void lowerMulI(MMul*, MDefinition*, MDefinition*) { MOZ_CRASH(); }
   void lowerUDiv(MDiv*) { MOZ_CRASH(); }
   void lowerUMod(MMod*) { MOZ_CRASH(); }
+  void lowerWasmSelectI(MWasmSelect* select) { MOZ_CRASH(); }
+  void lowerWasmSelectI64(MWasmSelect* select) { MOZ_CRASH(); }
+
+  void lowerBigIntLsh(MBigIntLsh*) { MOZ_CRASH(); }
+  void lowerBigIntRsh(MBigIntRsh*) { MOZ_CRASH(); }
+  void lowerBigIntDiv(MBigIntDiv*) { MOZ_CRASH(); }
+  void lowerBigIntMod(MBigIntMod*) { MOZ_CRASH(); }
+
+  void lowerAtomicLoad64(MLoadUnboxedScalar*) { MOZ_CRASH(); }
+  void lowerAtomicStore64(MStoreUnboxedScalar*) { MOZ_CRASH(); }
 
   LTableSwitch* newLTableSwitch(LAllocation, LDefinition, MTableSwitch*) {
     MOZ_CRASH();

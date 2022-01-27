@@ -2,12 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
-
 import FrameMenu from "../FrameMenu";
-import { kebabCase } from "lodash";
 
-import { showMenu } from "devtools-contextmenu";
+import { showMenu } from "../../../../context-menu/menu";
 import { copyToTheClipboard } from "../../../../utils/clipboard";
 import {
   makeMockFrame,
@@ -15,20 +12,19 @@ import {
   mockthreadcx,
 } from "../../../../utils/test-mockup";
 
-jest.mock("devtools-contextmenu", () => ({ showMenu: jest.fn() }));
+jest.mock("../../../../context-menu/menu", () => ({ showMenu: jest.fn() }));
 jest.mock("../../../../utils/clipboard", () => ({
   copyToTheClipboard: jest.fn(),
 }));
 
 function generateMockId(labelString) {
-  const label = L10N.getStr(labelString);
-  return `node-menu-${kebabCase(label)}`;
+  return `node-menu-${labelString}`;
 }
 
 describe("FrameMenu", () => {
-  let mockEvent: any;
+  let mockEvent;
   let mockFrame;
-  let emptyFrame: any;
+  let emptyFrame;
   let callbacks;
   let frameworkGroupingOn;
   let toggleFrameworkGrouping;
@@ -57,7 +53,7 @@ describe("FrameMenu", () => {
     const sourceId = generateMockId("copySourceUri2");
     const stacktraceId = generateMockId("copyStackTrace");
     const frameworkGroupingId = generateMockId("framework.enableGrouping");
-    const blackBoxId = generateMockId("sourceFooter.ignore");
+    const blackBoxId = generateMockId("ignoreContextItem.ignore");
 
     FrameMenu(
       mockFrame,

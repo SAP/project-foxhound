@@ -6,7 +6,7 @@ from mozperftest.utils import MachLogger
 
 
 class Metadata(MachLogger):
-    def __init__(self, mach_cmd, env, flavor):
+    def __init__(self, mach_cmd, env, flavor, script):
         MachLogger.__init__(self, mach_cmd)
         self._mach_cmd = mach_cmd
         self.flavor = flavor
@@ -14,11 +14,12 @@ class Metadata(MachLogger):
         self._results = []
         self._output = None
         self._env = env
+        self.script = script
 
-    def run_hook(self, name, **kw):
+    def run_hook(self, name, *args, **kw):
         # this bypasses layer restrictions on args,
         # which is fine since it's a user script
-        return self._env.hooks.run(name, **kw)
+        return self._env.hooks.run(name, *args, **kw)
 
     def set_output(self, output):
         self._output = output

@@ -50,7 +50,7 @@ var AppMenu = {
         );
         await reopenAppMenu(browserWindow);
 
-        browserWindow.document.getElementById("appMenu-help-button").click();
+        browserWindow.document.getElementById("appMenu-help-button2").click();
         let view = browserWindow.document.getElementById("PanelUI-helpView");
         let promiseViewShown = BrowserTestUtils.waitForEvent(view, "ViewShown");
         await promiseViewShown;
@@ -63,8 +63,10 @@ var AppMenu = {
 
 async function reopenAppMenu(browserWindow) {
   browserWindow.PanelUI.hide();
-  let view = browserWindow.document.getElementById("appMenu-mainView");
-  let promiseViewShown = BrowserTestUtils.waitForEvent(view, "ViewShown");
+  let promiseViewShown = BrowserTestUtils.waitForEvent(
+    PanelUI.panel,
+    "ViewShown"
+  );
   browserWindow.PanelUI.show();
   await promiseViewShown;
 }

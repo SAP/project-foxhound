@@ -32,9 +32,7 @@ CubebDeviceEnumerator* GetEnumerator() {
   return CubebDeviceEnumerator::GetInstance();
 }
 
-MediaEngineWebRTC::MediaEngineWebRTC(MediaEnginePrefs& aPrefs)
-    : mDelayAgnostic(aPrefs.mDelayAgnostic),
-      mExtendedFilter(aPrefs.mExtendedFilter) {
+MediaEngineWebRTC::MediaEngineWebRTC() {
   AssertIsOnOwningThread();
 
   GetChildAndCall(
@@ -75,8 +73,7 @@ void MediaEngineWebRTC::SetFakeDeviceChangeEventsEnabled(bool aEnable) {
 }
 
 void MediaEngineWebRTC::EnumerateVideoDevices(
-    uint64_t aWindowId, camera::CaptureEngine aCapEngine,
-    nsTArray<RefPtr<MediaDevice>>* aDevices) {
+    camera::CaptureEngine aCapEngine, nsTArray<RefPtr<MediaDevice>>* aDevices) {
   AssertIsOnOwningThread();
 
   // flag sources with cross-origin exploit potential
@@ -137,7 +134,7 @@ void MediaEngineWebRTC::EnumerateVideoDevices(
     LOG(("Number of Capabilities %d", numCaps));
     for (int j = 0; j < numCaps; j++) {
       if (GetChildAndCall(&CamerasChild::GetCaptureCapability, aCapEngine,
-                          uniqueId, j, cap) != 0) {
+                          uniqueId, j, &cap) != 0) {
         break;
       }
       LOG(("type=%d width=%d height=%d maxFPS=%d",
@@ -145,17 +142,9 @@ void MediaEngineWebRTC::EnumerateVideoDevices(
     }
 #endif
 
-    if (uniqueId[0] == '\0') {
-      // In case a device doesn't set uniqueId!
-      strncpy(uniqueId, deviceName, sizeof(uniqueId));
-      uniqueId[sizeof(uniqueId) - 1] = '\0';  // strncpy isn't safe
-    }
-
-    NS_ConvertUTF8toUTF16 uuid(uniqueId);
-    RefPtr<MediaEngineSource> vSource;
-
-    vSource = new MediaEngineRemoteVideoSource(i, aCapEngine,
-                                               scaryKind || scarySource);
+    RefPtr<MediaEngineSource> vSource = new MediaEngineRemoteVideoSource(
+        NS_ConvertUTF8toUTF16(deviceName), nsDependentCString(uniqueId),
+        aCapEngine, scaryKind || scarySource);
     aDevices->AppendElement(MakeRefPtr<MediaDevice>(
         vSource, vSource->GetName(), NS_ConvertUTF8toUTF16(vSource->GetUUID()),
         vSource->GetGroupId(), u""_ns));
@@ -163,7 +152,7 @@ void MediaEngineWebRTC::EnumerateVideoDevices(
 }
 
 void MediaEngineWebRTC::EnumerateMicrophoneDevices(
-    uint64_t aWindowId, nsTArray<RefPtr<MediaDevice>>* aDevices) {
+    nsTArray<RefPtr<MediaDevice>>* aDevices) {
   AssertIsOnOwningThread();
 
   nsTArray<RefPtr<AudioDeviceInfo>> devices;
@@ -186,7 +175,7 @@ void MediaEngineWebRTC::EnumerateMicrophoneDevices(
           devices[i], devices[i]->Name(),
           // Lie and provide the name as UUID
           NS_ConvertUTF16toUTF8(devices[i]->Name()), devices[i]->GroupID(),
-          devices[i]->MaxChannels(), mDelayAgnostic, mExtendedFilter);
+          devices[i]->MaxChannels());
       RefPtr<MediaDevice> device = MakeRefPtr<MediaDevice>(
           source, source->GetName(), NS_ConvertUTF8toUTF16(source->GetUUID()),
           source->GetGroupId(), u""_ns);
@@ -214,7 +203,7 @@ void MediaEngineWebRTC::EnumerateMicrophoneDevices(
 }
 
 void MediaEngineWebRTC::EnumerateSpeakerDevices(
-    uint64_t aWindowId, nsTArray<RefPtr<MediaDevice>>* aDevices) {
+    nsTArray<RefPtr<MediaDevice>>* aDevices) {
   AssertIsOnOwningThread();
 
   nsTArray<RefPtr<AudioDeviceInfo>> devices;
@@ -248,8 +237,8 @@ void MediaEngineWebRTC::EnumerateSpeakerDevices(
 }
 
 void MediaEngineWebRTC::EnumerateDevices(
-    uint64_t aWindowId, dom::MediaSourceEnum aMediaSource,
-    MediaSinkEnum aMediaSink, nsTArray<RefPtr<MediaDevice>>* aDevices) {
+    dom::MediaSourceEnum aMediaSource, MediaSinkEnum aMediaSink,
+    nsTArray<RefPtr<MediaDevice>>* aDevices) {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aMediaSource != dom::MediaSourceEnum::Other ||
              aMediaSink != MediaSinkEnum::Other);
@@ -260,18 +249,18 @@ void MediaEngineWebRTC::EnumerateDevices(
         // value as a request for getDisplayMedia-equivalent sharing: Combine
         // window and fullscreen into a single list of choices. The other values
         // are still useful for testing.
-        EnumerateVideoDevices(aWindowId, camera::WinEngine, aDevices);
-        EnumerateVideoDevices(aWindowId, camera::ScreenEngine, aDevices);
-        EnumerateVideoDevices(aWindowId, camera::BrowserEngine, aDevices);
+        EnumerateVideoDevices(camera::WinEngine, aDevices);
+        EnumerateVideoDevices(camera::BrowserEngine, aDevices);
+        EnumerateVideoDevices(camera::ScreenEngine, aDevices);
         break;
       case dom::MediaSourceEnum::Screen:
-        EnumerateVideoDevices(aWindowId, camera::ScreenEngine, aDevices);
+        EnumerateVideoDevices(camera::ScreenEngine, aDevices);
         break;
       case dom::MediaSourceEnum::Browser:
-        EnumerateVideoDevices(aWindowId, camera::BrowserEngine, aDevices);
+        EnumerateVideoDevices(camera::BrowserEngine, aDevices);
         break;
       case dom::MediaSourceEnum::Camera:
-        EnumerateVideoDevices(aWindowId, camera::CameraEngine, aDevices);
+        EnumerateVideoDevices(camera::CameraEngine, aDevices);
         break;
       default:
         MOZ_CRASH("No valid video source");
@@ -285,11 +274,11 @@ void MediaEngineWebRTC::EnumerateDevices(
         NS_ConvertUTF8toUTF16(audioCaptureSource->GetUUID()),
         audioCaptureSource->GetGroupId(), u""_ns));
   } else if (aMediaSource == dom::MediaSourceEnum::Microphone) {
-    EnumerateMicrophoneDevices(aWindowId, aDevices);
+    EnumerateMicrophoneDevices(aDevices);
   }
 
   if (aMediaSink == MediaSinkEnum::Speaker) {
-    EnumerateSpeakerDevices(aWindowId, aDevices);
+    EnumerateSpeakerDevices(aDevices);
   }
 }
 

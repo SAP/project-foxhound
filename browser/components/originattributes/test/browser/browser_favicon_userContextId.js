@@ -158,11 +158,9 @@ FaviconObserver.prototype = {
 
 function waitOnFaviconLoaded(aFaviconURL) {
   return PlacesTestUtils.waitForNotification(
-    "onPageChanged",
-    (uri, attr, value, id) =>
-      attr === Ci.nsINavHistoryObserver.ATTRIBUTE_FAVICON &&
-      value === aFaviconURL,
-    "history"
+    "favicon-changed",
+    events => events.some(e => e.faviconUrl == aFaviconURL),
+    "places"
   );
 }
 
@@ -333,7 +331,12 @@ async function doTestForAllTabsFavicon(aTestPage, aFaviconHost, aFaviconURL) {
 add_task(async function setup() {
   // Make sure userContext is enabled.
   await SpecialPowers.pushPrefEnv({
-    set: [["privacy.userContext.enabled", true]],
+    set: [
+      ["privacy.userContext.enabled", true],
+      ["dom.security.https_first", false],
+      // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
+      ["network.cookie.sameSite.laxByDefault", false],
+    ],
   });
 });
 

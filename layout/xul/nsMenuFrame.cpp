@@ -28,6 +28,7 @@
 #include "nsDisplayList.h"
 #include "nsIReflowCallback.h"
 #include "nsISound.h"
+#include "nsLayoutUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/Likely.h"
@@ -212,7 +213,7 @@ void nsMenuFrame::GetChildLists(nsTArray<ChildList>* aLists) const {
   }
 }
 
-nsMenuPopupFrame* nsMenuFrame::GetPopup() {
+nsMenuPopupFrame* nsMenuFrame::GetPopup() const {
   nsFrameList* popupList = GetPopupList();
   return popupList ? static_cast<nsMenuPopupFrame*>(popupList->FirstChild())
                    : nullptr;
@@ -269,6 +270,8 @@ void nsMenuFrame::SetInitialChildList(ChildListID aListID,
 
 void nsMenuFrame::DestroyFrom(nsIFrame* aDestructRoot,
                               PostDestroyData& aPostDestroyData) {
+  MOZ_ASSERT(!nsContentUtils::IsSafeToRunScript());
+
   if (mReflowCallbackPosted) {
     PresShell()->CancelReflowCallback(this);
     mReflowCallbackPosted = false;
@@ -289,8 +292,8 @@ void nsMenuFrame::DestroyFrom(nsIFrame* aDestructRoot,
 
   // if the menu content is just being hidden, it may be made visible again
   // later, so make sure to clear the highlighting.
-  mContent->AsElement()->UnsetAttr(kNameSpaceID_None, nsGkAtoms::menuactive,
-                                   false);
+  nsContentUtils::AddScriptRunner(
+      new nsUnsetAttrRunnable(mContent->AsElement(), nsGkAtoms::menuactive));
 
   // are we our menu parent's current menu item?
   nsMenuParent* menuParent = GetMenuParent();
@@ -393,46 +396,29 @@ nsresult nsMenuFrame::HandleEvent(nsPresContext* aPresContext,
         OpenMenu(false);
       }
     }
-  } else if (
-#ifndef NSCONTEXTMENUISMOUSEUP
-      (aEvent->mMessage == eMouseUp &&
-       (aEvent->AsMouseEvent()->mButton == MouseButton::eSecondary
-#  ifdef XP_MACOSX
-        // On Mac, we get the context menu event on left-click when ctrl key is
-        // pressed, listen it as well to dismiss the menu.
-        || (aEvent->AsMouseEvent()->mButton == MouseButton::ePrimary &&
-            aEvent->AsMouseEvent()->IsControl())
-#  endif
-            )) &&
-#else
-      aEvent->mMessage == eContextMenu &&
+  } else if (aEvent->mMessage == eMouseUp && !IsMenu() && !IsDisabled()) {
+    // We accept left and middle clicks on all menu items to activate the item.
+    // On context menus we also accept right click to activate the item, because
+    // right-clicking on an item in a context menu cannot open another context
+    // menu.
+    bool isMacCtrlClick = false;
+#ifdef XP_MACOSX
+    isMacCtrlClick = aEvent->AsMouseEvent()->mButton == MouseButton::ePrimary &&
+                     aEvent->AsMouseEvent()->IsControl();
 #endif
-      onmenu && !IsMenu() && !IsDisabled()) {
-    // if this menu is a context menu it accepts right-clicks...fire away!
-    // Make sure we cancel default processing of the context menu event so
-    // that it doesn't bubble and get seen again by the popuplistener and show
-    // another context menu.
-    //
-    // Furthermore (there's always more, isn't there?), on some platforms
-    // (win32 being one of them) we get the context menu event on a mouse up
-    // while on others we get it on a mouse down. For the ones where we get it
-    // on a mouse down, we must continue listening for the right button up
-    // event to dismiss the menu.
-    if (menuParent->IsContextMenu()) {
+    bool clickMightOpenContextMenu =
+        aEvent->AsMouseEvent()->mButton == MouseButton::eSecondary ||
+        isMacCtrlClick;
+    if (!clickMightOpenContextMenu || (onmenu && menuParent->IsContextMenu())) {
       *aEventStatus = nsEventStatus_eConsumeNoDefault;
       Execute(aEvent);
     }
-  } else if (aEvent->mMessage == eMouseUp &&
-             aEvent->AsMouseEvent()->mButton == MouseButton::ePrimary &&
-#ifdef XP_MACOSX
-             // On Mac, we get the context menu event on left-click when ctrl
-             // key is pressed, so we don't want to execute the event handler.
-             !aEvent->AsMouseEvent()->IsControl() &&
-#endif
-             !IsMenu() && !IsDisabled()) {
-    // Execute the execute event handler.
+  } else if (aEvent->mMessage == eContextMenu && onmenu && !IsMenu() &&
+             !IsDisabled() && menuParent->IsContextMenu()) {
+    // Make sure we cancel default processing of the context menu event so
+    // that it doesn't bubble and get seen again by the popuplistener and show
+    // another context menu.
     *aEventStatus = nsEventStatus_eConsumeNoDefault;
-    Execute(aEvent);
   } else if (aEvent->mMessage == eMouseOut) {
     // Kill our timer if one is active.
     if (mOpenTimer) {
@@ -880,18 +866,37 @@ void nsMenuFrame::UpdateMenuSpecialState() {
 }
 
 void nsMenuFrame::Execute(WidgetGUIEvent* aEvent) {
-  // flip "checked" state if we're a checkbox menu, or an un-checked radio menu
-  bool needToFlipChecked = false;
-  if (mType == eMenuType_Checkbox || (mType == eMenuType_Radio && !mChecked)) {
-    needToFlipChecked = !mContent->AsElement()->AttrValueIs(
-        kNameSpaceID_None, nsGkAtoms::autocheck, nsGkAtoms::_false,
-        eCaseMatters);
-  }
-
   nsCOMPtr<nsISound> sound(do_CreateInstance("@mozilla.org/sound;1"));
   if (sound) sound->PlayEventSound(nsISound::EVENT_MENU_EXECUTE);
 
-  StartBlinking(aEvent, needToFlipChecked);
+  // Create a trusted event if the triggering event was trusted, or if
+  // we're called from chrome code (since at least one of our caller
+  // passes in a null event).
+  bool isTrusted =
+      aEvent ? aEvent->IsTrusted() : nsContentUtils::IsCallerChrome();
+
+  mozilla::Modifiers modifiers = 0;
+  WidgetInputEvent* inputEvent = aEvent ? aEvent->AsInputEvent() : nullptr;
+  if (inputEvent) {
+    modifiers = inputEvent->mModifiers;
+  }
+
+  int16_t button = 0;
+  WidgetMouseEventBase* mouseEvent =
+      aEvent ? aEvent->AsMouseEventBase() : nullptr;
+  if (mouseEvent) {
+    button = mouseEvent->mButton;
+  }
+
+  StopBlinking();
+  CreateMenuCommandEvent(isTrusted, modifiers, button);
+  StartBlinking();
+}
+
+void nsMenuFrame::ActivateItem(Modifiers aModifiers, int16_t aButton) {
+  StopBlinking();
+  CreateMenuCommandEvent(nsContentUtils::IsCallerChrome(), aModifiers, aButton);
+  StartBlinking();
 }
 
 bool nsMenuFrame::ShouldBlink() {
@@ -902,10 +907,7 @@ bool nsMenuFrame::ShouldBlink() {
   return true;
 }
 
-void nsMenuFrame::StartBlinking(WidgetGUIEvent* aEvent, bool aFlipChecked) {
-  StopBlinking();
-  CreateMenuCommandEvent(aEvent, aFlipChecked);
-
+void nsMenuFrame::StartBlinking() {
   if (!ShouldBlink()) {
     PassMenuCommandEventToPopupManager();
     return;
@@ -940,38 +942,34 @@ void nsMenuFrame::StopBlinking() {
   mDelayedMenuCommandEvent = nullptr;
 }
 
-void nsMenuFrame::CreateMenuCommandEvent(WidgetGUIEvent* aEvent,
-                                         bool aFlipChecked) {
-  // Create a trusted event if the triggering event was trusted, or if
-  // we're called from chrome code (since at least one of our caller
-  // passes in a null event).
-  bool isTrusted =
-      aEvent ? aEvent->IsTrusted() : nsContentUtils::IsCallerChrome();
-
-  bool shift = false, control = false, alt = false, meta = false;
-  WidgetInputEvent* inputEvent = aEvent ? aEvent->AsInputEvent() : nullptr;
-  if (inputEvent) {
-    shift = inputEvent->IsShift();
-    control = inputEvent->IsControl();
-    alt = inputEvent->IsAlt();
-    meta = inputEvent->IsMeta();
-  }
-
+void nsMenuFrame::CreateMenuCommandEvent(bool aIsTrusted,
+                                         mozilla::Modifiers aModifiers,
+                                         int16_t aButton) {
   // Because the command event is firing asynchronously, a flag is needed to
   // indicate whether user input is being handled. This ensures that a popup
   // window won't get blocked.
   bool userinput = dom::UserActivation::IsHandlingUserInput();
 
+  // Flip "checked" state if we're a checkbox menu, or an un-checked radio menu.
+  bool needToFlipChecked = false;
+  if (mType == eMenuType_Checkbox || (mType == eMenuType_Radio && !mChecked)) {
+    needToFlipChecked = !mContent->AsElement()->AttrValueIs(
+        kNameSpaceID_None, nsGkAtoms::autocheck, nsGkAtoms::_false,
+        eCaseMatters);
+  }
+
   mDelayedMenuCommandEvent =
-      new nsXULMenuCommandEvent(mContent->AsElement(), isTrusted, shift,
-                                control, alt, meta, userinput, aFlipChecked);
+      new nsXULMenuCommandEvent(mContent->AsElement(), aIsTrusted, aModifiers,
+                                userinput, needToFlipChecked, aButton);
 }
 
 void nsMenuFrame::PassMenuCommandEventToPopupManager() {
   nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
   nsMenuParent* menuParent = GetMenuParent();
   if (pm && menuParent && mDelayedMenuCommandEvent) {
-    pm->ExecuteMenu(mContent, mDelayedMenuCommandEvent);
+    nsCOMPtr<nsIContent> content = mContent;
+    RefPtr<nsXULMenuCommandEvent> event = mDelayedMenuCommandEvent;
+    pm->ExecuteMenu(content, event);
   }
   mDelayedMenuCommandEvent = nullptr;
 }
@@ -1117,7 +1115,7 @@ nsMenuFrame::SetActiveChild(dom::Element* aChild) {
   return NS_OK;
 }
 
-nsIScrollableFrame* nsMenuFrame::GetScrollTargetFrame() {
+nsIScrollableFrame* nsMenuFrame::GetScrollTargetFrame() const {
   nsMenuPopupFrame* popupFrame = GetPopup();
   if (!popupFrame) return nullptr;
   nsIFrame* childFrame = popupFrame->PrincipalChildList().FirstChild();

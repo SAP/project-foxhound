@@ -23,18 +23,17 @@
 #include "nsIFragmentContentSink.h"
 #include "nsStreamUtils.h"
 #include "nsHTMLTokenizer.h"
-#include "nsDataHashtable.h"
 #include "nsXPCOMCIDInternal.h"
 #include "nsMimeTypes.h"
-#include "mozilla/CondVar.h"
-#include "mozilla/Mutex.h"
 #include "nsCharsetSource.h"
 #include "nsThreadUtils.h"
 #include "nsIHTMLContentSink.h"
 
 #include "mozilla/BinarySearch.h"
+#include "mozilla/CondVar.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/Encoding.h"
+#include "mozilla/Mutex.h"
 
 using namespace mozilla;
 
@@ -128,8 +127,6 @@ void nsParser::Initialize(bool aConstructor) {
     // Raw pointer
     mParserContext = 0;
   } else {
-    // nsCOMPtrs
-    mObserver = nullptr;
     mUnusedInput.Truncate();
   }
 
@@ -170,14 +167,12 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(nsParser)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsParser)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDTD)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSink)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mObserver)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_REFERENCE
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsParser)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDTD)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSink)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mObserver)
   CParserContext* pc = tmp->mParserContext;
   while (pc) {
     cb.NoteXPCOMChild(pc->mTokenizer);
@@ -260,7 +255,8 @@ nsParser::SetCommand(eParserCommands aParserCommand) {
  *  @param   aCharsetSource- the source of the charset
  */
 void nsParser::SetDocumentCharset(NotNull<const Encoding*> aCharset,
-                                  int32_t aCharsetSource) {
+                                  int32_t aCharsetSource,
+                                  bool aForceAutoDetection) {
   mCharset = aCharset;
   mCharsetSource = aCharsetSource;
   if (mParserContext && mParserContext->mScanner) {
@@ -397,6 +393,12 @@ nsParser::CancelParsingEvents() {
  */
 nsresult nsParser::WillBuildModel(nsString& aFilename) {
   if (!mParserContext) return NS_ERROR_HTMLPARSER_INVALIDPARSERCONTEXT;
+
+  if (mInternalState == NS_ERROR_OUT_OF_MEMORY) {
+    // Checking NS_ERROR_OUT_OF_MEMORY instead of NS_FAILED
+    // to avoid introducing unintentional changes to behavior.
+    return mInternalState;
+  }
 
   if (eUnknownDetect != mParserContext->mAutoDetectStatus) return NS_OK;
 
@@ -566,6 +568,12 @@ nsParser::Terminate(void) {
 
 NS_IMETHODIMP
 nsParser::ContinueInterruptedParsing() {
+  if (mInternalState == NS_ERROR_OUT_OF_MEMORY) {
+    // Checking NS_ERROR_OUT_OF_MEMORY instead of NS_FAILED
+    // to avoid introducing unintentional changes to behavior.
+    return mInternalState;
+  }
+
   // If there are scripts executing, then the content sink is jumping the gun
   // (probably due to a synchronous XMLHttpRequest) and will re-enable us
   // later, see bug 460706.
@@ -681,12 +689,16 @@ bool nsParser::IsScriptCreated() { return false; }
  *  of this method.
  */
 NS_IMETHODIMP
-nsParser::Parse(nsIURI* aURL, nsIRequestObserver* aListener, void* aKey,
-                nsDTDMode aMode) {
+nsParser::Parse(nsIURI* aURL, void* aKey) {
   MOZ_ASSERT(aURL, "Error: Null URL given");
 
+  if (mInternalState == NS_ERROR_OUT_OF_MEMORY) {
+    // Checking NS_ERROR_OUT_OF_MEMORY instead of NS_FAILED
+    // to avoid introducing unintentional changes to behavior.
+    return mInternalState;
+  }
+
   nsresult result = NS_ERROR_HTMLPARSER_BADURL;
-  mObserver = aListener;
 
   if (aURL) {
     nsAutoCString spec;
@@ -694,15 +706,19 @@ nsParser::Parse(nsIURI* aURL, nsIRequestObserver* aListener, void* aKey,
     if (rv != NS_OK) {
       return rv;
     }
-    NS_ConvertUTF8toUTF16 theName(spec);
+    nsString theName;  // Not nsAutoString due to length and usage
+    if (!CopyUTF8toUTF16(spec, theName, mozilla::fallible)) {
+      mInternalState = NS_ERROR_OUT_OF_MEMORY;
+      return mInternalState;
+    }
 
     nsScanner* theScanner = new nsScanner(theName, false);
-    CParserContext* pc = new CParserContext(mParserContext, theScanner, aKey,
-                                            mCommand, aListener);
+    CParserContext* pc =
+        new CParserContext(mParserContext, theScanner, aKey, mCommand);
     if (pc && theScanner) {
       pc->mMultipart = true;
       pc->mContextType = CParserContext::eCTURL;
-      pc->mDTDMode = aMode;
+      pc->mDTDMode = eDTDMode_autodetect;
       PushContext(*pc);
 
       result = NS_OK;
@@ -721,6 +737,12 @@ nsParser::Parse(nsIURI* aURL, nsIRequestObserver* aListener, void* aKey,
 nsresult nsParser::Parse(const nsAString& aSourceBuffer, void* aKey,
                          bool aLastCall) {
   nsresult result = NS_OK;
+
+  if (mInternalState == NS_ERROR_OUT_OF_MEMORY) {
+    // Checking NS_ERROR_OUT_OF_MEMORY instead of NS_FAILED
+    // to avoid introducing unintentional changes to behavior.
+    return mInternalState;
+  }
 
   // Don't bother if we're never going to parse this.
   if (mInternalState == NS_ERROR_HTMLPARSER_STOPPARSING) {
@@ -769,7 +791,7 @@ nsresult nsParser::Parse(const nsAString& aSourceBuffer, void* aKey,
         }
       }
 
-      pc = new CParserContext(mParserContext, theScanner, aKey, mCommand, 0,
+      pc = new CParserContext(mParserContext, theScanner, aKey, mCommand,
                               theStatus, aLastCall);
       NS_ENSURE_TRUE(pc, NS_ERROR_OUT_OF_MEMORY);
 
@@ -829,6 +851,12 @@ nsresult nsParser::Parse(const nsAString& aSourceBuffer, void* aKey,
 NS_IMETHODIMP
 nsParser::ParseFragment(const nsAString& aSourceBuffer,
                         nsTArray<nsString>& aTagStack) {
+  if (mInternalState == NS_ERROR_OUT_OF_MEMORY) {
+    // Checking NS_ERROR_OUT_OF_MEMORY instead of NS_FAILED
+    // to avoid introducing unintentional changes to behavior.
+    return mInternalState;
+  }
+
   nsresult result = NS_OK;
   nsAutoString theContext;
   uint32_t theCount = aTagStack.Length();
@@ -932,6 +960,12 @@ nsParser::ParseFragment(const nsAString& aSourceBuffer,
  */
 nsresult nsParser::ResumeParse(bool allowIteration, bool aIsFinalChunk,
                                bool aCanInterrupt) {
+  if (mInternalState == NS_ERROR_OUT_OF_MEMORY) {
+    // Checking NS_ERROR_OUT_OF_MEMORY instead of NS_FAILED
+    // to avoid introducing unintentional changes to behavior.
+    return mInternalState;
+  }
+
   nsresult result = NS_OK;
 
   if (!mBlocked && mInternalState != NS_ERROR_HTMLPARSER_STOPPARSING) {
@@ -1046,6 +1080,12 @@ nsresult nsParser::ResumeParse(bool allowIteration, bool aIsFinalChunk,
  *  tokenization phase, and try to make sense out of them.
  */
 nsresult nsParser::BuildModel() {
+  if (mInternalState == NS_ERROR_OUT_OF_MEMORY) {
+    // Checking NS_ERROR_OUT_OF_MEMORY instead of NS_FAILED
+    // to avoid introducing unintentional changes to behavior.
+    return mInternalState;
+  }
+
   nsITokenizer* theTokenizer = nullptr;
 
   nsresult result = NS_OK;
@@ -1068,13 +1108,16 @@ nsresult nsParser::BuildModel() {
  *******************************************************************/
 
 nsresult nsParser::OnStartRequest(nsIRequest* request) {
+  if (mInternalState == NS_ERROR_OUT_OF_MEMORY) {
+    // Checking NS_ERROR_OUT_OF_MEMORY instead of NS_FAILED
+    // to avoid introducing unintentional changes to behavior.
+    return mInternalState;
+  }
+
   MOZ_ASSERT(eNone == mParserContext->mStreamListenerState,
              "Parser's nsIStreamListener API was not setup "
              "correctly in constructor.");
 
-  if (mObserver) {
-    mObserver->OnStartRequest(request);
-  }
   mParserContext->mStreamListenerState = eOnStart;
   mParserContext->mAutoDetectStatus = eUnknownDetect;
   mParserContext->mRequest = request;
@@ -1122,7 +1165,7 @@ static bool ExtractCharsetFromXmlDeclaration(const unsigned char* aBytes,
         // The shortest string allowed before this is  (strlen==13):
         // <?xml version
         if ((((char*)aBytes)[i] == 'n') && (i >= 12) &&
-            (0 == PL_strncmp("versio", (char*)(aBytes + i - 6), 6))) {
+            (0 == strncmp("versio", (char*)(aBytes + i - 6), 6))) {
           // Fast forward through version
           char q = 0;
           for (++i; i < aLen; ++i) {
@@ -1147,7 +1190,7 @@ static bool ExtractCharsetFromXmlDeclaration(const unsigned char* aBytes,
         // The shortest allowed string before this (strlen==26):
         // <?xml version="1" encoding
         if ((((char*)aBytes)[i] == 'g') && (i >= 25) &&
-            (0 == PL_strncmp("encodin", (char*)(aBytes + i - 7), 7))) {
+            (0 == strncmp("encodin", (char*)(aBytes + i - 7), 7))) {
           int32_t encStart = 0;
           char q = 0;
           for (++i; i < aLen; ++i) {
@@ -1224,9 +1267,7 @@ static nsresult ParserWriteFunc(nsIInputStream* in, void* closure,
     // This code was bogus when I found it. It expects the BOM or the XML
     // declaration to be entirely in the first network buffer. -- hsivonen
     const Encoding* encoding;
-    size_t bomLength;
-    Tie(encoding, bomLength) = Encoding::ForBOM(MakeSpan(buf, count));
-    Unused << bomLength;
+    std::tie(encoding, std::ignore) = Encoding::ForBOM(Span(buf, count));
     if (encoding) {
       // The decoder will swallow the BOM. The UTF-16 will re-sniff for
       // endianness. The value of preferred is now "UTF-8", "UTF-16LE"
@@ -1245,7 +1286,7 @@ static nsresult ParserWriteFunc(nsIInputStream* in, void* closure,
       }
     }
 
-    pws->mParser->SetDocumentCharset(preferred, source);
+    pws->mParser->SetDocumentCharset(preferred, source, false);
     pws->mParser->SetSinkCharset(preferred);
   }
 
@@ -1260,6 +1301,12 @@ static nsresult ParserWriteFunc(nsIInputStream* in, void* closure,
 nsresult nsParser::OnDataAvailable(nsIRequest* request,
                                    nsIInputStream* pIStream,
                                    uint64_t sourceOffset, uint32_t aLength) {
+  if (mInternalState == NS_ERROR_OUT_OF_MEMORY) {
+    // Checking NS_ERROR_OUT_OF_MEMORY instead of NS_FAILED
+    // to avoid introducing unintentional changes to behavior.
+    return mInternalState;
+  }
+
   MOZ_ASSERT((eOnStart == mParserContext->mStreamListenerState ||
               eOnDataAvail == mParserContext->mStreamListenerState),
              "Error: OnStartRequest() must be called before OnDataAvailable()");
@@ -1329,6 +1376,12 @@ nsresult nsParser::OnDataAvailable(nsIRequest* request,
  *  has been collected from the net.
  */
 nsresult nsParser::OnStopRequest(nsIRequest* request, nsresult status) {
+  if (mInternalState == NS_ERROR_OUT_OF_MEMORY) {
+    // Checking NS_ERROR_OUT_OF_MEMORY instead of NS_FAILED
+    // to avoid introducing unintentional changes to behavior.
+    return mInternalState;
+  }
+
   nsresult rv = NS_OK;
 
   CParserContext* pc = mParserContext;
@@ -1355,12 +1408,6 @@ nsresult nsParser::OnStopRequest(nsIRequest* request, nsresult status) {
 
   // If the parser isn't enabled, we don't finish parsing till
   // it is reenabled.
-
-  // XXX Should we wait to notify our observers as well if the
-  // parser isn't yet enabled?
-  if (mObserver) {
-    mObserver->OnStopRequest(request, status);
-  }
 
   return rv;
 }
@@ -1391,6 +1438,12 @@ bool nsParser::WillTokenize(bool aIsFinalChunk) {
  * you run out of data.
  */
 nsresult nsParser::Tokenize(bool aIsFinalChunk) {
+  if (mInternalState == NS_ERROR_OUT_OF_MEMORY) {
+    // Checking NS_ERROR_OUT_OF_MEMORY instead of NS_FAILED
+    // to avoid introducing unintentional changes to behavior.
+    return mInternalState;
+  }
+
   nsITokenizer* theTokenizer;
 
   nsresult result = NS_ERROR_NOT_AVAILABLE;

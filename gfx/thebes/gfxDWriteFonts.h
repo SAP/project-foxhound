@@ -6,13 +6,14 @@
 #ifndef GFX_WINDOWSDWRITEFONTS_H
 #define GFX_WINDOWSDWRITEFONTS_H
 
+#include "mozilla/Atomics.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
 #include <dwrite_1.h>
 
 #include "gfxFont.h"
 #include "gfxUserFontSet.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsHashKeys.h"
 
 #include "mozilla/gfx/gfxVars.h"
@@ -29,7 +30,13 @@ class gfxDWriteFont final : public gfxFont {
                 AntialiasOption = kAntialiasDefault);
   ~gfxDWriteFont();
 
-  static void UpdateSystemTextQuality();
+  static bool InitDWriteSupport();
+
+  // These Update functions update gfxVars with font settings, they must only be
+  // called in the parent process.
+  static void UpdateSystemTextVars();
+  static void UpdateClearTypeVars();
+
   static void SystemTextQualityChanged();
 
   mozilla::UniquePtr<gfxFont> CopyWithAntialiasOption(
@@ -63,6 +70,8 @@ class gfxDWriteFont final : public gfxFont {
 
   already_AddRefed<mozilla::gfx::ScaledFont> GetScaledFont(
       mozilla::gfx::DrawTarget* aTarget) override;
+  already_AddRefed<mozilla::gfx::ScaledFont> GetScaledFontNoGDI(
+      mozilla::gfx::DrawTarget* aTarget) override;
 
   bool ShouldRoundXOffset(cairo_t* aCairo) const override;
 
@@ -78,6 +87,8 @@ class gfxDWriteFont final : public gfxFont {
   gfxFloat MeasureGlyphWidth(uint16_t aGlyph);
 
   DWRITE_MEASURING_MODE GetMeasuringMode() const;
+
+  static mozilla::Atomic<bool> sForceGDIClassicEnabled;
   bool GetForceGDIClassic() const;
 
   RefPtr<IDWriteFontFace> mFontFace;
@@ -86,7 +97,7 @@ class gfxDWriteFont final : public gfxFont {
   Metrics* mMetrics;
 
   // cache of glyph widths in 16.16 fixed-point pixels
-  mozilla::UniquePtr<nsDataHashtable<nsUint32HashKey, int32_t>> mGlyphWidths;
+  mozilla::UniquePtr<nsTHashMap<nsUint32HashKey, int32_t>> mGlyphWidths;
 
   bool mUseSubpixelPositions;
   bool mAllowManualShowGlyphs;
@@ -94,6 +105,9 @@ class gfxDWriteFont final : public gfxFont {
   // Used to record the sUseClearType setting at the time mAzureScaledFont
   // was set up, so we can tell if it's stale and needs to be re-created.
   bool mAzureScaledFontUsedClearType;
+  bool mAzureScaledFontNoGDIUsedClearType = false;
+
+  RefPtr<mozilla::gfx::ScaledFont> mAzureScaledFontNoGDI;
 
   bool UsingClearType() {
     return mozilla::gfx::gfxVars::SystemTextQuality() == CLEARTYPE_QUALITY;

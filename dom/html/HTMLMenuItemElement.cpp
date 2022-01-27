@@ -9,13 +9,24 @@
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/dom/HTMLMenuItemElementBinding.h"
+#include "mozilla/dom/HTMLUnknownElement.h"
 #include "nsAttrValueInlines.h"
 #include "nsContentUtils.h"
 
-NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(MenuItem)
+nsGenericHTMLElement* NS_NewHTMLMenuItemElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+    mozilla::dom::FromParser aFromParser) {
+  RefPtr<mozilla::dom::NodeInfo> nodeInfo(aNodeInfo);
+  auto* nim = nodeInfo->NodeInfoManager();
+  MOZ_ASSERT(nim);
+  if (mozilla::StaticPrefs::dom_menuitem_enabled()) {
+    return new (nim)
+        mozilla::dom::HTMLMenuItemElement(nodeInfo.forget(), aFromParser);
+  }
+  return new (nim) mozilla::dom::HTMLUnknownElement(nodeInfo.forget());
+}
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // First bits are needed for the menuitem type.
 #define NS_CHECKED_IS_TOGGLED (1 << 2)
@@ -427,7 +438,6 @@ JSObject* HTMLMenuItemElement::WrapNode(JSContext* aCx,
   return HTMLMenuItemElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #undef NS_ORIGINAL_CHECKED_VALUE

@@ -7,6 +7,7 @@
 #ifndef GFX_REPAINTREQUEST_H
 #define GFX_REPAINTREQUEST_H
 
+#include <iosfwd>
 #include <stdint.h>  // for uint8_t, uint32_t, uint64_t
 
 #include "FrameMetrics.h"             // for FrameMetrics
@@ -16,6 +17,7 @@
 #include "mozilla/gfx/ScaleFactor.h"  // for ScaleFactor
 #include "mozilla/TimeStamp.h"        // for TimeStamp
 #include "Units.h"                    // for CSSRect, CSSPixel, etc
+#include "UnitTransforms.h"           // for ViewAs
 
 namespace IPC {
 template <typename T>
@@ -49,32 +51,35 @@ struct RepaintRequest {
         mDevPixelsPerCSSPixel(1),
         mScrollOffset(0, 0),
         mZoom(),
-        mScrollGeneration(0),
         mDisplayPortMargins(0, 0, 0, 0),
         mPresShellId(-1),
         mLayoutViewport(0, 0, 0, 0),
-        mExtraResolution(),
+        mTransformToAncestorScale(),
         mPaintRequestTime(),
         mScrollUpdateType(eNone),
+        mScrollAnimationType(APZScrollAnimationType::No),
         mIsRootContent(false),
         mIsScrollInfoLayer(false) {}
 
   RepaintRequest(const FrameMetrics& aOther,
-                 const ScrollOffsetUpdateType aScrollUpdateType)
+                 const ScreenMargin& aDisplayportMargins,
+                 const ScrollOffsetUpdateType aScrollUpdateType,
+                 APZScrollAnimationType aScrollAnimationType)
       : mScrollId(aOther.GetScrollId()),
         mPresShellResolution(aOther.GetPresShellResolution()),
         mCompositionBounds(aOther.GetCompositionBounds()),
         mCumulativeResolution(aOther.GetCumulativeResolution()),
         mDevPixelsPerCSSPixel(aOther.GetDevPixelsPerCSSPixel()),
-        mScrollOffset(aOther.GetScrollOffset()),
+        mScrollOffset(aOther.GetVisualScrollOffset()),
         mZoom(aOther.GetZoom()),
         mScrollGeneration(aOther.GetScrollGeneration()),
-        mDisplayPortMargins(aOther.GetDisplayPortMargins()),
+        mDisplayPortMargins(aDisplayportMargins),
         mPresShellId(aOther.GetPresShellId()),
         mLayoutViewport(aOther.GetLayoutViewport()),
-        mExtraResolution(aOther.GetExtraResolution()),
+        mTransformToAncestorScale(aOther.GetTransformToAncestorScale()),
         mPaintRequestTime(aOther.GetPaintRequestTime()),
         mScrollUpdateType(aScrollUpdateType),
+        mScrollAnimationType(aScrollAnimationType),
         mIsRootContent(aOther.IsRootContent()),
         mIsScrollInfoLayer(aOther.IsScrollInfoLayer()) {}
 
@@ -93,9 +98,10 @@ struct RepaintRequest {
            mDisplayPortMargins == aOther.mDisplayPortMargins &&
            mPresShellId == aOther.mPresShellId &&
            mLayoutViewport.IsEqualEdges(aOther.mLayoutViewport) &&
-           mExtraResolution == aOther.mExtraResolution &&
+           mTransformToAncestorScale == aOther.mTransformToAncestorScale &&
            mPaintRequestTime == aOther.mPaintRequestTime &&
            mScrollUpdateType == aOther.mScrollUpdateType &&
+           mScrollAnimationType == aOther.mScrollAnimationType &&
            mIsRootContent == aOther.mIsRootContent &&
            mIsScrollInfoLayer == aOther.mIsScrollInfoLayer;
   }
@@ -104,30 +110,25 @@ struct RepaintRequest {
     return !operator==(aOther);
   }
 
+  friend std::ostream& operator<<(std::ostream& aOut,
+                                  const RepaintRequest& aRequest);
+
   CSSToScreenScale2D DisplayportPixelsPerCSSPixel() const {
-    // Note: use 'mZoom * ParentLayerToLayerScale(1.0f)' as the CSS-to-Layer
-    // scale instead of LayersPixelsPerCSSPixel(), because displayport
-    // calculations are done in the context of a repaint request, where we ask
-    // Layout to repaint at a new resolution that includes any async zoom. Until
-    // this repaint request is processed, LayersPixelsPerCSSPixel() does not yet
-    // include the async zoom, but it will when the displayport is interpreted
-    // for the repaint.
-    return mZoom * ParentLayerToLayerScale(1.0f) / mExtraResolution;
+    // Refer to FrameMetrics::DisplayportPixelsPerCSSPixel() for explanation.
+    return mZoom * mTransformToAncestorScale;
   }
 
-  CSSToLayerScale2D LayersPixelsPerCSSPixel() const {
+  CSSToLayerScale LayersPixelsPerCSSPixel() const {
     return mDevPixelsPerCSSPixel * mCumulativeResolution;
   }
 
   // Get the amount by which this frame has been zoomed since the last repaint.
   LayerToParentLayerScale GetAsyncZoom() const {
-    // The async portion of the zoom should be the same along the x and y
-    // axes.
-    return (mZoom / LayersPixelsPerCSSPixel()).ToScaleFactor();
+    return mZoom / LayersPixelsPerCSSPixel();
   }
 
   CSSSize CalculateCompositedSizeInCssPixels() const {
-    if (GetZoom() == CSSToParentLayerScale2D(0, 0)) {
+    if (GetZoom() == CSSToParentLayerScale(0)) {
       return CSSSize();  // avoid division by zero
     }
     return mCompositionBounds.Size() / GetZoom();
@@ -139,7 +140,7 @@ struct RepaintRequest {
     return mCompositionBounds;
   }
 
-  const LayoutDeviceToLayerScale2D& GetCumulativeResolution() const {
+  const LayoutDeviceToLayerScale& GetCumulativeResolution() const {
     return mCumulativeResolution;
   }
 
@@ -147,11 +148,17 @@ struct RepaintRequest {
     return mDevPixelsPerCSSPixel;
   }
 
+  bool IsAnimationInProgress() const {
+    return mScrollAnimationType != APZScrollAnimationType::No;
+  }
+
   bool IsRootContent() const { return mIsRootContent; }
 
-  const CSSPoint& GetScrollOffset() const { return mScrollOffset; }
+  CSSPoint GetLayoutScrollOffset() const { return mLayoutViewport.TopLeft(); }
 
-  const CSSToParentLayerScale2D& GetZoom() const { return mZoom; }
+  const CSSPoint& GetVisualScrollOffset() const { return mScrollOffset; }
+
+  const CSSToParentLayerScale& GetZoom() const { return mZoom; }
 
   ScrollOffsetUpdateType GetScrollUpdateType() const {
     return mScrollUpdateType;
@@ -159,7 +166,7 @@ struct RepaintRequest {
 
   bool GetScrollOffsetUpdated() const { return mScrollUpdateType != eNone; }
 
-  uint32_t GetScrollGeneration() const { return mScrollGeneration; }
+  ScrollGeneration GetScrollGeneration() const { return mScrollGeneration; }
 
   ScrollableLayerGuid::ViewID GetScrollId() const { return mScrollId; }
 
@@ -171,13 +178,17 @@ struct RepaintRequest {
 
   const CSSRect& GetLayoutViewport() const { return mLayoutViewport; }
 
-  const ScreenToLayerScale2D& GetExtraResolution() const {
-    return mExtraResolution;
+  const ParentLayerToScreenScale2D& GetTransformToAncestorScale() const {
+    return mTransformToAncestorScale;
   }
 
   const TimeStamp& GetPaintRequestTime() const { return mPaintRequestTime; }
 
   bool IsScrollInfoLayer() const { return mIsScrollInfoLayer; }
+
+  APZScrollAnimationType GetScrollAnimationType() const {
+    return mScrollAnimationType;
+  }
 
  protected:
   void SetIsRootContent(bool aIsRootContent) {
@@ -217,14 +228,8 @@ struct RepaintRequest {
   // This value is provided by Gecko at layout/paint time.
   ParentLayerRect mCompositionBounds;
 
-  // The cumulative resolution that the current frame has been painted at.
-  // This is the product of the pres-shell resolutions of the document
-  // containing this scroll frame and its ancestors, and any css-driven
-  // resolution. This information is provided by Gecko at layout/paint time.
-  // Note that this is allowed to have different x- and y-scales, but only
-  // for subframes (mIsRootContent = false). (The same applies to other scales
-  // that "inherit" the 2D-ness of this one, such as mZoom.)
-  LayoutDeviceToLayerScale2D mCumulativeResolution;
+  // See FrameMetrics::mCumulativeResolution for description.
+  LayoutDeviceToLayerScale mCumulativeResolution;
 
   // The conversion factor between CSS pixels and device pixels for this frame.
   // This can vary based on a variety of things, such as reflowing-zoom.
@@ -239,10 +244,10 @@ struct RepaintRequest {
   // steady state, the two will be the same, but during an async zoom action the
   // two may diverge. This information is initialized in Gecko but updated in
   // the APZC.
-  CSSToParentLayerScale2D mZoom;
+  CSSToParentLayerScale mZoom;
 
   // The scroll generation counter used to acknowledge the scroll offset update.
-  uint32_t mScrollGeneration;
+  ScrollGeneration mScrollGeneration;
 
   // A display port expressed as layer margins that apply to the rect of what
   // is drawn of the scrollable element.
@@ -267,15 +272,16 @@ struct RepaintRequest {
   // invalid.
   CSSRect mLayoutViewport;
 
-  // The extra resolution at which content in this scroll frame is drawn beyond
-  // that necessary to draw one Layer pixel per Screen pixel.
-  ScreenToLayerScale2D mExtraResolution;
+  // See FrameMetrics::mTransformToAncestorScale for description.
+  ParentLayerToScreenScale2D mTransformToAncestorScale;
 
   // The time at which the APZC last requested a repaint for this scroll frame.
   TimeStamp mPaintRequestTime;
 
   // The type of repaint request this represents.
   ScrollOffsetUpdateType mScrollUpdateType;
+
+  APZScrollAnimationType mScrollAnimationType;
 
   // Whether or not this is the root scroll frame for the root content document.
   bool mIsRootContent : 1;

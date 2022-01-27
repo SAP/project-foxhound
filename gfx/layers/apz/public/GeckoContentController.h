@@ -17,7 +17,6 @@
 #include "mozilla/EventForwards.h"  // for Modifiers
 #include "mozilla/layers/APZThreadUtils.h"
 #include "mozilla/layers/MatrixMessage.h"        // for MatrixMessage
-#include "mozilla/layers/RepaintRequest.h"       // for RepaintRequest
 #include "mozilla/layers/ScrollableLayerGuid.h"  // for ScrollableLayerGuid, etc
 #include "nsISupportsImpl.h"
 
@@ -26,6 +25,8 @@ namespace mozilla {
 class Runnable;
 
 namespace layers {
+
+struct RepaintRequest;
 
 class GeckoContentController {
  public:
@@ -39,8 +40,7 @@ class GeckoContentController {
    *  MatrixMessage for each layers id in the current APZ tree, along with the
    * corresponding transform.
    */
-  virtual void NotifyLayerTransforms(
-      const nsTArray<MatrixMessage>& aTransforms) = 0;
+  virtual void NotifyLayerTransforms(nsTArray<MatrixMessage>&& aTransforms) = 0;
 
   /**
    * Requests a paint of the given RepaintRequest |aRequest| from Gecko.
@@ -165,6 +165,8 @@ class GeckoContentController {
    * Whether this is RemoteContentController.
    */
   virtual bool IsRemote() { return false; }
+
+  virtual PresShell* GetTopLevelPresShell() const { return nullptr; };
 
  protected:
   // Protected destructor, to discourage deletion outside of Release():

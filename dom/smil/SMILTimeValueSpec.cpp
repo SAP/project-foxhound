@@ -12,6 +12,7 @@
 #include "mozilla/SMILTimedElement.h"
 #include "mozilla/SMILTimeValueSpec.h"
 #include "mozilla/SMILTimeValue.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/SVGAnimationElement.h"
 #include "mozilla/dom/TimeEvent.h"
@@ -214,9 +215,8 @@ void SMILTimeValueSpec::UnregisterFromReferencedElement(Element* aElement) {
 }
 
 SMILTimedElement* SMILTimeValueSpec::GetTimedElement(Element* aElement) {
-  return aElement && aElement->IsNodeOfType(nsINode::eANIMATION)
-             ? &static_cast<SVGAnimationElement*>(aElement)->TimedElement()
-             : nullptr;
+  nsCOMPtr<SVGAnimationElement> animationElement = do_QueryInterface(aElement);
+  return animationElement ? &animationElement->TimedElement() : nullptr;
 }
 
 // Indicates whether we're allowed to register an event-listener

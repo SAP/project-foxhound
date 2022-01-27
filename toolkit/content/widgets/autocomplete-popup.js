@@ -12,6 +12,14 @@
     constructor() {
       super();
 
+      this.attachShadow({ mode: "open" });
+
+      {
+        let slot = document.createElement("slot");
+        slot.part = "content";
+        this.shadowRoot.appendChild(slot);
+      }
+
       this.mInput = null;
       this.mPopupOpen = false;
       this._currentIndex = 0;
@@ -159,7 +167,6 @@
           this.richlistbox.selectedItem || this.richlistbox.firstElementChild
         );
       }
-      return val;
     }
 
     get selectedIndex() {
@@ -185,9 +192,7 @@
       return Number(this.getAttribute("overflowpadding"));
     }
 
-    set view(val) {
-      return val;
-    }
+    set view(val) {}
 
     get view() {
       return this.mInput.controller;
@@ -196,7 +201,7 @@
     closePopup() {
       if (this.mPopupOpen) {
         this.hidePopup();
-        this.removeAttribute("width");
+        this.style.removeProperty("--panel-width");
       }
     }
 
@@ -261,7 +266,7 @@
         this.selectedIndex = -1;
 
         var width = aElement.getBoundingClientRect().width;
-        this.setAttribute("width", width > 100 ? width : 100);
+        this.style.setProperty("--panel-width", Math.max(width, 100) + "px");
         // invalidate() depends on the width attribute
         this._invalidate();
 
@@ -401,6 +406,7 @@
             "autofill-clear-button",
             "autofill-insecureWarning",
             "generatedPassword",
+            "importableLearnMore",
             "importableLogins",
             "insecureWarning",
             "loginsFooter",
@@ -431,6 +437,11 @@
               break;
             case "autofill-insecureWarning":
               options = { is: "autocomplete-creditcard-insecure-field" };
+              break;
+            case "importableLearnMore":
+              options = {
+                is: "autocomplete-importable-learn-more-richlistitem",
+              };
               break;
             case "importableLogins":
               options = { is: "autocomplete-importable-logins-richlistitem" };

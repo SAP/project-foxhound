@@ -10,14 +10,13 @@ use crate::constants::{
 };
 use crate::err::{Error, Res};
 use crate::p11::{
-    random, PK11Origin, PK11SymKey, PK11_GetInternalSlot, PK11_ImportSymKey, SECItem, SECItemType,
-    Slot, SymKey, CKA_DERIVE, CKM_NSS_HKDF_SHA256, CKM_NSS_HKDF_SHA384, CK_ATTRIBUTE_TYPE,
-    CK_MECHANISM_TYPE,
+    random, Item, PK11Origin, PK11SymKey, PK11_ImportDataKey, Slot, SymKey, CKA_DERIVE,
+    CKM_HKDF_DERIVE, CK_ATTRIBUTE_TYPE, CK_MECHANISM_TYPE,
 };
 
 use std::convert::TryFrom;
-use std::os::raw::{c_char, c_uchar, c_uint};
-use std::ptr::{null_mut, NonNull};
+use std::os::raw::{c_char, c_uint};
+use std::ptr::null_mut;
 
 experimental_api!(SSL_HkdfExtract(
     version: Version,
@@ -53,46 +52,29 @@ fn key_size(version: Version, cipher: Cipher) -> Res<usize> {
 /// # Errors
 /// Only if NSS fails.
 pub fn generate_key(version: Version, cipher: Cipher) -> Res<SymKey> {
-    import_key(version, cipher, &random(key_size(version, cipher)?))
+    import_key(version, &random(key_size(version, cipher)?))
 }
 
 /// Import a symmetric key for use with HKDF.
 ///
 /// # Errors
 /// Errors returned if the key buffer is an incompatible size or the NSS functions fail.
-pub fn import_key(version: Version, cipher: Cipher, buf: &[u8]) -> Res<SymKey> {
+pub fn import_key(version: Version, buf: &[u8]) -> Res<SymKey> {
     if version != TLS_VERSION_1_3 {
         return Err(Error::UnsupportedVersion);
     }
-    let mech = match cipher {
-        TLS_AES_128_GCM_SHA256 | TLS_CHACHA20_POLY1305_SHA256 => CKM_NSS_HKDF_SHA256,
-        TLS_AES_256_GCM_SHA384 => CKM_NSS_HKDF_SHA384,
-        _ => return Err(Error::UnsupportedCipher),
-    };
-    let mut item = SECItem {
-        type_: SECItemType::siBuffer,
-        data: buf.as_ptr() as *mut c_uchar,
-        len: c_uint::try_from(buf.len())?,
-    };
-    let slot_ptr = unsafe { PK11_GetInternalSlot() };
-    let slot = match NonNull::new(slot_ptr) {
-        Some(p) => Slot::new(p),
-        None => return Err(Error::InternalError),
-    };
+    let slot = Slot::internal()?;
     let key_ptr = unsafe {
-        PK11_ImportSymKey(
+        PK11_ImportDataKey(
             *slot,
-            CK_MECHANISM_TYPE::from(mech),
+            CK_MECHANISM_TYPE::from(CKM_HKDF_DERIVE),
             PK11Origin::PK11_OriginUnwrap,
             CK_ATTRIBUTE_TYPE::from(CKA_DERIVE),
-            &mut item,
+            &mut Item::wrap(buf),
             null_mut(),
         )
     };
-    match NonNull::new(key_ptr) {
-        Some(p) => Ok(SymKey::new(p)),
-        None => Err(Error::InternalError),
-    }
+    SymKey::from_ptr(key_ptr)
 }
 
 /// Extract a PRK from the given salt and IKM using the algorithm defined in RFC 5869.
@@ -111,10 +93,7 @@ pub fn extract(
         None => null_mut(),
     };
     unsafe { SSL_HkdfExtract(version, cipher, salt_ptr, **ikm, &mut prk) }?;
-    match NonNull::new(prk) {
-        Some(p) => Ok(SymKey::new(p)),
-        None => Err(Error::InternalError),
-    }
+    SymKey::from_ptr(prk)
 }
 
 /// Expand a PRK using the HKDF-Expand-Label function defined in RFC 8446.
@@ -140,13 +119,10 @@ pub fn expand_label(
             **prk,
             handshake_hash.as_ptr(),
             c_uint::try_from(handshake_hash.len())?,
-            l.as_ptr() as *const c_char,
+            l.as_ptr().cast(),
             c_uint::try_from(l.len())?,
             &mut secret,
         )
     }?;
-    match NonNull::new(secret) {
-        Some(p) => Ok(SymKey::new(p)),
-        None => Err(Error::HkdfError),
-    }
+    SymKey::from_ptr(secret)
 }

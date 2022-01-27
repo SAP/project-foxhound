@@ -7,19 +7,15 @@
 #ifndef NSRECT_H
 #define NSRECT_H
 
-#include <stdio.h>           // for FILE
 #include <stdint.h>          // for int32_t, int64_t
 #include <algorithm>         // for min/max
 #include "mozilla/Likely.h"  // for MOZ_UNLIKELY
+#include "mozilla/gfx/BaseRect.h"
 #include "mozilla/gfx/Rect.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/gfx/Logging.h"
-#include "nsCoord.h"          // for nscoord, etc
-#include "nsISupportsImpl.h"  // for MOZ_COUNT_CTOR, etc
-#include "nsPoint.h"          // for nsIntPoint, nsPoint
-#include "nsMargin.h"         // for nsIntMargin, nsMargin
-#include "nsSize.h"           // for IntSize, nsSize
-#include "nscore.h"           // for NS_BUILD_REFCNT_LOGGING
+#include "nsCoord.h"      // for nscoord, etc
+#include "nsISupports.h"  // for MOZ_COUNT_CTOR, etc
+#include "nsPoint.h"      // for nsIntPoint, nsPoint
+#include "nsSize.h"       // for IntSize, nsSize
 #if !defined(ANDROID) && (defined(__SSE2__) || defined(_M_X64) || \
                           (defined(_M_IX86_FP) && _M_IX86_FP >= 2))
 #  if defined(_MSC_VER) && !defined(__clang__)
@@ -28,6 +24,8 @@
 #    include "emmintrin.h"
 #  endif
 #endif
+
+struct nsMargin;
 
 typedef mozilla::gfx::IntRect nsIntRect;
 
@@ -56,6 +54,9 @@ struct nsRect : public mozilla::gfx::BaseRect<nscoord, nsRect, nsPoint, nsSize,
   // overflowing nscoord values in the 'width' and 'height' fields by
   // clamping the width and height values to nscoord_MAX if necessary.
 
+  // Returns the smallest rectangle that contains both the area of both
+  // this and aRect. Thus, empty input rectangles are ignored.
+  // Note: if both rectangles are empty, returns aRect.
   [[nodiscard]] nsRect SaturatingUnion(const nsRect& aRect) const {
     if (IsEmpty()) {
       return aRect;
@@ -105,9 +106,6 @@ struct nsRect : public mozilla::gfx::BaseRect<nscoord, nsRect, nsPoint, nsSize,
   // Make all nsRect Union methods be saturating.
   [[nodiscard]] nsRect UnionEdges(const nsRect& aRect) const {
     return SaturatingUnionEdges(aRect);
-  }
-  void UnionRectEdges(const nsRect& aRect1, const nsRect& aRect2) {
-    *this = aRect1.UnionEdges(aRect2);
   }
   [[nodiscard]] nsRect Union(const nsRect& aRect) const {
     return SaturatingUnion(aRect);
@@ -222,13 +220,6 @@ struct nsRect : public mozilla::gfx::BaseRect<nscoord, nsRect, nsPoint, nsSize,
   }
 #  endif
 #endif
-
-  void SaturatingUnionRect(const nsRect& aRect1, const nsRect& aRect2) {
-    *this = aRect1.SaturatingUnion(aRect2);
-  }
-  void SaturatingUnionRectEdges(const nsRect& aRect1, const nsRect& aRect2) {
-    *this = aRect1.SaturatingUnionEdges(aRect2);
-  }
 
   // Return whether this rect's right or bottom edge overflow int32.
   bool Overflows() const;

@@ -148,50 +148,46 @@ class BranchedAddonStudyAction extends BaseStudyAction {
 
     switch (suitability) {
       case BaseAction.suitability.FILTER_MATCH: {
-        if (study) {
-          await this.update(recipe, study);
-        } else {
+        if (!study) {
           await this.enroll(recipe);
+        } else if (study.active) {
+          await this.update(recipe, study);
         }
         break;
       }
 
       case BaseAction.suitability.SIGNATURE_ERROR: {
-        if (study) {
-          await this._considerTemporaryError({
-            study,
-            reason: "signature-error",
-          });
-        }
+        await this._considerTemporaryError({
+          study,
+          reason: "signature-error",
+        });
         break;
       }
 
       case BaseAction.suitability.FILTER_ERROR: {
-        if (study) {
-          await this._considerTemporaryError({
-            study,
-            reason: "filter-error",
-          });
-        }
+        await this._considerTemporaryError({
+          study,
+          reason: "filter-error",
+        });
         break;
       }
 
-      case BaseAction.suitability.CAPABILITES_MISMATCH: {
-        if (study) {
+      case BaseAction.suitability.CAPABILITIES_MISMATCH: {
+        if (study?.active) {
           await this.unenroll(recipe.id, "capability-mismatch");
         }
         break;
       }
 
       case BaseAction.suitability.FILTER_MISMATCH: {
-        if (study) {
+        if (study?.active) {
           await this.unenroll(recipe.id, "filter-mismatch");
         }
         break;
       }
 
       case BaseAction.suitability.ARGUMENTS_INVALID: {
-        if (study) {
+        if (study?.active) {
           await this.unenroll(recipe.id, "arguments-invalid");
         }
         break;
@@ -208,20 +204,29 @@ class BranchedAddonStudyAction extends BaseStudyAction {
    * have been processed. It is responsible for unenrolling the client from any
    * studies that no longer apply, based on this.seenRecipeIds.
    */
-  async _finalize() {
+  async _finalize({ noRecipes } = {}) {
     const activeStudies = await AddonStudies.getAllActive({
       branched: AddonStudies.FILTER_BRANCHED_ONLY,
     });
 
-    for (const study of activeStudies) {
-      if (!this.seenRecipeIds.has(study.recipeId)) {
-        this.log.debug(
-          `Stopping branched add-on study for recipe ${study.recipeId}`
-        );
-        try {
-          await this.unenroll(study.recipeId, "recipe-not-seen");
-        } catch (err) {
-          Cu.reportError(err);
+    if (noRecipes) {
+      if (this.seenRecipeIds.size) {
+        throw new BranchedAddonStudyAction.BadNoRecipesArg();
+      }
+      for (const study of activeStudies) {
+        await this._considerTemporaryError({ study, reason: "no-recipes" });
+      }
+    } else {
+      for (const study of activeStudies) {
+        if (!this.seenRecipeIds.has(study.recipeId)) {
+          this.log.debug(
+            `Stopping branched add-on study for recipe ${study.recipeId}`
+          );
+          try {
+            await this.unenroll(study.recipeId, "recipe-not-seen");
+          } catch (err) {
+            Cu.reportError(err);
+          }
         }
       }
     }
@@ -752,6 +757,10 @@ class BranchedAddonStudyAction extends BaseStudyAction {
    * @param {String} args.reason If the study should end, the reason it is ending.
    */
   async _considerTemporaryError({ study, reason }) {
+    if (!study?.active) {
+      return;
+    }
+
     let now = Date.now(); // milliseconds-since-epoch
     let day = 24 * 60 * 60 * 1000;
     let newDeadline = new Date(now + 7 * day);
@@ -774,3 +783,7 @@ class BranchedAddonStudyAction extends BaseStudyAction {
     }
   }
 }
+
+BranchedAddonStudyAction.BadNoRecipesArg = class extends Error {
+  message = "noRecipes is true, but some recipes observed";
+};

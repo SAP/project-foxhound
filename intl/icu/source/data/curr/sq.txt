@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 sq{
     Currencies{
         AED{
@@ -334,6 +335,10 @@ sq{
             "LRD",
             "Dollari liberian",
         }
+        LSL{
+            "LSL",
+            "Lota lesotiane",
+        }
         LTL{
             "LTL",
             "Lita lituaneze",
@@ -627,7 +632,7 @@ sq{
             "Dollari i Karaibeve Lindore",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "Franga e Bregut të Fildishtë",
         }
         XPF{
@@ -652,9 +657,12 @@ sq{
         }
     }
     Currencies%narrow{
+        AFN{"AFN"}
+        AMD{"AMD"}
         AOA{"AOA"}
         ARS{"ARS"}
         AUD{"AUD"}
+        AZN{"AZN"}
         BAM{"BAM"}
         BBD{"BBD"}
         BDT{"BDT"}
@@ -664,7 +672,6 @@ sq{
         BRL{"BRL"}
         BSD{"BSD"}
         BWP{"BWP"}
-        BYN{"BYN"}
         BZD{"BZD"}
         CAD{"CAD"}
         CLP{"CLP"}
@@ -1082,6 +1089,10 @@ sq{
             one{"dollar liberian"}
             other{"dollarë liberian"}
         }
+        LSL{
+            one{"lotë lesotiane"}
+            other{"lota lesotiane"}
+        }
         LTL{
             one{"litë lituaneze"}
             other{"lita lituaneze"}
@@ -1403,5 +1414,4 @@ sq{
         one{"{0} {1}"}
         other{"{0} {1}"}
     }
-    Version{"37"}
 }

@@ -10,7 +10,7 @@
 //! single ISA instance.
 
 use crate::binemit::{
-    relax_branches, shrink_instructions, CodeInfo, MemoryCodeSink, RelocSink, StackmapSink,
+    relax_branches, shrink_instructions, CodeInfo, MemoryCodeSink, RelocSink, StackMapSink,
     TrapSink,
 };
 use crate::dce::do_dce;
@@ -22,7 +22,7 @@ use crate::legalize_function;
 use crate::legalizer::simple_legalize;
 use crate::licm::do_licm;
 use crate::loop_analysis::LoopAnalysis;
-use crate::machinst::MachCompileResult;
+use crate::machinst::{MachCompileResult, MachStackMap};
 use crate::nan_canonicalization::do_nan_canonicalization;
 use crate::postopt::do_postopt;
 use crate::redundant_reload_remover::RedundantReloadRemover;
@@ -36,8 +36,13 @@ use crate::timing;
 use crate::unreachable_code::eliminate_unreachable_code;
 use crate::value_label::{build_value_labels_ranges, ComparableSourceLoc, ValueLabelsRanges};
 use crate::verifier::{verify_context, verify_locations, VerifierErrors, VerifierResult};
+#[cfg(feature = "souper-harvest")]
+use alloc::string::String;
 use alloc::vec::Vec;
 use log::debug;
+
+#[cfg(feature = "souper-harvest")]
+use crate::souper_harvest::do_souper_harvest;
 
 /// Persistent data structures and compilation pipeline.
 pub struct Context {
@@ -127,13 +132,19 @@ impl Context {
         mem: &mut Vec<u8>,
         relocs: &mut dyn RelocSink,
         traps: &mut dyn TrapSink,
-        stackmaps: &mut dyn StackmapSink,
+        stack_maps: &mut dyn StackMapSink,
     ) -> CodegenResult<CodeInfo> {
         let info = self.compile(isa)?;
         let old_len = mem.len();
         mem.resize(old_len + info.total_size as usize, 0);
         let new_info = unsafe {
-            self.emit_to_memory(isa, mem.as_mut_ptr().add(old_len), relocs, traps, stackmaps)
+            self.emit_to_memory(
+                isa,
+                mem.as_mut_ptr().add(old_len),
+                relocs,
+                traps,
+                stack_maps,
+            )
         };
         debug_assert!(new_info == info);
         Ok(info)
@@ -222,16 +233,29 @@ impl Context {
         mem: *mut u8,
         relocs: &mut dyn RelocSink,
         traps: &mut dyn TrapSink,
-        stackmaps: &mut dyn StackmapSink,
+        stack_maps: &mut dyn StackMapSink,
     ) -> CodeInfo {
         let _tt = timing::binemit();
-        let mut sink = MemoryCodeSink::new(mem, relocs, traps, stackmaps);
+        let mut sink = MemoryCodeSink::new(mem, relocs, traps, stack_maps);
         if let Some(ref result) = &self.mach_compile_result {
             result.buffer.emit(&mut sink);
+            let info = sink.info;
+            // New backends do not emit StackMaps through the `CodeSink` because its interface
+            // requires `Value`s; instead, the `StackMap` objects are directly accessible via
+            // `result.buffer.stack_maps()`.
+            for &MachStackMap {
+                offset_end,
+                ref stack_map,
+                ..
+            } in result.buffer.stack_maps()
+            {
+                stack_maps.add_stack_map(offset_end, stack_map.clone());
+            }
+            info
         } else {
             isa.emit_function_to_memory(&self.func, &mut sink);
+            sink.info
         }
-        sink.info
     }
 
     /// Creates unwind information for the function.
@@ -242,6 +266,11 @@ impl Context {
         &self,
         isa: &dyn TargetIsa,
     ) -> CodegenResult<Option<crate::isa::unwind::UnwindInfo>> {
+        if let Some(backend) = isa.get_mach_backend() {
+            let unwind_info_kind = isa.unwind_info_kind();
+            let result = self.mach_compile_result.as_ref().unwrap();
+            return backend.emit_unwind_info(result, unwind_info_kind);
+        }
         isa.create_unwind_info(&self.func)
     }
 
@@ -438,7 +467,18 @@ impl Context {
         Ok(build_value_labels_ranges::<ComparableSourceLoc>(
             &self.func,
             &self.regalloc,
+            self.mach_compile_result.as_ref(),
             isa,
         ))
+    }
+
+    /// Harvest candidate left-hand sides for superoptimization with Souper.
+    #[cfg(feature = "souper-harvest")]
+    pub fn souper_harvest(
+        &mut self,
+        out: &mut std::sync::mpsc::Sender<String>,
+    ) -> CodegenResult<()> {
+        do_souper_harvest(&self.func, out);
+        Ok(())
     }
 }

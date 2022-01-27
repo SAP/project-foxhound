@@ -8,7 +8,7 @@
 
 "use strict";
 
-const TEST_URI = "data:text/html;charset=utf8,Clickable URLS";
+const TEST_URI = "data:text/html;charset=utf8,<!DOCTYPE html>Clickable URLS";
 
 add_task(async function() {
   const hud = await openNewTabAndConsole(TEST_URI);
@@ -75,6 +75,11 @@ add_task(async function() {
 
   onTabLoaded = BrowserTestUtils.waitForNewTab(gBrowser, firstURL, true);
 
+  AccessibilityUtils.setEnv({
+    // Focusable element is put back in focus order when its container row is in
+    // focused/active state.
+    nonNegativeTabIndexRule: false,
+  });
   EventUtils.sendMouseEvent(
     {
       type: "click",
@@ -83,6 +88,7 @@ add_task(async function() {
     urlEl3,
     hud.ui.window
   );
+  AccessibilityUtils.resetEnv();
   await onTabLoaded;
 
   info("Log a message and wait for it to appear so we know the UI was updated");

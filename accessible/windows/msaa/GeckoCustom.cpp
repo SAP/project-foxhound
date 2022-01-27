@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "AccessibleWrap.h"
 #include "GeckoCustom.h"
 
 using namespace mozilla;
@@ -11,31 +12,45 @@ using namespace mozilla::a11y;
 
 IMPL_IUNKNOWN_QUERY_HEAD(GeckoCustom)
 IMPL_IUNKNOWN_QUERY_IFACE(IGeckoCustom)
-IMPL_IUNKNOWN_QUERY_TAIL_AGGREGATED(mAcc)
+IMPL_IUNKNOWN_QUERY_TAIL_AGGREGATED(mMsaa)
 
 HRESULT
 GeckoCustom::get_anchorCount(long* aCount) {
-  *aCount = mAcc->AnchorCount();
+  AccessibleWrap* acc = mMsaa->LocalAcc();
+  if (!acc) {
+    return CO_E_OBJNOTCONNECTED;
+  }
+  *aCount = acc->AnchorCount();
   return S_OK;
 }
 
 HRESULT
 GeckoCustom::get_boundsInCSSPixels(int32_t* aX, int32_t* aY, int32_t* aWidth,
                                    int32_t* aHeight) {
-  nsIntRect bounds = mAcc->BoundsInCSSPixels();
+  AccessibleWrap* acc = mMsaa->LocalAcc();
+  if (!acc) {
+    return CO_E_OBJNOTCONNECTED;
+  }
+  nsIntRect bounds = acc->BoundsInCSSPixels();
   if (!bounds.IsEmpty()) {
-    *aX = bounds.X();
-    *aY = bounds.Y();
     *aWidth = bounds.Width();
     *aHeight = bounds.Height();
   }
+  // We should always report positional bounds info, even if
+  // our rect is empty.
+  *aX = bounds.X();
+  *aY = bounds.Y();
 
   return S_OK;
 }
 
 HRESULT
 GeckoCustom::get_DOMNodeID(BSTR* aID) {
-  nsIContent* content = mAcc->GetContent();
+  AccessibleWrap* acc = mMsaa->LocalAcc();
+  if (!acc) {
+    return CO_E_OBJNOTCONNECTED;
+  }
+  nsIContent* content = acc->GetContent();
   if (!content) {
     return S_OK;
   }
@@ -51,18 +66,30 @@ GeckoCustom::get_DOMNodeID(BSTR* aID) {
 
 STDMETHODIMP
 GeckoCustom::get_ID(uint64_t* aID) {
-  *aID = mAcc->IsDoc() ? 0 : reinterpret_cast<uintptr_t>(mAcc.get());
+  AccessibleWrap* acc = mMsaa->LocalAcc();
+  if (!acc) {
+    return CO_E_OBJNOTCONNECTED;
+  }
+  *aID = acc->IsDoc() ? 0 : reinterpret_cast<uintptr_t>(acc);
   return S_OK;
 }
 
 STDMETHODIMP
 GeckoCustom::get_minimumIncrement(double* aIncrement) {
-  *aIncrement = mAcc->Step();
+  AccessibleWrap* acc = mMsaa->LocalAcc();
+  if (!acc) {
+    return CO_E_OBJNOTCONNECTED;
+  }
+  *aIncrement = acc->Step();
   return S_OK;
 }
 
 STDMETHODIMP
 GeckoCustom::get_mozState(uint64_t* aState) {
-  *aState = mAcc->State();
+  AccessibleWrap* acc = mMsaa->LocalAcc();
+  if (!acc) {
+    return CO_E_OBJNOTCONNECTED;
+  }
+  *aState = acc->State();
   return S_OK;
 }

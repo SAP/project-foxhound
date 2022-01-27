@@ -151,17 +151,16 @@ TestInterface includes InterfaceMixin;
 interface OnlyForUseInConstructor {
 };
 
-[NamedConstructor=Test,
- NamedConstructor=Test(DOMString str),
- NamedConstructor=Test2(DictForConstructor dict, any any1, object obj1,
+[LegacyFactoryFunction=Test,
+ LegacyFactoryFunction=Test(DOMString str),
+ LegacyFactoryFunction=Test2(DictForConstructor dict, any any1, object obj1,
                         object? obj2, sequence<Dict> seq, optional any any2,
                         optional object obj3, optional object? obj4),
- NamedConstructor=Test3((long or record<DOMString, any>) arg1),
- NamedConstructor=Test4(record<DOMString, record<DOMString, any>> arg1),
- NamedConstructor=Test5(record<DOMString, sequence<record<DOMString, record<DOMString, sequence<sequence<any>>>>>> arg1),
- NamedConstructor=Test6(sequence<record<ByteString, sequence<sequence<record<ByteString, record<USVString, any>>>>>> arg1),
- Exposed=Window,
- ]
+ LegacyFactoryFunction=Test3((long or record<DOMString, any>) arg1),
+ LegacyFactoryFunction=Test4(record<DOMString, record<DOMString, any>> arg1),
+ LegacyFactoryFunction=Test5(record<DOMString, sequence<record<DOMString, record<DOMString, sequence<sequence<any>>>>>> arg1),
+ LegacyFactoryFunction=Test6(sequence<record<ByteString, sequence<sequence<record<ByteString, record<USVString, any>>>>>> arg1),
+ Exposed=Window]
 interface TestInterface {
   constructor();
   constructor(DOMString str);
@@ -983,15 +982,15 @@ interface TestInterface {
   void conditionalOnSecureContext8();
 
   // Miscellania
-  [LenientThis] attribute long attrWithLenientThis;
-  [Unforgeable] readonly attribute long unforgeableAttr;
-  [Unforgeable, ChromeOnly] readonly attribute long unforgeableAttr2;
-  [Unforgeable] long unforgeableMethod();
-  [Unforgeable, ChromeOnly] long unforgeableMethod2();
+  [LegacyLenientThis] attribute long attrWithLenientThis;
+  [LegacyUnforgeable] readonly attribute long unforgeableAttr;
+  [LegacyUnforgeable, ChromeOnly] readonly attribute long unforgeableAttr2;
+  [LegacyUnforgeable] long unforgeableMethod();
+  [LegacyUnforgeable, ChromeOnly] long unforgeableMethod2();
   stringifier;
   void passRenamedInterface(TestRenamedInterface arg);
   [PutForwards=writableByte] readonly attribute TestInterface putForwardsAttr;
-  [PutForwards=writableByte, LenientThis] readonly attribute TestInterface putForwardsAttr2;
+  [PutForwards=writableByte, LegacyLenientThis] readonly attribute TestInterface putForwardsAttr2;
   [PutForwards=writableByte, ChromeOnly] readonly attribute TestInterface putForwardsAttr3;
   [Throws] void throwingMethod();
   [Throws] attribute boolean throwingAttr;
@@ -1402,7 +1401,7 @@ interface TestCEReactionsInterface {
 
 typedef [EnforceRange] octet OctetRange;
 typedef [Clamp] octet OctetClamp;
-typedef [TreatNullAs=EmptyString] DOMString NullEmptyString;
+typedef [LegacyNullToEmptyString] DOMString NullEmptyString;
 // typedef [TreatNullAs=EmptyString] JSString NullEmptyJSString;
 
 dictionary TestAttributesOnDictionaryMembers {

@@ -17,20 +17,24 @@
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileReaderBinding.h"
 #include "mozilla/dom/ProgressEvent.h"
+#include "mozilla/dom/UnionTypes.h"
+#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/Encoding.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "nsAlgorithm.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDOMJSUtils.h"
 #include "nsError.h"
 #include "nsNetUtil.h"
+#include "nsStreamUtils.h"
+#include "nsThreadUtils.h"
 #include "xpcpublic.h"
 #include "nsReadableUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 #define ABORT_STR u"abort"
 #define LOAD_STR u"load"
@@ -262,7 +266,7 @@ namespace {
 void PopulateBufferForBinaryString(char16_t* aDest, const char* aSource,
                                    uint32_t aCount) {
   // Zero-extend each char to char16_t.
-  ConvertLatin1toUtf16(MakeSpan(aSource, aCount), MakeSpan(aDest, aCount));
+  ConvertLatin1toUtf16(Span(aSource, aCount), Span(aDest, aCount));
 }
 
 nsresult ReadFuncBinaryString(nsIInputStream* aInputStream, void* aClosure,
@@ -468,9 +472,9 @@ nsresult FileReader::GetAsText(Blob* aBlob, const nsACString& aCharset,
     }
   }
 
-  auto data = MakeSpan(reinterpret_cast<const uint8_t*>(aFileData), aDataLen);
+  auto data = Span(reinterpret_cast<const uint8_t*>(aFileData), aDataLen);
   nsresult rv;
-  Tie(rv, encoding) = encoding->Decode(data, aResult);
+  std::tie(rv, std::ignore) = encoding->Decode(data, aResult);
   return NS_FAILED(rv) ? rv : NS_OK;
 }
 
@@ -487,15 +491,7 @@ nsresult FileReader::GetAsDataURL(Blob* aBlob, const char* aFileData,
   }
   aResult.AppendLiteral(";base64,");
 
-  nsCString encodedData;
-  nsresult rv = Base64Encode(Substring(aFileData, aDataLen), encodedData);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (!AppendASCIItoUTF16(encodedData, aResult, fallible)) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  return NS_OK;
+  return Base64EncodeAppend(aFileData, aDataLen, aResult);
 }
 
 /* virtual */
@@ -809,6 +805,7 @@ void FileReader::Shutdown() {
     mAsyncStream = nullptr;
   }
 
+  ClearProgressEventTimer();
   FreeFileData();
   mResultArrayBuffer = nullptr;
 
@@ -819,5 +816,4 @@ void FileReader::Shutdown() {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

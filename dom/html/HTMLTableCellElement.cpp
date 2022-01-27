@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLTableCellElement.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLTableElement.h"
 #include "mozilla/dom/HTMLTableRowElement.h"
 #include "mozilla/MappedDeclarations.h"
@@ -15,8 +16,7 @@
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(TableCell)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 HTMLTableCellElement::~HTMLTableCellElement() = default;
 
@@ -214,5 +214,4 @@ nsMapRuleToAttributesFunc HTMLTableCellElement::GetAttributeMappingFunction()
   return &MapAttributesIntoRule;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

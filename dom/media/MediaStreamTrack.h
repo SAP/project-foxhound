@@ -142,6 +142,12 @@ class MediaStreamTrackSource : public nsISupports {
   void GetLabel(nsAString& aLabel) { aLabel.Assign(mLabel); }
 
   /**
+   * Whether this TrackSource provides video frames with an alpha channel. Only
+   * applies to video sources. Used by HTMLVideoElement.
+   */
+  virtual bool HasAlpha() const { return false; }
+
+  /**
    * Forwards a photo request to backends that support it. Other backends return
    * NS_ERROR_NOT_IMPLEMENTED to indicate that a MediaTrackGraph-based fallback
    * should be used.
@@ -261,8 +267,8 @@ class MediaStreamTrackSource : public nsISupports {
     MOZ_ASSERT(NS_IsMainThread());
     for (auto& sink : mSinks.Clone()) {
       if (!sink) {
-        MOZ_ASSERT_UNREACHABLE("Sink was not explicitly removed");
-        mSinks.RemoveElement(sink);
+        DebugOnly<bool> removed = mSinks.RemoveElement(sink);
+        MOZ_ASSERT(!removed, "Sink was not explicitly removed");
         continue;
       }
       sink->PrincipalChanged();
@@ -278,8 +284,8 @@ class MediaStreamTrackSource : public nsISupports {
     MOZ_ASSERT(NS_IsMainThread());
     for (auto& sink : mSinks.Clone()) {
       if (!sink) {
-        MOZ_ASSERT_UNREACHABLE("Sink was not explicitly removed");
-        mSinks.RemoveElement(sink);
+        DebugOnly<bool> removed = mSinks.RemoveElement(sink);
+        MOZ_ASSERT(!removed, "Sink was not explicitly removed");
         continue;
       }
       sink->MutedChanged(aNewState);
@@ -294,8 +300,8 @@ class MediaStreamTrackSource : public nsISupports {
     MOZ_ASSERT(NS_IsMainThread());
     for (auto& sink : mSinks.Clone()) {
       if (!sink) {
-        MOZ_ASSERT_UNREACHABLE("Sink was not explicitly removed");
-        mSinks.RemoveElement(sink);
+        DebugOnly<bool> removed = mSinks.RemoveElement(sink);
+        MOZ_ASSERT(!removed, "Sink was not explicitly removed");
         continue;
       }
       sink->OverrideEnded();
@@ -589,6 +595,7 @@ class MediaStreamTrack : public DOMEventTargetHelper, public SupportsWeakPtr {
 
   /**
    * Sets this track's muted state without raising any events.
+   * Only really set by cloning. See MutedChanged for runtime changes.
    */
   void SetMuted(bool aMuted) { mMuted = aMuted; }
 

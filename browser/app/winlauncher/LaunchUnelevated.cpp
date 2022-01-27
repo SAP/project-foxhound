@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+#define MOZ_USE_LAUNCHER_ERROR
+
 #include "LaunchUnelevated.h"
 
 #include "mozilla/Assertions.h"
@@ -121,12 +123,13 @@ namespace mozilla {
 // way to ensure that the child process runs as the original user in the active
 // session; an elevated process could be running with different credentials than
 // those of the session.
-// See https://blogs.msdn.microsoft.com/oldnewthing/20131118-00/?p=2643
+// See https://devblogs.microsoft.com/oldnewthing/20131118-00/?p=2643
 
 LauncherVoidResult LaunchUnelevated(int aArgc, wchar_t* aArgv[]) {
   // We need COM to talk to Explorer. Using ProcessRuntime so that
   // process-global COM configuration is done correctly
-  mozilla::mscom::ProcessRuntime mscom(GeckoProcessType_Default);
+  mozilla::mscom::ProcessRuntime mscom(
+      mozilla::mscom::ProcessRuntime::ProcessCategory::Launcher);
   if (!mscom) {
     return LAUNCHER_ERROR_FROM_HRESULT(mscom.GetHResult());
   }
@@ -137,12 +140,26 @@ LauncherVoidResult LaunchUnelevated(int aArgc, wchar_t* aArgv[]) {
     return LAUNCHER_ERROR_GENERIC();
   }
 
-  _bstr_t exe(aArgv[0]);
+  _bstr_t cmd;
+
+  UniquePtr<wchar_t[]> packageFamilyName = mozilla::GetPackageFamilyName();
+  if (packageFamilyName) {
+    int cmdLen =
+        // 22 for the prefix + suffix + null terminator below
+        22 + wcslen(packageFamilyName.get());
+    wchar_t appCmd[cmdLen];
+    swprintf(appCmd, cmdLen, L"shell:appsFolder\\%s!App",
+             packageFamilyName.get());
+    cmd = appCmd;
+  } else {
+    cmd = aArgv[0];
+  }
+
   _variant_t args(cmdLine.get());
   _variant_t operation(L"open");
   _variant_t directory;
   _variant_t showCmd(SW_SHOWNORMAL);
-  return ShellExecuteByExplorer(exe, args, operation, directory, showCmd);
+  return ShellExecuteByExplorer(cmd, args, operation, directory, showCmd);
 }
 
 LauncherResult<ElevationState> GetElevationState(

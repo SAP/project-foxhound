@@ -28,7 +28,7 @@ class ProcessingInstruction : public CharacterData {
   virtual already_AddRefed<CharacterData> CloneDataNode(
       dom::NodeInfo* aNodeInfo, bool aCloneText) const override;
 
-#ifdef DEBUG
+#ifdef MOZ_DOM_LIST
   virtual void List(FILE* out, int32_t aIndent) const override;
   virtual void DumpContent(FILE* out, int32_t aIndent,
                            bool aDumpAll) const override;
@@ -38,7 +38,7 @@ class ProcessingInstruction : public CharacterData {
   void GetTarget(nsAString& aTarget) { aTarget = NodeName(); }
   // This is the WebIDL API for LinkStyle, even though only
   // XMLStylesheetProcessingInstruction actually implements LinkStyle.
-  StyleSheet* GetSheet() const;
+  StyleSheet* GetSheetForBindings() const;
 
   NS_IMPL_FROMNODE_HELPER(ProcessingInstruction, IsProcessingInstruction())
 

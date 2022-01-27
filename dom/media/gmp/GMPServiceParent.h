@@ -10,9 +10,11 @@
 #include "mozilla/gmp/PGMPServiceParent.h"
 #include "mozIGeckoMediaPluginChromeService.h"
 #include "nsClassHashtable.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "mozilla/Atomics.h"
+#include "nsNetUtil.h"
 #include "nsIAsyncShutdown.h"
+#include "nsRefPtrHashtable.h"
 #include "nsThreadUtils.h"
 #include "mozilla/MozPromise.h"
 #include "GMPStorage.h"
@@ -21,6 +23,8 @@ template <class>
 struct already_AddRefed;
 
 namespace mozilla {
+class OriginAttributesPattern;
+
 namespace gmp {
 
 class GMPParent;
@@ -60,13 +64,13 @@ class GeckoMediaPluginServiceParent final
   nsresult ForgetThisSiteNative(
       const nsAString& aSite, const mozilla::OriginAttributesPattern& aPattern);
 
+  nsresult ForgetThisBaseDomainNative(const nsAString& aBaseDomain);
+
   // Notifies that some user of this class is created/destroyed.
   void ServiceUserCreated(GMPServiceParent* aServiceParent);
   void ServiceUserDestroyed(GMPServiceParent* aServiceParent);
 
   void UpdateContentProcessGMPCapabilities();
-
-  nsISerialEventTarget* Thread() const { return mWorkerThread; }
 
  private:
   friend class GMPServiceParent;
@@ -101,8 +105,9 @@ class GeckoMediaPluginServiceParent final
   void ClearNodeIdAndPlugin(nsIFile* aPluginStorageDir,
                             DirectoryFilter& aFilter);
   void ForgetThisSiteOnGMPThread(
-      const nsACString& aOrigin,
+      const nsACString& aSite,
       const mozilla::OriginAttributesPattern& aPattern);
+  void ForgetThisBaseDomainOnGMPThread(const nsACString& aBaseDomain);
   void ClearRecentHistoryOnGMPThread(PRTime aSince);
 
   already_AddRefed<GMPParent> GetById(uint32_t aPluginId);
@@ -111,17 +116,13 @@ class GeckoMediaPluginServiceParent final
   friend class GMPParent;
   void ReAddOnGMPThread(const RefPtr<GMPParent>& aOld);
   void PluginTerminated(const RefPtr<GMPParent>& aOld);
-  void InitializePlugins(AbstractThread* aAbstractGMPThread) override;
+  void InitializePlugins(nsISerialEventTarget* GMPThread) override;
   RefPtr<GenericPromise> LoadFromEnvironment();
   RefPtr<GenericPromise> AddOnGMPThread(nsString aDirectory);
 
   RefPtr<GetGMPContentParentPromise> GetContentParent(
-      GMPCrashHelper* aHelper, const nsACString& aNodeIdString,
+      GMPCrashHelper* aHelper, const NodeIdVariant& aNodeIdVariant,
       const nsCString& aAPI, const nsTArray<nsCString>& aTags) override;
-
-  RefPtr<GetGMPContentParentPromise> GetContentParent(
-      GMPCrashHelper* aHelper, const NodeId& aNodeId, const nsCString& aAPI,
-      const nsTArray<nsCString>& aTags) override;
 
  private:
   // Creates a copy of aOriginal. Note that the caller is responsible for
@@ -129,6 +130,12 @@ class GeckoMediaPluginServiceParent final
   already_AddRefed<GMPParent> ClonePlugin(const GMPParent* aOriginal);
   nsresult EnsurePluginsOnDiskScanned();
   nsresult InitStorage();
+
+  // Get a string based node ID from a NodeIdVariant. This will
+  // either fetch the internal string, or convert the internal NodeIdParts to a
+  // string. The conversion process is fallible, so the return value should be
+  // checked.
+  nsresult GetNodeId(const NodeIdVariant& aNodeIdVariant, nsACString& aOutId);
 
   class PathRunnable : public Runnable {
    public:
@@ -188,7 +195,7 @@ class GeckoMediaPluginServiceParent final
 
   // Hashes node id to whether that node id is allowed to store data
   // persistently on disk.
-  nsDataHashtable<nsCStringHashKey, bool> mPersistentStorageAllowed;
+  nsTHashMap<nsCStringHashKey, bool> mPersistentStorageAllowed;
 
   // Synchronization for barrier that ensures we've loaded GMPs from
   // MOZ_GMP_PATH before allowing GetContentParentFrom() to proceed.
@@ -203,44 +210,47 @@ class GeckoMediaPluginServiceParent final
   // processes we have. When this is empty we can safely shut down.
   // Synchronized across thread via mMutex in base class.
   nsTArray<GMPServiceParent*> mServiceParents;
-
-  const nsCOMPtr<nsISerialEventTarget> mWorkerThread;
 };
 
+nsresult WriteToFile(nsIFile* aPath, const nsCString& aFileName,
+                     const nsCString& aData);
 nsresult ReadSalt(nsIFile* aPath, nsACString& aOutData);
 bool MatchOrigin(nsIFile* aPath, const nsACString& aSite,
                  const mozilla::OriginAttributesPattern& aPattern);
+bool MatchBaseDomain(nsIFile* aPath, const nsACString& aBaseDomain);
 
 class GMPServiceParent final : public PGMPServiceParent {
  public:
   explicit GMPServiceParent(GeckoMediaPluginServiceParent* aService);
-  virtual ~GMPServiceParent();
+
+  // Our refcounting is thread safe, and when our refcount drops to zero
+  // we dispatch an event to the main thread to delete the GMPServiceParent.
+  // Note that this means it's safe for references to this object to be
+  // released on a non main thread, but the destructor will always run on
+  // the main thread.
+
+  // Mark AddRef and Release as `final`, as they overload pure virtual
+  // implementations in PGMPServiceParent.
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_DELETE_ON_MAIN_THREAD(
+      GMPServiceParent, final);
 
   ipc::IPCResult RecvGetGMPNodeId(const nsString& aOrigin,
                                   const nsString& aTopLevelOrigin,
                                   const nsString& aGMPName,
                                   nsCString* aID) override;
-  void ActorDealloc() override;
 
   static bool Create(Endpoint<PGMPServiceParent>&& aGMPService);
 
-  ipc::IPCResult RecvLaunchGMP(const nsCString& aNodeId, const nsCString& aAPI,
-                               nsTArray<nsCString>&& aTags,
-                               nsTArray<ProcessId>&& aAlreadyBridgedTo,
-                               uint32_t* aOutPluginId, ProcessId* aOutID,
-                               nsCString* aOutDisplayName,
-                               Endpoint<PGMPContentParent>* aOutEndpoint,
-                               nsresult* aOutRv,
-                               nsCString* aOutErrorDescription) override;
-
-  ipc::IPCResult RecvLaunchGMPForNodeId(
-      const NodeIdData& nodeId, const nsCString& aAPI,
+  ipc::IPCResult RecvLaunchGMP(
+      const NodeIdVariant& aNodeIdVariant, const nsCString& aAPI,
       nsTArray<nsCString>&& aTags, nsTArray<ProcessId>&& aAlreadyBridgedTo,
-      uint32_t* aOutPluginId, ProcessId* aOutID, nsCString* aOutDisplayName,
-      Endpoint<PGMPContentParent>* aOutEndpoint, nsresult* aOutRv,
-      nsCString* aOutErrorDescription) override;
+      uint32_t* aOutPluginId, ProcessId* aOutProcessId,
+      nsCString* aOutDisplayName, Endpoint<PGMPContentParent>* aOutEndpoint,
+      nsresult* aOutRv, nsCString* aOutErrorDescription) override;
 
  private:
+  ~GMPServiceParent();
+
   RefPtr<GeckoMediaPluginServiceParent> mService;
 };
 

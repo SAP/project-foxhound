@@ -26,7 +26,7 @@ class nsPageContentFrame final : public mozilla::ViewportFrame {
   friend class nsPageFrame;
 
   // nsIFrame
-  void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
+  void Reflow(nsPresContext* aPresContext, ReflowOutput& aReflowOutput,
               const ReflowInput& aReflowInput,
               nsReflowStatus& aStatus) override;
 
@@ -37,7 +37,9 @@ class nsPageContentFrame final : public mozilla::ViewportFrame {
 
   void SetSharedPageData(nsSharedPageData* aPD) { mPD = aPD; }
 
-  bool HasTransformGetter() const override { return true; }
+  ComputeTransformFunction GetTransformGetter() const override;
+  void BuildDisplayList(nsDisplayListBuilder*,
+                        const nsDisplayListSet&) override;
 
   /**
    * Return our canvas frame.
@@ -54,8 +56,13 @@ class nsPageContentFrame final : public mozilla::ViewportFrame {
                               nsPresContext* aPresContext)
       : ViewportFrame(aStyle, aPresContext, kClassID) {}
 
-  // Note: this is strongly owned by our nsPageSequenceFrame, which outlives us.
-  nsSharedPageData* mPD;
+  // Note: this will be set before reflow, and it's strongly owned by our
+  // nsPageSequenceFrame, which outlives us.
+  nsSharedPageData* mPD = nullptr;
+
+  // The combined InkOverflow from the previous and current page that does not
+  // yet have space allocated for it.
+  nscoord mRemainingOverflow = 0;
 };
 
 #endif /* nsPageContentFrame_h___ */

@@ -6,8 +6,8 @@
 
 #ifdef XP_WIN
 // Include Windows headers required for enabling high precision timers.
-#  include "windows.h"
-#  include "mmsystem.h"
+#  include <windows.h>
+#  include <mmsystem.h>
 #endif
 
 #include "VideoSink.h"
@@ -16,12 +16,14 @@
 #include "VideoUtils.h"
 
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkerTypes.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_media.h"
 
 namespace mozilla {
-
 extern LazyLogModule gMediaDecoderLog;
+}
 
 #undef FMT
 
@@ -31,14 +33,7 @@ extern LazyLogModule gMediaDecoderLog;
 #define VSINK_LOG_V(x, ...) \
   MOZ_LOG(gMediaDecoderLog, LogLevel::Verbose, (FMT(x, ##__VA_ARGS__)))
 
-#ifdef MOZ_GECKO_PROFILER
-#  include "ProfilerMarkerPayload.h"
-#  define VSINK_ADD_PROFILER_MARKER(tag, startTime, endTime) \
-    PROFILER_ADD_MARKER_WITH_PAYLOAD(                        \
-        tag, MEDIA_PLAYBACK, MediaSampleMarkerPayload, (startTime, endTime))
-#else
-#  define VSINK_ADD_PROFILER_MARKER(tag, startTime, endTime)
-#endif
+namespace mozilla {
 
 using namespace mozilla::layers;
 
@@ -108,7 +103,7 @@ RefPtr<VideoSink::EndedPromise> VideoSink::OnEnded(TrackType aType) {
   return nullptr;
 }
 
-TimeUnit VideoSink::GetEndTime(TrackType aType) const {
+media::TimeUnit VideoSink::GetEndTime(TrackType aType) const {
   AssertOwnerThread();
   MOZ_ASSERT(mAudioSink->IsStarted(), "Must be called after playback starts.");
 
@@ -117,10 +112,10 @@ TimeUnit VideoSink::GetEndTime(TrackType aType) const {
   } else if (aType == TrackInfo::kAudioTrack) {
     return mAudioSink->GetEndTime(aType);
   }
-  return TimeUnit::Zero();
+  return media::TimeUnit::Zero();
 }
 
-TimeUnit VideoSink::GetPosition(TimeStamp* aTimeStamp) const {
+media::TimeUnit VideoSink::GetPosition(TimeStamp* aTimeStamp) const {
   AssertOwnerThread();
   return mAudioSink->GetPosition(aTimeStamp);
 }
@@ -143,6 +138,12 @@ void VideoSink::SetVolume(double aVolume) {
   AssertOwnerThread();
 
   mAudioSink->SetVolume(aVolume);
+}
+
+void VideoSink::SetStreamName(const nsAString& aStreamName) {
+  AssertOwnerThread();
+
+  mAudioSink->SetStreamName(aStreamName);
 }
 
 void VideoSink::SetPreservesPitch(bool aPreservesPitch) {
@@ -210,7 +211,8 @@ void VideoSink::SetPlaying(bool aPlaying) {
   EnsureHighResTimersOnOnlyIfPlaying();
 }
 
-nsresult VideoSink::Start(const TimeUnit& aStartTime, const MediaInfo& aInfo) {
+nsresult VideoSink::Start(const media::TimeUnit& aStartTime,
+                          const MediaInfo& aInfo) {
   AssertOwnerThread();
   VSINK_LOG("[%s]", __func__);
 
@@ -270,7 +272,7 @@ void VideoSink::Stop() {
     mEndPromiseHolder.ResolveIfExists(true, __func__);
     mEndPromise = nullptr;
   }
-  mVideoFrameEndTime = TimeUnit::Zero();
+  mVideoFrameEndTime = media::TimeUnit::Zero();
 
   EnsureHighResTimersOnOnlyIfPlaying();
 }
@@ -367,7 +369,7 @@ void VideoSink::TryUpdateRenderedVideoFrames() {
   }
 
   TimeStamp nowTime;
-  const TimeUnit clockTime = mAudioSink->GetPosition(&nowTime);
+  const media::TimeUnit clockTime = mAudioSink->GetPosition(&nowTime);
   if (clockTime >= v->mTime) {
     // Time to render this frame.
     UpdateRenderedVideoFrames();
@@ -462,8 +464,9 @@ void VideoSink::RenderVideoFrames(int32_t aMaxFrames, int64_t aClockTime,
                 frame->mTime.ToMicroseconds(), frame->mFrameID,
                 VideoQueue().GetSize());
     if (!wasSent) {
-      VSINK_ADD_PROFILER_MARKER("PlayVideo", frame->mTime.ToMicroseconds(),
-                                frame->GetEndTime().ToMicroseconds());
+      PROFILER_MARKER("PlayVideo", MEDIA_PLAYBACK, {}, MediaSampleMarker,
+                      frame->mTime.ToMicroseconds(),
+                      frame->GetEndTime().ToMicroseconds());
     }
   }
 
@@ -490,7 +493,7 @@ void VideoSink::UpdateRenderedVideoFrames() {
   uint32_t droppedInSink = 0;
 
   // Skip frames up to the playback position.
-  TimeUnit lastFrameEndTime;
+  media::TimeUnit lastFrameEndTime;
   while (VideoQueue().GetSize() > mMinVideoQueueSize &&
          clockTime >= VideoQueue().PeekFront()->GetEndTime()) {
     RefPtr<VideoData> frame = VideoQueue().PopFront();
@@ -502,8 +505,9 @@ void VideoSink::UpdateRenderedVideoFrames() {
       VSINK_LOG_V("discarding video frame mTime=%" PRId64
                   " clock_time=%" PRId64,
                   frame->mTime.ToMicroseconds(), clockTime.ToMicroseconds());
-      VSINK_ADD_PROFILER_MARKER("DiscardVideo", frame->mTime.ToMicroseconds(),
-                                frame->GetEndTime().ToMicroseconds());
+      PROFILER_MARKER("DiscardVideo", MEDIA_PLAYBACK, {}, MediaSampleMarker,
+                      frame->mTime.ToMicroseconds(),
+                      frame->GetEndTime().ToMicroseconds());
     }
   }
 

@@ -65,6 +65,7 @@ NSS_SRCDIRS = \
  pwdecrypt \
  rsaperf \
  rsapoptst \
+ sdbthreadtst \
  sdrtest \
  selfserv  \
  signtool \
@@ -75,6 +76,7 @@ NSS_SRCDIRS = \
  symkeyutil \
  tests \
  tstclnt  \
+ validation  \
  vfychain \
  vfyserv \
  modutil \

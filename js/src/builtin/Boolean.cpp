@@ -10,7 +10,6 @@
 
 #include "builtin/Boolean-inl.h"
 
-#include "jsapi.h"
 #include "jstypes.h"
 
 #include "jit/InlinableNatives.h"
@@ -22,6 +21,7 @@
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/ProxyObject.h"
+#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/BooleanObject-inl.h"
 

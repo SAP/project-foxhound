@@ -36,10 +36,11 @@ void DNSRequestBase::SetIPCActor(DNSRequestActor* aActor) {
 // A simple class to provide nsIDNSRecord on the child
 //-----------------------------------------------------------------------------
 
-class ChildDNSRecord : public nsIDNSRecord {
+class ChildDNSRecord : public nsIDNSAddrRecord {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIDNSRECORD
+  NS_DECL_NSIDNSADDRRECORD
 
   ChildDNSRecord(const DNSRecord& reply, uint16_t flags);
 
@@ -48,21 +49,23 @@ class ChildDNSRecord : public nsIDNSRecord {
 
   nsCString mCanonicalName;
   nsTArray<NetAddr> mAddresses;
-  uint32_t mCurrent;  // addr iterator
-  uint16_t mFlags;
-  double mTrrFetchDuration;
-  double mTrrFetchDurationNetworkOnly;
-  bool mIsTRR;
+  uint32_t mCurrent = 0;  // addr iterator
+  uint16_t mFlags = 0;
+  double mTrrFetchDuration = 0;
+  double mTrrFetchDurationNetworkOnly = 0;
+  bool mIsTRR = false;
+  uint32_t mEffectiveTRRMode = 0;
 };
 
-NS_IMPL_ISUPPORTS(ChildDNSRecord, nsIDNSRecord)
+NS_IMPL_ISUPPORTS(ChildDNSRecord, nsIDNSRecord, nsIDNSAddrRecord)
 
 ChildDNSRecord::ChildDNSRecord(const DNSRecord& reply, uint16_t flags)
-    : mCurrent(0), mFlags(flags) {
+    : mFlags(flags) {
   mCanonicalName = reply.canonicalName();
   mTrrFetchDuration = reply.trrFetchDuration();
   mTrrFetchDurationNetworkOnly = reply.trrFetchDurationNetworkOnly();
   mIsTRR = reply.isTRR();
+  mEffectiveTRRMode = reply.effectiveTRRMode();
 
   // A shame IPDL gives us no way to grab ownership of array: so copy it.
   const nsTArray<NetAddr>& addrs = reply.addrs();
@@ -70,7 +73,7 @@ ChildDNSRecord::ChildDNSRecord(const DNSRecord& reply, uint16_t flags)
 }
 
 //-----------------------------------------------------------------------------
-// ChildDNSRecord::nsIDNSRecord
+// ChildDNSRecord::nsIDNSAddrRecord
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
@@ -126,7 +129,9 @@ NS_IMETHODIMP
 ChildDNSRecord::GetScriptableNextAddr(uint16_t port, nsINetAddr** result) {
   NetAddr addr;
   nsresult rv = GetNextAddr(port, &addr);
-  if (NS_FAILED(rv)) return rv;
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   RefPtr<nsNetAddr> netaddr = new nsNetAddr(&addr);
   netaddr.forget(result);
@@ -144,7 +149,7 @@ ChildDNSRecord::GetNextAddrAsString(nsACString& result) {
   }
 
   char buf[kIPv6CStrBufSize];
-  if (NetAddrToString(&addr, buf, sizeof(buf))) {
+  if (addr.ToStringBuffer(buf, sizeof(buf))) {
     result.Assign(buf);
     return NS_OK;
   }
@@ -171,28 +176,39 @@ ChildDNSRecord::ReportUnusable(uint16_t aPort) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+ChildDNSRecord::GetEffectiveTRRMode(uint32_t* aMode) {
+  *aMode = mEffectiveTRRMode;
+  return NS_OK;
+}
+
 class ChildDNSByTypeRecord : public nsIDNSByTypeRecord,
                              public nsIDNSTXTRecord,
-                             public nsIDNSHTTPSSVCRecord {
+                             public nsIDNSHTTPSSVCRecord,
+                             public DNSHTTPSSVCRecordBase {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
-  NS_FORWARD_SAFE_NSIDNSRECORD(((nsIDNSRecord*)nullptr))
+  NS_DECL_NSIDNSRECORD
   NS_DECL_NSIDNSBYTYPERECORD
   NS_DECL_NSIDNSTXTRECORD
   NS_DECL_NSIDNSHTTPSSVCRECORD
 
-  explicit ChildDNSByTypeRecord(const TypeRecordResultType& reply);
+  explicit ChildDNSByTypeRecord(const TypeRecordResultType& reply,
+                                const nsACString& aHost);
 
  private:
   virtual ~ChildDNSByTypeRecord() = default;
 
   TypeRecordResultType mResults = AsVariant(mozilla::Nothing());
+  bool mAllRecordsExcluded = false;
 };
 
 NS_IMPL_ISUPPORTS(ChildDNSByTypeRecord, nsIDNSByTypeRecord, nsIDNSRecord,
                   nsIDNSTXTRecord, nsIDNSHTTPSSVCRecord)
 
-ChildDNSByTypeRecord::ChildDNSByTypeRecord(const TypeRecordResultType& reply) {
+ChildDNSByTypeRecord::ChildDNSByTypeRecord(const TypeRecordResultType& reply,
+                                           const nsACString& aHost)
+    : DNSHTTPSSVCRecordBase(aHost) {
   mResults = reply;
 }
 
@@ -246,9 +262,73 @@ ChildDNSByTypeRecord::GetRecords(nsTArray<RefPtr<nsISVCBRecord>>& aRecords) {
 }
 
 NS_IMETHODIMP
+ChildDNSByTypeRecord::GetServiceModeRecord(bool aNoHttp2, bool aNoHttp3,
+                                           nsISVCBRecord** aRecord) {
+  if (!mResults.is<TypeRecordHTTPSSVC>()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  auto& results = mResults.as<TypeRecordHTTPSSVC>();
+  nsCOMPtr<nsISVCBRecord> result = GetServiceModeRecordInternal(
+      aNoHttp2, aNoHttp3, results, mAllRecordsExcluded);
+  if (!result) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  result.forget(aRecord);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ChildDNSByTypeRecord::GetAllRecordsWithEchConfig(
+    bool aNoHttp2, bool aNoHttp3, bool* aAllRecordsHaveEchConfig,
+    bool* aAllRecordsInH3ExcludedList,
+    nsTArray<RefPtr<nsISVCBRecord>>& aResult) {
+  if (!mResults.is<TypeRecordHTTPSSVC>()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  auto& records = mResults.as<TypeRecordHTTPSSVC>();
+  GetAllRecordsWithEchConfigInternal(aNoHttp2, aNoHttp3, records,
+                                     aAllRecordsHaveEchConfig,
+                                     aAllRecordsInH3ExcludedList, aResult);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ChildDNSByTypeRecord::GetHasIPAddresses(bool* aResult) {
+  NS_ENSURE_ARG(aResult);
+
+  if (!mResults.is<TypeRecordHTTPSSVC>()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  auto& results = mResults.as<TypeRecordHTTPSSVC>();
+  *aResult = HasIPAddressesInternal(results);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ChildDNSByTypeRecord::GetAllRecordsExcluded(bool* aResult) {
+  NS_ENSURE_ARG(aResult);
+
+  if (!mResults.is<TypeRecordHTTPSSVC>()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  *aResult = mAllRecordsExcluded;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 ChildDNSByTypeRecord::GetResults(mozilla::net::TypeRecordResultType* aResults) {
   *aResults = mResults;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+ChildDNSByTypeRecord::GetTtl(uint32_t* aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 //-----------------------------------------------------------------------------
@@ -382,7 +462,8 @@ bool DNSRequestSender::OnRecvLookupCompleted(const DNSRequestResponse& reply) {
     }
     case DNSRequestResponse::TIPCTypeRecord: {
       MOZ_ASSERT(mType != nsIDNSService::RESOLVE_TYPE_DEFAULT);
-      mResultRecord = new ChildDNSByTypeRecord(reply.get_IPCTypeRecord().mData);
+      mResultRecord =
+          new ChildDNSByTypeRecord(reply.get_IPCTypeRecord().mData, mHost);
       break;
     }
     default:
@@ -409,9 +490,9 @@ bool DNSRequestSender::OnRecvLookupCompleted(const DNSRequestResponse& reply) {
   }
 
   if (DNSRequestChild* child = mIPCActor->AsDNSRequestChild()) {
-    Unused << child->Send__delete__(child);
+    Unused << mozilla::net::DNSRequestChild::Send__delete__(child);
   } else if (DNSRequestParent* parent = mIPCActor->AsDNSRequestParent()) {
-    Unused << parent->Send__delete__(parent);
+    Unused << mozilla::net::DNSRequestParent::Send__delete__(parent);
   }
 
   return true;

@@ -1,9 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { BookmarksEngine } = ChromeUtils.import(
-  "resource://services-sync/engines/bookmarks.js"
-);
 const { Service } = ChromeUtils.import("resource://services-sync/service.js");
 const { PlacesTransactions } = ChromeUtils.import(
   "resource://gre/modules/PlacesTransactions.jsm"
@@ -16,7 +13,7 @@ let tracker;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 add_task(async function setup() {
-  await Service.engineManager.register(BookmarksEngine);
+  await Service.engineManager.switchAlternatives();
   engine = Service.engineManager.get("bookmarks");
   store = engine._store;
   tracker = engine._tracker;
@@ -55,7 +52,10 @@ function promiseSpinningly(promise) {
   let tm = Cc["@mozilla.org/thread-manager;1"].getService();
 
   // Keep waiting until the promise resolves.
-  tm.spinEventLoopUntil(() => resolved);
+  tm.spinEventLoopUntil(
+    "Test(test_bookmark_tracker.js:promiseSpinningly)",
+    () => resolved
+  );
   if (rerror) {
     throw rerror;
   }
@@ -64,7 +64,6 @@ function promiseSpinningly(promise) {
 
 async function cleanup() {
   await engine.setLastSync(0);
-  engine._needWeakUpload.clear();
   await store.wipe();
   await resetTracker();
   await tracker.stop();
@@ -173,61 +172,6 @@ async function insertBookmarksToMigrate() {
   );
 
   await PlacesUtils.bookmarks.remove(exampleBmk.guid);
-}
-
-// `PlacesUtils.annotations.setItemAnnotation` prevents us from setting
-// annotations on nonexistent items, so this test helper writes to the DB
-// directly.
-function setAnnoUnchecked(itemId, name, value, type) {
-  return PlacesUtils.withConnectionWrapper(
-    "test_bookmark_tracker: setItemAnnoUnchecked",
-    async function(db) {
-      await db.executeCached(
-        `
-        INSERT OR IGNORE INTO moz_anno_attributes (name)
-        VALUES (:name)`,
-        { name }
-      );
-
-      let annoIds = await db.executeCached(
-        `
-        SELECT a.id, a.dateAdded
-        FROM moz_items_annos a WHERE a.item_id = :itemId`,
-        { itemId }
-      );
-
-      let annoId;
-      let dateAdded;
-      let lastModified = PlacesUtils.toPRTime(Date.now());
-
-      if (annoIds.length) {
-        annoId = annoIds[0].getResultByName("id");
-        dateAdded = annoIds[0].getResultByName("dateAdded");
-      } else {
-        annoId = null;
-        dateAdded = lastModified;
-      }
-
-      await db.executeCached(
-        `
-        INSERT OR REPLACE INTO moz_items_annos (id, item_id, anno_attribute_id,
-          content, flags, expiration, type, dateAdded, lastModified)
-        VALUES (:annoId, :itemId, (SELECT id FROM moz_anno_attributes
-                                   WHERE name = :name),
-                :value, 0, :expiration, :type, :dateAdded, :lastModified)`,
-        {
-          annoId,
-          itemId,
-          name,
-          value,
-          type,
-          expiration: PlacesUtils.annotations.EXPIRE_NEVER,
-          dateAdded,
-          lastModified,
-        }
-      );
-    }
-  );
 }
 
 add_task(async function test_tracking() {

@@ -1,18 +1,22 @@
-use crate::stream::{StreamExt, Fuse};
+use super::assert_stream;
+use crate::stream::{Fuse, StreamExt};
 use core::pin::Pin;
 use futures_core::stream::{FusedStream, Stream};
 use futures_core::task::{Context, Poll};
+use pin_project_lite::pin_project;
 
-/// Stream for the [`select()`] function.
-#[derive(Debug)]
-#[must_use = "streams do nothing unless polled"]
-pub struct Select<St1, St2> {
-    stream1: Fuse<St1>,
-    stream2: Fuse<St2>,
-    flag: bool,
+pin_project! {
+    /// Stream for the [`select()`] function.
+    #[derive(Debug)]
+    #[must_use = "streams do nothing unless polled"]
+    pub struct Select<St1, St2> {
+        #[pin]
+        stream1: Fuse<St1>,
+        #[pin]
+        stream2: Fuse<St2>,
+        flag: bool,
+    }
 }
-
-impl<St1: Unpin, St2: Unpin> Unpin for Select<St1, St2> {}
 
 /// This function will attempt to pull items from both streams. Each
 /// stream will be polled in a round-robin fashion, and whenever a stream is
@@ -25,14 +29,15 @@ impl<St1: Unpin, St2: Unpin> Unpin for Select<St1, St2> {}
 /// Note that this function consumes both streams and returns a wrapped
 /// version of them.
 pub fn select<St1, St2>(stream1: St1, stream2: St2) -> Select<St1, St2>
-    where St1: Stream,
-          St2: Stream<Item = St1::Item>
+where
+    St1: Stream,
+    St2: Stream<Item = St1::Item>,
 {
-    Select {
+    assert_stream::<St1::Item, _>(Select {
         stream1: stream1.fuse(),
         stream2: stream2.fuse(),
         flag: false,
-    }
+    })
 }
 
 impl<St1, St2> Select<St1, St2> {
@@ -57,10 +62,8 @@ impl<St1, St2> Select<St1, St2> {
     /// Note that care must be taken to avoid tampering with the state of the
     /// stream which may otherwise confuse this combinator.
     pub fn get_pin_mut(self: Pin<&mut Self>) -> (Pin<&mut St1>, Pin<&mut St2>) {
-        unsafe {
-            let Self { stream1, stream2, .. } = self.get_unchecked_mut();
-            (Pin::new_unchecked(stream1).get_pin_mut(), Pin::new_unchecked(stream2).get_pin_mut())
-        }
+        let this = self.project();
+        (this.stream1.get_pin_mut(), this.stream2.get_pin_mut())
     }
 
     /// Consumes this combinator, returning the underlying streams.
@@ -73,8 +76,9 @@ impl<St1, St2> Select<St1, St2> {
 }
 
 impl<St1, St2> FusedStream for Select<St1, St2>
-    where St1: Stream,
-          St2: Stream<Item = St1::Item>
+where
+    St1: Stream,
+    St2: Stream<Item = St1::Item>,
 {
     fn is_terminated(&self) -> bool {
         self.stream1.is_terminated() && self.stream2.is_terminated()
@@ -82,24 +86,18 @@ impl<St1, St2> FusedStream for Select<St1, St2>
 }
 
 impl<St1, St2> Stream for Select<St1, St2>
-    where St1: Stream,
-          St2: Stream<Item = St1::Item>
+where
+    St1: Stream,
+    St2: Stream<Item = St1::Item>,
 {
     type Item = St1::Item;
 
-    fn poll_next(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<St1::Item>> {
-        let Select { flag, stream1, stream2 } =
-            unsafe { self.get_unchecked_mut() };
-        let stream1 = unsafe { Pin::new_unchecked(stream1) };
-        let stream2 = unsafe { Pin::new_unchecked(stream2) };
-
-        if !*flag {
-            poll_inner(flag, stream1, stream2, cx)
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<St1::Item>> {
+        let this = self.project();
+        if !*this.flag {
+            poll_inner(this.flag, this.stream1, this.stream2, cx)
         } else {
-            poll_inner(flag, stream2, stream1, cx)
+            poll_inner(this.flag, this.stream2, this.stream1, cx)
         }
     }
 }
@@ -108,24 +106,24 @@ fn poll_inner<St1, St2>(
     flag: &mut bool,
     a: Pin<&mut St1>,
     b: Pin<&mut St2>,
-    cx: &mut Context<'_>
+    cx: &mut Context<'_>,
 ) -> Poll<Option<St1::Item>>
-    where St1: Stream, St2: Stream<Item = St1::Item>
+where
+    St1: Stream,
+    St2: Stream<Item = St1::Item>,
 {
     let a_done = match a.poll_next(cx) {
         Poll::Ready(Some(item)) => {
             // give the other stream a chance to go first next time
             *flag = !*flag;
-            return Poll::Ready(Some(item))
-        },
+            return Poll::Ready(Some(item));
+        }
         Poll::Ready(None) => true,
         Poll::Pending => false,
     };
 
     match b.poll_next(cx) {
-        Poll::Ready(Some(item)) => {
-            Poll::Ready(Some(item))
-        }
+        Poll::Ready(Some(item)) => Poll::Ready(Some(item)),
         Poll::Ready(None) if a_done => Poll::Ready(None),
         Poll::Ready(None) | Poll::Pending => Poll::Pending,
     }

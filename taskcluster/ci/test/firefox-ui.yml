@@ -6,6 +6,7 @@ job-defaults:
     suite:
         category: firefox-ui
     max-run-time: 5400
+    test-manifest-loader: null  # don't load tests in the taskgraph
     mozharness:
         script: firefox_ui_tests/functional.py
         config:
@@ -18,6 +19,7 @@ job-defaults:
                 linux.*:
                     - firefox_ui_tests/taskcluster.py
                     - remove_executables.py
+    python-3: true
 
 firefox-ui-functional-local:
     description: "Firefox-ui-tests functional run"

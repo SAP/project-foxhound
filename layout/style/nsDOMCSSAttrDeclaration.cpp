@@ -75,7 +75,8 @@ nsresult nsDOMCSSAttributeDeclaration::SetCSSDeclaration(
 
   // The closure needs to have been called by now, otherwise we shouldn't be
   // getting here when the attribute hasn't changed.
-  MOZ_ASSERT_IF(aClosureData, !aClosureData->mClosure);
+  MOZ_ASSERT_IF(aClosureData && aClosureData->mShouldBeCalled,
+                aClosureData->mWasCalled);
 
   aDecl->SetDirty();
   if (mIsSMILOverride) {
@@ -93,7 +94,7 @@ Document* nsDOMCSSAttributeDeclaration::DocToUpdate() {
 
 DeclarationBlock* nsDOMCSSAttributeDeclaration::GetOrCreateCSSDeclaration(
     Operation aOperation, DeclarationBlock** aCreated) {
-  MOZ_ASSERT(aOperation != eOperation_Modify || aCreated);
+  MOZ_ASSERT(aOperation != Operation::Modify || aCreated);
 
   if (!mElement) return nullptr;
 
@@ -108,7 +109,7 @@ DeclarationBlock* nsDOMCSSAttributeDeclaration::GetOrCreateCSSDeclaration(
     return declaration;
   }
 
-  if (aOperation != eOperation_Modify) {
+  if (aOperation != Operation::Modify) {
     return nullptr;
   }
 
@@ -144,7 +145,7 @@ nsresult nsDOMCSSAttributeDeclaration::SetSMILValueHelper(SetterFunc aFunc) {
   // scripted animation.
   RefPtr<DeclarationBlock> created;
   DeclarationBlock* olddecl =
-      GetOrCreateCSSDeclaration(eOperation_Modify, getter_AddRefs(created));
+      GetOrCreateCSSDeclaration(Operation::Modify, getter_AddRefs(created));
   if (!olddecl) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -175,6 +176,14 @@ nsresult nsDOMCSSAttributeDeclaration::SetSMILValue(
   return SetSMILValueHelper([aPropID, &aLength](DeclarationBlock& aDecl) {
     return SVGElement::UpdateDeclarationBlockFromLength(
         aDecl, aPropID, aLength, SVGElement::ValToUse::Anim);
+  });
+}
+
+nsresult nsDOMCSSAttributeDeclaration::SetSMILValue(
+    const nsCSSPropertyID /*aPropID*/, const SVGAnimatedPathSegList& aPath) {
+  return SetSMILValueHelper([&aPath](DeclarationBlock& aDecl) {
+    return SVGElement::UpdateDeclarationBlockFromPath(
+        aDecl, aPath, SVGElement::ValToUse::Anim);
   });
 }
 
@@ -209,8 +218,13 @@ void nsDOMCSSAttributeDeclaration::SetPropertyValue(
 }
 
 void nsDOMCSSAttributeDeclaration::MutationClosureFunction(void* aData) {
-  MutationClosureData* data = static_cast<MutationClosureData*>(aData);
-  // Clear mClosure pointer so that it doesn't get called again.
-  data->mClosure = nullptr;
+  auto* data = static_cast<MutationClosureData*>(aData);
+  MOZ_ASSERT(
+      data->mShouldBeCalled,
+      "Did we pass a non-null closure to the style system unnecessarily?");
+  if (data->mWasCalled) {
+    return;
+  }
+  data->mWasCalled = true;
   data->mElement->InlineStyleDeclarationWillChange(*data);
 }

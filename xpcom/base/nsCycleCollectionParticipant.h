@@ -7,10 +7,14 @@
 #ifndef nsCycleCollectionParticipant_h__
 #define nsCycleCollectionParticipant_h__
 
-#include "mozilla/MacroArgs.h"
+#include <type_traits>
+#include "js/HeapAPI.h"
+#include "js/TypeDecls.h"
 #include "mozilla/MacroForEach.h"
 #include "nsCycleCollectionNoteChild.h"
-#include "js/RootingAPI.h"
+#include "nsDebug.h"
+#include "nsID.h"
+#include "nscore.h"
 
 /**
  * Note: the following two IIDs only differ in one bit in the last byte.  This
@@ -38,6 +42,85 @@
     }                                                \
   }
 
+namespace mozilla {
+enum class CCReason : uint8_t {
+  NO_REASON,
+
+  // Purple buffer "overflow": enough objects are suspected to be cycle
+  // collectable to trigger an immediate CC.
+  MANY_SUSPECTED,
+
+  // The previous collection was kCCForced ago, and there are at least
+  // kCCForcedPurpleLimit objects suspected of being cycle collectable.
+  TIMED,
+
+  // Run a CC after a GC has completed.
+  GC_FINISHED,
+
+  // Run a slice of a collection.
+  SLICE,
+
+  // Manual reasons are explicitly triggered with a custom listener (as opposed
+  // to exceeding some internal threshold.) If a CC is already in progress,
+  // continue it. Otherwise, start a new one.
+  FIRST_MANUAL_REASON = 128,
+
+  // We want to GC, but must finish any ongoing cycle collection first.
+  GC_WAITING = FIRST_MANUAL_REASON,
+
+  // CC requested via an API. Used by tests.
+  API,
+
+  // Collecting in order to dump the heap.
+  DUMP_HEAP,
+
+  // Low memory situation detected.
+  MEM_PRESSURE,
+
+  // IPC message to a content process to trigger a CC. The original reason is
+  // not tracked.
+  IPC_MESSAGE,
+
+  // Cycle collection on a worker. The triggering reason is not tracked.
+  WORKER,
+
+  // Used for finding leaks.
+  SHUTDOWN
+};
+
+#define FOR_EACH_CCREASON(MACRO) \
+  MACRO(NO_REASON)               \
+  MACRO(MANY_SUSPECTED)          \
+  MACRO(TIMED)                   \
+  MACRO(GC_FINISHED)             \
+  MACRO(SLICE)                   \
+  MACRO(GC_WAITING)              \
+  MACRO(API)                     \
+  MACRO(DUMP_HEAP)               \
+  MACRO(MEM_PRESSURE)            \
+  MACRO(IPC_MESSAGE)             \
+  MACRO(WORKER)                  \
+  MACRO(SHUTDOWN)
+
+static inline bool IsManualCCReason(CCReason reason) {
+  return reason >= CCReason::FIRST_MANUAL_REASON;
+}
+
+static inline const char* CCReasonToString(CCReason aReason) {
+  switch (aReason) {
+#define SET_REASON_STR(name) \
+  case CCReason::name:       \
+    return #name;            \
+    break;
+    FOR_EACH_CCREASON(SET_REASON_STR)
+#undef SET_REASON_STR
+    default:
+      return "<unknown-reason>";
+  }
+}
+
+}  // namespace mozilla
+
 /**
  * Just holds the IID so NS_GET_IID works.
  */
@@ -49,11 +132,15 @@ class nsCycleCollectionISupports {
 NS_DEFINE_STATIC_IID_ACCESSOR(nsCycleCollectionISupports,
                               NS_CYCLECOLLECTIONISUPPORTS_IID)
 
+class nsCycleCollectionTraversalCallback;
+class nsISupports;
 class nsWrapperCache;
 
 namespace JS {
 template <class T>
 class Heap;
+template <typename T>
+class TenuredHeap;
 } /* namespace JS */
 
 /*
@@ -566,25 +653,22 @@ T* DowncastCCParticipant(void* aPtr) {
 #define NS_DECL_CYCLE_COLLECTION_CLASS_NAME_METHOD(_class) \
   NS_IMETHOD_(const char*) ClassName() override { return #_class; };
 
-#define NS_DECL_CYCLE_COLLECTION_CLASS_BODY_NO_UNLINK(_class, _base)         \
- public:                                                                     \
-  NS_IMETHOD TraverseNative(void* p, nsCycleCollectionTraversalCallback& cb) \
-      override;                                                              \
-  NS_DECL_CYCLE_COLLECTION_CLASS_NAME_METHOD(_class)                         \
-  NS_IMETHOD_(void) DeleteCycleCollectable(void* p) override {               \
-    DowncastCCParticipant<_class>(p)->DeleteCycleCollectable();              \
-  }                                                                          \
-  static _class* Downcast(nsISupports* s) {                                  \
-    return static_cast<_class*>(static_cast<_base*>(s));                     \
-  }                                                                          \
-  static nsISupports* Upcast(_class* p) {                                    \
-    return NS_ISUPPORTS_CAST(_base*, p);                                     \
-  }                                                                          \
-  template <typename T>                                                      \
-  friend nsISupports* ToSupports(T* p, NS_CYCLE_COLLECTION_INNERCLASS* dummy);
-
-#define NS_DECL_CYCLE_COLLECTION_CLASS_BODY(_class, _base)     \
-  NS_DECL_CYCLE_COLLECTION_CLASS_BODY_NO_UNLINK(_class, _base) \
+#define NS_DECL_CYCLE_COLLECTION_CLASS_BODY(_class, _base)                     \
+ public:                                                                       \
+  NS_IMETHOD TraverseNative(void* p, nsCycleCollectionTraversalCallback& cb)   \
+      override;                                                                \
+  NS_DECL_CYCLE_COLLECTION_CLASS_NAME_METHOD(_class)                           \
+  NS_IMETHOD_(void) DeleteCycleCollectable(void* p) override {                 \
+    DowncastCCParticipant<_class>(p)->DeleteCycleCollectable();                \
+  }                                                                            \
+  static _class* Downcast(nsISupports* s) {                                    \
+    return static_cast<_class*>(static_cast<_base*>(s));                       \
+  }                                                                            \
+  static nsISupports* Upcast(_class* p) {                                      \
+    return NS_ISUPPORTS_CAST(_base*, p);                                       \
+  }                                                                            \
+  template <typename T>                                                        \
+  friend nsISupports* ToSupports(T* p, NS_CYCLE_COLLECTION_INNERCLASS* dummy); \
   NS_IMETHOD_(void) Unlink(void* p) override;
 
 #define NS_PARTICIPANT_AS(type, participant) \
@@ -720,8 +804,7 @@ T* DowncastCCParticipant(void* aPtr) {
 #define NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(_class) \
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(_class, _class)
 
-#define NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_BODY_NO_UNLINK(_class,      \
-                                                                _base_class) \
+#define NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_BODY(_class, _base_class)   \
  public:                                                                     \
   NS_IMETHOD TraverseNative(void* p, nsCycleCollectionTraversalCallback& cb) \
       override;                                                              \
@@ -729,10 +812,7 @@ T* DowncastCCParticipant(void* aPtr) {
   static _class* Downcast(nsISupports* s) {                                  \
     return static_cast<_class*>(static_cast<_base_class*>(                   \
         NS_CYCLE_COLLECTION_CLASSNAME(_base_class)::Downcast(s)));           \
-  }
-
-#define NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_BODY(_class, _base_class)     \
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_BODY_NO_UNLINK(_class, _base_class) \
+  }                                                                          \
   NS_IMETHOD_(void) Unlink(void* p) override;
 
 #define NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(_class, _base_class)   \
@@ -747,22 +827,6 @@ T* DowncastCCParticipant(void* aPtr) {
     NS_IMPL_GET_XPCOM_CYCLE_COLLECTION_PARTICIPANT(_class)              \
   };                                                                    \
   NS_CHECK_FOR_RIGHT_PARTICIPANT_IMPL_INHERITED(_class)                 \
-  static NS_CYCLE_COLLECTION_INNERCLASS NS_CYCLE_COLLECTION_INNERNAME;
-
-#define NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_NO_UNLINK(_class,       \
-                                                           _base_class)  \
-  class NS_CYCLE_COLLECTION_INNERCLASS                                   \
-      : public NS_CYCLE_COLLECTION_CLASSNAME(_base_class) {              \
-   public:                                                               \
-    constexpr explicit NS_CYCLE_COLLECTION_INNERCLASS(Flags aFlags = 0)  \
-        : NS_CYCLE_COLLECTION_CLASSNAME(_base_class)(aFlags) {}          \
-                                                                         \
-   private:                                                              \
-    NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_BODY_NO_UNLINK(_class,      \
-                                                            _base_class) \
-    NS_IMPL_GET_XPCOM_CYCLE_COLLECTION_PARTICIPANT(_class)               \
-  };                                                                     \
-  NS_CHECK_FOR_RIGHT_PARTICIPANT_IMPL_INHERITED(_class)                  \
   static NS_CYCLE_COLLECTION_INNERCLASS NS_CYCLE_COLLECTION_INNERNAME;
 
 #define NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(_class,      \
@@ -887,8 +951,8 @@ T* DowncastCCParticipant(void* aPtr) {
   _class::NS_CYCLE_COLLECTION_INNERCLASS _class::NS_CYCLE_COLLECTION_INNERNAME;
 
 // Most JS holder classes should only contain pointers to JS GC things in a
-// single JS zone, but there are some exceptions. Such classes should use this
-// macro to tell the system about this.
+// single JS zone (excluding pointers into the atoms zone), but there are some
+// exceptions. Such classes should use this macro to tell the system about this.
 #define NS_IMPL_CYCLE_COLLECTION_MULTI_ZONE_JSHOLDER_CLASS(_class) \
   _class::NS_CYCLE_COLLECTION_INNERCLASS                           \
       _class::NS_CYCLE_COLLECTION_INNERNAME(                       \

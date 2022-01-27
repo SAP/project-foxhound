@@ -11,8 +11,10 @@ const { UpdateUtils } = ChromeUtils.import(
   "resource://gre/modules/UpdateUtils.jsm"
 );
 
-XPCOMUtils.defineLazyGetter(this, "pluginsBundle", () =>
-  Services.strings.createBundle("chrome://global/locale/plugins.properties")
+XPCOMUtils.defineLazyGetter(
+  this,
+  "pluginsBundle",
+  () => new Localization(["toolkit/about/aboutPlugins.ftl"])
 );
 
 var gMockAddons = new Map();
@@ -108,9 +110,9 @@ add_task(async function test_notInstalled() {
     let mockAddon = gMockAddons.get(addon.id);
 
     Assert.notEqual(mockAddon, null);
-    let name = pluginsBundle.GetStringFromName(mockAddon.nameId);
+    let name = await pluginsBundle.formatValue(mockAddon.nameId);
     Assert.equal(addon.name, name);
-    let description = pluginsBundle.GetStringFromName(mockAddon.descriptionId);
+    let description = await pluginsBundle.formatValue(mockAddon.descriptionId);
     Assert.equal(addon.description, description);
 
     Assert.ok(!addon.isActive);
@@ -137,9 +139,6 @@ add_task(async function test_notInstalled() {
     Assert.ok(addon.providesUpdatesSecurely);
     Assert.ok(!addon.foreignInstall);
 
-    let mimetypes = addon.pluginMimeTypes;
-    Assert.ok(mimetypes);
-    Assert.equal(mimetypes.length, 0);
     let libraries = addon.pluginLibraries;
     Assert.ok(libraries);
     Assert.equal(libraries.length, 0);
@@ -181,7 +180,7 @@ add_task(async function test_installed() {
     Assert.ok(!addon.appDisabled);
     Assert.ok(addon.userDisabled);
 
-    let name = pluginsBundle.GetStringFromName(mockAddon.nameId);
+    let name = await pluginsBundle.formatValue(mockAddon.nameId);
     Assert.equal(addon.name, name);
     Assert.equal(addon.version, TEST_VERSION);
 
@@ -192,9 +191,6 @@ add_task(async function test_installed() {
 
     Assert.equal(addon.updateDate.getTime(), TEST_TIME_SEC * 1000);
 
-    let mimetypes = addon.pluginMimeTypes;
-    Assert.ok(mimetypes);
-    Assert.equal(mimetypes.length, 0);
     let libraries = addon.pluginLibraries;
     Assert.ok(libraries);
     Assert.equal(libraries.length, 1);

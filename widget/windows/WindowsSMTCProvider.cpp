@@ -15,7 +15,6 @@
 #  include <winsdkver.h>
 #  include <wrl.h>
 
-#  include "imgIEncoder.h"
 #  include "nsMimeTypes.h"
 #  include "mozilla/Assertions.h"
 #  include "mozilla/Logging.h"
@@ -23,6 +22,7 @@
 #  include "mozilla/WidgetUtils.h"
 #  include "mozilla/WindowsVersion.h"
 #  include "mozilla/ScopeExit.h"
+#  include "mozilla/dom/MediaControlUtils.h"
 #  include "mozilla/media/MediaUtils.h"
 #  include "nsThreadUtils.h"
 
@@ -148,13 +148,18 @@ bool WindowsSMTCProvider::Open() {
     return false;
   }
 
-  if (!SetControlAttributes(SMTCControlAttributes::EnableAll())) {
-    LOG("Failed to set control attributes");
+  if (!UpdateButtons()) {
+    LOG("Failed to initialize the buttons");
     return false;
   }
 
   if (!RegisterEvents()) {
     LOG("Failed to register SMTC key-event listener");
+    return false;
+  }
+
+  if (!EnableControl(true)) {
+    LOG("Failed to enable SMTC control");
     return false;
   }
 
@@ -165,24 +170,19 @@ bool WindowsSMTCProvider::Open() {
 
 void WindowsSMTCProvider::Close() {
   MediaControlKeySource::Close();
-  if (mInitialized) {  // Prevent calling Set methods when init failed
+  // Prevent calling Set methods when init failed
+  if (mInitialized) {
     SetPlaybackState(mozilla::dom::MediaSessionPlaybackState::None);
-    SetControlAttributes(SMTCControlAttributes::DisableAll());
+    UnregisterEvents();
+    ClearMetadata();
+    // We have observed an Windows issue, if we modify `mControls` , (such as
+    // setting metadata, disable buttons) before disabling control, and those
+    // operations are not done sequentially within a same main thread task,
+    // then it would cause a problem where the SMTC wasn't clean up completely
+    // and show the executable name.
+    EnableControl(false);
     mInitialized = false;
   }
-
-  UnregisterEvents();
-
-  // Cancel the pending image fetch process
-  mImageFetchRequest.DisconnectIfExists();
-
-  CancelPendingStoreAsyncOperation();
-
-  // Clear the cached image urls
-  mThumbnailUrl = EmptyString();
-  mProcessingUrl = EmptyString();
-
-  mNextImageIndex = 0;
 }
 
 void WindowsSMTCProvider::SetPlaybackState(
@@ -227,6 +227,38 @@ void WindowsSMTCProvider::SetMediaMetadata(
   LoadThumbnail(aMetadata.mArtwork);
 }
 
+void WindowsSMTCProvider::ClearMetadata() {
+  MOZ_ASSERT(mDisplay);
+  if (FAILED(mDisplay->ClearAll())) {
+    LOG("Failed to clear SMTC display");
+  }
+  mImageFetchRequest.DisconnectIfExists();
+  CancelPendingStoreAsyncOperation();
+  mThumbnailUrl.Truncate();
+  mProcessingUrl.Truncate();
+  mNextImageIndex = 0;
+  mSupportedKeys = 0;
+}
+
+void WindowsSMTCProvider::SetSupportedMediaKeys(
+    const MediaKeysArray& aSupportedKeys) {
+  MOZ_ASSERT(mInitialized);
+
+  uint32_t supportedKeys = 0;
+  for (const mozilla::dom::MediaControlKey& key : aSupportedKeys) {
+    supportedKeys |= GetMediaKeyMask(key);
+  }
+
+  if (supportedKeys == mSupportedKeys) {
+    LOG("Supported keys stay the same");
+    return;
+  }
+
+  LOG("Update supported keys");
+  mSupportedKeys = supportedKeys;
+  UpdateButtons();
+}
+
 void WindowsSMTCProvider::UnregisterEvents() {
   if (mControls && mButtonPressedToken.value != 0) {
     mControls->remove_ButtonPressed(mButtonPressedToken);
@@ -268,9 +300,64 @@ bool WindowsSMTCProvider::RegisterEvents() {
   return true;
 }
 
-void WindowsSMTCProvider::OnButtonPressed(mozilla::dom::MediaControlKey aKey) {
+void WindowsSMTCProvider::OnButtonPressed(
+    mozilla::dom::MediaControlKey aKey) const {
+  if (!IsKeySupported(aKey)) {
+    LOG("key: %s is not supported", ToMediaControlKeyStr(aKey));
+    return;
+  }
+
   for (auto& listener : mListeners) {
     listener->OnActionPerformed(mozilla::dom::MediaControlAction(aKey));
+  }
+}
+
+bool WindowsSMTCProvider::EnableControl(bool aEnabled) const {
+  MOZ_ASSERT(mControls);
+  return SUCCEEDED(mControls->put_IsEnabled(aEnabled));
+}
+
+bool WindowsSMTCProvider::UpdateButtons() const {
+  static const mozilla::dom::MediaControlKey kKeys[] = {
+      mozilla::dom::MediaControlKey::Play, mozilla::dom::MediaControlKey::Pause,
+      mozilla::dom::MediaControlKey::Previoustrack,
+      mozilla::dom::MediaControlKey::Nexttrack,
+      mozilla::dom::MediaControlKey::Stop};
+
+  bool success = true;
+  for (const mozilla::dom::MediaControlKey& key : kKeys) {
+    if (!EnableKey(key, IsKeySupported(key))) {
+      success = false;
+      LOG("Failed to set %s=%s", ToMediaControlKeyStr(key),
+          IsKeySupported(key) ? "true" : "false");
+    }
+  }
+
+  return success;
+}
+
+bool WindowsSMTCProvider::IsKeySupported(
+    mozilla::dom::MediaControlKey aKey) const {
+  return mSupportedKeys & GetMediaKeyMask(aKey);
+}
+
+bool WindowsSMTCProvider::EnableKey(mozilla::dom::MediaControlKey aKey,
+                                    bool aEnable) const {
+  MOZ_ASSERT(mControls);
+  switch (aKey) {
+    case mozilla::dom::MediaControlKey::Play:
+      return SUCCEEDED(mControls->put_IsPlayEnabled(aEnable));
+    case mozilla::dom::MediaControlKey::Pause:
+      return SUCCEEDED(mControls->put_IsPauseEnabled(aEnable));
+    case mozilla::dom::MediaControlKey::Previoustrack:
+      return SUCCEEDED(mControls->put_IsPreviousEnabled(aEnable));
+    case mozilla::dom::MediaControlKey::Nexttrack:
+      return SUCCEEDED(mControls->put_IsNextEnabled(aEnable));
+    case mozilla::dom::MediaControlKey::Stop:
+      return SUCCEEDED(mControls->put_IsStopEnabled(aEnable));
+    default:
+      LOG("No button for %s", ToMediaControlKeyStr(aKey));
+      return false;
   }
 }
 
@@ -305,29 +392,6 @@ bool WindowsSMTCProvider::InitDisplayAndControls() {
   }
 
   MOZ_ASSERT(mDisplay);
-  return true;
-}
-
-bool WindowsSMTCProvider::SetControlAttributes(
-    SMTCControlAttributes aAttributes) {
-  MOZ_ASSERT(mControls);
-
-  if (FAILED(mControls->put_IsEnabled(aAttributes.mEnabled))) {
-    return false;
-  }
-  if (FAILED(mControls->put_IsPauseEnabled(aAttributes.mPlayPauseEnabled))) {
-    return false;
-  }
-  if (FAILED(mControls->put_IsPlayEnabled(aAttributes.mPlayPauseEnabled))) {
-    return false;
-  }
-  if (FAILED(mControls->put_IsNextEnabled(aAttributes.mNextEnabled))) {
-    return false;
-  }
-  if (FAILED(mControls->put_IsPreviousEnabled(aAttributes.mPreviousEnabled))) {
-    return false;
-  }
-
   return true;
 }
 
@@ -376,57 +440,6 @@ bool WindowsSMTCProvider::SetMusicMetadata(const wchar_t* aArtist,
   return true;
 }
 
-// The image buffer would be allocated in aStream whose size is aSize and the
-// buffer head is aBuffer
-static nsresult GetEncodedImageBuffer(imgIContainer* aImage,
-                                      const nsACString& aMimeType,
-                                      nsIInputStream** aStream, uint32_t* aSize,
-                                      char** aBuffer) {
-  nsCOMPtr<imgITools> imgTools = do_GetService("@mozilla.org/image/tools;1");
-  if (!imgTools) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsCOMPtr<nsIInputStream> inputStream;
-  nsresult rv = imgTools->EncodeImage(aImage, aMimeType, EmptyString(),
-                                      getter_AddRefs(inputStream));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  if (!inputStream) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsCOMPtr<imgIEncoder> encoder = do_QueryInterface(inputStream);
-  if (!encoder) {
-    return NS_ERROR_FAILURE;
-  }
-
-  rv = encoder->GetImageBufferUsed(aSize);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  rv = encoder->GetImageBuffer(aBuffer);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  encoder.forget(aStream);
-  return NS_OK;
-}
-
-static bool IsImageIn(const nsTArray<mozilla::dom::MediaImage>& aArtwork,
-                      const nsAString& aImageUrl) {
-  for (const mozilla::dom::MediaImage& image : aArtwork) {
-    if (image.mSrc == aImageUrl) {
-      return true;
-    }
-  }
-  return false;
-}
-
 void WindowsSMTCProvider::LoadThumbnail(
     const nsTArray<mozilla::dom::MediaImage>& aArtwork) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -441,13 +454,13 @@ void WindowsSMTCProvider::LoadThumbnail(
   if (!mProcessingUrl.IsEmpty()) {
     LOG("Load thumbnail while image: %s is being processed",
         NS_ConvertUTF16toUTF8(mProcessingUrl).get());
-    if (IsImageIn(mArtwork, mProcessingUrl)) {
+    if (mozilla::dom::IsImageIn(mArtwork, mProcessingUrl)) {
       LOG("No need to load thumbnail. The one being processed is in the "
           "artwork");
       return;
     }
   } else if (!mThumbnailUrl.IsEmpty()) {
-    if (IsImageIn(mArtwork, mThumbnailUrl)) {
+    if (mozilla::dom::IsImageIn(mArtwork, mThumbnailUrl)) {
       LOG("No need to load thumbnail. The one in use is in the artwork");
       return;
     }
@@ -469,7 +482,7 @@ void WindowsSMTCProvider::LoadImageAtIndex(const size_t aIndex) {
   if (aIndex >= mArtwork.Length()) {
     LOG("Stop loading thumbnail. No more available images");
     mImageFetchRequest.DisconnectIfExists();
-    mProcessingUrl = EmptyString();
+    mProcessingUrl.Truncate();
     return;
   }
 
@@ -480,8 +493,8 @@ void WindowsSMTCProvider::LoadImageAtIndex(const size_t aIndex) {
   // image, we can use `CreateFromFile` to create the IRandomAccessStream. We
   // should probably cache it since it could be used very often (Bug 1643102)
 
-  if (image.mSrc.Find("file:///"_ns, false, 0, 0) == 0) {
-    LOG("Skip the local file. Try next image");
+  if (!mozilla::dom::IsValidImageUrl(image.mSrc)) {
+    LOG("Skip the image with invalid URL. Try next image");
     mImageFetchRequest.DisconnectIfExists();
     LoadImageAtIndex(mNextImageIndex++);
     return;
@@ -507,9 +520,9 @@ void WindowsSMTCProvider::LoadImageAtIndex(const size_t aIndex) {
             char* src = nullptr;
             // Only used to hold the image data
             nsCOMPtr<nsIInputStream> inputStream;
-            nsresult rv =
-                GetEncodedImageBuffer(aImage, nsLiteralCString(IMAGE_PNG),
-                                      getter_AddRefs(inputStream), &size, &src);
+            nsresult rv = mozilla::dom::GetEncodedImageBuffer(
+                aImage, nsLiteralCString(IMAGE_PNG),
+                getter_AddRefs(inputStream), &size, &src);
             if (NS_FAILED(rv) || !inputStream || size == 0 || !src) {
               LOG("Failed to get the image buffer info. Try next image");
               LoadImageAtIndex(mNextImageIndex++);
@@ -590,6 +603,8 @@ void WindowsSMTCProvider::LoadImage(const char* aImageData,
       [this, self = RefPtr<WindowsSMTCProvider>(this),
        aImageUrl = nsString(mProcessingUrl)](
           IAsyncOperation<unsigned int>* aAsyncOp, AsyncStatus aStatus) {
+        MOZ_ASSERT(NS_IsMainThread());
+
         if (aStatus != AsyncStatus::Completed) {
           LOG("Asynchronous operation is not completed");
           return E_ABORT;
@@ -603,9 +618,8 @@ void WindowsSMTCProvider::LoadImage(const char* aImageData,
           return hr;
         }
 
-        nsresult rv = UpdateThumbnailOnMainThread(aImageUrl);
-        if (NS_FAILED(rv)) {
-          LOG("Failed to dispatch a task to thumbnail update");
+        if (!UpdateThumbnail(aImageUrl)) {
+          LOG("Failed to update thumbnail");
         }
 
         // If an error occurs above:
@@ -638,7 +652,7 @@ bool WindowsSMTCProvider::SetThumbnail(const nsAString& aUrl) {
   auto cleanup =
       MakeScopeExit([this, self = RefPtr<WindowsSMTCProvider>(this)] {
         LOG("Clean mThumbnailUrl");
-        mThumbnailUrl = EmptyString();
+        mThumbnailUrl.Truncate();
       });
 
   if (FAILED(hr)) {
@@ -680,37 +694,34 @@ void WindowsSMTCProvider::ClearThumbnail() {
   hr = mDisplay->Update();
   MOZ_ASSERT(SUCCEEDED(hr));
   Unused << hr;
-  mThumbnailUrl = EmptyString();
+  mThumbnailUrl.Truncate();
 }
 
-nsresult WindowsSMTCProvider::UpdateThumbnailOnMainThread(
-    const nsAString& aUrl) {
-  return NS_DispatchToMainThread(
-      media::NewRunnableFrom([this, self = RefPtr<WindowsSMTCProvider>(this),
-                              aImageUrl = nsString(aUrl)] {
-        if (!IsOpened()) {
-          LOG("Abort the thumbnail update: SMTC is closed");
-          return NS_OK;
-        }
+bool WindowsSMTCProvider::UpdateThumbnail(const nsAString& aUrl) {
+  MOZ_ASSERT(NS_IsMainThread());
 
-        if (aImageUrl != mProcessingUrl) {
-          LOG("Abort the thumbnail update: The image from %s is out of date",
-              NS_ConvertUTF16toUTF8(aImageUrl).get());
-          return NS_OK;
-        }
+  if (!IsOpened()) {
+    LOG("Abort the thumbnail update: SMTC is closed");
+    return false;
+  }
 
-        mProcessingUrl = EmptyString();
+  if (aUrl != mProcessingUrl) {
+    LOG("Abort the thumbnail update: The image from %s is out of date",
+        NS_ConvertUTF16toUTF8(aUrl).get());
+    return false;
+  }
 
-        if (!SetThumbnail(aImageUrl)) {
-          LOG("Failed to update thumbnail");
-          return NS_OK;
-        }
+  mProcessingUrl.Truncate();
 
-        MOZ_ASSERT(mThumbnailUrl == aImageUrl);
-        LOG("The thumbnail is updated to the image from: %s",
-            NS_ConvertUTF16toUTF8(mThumbnailUrl).get());
-        return NS_OK;
-      }));
+  if (!SetThumbnail(aUrl)) {
+    LOG("Failed to update thumbnail");
+    return false;
+  }
+
+  MOZ_ASSERT(mThumbnailUrl == aUrl);
+  LOG("The thumbnail is updated to the image from: %s",
+      NS_ConvertUTF16toUTF8(mThumbnailUrl).get());
+  return true;
 }
 
 void WindowsSMTCProvider::CancelPendingStoreAsyncOperation() const {

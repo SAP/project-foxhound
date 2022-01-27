@@ -20,22 +20,15 @@
 
 using namespace mozilla::a11y;
 
-// IUnknown
-
-STDMETHODIMP
-ia2AccessibleTableCell::QueryInterface(REFIID iid, void** ppv) {
-  if (!ppv) return E_INVALIDARG;
-
-  *ppv = nullptr;
-
-  if (IID_IAccessibleTableCell == iid) {
-    *ppv = static_cast<IAccessibleTableCell*>(this);
-    (reinterpret_cast<IUnknown*>(*ppv))->AddRef();
-    return S_OK;
-  }
-
-  return E_NOINTERFACE;
+TableCellAccessible* ia2AccessibleTableCell::CellAcc() {
+  AccessibleWrap* acc = LocalAcc();
+  return acc ? acc->AsTableCell() : nullptr;
 }
+
+// IUnknown
+IMPL_IUNKNOWN_QUERY_HEAD(ia2AccessibleTableCell)
+IMPL_IUNKNOWN_QUERY_IFACE(IAccessibleTableCell)
+IMPL_IUNKNOWN_QUERY_TAIL_INHERITED(ia2AccessibleHypertext)
 
 ////////////////////////////////////////////////////////////////////////////////
 // IAccessibleTableCell
@@ -45,14 +38,16 @@ ia2AccessibleTableCell::get_table(IUnknown** aTable) {
   if (!aTable) return E_INVALIDARG;
 
   *aTable = nullptr;
-  if (!mTableCell) return CO_E_OBJNOTCONNECTED;
+  TableCellAccessible* tableCell = CellAcc();
+  if (!tableCell) return CO_E_OBJNOTCONNECTED;
 
-  TableAccessible* table = mTableCell->Table();
+  TableAccessible* table = tableCell->Table();
   if (!table) return E_FAIL;
 
   AccessibleWrap* wrap = static_cast<AccessibleWrap*>(table->AsAccessible());
-  *aTable = static_cast<IAccessible*>(wrap);
-  (*aTable)->AddRef();
+  RefPtr<IAccessibleTable> result;
+  wrap->GetNativeInterface(getter_AddRefs(result));
+  result.forget(aTable);
   return S_OK;
 }
 
@@ -61,9 +56,10 @@ ia2AccessibleTableCell::get_columnExtent(long* aSpan) {
   if (!aSpan) return E_INVALIDARG;
 
   *aSpan = 0;
-  if (!mTableCell) return CO_E_OBJNOTCONNECTED;
+  TableCellAccessible* tableCell = CellAcc();
+  if (!tableCell) return CO_E_OBJNOTCONNECTED;
 
-  *aSpan = mTableCell->ColExtent();
+  *aSpan = tableCell->ColExtent();
 
   return S_OK;
 }
@@ -75,10 +71,11 @@ ia2AccessibleTableCell::get_columnHeaderCells(IUnknown*** aCellAccessibles,
 
   *aCellAccessibles = nullptr;
   *aNColumnHeaderCells = 0;
-  if (!mTableCell) return CO_E_OBJNOTCONNECTED;
+  TableCellAccessible* tableCell = CellAcc();
+  if (!tableCell) return CO_E_OBJNOTCONNECTED;
 
-  AutoTArray<Accessible*, 10> cells;
-  mTableCell->ColHeaderCells(&cells);
+  AutoTArray<LocalAccessible*, 10> cells;
+  tableCell->ColHeaderCells(&cells);
 
   *aNColumnHeaderCells = cells.Length();
   *aCellAccessibles = static_cast<IUnknown**>(
@@ -88,8 +85,9 @@ ia2AccessibleTableCell::get_columnHeaderCells(IUnknown*** aCellAccessibles,
 
   for (uint32_t i = 0; i < cells.Length(); i++) {
     AccessibleWrap* cell = static_cast<AccessibleWrap*>(cells[i]);
-    (*aCellAccessibles)[i] = static_cast<IAccessible*>(cell);
-    (*aCellAccessibles)[i]->AddRef();
+    RefPtr<IAccessible> iaCell;
+    cell->GetNativeInterface(getter_AddRefs(iaCell));
+    iaCell.forget(&(*aCellAccessibles)[i]);
   }
 
   return S_OK;
@@ -100,9 +98,10 @@ ia2AccessibleTableCell::get_columnIndex(long* aColIdx) {
   if (!aColIdx) return E_INVALIDARG;
 
   *aColIdx = -1;
-  if (!mTableCell) return CO_E_OBJNOTCONNECTED;
+  TableCellAccessible* tableCell = CellAcc();
+  if (!tableCell) return CO_E_OBJNOTCONNECTED;
 
-  *aColIdx = mTableCell->ColIdx();
+  *aColIdx = tableCell->ColIdx();
   return S_OK;
 }
 
@@ -111,9 +110,10 @@ ia2AccessibleTableCell::get_rowExtent(long* aSpan) {
   if (!aSpan) return E_INVALIDARG;
 
   *aSpan = 0;
-  if (!mTableCell) return CO_E_OBJNOTCONNECTED;
+  TableCellAccessible* tableCell = CellAcc();
+  if (!tableCell) return CO_E_OBJNOTCONNECTED;
 
-  *aSpan = mTableCell->RowExtent();
+  *aSpan = tableCell->RowExtent();
   return S_OK;
 }
 
@@ -124,10 +124,11 @@ ia2AccessibleTableCell::get_rowHeaderCells(IUnknown*** aCellAccessibles,
 
   *aCellAccessibles = nullptr;
   *aNRowHeaderCells = 0;
-  if (!mTableCell) return CO_E_OBJNOTCONNECTED;
+  TableCellAccessible* tableCell = CellAcc();
+  if (!tableCell) return CO_E_OBJNOTCONNECTED;
 
-  AutoTArray<Accessible*, 10> cells;
-  mTableCell->RowHeaderCells(&cells);
+  AutoTArray<LocalAccessible*, 10> cells;
+  tableCell->RowHeaderCells(&cells);
 
   *aNRowHeaderCells = cells.Length();
   *aCellAccessibles = static_cast<IUnknown**>(
@@ -136,8 +137,9 @@ ia2AccessibleTableCell::get_rowHeaderCells(IUnknown*** aCellAccessibles,
 
   for (uint32_t i = 0; i < cells.Length(); i++) {
     AccessibleWrap* cell = static_cast<AccessibleWrap*>(cells[i]);
-    (*aCellAccessibles)[i] = static_cast<IAccessible*>(cell);
-    (*aCellAccessibles)[i]->AddRef();
+    RefPtr<IAccessible> iaCell;
+    cell->GetNativeInterface(getter_AddRefs(iaCell));
+    iaCell.forget(&(*aCellAccessibles)[i]);
   }
 
   return S_OK;
@@ -148,9 +150,10 @@ ia2AccessibleTableCell::get_rowIndex(long* aRowIdx) {
   if (!aRowIdx) return E_INVALIDARG;
 
   *aRowIdx = -1;
-  if (!mTableCell) return CO_E_OBJNOTCONNECTED;
+  TableCellAccessible* tableCell = CellAcc();
+  if (!tableCell) return CO_E_OBJNOTCONNECTED;
 
-  *aRowIdx = mTableCell->RowIdx();
+  *aRowIdx = tableCell->RowIdx();
   return S_OK;
 }
 
@@ -164,13 +167,14 @@ ia2AccessibleTableCell::get_rowColumnExtents(long* aRowIdx, long* aColIdx,
 
   *aRowIdx = *aColIdx = *aRowExtents = *aColExtents = 0;
   *aIsSelected = false;
-  if (!mTableCell) return CO_E_OBJNOTCONNECTED;
+  TableCellAccessible* tableCell = CellAcc();
+  if (!tableCell) return CO_E_OBJNOTCONNECTED;
 
-  *aRowIdx = mTableCell->RowIdx();
-  *aColIdx = mTableCell->ColIdx();
-  *aRowExtents = mTableCell->RowExtent();
-  *aColExtents = mTableCell->ColExtent();
-  *aIsSelected = mTableCell->Selected();
+  *aRowIdx = tableCell->RowIdx();
+  *aColIdx = tableCell->ColIdx();
+  *aRowExtents = tableCell->RowExtent();
+  *aColExtents = tableCell->ColExtent();
+  *aIsSelected = tableCell->Selected();
 
   return S_OK;
 }
@@ -180,8 +184,9 @@ ia2AccessibleTableCell::get_isSelected(boolean* aIsSelected) {
   if (!aIsSelected) return E_INVALIDARG;
 
   *aIsSelected = false;
-  if (!mTableCell) return CO_E_OBJNOTCONNECTED;
+  TableCellAccessible* tableCell = CellAcc();
+  if (!tableCell) return CO_E_OBJNOTCONNECTED;
 
-  *aIsSelected = mTableCell->Selected();
+  *aIsSelected = tableCell->Selected();
   return S_OK;
 }

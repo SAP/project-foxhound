@@ -6,6 +6,7 @@ extern crate log;
 
 extern crate env_logger;
 
+use mp4parse::ParseStrictness;
 use mp4parse_capi::*;
 use std::env;
 use std::fs::File;
@@ -13,14 +14,34 @@ use std::io::Read;
 
 extern "C" fn buf_read(buf: *mut u8, size: usize, userdata: *mut std::os::raw::c_void) -> isize {
     let input: &mut std::fs::File = unsafe { &mut *(userdata as *mut _) };
-    let mut buf = unsafe { std::slice::from_raw_parts_mut(buf, size) };
-    match input.read(&mut buf) {
+    let buf = unsafe { std::slice::from_raw_parts_mut(buf, size) };
+    match input.read(buf) {
         Ok(n) => n as isize,
         Err(_) => -1,
     }
 }
 
-fn dump_file(filename: &str) {
+fn dump_avif(filename: &str, strictness: ParseStrictness) {
+    let mut file = File::open(filename).expect("Unknown file");
+    let io = Mp4parseIo {
+        read: Some(buf_read),
+        userdata: &mut file as *mut _ as *mut std::os::raw::c_void,
+    };
+
+    unsafe {
+        let mut parser = std::ptr::null_mut();
+        let rv = mp4parse_avif_new(&io, strictness, &mut parser);
+        println!("mp4parse_avif_new -> {:?}", rv);
+        if rv == Mp4parseStatus::Ok {
+            println!(
+                "mp4parse_avif_get_image_safe -> {:?}",
+                mp4parse_avif_get_image_safe(&*parser)
+            );
+        }
+    }
+}
+
+fn dump_file(filename: &str, strictness: ParseStrictness) {
     let mut file = File::open(filename).expect("Unknown file");
     let io = Mp4parseIo {
         read: Some(buf_read),
@@ -33,8 +54,12 @@ fn dump_file(filename: &str) {
 
         match rv {
             Mp4parseStatus::Ok => (),
+            Mp4parseStatus::Invalid => {
+                println!("-- failed to parse as mp4 video, trying AVIF");
+                dump_avif(filename, strictness);
+            }
             _ => {
-                println!("-- fail to parse, '-v' for more info");
+                println!("-- fail to parse: {:?}, '-v' for more info", rv);
                 return;
             }
         }
@@ -44,8 +69,8 @@ fn dump_file(filename: &str) {
             Mp4parseStatus::Ok => {
                 println!("-- mp4parse_fragment_info {:?}", frag_info);
             }
-            _ => {
-                println!("-- mp4parse_fragment_info failed");
+            rv => {
+                println!("-- mp4parse_fragment_info failed with {:?}", rv);
                 return;
             }
         }
@@ -62,9 +87,7 @@ fn dump_file(filename: &str) {
         for i in 0..counts {
             let mut track_info = Mp4parseTrackInfo {
                 track_type: Mp4parseTrackType::Audio,
-                track_id: 0,
-                duration: 0,
-                media_time: 0,
+                ..Default::default()
             };
             match mp4parse_get_track_info(parser, i, &mut track_info) {
                 Mp4parseStatus::Ok => {
@@ -142,17 +165,31 @@ fn dump_file(filename: &str) {
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
+    let mut dump_func: fn(&str, ParseStrictness) = dump_file;
+    let mut verbose = false;
+    let mut strictness = ParseStrictness::Normal;
+    let mut filenames = Vec::new();
+    for arg in env::args().skip(1) {
+        match arg.as_str() {
+            "--avif" => dump_func = dump_avif,
+            "--strict" => strictness = ParseStrictness::Strict,
+            "--permissive" => strictness = ParseStrictness::Permissive,
+            "-v" | "--verbose" => verbose = true,
+            _ => {
+                if let Some("-") = arg.get(0..1) {
+                    eprintln!("Ignoring unknown switch {:?}", arg);
+                } else {
+                    filenames.push(arg)
+                }
+            }
+        }
+    }
+
+    if filenames.is_empty() {
+        eprintln!("No files to dump, exiting...");
         return;
     }
 
-    // Initialize logging, setting the log level if requested.
-    let (skip, verbose) = if args[1] == "-v" {
-        (2, true)
-    } else {
-        (1, false)
-    };
     let env = env_logger::Env::default();
     let mut logger = env_logger::Builder::from_env(env);
     if verbose {
@@ -160,9 +197,9 @@ fn main() {
     }
     logger.init();
 
-    for filename in args.iter().skip(skip) {
+    for filename in filenames {
         info!("-- dump of '{}' --", filename);
-        dump_file(filename);
+        dump_func(filename.as_str(), strictness);
         info!("-- end of '{}' --", filename);
     }
 }

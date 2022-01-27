@@ -5,15 +5,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ADTSDemuxer.h"
-#include "FlacDemuxer.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/ModuleUtils.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "mozilla/Telemetry.h"
 #include "mp3sniff.h"
 #include "nestegg/nestegg.h"
+#include "nsHttpChannel.h"
 #include "nsIClassInfoImpl.h"
 #include "nsIChannel.h"
 #include "nsMediaSniffer.h"
 #include "nsMimeTypes.h"
+#include "nsQueryObject.h"
 #include "nsString.h"
 
 #include <algorithm>
@@ -32,34 +36,69 @@ NS_IMPL_ISUPPORTS(nsMediaSniffer, nsIContentSniffer)
 nsMediaSnifferEntry nsMediaSniffer::sSnifferEntries[] = {
     // The string OggS, followed by the null byte.
     PATTERN_ENTRY("\xFF\xFF\xFF\xFF\xFF", "OggS", APPLICATION_OGG),
+    // The string RIFF, followed by four bytes, followed by the string WAVE,
+    // followed by 8 bytes, followed by 0x0055, the codec identifier for mp3 in
+    // a RIFF container. This entry MUST be before the next one, which is
+    // assumed to be a WAV file containing PCM data.
+    PATTERN_ENTRY("\xFF\xFF\xFF\xFF"
+                  "\x00\x00\x00\x00"
+                  "\xFF\xFF\xFF\xFF"
+                  "\x00\x00\x00\x00"
+                  "\x00\x00\x00\x00"
+                  "\xFF\xFF",
+                  "RIFF"
+                  "\x00\x00\x00\x00"
+                  "WAVE"
+                  "\x00\x00\x00\x00"
+                  "\x00\x00\x00\x00"
+                  "\x55\x00",
+                  AUDIO_MP3),
     // The string RIFF, followed by four bytes, followed by the string WAVE
     PATTERN_ENTRY("\xFF\xFF\xFF\xFF\x00\x00\x00\x00\xFF\xFF\xFF\xFF",
                   "RIFF\x00\x00\x00\x00WAVE", AUDIO_WAV),
     // mp3 with ID3 tags, the string "ID3".
     PATTERN_ENTRY("\xFF\xFF\xFF", "ID3", AUDIO_MP3),
     // FLAC with standard header
-    PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "fLaC", AUDIO_FLAC)};
+    PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "fLaC", AUDIO_FLAC),
+    PATTERN_ENTRY("\xFF\xFF\xFF\xFF\xFF\xFF\xFF", "#EXTM3U",
+                  APPLICATION_MPEGURL)};
+
+using PatternLabel = mozilla::Telemetry::LABELS_MEDIA_SNIFFER_MP4_BRAND_PATTERN;
+
+struct nsMediaSnifferFtypEntry : nsMediaSnifferEntry {
+  nsMediaSnifferFtypEntry(nsMediaSnifferEntry aBase, const PatternLabel aLabel)
+      : nsMediaSnifferEntry(aBase), mLabel(aLabel) {}
+  PatternLabel mLabel;
+};
 
 // For a complete list of file types, see http://www.ftyps.com/index.html
-nsMediaSnifferEntry sFtypEntries[] = {
-    PATTERN_ENTRY("\xFF\xFF\xFF", "mp4", VIDEO_MP4),  // Could be mp41 or mp42.
-    PATTERN_ENTRY("\xFF\xFF\xFF", "avc",
-                  VIDEO_MP4),  // Could be avc1, avc2, ...
-    PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "3gp4",
-                  VIDEO_MP4),  // 3gp4 is based on MP4
-    PATTERN_ENTRY("\xFF\xFF\xFF", "3gp",
-                  VIDEO_3GPP),  // Could be 3gp5, ...
-    PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "M4V ", VIDEO_MP4),
-    PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "M4A ", AUDIO_MP4),
-    PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "M4P ", AUDIO_MP4),
-    PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "qt  ", VIDEO_QUICKTIME),
-    PATTERN_ENTRY("\xFF\xFF\xFF", "iso", VIDEO_MP4),  // Could be isom or iso2.
-    PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "mmp4", VIDEO_MP4),
+nsMediaSnifferFtypEntry sFtypEntries[] = {
+    {PATTERN_ENTRY("\xFF\xFF\xFF", "mp4", VIDEO_MP4),
+     PatternLabel::ftyp_mp4},  // Could be mp41 or mp42.
+    {PATTERN_ENTRY("\xFF\xFF\xFF", "avc", VIDEO_MP4),
+     PatternLabel::ftyp_avc},  // Could be avc1, avc2, ...
+    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "3gp4", VIDEO_MP4),
+     PatternLabel::ftyp_3gp4},  // 3gp4 is based on MP4
+    {PATTERN_ENTRY("\xFF\xFF\xFF", "3gp", VIDEO_3GPP),
+     PatternLabel::ftyp_3gp},  // Could be 3gp5, ...
+    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "M4V ", VIDEO_MP4),
+     PatternLabel::ftyp_M4V},
+    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "M4A ", AUDIO_MP4),
+     PatternLabel::ftyp_M4A},
+    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "M4P ", AUDIO_MP4),
+     PatternLabel::ftyp_M4P},
+    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "qt  ", VIDEO_QUICKTIME),
+     PatternLabel::ftyp_qt},
+    {PATTERN_ENTRY("\xFF\xFF\xFF", "iso", VIDEO_MP4),
+     PatternLabel::ftyp_iso},  // Could be isom or iso2.
+    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "mmp4", VIDEO_MP4),
+     PatternLabel::ftyp_mmp4},
+    {PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "avif", IMAGE_AVIF),
+     PatternLabel::ftyp_avif},
 };
 
 static bool MatchesBrands(const uint8_t aData[4], nsACString& aSniffedType) {
-  for (size_t i = 0; i < mozilla::ArrayLength(sFtypEntries); ++i) {
-    const auto& currentEntry = sFtypEntries[i];
+  for (const auto& currentEntry : sFtypEntries) {
     bool matched = true;
     MOZ_ASSERT(currentEntry.mLength <= 4,
                "Pattern is too large to match brand strings.");
@@ -70,7 +109,16 @@ static bool MatchesBrands(const uint8_t aData[4], nsACString& aSniffedType) {
       }
     }
     if (matched) {
+      // If we eventually remove the "iso" pattern entry per bug 1725190,
+      // this block should be removed and the bug1725190.cr3 test in
+      // test_mediasniffer_ext.js will need to be updated
+      if (!mozilla::StaticPrefs::media_mp4_sniff_iso_brand() &&
+          currentEntry.mLabel == PatternLabel::ftyp_iso) {
+        continue;
+      }
+
       aSniffedType.AssignASCII(currentEntry.mContentType);
+      AccumulateCategorical(currentEntry.mLabel);
       return true;
     }
   }
@@ -82,8 +130,8 @@ static bool MatchesBrands(const uint8_t aData[4], nsACString& aSniffedType) {
 // including MP4 (described at
 // http://mimesniff.spec.whatwg.org/#signature-for-mp4), M4A (Apple iTunes
 // audio), and 3GPP.
-static bool MatchesMP4(const uint8_t* aData, const uint32_t aLength,
-                       nsACString& aSniffedType) {
+bool MatchesMP4(const uint8_t* aData, const uint32_t aLength,
+                nsACString& aSniffedType) {
   if (aLength <= MP4_MIN_BYTES_COUNT) {
     return false;
   }
@@ -116,17 +164,13 @@ static bool MatchesMP4(const uint8_t* aData, const uint32_t aLength,
 }
 
 static bool MatchesWebM(const uint8_t* aData, const uint32_t aLength) {
-  return nestegg_sniff((uint8_t*)aData, aLength) ? true : false;
+  return nestegg_sniff((uint8_t*)aData, aLength);
 }
 
 // This function implements mp3 sniffing based on parsing
 // packet headers and looking for expected boundaries.
 static bool MatchesMP3(const uint8_t* aData, const uint32_t aLength) {
   return mp3_sniff(aData, (long)aLength);
-}
-
-static bool MatchesFLAC(const uint8_t* aData, const uint32_t aLength) {
-  return mozilla::FlacDemuxer::FlacSniffer(aData, aLength);
 }
 
 static bool MatchesADTS(const uint8_t* aData, const uint32_t aLength) {
@@ -138,32 +182,23 @@ nsMediaSniffer::GetMIMETypeFromContent(nsIRequest* aRequest,
                                        const uint8_t* aData,
                                        const uint32_t aLength,
                                        nsACString& aSniffedType) {
-  nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
-  if (channel) {
-    nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
-    if (loadInfo->GetSkipContentSniffing()) {
-      return NS_ERROR_NOT_AVAILABLE;
-    }
-    nsLoadFlags loadFlags = 0;
-    channel->GetLoadFlags(&loadFlags);
-    if (!(loadFlags & nsIChannel::LOAD_MEDIA_SNIFFER_OVERRIDES_CONTENT_TYPE)) {
-      // For media, we want to sniff only if the Content-Type is unknown, or if
-      // it is application/octet-stream.
-      nsAutoCString contentType;
-      nsresult rv = channel->GetContentType(contentType);
-      NS_ENSURE_SUCCESS(rv, rv);
-      if (!contentType.IsEmpty() &&
-          !contentType.EqualsLiteral(APPLICATION_OCTET_STREAM) &&
-          !contentType.EqualsLiteral(UNKNOWN_CONTENT_TYPE)) {
-        return NS_ERROR_NOT_AVAILABLE;
-      }
-    }
-  }
-
   const uint32_t clampedLength = std::min(aLength, MAX_BYTES_SNIFFED);
 
-  for (size_t i = 0; i < mozilla::ArrayLength(sSnifferEntries); ++i) {
-    const nsMediaSnifferEntry& currentEntry = sSnifferEntries[i];
+  auto maybeUpdate = mozilla::MakeScopeExit([request = RefPtr{aRequest}]() {
+    nsCOMPtr<nsIChannel> channel = do_QueryInterface(request);
+    if (channel && XRE_IsParentProcess()) {
+      if (RefPtr<mozilla::net::nsHttpChannel> httpChannel =
+              do_QueryObject(channel)) {
+        // If the audio or video type pattern matching algorithm given bytes
+        // does not return undefined, then disable the further check and allow
+        // the response.
+        httpChannel->DisableIsOpaqueResponseAllowedAfterSniffCheck(
+            mozilla::net::nsHttpChannel::SnifferType::Media);
+      }
+    };
+  });
+
+  for (const auto& currentEntry : sSnifferEntries) {
     if (clampedLength < currentEntry.mLength || currentEntry.mLength == 0) {
       continue;
     }
@@ -200,13 +235,7 @@ nsMediaSniffer::GetMIMETypeFromContent(nsIRequest* aRequest,
     return NS_OK;
   }
 
-  // Flac frames are generally big, often in excess of 24kB.
-  // Using a size of MAX_BYTES_SNIFFED effectively means that we will only
-  // recognize flac content if it starts with a frame.
-  if (MatchesFLAC(aData, clampedLength)) {
-    aSniffedType.AssignLiteral(AUDIO_FLAC);
-    return NS_OK;
-  }
+  maybeUpdate.release();
 
   // Could not sniff the media type, we are required to set it to
   // application/octet-stream.

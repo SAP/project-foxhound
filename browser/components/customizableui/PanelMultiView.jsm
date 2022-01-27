@@ -338,7 +338,7 @@ var PanelMultiView = class extends AssociatedToNode {
 
     return (
       doc.getElementById(id) ||
-      viewCacheTemplate.content.querySelector("#" + id)
+      viewCacheTemplate?.content.querySelector("#" + id)
     );
   }
 
@@ -729,6 +729,11 @@ var PanelMultiView = class extends AssociatedToNode {
         (anchor && anchor.getAttribute("label"));
       // The constrained width of subviews may also vary between panels.
       nextPanelView.minMaxWidth = prevPanelView.knownWidth;
+      let lockPanelVertical =
+        this.openViews[0].node.getAttribute("lockpanelvertical") == "true";
+      nextPanelView.minMaxHeight = lockPanelVertical
+        ? prevPanelView.knownHeight
+        : 0;
 
       if (anchor) {
         viewNode.classList.add("PanelUI-subView");
@@ -782,7 +787,10 @@ var PanelMultiView = class extends AssociatedToNode {
    */
   async _showMainView() {
     let nextPanelView = PanelView.forNode(
-      this.document.getElementById(this.node.getAttribute("mainViewId"))
+      PanelMultiView.getViewNode(
+        this.document,
+        this.node.getAttribute("mainViewId")
+      )
     );
 
     // If the view is already open in another panel, close the panel first.
@@ -804,6 +812,7 @@ var PanelMultiView = class extends AssociatedToNode {
     nextPanelView.mainview = true;
     nextPanelView.headerText = "";
     nextPanelView.minMaxWidth = 0;
+    nextPanelView.minMaxHeight = 0;
 
     // Ensure the view will be visible once the panel is opened.
     nextPanelView.visible = true;
@@ -828,6 +837,13 @@ var PanelMultiView = class extends AssociatedToNode {
 
     panelView.node.panelMultiView = this.node;
     this.openViews.push(panelView);
+
+    // Panels could contain out-pf-process <browser> elements, that need to be
+    // supported with a remote attribute on the panel in order to display properly.
+    // See bug https://bugzilla.mozilla.org/show_bug.cgi?id=1365660
+    if (panelView.node.getAttribute("remote") == "true") {
+      this._panel.setAttribute("remote", "true");
+    }
 
     let canceled = await panelView.dispatchAsyncEvent("ViewShowing");
 
@@ -1144,7 +1160,7 @@ var PanelMultiView = class extends AssociatedToNode {
     }
   }
 
-  _calculateMaxHeight() {
+  _calculateMaxHeight(aEvent) {
     // While opening the panel, we have to limit the maximum height of any
     // view based on the space that will be available. We cannot just use
     // window.screen.availTop and availHeight because these may return an
@@ -1166,7 +1182,7 @@ var PanelMultiView = class extends AssociatedToNode {
     // The distance from the anchor to the available margin of the screen is
     // based on whether the panel will open towards the top or the bottom.
     let maxHeight;
-    if (this._panel.alignmentPosition.startsWith("before_")) {
+    if (aEvent.alignmentPosition.startsWith("before_")) {
       maxHeight = anchor.screenY - cssAvailTop;
     } else {
       let anchorScreenBottom = anchor.screenY + anchorRect.height;
@@ -1207,7 +1223,11 @@ var PanelMultiView = class extends AssociatedToNode {
         currentView.keyNavigation(aEvent);
         break;
       case "mousemove":
-        this.openViews.forEach(panelView => panelView.clearNavigation());
+        this.openViews.forEach(panelView => {
+          if (!panelView.ignoreMouseMove) {
+            panelView.clearNavigation();
+          }
+        });
         break;
       case "popupshowing": {
         this._viewContainer.setAttribute("panelopen", "true");
@@ -1226,7 +1246,7 @@ var PanelMultiView = class extends AssociatedToNode {
       }
       case "popuppositioned": {
         if (this._panel.state == "showing") {
-          let maxHeight = this._calculateMaxHeight();
+          let maxHeight = this._calculateMaxHeight(aEvent);
           this._viewStack.style.maxHeight = maxHeight + "px";
           this._offscreenViewStack.style.maxHeight = maxHeight + "px";
         }
@@ -1343,19 +1363,42 @@ var PanelView = class extends AssociatedToNode {
   }
 
   /**
+   * Constrains the height of this view using the "min-height" and "max-height"
+   * styles. Setting this to zero removes the constraints.
+   */
+  set minMaxHeight(value) {
+    let style = this.node.style;
+    if (value) {
+      style.minHeight = style.maxHeight = value + "px";
+    } else {
+      style.removeProperty("min-height");
+      style.removeProperty("max-height");
+    }
+  }
+
+  /**
    * Adds a header with the given title, or removes it if the title is empty.
    */
   set headerText(value) {
+    let ensureHeaderSeparator = headerNode => {
+      if (headerNode.nextSibling.tagName != "toolbarseparator") {
+        let separator = this.document.createXULElement("toolbarseparator");
+        this.node.insertBefore(separator, headerNode.nextSibling);
+      }
+    };
+
     // If the header already exists, update or remove it as requested.
     let header = this.node.firstElementChild;
     if (header && header.classList.contains("panel-header")) {
       if (value) {
         // The back button has a label in it - we want to select
         // the label that's a direct child of the header.
-        header.querySelector(
-          ".panel-header > label > span"
-        ).textContent = value;
+        header.querySelector(".panel-header > h1 > span").textContent = value;
+        ensureHeaderSeparator(header);
       } else {
+        if (header.nextSibling.tagName == "toolbarseparator") {
+          header.nextSibling.remove();
+        }
         header.remove();
       }
       return;
@@ -1384,13 +1427,15 @@ var PanelView = class extends AssociatedToNode {
       backButton.blur();
     });
 
-    let label = this.document.createXULElement("label");
+    let h1 = this.document.createElement("h1");
     let span = this.document.createElement("span");
     span.textContent = value;
-    label.appendChild(span);
+    h1.appendChild(span);
 
-    header.append(backButton, label);
+    header.append(backButton, h1);
     this.node.prepend(header);
+
+    ensureHeaderSeparator(header);
   }
 
   /**
@@ -1433,6 +1478,8 @@ var PanelView = class extends AssociatedToNode {
       return;
     }
 
+    const profilerMarkerStartTime = Cu.now();
+
     // We batch DOM changes together in order to reduce synchronous layouts.
     // First we reset any change we may have made previously. The first time
     // this is called, and in the best case scenario, this has no effect.
@@ -1441,7 +1488,7 @@ var PanelView = class extends AssociatedToNode {
       // Non-hidden <label> or <description> elements that also aren't empty
       // and also don't have a value attribute can be multiline (if their
       // text content is long enough).
-      let isMultiline = ":not(:-moz-any([hidden],[value],:empty))";
+      let isMultiline = ":not([hidden],[value],:empty)";
       let selector = [
         "description" + isMultiline,
         "label" + isMultiline,
@@ -1522,6 +1569,12 @@ var PanelView = class extends AssociatedToNode {
       });
       element.style.height = bounds.height + "px";
     }
+
+    ChromeUtils.addProfilerMarker(
+      "PMV.descriptionHeightWorkaround()",
+      profilerMarkerStartTime,
+      `<${this.node.tagName} id="${this.node.id}">`
+    );
   }
 
   /**
@@ -1559,6 +1612,7 @@ var PanelView = class extends AssociatedToNode {
       if (
         node.tagName == "button" ||
         node.tagName == "toolbarbutton" ||
+        node.tagName == "checkbox" ||
         node.classList.contains("text-link") ||
         node.classList.contains("navigable") ||
         (!arrowKey && this._isNavigableWithTabOnly(node))
@@ -1764,6 +1818,8 @@ var PanelView = class extends AssociatedToNode {
       return popup && popup.state == "open";
     };
 
+    this.ignoreMouseMove = false;
+
     let keyCode = event.code;
     switch (keyCode) {
       case "ArrowDown":
@@ -1856,6 +1912,7 @@ var PanelView = class extends AssociatedToNode {
           event.altKey,
           event.shiftKey,
           event.metaKey,
+          0,
           null,
           0
         );

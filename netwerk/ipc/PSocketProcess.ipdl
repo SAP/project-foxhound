@@ -20,6 +20,11 @@ include protocol PTRRService;
 include protocol PProxyConfigLookup;
 include protocol PNativeDNSResolverOverride;
 include protocol PRemoteLazyInputStream;
+include protocol PProxyAutoConfig;
+
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+include protocol PSandboxTesting;
+#endif
 
 include MemoryReportTypes;
 include NeckoChannelParams;
@@ -37,7 +42,7 @@ using mozilla::Telemetry::DiscardedData from "mozilla/TelemetryComms.h";
 using base::ProcessId from "base/process.h";
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
 using PRTime from "prtime.h";
-using refcounted class nsIURI from "mozilla/ipc/URIUtils.h";
+[RefCounted] using class nsIURI from "mozilla/ipc/URIUtils.h";
 using struct nsID from "nsID.h";
 using mozilla::net::SocketInfo from "mozilla/net/DashboardTypes.h";
 using mozilla::net::DNSCacheEntries from "mozilla/net/DashboardTypes.h";
@@ -47,7 +52,6 @@ namespace mozilla {
 namespace net {
 
 struct HttpHandlerInitArgs {
-  bool mFastOpenSupported;
   nsCString mLegacyAppName;
   nsCString mLegacyAppVersion;
   nsCString mPlatform;
@@ -76,6 +80,7 @@ struct SocketPorcessInitAttributes {
   FileDescriptor? mSandboxBroker;
 };
 
+[NeedsOtherPid]
 sync protocol PSocketProcess
 {
   manages PDNSRequest;
@@ -96,7 +101,6 @@ sync protocol PSocketProcess
 parent:
   async InitCrashReporter(NativeThreadId threadId);
   async AddMemoryReport(MemoryReport aReport);
-  async FinishMemoryReport(uint32_t aGeneration);
   // Messages for sending telemetry to parent process.
   async AccumulateChildHistograms(HistogramAccumulation[] accumulations);
   async AccumulateChildKeyedHistograms(KeyedHistogramAccumulation[] accumulations);
@@ -130,6 +134,11 @@ parent:
                        OriginAttributes aOriginAttributes,
                        nsCString aRequestString)
     returns (bool aAccepted);
+  async ODoHServiceActivated(bool aActivated);
+
+  async ExcludeHttp2OrHttp3(HttpConnectionInfoCloneArgs aArgs);
+
+  async OnConsoleMessage(nsString aMessage);
 
 child:
   async Init(SocketPorcessInitAttributes aAttributes);
@@ -137,12 +146,16 @@ child:
   async RequestMemoryReport(uint32_t generation,
                             bool anonymize,
                             bool minimizeMemoryUsage,
-                            FileDescriptor? DMDFile);
+                            FileDescriptor? DMDFile)
+      returns (uint32_t aGeneration);
   async SetOffline(bool offline);
   async SetConnectivity(bool connectivity);
   async InitLinuxSandbox(FileDescriptor? sandboxBroker);
   async InitSocketProcessBridgeParent(ProcessId processId, Endpoint<PSocketProcessBridgeParent> endpoint);
   async InitProfiler(Endpoint<PProfilerChild> aEndpoint);
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+  async InitSandboxTesting(Endpoint<PSandboxTestingChild> aEndpoint);
+#endif
   // test-only
   async SocketProcessTelemetryPing();
 
@@ -171,6 +184,11 @@ child:
     returns (DNSCacheEntries[] entries);
    async GetHttpConnectionData()
     returns (HttpRetParams[] params);
+
+  async InitProxyAutoConfigChild(Endpoint<PProxyAutoConfigChild> endpoint);
+
+  async RecheckIPConnectivity();
+  async RecheckDNS();
 
 both:
   async PFileDescriptorSet(FileDescriptor fd);

@@ -12,25 +12,26 @@ use crate::error::{Error, ErrorKind};
 /// MemoryDistributionMetric).
 #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[repr(i32)] // use i32 to be compatible with our JNA definition
 pub enum MemoryUnit {
-    ///
+    /// 1 byte
     Byte,
-    ///
+    /// 2^10 bytes
     Kilobyte,
-    ///
+    /// 2^20 bytes
     Megabyte,
-    ///
+    /// 2^30 bytes
     Gigabyte,
 }
 
 impl MemoryUnit {
-    /// Convert a value in the given unit to bytes.
+    /// Converts a value in the given unit to bytes.
     ///
-    /// ## Arguments
+    /// # Arguments
     ///
     /// * `value` - the value to convert.
     ///
-    /// ## Return value
+    /// # Returns
     ///
     /// The integer representation of the byte value.
     pub fn as_bytes(self, value: u64) -> u64 {
@@ -45,7 +46,7 @@ impl MemoryUnit {
 }
 
 /// Trait implementation for converting an integer value
-/// to a MemoryUnit. This is used in the FFI code. Please
+/// to a [`MemoryUnit`]. This is used in the FFI code. Please
 /// note that values should match the ordering of the platform
 /// specific side of things (e.g. Kotlin implementation).
 impl TryFrom<i32> for MemoryUnit {

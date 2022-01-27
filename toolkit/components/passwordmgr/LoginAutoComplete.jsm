@@ -233,15 +233,32 @@ class GeneratedPasswordAutocompleteItem extends AutocompleteItem {
   }
 }
 
+class ImportableLearnMoreAutocompleteItem extends AutocompleteItem {
+  constructor() {
+    super("importableLearnMore");
+  }
+}
+
 class ImportableLoginsAutocompleteItem extends AutocompleteItem {
-  constructor(browserId, hostname) {
+  constructor(browserId, hostname, actor) {
     super("importableLogins");
     this.label = browserId;
     this.comment = hostname;
+    this._actor = actor;
+
+    // This is sent for every item (re)shown, but the parent will debounce to
+    // reduce the count by 1 total.
+    this._actor.sendAsyncMessage(
+      "PasswordManager:decreaseSuggestImportCount",
+      1
+    );
   }
 
   removeFromStorage() {
-    Services.telemetry.recordEvent("exp_import", "event", "delete", this.label);
+    this._actor.sendAsyncMessage(
+      "PasswordManager:decreaseSuggestImportCount",
+      100
+    );
   }
 }
 
@@ -358,9 +375,11 @@ function LoginAutoCompleteResult(
     if (!logins.length && importableBrowsers) {
       this._rows.push(
         ...importableBrowsers.map(
-          browserId => new ImportableLoginsAutocompleteItem(browserId, hostname)
+          browserId =>
+            new ImportableLoginsAutocompleteItem(browserId, hostname, actor)
         )
       );
+      this._rows.push(new ImportableLearnMoreAutocompleteItem());
     }
 
     this._rows.push(
@@ -372,18 +391,6 @@ function LoginAutoCompleteResult(
   if (this.matchCount > 0) {
     this.searchResult = Ci.nsIAutoCompleteResult.RESULT_SUCCESS;
     this.defaultIndex = 0;
-    // For experiment telemetry, record how many importable logins were
-    // available when showing the popup and some extra data.
-    Services.telemetry.recordEvent(
-      "exp_import",
-      "impression",
-      "popup",
-      (importable?.browsers?.length ?? 0) + "",
-      {
-        loginsCount: logins.length + "",
-        searchLength: aSearchString.length + "",
-      }
-    );
   } else if (hidingFooterOnPWFieldAutoOpened) {
     // We use a failure result so that the empty results aren't re-used for when
     // the user tries to manually open the popup (we want the footer in that case).
@@ -456,6 +463,10 @@ LoginAutoCompleteResult.prototype = {
 
   getFinalCompleteValueAt(index) {
     return this.getValueAt(index);
+  },
+
+  isRemovableAt(index) {
+    return true;
   },
 
   removeValueAt(index) {
@@ -769,28 +780,21 @@ let gAutoCompleteListener = {
 
     let loginManager = window.windowGlobalChild.getActor("LoginManager");
     switch (selectedRowStyle) {
-      case "importableLogins":
+      case "importableLearnMore":
         loginManager.sendAsyncMessage(
-          "PasswordManager:OpenMigrationWizard",
-          selectedRowComment
+          "PasswordManager:OpenImportableLearnMore",
+          {}
         );
-        Services.telemetry.recordEvent(
-          "exp_import",
-          "event",
-          "enter",
-          selectedRowComment
-        );
+        break;
+      case "importableLogins":
+        loginManager.sendAsyncMessage("PasswordManager:HandleImportable", {
+          browserId: selectedRowComment,
+        });
         break;
       case "loginsFooter":
         loginManager.sendAsyncMessage("PasswordManager:OpenPreferences", {
           entryPoint: "autocomplete",
         });
-        Services.telemetry.recordEvent(
-          "exp_import",
-          "event",
-          "enter",
-          "loginsFooter"
-        );
         break;
     }
   },

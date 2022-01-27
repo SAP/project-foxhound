@@ -7,30 +7,23 @@
 #ifndef MOZILLA_LAYERS_COMPOSITABLEFORWARDER
 #define MOZILLA_LAYERS_COMPOSITABLEFORWARDER
 
-#include <stdint.h>  // for int32_t, uint64_t
-#include "gfxTypes.h"
-#include "mozilla/Attributes.h"  // for override
-#include "mozilla/UniquePtr.h"
-#include "mozilla/layers/CompositableClient.h"  // for CompositableClient
-#include "mozilla/layers/CompositorTypes.h"
-#include "mozilla/layers/ISurfaceAllocator.h"  // for ISurfaceAllocator
-#include "mozilla/layers/LayersTypes.h"        // for LayersBackend
-#include "mozilla/layers/TextureClient.h"      // for TextureClient
-#include "mozilla/layers/TextureForwarder.h"   // for TextureForwarder
-#include "nsRegion.h"                          // for nsIntRegion
-#include "mozilla/gfx/Rect.h"
-#include "nsHashKeys.h"
-#include "nsTHashtable.h"
+#include <stdint.h>  // for int32_t, uint32_t, uint64_t
+#include "mozilla/Assertions.h"  // for AssertionConditionType, MOZ_ASSERT, MOZ_ASSERT_HELPER1
+#include "mozilla/RefPtr.h"                  // for RefPtr
+#include "mozilla/TimeStamp.h"               // for TimeStamp
+#include "mozilla/layers/KnowsCompositor.h"  // for KnowsCompositor
+#include "nsRect.h"                          // for nsIntRect
+#include "nsRegion.h"                        // for nsIntRegion
+#include "nsTArray.h"                        // for nsTArray
 
 namespace mozilla {
 namespace layers {
-
 class CompositableClient;
+class CompositableHandle;
 class ImageContainer;
-class SurfaceDescriptor;
-class SurfaceDescriptorTiles;
-class ThebesBufferData;
 class PTextureChild;
+class SurfaceDescriptorTiles;
+class TextureClient;
 
 /**
  * A transaction is a set of changes that happenned on the content side, that
@@ -48,28 +41,15 @@ class PTextureChild;
  */
 class CompositableForwarder : public KnowsCompositor {
  public:
+  CompositableForwarder();
+  ~CompositableForwarder();
+
   /**
    * Setup the IPDL actor for aCompositable to be part of layers
    * transactions.
    */
   virtual void Connect(CompositableClient* aCompositable,
                        ImageContainer* aImageContainer = nullptr) = 0;
-
-  /**
-   * Tell the CompositableHost on the compositor side what TiledLayerBuffer to
-   * use for the next composition.
-   */
-  virtual void UseTiledLayerBuffer(
-      CompositableClient* aCompositable,
-      const SurfaceDescriptorTiles& aTiledDescriptor) = 0;
-
-  /**
-   * Communicate to the compositor that aRegion in the texture identified by
-   * aCompositable and aIdentifier has been updated to aThebesBuffer.
-   */
-  virtual void UpdateTextureRegion(CompositableClient* aCompositable,
-                                   const ThebesBufferData& aThebesBufferData,
-                                   const nsIntRegion& aUpdatedRegion) = 0;
 
   virtual void ReleaseCompositable(const CompositableHandle& aHandle) = 0;
   virtual bool DestroyInTransaction(PTextureChild* aTexture) = 0;
@@ -101,9 +81,6 @@ class CompositableForwarder : public KnowsCompositor {
    */
   virtual void UseTextures(CompositableClient* aCompositable,
                            const nsTArray<TimedTextureClient>& aTextures) = 0;
-  virtual void UseComponentAlphaTextures(CompositableClient* aCompositable,
-                                         TextureClient* aClientOnBlack,
-                                         TextureClient* aClientOnWhite) = 0;
 
   virtual void UpdateFwdTransactionId() = 0;
   virtual uint64_t GetFwdTransactionId() = 0;
@@ -111,10 +88,6 @@ class CompositableForwarder : public KnowsCompositor {
   virtual bool InForwarderThread() = 0;
 
   void AssertInForwarderThread() { MOZ_ASSERT(InForwarderThread()); }
-
-  static uint32_t GetMaxFileDescriptorsPerMessage();
-
-  virtual ShadowLayerForwarder* AsLayerForwarder() { return nullptr; }
 
  protected:
   nsTArray<RefPtr<TextureClient>> mTexturesToRemove;

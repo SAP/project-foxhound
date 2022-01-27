@@ -253,7 +253,14 @@ void vprintf_stderr(const char* aFmt, va_list aArgs) {
     }
   }
 
-  FILE* fp = _fdopen(_dup(2), "a");
+  // stderr is unbuffered by default so we open a new FILE (which is buffered)
+  // so that calls to printf_stderr are not as likely to get mixed together.
+  int fd = _fileno(stderr);
+  if (fd == -2) {
+    return;
+  }
+
+  FILE* fp = _fdopen(_dup(fd), "a");
   if (!fp) {
     return;
   }
@@ -290,4 +297,27 @@ void fprintf_stderr(FILE* aFile, const char* aFmt, ...) {
     vfprintf(aFile, aFmt, args);
   }
   va_end(args);
+}
+
+void print_stderr(std::stringstream& aStr) {
+#if defined(ANDROID)
+  // On Android logcat output is truncated to 1024 chars per line, and
+  // we usually use std::stringstream to build up giant multi-line gobs
+  // of output. So to avoid the truncation we find the newlines and
+  // print the lines individually.
+  std::string line;
+  while (std::getline(aStr, line)) {
+    printf_stderr("%s\n", line.c_str());
+  }
+#else
+  printf_stderr("%s", aStr.str().c_str());
+#endif
+}
+
+void fprint_stderr(FILE* aFile, std::stringstream& aStr) {
+  if (aFile == stderr) {
+    print_stderr(aStr);
+  } else {
+    fprintf_stderr(aFile, "%s", aStr.str().c_str());
+  }
 }

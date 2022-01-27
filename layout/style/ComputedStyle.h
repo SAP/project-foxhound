@@ -65,7 +65,7 @@ class ComputedStyle {
                 ServoComputedDataForgotten aComputedValues);
 
   // Returns the computed (not resolved) value of the given property.
-  void GetComputedPropertyValue(nsCSSPropertyID aId, nsAString& aOut) const {
+  void GetComputedPropertyValue(nsCSSPropertyID aId, nsACString& aOut) const {
     Servo_GetPropertyValue(this, aId, &aOut);
   }
 
@@ -116,12 +116,6 @@ class ComputedStyle {
     return mPseudoType != PseudoStyleType::NotPseudo;
   }
 
-  // Whether there are author-specified rules for padding properties.
-  // Only returns something meaningful if the appearance property is not `none`.
-  bool HasAuthorSpecifiedPadding() const {
-    return bool(Flags() & Flag::HAS_AUTHOR_SPECIFIED_PADDING);
-  }
-
   // Whether there are author-specified rules for border or background
   // properties.
   // Only returns something meaningful if the appearance property is not `none`.
@@ -152,10 +146,15 @@ class ComputedStyle {
   // only set on ComputedStyles whose pseudo is nsCSSAnonBoxes::mozText().
   bool IsTextCombined() const { return bool(Flags() & Flag::IS_TEXT_COMBINED); }
 
-  // Is this horizontal-in-vertical (tate-chu-yoko) text? This flag is
-  // only set on ComputedStyles whose pseudo is nsCSSAnonBoxes::mozText().
-  bool DependsOnFontMetrics() const {
-    return bool(Flags() & Flag::DEPENDS_ON_FONT_METRICS);
+  // Whether there's any font metric dependency coming directly from our style.
+  bool DependsOnSelfFontMetrics() const {
+    return bool(Flags() & Flag::DEPENDS_ON_SELF_FONT_METRICS);
+  }
+
+  // Whether there's any font metric dependency coming directly from our parent
+  // style.
+  bool DependsOnInheritedFontMetrics() const {
+    return bool(Flags() & Flag::DEPENDS_ON_INHERITED_FONT_METRICS);
   }
 
   // Does this ComputedStyle represent the style for a pseudo-element or
@@ -222,6 +221,9 @@ class ComputedStyle {
   }
 #include "nsStyleStructList.h"
 #undef STYLE_STRUCT
+
+  inline mozilla::StylePointerEvents PointerEvents() const;
+  inline mozilla::StyleUserSelect UserSelect() const;
 
   /**
    * Compute the style changes needed during restyling when this style

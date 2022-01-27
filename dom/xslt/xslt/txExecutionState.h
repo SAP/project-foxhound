@@ -52,7 +52,7 @@ class txLoadedDocumentsHash : public nsTHashtable<txLoadedDocumentEntry> {
  public:
   txLoadedDocumentsHash() : nsTHashtable<txLoadedDocumentEntry>(4) {}
   ~txLoadedDocumentsHash();
-  MOZ_MUST_USE nsresult init(const txXPathNode& aSource);
+  [[nodiscard]] nsresult init(const txXPathNode& aSource);
 
  private:
   friend class txExecutionState;
@@ -81,7 +81,7 @@ class txExecutionState : public txIMatchContext {
   };
 
   // Stack functions
-  nsresult pushEvalContext(txIEvalContext* aContext);
+  void pushEvalContext(txIEvalContext* aContext);
   txIEvalContext* popEvalContext();
 
   /**
@@ -91,9 +91,9 @@ class txExecutionState : public txIMatchContext {
    */
   void popAndDeleteEvalContextUntil(txIEvalContext* aContext);
 
-  nsresult pushBool(bool aBool);
+  void pushBool(bool aBool);
   bool popBool();
-  nsresult pushResultHandler(txAXMLEventHandler* aHandler);
+  void pushResultHandler(txAXMLEventHandler* aHandler);
   txAXMLEventHandler* popResultHandler();
   void pushTemplateRule(txStylesheet::ImportFrame* aFrame,
                         const txExpandedName& aMode, txParameterMap* aParams);

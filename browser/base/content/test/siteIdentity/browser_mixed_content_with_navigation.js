@@ -40,13 +40,16 @@ add_task(async function() {
 });
 
 async function run_testcase(testcase) {
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.mixed_content.upgrade_display_content", false]],
+  });
   // Test the forward and back case.
   // Start by loading an unrelated URI so that this generalizes well when the
   // testcase would otherwise first navigate to an error page, which doesn't
   // seem to work with withNewTab.
   await BrowserTestUtils.withNewTab("about:blank", async browser => {
     // Navigate to the test URI.
-    await BrowserTestUtils.loadURI(browser, testcase.uri);
+    BrowserTestUtils.loadURI(browser, testcase.uri);
     if (!testcase.expectErrorPage) {
       await BrowserTestUtils.browserLoaded(browser, false, testcase.uri);
     } else {
@@ -59,7 +62,7 @@ async function run_testcase(testcase) {
     );
 
     // Navigate to a URI that should be secure.
-    await BrowserTestUtils.loadURI(browser, kSecureURI);
+    BrowserTestUtils.loadURI(browser, kSecureURI);
     await BrowserTestUtils.browserLoaded(browser, false, kSecureURI);
     let secureIdentityMode = window.document.getElementById("identity-box")
       .className;
@@ -88,7 +91,7 @@ async function run_testcase(testcase) {
     is(secureIdentityMode, "verifiedDomain", "identity should start as secure");
 
     // Navigate to the test URI.
-    await BrowserTestUtils.loadURI(browser, testcase.uri);
+    BrowserTestUtils.loadURI(browser, testcase.uri);
     if (!testcase.expectErrorPage) {
       await BrowserTestUtils.browserLoaded(browser, false, testcase.uri);
     } else {
@@ -104,7 +107,7 @@ async function run_testcase(testcase) {
     browser.webNavigation.goBack();
     await BrowserTestUtils.browserStopped(browser, kSecureURI);
     let secureIdentityModeAgain = window.document.getElementById("identity-box")
-      .classList;
+      .className;
     is(
       secureIdentityModeAgain,
       "verifiedDomain",

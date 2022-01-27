@@ -7,7 +7,7 @@
 #ifndef DOM_SVG_SVGFEFLOODELEMENT_H_
 #define DOM_SVG_SVGFEFLOODELEMENT_H_
 
-#include "SVGFilters.h"
+#include "mozilla/dom/SVGFilters.h"
 
 nsresult NS_NewSVGFEFloodElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -44,6 +44,8 @@ class SVGFEFloodElement : public SVGFEFloodElementBase {
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+
+  virtual nsresult BindToTree(BindContext& aCtx, nsINode& aParent) override;
 
  protected:
   virtual bool ProducesSRGB() override { return true; }

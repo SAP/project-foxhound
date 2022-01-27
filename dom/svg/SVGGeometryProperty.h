@@ -127,7 +127,9 @@ float ResolveImpl(ComputedStyle const& aStyle, SVGElement* aElement,
     // https://svgwg.org/svg2-draft/embedded.html#ImageElement
 
     SVGImageFrame* imgf = do_QueryFrame(aElement->GetPrimaryFrame());
-    MOZ_ASSERT(imgf);
+    if (!imgf) {
+      return 0.f;
+    }
 
     using Other = typename Tag::CounterPart;
     auto const& valueOther = aStyle.StylePosition()->*Other::Getter;
@@ -146,7 +148,8 @@ float ResolveImpl(ComputedStyle const& aStyle, SVGElement* aElement,
 
       if (aspectRatio) {
         // Preserve aspect ratio if it's present.
-        return Other::AspectRatioRelative(aspectRatio).ApplyTo(lengthOther);
+        return Other::AspectRatioRelative(aspectRatio)
+            .ApplyToFloat(lengthOther);
       }
 
       float intrinsicLength = intrinsicImageSize.*Tag::SizeGetter;
@@ -229,14 +232,14 @@ float ResolveWith(const ComputedStyle& aStyle, const SVGElement* aElement) {
 }
 
 template <class Func>
-bool DoForComputedStyle(SVGElement* aElement, Func aFunc) {
+bool DoForComputedStyle(const SVGElement* aElement, Func aFunc) {
   if (const nsIFrame* f = aElement->GetPrimaryFrame()) {
     aFunc(f->Style());
     return true;
   }
 
   if (RefPtr<ComputedStyle> computedStyle =
-          nsComputedDOMStyle::GetComputedStyleNoFlush(aElement, nullptr)) {
+          nsComputedDOMStyle::GetComputedStyleNoFlush(aElement)) {
     aFunc(computedStyle.get());
     return true;
   }
@@ -253,17 +256,6 @@ bool DoForComputedStyle(SVGElement* aElement, Func aFunc) {
 template <class... Tags>
 bool ResolveAll(const SVGElement* aElement,
                 details::AlwaysFloat<Tags>*... aRes) {
-  if (nsIFrame const* f = aElement->GetPrimaryFrame()) {
-    SVGGEOMETRYPROPERTY_EVAL_ALL(*aRes =
-                                     ResolveWith<Tags>(*f->Style(), aElement));
-    return true;
-  }
-  return false;
-}
-
-template <class... Tags>
-bool ResolveAllAllowFallback(SVGElement* aElement,
-                             details::AlwaysFloat<Tags>*... aRes) {
   bool res = DoForComputedStyle(aElement, [&](auto const* style) {
     SVGGEOMETRYPROPERTY_EVAL_ALL(*aRes = ResolveWith<Tags>(*style, aElement));
   });

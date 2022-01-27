@@ -19,7 +19,7 @@ const SCREEN_SHARING_HEADER_ID = "sharing-warning-screen-panel-header";
 // The number of milliseconds we're willing to wait for the
 // warning panel before we decide that it's not coming.
 const WARNING_PANEL_TIMEOUT_MS = 1000;
-const CTRL_TAB_RUO_PREF = "browser.ctrlTab.recentlyUsedOrder";
+const CTRL_TAB_RUO_PREF = "browser.ctrlTab.sortByRecentlyUsed";
 
 /**
  * Common helper function that pretendToShareWindow and pretendToShareScreen
@@ -189,6 +189,10 @@ async function ensureWarning(tab) {
 }
 
 add_task(async function setup() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["privacy.webrtc.sharedTabWarning", true]],
+  });
+
   // Loads up NEW_BACKGROUND_TABS_TO_OPEN background tabs at about:blank,
   // and waits until they're fully open.
   let uris = new Array(NEW_BACKGROUND_TABS_TO_OPEN).fill("about:blank");

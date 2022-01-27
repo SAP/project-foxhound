@@ -8,8 +8,9 @@
 
 #include <inttypes.h>
 
-#include "GeckoProfiler.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "gfxPlatform.h"
+#include "nsPrintfCString.h"
 
 namespace mozilla {
 
@@ -34,7 +35,7 @@ TimeStamp ImageComposite::GetBiasedTime(const TimeStamp& aInput) const {
   }
 }
 
-void ImageComposite::UpdateBias(size_t aImageIndex) {
+void ImageComposite::UpdateBias(size_t aImageIndex, bool aFrameChanged) {
   MOZ_ASSERT(aImageIndex < ImagesCount());
 
   TimeStamp compositionTime = GetCompositionTime();
@@ -43,11 +44,21 @@ void ImageComposite::UpdateBias(size_t aImageIndex) {
                                 ? mImages[aImageIndex + 1].mTimeStamp
                                 : TimeStamp();
 
+  if (profiler_thread_is_being_profiled_for_markers() && compositedImageTime &&
+      nextImageTime) {
+    TimeDuration offsetCurrent = compositedImageTime - compositionTime;
+    TimeDuration offsetNext = nextImageTime - compositionTime;
+    nsPrintfCString str("current %.2lfms, next %.2lfms",
+                        offsetCurrent.ToMilliseconds(),
+                        offsetNext.ToMilliseconds());
+    PROFILER_MARKER_TEXT("Video frame offsets", GRAPHICS, {}, str);
+  }
+
   if (compositedImageTime.IsNull()) {
     mBias = ImageComposite::BIAS_NONE;
     return;
   }
-  TimeDuration threshold = TimeDuration::FromMilliseconds(1.0);
+  TimeDuration threshold = TimeDuration::FromMilliseconds(1.5);
   if (compositionTime - compositedImageTime < threshold &&
       compositionTime - compositedImageTime > -threshold) {
     // The chosen frame's time is very close to the composition time (probably
@@ -81,7 +92,15 @@ void ImageComposite::UpdateBias(size_t aImageIndex) {
     mBias = ImageComposite::BIAS_POSITIVE;
     return;
   }
-  mBias = ImageComposite::BIAS_NONE;
+  if (aFrameChanged) {
+    // The current and next video frames are a sufficient distance from the
+    // composition time and we can reliably pick the right frame without bias.
+    // Reset the bias.
+    // We only do this when the frame changed. Otherwise, when playing a 30fps
+    // video on a 60fps display, we'd keep resetting the bias during the "middle
+    // frames".
+    mBias = ImageComposite::BIAS_NONE;
+  }
 }
 
 int ImageComposite::ChooseImageIndex() {
@@ -92,40 +111,51 @@ int ImageComposite::ChooseImageIndex() {
   if (mImages.IsEmpty()) {
     return -1;
   }
-  TimeStamp now = GetCompositionTime();
 
-  if (now.IsNull()) {
-    // Not in a composition, so just return the last image we composited
-    // (if it's one of the current images).
-    for (uint32_t i = 0; i < mImages.Length(); ++i) {
-      if (mImages[i].mFrameID == mLastFrameID &&
-          mImages[i].mProducerID == mLastProducerID) {
-        return i;
-      }
-    }
-    return 0;
-  }
-
-  // We are inside a composition.
+  TimeStamp compositionTime = GetCompositionTime();
   auto compositionOpportunityId = GetCompositionOpportunityId();
+  if (compositionTime &&
+      compositionOpportunityId != mLastChooseImageIndexComposition) {
+    // We are inside a composition, in the first call to ChooseImageIndex during
+    // this composition.
+    // Find the newest frame whose biased timestamp is at or before
+    // `compositionTime`.
+    uint32_t imageIndex = 0;
+    while (imageIndex + 1 < mImages.Length() &&
+           mImages[imageIndex + 1].mTextureHost->IsValid() &&
+           GetBiasedTime(mImages[imageIndex + 1].mTimeStamp) <=
+               compositionTime) {
+      ++imageIndex;
+    }
 
-  // Find the newest frame whose biased timestamp is at or before `now`.
-  uint32_t result = 0;
-  while (result + 1 < mImages.Length() &&
-         GetBiasedTime(mImages[result + 1].mTimeStamp) <= now) {
-    ++result;
-  }
+    if (!mImages[imageIndex].mTextureHost->IsValid()) {
+      // Still not ready to be shown.
+      return -1;
+    }
 
-  // If ChooseImageIndex is called for the first time during this composition,
-  // call UpdateCompositedFrame.
-  if (compositionOpportunityId != mLastChooseImageIndexComposition) {
     bool wasVisibleAtPreviousComposition =
         compositionOpportunityId == mLastChooseImageIndexComposition.Next();
-    UpdateCompositedFrame(result, wasVisibleAtPreviousComposition);
+
+    bool frameChanged =
+        UpdateCompositedFrame(imageIndex, wasVisibleAtPreviousComposition);
+    UpdateBias(imageIndex, frameChanged);
+
     mLastChooseImageIndexComposition = compositionOpportunityId;
+
+    return imageIndex;
   }
 
-  return result;
+  // We've been called before during this composition, or we're not in a
+  // composition. Just return the last image we picked (if it's one of the
+  // current images).
+  for (uint32_t i = 0; i < mImages.Length(); ++i) {
+    if (mImages[i].mFrameID == mLastFrameID &&
+        mImages[i].mProducerID == mLastProducerID) {
+      return i;
+    }
+  }
+
+  return 0;
 }
 
 const ImageComposite::TimedImage* ImageComposite::ChooseImage() {
@@ -152,8 +182,7 @@ void ImageComposite::SetImages(nsTArray<TimedImage>&& aNewImages) {
     // will never be shown.
     CountSkippedFrames(&aNewImages[0]);
 
-#if MOZ_GECKO_PROFILER
-    if (profiler_can_accept_markers()) {
+    if (profiler_thread_is_being_profiled_for_markers()) {
       int len = aNewImages.Length();
       const auto& first = aNewImages[0];
       const auto& last = aNewImages.LastElement();
@@ -161,15 +190,14 @@ void ImageComposite::SetImages(nsTArray<TimedImage>&& aNewImages) {
                           ") to frameID %" PRId32 " (prod %" PRId32 ")",
                           len, len == 1 ? "image" : "images", first.mFrameID,
                           first.mProducerID, last.mFrameID, last.mProducerID);
-      AUTO_PROFILER_TEXT_MARKER_CAUSE("ImageComposite::SetImages", str,
-                                      GRAPHICS, Nothing(), nullptr);
+      PROFILER_MARKER_TEXT("ImageComposite::SetImages", GRAPHICS, {}, str);
     }
-#endif
   }
   mImages = std::move(aNewImages);
 }
 
-void ImageComposite::UpdateCompositedFrame(
+// Returns whether the frame changed.
+bool ImageComposite::UpdateCompositedFrame(
     int aImageIndex, bool aWasVisibleAtPreviousComposition) {
   MOZ_RELEASE_ASSERT(aImageIndex >= 0);
   MOZ_RELEASE_ASSERT(aImageIndex < static_cast<int>(mImages.Length()));
@@ -180,9 +208,8 @@ void ImageComposite::UpdateCompositedFrame(
   MOZ_RELEASE_ASSERT(compositionTime,
                      "Should only be called during a composition");
 
-#if MOZ_GECKO_PROFILER
   nsCString descr;
-  if (profiler_can_accept_markers()) {
+  if (profiler_thread_is_being_profiled_for_markers()) {
     nsCString relativeTimeString;
     if (image.mTimeStamp) {
       relativeTimeString.AppendPrintf(
@@ -205,12 +232,11 @@ void ImageComposite::UpdateCompositedFrame(
       descr.AppendLiteral(", no change");
     }
   }
-  AUTO_PROFILER_TEXT_MARKER_CAUSE("UpdateCompositedFrame", descr, GRAPHICS,
-                                  Nothing(), nullptr);
-#endif
+  PROFILER_MARKER_TEXT("UpdateCompositedFrame", GRAPHICS, {}, descr);
 
   if (mLastFrameID == image.mFrameID && mLastProducerID == image.mProducerID) {
-    return;
+    // The frame didn't change.
+    return false;
   }
 
   CountSkippedFrames(&image);
@@ -228,23 +254,21 @@ void ImageComposite::UpdateCompositedFrame(
 
   if (dropped > 0) {
     mDroppedFrames += dropped;
-#if MOZ_GECKO_PROFILER
-    if (profiler_can_accept_markers()) {
-      TimeStamp now = TimeStamp::Now();
+    if (profiler_thread_is_being_profiled_for_markers()) {
       const char* frameOrFrames = dropped == 1 ? "frame" : "frames";
       nsPrintfCString text("%" PRId32 " %s dropped: %" PRId32 " -> %" PRId32
                            " (producer %" PRId32 ")",
                            dropped, frameOrFrames, mLastFrameID, image.mFrameID,
                            mLastProducerID);
-      profiler_add_text_marker("Video frames dropped", text,
-                               JS::ProfilingCategoryPair::GRAPHICS, now, now);
+      PROFILER_MARKER_TEXT("Video frames dropped", GRAPHICS, {}, text);
     }
-#endif
   }
 
   mLastFrameID = image.mFrameID;
   mLastProducerID = image.mProducerID;
   mLastFrameUpdateComposition = compositionOpportunityId;
+
+  return true;
 }
 
 void ImageComposite::OnFinishRendering(int aImageIndex,
@@ -264,12 +288,6 @@ void ImageComposite::OnFinishRendering(int aImageIndex,
         mLastProducerID);
     AppendImageCompositeNotification(info);
   }
-
-  // Update mBias. This can change which frame ChooseImage(Index) would
-  // return, and we don't want to do that until we've finished compositing
-  // since callers of ChooseImage(Index) assume the same image will be chosen
-  // during a given composition.
-  UpdateBias(aImageIndex);
 }
 
 const ImageComposite::TimedImage* ImageComposite::GetImage(
@@ -329,8 +347,8 @@ void ImageComposite::CountSkippedFrames(const TimedImage* aImage) {
 }
 
 void ImageComposite::DetectTimeStampJitter(const TimedImage* aNewImage) {
-#if MOZ_GECKO_PROFILER
-  if (!profiler_can_accept_markers() || aNewImage->mTimeStamp.IsNull()) {
+  if (!profiler_thread_is_being_profiled_for_markers() ||
+      aNewImage->mTimeStamp.IsNull()) {
     return;
   }
 
@@ -351,12 +369,9 @@ void ImageComposite::DetectTimeStampJitter(const TimedImage* aNewImage) {
     }
   }
   if (jitter) {
-    TimeStamp now = TimeStamp::Now();
     nsPrintfCString text("%.2lfms", jitter->ToMilliseconds());
-    profiler_add_text_marker("VideoFrameTimeStampJitter", text,
-                             JS::ProfilingCategoryPair::GRAPHICS, now, now);
+    PROFILER_MARKER_TEXT("VideoFrameTimeStampJitter", GRAPHICS, {}, text);
   }
-#endif
 }
 
 }  // namespace layers

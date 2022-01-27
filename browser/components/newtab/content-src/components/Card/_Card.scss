@@ -1,19 +1,28 @@
+@use 'sass:math';
+
 .card-outer {
   @include context-menu-button;
-  background: var(--newtab-card-background-color);
-  border-radius: $border-radius;
+  background: var(--newtab-background-color-secondary);
+  border-radius: $border-radius-new;
   display: inline-block;
   height: $card-height;
   margin-inline-end: $base-gutter;
   position: relative;
   width: 100%;
 
+  &:is(:focus):not(.placeholder) {
+    @include ds-focus;
+
+    transition: none;
+  }
+
+  &:hover {
+    box-shadow: none;
+    transition: none;
+  }
+
   &.placeholder {
     background: transparent;
-
-    .card {
-      box-shadow: inset $inner-box-shadow;
-    }
 
     .card-preview-image-outer,
     .card-context {
@@ -22,8 +31,8 @@
   }
 
   .card {
-    border-radius: $border-radius;
-    box-shadow: var(--newtab-card-shadow);
+    border-radius: $border-radius-new;
+    box-shadow: $shadow-card;
     height: 100%;
   }
 
@@ -35,24 +44,29 @@
     position: absolute;
     width: 100%;
 
-    &:-moz-any(.active, :focus) {
+    &:is(:focus) {
+      .card {
+        @include ds-focus;
+      }
+    }
+
+    &:is(.active, :focus) {
       .card {
         @include fade-in-card;
       }
 
       .card-title {
-        color: var(--newtab-link-primary-color);
+        color: var(--newtab-primary-action-background);
       }
     }
   }
 
-  &:-moz-any(:hover, :focus, .active):not(.placeholder) {
-    @include fade-in-card;
+  &:is(:hover, :focus, .active):not(.placeholder) {
     @include context-menu-button-hover;
     outline: none;
 
     .card-title {
-      color: var(--newtab-link-primary-color);
+      color: var(--newtab-primary-action-background);
     }
 
     .alternate ~ .card-host-name {
@@ -65,15 +79,11 @@
   }
 
   .card-preview-image-outer {
-    background-color: $grey-30;
-    border-radius: $border-radius $border-radius 0 0;
+    background-color: var(--newtab-element-secondary-color);
+    border-radius: $border-radius-new $border-radius-new 0 0;
     height: $card-preview-image-height;
     overflow: hidden;
     position: relative;
-
-    [lwt-newtab-brighttext] & {
-      background-color: $grey-60;
-    }
 
     &::after {
       border-bottom: 1px solid var(--newtab-card-hairline-color);
@@ -262,23 +272,24 @@
     .card-context {
       $icon-size: 16px;
       $container-size: 32px;
-      background-color: var(--newtab-card-background-color);
-      border-radius: $container-size / 2;
+      background-color: var(--newtab-background-color-secondary);
+      border-radius: math.div($container-size, 2);
       clip-path: inset(-1px -1px $container-size - ($card-height-compact - $card-preview-image-height-compact - 2 * $card-detail-vertical-spacing));
       height: $container-size;
       width: $container-size;
-      padding: ($container-size - $icon-size) / 2;
-      top: $card-preview-image-height-compact - $icon-size;
+      padding: math.div($container-size - $icon-size, 2);
+      // The -1 at the end is so both opacity borders don't overlap, which causes bug 1629483
+      top: $card-preview-image-height-compact - math.div($container-size, 2) - 1;
       inset-inline-end: 12px;
       inset-inline-start: auto;
 
       &::after {
         border: 1px solid var(--newtab-card-hairline-color);
         border-bottom: 0;
-        border-radius: ($container-size / 2) + 1 ($container-size / 2) + 1 0 0;
+        border-radius: math.div($container-size, 2) + 1 math.div($container-size, 2) + 1 0 0;
         content: '';
         position: absolute;
-        height: ($container-size + 2) / 2;
+        height: math.div($container-size + 2, 2);
         width: $container-size + 2;
         top: -1px;
         left: -1px;

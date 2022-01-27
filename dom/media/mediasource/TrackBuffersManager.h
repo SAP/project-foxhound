@@ -227,6 +227,14 @@ class TrackBuffersManager final
   void AppendDataToCurrentInputBuffer(const MediaSpan& aData);
 
   RefPtr<MediaByteBuffer> mInitData;
+
+  // Checks if a new set of init data is a repeat of the last set of init data
+  // received. Because streams may retransmit the same init data (or
+  // functionally equivalent init data) we do not want to perform costly
+  // operations each time we receive init data, only when it's actually
+  // different data.
+  bool IsRepeatInitData(const MediaInfo& aNewMediaInfo) const;
+
   // Temporary input buffer to handle partial media segment header.
   // We store the current input buffer content into it should we need to
   // reinitialize the demuxer once we have some samples and a discontinuity is
@@ -266,7 +274,7 @@ class TrackBuffersManager final
 
   struct TrackData {
     TrackData() : mNumTracks(0), mNeedRandomAccessPoint(true), mSizeBuffer(0) {}
-    uint32_t mNumTracks;
+    Atomic<uint32_t> mNumTracks;
     // Definition of variables:
     // https://w3c.github.io/media-source/#track-buffers
     // Last decode timestamp variable that stores the decode timestamp of the

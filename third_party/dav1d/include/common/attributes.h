@@ -31,6 +31,15 @@
 #include "config.h"
 
 #include <stddef.h>
+#include <assert.h>
+
+#ifndef __has_attribute
+#define __has_attribute(x) 0
+#endif
+
+#ifndef __has_feature
+#define __has_feature(x) 0
+#endif
 
 #ifdef __GNUC__
 #define ATTR_ALIAS __attribute__((may_alias))
@@ -92,9 +101,11 @@
  */
 #ifdef _MSC_VER
 #define NOINLINE __declspec(noinline)
-#else /* !_MSC_VER */
+#elif __has_attribute(noclone)
+#define NOINLINE __attribute__((noinline, noclone))
+#else
 #define NOINLINE __attribute__((noinline))
-#endif /* !_MSC_VER */
+#endif
 
 #ifdef __clang__
 #define NO_SANITIZE(x) __attribute__((no_sanitize(x)))
@@ -103,11 +114,11 @@
 #endif
 
 #if defined(NDEBUG) && (defined(__GNUC__) || defined(__clang__))
+#undef assert
 #define assert(x) do { if (!(x)) __builtin_unreachable(); } while (0)
 #elif defined(NDEBUG) && defined(_MSC_VER)
+#undef assert
 #define assert __assume
-#else
-#include <assert.h>
 #endif
 
 #if defined(__GNUC__) && !defined(__INTEL_COMPILER) && !defined(__clang__)
@@ -116,8 +127,8 @@
 #    define dav1d_uninit(x) x
 #endif
 
- #ifdef _MSC_VER
- #include <intrin.h>
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
 
 static inline int ctz(const unsigned int mask) {
     unsigned long idx;
@@ -159,8 +170,18 @@ static inline int clzll(const unsigned long long mask) {
 }
 #endif /* !_MSC_VER */
 
-#ifndef __has_feature
-#define __has_feature(x) 0
+#ifndef static_assert
+#define CHECK_OFFSET(type, field, name) \
+    struct check_##type##_##field { int x[(name == offsetof(type, field)) ? 1 : -1]; }
+#else
+#define CHECK_OFFSET(type, field, name) \
+    static_assert(name == offsetof(type, field), #field)
+#endif
+
+#ifdef _MSC_VER
+#define PACKED(...) __pragma(pack(push, 1)) __VA_ARGS__ __pragma(pack(pop))
+#else
+#define PACKED(...) __VA_ARGS__ __attribute__((__packed__))
 #endif
 
 #endif /* DAV1D_COMMON_ATTRIBUTES_H */

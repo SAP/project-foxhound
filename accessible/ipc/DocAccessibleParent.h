@@ -9,8 +9,8 @@
 
 #include "nsAccessibilityService.h"
 #include "mozilla/a11y/PDocAccessibleParent.h"
-#include "mozilla/a11y/ProxyAccessible.h"
-#include "mozilla/Tuple.h"
+#include "mozilla/a11y/RemoteAccessible.h"
+#include "mozilla/dom/BrowserBridgeParent.h"
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
 #include "nsISupportsImpl.h"
@@ -28,24 +28,28 @@ class DocAccessiblePlatformExtParent;
  * These objects live in the main process and comunicate with and represent
  * an accessible document in a content process.
  */
-class DocAccessibleParent : public ProxyAccessible,
+class DocAccessibleParent : public RemoteAccessible,
                             public PDocAccessibleParent {
  public:
   NS_INLINE_DECL_REFCOUNTING(DocAccessibleParent);
 
   DocAccessibleParent()
-      : ProxyAccessible(this),
+      : RemoteAccessible(this),
         mParentDoc(kNoParentDoc),
 #if defined(XP_WIN)
         mEmulatedWindowHandle(nullptr),
 #endif  // defined(XP_WIN)
         mTopLevel(false),
         mTopLevelInContentProcess(false),
-        mShutdown(false) {
+        mShutdown(false),
+        mFocus(0),
+        mCaretId(0),
+        mCaretOffset(-1),
+        mIsCaretAtEndOfLine(false) {
     sMaxDocID++;
     mActorID = sMaxDocID;
     MOZ_ASSERT(!LiveDocs().Get(mActorID));
-    LiveDocs().Put(mActorID, this);
+    LiveDocs().InsertOrUpdate(mActorID, this);
   }
 
   /**
@@ -102,7 +106,8 @@ class DocAccessibleParent : public ProxyAccessible,
 #if defined(XP_WIN)
       const LayoutDeviceIntRect& aCaretRect,
 #endif
-      const int32_t& aOffset, const bool& aIsSelectionCollapsed) final;
+      const int32_t& aOffset, const bool& aIsSelectionCollapsed,
+      const bool& aIsAtEndOfLine) final;
 
   virtual mozilla::ipc::IPCResult RecvTextChangeEvent(
       const uint64_t& aID, const nsString& aStr, const int32_t& aStart,
@@ -135,6 +140,10 @@ class DocAccessibleParent : public ProxyAccessible,
       const uint64_t& aID, const uint64_t& aType, const uint32_t& aScrollX,
       const uint32_t& aScrollY, const uint32_t& aMaxScrollX,
       const uint32_t& aMaxScrollY) override;
+
+  virtual mozilla::ipc::IPCResult RecvCache(
+      const mozilla::a11y::CacheUpdateType& aUpdateType,
+      nsTArray<CacheData>&& aData, const bool& aFinal) override;
 
 #if !defined(XP_WIN)
   virtual mozilla::ipc::IPCResult RecvAnnouncementEvent(
@@ -172,29 +181,42 @@ class DocAccessibleParent : public ProxyAccessible,
   DocAccessibleParent* ParentDoc() const;
   static const uint64_t kNoParentDoc = UINT64_MAX;
 
-  /*
+  /**
    * Called when a document in a content process notifies the main process of a
    * new child document.
+   * Although this is called internally for OOP child documents, these should be
+   * added via the BrowserBridgeParent version of this method, as the parent id
+   * might not exist yet in that case.
    */
   ipc::IPCResult AddChildDoc(DocAccessibleParent* aChildDoc, uint64_t aParentID,
                              bool aCreating = true);
+
+  /**
+   * Called when a document in a content process notifies the main process of a
+   * new OOP child document.
+   */
+  ipc::IPCResult AddChildDoc(dom::BrowserBridgeParent* aBridge);
+
+  void RemovePendingOOPChildDoc(dom::BrowserBridgeParent* aBridge) {
+    mPendingOOPChildDocs.Remove(aBridge);
+  }
 
   /*
    * Called when the document in the content process this object represents
    * notifies the main process a child document has been removed.
    */
   void RemoveChildDoc(DocAccessibleParent* aChildDoc) {
-    ProxyAccessible* parent = aChildDoc->Parent();
+    RemoteAccessible* parent = aChildDoc->RemoteParent();
     MOZ_ASSERT(parent);
     if (parent) {
-      aChildDoc->Parent()->ClearChildDoc(aChildDoc);
+      aChildDoc->RemoteParent()->ClearChildDoc(aChildDoc);
     }
     DebugOnly<bool> result = mChildDocs.RemoveElement(aChildDoc->mActorID);
     aChildDoc->mParentDoc = kNoParentDoc;
     MOZ_ASSERT(result);
   }
 
-  void RemoveAccessible(ProxyAccessible* aAccessible) {
+  void RemoveAccessible(RemoteAccessible* aAccessible) {
     MOZ_DIAGNOSTIC_ASSERT(mAccessibles.GetEntry(aAccessible->ID()));
     mAccessibles.RemoveEntry(aAccessible->ID());
   }
@@ -202,14 +224,14 @@ class DocAccessibleParent : public ProxyAccessible,
   /**
    * Return the accessible for given id.
    */
-  ProxyAccessible* GetAccessible(uintptr_t aID) {
+  RemoteAccessible* GetAccessible(uintptr_t aID) {
     if (!aID) return this;
 
     ProxyEntry* e = mAccessibles.GetEntry(aID);
     return e ? e->mProxy : nullptr;
   }
 
-  const ProxyAccessible* GetAccessible(uintptr_t aID) const {
+  const RemoteAccessible* GetAccessible(uintptr_t aID) const {
     return const_cast<DocAccessibleParent*>(this)->GetAccessible(aID);
   }
 
@@ -229,13 +251,9 @@ class DocAccessibleParent : public ProxyAccessible,
    * DocAccessibleParent or vice versa. Therefore, this must be conditionally
    * called when either of these is created.
    * @param aOuterDoc The OuterDocAccessible to be returned as the parent of
-   *        this document. Only GetNativeInterface() is called on this, so it
-   *        may be a ProxyAccessibleWrap or similar.
+   *        this document.
    */
   void SendParentCOMProxy(Accessible* aOuterDoc);
-
-  virtual mozilla::ipc::IPCResult RecvGetWindowedPluginIAccessible(
-      const WindowsHandle& aHwnd, IAccessibleHolder* aPluginCOMProxy) override;
 
   /**
    * Set emulated native window handle for a document.
@@ -258,12 +276,40 @@ class DocAccessibleParent : public ProxyAccessible,
   DocAccessiblePlatformExtParent* GetPlatformExtension();
 #endif
 
+  // Accessible
+  virtual int32_t IndexInParent() const override {
+    if (IsTopLevel() && OuterDocOfRemoteBrowser()) {
+      // An OuterDoc can only have 1 child.
+      return 0;
+    }
+    return RemoteAccessible::IndexInParent();
+  }
+
   /**
-   * If this is an iframe document rendered in a different process to its
-   * embedder, return the DocAccessibleParent and id for the embedder
-   * accessible. Otherwise, return null and 0.
+   * Get the focused Accessible in this document, if any.
    */
-  Tuple<DocAccessibleParent*, uint64_t> GetRemoteEmbedder();
+  RemoteAccessible* GetFocusedAcc() const {
+    return const_cast<DocAccessibleParent*>(this)->GetAccessible(mFocus);
+  }
+
+  /**
+   * Get the HyperText Accessible containing the caret and the offset of the
+   * caret within. If there is no caret in this document, returns
+   * {nullptr, -1}.
+   */
+  std::pair<RemoteAccessible*, int32_t> GetCaret() const {
+    if (mCaretOffset == -1) {
+      return {nullptr, -1};
+    }
+    RemoteAccessible* acc =
+        const_cast<DocAccessibleParent*>(this)->GetAccessible(mCaretId);
+    if (!acc) {
+      return {nullptr, -1};
+    }
+    return {acc, mCaretOffset};
+  }
+
+  bool IsCaretAtEndOfLine() const { return mIsCaretAtEndOfLine; }
 
  private:
   ~DocAccessibleParent() {
@@ -293,14 +339,14 @@ class DocAccessibleParent : public ProxyAccessible,
 
     enum { ALLOW_MEMMOVE = true };
 
-    ProxyAccessible* mProxy;
+    RemoteAccessible* mProxy;
   };
 
-  uint32_t AddSubtree(ProxyAccessible* aParent,
+  uint32_t AddSubtree(RemoteAccessible* aParent,
                       const nsTArray<AccessibleData>& aNewTree, uint32_t aIdx,
                       uint32_t aIdxInParent);
   [[nodiscard]] bool CheckDocTree() const;
-  xpcAccessibleGeneric* GetXPCAccessible(ProxyAccessible* aProxy);
+  xpcAccessibleGeneric* GetXPCAccessible(RemoteAccessible* aProxy);
 
   nsTArray<uint64_t> mChildDocs;
   uint64_t mParentDoc;
@@ -326,18 +372,16 @@ class DocAccessibleParent : public ProxyAccessible,
   bool mTopLevelInContentProcess;
   bool mShutdown;
 
-  struct PendingChildDoc {
-    PendingChildDoc(DocAccessibleParent* aChildDoc, uint64_t aParentID)
-        : mChildDoc(aChildDoc), mParentID(aParentID) {}
-    RefPtr<DocAccessibleParent> mChildDoc;
-    uint64_t mParentID;
-  };
-  // We use nsTArray because there will be very few entries.
-  nsTArray<PendingChildDoc> mPendingChildDocs;
+  nsTHashSet<RefPtr<dom::BrowserBridgeParent>> mPendingOOPChildDocs;
+
+  uint64_t mFocus;
+  uint64_t mCaretId;
+  int32_t mCaretOffset;
+  bool mIsCaretAtEndOfLine;
 
   static uint64_t sMaxDocID;
-  static nsDataHashtable<nsUint64HashKey, DocAccessibleParent*>& LiveDocs() {
-    static nsDataHashtable<nsUint64HashKey, DocAccessibleParent*> sLiveDocs;
+  static nsTHashMap<nsUint64HashKey, DocAccessibleParent*>& LiveDocs() {
+    static nsTHashMap<nsUint64HashKey, DocAccessibleParent*> sLiveDocs;
     return sLiveDocs;
   }
 };

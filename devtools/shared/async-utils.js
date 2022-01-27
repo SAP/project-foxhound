@@ -5,12 +5,10 @@
 "use strict";
 
 /**
- * Helpers for async functions. Async functions are generator functions that are
- * run by Tasks. An async function returns a Promise for the resolution of the
- * function. When the function returns, the promise is resolved with the
- * returned value. If it throws the promise rejects with the thrown error.
- *
- * See Task documentation at https://developer.mozilla.org/en-US/docs/Mozilla/JavaScript_code_modules/Task.jsm.
+ * Helpers for async functions. An async function returns a Promise for the
+ * resolution of the function. When the function returns, the promise is
+ * resolved with the returned value. If it throws the promise rejects with
+ * the thrown error.
  */
 
 /**
@@ -49,9 +47,15 @@ const SWALLOWED_RET = Symbol("swallowed");
  * @param  {Function} shouldSwallow
  *         Function that will run when an error is caught. If it returns true,
  *         the error will be swallowed. Otherwise, it will bubble up.
+ * @param {Mixed} retValue
+ *         Optional value to return when an error is caught and is swallowed.
  * @return {Function} The wrapped method.
  */
-exports.safeAsyncMethod = function(asyncFn, shouldSwallow) {
+exports.safeAsyncMethod = function(
+  asyncFn,
+  shouldSwallow,
+  retValue = SWALLOWED_RET
+) {
   return async function(...args) {
     try {
       const ret = await asyncFn(...args);
@@ -59,7 +63,7 @@ exports.safeAsyncMethod = function(asyncFn, shouldSwallow) {
     } catch (e) {
       if (shouldSwallow()) {
         console.warn("Async method failed in safeAsyncMethod", e);
-        return SWALLOWED_RET;
+        return retValue;
       }
       throw e;
     }

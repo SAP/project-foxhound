@@ -6,6 +6,7 @@
 #ifndef __nsLookAndFeel
 #define __nsLookAndFeel
 
+#include <bitset>
 #include <windows.h>
 
 #include "nsXPLookAndFeel.h"
@@ -51,16 +52,12 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
 
   void NativeInit() final;
   void RefreshImpl() override;
-  nsresult NativeGetColor(ColorID aID, nscolor& aResult) override;
-  nsresult GetIntImpl(IntID aID, int32_t& aResult) override;
-  nsresult GetFloatImpl(FloatID aID, float& aResult) override;
-  bool GetFontImpl(FontID aID, nsString& aFontName,
-                   gfxFontStyle& aFontStyle) override;
+  nsresult NativeGetInt(IntID, int32_t& aResult) override;
+  nsresult NativeGetFloat(FloatID, float& aResult) override;
+  nsresult NativeGetColor(ColorID, ColorScheme, nscolor& aResult) override;
+  bool NativeGetFont(FontID aID, nsString& aFontName,
+                     gfxFontStyle& aFontStyle) override;
   char16_t GetPasswordCharacterImpl() override;
-
-  nsTArray<LookAndFeelInt> GetIntCacheImpl() override;
-  void SetIntCacheImpl(
-      const nsTArray<LookAndFeelInt>& aLookAndFeelIntCache) override;
 
  private:
   /**
@@ -81,12 +78,10 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
 
   nscolor GetColorForSysColorIndex(int index);
 
-  // Content process cached values that get shipped over from the browser
-  // process.
-  int32_t mUseAccessibilityTheme;
-  int32_t mUseDefaultTheme;  // is the current theme a known default?
-  int32_t mNativeThemeId;    // see LookAndFeel enum 'WindowsTheme'
-  int32_t mCaretBlinkTime;
+  LookAndFeelFont GetLookAndFeelFontInternal(const LOGFONTW& aLogFont,
+                                             bool aUseShellDlg);
+
+  LookAndFeelFont GetLookAndFeelFont(LookAndFeel::FontID anID);
 
   // Cached colors and flags indicating success in their retrieval.
   nscolor mColorMenuHoverText;
@@ -105,19 +100,6 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
   bool mInitialized;
 
   void EnsureInit();
-
-  struct CachedSystemFont {
-    CachedSystemFont() : mCacheValid(false) {}
-
-    bool mCacheValid;
-    bool mHaveFont;
-    nsString mFontName;
-    gfxFontStyle mFontStyle;
-  };
-
-  mozilla::RangedArray<CachedSystemFont, size_t(FontID::MINIMUM),
-                       size_t(FontID::MAXIMUM) + 1 - size_t(FontID::MINIMUM)>
-      mSystemFontCache;
 
   nsCOMPtr<nsIWindowsRegKey> mDwmKey;
 };

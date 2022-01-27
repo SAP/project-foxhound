@@ -31,12 +31,11 @@ if not get_option('enable_tests')
     subdir_done()
 endif
 
-libdav1d_nasm_objs_if_needed = []
-
 if is_asm_enabled
     checkasm_sources = files(
         'checkasm/checkasm.c',
         'checkasm/msac.c',
+        'checkasm/refmvs.c',
     )
 
     checkasm_tmpl_sources = files(
@@ -59,28 +58,28 @@ if is_asm_enabled
             install: false,
             build_by_default: false,
         )
-        checkasm_bitdepth_objs += checkasm_bitdepth_lib.extract_all_objects()
+        checkasm_bitdepth_objs += checkasm_bitdepth_lib.extract_all_objects(recursive: true)
     endforeach
 
-    checkasm_nasm_objs = []
-    if host_machine.cpu_family() == 'aarch64'
-        checkasm_sources += files('checkasm/arm/checkasm_64.S')
+    checkasm_asm_objs = []
+    checkasm_asm_sources = []
+    if host_machine.cpu_family() == 'aarch64' or host_machine.cpu() == 'arm64'
+        checkasm_asm_sources += files('checkasm/arm/checkasm_64.S')
     elif host_machine.cpu_family().startswith('arm')
-        checkasm_sources += files('checkasm/arm/checkasm_32.S')
+        checkasm_asm_sources += files('checkasm/arm/checkasm_32.S')
     elif host_machine.cpu_family().startswith('x86')
-        checkasm_nasm_objs = nasm_gen.process(files('checkasm/x86/checkasm.asm'))
+        checkasm_asm_objs += nasm_gen.process(files('checkasm/x86/checkasm.asm'))
     endif
 
-    m_lib = cc.find_library('m', required: false)
-
-    if meson.version().version_compare('< 0.48.999')
-        libdav1d_nasm_objs_if_needed = libdav1d_nasm_objs
+    if use_gaspp
+        checkasm_asm_objs += gaspp_gen.process(checkasm_asm_sources)
+    else
+        checkasm_sources += checkasm_asm_sources
     endif
 
     checkasm = executable('checkasm',
         checkasm_sources,
-        checkasm_nasm_objs,
-        libdav1d_nasm_objs_if_needed,
+        checkasm_asm_objs,
 
         objects: [
             checkasm_bitdepth_objs,
@@ -94,16 +93,57 @@ if is_asm_enabled
             thread_dependency,
             rt_dependency,
             libdl_dependency,
-            m_lib,
+            libm_dependency,
             ],
         )
 
-    test('checkasm', checkasm, is_parallel: false)
+    test('checkasm', checkasm, suite: 'checkasm', timeout: 180, is_parallel: false)
+    benchmark('checkasm', checkasm, suite: 'checkasm', timeout: 3600, args: '--bench')
 endif
 
+c99_extension_flag = cc.first_supported_argument(
+    '-Werror=c11-extensions',
+    '-Werror=c99-c11-compat',
+    '-Wc11-extensions',
+    '-Wc99-c11-compat',
+)
+
+# dav1d_api_headers
+foreach header : dav1d_api_headers
+    target = header + '_test'
+
+    header_test_exe = executable(target,
+        'header_test.c',
+        include_directories: dav1d_inc_dirs,
+        c_args: ['-DDAV1D_TEST_HEADER="@0@"'.format(header), c99_extension_flag],
+        build_by_default: true
+    )
+
+    test(target, header_test_exe, suite: 'headers')
+endforeach
+
+
 # fuzzing binaries
-if meson.version().version_compare('>=0.49')
-    subdir('libfuzzer')
+subdir('libfuzzer')
+
+# seek stress test binary, depends on dav1d cli tool
+if get_option('enable_tools')
+    seek_stress_sources = files('seek_stress.c')
+    seek_stress = executable('seek_stress',
+        seek_stress_sources, rev_target,
+        objects: [
+            dav1d.extract_objects('dav1d_cli_parse.c'),
+            dav1d_input_objs.extract_objects('input/input.c', 'input/ivf.c'),
+        ],
+        include_directories: [dav1d_inc_dirs, include_directories('../tools')],
+        link_with: libdav1d,
+        dependencies: [
+            thread_dependency,
+            rt_dependency,
+            getopt_dependency,
+            libm_dependency,
+        ],
+    )
 endif
 
 # Include dav1d test data repository with additional tests

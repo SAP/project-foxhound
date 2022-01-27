@@ -17,7 +17,9 @@
 #include "jsnum.h"
 
 #include "builtin/Array.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "util/StringBuffer.h"
+#include "vm/PlainObject.h"  // js::NewPlainObjectWithProperties
 #include "vm/Realm.h"
 
 #include "vm/NativeObject-inl.h"
@@ -605,7 +607,7 @@ inline bool JSONParserBase::finishObject(MutableHandleValue vp,
                                          PropertyVector& properties) {
   MOZ_ASSERT(&properties == &stack.back().properties());
 
-  JSObject* obj = ObjectGroup::newPlainObject(
+  JSObject* obj = NewPlainObjectWithProperties(
       cx, properties.begin(), properties.length(), GenericObject);
   if (!obj) {
     return false;
@@ -616,15 +618,6 @@ inline bool JSONParserBase::finishObject(MutableHandleValue vp,
     return false;
   }
   stack.popBack();
-
-  if (!stack.empty() && stack.back().state == FinishArrayElement) {
-    const ElementVector& elements = stack.back().elements();
-    if (!CombinePlainObjectPropertyTypes(cx, obj, elements.begin(),
-                                         elements.length())) {
-      return false;
-    }
-  }
-
   return true;
 }
 
@@ -632,8 +625,8 @@ inline bool JSONParserBase::finishArray(MutableHandleValue vp,
                                         ElementVector& elements) {
   MOZ_ASSERT(&elements == &stack.back().elements());
 
-  ArrayObject* obj = ObjectGroup::newArrayObject(
-      cx, elements.begin(), elements.length(), GenericObject);
+  ArrayObject* obj =
+      NewDenseCopiedArray(cx, elements.length(), elements.begin());
   if (!obj) {
     return false;
   }
@@ -643,15 +636,6 @@ inline bool JSONParserBase::finishArray(MutableHandleValue vp,
     return false;
   }
   stack.popBack();
-
-  if (!stack.empty() && stack.back().state == FinishArrayElement) {
-    const ElementVector& elements = stack.back().elements();
-    if (!CombineArrayElementTypes(cx, obj, elements.begin(),
-                                  elements.length())) {
-      return false;
-    }
-  }
-
   return true;
 }
 

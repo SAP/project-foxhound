@@ -6,20 +6,17 @@
 
 #include "vm/GeckoProfiler-inl.h"
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Sprintf.h"
 
 #include "jsnum.h"
 
 #include "gc/GC.h"
 #include "gc/PublicIterators.h"
-#include "jit/BaselineFrame.h"
 #include "jit/BaselineJIT.h"
 #include "jit/JitcodeMap.h"
-#include "jit/JitFrames.h"
-#include "jit/JitRealm.h"
+#include "jit/JitRuntime.h"
 #include "jit/JSJitFrameIter.h"
+#include "js/ProfilingStack.h"
 #include "js/TraceLoggerAPI.h"
 #include "util/StringBuffer.h"
 #include "vm/FrameIter.h"  // js::OnlyJSJitFrameIter
@@ -29,8 +26,6 @@
 #include "vm/JSScript-inl.h"
 
 using namespace js;
-
-using mozilla::DebugOnly;
 
 GeckoProfilerThread::GeckoProfilerThread()
     : profilingStack_(nullptr), profilingStackIfEnabled_(nullptr) {}
@@ -50,7 +45,8 @@ void GeckoProfilerThread::setProfilingStack(ProfilingStack* profilingStack,
   profilingStackIfEnabled_ = enabled ? profilingStack : nullptr;
 }
 
-void GeckoProfilerRuntime::setEventMarker(void (*fn)(const char*)) {
+void GeckoProfilerRuntime::setEventMarker(void (*fn)(const char*,
+                                                     const char*)) {
   eventMarker_ = fn;
 }
 
@@ -196,11 +192,11 @@ void GeckoProfilerRuntime::onScriptFinalized(BaseScript* script) {
   }
 }
 
-void GeckoProfilerRuntime::markEvent(const char* event) {
+void GeckoProfilerRuntime::markEvent(const char* event, const char* details) {
   MOZ_ASSERT(enabled());
   if (eventMarker_) {
     JS::AutoSuppressGCAnalysis nogc;
-    eventMarker_(event);
+    eventMarker_(event, details);
   }
 }
 
@@ -405,10 +401,8 @@ void ProfilingStackFrame::trace(JSTracer* trc) {
 }
 
 GeckoProfilerBaselineOSRMarker::GeckoProfilerBaselineOSRMarker(
-    JSContext* cx,
-    bool hasProfilerFrame MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
+    JSContext* cx, bool hasProfilerFrame)
     : profiler(&cx->geckoProfiler()) {
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   if (!hasProfilerFrame || !cx->runtime()->geckoProfiler().enabled()) {
     profiler = nullptr;
     return;
@@ -465,7 +459,12 @@ JS_PUBLIC_API JSScript* ProfilingStackFrame::script() const {
   return script;
 }
 
-JS_FRIEND_API jsbytecode* ProfilingStackFrame::pc() const {
+JS_PUBLIC_API JSFunction* ProfilingStackFrame::function() const {
+  JSScript* script = this->script();
+  return script ? script->function() : nullptr;
+}
+
+JS_PUBLIC_API jsbytecode* ProfilingStackFrame::pc() const {
   MOZ_ASSERT(isJsFrame());
   if (pcOffsetIfJS_ == NullPCOffset) {
     return nullptr;
@@ -488,28 +487,26 @@ void ProfilingStackFrame::setPC(jsbytecode* pc) {
   pcOffsetIfJS_ = pcToOffset(script, pc);
 }
 
-JS_FRIEND_API void js::SetContextProfilingStack(
+JS_PUBLIC_API void js::SetContextProfilingStack(
     JSContext* cx, ProfilingStack* profilingStack) {
   cx->geckoProfiler().setProfilingStack(
       profilingStack, cx->runtime()->geckoProfiler().enabled());
 }
 
-JS_FRIEND_API void js::EnableContextProfilingStack(JSContext* cx,
+JS_PUBLIC_API void js::EnableContextProfilingStack(JSContext* cx,
                                                    bool enabled) {
   cx->geckoProfiler().enable(enabled);
   cx->runtime()->geckoProfiler().enable(enabled);
 }
 
-JS_FRIEND_API void js::RegisterContextProfilingEventMarker(
-    JSContext* cx, void (*fn)(const char*)) {
+JS_PUBLIC_API void js::RegisterContextProfilingEventMarker(
+    JSContext* cx, void (*fn)(const char*, const char*)) {
   MOZ_ASSERT(cx->runtime()->geckoProfiler().enabled());
   cx->runtime()->geckoProfiler().setEventMarker(fn);
 }
 
-AutoSuppressProfilerSampling::AutoSuppressProfilerSampling(
-    JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
+AutoSuppressProfilerSampling::AutoSuppressProfilerSampling(JSContext* cx)
     : cx_(cx), previouslyEnabled_(cx->isProfilerSamplingEnabled()) {
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   if (previouslyEnabled_) {
     cx_->disableProfilerSampling();
   }
@@ -562,7 +559,7 @@ const ProfilingCategoryPairInfo sProfilingCategoryPairInfo[] = {
 
 // clang-format on
 
-JS_FRIEND_API const ProfilingCategoryPairInfo& GetProfilingCategoryPairInfo(
+JS_PUBLIC_API const ProfilingCategoryPairInfo& GetProfilingCategoryPairInfo(
     ProfilingCategoryPair aCategoryPair) {
   static_assert(
       MOZ_ARRAY_LENGTH(sProfilingCategoryPairInfo) ==

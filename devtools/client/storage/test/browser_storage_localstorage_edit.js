@@ -7,9 +7,11 @@
 "use strict";
 
 add_task(async function() {
-  await openTabAndSetupStorage(MAIN_DOMAIN + "storage-localstorage.html");
+  await openTabAndSetupStorage(
+    MAIN_DOMAIN_SECURED + "storage-localstorage.html"
+  );
 
-  await selectTreeItem(["localStorage", "http://test1.example.org"]);
+  await selectTreeItem(["localStorage", "https://test1.example.org"]);
 
   await editCell("TestLS1", "name", "newTestLS1");
   await editCell("newTestLS1", "value", "newValueLS1");
@@ -19,6 +21,4 @@ add_task(async function() {
 
   await editCell("TestLS5", "name", "newTestLS5");
   await editCell("newTestLS5", "value", "newValueLS5");
-
-  await finishTests();
 });

@@ -6,15 +6,13 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Preferences.jsm", this);
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryReportingPolicy.jsm", this);
-ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/Timer.jsm", this);
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/UpdateUtils.jsm", this);
+const { TelemetryReportingPolicy } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryReportingPolicy.jsm"
+);
+const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { UpdateUtils } = ChromeUtils.import(
+  "resource://gre/modules/UpdateUtils.jsm"
+);
 
 const TEST_CHANNEL = "TestChannelABC";
 
@@ -22,12 +20,11 @@ const PREF_MINIMUM_CHANNEL_POLICY_VERSION =
   TelemetryUtils.Preferences.MinimumPolicyVersion + ".channel-" + TEST_CHANNEL;
 
 function fakeShowPolicyTimeout(set, clear) {
-  let reportingPolicy = ChromeUtils.import(
-    "resource://gre/modules/TelemetryReportingPolicy.jsm",
-    null
+  let { Policy } = ChromeUtils.import(
+    "resource://gre/modules/TelemetryReportingPolicy.jsm"
   );
-  reportingPolicy.Policy.setShowInfobarTimeout = set;
-  reportingPolicy.Policy.clearShowInfobarTimeout = clear;
+  Policy.setShowInfobarTimeout = set;
+  Policy.clearShowInfobarTimeout = clear;
 }
 
 function fakeResetAcceptedPolicy() {
@@ -59,12 +56,14 @@ function setMinimumPolicyVersion(aNewPolicyVersion) {
 add_task(async function test_setup() {
   // Addon manager needs a profile directory
   do_get_profile(true);
-  loadAddonManager("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
+  await loadAddonManager(
+    "xpcshell@tests.mozilla.org",
+    "XPCShell",
+    "1",
+    "1.9.2"
+  );
   finishAddonManagerStartup();
   fakeIntlReady();
-
-  // Make sure SearchService is ready for it to be called.
-  await Services.search.init();
 
   // Make sure we don't generate unexpected pings due to pref changes.
   await setEmptyPrefWatchlist();
@@ -78,35 +77,44 @@ add_task(async function test_setup() {
   TelemetryReportingPolicy.setup();
 });
 
-add_task(async function test_firstRun() {
-  const FIRST_RUN_TIMEOUT_MSEC = 60 * 1000; // 60s
-  const OTHER_RUNS_TIMEOUT_MSEC = 10 * 1000; // 10s
+add_task(
+  {
+    // This tests initialises the search service, but that doesn't currently
+    // work on Android.
+    skip_if: () => AppConstants.platform == "android",
+  },
+  async function test_firstRun() {
+    await Services.search.init();
 
-  Preferences.reset(TelemetryUtils.Preferences.FirstRun);
+    const FIRST_RUN_TIMEOUT_MSEC = 60 * 1000; // 60s
+    const OTHER_RUNS_TIMEOUT_MSEC = 10 * 1000; // 10s
 
-  let startupTimeout = 0;
-  fakeShowPolicyTimeout(
-    (callback, timeout) => (startupTimeout = timeout),
-    () => {}
-  );
-  TelemetryReportingPolicy.reset();
+    Preferences.reset(TelemetryUtils.Preferences.FirstRun);
 
-  Services.obs.notifyObservers(null, "sessionstore-windows-restored");
-  Assert.equal(
-    startupTimeout,
-    FIRST_RUN_TIMEOUT_MSEC,
-    "The infobar display timeout should be 60s on the first run."
-  );
+    let startupTimeout = 0;
+    fakeShowPolicyTimeout(
+      (callback, timeout) => (startupTimeout = timeout),
+      () => {}
+    );
+    TelemetryReportingPolicy.reset();
 
-  // Run again, and check that we actually wait only 10 seconds.
-  TelemetryReportingPolicy.reset();
-  Services.obs.notifyObservers(null, "sessionstore-windows-restored");
-  Assert.equal(
-    startupTimeout,
-    OTHER_RUNS_TIMEOUT_MSEC,
-    "The infobar display timeout should be 10s on other runs."
-  );
-});
+    Services.obs.notifyObservers(null, "sessionstore-windows-restored");
+    Assert.equal(
+      startupTimeout,
+      FIRST_RUN_TIMEOUT_MSEC,
+      "The infobar display timeout should be 60s on the first run."
+    );
+
+    // Run again, and check that we actually wait only 10 seconds.
+    TelemetryReportingPolicy.reset();
+    Services.obs.notifyObservers(null, "sessionstore-windows-restored");
+    Assert.equal(
+      startupTimeout,
+      OTHER_RUNS_TIMEOUT_MSEC,
+      "The infobar display timeout should be 10s on other runs."
+    );
+  }
+);
 
 add_task(async function test_prefs() {
   TelemetryReportingPolicy.reset();

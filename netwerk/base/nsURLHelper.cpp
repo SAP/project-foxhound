@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsURLHelper.h"
+
+#include "mozilla/Encoding.h"
 #include "mozilla/RangedPtr.h"
 #include "mozilla/TextUtils.h"
 
@@ -11,7 +14,6 @@
 #include <iterator>
 
 #include "nsASCIIMask.h"
-#include "nsURLHelper.h"
 #include "nsIFile.h"
 #include "nsIURLParser.h"
 #include "nsCOMPtr.h"
@@ -22,7 +24,9 @@
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Tokenizer.h"
 #include "nsEscape.h"
+#include "nsDOMString.h"
 #include "mozilla/net/rust_helper.h"
+#include "mozilla/net/DNS.h"
 
 using namespace mozilla;
 
@@ -31,9 +35,9 @@ using namespace mozilla;
 //----------------------------------------------------------------------------
 
 static bool gInitialized = false;
-static nsIURLParser* gNoAuthURLParser = nullptr;
-static nsIURLParser* gAuthURLParser = nullptr;
-static nsIURLParser* gStdURLParser = nullptr;
+static StaticRefPtr<nsIURLParser> gNoAuthURLParser;
+static StaticRefPtr<nsIURLParser> gAuthURLParser;
+static StaticRefPtr<nsIURLParser> gStdURLParser;
 
 static void InitGlobals() {
   nsCOMPtr<nsIURLParser> parser;
@@ -41,22 +45,19 @@ static void InitGlobals() {
   parser = do_GetService(NS_NOAUTHURLPARSER_CONTRACTID);
   NS_ASSERTION(parser, "failed getting 'noauth' url parser");
   if (parser) {
-    gNoAuthURLParser = parser.get();
-    NS_ADDREF(gNoAuthURLParser);
+    gNoAuthURLParser = parser;
   }
 
   parser = do_GetService(NS_AUTHURLPARSER_CONTRACTID);
   NS_ASSERTION(parser, "failed getting 'auth' url parser");
   if (parser) {
-    gAuthURLParser = parser.get();
-    NS_ADDREF(gAuthURLParser);
+    gAuthURLParser = parser;
   }
 
   parser = do_GetService(NS_STDURLPARSER_CONTRACTID);
   NS_ASSERTION(parser, "failed getting 'std' url parser");
   if (parser) {
-    gStdURLParser = parser.get();
-    NS_ADDREF(gStdURLParser);
+    gStdURLParser = parser;
   }
 
   gInitialized = true;
@@ -64,11 +65,11 @@ static void InitGlobals() {
 
 void net_ShutdownURLHelper() {
   if (gInitialized) {
-    NS_IF_RELEASE(gNoAuthURLParser);
-    NS_IF_RELEASE(gAuthURLParser);
-    NS_IF_RELEASE(gStdURLParser);
     gInitialized = false;
   }
+  gNoAuthURLParser = nullptr;
+  gAuthURLParser = nullptr;
+  gStdURLParser = nullptr;
 }
 
 //----------------------------------------------------------------------------
@@ -183,13 +184,16 @@ nsresult net_ParseFileURL(const nsACString& inURL, nsACString& outDirectory,
                              &extensionPos, &extensionLen);
   if (NS_FAILED(rv)) return rv;
 
-  if (directoryLen > 0)
+  if (directoryLen > 0) {
     outDirectory = Substring(inURL, filepathPos + directoryPos, directoryLen);
-  if (basenameLen > 0)
+  }
+  if (basenameLen > 0) {
     outFileBaseName = Substring(inURL, filepathPos + basenamePos, basenameLen);
-  if (extensionLen > 0)
+  }
+  if (extensionLen > 0) {
     outFileExtension =
         Substring(inURL, filepathPos + extensionPos, extensionLen);
+  }
   // since we are using a no-auth url parser, there will never be a host
   // XXX not strictly true... file://localhost/foo/bar.html is a valid URL
 
@@ -221,10 +225,11 @@ void net_CoalesceDirs(netCoalesceFlags flags, char* path) {
        the path can begin // or /%2F to mark the root of the
        servers filesystem, a simple / only marks the root relative
        to the user loging in. We remember the length of the marker */
-    if (nsCRT::strncasecmp(path, "/%2F", 4) == 0)
+    if (nsCRT::strncasecmp(path, "/%2F", 4) == 0) {
       special_ftp_len = 4;
-    else if (strncmp(path, "//", 2) == 0)
+    } else if (strncmp(path, "//", 2) == 0) {
       special_ftp_len = 2;
+    }
   }
 
   /* find the last slash before # or ? */
@@ -282,8 +287,9 @@ void net_CoalesceDirs(netCoalesceFlags flags, char* path) {
       // otherwise retain them in the path
       if (traversal > 0 || !(flags & NET_COALESCE_ALLOW_RELATIVE_ROOT)) {
         if (urlPtr != path) urlPtr--;  // we must be going back at least by one
-        for (; *urlPtr != '/' && urlPtr != path; urlPtr--)
-          ;           // null body
+        for (; *urlPtr != '/' && urlPtr != path; urlPtr--) {
+          ;  // null body
+        }
         --traversal;  // count back
         // forward the fwdPtr past the ../
         fwdPtr += 2;
@@ -308,10 +314,11 @@ void net_CoalesceDirs(netCoalesceFlags flags, char* path) {
         // /%2F and urlPtr just points at the "F" of "/%2F" then do
         // not overwrite it with the /, just copy .. and move forward
         // urlPtr.
-        if (special_ftp_len > 3 && urlPtr == path + special_ftp_len - 1)
+        if (special_ftp_len > 3 && urlPtr == path + special_ftp_len - 1) {
           ++urlPtr;
-        else
+        } else {
           *urlPtr++ = *fwdPtr;
+        }
         ++fwdPtr;
         *urlPtr++ = *fwdPtr;
         ++fwdPtr;
@@ -321,8 +328,9 @@ void net_CoalesceDirs(netCoalesceFlags flags, char* path) {
       // count the hierachie, but only if we do not have reached
       // the root of some special urls with a special root marker
       if (*fwdPtr == '/' && *(fwdPtr + 1) != '.' &&
-          (special_ftp_len != 2 || *(fwdPtr + 1) != '/'))
+          (special_ftp_len != 2 || *(fwdPtr + 1) != '/')) {
         traversal++;
+      }
       // copy the url incrementaly
       *urlPtr++ = *fwdPtr;
     }
@@ -333,8 +341,10 @@ void net_CoalesceDirs(netCoalesceFlags flags, char* path) {
    *     /foo/foo1/.   ->  /foo/foo1/
    */
 
-  if ((urlPtr > (path + 1)) && (*(urlPtr - 1) == '.') && (*(urlPtr - 2) == '/'))
+  if ((urlPtr > (path + 1)) && (*(urlPtr - 1) == '.') &&
+      (*(urlPtr - 2) == '/')) {
     urlPtr--;
+  }
 
   // Copy remaining stuff past the #?;
   for (; *fwdPtr != '\0'; ++fwdPtr) {
@@ -433,13 +443,13 @@ bool net_IsAbsoluteURL(const nsACString& uri) {
 void net_FilterURIString(const nsACString& input, nsACString& result) {
   result.Truncate();
 
-  auto start = input.BeginReading();
-  auto end = input.EndReading();
+  const auto* start = input.BeginReading();
+  const auto* end = input.EndReading();
 
   // Trim off leading and trailing invalid chars.
   auto charFilter = [](char c) { return static_cast<uint8_t>(c) > 0x20; };
-  auto newStart = std::find_if(start, end, charFilter);
-  auto newEnd =
+  const auto* newStart = std::find_if(start, end, charFilter);
+  const auto* newEnd =
       std::find_if(std::reverse_iterator<decltype(end)>(end),
                    std::reverse_iterator<decltype(newStart)>(newStart),
                    charFilter)
@@ -448,7 +458,7 @@ void net_FilterURIString(const nsACString& input, nsACString& result) {
   // Check if chars need to be stripped.
   bool needsStrip = false;
   const ASCIIMaskArray& mask = ASCIIMask::MaskCRLFTab();
-  for (auto itr = start; itr != end; ++itr) {
+  for (const auto* itr = start; itr != end; ++itr) {
     if (ASCIIMask::IsMasked(mask, *itr)) {
       needsStrip = true;
       break;
@@ -469,24 +479,24 @@ void net_FilterURIString(const nsACString& input, nsACString& result) {
 }
 
 nsresult net_FilterAndEscapeURI(const nsACString& aInput, uint32_t aFlags,
+                                const ASCIIMaskArray& aFilterMask,
                                 nsACString& aResult) {
   aResult.Truncate();
 
-  auto start = aInput.BeginReading();
-  auto end = aInput.EndReading();
+  const auto* start = aInput.BeginReading();
+  const auto* end = aInput.EndReading();
 
   // Trim off leading and trailing invalid chars.
   auto charFilter = [](char c) { return static_cast<uint8_t>(c) > 0x20; };
-  auto newStart = std::find_if(start, end, charFilter);
-  auto newEnd =
+  const auto* newStart = std::find_if(start, end, charFilter);
+  const auto* newEnd =
       std::find_if(std::reverse_iterator<decltype(end)>(end),
                    std::reverse_iterator<decltype(newStart)>(newStart),
                    charFilter)
           .base();
 
-  const ASCIIMaskArray& mask = ASCIIMask::MaskCRLFTab();
-  return NS_EscapeAndFilterURL(Substring(newStart, newEnd), aFlags, &mask,
-                               aResult, fallible);
+  return NS_EscapeAndFilterURL(Substring(newStart, newEnd), aFlags,
+                               &aFilterMask, aResult, fallible);
 }
 
 #if defined(XP_WIN)
@@ -672,7 +682,8 @@ static void net_ParseMediaType(const nsACString& aMediaTypeStr,
       const char* paramName = net_FindCharNotInSet(
           start + curParamStart, start + curParamEnd, HTTP_LWS);
       static const char charsetStr[] = "charset=";
-      if (PL_strncasecmp(paramName, charsetStr, sizeof(charsetStr) - 1) == 0) {
+      if (nsCRT::strncasecmp(paramName, charsetStr, sizeof(charsetStr) - 1) ==
+          0) {
         charset = paramName + sizeof(charsetStr) - 1;
         charsetEnd = start + curParamEnd;
         typeHasCharset = true;
@@ -861,6 +872,12 @@ void net_ParseRequestContentType(const nsACString& aHeaderStr,
 }
 
 bool net_IsValidHostName(const nsACString& host) {
+  // A DNS name is limited to 255 bytes on the wire.
+  // In practice this means the host name is limited to 253 ascii characters.
+  if (StaticPrefs::network_dns_limit_253_chars() && host.Length() > 253) {
+    return false;
+  }
+
   const char* end = host.EndReading();
   // Use explicit whitelists to select which characters we are
   // willing to send to lower-level DNS logic. This is more
@@ -875,13 +892,12 @@ bool net_IsValidHostName(const nsACString& host) {
   if (net_FindCharNotInSet(host.BeginReading(), end,
                            "abcdefghijklmnopqrstuvwxyz"
                            ".-0123456789"
-                           "ABCDEFGHIJKLMNOPQRSTUVWXYZ$+_") == end)
+                           "ABCDEFGHIJKLMNOPQRSTUVWXYZ$+_") == end) {
     return true;
+  }
 
   // Might be a valid IPv6 link-local address containing a percent sign
-  nsAutoCString strhost(host);
-  PRNetAddr addr;
-  return PR_StringToNetAddr(strhost.get(), &addr) == PR_SUCCESS;
+  return mozilla::net::HostIsIPLiteral(host);
 }
 
 bool net_IsValidIPv4Addr(const nsACString& aAddr) {
@@ -891,3 +907,275 @@ bool net_IsValidIPv4Addr(const nsACString& aAddr) {
 bool net_IsValidIPv6Addr(const nsACString& aAddr) {
   return mozilla::net::rust_net_is_valid_ipv6_addr(&aAddr);
 }
+
+namespace mozilla {
+static auto MakeNameMatcher(const nsAString& aName) {
+  return [&aName](const auto& param) { return param.mKey.Equals(aName); };
+}
+
+bool URLParams::Has(const nsAString& aName) {
+  return std::any_of(mParams.cbegin(), mParams.cend(), MakeNameMatcher(aName));
+}
+
+void URLParams::Get(const nsAString& aName, nsString& aRetval) {
+  SetDOMStringToNull(aRetval);
+
+  const auto end = mParams.cend();
+  const auto it = std::find_if(mParams.cbegin(), end, MakeNameMatcher(aName));
+  if (it != end) {
+    aRetval.Assign(it->mValue);
+  }
+}
+
+void URLParams::GetAll(const nsAString& aName, nsTArray<nsString>& aRetval) {
+  aRetval.Clear();
+
+  for (uint32_t i = 0, len = mParams.Length(); i < len; ++i) {
+    if (mParams[i].mKey.Equals(aName)) {
+      aRetval.AppendElement(mParams[i].mValue);
+    }
+  }
+}
+
+void URLParams::Append(const nsAString& aName, const nsAString& aValue) {
+  Param* param = mParams.AppendElement();
+  param->mKey = aName;
+  param->mValue = aValue;
+
+  nsTArray<nsString> args;
+  args.AppendElement(param->mKey);
+  args.AppendElement(param->mValue);
+
+  MarkTaintOperation(param->mKey, "URLParams(key)", args);
+  MarkTaintOperation(param->mValue, "URLParams(value)", args);
+}
+
+void URLParams::Set(const nsAString& aName, const nsAString& aValue) {
+  Param* param = nullptr;
+  for (uint32_t i = 0, len = mParams.Length(); i < len;) {
+    if (!mParams[i].mKey.Equals(aName)) {
+      ++i;
+      continue;
+    }
+    if (!param) {
+      param = &mParams[i];
+      ++i;
+      continue;
+    }
+    // Remove duplicates.
+    mParams.RemoveElementAt(i);
+    --len;
+  }
+
+  if (!param) {
+    param = mParams.AppendElement();
+    param->mKey = aName;
+  }
+
+  param->mValue = aValue;
+}
+
+void URLParams::Delete(const nsAString& aName) {
+  mParams.RemoveElementsBy(
+      [&aName](const auto& param) { return param.mKey.Equals(aName); });
+}
+
+/* static */
+void URLParams::ConvertString(const nsACString& aInput, nsAString& aOutput) {
+  if (NS_FAILED(UTF_8_ENCODING->DecodeWithoutBOMHandling(aInput, aOutput))) {
+    MOZ_CRASH("Out of memory when converting URL params.");
+  }
+}
+
+/* static */
+void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
+  const char* const end = aInput.EndReading();
+  const char* const start = aInput.BeginReading();
+  nsAutoCString unescaped;
+
+  for (const char* iter = start; iter != end;) {
+    // replace '+' with U+0020
+    if (*iter == '+') {
+      unescaped.Append(' ');
+      ++iter;
+      continue;
+    }
+
+    // Percent decode algorithm
+    if (*iter == '%') {
+      const char* const first = iter + 1;
+      const char* const second = first + 1;
+
+      const auto asciiHexDigit = [](char x) {
+        return (x >= 0x41 && x <= 0x46) || (x >= 0x61 && x <= 0x66) ||
+               (x >= 0x30 && x <= 0x39);
+      };
+
+      const auto hexDigit = [](char x) {
+        return x >= 0x30 && x <= 0x39
+                   ? x - 0x30
+                   : (x >= 0x41 && x <= 0x46 ? x - 0x37 : x - 0x57);
+      };
+
+      if (first != end && second != end && asciiHexDigit(*first) &&
+          asciiHexDigit(*second)) {
+        unescaped.Taint().concat(aInput.Taint().subtaint(std::distance(start, iter), std::distance(start, second)),
+                                 unescaped.Length());
+        unescaped.Append(hexDigit(*first) * 16 + hexDigit(*second));
+        iter = second + 1;
+      } else {
+        unescaped.Append('%');
+        ++iter;
+      }
+
+      continue;
+    }
+    // Taintfox: append single char taint
+    unescaped.Taint().concat(aInput.Taint().subtaint(std::distance(start, iter), std::distance(start, iter) + 1),
+                             unescaped.Length());
+    unescaped.Append(*iter);
+    ++iter;
+  }
+
+  // XXX It seems rather wasteful to first decode into a UTF-8 nsCString and
+  // then convert the whole string to UTF-16, at least if we exceed the inline
+  // storage size.
+  ConvertString(unescaped, aOutput);
+  aOutput.AssignTaint(unescaped.Taint());
+}
+
+/* static */
+bool URLParams::ParseNextInternal(const char*& aStart, const char* const aEnd, const StringTaint& aTaint,
+                                  nsAString* aOutDecodedName,
+                                  nsAString* aOutDecodedValue) {
+  nsDependentCSubstring string;
+  // Taintfox: keep track of start of the string
+  const char* const stringStart = aStart;
+
+  const char* const iter = std::find(aStart, aEnd, '&');
+  if (iter != aEnd) {
+    string.Rebind(aStart, iter);
+    // Taintfox: propagate taint
+    string.AssignTaint(aTaint.subtaint(std::distance(stringStart, aStart),
+                                       std::distance(stringStart, iter)));
+    aStart = iter + 1;
+  } else {
+    string.Rebind(aStart, aEnd);
+    // Taintfox: propagate taint
+    string.AssignTaint(aTaint.subtaint(std::distance(stringStart, aStart),
+                                       std::distance(stringStart, aEnd)));
+    aStart = aEnd;
+  }
+
+  if (string.IsEmpty()) {
+    return false;
+  }
+
+  const auto* const eqStart = string.BeginReading();
+  const auto* const eqEnd = string.EndReading();
+  const auto* const eqIter = std::find(eqStart, eqEnd, '=');
+
+  nsDependentCSubstring name;
+  nsDependentCSubstring value;
+
+  if (eqIter != eqEnd) {
+    name.Rebind(eqStart, eqIter);
+    // Taintfox: propagate taint
+    name.AssignTaint(string.Taint().subtaint(std::distance(eqStart, eqStart),
+                                             std::distance(eqStart, eqIter)));
+    value.Rebind(eqIter + 1, eqEnd);
+    // Taintfox: propagate taint
+    value.AssignTaint(string.Taint().subtaint(std::distance(eqStart, eqIter),
+                                              std::distance(eqStart, eqEnd)));
+  } else {
+    // Taintfox: taint should be propagated here
+    name.Rebind(string, 0);
+  }
+
+  DecodeString(name, *aOutDecodedName);
+  DecodeString(value, *aOutDecodedValue);
+
+  return true;
+}
+
+/* static */
+bool URLParams::Extract(const nsACString& aInput, const nsAString& aName,
+                        nsAString& aValue) {
+  aValue.SetIsVoid(true);
+  return !URLParams::Parse(
+      aInput, [&aName, &aValue](const nsAString& name, nsString&& value) {
+        if (aName == name) {
+          aValue = std::move(value);
+          return false;
+        }
+        return true;
+      });
+}
+
+void URLParams::ParseInput(const nsACString& aInput) {
+  // Remove all the existing data before parsing a new input.
+  DeleteAll();
+
+  URLParams::Parse(aInput, [this](nsString&& name, nsString&& value) {
+    mParams.AppendElement(Param{std::move(name), std::move(value)});
+    return true;
+  });
+}
+
+namespace {
+
+void SerializeString(const nsCString& aInput, nsAString& aValue) {
+  const unsigned char* p = (const unsigned char*)aInput.get();
+  const unsigned char* end = p + aInput.Length();
+
+  while (p != end) {
+    // ' ' to '+'
+    if (*p == 0x20) {
+      aValue.Append(0x2B);
+      // Percent Encode algorithm
+    } else if (*p == 0x2A || *p == 0x2D || *p == 0x2E ||
+               (*p >= 0x30 && *p <= 0x39) || (*p >= 0x41 && *p <= 0x5A) ||
+               *p == 0x5F || (*p >= 0x61 && *p <= 0x7A)) {
+      aValue.Append(*p);
+    } else {
+      aValue.AppendPrintf("%%%.2X", *p);
+    }
+
+    ++p;
+  }
+}
+
+}  // namespace
+
+void URLParams::Serialize(nsAString& aValue, bool aEncode) const {
+  aValue.Truncate();
+  bool first = true;
+
+  for (uint32_t i = 0, len = mParams.Length(); i < len; ++i) {
+    if (first) {
+      first = false;
+    } else {
+      aValue.Append('&');
+    }
+
+    // XXX Actually, it's not necessary to build a new string object. Generally,
+    // such cases could just convert each codepoint one-by-one.
+    if (aEncode) {
+      SerializeString(NS_ConvertUTF16toUTF8(mParams[i].mKey), aValue);
+      aValue.Append('=');
+      SerializeString(NS_ConvertUTF16toUTF8(mParams[i].mValue), aValue);
+    } else {
+      aValue.Append(mParams[i].mKey);
+      aValue.Append('=');
+      aValue.Append(mParams[i].mValue);
+    }
+  }
+}
+
+void URLParams::Sort() {
+  mParams.StableSort([](const Param& lhs, const Param& rhs) {
+    return Compare(lhs.mKey, rhs.mKey);
+  });
+}
+
+}  // namespace mozilla

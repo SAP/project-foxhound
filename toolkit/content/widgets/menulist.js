@@ -69,10 +69,12 @@
 
     static get inheritedAttributes() {
       return {
-        image: "src=image",
-        "#label": "value=label,crop,accesskey,highlightable",
-        "#highlightable-label": "text=label,crop,accesskey,highlightable",
-        dropmarker: "disabled,open",
+        "#label-box": "native",
+        image: "src=image,native",
+        "#label": "value=label,crop,accesskey,highlightable,native",
+        "#highlightable-label":
+          "text=label,crop,accesskey,highlightable,native",
+        dropmarker: "disabled,open,native",
       };
     }
 
@@ -115,7 +117,8 @@
     set value(val) {
       // if the new value is null, we still need to remove the old value
       if (val == null) {
-        return (this.selectedItem = val);
+        this.selectedItem = val;
+        return;
       }
 
       var arr = null;
@@ -130,8 +133,6 @@
         this.selectedItem = null;
         this.setAttribute("value", val);
       }
-
-      return val;
     }
 
     // nsIDOMXULSelectControlElement
@@ -152,7 +153,6 @@
     // nsIDOMXULMenuListElement
     set image(val) {
       this.setAttribute("image", val);
-      return val;
     }
 
     // nsIDOMXULMenuListElement
@@ -167,7 +167,6 @@
 
     set description(val) {
       this.setAttribute("description", val);
-      return val;
     }
 
     get description() {
@@ -177,7 +176,6 @@
     // nsIDOMXULMenuListElement
     set open(val) {
       this.openMenu(val);
-      return val;
     }
 
     // nsIDOMXULMenuListElement
@@ -208,7 +206,6 @@
       } else {
         this.selectedItem = null;
       }
-      return val;
     }
 
     // nsIDOMXULSelectControlElement
@@ -237,11 +234,11 @@
     set selectedItem(val) {
       var oldval = this.mSelectedInternal;
       if (oldval == val) {
-        return val;
+        return;
       }
 
       if (val && !this.contains(val)) {
-        return val;
+        return;
       }
 
       if (oldval) {
@@ -278,8 +275,6 @@
       event = document.createEvent("Events");
       event.initEvent("ValueChange", true, true);
       this.dispatchEvent(event);
-
-      return val;
     }
 
     // nsIDOMXULSelectControlElement

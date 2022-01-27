@@ -138,9 +138,9 @@ class DeadlockDetector {
     {
       PRAutoLock _(mLock);
       n += mOrdering.ShallowSizeOfExcludingThis(aMallocSizeOf);
-      for (auto iter = mOrdering.ConstIter(); !iter.Done(); iter.Next()) {
+      for (const auto& data : mOrdering.Values()) {
         // NB: Key is accounted for in the entry.
-        n += iter.Data()->SizeOfIncludingThis(aMallocSizeOf);
+        n += data->SizeOfIncludingThis(aMallocSizeOf);
       }
     }
 
@@ -159,7 +159,7 @@ class DeadlockDetector {
    */
   void Add(const T* aResource) {
     PRAutoLock _(mLock);
-    mOrdering.Put(aResource, new OrderingEntry(aResource));
+    mOrdering.InsertOrUpdate(aResource, MakeUnique<OrderingEntry>(aResource));
   }
 
   void Remove(const T* aResource) {

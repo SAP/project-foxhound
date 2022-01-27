@@ -3,16 +3,6 @@
 const TEST_ENGINE_NAME = "Foo";
 const TEST_ENGINE_BASENAME = "testEngine.xml";
 
-const searchPopup = document.getElementById("PopupSearchAutoComplete");
-const oneOffInstance = searchPopup.oneOffButtons;
-const contextMenu = oneOffInstance.querySelector(
-  ".search-one-offs-context-menu"
-);
-const oneOffButtons = oneOffInstance.buttons;
-const searchInNewTabMenuItem = oneOffInstance.querySelector(
-  ".search-one-offs-context-open-in-new-tab"
-);
-
 let searchbar;
 let searchIcon;
 
@@ -23,12 +13,17 @@ add_task(async function init() {
   });
   searchIcon = searchbar.querySelector(".searchbar-search-button");
 
-  await promiseNewEngine(TEST_ENGINE_BASENAME, {
-    setAsCurrent: false,
-  });
+  await SearchTestUtils.promiseNewSearchEngine(
+    getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME
+  );
 });
 
 add_task(async function telemetry() {
+  let searchPopup = document.getElementById("PopupSearchAutoComplete");
+  let oneOffInstance = searchPopup.oneOffButtons;
+
+  let oneOffButtons = oneOffInstance.buttons;
+
   // Open the popup.
   let shownPromise = promiseEvent(searchPopup, "popupshown");
   let builtPromise = promiseEvent(oneOffInstance, "rebuild");
@@ -51,6 +46,9 @@ add_task(async function telemetry() {
   );
 
   // Open the context menu on the one-off.
+  let contextMenu = oneOffInstance.querySelector(
+    ".search-one-offs-context-menu"
+  );
   let promise = BrowserTestUtils.waitForEvent(contextMenu, "popupshown");
   EventUtils.synthesizeMouseAtCenter(oneOffButton, {
     type: "contextmenu",
@@ -59,8 +57,11 @@ add_task(async function telemetry() {
   await promise;
 
   // Click the Search in New Tab menu item.
+  let searchInNewTabMenuItem = contextMenu.querySelector(
+    ".search-one-offs-context-open-in-new-tab"
+  );
   promise = BrowserTestUtils.waitForNewTab(gBrowser);
-  EventUtils.synthesizeMouseAtCenter(searchInNewTabMenuItem, {});
+  contextMenu.activateItem(searchInNewTabMenuItem);
   let tab = await promise;
 
   // By default the search will open in the background and the popup will stay open:
@@ -79,5 +80,10 @@ add_task(async function telemetry() {
   BrowserTestUtils.removeTab(tab);
 
   // Move the cursor out of the panel area to avoid messing with other tests.
-  await EventUtils.synthesizeNativeMouseMove(searchbar);
+  await EventUtils.promiseNativeMouseEvent({
+    type: "mousemove",
+    target: searchbar,
+    offsetX: 0,
+    offsetY: 0,
+  });
 });

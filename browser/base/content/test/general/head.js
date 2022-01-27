@@ -1,4 +1,6 @@
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
 ChromeUtils.defineModuleGetter(
   this,
@@ -168,33 +170,6 @@ function promiseWaitForFocus(aWindow) {
   });
 }
 
-function getTestPlugin(aName) {
-  var pluginName = aName || "Test Plug-in";
-  var ph = Cc["@mozilla.org/plugin/host;1"].getService(Ci.nsIPluginHost);
-  var tags = ph.getPluginTags();
-
-  // Find the test plugin
-  for (var i = 0; i < tags.length; i++) {
-    if (tags[i].name == pluginName) {
-      return tags[i];
-    }
-  }
-  ok(false, "Unable to find plugin");
-  return null;
-}
-
-// call this to set the test plugin(s) initially expected enabled state.
-// it will automatically be reset to it's previous value after the test
-// ends
-function setTestPluginEnabledState(newEnabledState, pluginName) {
-  var plugin = getTestPlugin(pluginName);
-  var oldEnabledState = plugin.enabledState;
-  plugin.enabledState = newEnabledState;
-  SimpleTest.registerCleanupFunction(function() {
-    getTestPlugin(pluginName).enabledState = oldEnabledState;
-  });
-}
-
 function pushPrefs(...aPrefs) {
   return SpecialPowers.pushPrefEnv({ set: aPrefs });
 }
@@ -257,124 +232,6 @@ function promiseTabLoaded(aTab) {
     whenTabLoaded(aTab, resolve);
   });
 }
-
-var FullZoomHelper = {
-  selectTabAndWaitForLocationChange: function selectTabAndWaitForLocationChange(
-    tab
-  ) {
-    if (!tab) {
-      throw new Error("tab must be given.");
-    }
-    if (gBrowser.selectedTab == tab) {
-      return Promise.resolve();
-    }
-
-    return Promise.all([
-      BrowserTestUtils.switchTab(gBrowser, tab),
-      this.waitForLocationChange(),
-    ]);
-  },
-
-  removeTabAndWaitForLocationChange: function removeTabAndWaitForLocationChange(
-    tab
-  ) {
-    tab = tab || gBrowser.selectedTab;
-    let selected = gBrowser.selectedTab == tab;
-    gBrowser.removeTab(tab);
-    if (selected) {
-      return this.waitForLocationChange();
-    }
-    return Promise.resolve();
-  },
-
-  waitForLocationChange: function waitForLocationChange() {
-    return new Promise(resolve => {
-      Services.obs.addObserver(function obs(subj, topic, data) {
-        Services.obs.removeObserver(obs, topic);
-        resolve();
-      }, "browser-fullZoom:location-change");
-    });
-  },
-
-  load: function load(tab, url) {
-    return new Promise(resolve => {
-      let didLoad = false;
-      let didZoom = false;
-
-      promiseTabLoadEvent(tab).then(event => {
-        didLoad = true;
-        if (didZoom) {
-          resolve();
-        }
-      }, true);
-
-      this.waitForLocationChange().then(function() {
-        didZoom = true;
-        if (didLoad) {
-          resolve();
-        }
-      });
-
-      BrowserTestUtils.loadURI(tab.linkedBrowser, url);
-    });
-  },
-
-  zoomTest: function zoomTest(tab, val, msg) {
-    is(ZoomManager.getZoomForBrowser(tab.linkedBrowser), val, msg);
-  },
-
-  enlarge: function enlarge() {
-    return new Promise(resolve => FullZoom.enlarge(resolve));
-  },
-
-  reduce: function reduce() {
-    return new Promise(resolve => FullZoom.reduce(resolve));
-  },
-
-  reset: function reset() {
-    return FullZoom.reset();
-  },
-
-  BACK: 0,
-  FORWARD: 1,
-  navigate: function navigate(direction) {
-    return new Promise(resolve => {
-      let didPs = false;
-      let didZoom = false;
-
-      BrowserTestUtils.waitForContentEvent(
-        gBrowser.selectedBrowser,
-        "pageshow",
-        true
-      ).then(() => {
-        didPs = true;
-        if (didZoom) {
-          resolve();
-        }
-      });
-
-      if (direction == this.BACK) {
-        gBrowser.goBack();
-      } else if (direction == this.FORWARD) {
-        gBrowser.goForward();
-      }
-
-      this.waitForLocationChange().then(function() {
-        didZoom = true;
-        if (didPs) {
-          resolve();
-        }
-      });
-    });
-  },
-
-  failAndContinue: function failAndContinue(func) {
-    return function(err) {
-      ok(false, err);
-      func();
-    };
-  },
-};
 
 /**
  * Waits for a load (or custom) event to finish in a given tab. If provided
@@ -495,7 +352,7 @@ function promiseOnBookmarkItemAdded(aExpectedURI) {
 
 async function loadBadCertPage(url) {
   let loaded = BrowserTestUtils.waitForErrorPage(gBrowser.selectedBrowser);
-  await BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url);
+  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url);
   await loaded;
 
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
@@ -519,6 +376,7 @@ async function promiseStylesheetsLoaded(tab, styleSheetCount) {
 
   await TestUtils.waitForCondition(() => {
     let menu = styleMenu._pageStyleSheets.get(permanentKey);
+    info(`waiting for sheets: ${menu && menu.filteredStyleSheets.length}`);
     return menu && menu.filteredStyleSheets.length >= styleSheetCount;
   }, "waiting for style sheets to load");
 }

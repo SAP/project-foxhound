@@ -5,11 +5,40 @@
 
 "use strict";
 
+/**
+ * This dialog will ask the user to confirm that they really want to delete all
+ * site data for a number of hosts.
+ **/
 let gSiteDataRemoveSelected = {
   init() {
-    let hosts = window.arguments[0].hosts;
-    hosts.sort();
+    document.addEventListener("dialogaccept", function() {
+      window.arguments[0].allowed = true;
+    });
+    document.addEventListener("dialogcancel", function() {
+      window.arguments[0].allowed = false;
+    });
+
     let list = document.getElementById("removalList");
+
+    let hosts = window.arguments[0].hosts;
+
+    if (!hosts) {
+      throw new Error("Must specify hosts option in arguments.");
+    }
+    let dialog = document.getElementById("SiteDataRemoveSelectedDialog");
+    if (hosts.length == 1) {
+      dialog.classList.add("single-entry");
+      document.l10n.setAttributes(
+        document.getElementById("removing-description"),
+        "site-data-removing-single-desc",
+        {
+          baseDomain: hosts[0],
+        }
+      );
+      return;
+    }
+    dialog.classList.add("multi-entry");
+    hosts.sort();
     let fragment = document.createDocumentFragment();
     for (let host of hosts) {
       let listItem = document.createXULElement("richlistitem");
@@ -23,11 +52,5 @@ let gSiteDataRemoveSelected = {
       fragment.appendChild(listItem);
     }
     list.appendChild(fragment);
-    document.addEventListener("dialogaccept", function() {
-      window.arguments[0].allowed = true;
-    });
-    document.addEventListener("dialogcancel", function() {
-      window.arguments[0].allowed = false;
-    });
   },
 };

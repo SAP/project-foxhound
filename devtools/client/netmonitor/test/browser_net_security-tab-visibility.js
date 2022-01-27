@@ -8,6 +8,9 @@
  */
 
 add_task(async function() {
+  // This test explicitly asserts some insecure domains.
+  await pushPref("dom.security.https_first", false);
+
   const TEST_DATA = [
     {
       desc: "http request",
@@ -15,21 +18,24 @@ add_task(async function() {
       visibleOnNewEvent: false,
       visibleOnSecurityInfo: false,
       visibleOnceComplete: false,
+      securityState: "insecure",
     },
     {
       desc: "working https request",
       uri: "https://example.com" + CORS_SJS_PATH,
-      visibleOnNewEvent: false,
+      visibleOnNewEvent: true,
       visibleOnSecurityInfo: true,
       visibleOnceComplete: true,
+      securityState: "secure",
     },
     {
       desc: "broken https request",
       uri: "https://nocert.example.com",
       isBroken: true,
-      visibleOnNewEvent: false,
+      visibleOnNewEvent: true,
       visibleOnSecurityInfo: true,
       visibleOnceComplete: true,
+      securityState: "broken",
     },
   ];
 
@@ -61,6 +67,9 @@ add_task(async function() {
     info("Waiting for new network event.");
     await onNewItem;
 
+    info("Waiting for request to complete.");
+    await onComplete;
+
     info("Selecting the request.");
     EventUtils.sendMouseEvent(
       { type: "mousedown" },
@@ -69,8 +78,8 @@ add_task(async function() {
 
     is(
       getSelectedRequest(store.getState()).securityState,
-      undefined,
-      "Security state has not yet arrived."
+      testcase.securityState,
+      "Security state is immediately set"
     );
     is(
       !!document.querySelector("#security-tab"),
@@ -83,10 +92,7 @@ add_task(async function() {
     if (testcase.visibleOnSecurityInfo) {
       // click security panel to lazy load the securityState
       await waitUntil(() => document.querySelector("#security-tab"));
-      EventUtils.sendMouseEvent(
-        { type: "click" },
-        document.querySelector("#security-tab")
-      );
+      clickOnSidebarTab(document, "security");
       await waitUntil(() =>
         document.querySelector("#security-panel .security-info-value")
       );
@@ -94,10 +100,6 @@ add_task(async function() {
 
       await waitUntil(
         () => !!getSelectedRequest(store.getState()).securityState
-      );
-      ok(
-        getSelectedRequest(store.getState()).securityState,
-        "Security state arrived."
       );
     }
 
@@ -108,9 +110,6 @@ add_task(async function() {
         (testcase.visibleOnSecurityInfo ? "visible" : "hidden") +
         " after security information arrived."
     );
-
-    info("Waiting for request to complete.");
-    await onComplete;
 
     is(
       !!document.querySelector("#security-tab"),

@@ -9,14 +9,16 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/MessageManagerGlobal.h"
+#include "mozilla/dom/MessageManagerCallback.h"
 #include "nsCOMPtr.h"
-#include "nsFrameMessageManager.h"
 #include "nsIScriptContext.h"
 #include "nsIScriptContext.h"
 #include "nsServiceManagerUtils.h"
 #include "nsWeakReference.h"
 #include "nsWrapperCache.h"
 #include "xpcpublic.h"
+
+class nsFrameMessageManager;
 
 namespace mozilla {
 namespace dom {
@@ -76,7 +78,7 @@ class ContentProcessMessageManager : public nsIMessageSender,
     mMessageManager->GetInitialProcessData(aCx, aInitialProcessData, aError);
   }
 
-  already_AddRefed<ipc::SharedMap> SharedData();
+  already_AddRefed<ipc::SharedMap> GetSharedData();
 
   NS_FORWARD_SAFE_NSIMESSAGESENDER(mMessageManager)
 

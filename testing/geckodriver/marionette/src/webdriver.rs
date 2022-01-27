@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -22,7 +26,7 @@ pub struct Locator {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Selector {
     #[serde(rename = "css selector")]
-    CSS,
+    Css,
     #[serde(rename = "link text")]
     LinkText,
     #[serde(rename = "partial link text")]
@@ -145,8 +149,7 @@ pub struct Script {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Command {
-    // Needs to be updated to "WebDriver:AcceptAlert" for Firefox 63
-    #[serde(rename = "WebDriver:AcceptDialog")]
+    #[serde(rename = "WebDriver:AcceptAlert")]
     AcceptAlert,
     #[serde(
         rename = "WebDriver:AddCookie",
@@ -164,6 +167,8 @@ pub enum Command {
     DeleteCookie(String),
     #[serde(rename = "WebDriver:DeleteAllCookies")]
     DeleteCookies,
+    #[serde(rename = "WebDriver:DeleteSession")]
+    DeleteSession,
     #[serde(rename = "WebDriver:DismissAlert")]
     DismissAlert,
     #[serde(rename = "WebDriver:ElementClear")]
@@ -226,6 +231,8 @@ pub enum Command {
     GetElementText(LegacyWebElement),
     #[serde(rename = "WebDriver:GetPageSource")]
     GetPageSource,
+    #[serde(rename = "WebDriver:GetShadowRoot")]
+    GetShadowRoot { id: String },
     #[serde(rename = "WebDriver:GetTimeouts")]
     GetTimeouts,
     #[serde(rename = "WebDriver:GetTitle")]
@@ -298,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_json_selector_css() {
-        assert_ser_de(&Selector::CSS, json!("css selector"));
+        assert_ser_de(&Selector::Css, json!("css selector"));
     }
 
     #[test]
@@ -372,7 +379,7 @@ mod tests {
     #[test]
     fn test_command_with_params() {
         let locator = Locator {
-            using: Selector::CSS,
+            using: Selector::Css,
             value: "value".into(),
         };
         let json = json!({"WebDriver:FindElement": {"using": "css selector", "value": "value"}});

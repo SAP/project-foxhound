@@ -94,12 +94,10 @@ add_task(async function test_sidebarpanels_click() {
 
   for (let test of tests) {
     gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
-    await pushPref("intl.uidirection", 0);
     info("Running " + test.desc + " in LTR mode");
     await testPlacesPanel(test);
-    await popPref();
 
-    await pushPref("intl.uidirection", 1);
+    await pushPref("intl.l10n.pseudo", "bidi");
     info("Running " + test.desc + " in RTL mode");
     await testPlacesPanel(test);
     await popPref();
@@ -156,7 +154,7 @@ async function testPlacesPanel(testInfo) {
 
 function promiseAlertDialogObserved() {
   return new Promise(resolve => {
-    function observer(subject) {
+    async function observer(subject) {
       info("alert dialog observed as expected");
       Services.obs.removeObserver(observer, "common-dialog-loaded");
       Services.obs.removeObserver(observer, "tabmodal-dialog-loaded");

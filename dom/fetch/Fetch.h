@@ -13,7 +13,6 @@
 #include "nsString.h"
 
 #include "mozilla/DebugOnly.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/AbortSignal.h"
 #include "mozilla/dom/BodyConsumer.h"
 #include "mozilla/dom/BodyStream.h"
@@ -25,6 +24,12 @@ class nsIGlobalObject;
 class nsIEventTarget;
 
 namespace mozilla {
+class ErrorResult;
+
+namespace ipc {
+class PrincipalInfo;
+}  // namespace ipc
+
 namespace dom {
 
 class BlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrUSVString;
@@ -34,7 +39,7 @@ class BlobImpl;
 class InternalRequest;
 class
     OwningBlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrUSVString;
-struct ReadableStream;
+class ReadableStream;
 class RequestOrUSVString;
 class WorkerPrivate;
 
@@ -50,12 +55,12 @@ nsresult UpdateRequestReferrer(nsIGlobalObject* aGlobal,
                                InternalRequest* aRequest);
 
 namespace fetch {
-typedef BlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrUSVString
-    BodyInit;
-typedef BlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrReadableStreamOrUSVString
-    ResponseBodyInit;
-typedef OwningBlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrUSVString
-    OwningBodyInit;
+using BodyInit =
+    BlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrUSVString;
+using ResponseBodyInit =
+    BlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrReadableStreamOrUSVString;
+using OwningBodyInit =
+    OwningBlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrUSVString;
 };  // namespace fetch
 
 /*
@@ -122,6 +127,10 @@ nsresult ExtractByteStreamFromBody(const fetch::ResponseBodyInit& aBodyInit,
 template <class Derived>
 class FetchBody : public BodyStreamHolder, public AbortFollower {
  public:
+  using BodyStreamHolder::QueryInterface;
+
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(FetchBody, BodyStreamHolder)
+
   bool GetBodyUsed(ErrorResult& aRv) const;
 
   // For use in assertions. On success, returns true if the body is used, false
@@ -148,8 +157,15 @@ class FetchBody : public BodyStreamHolder, public AbortFollower {
     return ConsumeBody(aCx, BodyConsumer::CONSUME_TEXT, aRv);
   }
 
+#ifdef MOZ_DOM_STREAMS
+  already_AddRefed<ReadableStream> GetBody(ErrorResult& aRv) {
+    MOZ_CRASH("MOZ_DOM_STREAMS:NYI");
+  }
+#else
   void GetBody(JSContext* aCx, JS::MutableHandle<JSObject*> aBodyOut,
                ErrorResult& aRv);
+#endif
+  void GetMimeType(nsACString& aMimeType);
 
   const nsACString& BodyBlobURISpec() const;
 
@@ -187,8 +203,6 @@ class FetchBody : public BodyStreamHolder, public AbortFollower {
   // to the Console.
   void SetBodyUsed(JSContext* aCx, ErrorResult& aRv);
 
-  const nsCString& MimeType() const { return mMimeType; }
-
   // BodyStreamHolder
   void NullifyStream() override {
     mReadableStreamBody = nullptr;
@@ -207,7 +221,7 @@ class FetchBody : public BodyStreamHolder, public AbortFollower {
   virtual AbortSignalImpl* GetSignalImpl() const = 0;
 
   // AbortFollower
-  void Abort() override;
+  void RunAbortAlgorithm() override;
 
   already_AddRefed<Promise> ConsumeBody(JSContext* aCx,
                                         BodyConsumer::ConsumeType aType,
@@ -231,10 +245,6 @@ class FetchBody : public BodyStreamHolder, public AbortFollower {
 
   virtual ~FetchBody();
 
-  void SetMimeType();
-
-  void OverrideMimeType(const nsACString& aMimeType);
-
   void SetReadableStreamBody(JSContext* aCx, JSObject* aBody);
 
  private:
@@ -250,12 +260,55 @@ class FetchBody : public BodyStreamHolder, public AbortFollower {
 
   // Only ever set once, always on target thread.
   bool mBodyUsed;
-  nsCString mMimeType;
 
   // The main-thread event target for runnable dispatching.
   nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
 };
 
+class EmptyBody final : public FetchBody<EmptyBody> {
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(EmptyBody,
+                                                         FetchBody<EmptyBody>)
+
+ public:
+  static already_AddRefed<EmptyBody> Create(
+      nsIGlobalObject* aGlobal, mozilla::ipc::PrincipalInfo* aPrincipalInfo,
+      AbortSignalImpl* aAbortSignalImpl, const nsACString& aMimeType,
+      ErrorResult& aRv);
+
+  nsIGlobalObject* GetParentObject() const { return mOwner; }
+
+  AbortSignalImpl* GetSignalImpl() const override { return mAbortSignalImpl; }
+
+  const UniquePtr<mozilla::ipc::PrincipalInfo>& GetPrincipalInfo() const {
+    return mPrincipalInfo;
+  }
+
+  void GetMimeType(nsACString& aMimeType) { aMimeType = mMimeType; }
+
+  void GetBody(nsIInputStream** aStream, int64_t* aBodyLength = nullptr);
+
+  using FetchBody::BodyBlobURISpec;
+
+  const nsACString& BodyBlobURISpec() const { return EmptyCString(); }
+
+  using FetchBody::BodyLocalPath;
+
+  const nsAString& BodyLocalPath() const { return EmptyString(); }
+
+ private:
+  EmptyBody(nsIGlobalObject* aGlobal,
+            mozilla::ipc::PrincipalInfo* aPrincipalInfo,
+            AbortSignalImpl* aAbortSignalImpl, const nsACString& aMimeType,
+            already_AddRefed<nsIInputStream> aBodyStream);
+
+  ~EmptyBody();
+
+  UniquePtr<mozilla::ipc::PrincipalInfo> mPrincipalInfo;
+  RefPtr<AbortSignalImpl> mAbortSignalImpl;
+  nsCString mMimeType;
+  nsCOMPtr<nsIInputStream> mBodyStream;
+};
 }  // namespace dom
 }  // namespace mozilla
 

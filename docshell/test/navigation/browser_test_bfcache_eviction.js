@@ -5,6 +5,8 @@ add_task(async function() {
     set: [
       ["browser.sessionhistory.max_total_viewers", 3],
       ["docshell.shistory.testing.bfevict", true],
+      // If Fission is disabled, the pref is no-op.
+      ["fission.bfcacheInParent", true],
     ],
   });
 
@@ -15,7 +17,7 @@ add_task(async function() {
     browser
   ) {
     let testDone = {};
-    if (!SpecialPowers.getBoolPref("fission.sessionHistoryInParent")) {
+    if (!SpecialPowers.Services.appinfo.sessionHistoryInParent) {
       // 2.  Add a promise that will be resolved when the 'content viewer evicted' event goes off
       testDone.promise = SpecialPowers.spawn(browser, [], async function() {
         return new Promise(resolve => {
@@ -31,7 +33,6 @@ add_task(async function() {
                 "History listener got called after a content viewer was evicted"
               );
               legacySHistory.removeSHistoryListener(historyListener);
-              delete content._testListener;
               // 6. Resolve the promise when we got our 'content viewer evicted' event
               resolve();
             },
@@ -50,7 +51,7 @@ add_task(async function() {
       testDone.promise = new Promise(resolve => {
         testDone.resolve = resolve;
       });
-      let legacySHistory = browser.browsingContext.sessionHistory;
+      let shistory = browser.browsingContext.sessionHistory;
       // 3. Register a session history listener to listen for a 'content viewer evicted' event.
       let historyListener = {
         OnContentViewerEvicted() {
@@ -58,7 +59,7 @@ add_task(async function() {
             true,
             "History listener got called after a content viewer was evicted"
           );
-          legacySHistory.removeSHistoryListener(historyListener);
+          shistory.removeSHistoryListener(historyListener);
           delete window._testListener;
           // 6. Resolve the promise when we got our 'content viewer evicted' event
           testDone.resolve();
@@ -68,7 +69,7 @@ add_task(async function() {
           "nsISupportsWeakReference",
         ]),
       };
-      legacySHistory.addSHistoryListener(historyListener);
+      shistory.addSHistoryListener(historyListener);
       // Keep the weak shistory listener alive
       window._testListener = historyListener;
     }
@@ -85,7 +86,7 @@ add_task(async function() {
     for (var i = 0; i < 4; i++) {
       testPage = `data:text/html,<html id='html1'><body id='body1'>${i}</body></html>`;
       let pagePromise = BrowserTestUtils.browserLoaded(browser);
-      await BrowserTestUtils.loadURI(browser, testPage);
+      BrowserTestUtils.loadURI(browser, testPage);
       await pagePromise;
     }
     // 7. Wait for 'content viewer evicted' event to go off

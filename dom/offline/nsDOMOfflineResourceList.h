@@ -8,10 +8,6 @@
 #define nsDOMOfflineResourceList_h___
 
 #include "nscore.h"
-#include "nsIApplicationCache.h"
-#include "nsIApplicationCacheContainer.h"
-#include "nsIApplicationCacheService.h"
-#include "nsIOfflineCacheUpdate.h"
 #include "nsTArray.h"
 #include "nsString.h"
 #include "nsIURI.h"
@@ -35,14 +31,12 @@ class Event;
 
 class nsDOMOfflineResourceList final : public mozilla::DOMEventTargetHelper,
                                        public nsIObserver,
-                                       public nsIOfflineCacheUpdateObserver,
                                        public nsSupportsWeakReference {
-  typedef mozilla::ErrorResult ErrorResult;
+  using ErrorResult = mozilla::ErrorResult;
 
  public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIOBSERVER
-  NS_DECL_NSIOFFLINECACHEUPDATEOBSERVER
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsDOMOfflineResourceList,
                                            mozilla::DOMEventTargetHelper)
@@ -53,8 +47,6 @@ class nsDOMOfflineResourceList final : public mozilla::DOMEventTargetHelper,
 
   void FirePendingEvents();
   void Disconnect();
-
-  nsresult Init();
 
   nsPIDOMWindowInner* GetParentObject() const { return GetOwner(); }
   virtual JSObject* WrapObject(JSContext* aCx,
@@ -95,36 +87,11 @@ class nsDOMOfflineResourceList final : public mozilla::DOMEventTargetHelper,
  private:
   void SendEvent(const nsAString& aEventName);
 
-  void UpdateAdded(nsIOfflineCacheUpdate* aUpdate);
-  void UpdateCompleted(nsIOfflineCacheUpdate* aUpdate);
-
-  already_AddRefed<nsIApplicationCacheContainer> GetDocumentAppCacheContainer();
-  already_AddRefed<nsIApplicationCache> GetDocumentAppCache();
-
   nsresult GetCacheKey(const nsAString& aURI, nsCString& aKey);
   nsresult GetCacheKey(nsIURI* aURI, nsCString& aKey);
 
   nsresult CacheKeys();
   void ClearCachedKeys();
-
-  bool mInitialized;
-
-  nsCOMPtr<nsIURI> mManifestURI;
-  // AsciiSpec of mManifestURI
-  nsCString mManifestSpec;
-
-  nsCOMPtr<nsIURI> mDocumentURI;
-  nsCOMPtr<nsIPrincipal> mLoadingPrincipal;
-  nsCOMPtr<nsIApplicationCacheService> mApplicationCacheService;
-  nsCOMPtr<nsIApplicationCache> mAvailableApplicationCache;
-  nsCOMPtr<nsIOfflineCacheUpdate> mCacheUpdate;
-  bool mExposeCacheUpdateStatus;
-  uint16_t mStatus;
-
-  // The set of dynamic keys for this application cache object.
-  mozilla::Maybe<nsTArray<nsCString>> mCachedKeys;
-
-  nsCOMArray<mozilla::dom::Event> mPendingEvents;
 };
 
 #endif

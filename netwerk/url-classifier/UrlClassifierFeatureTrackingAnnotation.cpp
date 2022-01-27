@@ -11,6 +11,7 @@
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/net/UrlClassifierCommon.h"
+#include "nsIChannel.h"
 #include "nsIClassifiedChannel.h"
 #include "nsIWebProgressListener.h"
 #include "nsContentUtils.h"
@@ -40,7 +41,7 @@ StaticRefPtr<UrlClassifierFeatureTrackingAnnotation> gFeatureTrackingAnnotation;
 }  // namespace
 
 UrlClassifierFeatureTrackingAnnotation::UrlClassifierFeatureTrackingAnnotation()
-    : UrlClassifierFeatureBase(
+    : UrlClassifierFeatureAntiTrackingBase(
           nsLiteralCString(TRACKING_ANNOTATION_FEATURE_NAME),
           nsLiteralCString(URLCLASSIFIER_ANNOTATION_BLOCKLIST),
           nsLiteralCString(URLCLASSIFIER_ANNOTATION_ENTITYLIST),

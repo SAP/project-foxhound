@@ -56,10 +56,10 @@ TEST_P(Blake2BKATKeyed, Keyed) {
   EXPECT_EQ(values, std::get<1>(GetParam()));
 }
 
-INSTANTIATE_TEST_CASE_P(UnkeyedKAT, Blake2BKATUnkeyed,
-                        ::testing::ValuesIn(TestcasesUnkeyed));
-INSTANTIATE_TEST_CASE_P(KeyedKAT, Blake2BKATKeyed,
-                        ::testing::ValuesIn(TestcasesKeyed));
+INSTANTIATE_TEST_SUITE_P(UnkeyedKAT, Blake2BKATUnkeyed,
+                         ::testing::ValuesIn(TestcasesUnkeyed));
+INSTANTIATE_TEST_SUITE_P(KeyedKAT, Blake2BKATKeyed,
+                         ::testing::ValuesIn(TestcasesKeyed));
 
 TEST_F(Blake2BTests, ContextTest) {
   ScopedBLAKE2BContext ctx(BLAKE2B_NewContext());
@@ -270,20 +270,4 @@ TEST_F(Blake2BTests, EmptyKeyTest) {
   SECStatus rv = BLAKE2B_MAC_HashBuf(digest.data(), data.data(), 3, key, 0);
   EXPECT_EQ(SECFailure, rv);
   EXPECT_EQ(SEC_ERROR_INVALID_ARGS, PORT_GetError());
-}
-
-int main(int argc, char** argv) {
-  ::testing::InitGoogleTest(&argc, argv);
-
-  if (NSS_NoDB_Init(nullptr) != SECSuccess) {
-    return 1;
-  }
-
-  int rv = RUN_ALL_TESTS();
-
-  if (NSS_Shutdown() != SECSuccess) {
-    return 1;
-  }
-
-  return rv;
 }

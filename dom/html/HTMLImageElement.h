@@ -100,8 +100,11 @@ class HTMLImageElement final : public nsGenericHTMLElement,
   void SetHeight(uint32_t aHeight, ErrorResult& aError) {
     SetUnsignedIntAttr(nsGkAtoms::height, aHeight, 0, aError);
   }
-  uint32_t NaturalWidth();
-  uint32_t NaturalHeight();
+
+  nsIntSize NaturalSize();
+  uint32_t NaturalHeight() { return NaturalSize().height; }
+  uint32_t NaturalWidth() { return NaturalSize().width; }
+
   bool Complete();
   uint32_t Hspace() {
     return GetDimensionAttrAsUnsignedInt(nsGkAtoms::hspace, 0);
@@ -179,7 +182,7 @@ class HTMLImageElement final : public nsGenericHTMLElement,
     SetHTMLAttr(nsGkAtoms::referrerpolicy, aReferrer, aError);
   }
   void GetReferrerPolicy(nsAString& aReferrer) {
-    GetEnumAttr(nsGkAtoms::referrerpolicy, EmptyCString().get(), aReferrer);
+    GetEnumAttr(nsGkAtoms::referrerpolicy, "", aReferrer);
   }
   void SetDecoding(const nsAString& aDecoding, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::decoding, aDecoding, aError);
@@ -264,7 +267,11 @@ class HTMLImageElement final : public nsGenericHTMLElement,
       const nsAString& aTypeAttr, const nsAString& aMediaAttr,
       nsAString& aResult);
 
-  void StopLazyLoadingAndStartLoadIfNeeded();
+  enum class FromIntersectionObserver : bool { No, Yes };
+  enum class StartLoading : bool { No, Yes };
+  void StopLazyLoading(FromIntersectionObserver, StartLoading);
+
+  void LazyLoadImageReachedViewport();
 
  protected:
   virtual ~HTMLImageElement();

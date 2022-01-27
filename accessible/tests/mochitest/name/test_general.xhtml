@@ -113,7 +113,7 @@
       // Name from the @title attribute of <toolbaritem/> (original bug 237249).
 
       // Direct child of toolbaritem.
-      var toolbarItemChildAcc = testName("toolbaritem_child", null);
+      testName("toolbaritem_child", null);
 
       // Child from subtree of toolbaritem.
       testName("toolbaritem_hboxbutton", "button");
@@ -130,6 +130,9 @@
       // ARIA role button is presented allowing the name calculation from
       // children.
       testName("box_children", "14");
+
+      // Button labelled by a text child.
+      testName("button_text", "Text");
 
       // ARIA role option is presented allowing the name calculation from
       // the visible children (bug 443081)
@@ -299,6 +302,7 @@
 
   <!-- name from children -->
   <box id="box_children" role="button">14</box>
+  <button id="button_text">Text</button>
 
   <!-- name from children, hidden children -->
   <vbox role="listbox" tabindex="0">

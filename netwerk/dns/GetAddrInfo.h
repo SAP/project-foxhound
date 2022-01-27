@@ -11,10 +11,11 @@
 #include "nscore.h"
 #include "nsINativeDNSResolverOverride.h"
 #include "nsHashKeys.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "mozilla/RWLock.h"
 #include "nsTArray.h"
 #include "prio.h"
+#include "mozilla/net/DNS.h"
 
 #if defined(XP_WIN)
 #  define DNSQUERY_AVAILABLE 1
@@ -66,16 +67,16 @@ class NativeDNSResolverOverride : public nsINativeDNSResolverOverride {
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSINATIVEDNSRESOLVEROVERRIDE
  public:
-  NativeDNSResolverOverride() : mLock("NativeDNSResolverOverride") {}
+  NativeDNSResolverOverride() = default;
 
   static already_AddRefed<nsINativeDNSResolverOverride> GetSingleton();
 
  private:
   virtual ~NativeDNSResolverOverride() = default;
-  mozilla::RWLock mLock;
+  mozilla::RWLock mLock{"NativeDNSResolverOverride"};
 
-  nsDataHashtable<nsCStringHashKey, nsTArray<PRNetAddr>> mOverrides;
-  nsDataHashtable<nsCStringHashKey, nsCString> mCnames;
+  nsTHashMap<nsCStringHashKey, nsTArray<NetAddr>> mOverrides;
+  nsTHashMap<nsCStringHashKey, nsCString> mCnames;
 
   friend bool FindAddrOverride(const nsACString& aHost, uint16_t aAddressFamily,
                                uint16_t aFlags, AddrInfo** aAddrInfo);

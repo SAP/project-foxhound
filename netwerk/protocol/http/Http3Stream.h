@@ -8,6 +8,7 @@
 
 #include "nsAHttpTransaction.h"
 #include "ARefBase.h"
+#include "mozilla/WeakPtr.h"
 
 namespace mozilla {
 namespace net {
@@ -16,6 +17,7 @@ class Http3Session;
 
 class Http3Stream final : public nsAHttpSegmentReader,
                           public nsAHttpSegmentWriter,
+                          public SupportsWeakPtr,
                           public ARefBase {
  public:
   NS_DECL_NSAHTTPSEGMENTREADER
@@ -23,22 +25,18 @@ class Http3Stream final : public nsAHttpSegmentReader,
   // for RefPtr
   NS_INLINE_DECL_REFCOUNTING(Http3Stream, override)
 
-  Http3Stream(nsAHttpTransaction* httpTransaction, Http3Session* session);
+  Http3Stream(nsAHttpTransaction*, Http3Session*, uint32_t, uint64_t);
 
   bool HasStreamId() const { return mStreamId != UINT64_MAX; }
   uint64_t StreamId() const { return mStreamId; }
 
   nsresult TryActivating();
 
-  // TODO priorities
-  void TopLevelOuterContentWindowIdChanged(uint64_t windowId){};
+  void TopBrowsingContextIdChanged(uint64_t id);
 
-  [[nodiscard]] nsresult ReadSegments(nsAHttpSegmentReader*, uint32_t,
-                                      uint32_t*);
+  [[nodiscard]] nsresult ReadSegments(nsAHttpSegmentReader*);
   [[nodiscard]] nsresult WriteSegments(nsAHttpSegmentWriter*, uint32_t,
                                        uint32_t*);
-
-  bool RequestBlockedOnRead() const { return mRequestBlockedOnRead; }
 
   void SetQueued(bool aStatus) { mQueued = aStatus; }
   bool Queued() const { return mQueued; }
@@ -51,12 +49,18 @@ class Http3Stream final : public nsAHttpSegmentReader,
   nsAHttpTransaction* Transaction() { return mTransaction; }
   bool RecvdFin() const { return mFin; }
   bool RecvdReset() const { return mResetRecv; }
-  void SetRecvdReset() {
-    mResetRecv = true;
-    mRecvState = RECEIVED_RESET;
-  }
+  void SetRecvdReset() { mResetRecv = true; }
+
+  void StopSending();
 
   void SetResponseHeaders(nsTArray<uint8_t>& aResponseHeaders, bool fin);
+
+  // Mirrors nsAHttpTransaction
+  bool Do0RTT();
+  nsresult Finish0RTT(bool aRestart);
+
+  uint8_t PriorityUrgency();
+  bool PriorityIncremental();
 
  private:
   ~Http3Stream() = default;
@@ -64,6 +68,8 @@ class Http3Stream final : public nsAHttpSegmentReader,
   bool GetHeadersString(const char* buf, uint32_t avail, uint32_t* countUsed);
   nsresult StartRequest();
   void FindRequestContentLength();
+
+  void SetPriority(uint32_t aCos);
 
   /**
    * SendStreamState:
@@ -84,7 +90,7 @@ class Http3Stream final : public nsAHttpSegmentReader,
    *      the data to neqo.
    *      After SENDING_BODY, the state transfers to READING_HEADERS.
    *  - EARLY_RESPONSE:
-   *      The server may send STOP_SENDING frame with error HTTP_EARLY_RESPONSE.
+   *      The server may send STOP_SENDING frame with error HTTP_NO_ERROR.
    *      That error means that the server is not interested in the request
    *      body. In this state the server will just ignore the request body.
    **/
@@ -94,10 +100,12 @@ class Http3Stream final : public nsAHttpSegmentReader,
     SENDING_BODY,
     EARLY_RESPONSE,
     SEND_DONE
-  } mSendState;
+  } mSendState{PREPARING_HEADERS};
 
   /**
    * RecvStreamState:
+   *  - BEFORE_HEADERS:
+   *      The stream has not received headers yet.
    *  - READING_HEADERS:
    *      In this state Http3Session::ReadResponseHeaders will be called to read
    *      the response headers. All headers will be read at once into
@@ -114,32 +122,39 @@ class Http3Stream final : public nsAHttpSegmentReader,
    *      The transaction is done.
    **/
   enum RecvStreamState {
+    BEFORE_HEADERS,
     READING_HEADERS,
     READING_DATA,
     RECEIVED_FIN,
-    RECEIVED_RESET,
     RECV_DONE
-  } mRecvState;
+  } mRecvState{BEFORE_HEADERS};
 
-  uint64_t mStreamId;
+  uint64_t mStreamId{UINT64_MAX};
   Http3Session* mSession;
   RefPtr<nsAHttpTransaction> mTransaction;
   nsCString mFlatHttpRequestHeaders;
-  bool mQueued;
-  bool mRequestBlockedOnRead;
-  bool mDataReceived;
-  bool mResetRecv;
+  bool mQueued{false};
+  bool mDataReceived{false};
+  bool mResetRecv{false};
   nsTArray<uint8_t> mFlatResponseHeaders;
-  uint32_t mRequestBodyLenRemaining;
-
-  // The underlying socket transport object is needed to propogate some events
-  RefPtr<nsISocketTransport> mSocketTransport;
+  uint32_t mRequestBodyLenRemaining{0};
+  uint64_t mTransactionTabId{0};
+  uint64_t mCurrentTopBrowsingContextId;
+  uint8_t mPriorityUrgency{3};  // urgency field of http priority
+  bool mPriorityIncremental{false};
 
   // For Progress Events
-  uint64_t mTotalSent;
-  uint64_t mTotalRead;
+  uint64_t mTotalSent{0};
+  uint64_t mTotalRead{0};
 
-  bool mFin;
+  bool mFin{false};
+
+  bool mAttempting0RTT = false;
+
+  uint32_t mSendingBlockedByFlowControlCount = 0;
+
+  nsresult mSocketInCondition = NS_ERROR_NOT_INITIALIZED;
+  nsresult mSocketOutCondition = NS_ERROR_NOT_INITIALIZED;
 };
 
 }  // namespace net

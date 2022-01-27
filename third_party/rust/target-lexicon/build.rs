@@ -7,11 +7,19 @@ use std::env;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::process::Command;
 use std::str::FromStr;
 
+#[cfg(not(feature = "std"))]
 extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std as alloc;
 
 // Include triple.rs and targets.rs so we can parse the TARGET environment variable.
+// targets.rs depends on data_model
+mod data_model {
+    include!("src/data_model.rs");
+}
 mod triple {
     include!("src/triple.rs");
 }
@@ -39,9 +47,39 @@ fn main() {
     let out_dir =
         PathBuf::from(env::var("OUT_DIR").expect("The OUT_DIR environment variable must be set"));
     let target = env::var("TARGET").expect("The TARGET environment variable must be set");
-    let triple = Triple::from_str(&target).expect(&format!("Invalid target name: '{}'", target));
+    let triple =
+        Triple::from_str(&target).unwrap_or_else(|_| panic!("Invalid target name: '{}'", target));
     let out = File::create(out_dir.join("host.rs")).expect("error creating host.rs");
     write_host_rs(out, triple).expect("error writing host.rs");
+    if using_1_40() {
+        println!("cargo:rustc-cfg=feature=\"rust_1_40\"");
+    }
+}
+
+fn using_1_40() -> bool {
+    match (|| {
+        let stdout = match Command::new("rustc").arg("--version").output() {
+            Ok(output) => {
+                if output.status.success() {
+                    output.stdout
+                } else {
+                    return None;
+                }
+            }
+            _ => return None,
+        };
+        std::str::from_utf8(&stdout)
+            .ok()?
+            .split(' ')
+            .nth(1)?
+            .split('.')
+            .nth(1)?
+            .parse::<i32>()
+            .ok()
+    })() {
+        Some(version) => version >= 40,
+        None => true, // assume we're using an up-to-date compiler
+    }
 }
 
 fn write_host_rs(mut out: File, triple: Triple) -> io::Result<()> {
@@ -55,6 +93,16 @@ fn write_host_rs(mut out: File, triple: Triple) -> io::Result<()> {
     writeln!(out, "use crate::ArmArchitecture::*;")?;
     writeln!(out, "#[allow(unused_imports)]")?;
     writeln!(out, "use crate::CustomVendor;")?;
+    writeln!(out, "#[allow(unused_imports)]")?;
+    writeln!(out, "use crate::Mips32Architecture::*;")?;
+    writeln!(out, "#[allow(unused_imports)]")?;
+    writeln!(out, "use crate::Mips64Architecture::*;")?;
+    writeln!(out, "#[allow(unused_imports)]")?;
+    writeln!(out, "use crate::Riscv32Architecture::*;")?;
+    writeln!(out, "#[allow(unused_imports)]")?;
+    writeln!(out, "use crate::Riscv64Architecture::*;")?;
+    writeln!(out, "#[allow(unused_imports)]")?;
+    writeln!(out, "use crate::X86_32Architecture::*;")?;
     writeln!(out)?;
     writeln!(out, "/// The `Triple` of the current host.")?;
     writeln!(out, "pub const HOST: Triple = Triple {{")?;
@@ -63,7 +111,11 @@ fn write_host_rs(mut out: File, triple: Triple) -> io::Result<()> {
         "    architecture: Architecture::{:?},",
         triple.architecture
     )?;
-    writeln!(out, "    vendor: {},", vendor_display(&triple.vendor))?;
+    writeln!(
+        out,
+        "    vendor: Vendor::{},",
+        vendor_display(&triple.vendor)
+    )?;
     writeln!(
         out,
         "    operating_system: OperatingSystem::{:?},",
@@ -93,7 +145,7 @@ fn write_host_rs(mut out: File, triple: Triple) -> io::Result<()> {
     writeln!(out, "impl Vendor {{")?;
     writeln!(out, "    /// Return the vendor for the current host.")?;
     writeln!(out, "    pub const fn host() -> Self {{")?;
-    writeln!(out, "        {}", vendor_display(&triple.vendor))?;
+    writeln!(out, "        Vendor::{}", vendor_display(&triple.vendor))?;
     writeln!(out, "    }}")?;
     writeln!(out, "}}")?;
     writeln!(out)?;
@@ -143,7 +195,7 @@ fn write_host_rs(mut out: File, triple: Triple) -> io::Result<()> {
     )?;
     writeln!(
         out,
-        "            vendor: {},",
+        "            vendor: Vendor::{},",
         vendor_display(&triple.vendor)
     )?;
     writeln!(
@@ -170,10 +222,7 @@ fn write_host_rs(mut out: File, triple: Triple) -> io::Result<()> {
 
 fn vendor_display(vendor: &Vendor) -> String {
     match vendor {
-        Vendor::Custom(custom) => format!(
-            "Vendor::Custom(CustomVendor::Static({:?}))",
-            custom.as_str()
-        ),
-        known => format!("Vendor::{:?}", known),
+        Vendor::Custom(custom) => format!("Custom(CustomVendor::Static({:?}))", custom.as_str()),
+        known => format!("{:?}", known),
     }
 }

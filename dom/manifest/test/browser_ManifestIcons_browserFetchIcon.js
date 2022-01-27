@@ -1,5 +1,3 @@
-// Used by JSHint:
-/* global Cu, BrowserTestUtils, ok, add_task, gBrowser */
 "use strict";
 
 Services.prefs.setBoolPref("dom.manifest.enabled", true);
@@ -12,7 +10,7 @@ const { ManifestObtainer } = ChromeUtils.import(
 );
 
 const defaultURL = new URL(
-  "http://example.org/browser/dom/manifest/test/resource.sjs"
+  "https://example.org/browser/dom/manifest/test/resource.sjs"
 );
 defaultURL.searchParams.set("Content-Type", "application/manifest+json");
 

@@ -9,9 +9,10 @@
 #include "nsString.h"
 #include "ExampleStylesheet.h"
 #include "ServoBindings.h"
+#include "mozilla/dom/DOMString.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/Utf8.h"
-#include "mozilla/NullPrincipalURI.h"
+#include "mozilla/NullPrincipal.h"
 #include "mozilla/css/SheetParsingMode.h"
 #include "ReferrerInfo.h"
 #include "nsCSSValue.h"
@@ -35,7 +36,7 @@ static void ServoParsingBench(const StyleUseCounters* aCounters) {
   cssStr.Append(css);
   ASSERT_EQ(Encoding::UTF8ValidUpTo(css), css.Length());
 
-  RefPtr<NullPrincipalURI> uri = new NullPrincipalURI();
+  RefPtr<nsIURI> uri = NullPrincipal::CreateURI();
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
   RefPtr<URLExtraData> data =
       new URLExtraData(uri.forget(), referrerInfo.forget(),
@@ -50,10 +51,12 @@ static void ServoParsingBench(const StyleUseCounters* aCounters) {
   }
 }
 
+static constexpr auto STYLE_RULE = StyleCssRuleType::Style;
+
 static void ServoSetPropertyByIdBench(const nsACString& css) {
   RefPtr<RawServoDeclarationBlock> block =
       Servo_DeclarationBlock_CreateEmpty().Consume();
-  RefPtr<NullPrincipalURI> uri = new NullPrincipalURI();
+  RefPtr<nsIURI> uri = NullPrincipal::CreateURI();
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
   RefPtr<URLExtraData> data =
       new URLExtraData(uri.forget(), referrerInfo.forget(),
@@ -64,7 +67,7 @@ static void ServoSetPropertyByIdBench(const nsACString& css) {
     Servo_DeclarationBlock_SetPropertyById(
         block, eCSSProperty_width, &css,
         /* is_important = */ false, data, ParsingMode::Default,
-        eCompatibility_FullStandards, nullptr, {});
+        eCompatibility_FullStandards, nullptr, STYLE_RULE, {});
   }
 }
 
@@ -72,7 +75,7 @@ static void ServoGetPropertyValueById() {
   RefPtr<RawServoDeclarationBlock> block =
       Servo_DeclarationBlock_CreateEmpty().Consume();
 
-  RefPtr<NullPrincipalURI> uri = new NullPrincipalURI();
+  RefPtr<nsIURI> uri = NullPrincipal::CreateURI();
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
   RefPtr<URLExtraData> data =
       new URLExtraData(uri.forget(), referrerInfo.forget(),
@@ -82,11 +85,10 @@ static void ServoGetPropertyValueById() {
   Servo_DeclarationBlock_SetPropertyById(
       block, eCSSProperty_width, &css,
       /* is_important = */ false, data, ParsingMode::Default,
-      eCompatibility_FullStandards, nullptr, {});
+      eCompatibility_FullStandards, nullptr, STYLE_RULE, {});
 
   for (int i = 0; i < GETPROPERTY_REPETITIONS; i++) {
-    DOMString value_;
-    nsAString& value = value_;
+    nsAutoCString value;
     Servo_DeclarationBlock_GetPropertyValueById(block, eCSSProperty_width,
                                                 &value);
     ASSERT_TRUE(value.EqualsLiteral("10px"));

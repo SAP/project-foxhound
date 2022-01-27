@@ -97,15 +97,17 @@ class TextureImage {
   /**
    * aSurf - the source surface to update from
    * aRegion - the region in this image to update
-   * aFrom - offset in the source to update from
+   * aSrcOffset - offset in the source to update from
+   * aDstOffset - offset in the destination to update to
    */
-  virtual bool DirectUpdate(gfx::DataSourceSurface* aSurf,
-                            const nsIntRegion& aRegion,
-                            const gfx::IntPoint& aFrom = gfx::IntPoint(0,
-                                                                       0)) = 0;
+  virtual bool DirectUpdate(
+      gfx::DataSourceSurface* aSurf, const nsIntRegion& aRegion,
+      const gfx::IntPoint& aSrcOffset = gfx::IntPoint(0, 0),
+      const gfx::IntPoint& aDstOffset = gfx::IntPoint(0, 0)) = 0;
   bool UpdateFromDataSource(gfx::DataSourceSurface* aSurf,
                             const nsIntRegion* aDstRegion = nullptr,
-                            const gfx::IntPoint* aSrcOffset = nullptr);
+                            const gfx::IntPoint* aSrcOffset = nullptr,
+                            const gfx::IntPoint* aDstOffset = nullptr);
 
   virtual void BindTexture(GLenum aTextureUnit) = 0;
 
@@ -179,8 +181,10 @@ class BasicTextureImage : public TextureImage {
 
   void BindTexture(GLenum aTextureUnit) override;
 
-  bool DirectUpdate(gfx::DataSourceSurface* aSurf, const nsIntRegion& aRegion,
-                    const gfx::IntPoint& aFrom = gfx::IntPoint(0, 0)) override;
+  bool DirectUpdate(
+      gfx::DataSourceSurface* aSurf, const nsIntRegion& aRegion,
+      const gfx::IntPoint& aSrcOffset = gfx::IntPoint(0, 0),
+      const gfx::IntPoint& aDstOffset = gfx::IntPoint(0, 0)) override;
   GLuint GetTextureID() override { return mTexture; }
 
   void MarkValid() override { mTextureState = Valid; }
@@ -216,8 +220,10 @@ class TiledTextureImage final : public TextureImage {
   GLuint GetTextureID() override {
     return mImages[mCurrentImage]->GetTextureID();
   }
-  bool DirectUpdate(gfx::DataSourceSurface* aSurf, const nsIntRegion& aRegion,
-                    const gfx::IntPoint& aFrom = gfx::IntPoint(0, 0)) override;
+  bool DirectUpdate(
+      gfx::DataSourceSurface* aSurf, const nsIntRegion& aRegion,
+      const gfx::IntPoint& aSrcOffset = gfx::IntPoint(0, 0),
+      const gfx::IntPoint& aDstOffset = gfx::IntPoint(0, 0)) override;
   void BindTexture(GLenum) override;
 
  protected:

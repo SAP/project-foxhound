@@ -6,11 +6,15 @@
 
 /*** Panel and outer controls ***/
 
-#downloadsSummary:-moz-focusring {
+#downloadsHistory {
+  border: 0;
+}
+
+#downloadsSummary:focus-visible {
   outline-offset: -5px;
 }
 
-@notKeyfocus@ #downloadsSummary:-moz-focusring {
+@notKeyfocus@ #downloadsSummary:focus-visible {
   outline: none;
 }
 
@@ -24,25 +28,6 @@
 
 @notKeyfocus@ .downloadButton:-moz-focusring {
   outline: none;
-}
-
-@media (-moz-windows-default-theme) {
-  @item@[verdict="Malware"]:not(:hover) {
-    color: #aa1b08;
-  }
-
-  :root[lwt-popup-brighttext] @item@[verdict="Malware"]:not(:hover) {
-    color: #ff0039;
-  }
-
-  /* Use unified color for the progressbar on default theme */
-  .downloadProgress::-moz-progress-bar {
-    background-color: #3c9af8;
-  }
-
-  .downloadProgress[paused]::-moz-progress-bar {
-    background-color: #a6a6a6;
-  }
 }
 
 /*** Highlighted list items ***/

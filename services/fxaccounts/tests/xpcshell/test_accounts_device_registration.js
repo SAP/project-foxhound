@@ -661,8 +661,12 @@ add_task(async function test_verification_updates_registration() {
 
   await updatePromise;
 
-  const { device: newDevice } = await state.getUserAccountData();
+  const {
+    device: newDevice,
+    encryptedSendTabKeys,
+  } = await state.getUserAccountData();
   Assert.equal(newDevice.registeredCommandsKeys.length, 1);
+  Assert.notEqual(encryptedSendTabKeys, null);
   await fxa.signOut(true);
 });
 
@@ -704,11 +708,16 @@ add_task(async function test_devicelist_pushendpointexpired() {
       },
     ]);
   };
+  let polledForMissedCommands = false;
+  fxa._internal.commands.pollDeviceCommands = () => {
+    polledForMissedCommands = true;
+  };
 
   await fxa.device.refreshDeviceList();
 
   Assert.equal(spy.getDeviceList.count, 1);
   Assert.equal(spy.updateDevice.count, 1);
+  Assert.ok(polledForMissedCommands);
   await fxa.signOut(true);
 });
 
@@ -751,10 +760,16 @@ add_task(async function test_devicelist_nopushcallback() {
     ]);
   };
 
+  let polledForMissedCommands = false;
+  fxa._internal.commands.pollDeviceCommands = () => {
+    polledForMissedCommands = true;
+  };
+
   await fxa.device.refreshDeviceList();
 
   Assert.equal(spy.getDeviceList.count, 1);
   Assert.equal(spy.updateDevice.count, 1);
+  Assert.ok(polledForMissedCommands);
   await fxa.signOut(true);
 });
 
@@ -910,8 +925,7 @@ function getTestUser(name) {
     email: name + "@example.com",
     uid: "1ad7f502-4cc7-4ec1-a209-071fd2fae348",
     sessionToken: name + "'s session token",
-    keyFetchToken: name + "'s keyfetch token",
-    unwrapBKey: expandHex("44"),
     verified: false,
+    ...MOCK_ACCOUNT_KEYS,
   };
 }

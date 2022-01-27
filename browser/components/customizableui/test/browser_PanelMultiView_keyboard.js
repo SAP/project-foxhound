@@ -24,6 +24,7 @@ let gMainRadiogroup;
 let gMainTextbox;
 let gMainButton2;
 let gMainButton3;
+let gCheckbox;
 let gMainTabOrder;
 let gMainArrowOrder;
 let gSubView;
@@ -129,6 +130,9 @@ add_task(async function setup() {
   gMainButton3 = document.createXULElement("button");
   gMainButton3.id = "gMainButton3";
   gMainView.appendChild(gMainButton3);
+  gCheckbox = document.createXULElement("checkbox");
+  gCheckbox.id = "gCheckbox";
+  gMainView.appendChild(gCheckbox);
   gMainTabOrder = [
     gMainButton1,
     gMainMenulist,
@@ -136,8 +140,9 @@ add_task(async function setup() {
     gMainTextbox,
     gMainButton2,
     gMainButton3,
+    gCheckbox,
   ];
-  gMainArrowOrder = [gMainButton1, gMainButton2, gMainButton3];
+  gMainArrowOrder = [gMainButton1, gMainButton2, gMainButton3, gCheckbox];
 
   gSubView = document.createXULElement("panelview");
   gSubView.id = "testSubView";
@@ -460,17 +465,10 @@ async function testTabArrowsEmbeddedDoc(aView, aEmbedder) {
   if (doc.readyState != "complete" || doc.location.href != kEmbeddedDocUrl) {
     info(`Embedded doc readyState ${doc.readyState}, location ${doc.location}`);
     info("Waiting for load on embedder");
-    if (aEmbedder.tagName == "browser") {
-      // We can't use BrowserTestUtils.browserLoaded because it assumes the
-      // browser is linked to a tab.
-      await BrowserTestUtils.waitForEvent(
-        aEmbedder,
-        "BrowserTestUtils:ContentEvent:load"
-      );
-    } else {
-      // iframe
-      await BrowserTestUtils.waitForEvent(aEmbedder, "load");
-    }
+    // Browsers don't fire load events, and iframes don't fire load events in
+    // typeChrome windows. We can handle both by using a capturing event
+    // listener to capture the load event from the child document.
+    await BrowserTestUtils.waitForEvent(aEmbedder, "load", true);
     // The original doc might have been a temporary about:blank, so fetch it
     // again.
     doc = aEmbedder.contentDocument;
@@ -497,9 +495,7 @@ async function testTabArrowsEmbeddedDoc(aView, aEmbedder) {
   is(textarea.selectionStart, 0, "selectionStart 0 after ArrowLeft");
   is(doc.activeElement, textarea, "textarea still focused");
   let docButton = doc.getElementById("docButton");
-  expectFocusAfterKey("Tab", docButton);
-  // Make sure tab leaves the document and reaches the Back button.
-  expectFocusAfterKey("Tab", backButton);
+  await expectFocusAfterKey("Tab", docButton);
   await hidePopup();
 }
 

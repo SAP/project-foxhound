@@ -19,7 +19,6 @@ def inline(doc):
 
 
 class TestServerQuitApplication(MarionetteTestCase):
-
     def tearDown(self):
         if self.marionette.session is None:
             self.marionette.start_session()
@@ -29,14 +28,12 @@ class TestServerQuitApplication(MarionetteTestCase):
         if flags is not None:
             body = {"flags": list(flags)}
 
-        try:
-            resp = self.marionette._send_message("Marionette:Quit", body)
-        finally:
-            self.marionette.session_id = None
-            self.marionette.session = None
-            self.marionette.process_id = None
-            self.marionette.profile = None
-            self.marionette.window = None
+        resp = self.marionette._send_message("Marionette:Quit", body)
+        self.marionette.session_id = None
+        self.marionette.session = None
+        self.marionette.process_id = None
+        self.marionette.profile = None
+        self.marionette.window = None
 
         self.assertIn("cause", resp)
 
@@ -76,7 +73,6 @@ class TestServerQuitApplication(MarionetteTestCase):
 
 
 class TestQuitRestart(MarionetteTestCase):
-
     def setUp(self):
         MarionetteTestCase.setUp(self)
 
@@ -86,8 +82,9 @@ class TestQuitRestart(MarionetteTestCase):
 
         # Use a preference to check that the restart was successful. If its
         # value has not been forced, a restart will cause a reset of it.
-        self.assertNotEqual(self.marionette.get_pref("startup.homepage_welcome_url"),
-                            "about:about")
+        self.assertNotEqual(
+            self.marionette.get_pref("startup.homepage_welcome_url"), "about:about"
+        )
         self.marionette.set_pref("startup.homepage_welcome_url", "about:about")
 
     def tearDown(self):
@@ -102,21 +99,26 @@ class TestQuitRestart(MarionetteTestCase):
     @property
     def is_safe_mode(self):
         with self.marionette.using_context("chrome"):
-            return self.marionette.execute_script("""
+            return self.marionette.execute_script(
+                """
               Cu.import("resource://gre/modules/Services.jsm");
               return Services.appinfo.inSafeMode;
-            """)
+            """
+            )
 
     def shutdown(self, restart=False):
         self.marionette.set_context("chrome")
-        self.marionette.execute_script("""
+        self.marionette.execute_script(
+            """
             Components.utils.import("resource://gre/modules/Services.jsm");
             let flags = Ci.nsIAppStartup.eAttemptQuit;
             if (arguments[0]) {
               flags |= Ci.nsIAppStartup.eRestart;
             }
             Services.startup.quit(flags);
-        """, script_args=(restart,))
+        """,
+            script_args=(restart,),
+        )
 
     def test_force_restart(self):
         self.marionette.restart()
@@ -125,8 +127,9 @@ class TestQuitRestart(MarionetteTestCase):
 
         # A forced restart will cause a new process id
         self.assertNotEqual(self.marionette.process_id, self.pid)
-        self.assertNotEqual(self.marionette.get_pref("startup.homepage_welcome_url"),
-                            "about:about")
+        self.assertNotEqual(
+            self.marionette.get_pref("startup.homepage_welcome_url"), "about:about"
+        )
 
     def test_force_clean_restart(self):
         self.marionette.restart(clean=True)
@@ -134,64 +137,93 @@ class TestQuitRestart(MarionetteTestCase):
         self.assertNotEqual(self.marionette.session_id, self.session_id)
         # A forced restart will cause a new process id
         self.assertNotEqual(self.marionette.process_id, self.pid)
-        self.assertNotEqual(self.marionette.get_pref("startup.homepage_welcome_url"),
-                            "about:about")
+        self.assertNotEqual(
+            self.marionette.get_pref("startup.homepage_welcome_url"), "about:about"
+        )
 
     def test_force_quit(self):
         self.marionette.quit()
 
         self.assertEqual(self.marionette.session, None)
-        with self.assertRaisesRegexp(errors.InvalidSessionIdException, "Please start a session"):
+        with self.assertRaisesRegexp(
+            errors.InvalidSessionIdException, "Please start a session"
+        ):
             self.marionette.get_url()
 
     def test_force_clean_quit(self):
         self.marionette.quit(clean=True)
 
         self.assertEqual(self.marionette.session, None)
-        with self.assertRaisesRegexp(errors.InvalidSessionIdException, "Please start a session"):
+        with self.assertRaisesRegexp(
+            errors.InvalidSessionIdException, "Please start a session"
+        ):
             self.marionette.get_url()
 
         self.marionette.start_session()
         self.assertNotEqual(self.marionette.profile, self.profile)
         self.assertNotEqual(self.marionette.session_id, self.session_id)
-        self.assertNotEqual(self.marionette.get_pref("startup.homepage_welcome_url"),
-                            "about:about")
+        self.assertNotEqual(
+            self.marionette.get_pref("startup.homepage_welcome_url"), "about:about"
+        )
 
     def test_no_in_app_clean_restart(self):
         # Test that in_app and clean cannot be used in combination
-        with self.assertRaisesRegexp(ValueError, "cannot be triggered with the clean flag set"):
+        with self.assertRaisesRegexp(
+            ValueError, "cannot be triggered with the clean flag set"
+        ):
             self.marionette.restart(in_app=True, clean=True)
 
     def test_in_app_restart(self):
-        self.marionette.restart(in_app=True)
+        details = self.marionette.restart(in_app=True)
+
+        self.assertFalse(details["forced"], "Expected non-forced shutdown")
 
         self.assertEqual(self.marionette.profile, self.profile)
         self.assertNotEqual(self.marionette.session_id, self.session_id)
 
-        # An in-app restart will keep the same process id only on Linux
-        if self.marionette.session_capabilities["platformName"] == "linux":
-            self.assertEqual(self.marionette.process_id, self.pid)
-        else:
-            self.assertNotEqual(self.marionette.process_id, self.pid)
+        self.assertNotEqual(self.marionette.process_id, self.pid)
 
-        self.assertNotEqual(self.marionette.get_pref("startup.homepage_welcome_url"),
-                            "about:about")
+        self.assertNotEqual(
+            self.marionette.get_pref("startup.homepage_welcome_url"), "about:about"
+        )
+
+    def test_in_app_restart_component_prevents_shutdown(self):
+        with self.marionette.using_context("chrome"):
+            self.marionette.execute_script(
+                """
+                Services.obs.addObserver(subject => {
+                  let cancelQuit = subject.QueryInterface(Ci.nsISupportsPRBool);
+                  cancelQuit.data = true;
+                }, "quit-application-requested");
+                """
+            )
+
+        details = self.marionette.restart(in_app=True)
+
+        self.assertTrue(details["forced"], "Expected forced shutdown")
+
+        self.assertEqual(self.marionette.profile, self.profile)
+        self.assertNotEqual(self.marionette.session_id, self.session_id)
+
+        self.assertNotEqual(self.marionette.process_id, self.pid)
+
+        self.assertNotEqual(
+            self.marionette.get_pref("startup.homepage_welcome_url"), "about:about"
+        )
 
     def test_in_app_restart_with_callback(self):
-        self.marionette.restart(in_app=True,
-                                callback=lambda: self.shutdown(restart=True))
+        self.marionette.restart(
+            in_app=True, callback=lambda: self.shutdown(restart=True)
+        )
 
         self.assertEqual(self.marionette.profile, self.profile)
         self.assertNotEqual(self.marionette.session_id, self.session_id)
 
-        # An in-app restart will keep the same process id only on Linux
-        if self.marionette.session_capabilities["platformName"] == "linux":
-            self.assertEqual(self.marionette.process_id, self.pid)
-        else:
-            self.assertNotEqual(self.marionette.process_id, self.pid)
+        self.assertNotEqual(self.marionette.process_id, self.pid)
 
-        self.assertNotEqual(self.marionette.get_pref("startup.homepage_welcome_url"),
-                            "about:about")
+        self.assertNotEqual(
+            self.marionette.get_pref("startup.homepage_welcome_url"), "about:about"
+        )
 
     def test_in_app_restart_with_callback_not_callable(self):
         with self.assertRaisesRegexp(ValueError, "is not callable"):
@@ -199,25 +231,43 @@ class TestQuitRestart(MarionetteTestCase):
 
     @unittest.skipIf(sys.platform.startswith("win"), "Bug 1493796")
     def test_in_app_restart_with_callback_but_process_quit(self):
-        with self.assertRaisesRegexp(IOError, "Process unexpectedly quit without restarting"):
-            self.marionette.restart(in_app=True, callback=lambda: self.shutdown(restart=False))
+        try:
+            timeout_shutdown = self.marionette.shutdown_timeout
+            timeout_startup = self.marionette.startup_timeout
+            self.marionette.shutdown_timeout = 5
+            self.marionette.startup_timeout = 0
+
+            with self.assertRaisesRegexp(
+                IOError, "Process unexpectedly quit without restarting"
+            ):
+                self.marionette.restart(
+                    in_app=True, callback=lambda: self.shutdown(restart=False)
+                )
+        finally:
+            self.marionette.shutdown_timeout = timeout_shutdown
+            self.marionette.startup_timeout = timeout_startup
 
     @unittest.skipIf(sys.platform.startswith("win"), "Bug 1493796")
     def test_in_app_restart_with_callback_missing_shutdown(self):
         try:
             timeout_shutdown = self.marionette.shutdown_timeout
+            timeout_startup = self.marionette.startup_timeout
             self.marionette.shutdown_timeout = 5
+            self.marionette.startup_timeout = 0
 
-            with self.assertRaisesRegexp(IOError, "the connection to Marionette server is lost"):
+            with self.assertRaisesRegexp(
+                IOError, "the connection to Marionette server is lost"
+            ):
                 self.marionette.restart(in_app=True, callback=lambda: False)
         finally:
             self.marionette.shutdown_timeout = timeout_shutdown
+            self.marionette.startup_timeout = timeout_startup
 
     def test_in_app_restart_safe_mode(self):
-
         def restart_in_safe_mode():
             with self.marionette.using_context("chrome"):
-                self.marionette.execute_script("""
+                self.marionette.execute_script(
+                    """
                   Components.utils.import("resource://gre/modules/Services.jsm");
 
                   let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"]
@@ -228,7 +278,8 @@ class TestQuitRestart(MarionetteTestCase):
                   if (!cancelQuit.data) {
                     Services.startup.restartInSafeMode(Ci.nsIAppStartup.eAttemptQuit);
                   }
-                """)
+                """
+                )
 
         try:
             self.assertFalse(self.is_safe_mode, "Safe Mode is unexpectedly enabled")
@@ -240,29 +291,65 @@ class TestQuitRestart(MarionetteTestCase):
             self.marionette.quit(clean=True)
 
     def test_in_app_quit(self):
-        self.marionette.quit(in_app=True)
+        details = self.marionette.quit(in_app=True)
+
+        self.assertFalse(details["forced"], "Expected non-forced shutdown")
 
         self.assertEqual(self.marionette.session, None)
-        with self.assertRaisesRegexp(errors.InvalidSessionIdException, "Please start a session"):
+        with self.assertRaisesRegexp(
+            errors.InvalidSessionIdException, "Please start a session"
+        ):
             self.marionette.get_url()
 
         self.marionette.start_session()
         self.assertEqual(self.marionette.profile, self.profile)
         self.assertNotEqual(self.marionette.session_id, self.session_id)
-        self.assertNotEqual(self.marionette.get_pref("startup.homepage_welcome_url"),
-                            "about:about")
+        self.assertNotEqual(
+            self.marionette.get_pref("startup.homepage_welcome_url"), "about:about"
+        )
+
+    def test_in_app_quit_component_prevents_shutdown(self):
+        with self.marionette.using_context("chrome"):
+            self.marionette.execute_script(
+                """
+                Services.obs.addObserver(subject => {
+                  let cancelQuit = subject.QueryInterface(Ci.nsISupportsPRBool);
+                  cancelQuit.data = true;
+                }, "quit-application-requested");
+                """
+            )
+
+        details = self.marionette.quit(in_app=True)
+
+        self.assertTrue(details["forced"], "Expected forced shutdown")
+
+        self.assertEqual(self.marionette.session, None)
+        with self.assertRaisesRegexp(
+            errors.InvalidSessionIdException, "Please start a session"
+        ):
+            self.marionette.get_url()
+
+        self.marionette.start_session()
+        self.assertEqual(self.marionette.profile, self.profile)
+        self.assertNotEqual(self.marionette.session_id, self.session_id)
+        self.assertNotEqual(
+            self.marionette.get_pref("startup.homepage_welcome_url"), "about:about"
+        )
 
     def test_in_app_quit_with_callback(self):
         self.marionette.quit(in_app=True, callback=self.shutdown)
         self.assertEqual(self.marionette.session, None)
-        with self.assertRaisesRegexp(errors.InvalidSessionIdException, "Please start a session"):
+        with self.assertRaisesRegexp(
+            errors.InvalidSessionIdException, "Please start a session"
+        ):
             self.marionette.get_url()
 
         self.marionette.start_session()
         self.assertEqual(self.marionette.profile, self.profile)
         self.assertNotEqual(self.marionette.session_id, self.session_id)
-        self.assertNotEqual(self.marionette.get_pref("startup.homepage_welcome_url"),
-                            "about:about")
+        self.assertNotEqual(
+            self.marionette.get_pref("startup.homepage_welcome_url"), "about:about"
+        )
 
     def test_in_app_quit_with_callback_missing_shutdown(self):
         try:
@@ -279,14 +366,18 @@ class TestQuitRestart(MarionetteTestCase):
             self.marionette.restart(in_app=True, callback=4)
 
     def test_in_app_quit_with_dismissed_beforeunload_prompt(self):
-        self.marionette.navigate(inline("""
+        self.marionette.navigate(
+            inline(
+                """
           <input type="text">
           <script>
             window.addEventListener("beforeunload", function (event) {
               event.preventDefault();
             });
           </script>
-        """))
+        """
+            )
+        )
 
         self.marionette.find_element(By.TAG_NAME, "input").send_keys("foo")
         self.marionette.quit(in_app=True)
@@ -295,63 +386,77 @@ class TestQuitRestart(MarionetteTestCase):
     def test_reset_context_after_quit_by_set_context(self):
         # Check that we are in content context which is used by default in
         # Marionette
-        self.assertNotIn("chrome://", self.marionette.get_url(),
-                         "Context does not default to content")
+        self.assertNotIn(
+            "chrome://",
+            self.marionette.get_url(),
+            "Context does not default to content",
+        )
 
         self.marionette.set_context("chrome")
         self.marionette.quit(in_app=True)
         self.assertEqual(self.marionette.session, None)
         self.marionette.start_session()
-        self.assertNotIn("chrome://", self.marionette.get_url(),
-                         "Not in content context after quit with using_context")
+        self.assertNotIn(
+            "chrome://",
+            self.marionette.get_url(),
+            "Not in content context after quit with using_context",
+        )
 
     def test_reset_context_after_quit_by_using_context(self):
         # Check that we are in content context which is used by default in
         # Marionette
-        self.assertNotIn("chrome://", self.marionette.get_url(),
-                         "Context does not default to content")
+        self.assertNotIn(
+            "chrome://",
+            self.marionette.get_url(),
+            "Context does not default to content",
+        )
 
         with self.marionette.using_context("chrome"):
             self.marionette.quit(in_app=True)
             self.assertEqual(self.marionette.session, None)
             self.marionette.start_session()
-            self.assertNotIn("chrome://", self.marionette.get_url(),
-                             "Not in content context after quit with using_context")
+            self.assertNotIn(
+                "chrome://",
+                self.marionette.get_url(),
+                "Not in content context after quit with using_context",
+            )
 
     def test_keep_context_after_restart_by_set_context(self):
         # Check that we are in content context which is used by default in
         # Marionette
-        self.assertNotIn("chrome://", self.marionette.get_url(),
-                         "Context doesn't default to content")
+        self.assertNotIn(
+            "chrome://", self.marionette.get_url(), "Context doesn't default to content"
+        )
 
         # restart while we are in chrome context
         self.marionette.set_context("chrome")
         self.marionette.restart(in_app=True)
 
-        # An in-app restart will keep the same process id only on Linux
-        if self.marionette.session_capabilities["platformName"] == "linux":
-            self.assertEqual(self.marionette.process_id, self.pid)
-        else:
-            self.assertNotEqual(self.marionette.process_id, self.pid)
+        self.assertNotEqual(self.marionette.process_id, self.pid)
 
-        self.assertIn("chrome://", self.marionette.get_url(),
-                      "Not in chrome context after a restart with set_context")
+        self.assertIn(
+            "chrome://",
+            self.marionette.get_url(),
+            "Not in chrome context after a restart with set_context",
+        )
 
     def test_keep_context_after_restart_by_using_context(self):
         # Check that we are in content context which is used by default in
         # Marionette
-        self.assertNotIn("chrome://", self.marionette.get_url(),
-                         "Context does not default to content")
+        self.assertNotIn(
+            "chrome://",
+            self.marionette.get_url(),
+            "Context does not default to content",
+        )
 
         # restart while we are in chrome context
-        with self.marionette.using_context('chrome'):
+        with self.marionette.using_context("chrome"):
             self.marionette.restart(in_app=True)
 
-            # An in-app restart will keep the same process id only on Linux
-            if self.marionette.session_capabilities["platformName"] == "linux":
-                self.assertEqual(self.marionette.process_id, self.pid)
-            else:
-                self.assertNotEqual(self.marionette.process_id, self.pid)
+            self.assertNotEqual(self.marionette.process_id, self.pid)
 
-            self.assertIn("chrome://", self.marionette.get_url(),
-                          "Not in chrome context after a restart with using_context")
+            self.assertIn(
+                "chrome://",
+                self.marionette.get_url(),
+                "Not in chrome context after a restart with using_context",
+            )

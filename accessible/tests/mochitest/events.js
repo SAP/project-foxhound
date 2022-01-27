@@ -566,7 +566,7 @@ function eventQueue(aEventType) {
           continue;
         }
 
-        // Report an error if we hanlded not expected event of unique type
+        // Report an error if we handled not expected event of unique type
         // (i.e. event types are matched, targets differs).
         if (
           !checker.unexpected &&
@@ -1251,11 +1251,21 @@ function synthClick(aNodeOrID, aCheckerOrEventSeq, aArgs) {
 
     var x = 1,
       y = 1;
-    if (aArgs && "where" in aArgs && aArgs.where == "right") {
-      if (isHTMLElement(targetNode)) {
-        x = targetNode.offsetWidth - 1;
-      } else if (isXULElement(targetNode)) {
-        x = targetNode.getBoundingClientRect().width - 1;
+    if (aArgs && "where" in aArgs) {
+      if (aArgs.where == "right") {
+        if (isHTMLElement(targetNode)) {
+          x = targetNode.offsetWidth - 1;
+        } else if (isXULElement(targetNode)) {
+          x = targetNode.getBoundingClientRect().width - 1;
+        }
+      } else if (aArgs.where == "center") {
+        if (isHTMLElement(targetNode)) {
+          x = targetNode.offsetWidth / 2;
+          y = targetNode.offsetHeight / 2;
+        } else if (isXULElement(targetNode)) {
+          x = targetNode.getBoundingClientRect().width / 2;
+          y = targetNode.getBoundingClientRect().height / 2;
+        }
       }
     }
     synthesizeMouse(targetNode, x, y, aArgs ? aArgs : {});
@@ -1268,6 +1278,27 @@ function synthClick(aNodeOrID, aCheckerOrEventSeq, aArgs) {
 
   this.getID = function synthClick_getID() {
     return prettyName(aNodeOrID) + " click";
+  };
+}
+
+/**
+ * Scrolls the node into view.
+ */
+function scrollIntoView(aNodeOrID, aCheckerOrEventSeq) {
+  this.__proto__ = new synthAction(aNodeOrID, aCheckerOrEventSeq);
+
+  this.invoke = function scrollIntoView_invoke() {
+    var targetNode = this.DOMNode;
+    if (isHTMLElement(targetNode)) {
+      targetNode.scrollIntoView(true);
+    } else if (isXULElement(targetNode)) {
+      var targetAcc = getAccessible(targetNode);
+      targetAcc.scrollTo(SCROLL_TYPE_ANYWHERE);
+    }
+  };
+
+  this.getID = function scrollIntoView_getID() {
+    return prettyName(aNodeOrID) + " scrollIntoView";
   };
 }
 
@@ -1454,7 +1485,7 @@ function synthOpenComboboxKey(aID, aCheckerOrEventSeq) {
   this.__proto__ = new synthDownKey(aID, aCheckerOrEventSeq, { altKey: true });
 
   this.getID = function synthOpenComboboxKey_getID() {
-    return "open combobox (atl + down arrow) " + prettyName(aID);
+    return "open combobox (alt + down arrow) " + prettyName(aID);
   };
 }
 

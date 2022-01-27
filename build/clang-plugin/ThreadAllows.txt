@@ -8,10 +8,8 @@ AwaitIdleMixed
 AwaitIdlePaused
 BGReadURLs
 BHMgr Processor
-BgFileSaver
 COM Intcpt Log
 COM MTA
-Cache Deleter
 Cache I/O
 Cameras IPC
 ChainedPipePump
@@ -43,15 +41,14 @@ IPDL Background
 IdentityCrypto
 ImageBridgeChld
 LS Thread
-LayerScope
 MDCDMThread
 MWQThread
 MediaCache
 MediaTelemetry
 MediaTrackGrph
+MemoryPoller
 mtransport
 NamedPipeSrv
-NetPredictClean
 Netlink Monitor
 OSKeyStore
 OutputDrain
@@ -65,6 +62,9 @@ ProxyResolution
 RemoteLzyStream
 RWLockTester
 RacingServMan
+RemVidChild
+Renderer
+ResetCleanup
 Sandbox Testing
 SaveScripts
 Socket Thread
@@ -73,15 +73,16 @@ SpinEventLoop
 StressRunner
 SuicideManager
 SuicideThread
+System Proxy
 TEQ AwaitIdle
-TelemetryGVIO
+TelemetryModule
 Test Thread
 Test thread
 TestPipe
 TestShortWrites
 TestThreadsMain
 Testing Thread
-Timer Thread
+Timer
 ToastBgThread
 TRR Background
 URL Classifier

@@ -4,13 +4,13 @@
 "use strict";
 
 const TEST_URI =
-  "data:text/html;charset=utf8,Test that the netmonitor " +
+  "data:text/html;charset=utf8,<!DOCTYPE html>Test that the netmonitor " +
   "displays requests that have been recorded in the " +
   "web console, even if the netmonitor hadn't opened yet.";
 
 const TEST_FILE = "test-network-request.html";
 const TEST_PATH =
-  "http://example.com/browser/devtools/client/webconsole/" +
+  "https://example.com/browser/devtools/client/webconsole/" +
   "test/browser/" +
   TEST_FILE;
 
@@ -27,7 +27,8 @@ registerCleanupFunction(async () => {
 });
 
 add_task(async function task() {
-  await pushPref("devtools.target-switching.enabled", true);
+  // Make sure the filter to show all the requests is set
+  await pushPref("devtools.netmonitor.filters", '["all"]');
 
   // Test that the request appears in the console.
   const hud = await openNewTabAndConsole(TEST_URI);
@@ -50,8 +51,9 @@ add_task(async function task() {
   info("Network message found.");
 
   // Test that the request appears in the network panel.
-  const target = await TargetFactory.forTab(currentTab);
-  const toolbox = await gDevTools.showToolbox(target, "netmonitor");
+  const toolbox = await gDevTools.showToolboxForTab(currentTab, {
+    toolId: "netmonitor",
+  });
   info("Network panel is open.");
 
   await testNetmonitor(toolbox);
@@ -67,11 +69,14 @@ async function testNetmonitor(toolbox) {
   );
 
   store.dispatch(Actions.batchEnable(false));
-  const requestItem = document.querySelector(".request-list-item");
-  await waitUntil(() => store.getState().requests.requests.length > 0);
+
   // Lets also wait until all the event timings data requested
   // has completed and the column is rendered.
-  await waitForDOM(requestItem, ".requests-list-timings-total");
+  await waitFor(() =>
+    document.querySelector(
+      ".request-list-item:first-child .requests-list-timings-total"
+    )
+  );
 
   is(
     store.getState().requests.requests.length,

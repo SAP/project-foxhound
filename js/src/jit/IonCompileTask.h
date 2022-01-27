@@ -12,15 +12,15 @@
 #include "jit/MIRGenerator.h"
 
 #include "js/Utility.h"
+#include "vm/HelperThreadTask.h"
+
+struct JS_PUBLIC_API JSContext;
 
 namespace js {
-
-class CompilerConstraintList;
-
 namespace jit {
 
 class CodeGenerator;
-class MRootList;
+class WarpSnapshot;
 
 // IonCompileTask represents a single off-thread Ion compilation task.
 class IonCompileTask final : public HelperThreadTask,
@@ -33,50 +33,55 @@ class IonCompileTask final : public HelperThreadTask,
   // performed by FinishOffThreadTask().
   CodeGenerator* backgroundCodegen_ = nullptr;
 
-  CompilerConstraintList* constraints_ = nullptr;
-  MRootList* rootList_ = nullptr;
   WarpSnapshot* snapshot_ = nullptr;
 
-  // script->hasIonScript() at the start of the compilation. Used to avoid
-  // calling hasIonScript() from background compilation threads.
-  bool scriptHasIonScript_;
+  // Alias of the JSContext field of this task, to determine the priority of
+  // compiling this script. Contexts are destroyed after the pending tasks are
+  // removed from the helper threads. Thus this should be safe.
+  const mozilla::Atomic<bool, mozilla::ReleaseAcquire>& isExecuting_;
 
  public:
-  explicit IonCompileTask(MIRGenerator& mirGen, bool scriptHasIonScript,
-                          CompilerConstraintList* constraints,
+  explicit IonCompileTask(JSContext* cx, MIRGenerator& mirGen,
                           WarpSnapshot* snapshot);
 
   JSScript* script() { return mirGen_.outerInfo().script(); }
   MIRGenerator& mirGen() { return mirGen_; }
   TempAllocator& alloc() { return mirGen_.alloc(); }
-  bool scriptHasIonScript() const { return scriptHasIonScript_; }
-  CompilerConstraintList* constraints() { return constraints_; }
   WarpSnapshot* snapshot() { return snapshot_; }
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf);
   void trace(JSTracer* trc);
 
-  void setRootList(MRootList& rootList) {
-    MOZ_ASSERT(!rootList_);
-    rootList_ = &rootList;
-  }
   CodeGenerator* backgroundCodegen() const { return backgroundCodegen_; }
   void setBackgroundCodegen(CodeGenerator* codegen) {
     backgroundCodegen_ = codegen;
   }
 
-  void runTaskLocked(AutoLockHelperThreadState& locked) override;
+  // Return whether the main thread which scheduled this task is currently
+  // executing JS code. This changes the way we prioritize tasks.
+  bool isMainThreadRunningJS() const { return isExecuting_; }
 
   ThreadType threadType() override { return THREAD_TYPE_ION; }
   void runTask();
+  void runHelperThreadTask(AutoLockHelperThreadState& locked) override;
+};
+
+class IonFreeTask : public HelperThreadTask {
+ public:
+  explicit IonFreeTask(IonCompileTask* task) : task_(task) {}
+  IonCompileTask* compileTask() { return task_; }
+
+  ThreadType threadType() override { return THREAD_TYPE_ION_FREE; }
+  void runHelperThreadTask(AutoLockHelperThreadState& locked) override;
+
+ private:
+  IonCompileTask* task_;
 };
 
 void AttachFinishedCompilations(JSContext* cx);
 void FinishOffThreadTask(JSRuntime* runtime, IonCompileTask* task,
                          const AutoLockHelperThreadState& lock);
 void FreeIonCompileTask(IonCompileTask* task);
-
-MOZ_MUST_USE bool CreateMIRRootList(IonCompileTask& task);
 
 }  // namespace jit
 }  // namespace js

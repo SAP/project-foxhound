@@ -7,8 +7,7 @@
 #include "mozilla/dom/XULCommandEvent.h"
 #include "prtime.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 XULCommandEvent::XULCommandEvent(EventTarget* aOwner,
                                  nsPresContext* aPresContext,
@@ -46,8 +45,8 @@ uint16_t XULCommandEvent::InputSource() { return mInputSource; }
 void XULCommandEvent::InitCommandEvent(
     const nsAString& aType, bool aCanBubble, bool aCancelable,
     nsGlobalWindowInner* aView, int32_t aDetail, bool aCtrlKey, bool aAltKey,
-    bool aShiftKey, bool aMetaKey, Event* aSourceEvent, uint16_t aInputSource,
-    ErrorResult& aRv) {
+    bool aShiftKey, bool aMetaKey, int16_t aButton, Event* aSourceEvent,
+    uint16_t aInputSource, ErrorResult& aRv) {
   if (NS_WARN_IF(mEvent->mFlags.mIsBeingDispatched)) {
     return;
   }
@@ -58,10 +57,10 @@ void XULCommandEvent::InitCommandEvent(
                                              aMetaKey);
   mSourceEvent = aSourceEvent;
   mInputSource = aInputSource;
+  mButton = aButton;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 using namespace mozilla;
 using namespace mozilla::dom;

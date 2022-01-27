@@ -34,16 +34,6 @@ namespace nsStyleTransformMatrix {
 // The operator passed to Servo backend.
 enum class MatrixTransformOperator : uint8_t { Interpolate, Accumulate };
 
-// Function for applying perspective() transform function. We treat
-// any value smaller than epsilon as perspective(infinity), which
-// follows CSSWG's resolution on perspective(0). See bug 1316236.
-inline void ApplyPerspectiveToMatrix(mozilla::gfx::Matrix4x4& aMatrix,
-                                     float aDepth) {
-  if (aDepth >= std::numeric_limits<float>::epsilon()) {
-    aMatrix.Perspective(aDepth);
-  }
-}
-
 /**
  * This class provides on-demand access to the 'reference box' for CSS
  * transforms (needed to resolve percentage values in 'transform',

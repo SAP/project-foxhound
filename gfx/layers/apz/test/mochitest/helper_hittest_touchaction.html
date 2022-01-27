@@ -65,6 +65,8 @@
  <div id="taListener" class="taBox" ontouchstart="return false;">
   <div id="taInnerListenerPanX" style="touch-action: pan-x"></div>
  </div>
+ <div id="taPinchZoom" class="taBox" style="touch-action: pinch-zoom">
+ </div>
 
  <br/>
 
@@ -108,21 +110,15 @@
 
 var config = getHitTestConfig();
 
-function* test(testDriver) {
+async function test() {
   for (var scroller of document.querySelectorAll(".taBigBox > div")) {
     // layerize all the scrollable divs
     config.utils.setDisplayPortForElement(0, 0, 100, 100, scroller, 1);
   }
-  yield waitForApzFlushedRepaints(testDriver);
+  await promiseApzFlushedRepaints();
 
   var scrollId = config.utils.getViewId(document.scrollingElement);
   var layersId = config.utils.getLayersId();
-
-  // Elements with APZ aware listeners round-trip through the dispatch-to-content
-  // region and end up as IRREGULAR_AREA when WebRender is disabled.
-  var touchListenerFlag = config.isWebRender
-        ? APZHitResultFlags.APZ_AWARE_LISTENERS
-        : APZHitResultFlags.IRREGULAR_AREA;
 
   checkHitResult(
       hitTest(centerOf("taNone")),
@@ -261,7 +257,7 @@ function* test(testDriver) {
   checkHitResult(
       hitTest(centerOf("taInnerManipListener")),
       APZHitResultFlags.VISIBLE |
-      touchListenerFlag |
+      APZHitResultFlags.APZ_AWARE_LISTENERS |
       APZHitResultFlags.DOUBLE_TAP_ZOOM_DISABLED,
       scrollId,
       layersId,
@@ -270,20 +266,30 @@ function* test(testDriver) {
   checkHitResult(
       hitTest(centerOf("taListener")),
       APZHitResultFlags.VISIBLE |
-      touchListenerFlag,
+      APZHitResultFlags.APZ_AWARE_LISTENERS,
       scrollId,
       layersId,
       "div with touch listener");
   checkHitResult(
       hitTest(centerOf("taInnerListenerPanX")),
       APZHitResultFlags.VISIBLE |
-      touchListenerFlag |
+      APZHitResultFlags.APZ_AWARE_LISTENERS |
       APZHitResultFlags.PAN_Y_DISABLED |
       APZHitResultFlags.PINCH_ZOOM_DISABLED |
       APZHitResultFlags.DOUBLE_TAP_ZOOM_DISABLED,
       scrollId,
       layersId,
       "touch-action: pan-x inside div with touch listener");
+
+  checkHitResult(
+      hitTest(centerOf("taPinchZoom")),
+      APZHitResultFlags.VISIBLE |
+      APZHitResultFlags.PAN_Y_DISABLED |
+      APZHitResultFlags.PAN_X_DISABLED |
+      APZHitResultFlags.DOUBLE_TAP_ZOOM_DISABLED,
+      scrollId,
+      layersId,
+      "touch-action: pinch-zoom inside div with touch listener");
 
   checkHitResult(
       hitTest(centerOf("taScrollerPanY")),
@@ -339,14 +345,9 @@ function* test(testDriver) {
       "overflow:hidden div doesn't reset pan-x/pan-y from enclosing scroller");
 }
 
-if (!config.isWebRender) {
-  ok(true, "This test is WebRender-only because we get a bunch of dispatch-to-content regions without it and the test isn't very interesting.");
-  subtestDone();
-} else {
-  waitUntilApzStable()
-    .then(runContinuation(test))
-    .then(subtestDone);
-}
+waitUntilApzStable()
+  .then(test)
+  .then(subtestDone, subtestFailed);
 
 </script>
 </html>

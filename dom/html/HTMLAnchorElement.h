@@ -12,6 +12,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/Link.h"
+#include "mozilla/dom/HTMLDNSPrefetch.h"
 #include "nsGenericHTMLElement.h"
 #include "nsDOMTokenList.h"
 
@@ -20,7 +21,9 @@ class EventChainPostVisitor;
 class EventChainPreVisitor;
 namespace dom {
 
-class HTMLAnchorElement final : public nsGenericHTMLElement, public Link {
+class HTMLAnchorElement final : public nsGenericHTMLElement,
+                                public Link,
+                                public SupportsDNSPrefetch {
  public:
   using Element::GetText;
 
@@ -74,10 +77,6 @@ class HTMLAnchorElement final : public nsGenericHTMLElement, public Link {
 
   virtual EventStates IntrinsicState() const override;
 
-  virtual void OnDNSPrefetchDeferred() override;
-  virtual void OnDNSPrefetchRequested() override;
-  virtual bool HasDeferredDNSPrefetchRequest() override;
-
   // WebIDL API
 
   void GetHref(nsAString& aValue) {
@@ -108,7 +107,7 @@ class HTMLAnchorElement final : public nsGenericHTMLElement, public Link {
     SetHTMLAttr(nsGkAtoms::referrerpolicy, aValue, rv);
   }
   void GetReferrerPolicy(DOMString& aPolicy) {
-    GetEnumAttr(nsGkAtoms::referrerpolicy, EmptyCString().get(), aPolicy);
+    GetEnumAttr(nsGkAtoms::referrerpolicy, "", aPolicy);
   }
   nsDOMTokenList* RelList();
   void GetHreflang(DOMString& aValue) {

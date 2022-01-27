@@ -28,7 +28,10 @@ var DateTimePickerPanel = class {
     return frame;
   }
 
-  openPicker(type, anchor, detail) {
+  openPicker(type, rect, detail) {
+    if (type == "datetime-local") {
+      type = "date";
+    }
     this.type = type;
     this.pickerState = {};
     // TODO: Resize picker according to content zoom level
@@ -57,8 +60,15 @@ var DateTimePickerPanel = class {
         break;
       }
     }
-    this.element.hidden = false;
-    this.element.openPopup(anchor, "after_start", 0, 0);
+    this.element.openPopupAtScreenRect(
+      "after_start",
+      rect.left,
+      rect.top,
+      rect.width,
+      rect.height,
+      false,
+      false
+    );
   }
 
   closePicker() {
@@ -71,7 +81,7 @@ var DateTimePickerPanel = class {
       this
     );
     this.dateTimePopupFrame.setAttribute("src", "");
-    this.element.hidden = true;
+    this.element.hidePopup();
   }
 
   setPopupValue(data) {
@@ -100,9 +110,12 @@ var DateTimePickerPanel = class {
   }
 
   initPicker(detail) {
-    // TODO: When bug 1376616 lands, replace this.setGregorian with
-    //       mozIntl.Locale for setting calendar to Gregorian
-    let locale = this.setGregorian(Services.locale.webExposedLocales[0]);
+    let locale = new Services.intl.Locale(
+      Services.locale.webExposedLocales[0],
+      {
+        calendar: "gregory",
+      }
+    ).toString();
 
     // Workaround for bug 1418061, while we wait for resolution of
     // http://bugs.icu-project.org/trac/ticket/13592: drop the PT region code,
@@ -110,7 +123,7 @@ var DateTimePickerPanel = class {
     // the region-less "pt" locale has shorter forms that are better here.
     locale = locale.replace(/^pt-PT/i, "pt");
 
-    const dir = Services.intl.getLocaleInfo(locale).direction;
+    const dir = Services.locale.isAppLocaleRTL ? "rtl" : "ltr";
 
     switch (this.type) {
       case "time": {
@@ -134,37 +147,42 @@ var DateTimePickerPanel = class {
       case "date": {
         const { year, month, day } = detail.value;
         const { firstDayOfWeek, weekends } = this.getCalendarInfo(locale);
-        const monthStrings = this.getDisplayNames(
-          locale,
-          [
-            "dates/gregorian/months/january",
-            "dates/gregorian/months/february",
-            "dates/gregorian/months/march",
-            "dates/gregorian/months/april",
-            "dates/gregorian/months/may",
-            "dates/gregorian/months/june",
-            "dates/gregorian/months/july",
-            "dates/gregorian/months/august",
-            "dates/gregorian/months/september",
-            "dates/gregorian/months/october",
-            "dates/gregorian/months/november",
-            "dates/gregorian/months/december",
-          ],
-          "short"
-        );
-        const weekdayStrings = this.getDisplayNames(
-          locale,
-          [
-            "dates/gregorian/weekdays/sunday",
-            "dates/gregorian/weekdays/monday",
-            "dates/gregorian/weekdays/tuesday",
-            "dates/gregorian/weekdays/wednesday",
-            "dates/gregorian/weekdays/thursday",
-            "dates/gregorian/weekdays/friday",
-            "dates/gregorian/weekdays/saturday",
-          ],
-          "short"
-        );
+
+        const monthDisplayNames = new Services.intl.DisplayNames(locale, {
+          type: "month",
+          style: "short",
+          calendar: "gregory",
+        });
+        const monthStrings = [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+        ].map(month => monthDisplayNames.of(month));
+
+        const weekdayDisplayNames = new Services.intl.DisplayNames(locale, {
+          type: "weekday",
+          style: "abbreviated",
+          calendar: "gregory",
+        });
+        const weekdayStrings = [
+          // Weekdays starting Sunday (7) to Saturday (6).
+          7,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+        ].map(weekday => weekdayDisplayNames.of(weekday));
 
         this.postMessageToPicker({
           name: "PickerInit",
@@ -253,42 +271,22 @@ var DateTimePickerPanel = class {
   getCalendarInfo(locale) {
     const calendarInfo = Services.intl.getCalendarInfo(locale);
 
-    // Day of week from calendarInfo starts from 1 as Sunday to 7 as Saturday,
+    // Day of week from calendarInfo starts from 1 as Monday to 7 as Sunday,
     // so they need to be mapped to JavaScript convention with 0 as Sunday
     // and 6 as Saturday
-    let firstDayOfWeek = calendarInfo.firstDayOfWeek - 1,
-      weekendStart = calendarInfo.weekendStart - 1,
-      weekendEnd = calendarInfo.weekendEnd - 1;
-
-    let weekends = [];
-
-    // Make sure weekendEnd is greater than weekendStart
-    if (weekendEnd < weekendStart) {
-      weekendEnd += 7;
+    function toDateWeekday(day) {
+      return day === 7 ? 0 : day;
     }
 
-    // We get the weekends by incrementing weekendStart up to weekendEnd.
-    // If the start and end is the same day, then weekends only has one day.
-    for (let day = weekendStart; day <= weekendEnd; day++) {
-      weekends.push(day % 7);
-    }
+    let firstDayOfWeek = toDateWeekday(calendarInfo.firstDayOfWeek),
+      weekend = calendarInfo.weekend;
+
+    let weekends = weekend.map(toDateWeekday);
 
     return {
       firstDayOfWeek,
       weekends,
     };
-  }
-
-  getDisplayNames(locale, keys, style) {
-    const displayNames = Services.intl.getDisplayNames(locale, { keys, style });
-    return keys.map(key => displayNames.values[key]);
-  }
-
-  setGregorian(locale) {
-    if (locale.match(/u-ca-/)) {
-      return locale.replace(/u-ca-[^-]+/, "u-ca-gregory");
-    }
-    return locale + "-u-ca-gregory";
   }
 
   handleEvent(aEvent) {
@@ -319,7 +317,6 @@ var DateTimePickerPanel = class {
         break;
       }
       case "ClosePopup": {
-        this.element.hidePopup();
         this.closePicker();
         break;
       }

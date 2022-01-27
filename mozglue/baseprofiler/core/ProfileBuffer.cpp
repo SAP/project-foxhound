@@ -19,13 +19,6 @@ ProfileBuffer::ProfileBuffer(ProfileChunkedBuffer& aBuffer)
   MOZ_ASSERT(mEntries.IsInSession());
 }
 
-ProfileBuffer::~ProfileBuffer() {
-  // Only ProfileBuffer controls this buffer, and it should be empty when there
-  // is no ProfileBuffer using it.
-  mEntries.ResetChunkManager();
-  MOZ_ASSERT(!mEntries.IsInSession());
-}
-
 /* static */
 ProfileBufferBlockIndex ProfileBuffer::AddEntry(
     ProfileChunkedBuffer& aProfileChunkedBuffer,
@@ -53,12 +46,13 @@ uint64_t ProfileBuffer::AddEntry(const ProfileBufferEntry& aEntry) {
 
 /* static */
 ProfileBufferBlockIndex ProfileBuffer::AddThreadIdEntry(
-    ProfileChunkedBuffer& aProfileChunkedBuffer, int aThreadId) {
+    ProfileChunkedBuffer& aProfileChunkedBuffer,
+    BaseProfilerThreadId aThreadId) {
   return AddEntry(aProfileChunkedBuffer,
                   ProfileBufferEntry::ThreadId(aThreadId));
 }
 
-uint64_t ProfileBuffer::AddThreadIdEntry(int aThreadId) {
+uint64_t ProfileBuffer::AddThreadIdEntry(BaseProfilerThreadId aThreadId) {
   return AddThreadIdEntry(mEntries, aThreadId).ConvertToProfileBufferIndex();
 }
 
@@ -140,39 +134,45 @@ void ProfileBuffer::CollectOverheadStats(TimeDuration aSamplingTime,
                                          TimeDuration aCleaning,
                                          TimeDuration aCounters,
                                          TimeDuration aThreads) {
-  double timeNs = aSamplingTime.ToMilliseconds() * 1000.0;
-  if (mFirstSamplingTimeNs == 0.0) {
-    mFirstSamplingTimeNs = timeNs;
+  double timeUs = aSamplingTime.ToMilliseconds() * 1000.0;
+  if (mFirstSamplingTimeUs == 0.0) {
+    mFirstSamplingTimeUs = timeUs;
   } else {
     // Note that we'll have 1 fewer interval than other numbers (because
     // we need both ends of an interval to know its duration). The final
     // difference should be insignificant over the expected many thousands
     // of iterations.
-    mIntervalsNs.Count(timeNs - mLastSamplingTimeNs);
+    mIntervalsUs.Count(timeUs - mLastSamplingTimeUs);
   }
-  mLastSamplingTimeNs = timeNs;
+  mLastSamplingTimeUs = timeUs;
   // Time to take the lock before sampling.
-  double lockingNs = aLocking.ToMilliseconds() * 1000.0;
-  // Time to discard expired markers.
-  double cleaningNs = aCleaning.ToMilliseconds() * 1000.0;
+  double lockingUs = aLocking.ToMilliseconds() * 1000.0;
+  // Time to discard expired data.
+  double cleaningUs = aCleaning.ToMilliseconds() * 1000.0;
   // Time to gather all counters.
-  double countersNs = aCounters.ToMilliseconds() * 1000.0;
+  double countersUs = aCounters.ToMilliseconds() * 1000.0;
   // Time to sample all threads.
-  double threadsNs = aThreads.ToMilliseconds() * 1000.0;
+  double threadsUs = aThreads.ToMilliseconds() * 1000.0;
 
   // Add to our gathered stats.
-  mOverheadsNs.Count(lockingNs + cleaningNs + countersNs + threadsNs);
-  mLockingsNs.Count(lockingNs);
-  mCleaningsNs.Count(cleaningNs);
-  mCountersNs.Count(countersNs);
-  mThreadsNs.Count(threadsNs);
+  mOverheadsUs.Count(lockingUs + cleaningUs + countersUs + threadsUs);
+  mLockingsUs.Count(lockingUs);
+  mCleaningsUs.Count(cleaningUs);
+  mCountersUs.Count(countersUs);
+  mThreadsUs.Count(threadsUs);
 
-  // Record details in buffer.
-  AddEntry(ProfileBufferEntry::ProfilerOverheadTime(timeNs));
-  AddEntry(ProfileBufferEntry::ProfilerOverheadDuration(lockingNs));
-  AddEntry(ProfileBufferEntry::ProfilerOverheadDuration(cleaningNs));
-  AddEntry(ProfileBufferEntry::ProfilerOverheadDuration(countersNs));
-  AddEntry(ProfileBufferEntry::ProfilerOverheadDuration(threadsNs));
+  // Record details in buffer, if requested.
+  static const bool sRecordSamplingOverhead = []() {
+    const char* recordOverheads = getenv("MOZ_PROFILER_RECORD_OVERHEADS");
+    return recordOverheads && recordOverheads[0] != '\0';
+  }();
+  if (sRecordSamplingOverhead) {
+    AddEntry(ProfileBufferEntry::ProfilerOverheadTime(timeUs));
+    AddEntry(ProfileBufferEntry::ProfilerOverheadDuration(lockingUs));
+    AddEntry(ProfileBufferEntry::ProfilerOverheadDuration(cleaningUs));
+    AddEntry(ProfileBufferEntry::ProfilerOverheadDuration(countersUs));
+    AddEntry(ProfileBufferEntry::ProfilerOverheadDuration(threadsUs));
+  }
 }
 
 ProfilerBufferInfo ProfileBuffer::GetProfilerBufferInfo() const {
@@ -180,12 +180,12 @@ ProfilerBufferInfo ProfileBuffer::GetProfilerBufferInfo() const {
           BufferRangeEnd(),
           static_cast<uint32_t>(*mEntries.BufferLength() /
                                 8),  // 8 bytes per entry.
-          mIntervalsNs,
-          mOverheadsNs,
-          mLockingsNs,
-          mCleaningsNs,
-          mCountersNs,
-          mThreadsNs};
+          mIntervalsUs,
+          mOverheadsUs,
+          mLockingsUs,
+          mCleaningsUs,
+          mCountersUs,
+          mThreadsUs};
 }
 
 /* ProfileBufferCollector */

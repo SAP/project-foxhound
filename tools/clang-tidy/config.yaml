@@ -19,7 +19,7 @@ platforms:
 # Minimum clang-tidy version that is required for all the following checkers
 # to work properly.
 # This is also used by 'mach clang-format'
-package_version: "10.0"
+package_version: "13.0.0"
 clang_checkers:
   - name: -*
     publish: !!bool no
@@ -213,6 +213,11 @@ clang_checkers:
     reliability: high
   - name: readability-braces-around-statements
     reliability: high
+    config:
+      - key: ShortStatementLines
+        # Allow `if (foo) return;` without braces
+        # Still warns on `if (foo)\n return;`
+        value: 1
   - name: readability-const-return-type
     reliability: high
   # Note: this can be loosened up by using the ShortStatementLines option
@@ -222,6 +227,10 @@ clang_checkers:
     reliability: high
   - name: readability-else-after-return
     reliability: high
+    config:
+      - key: WarnOnConditionVariables
+        # Disable as we don't mind this kind of behavior
+        value: 0
   - name: readability-implicit-bool-conversion
     reliability: low
     # On automation the config flags act strange. Please see Bug 1500241.

@@ -17,12 +17,11 @@ loader.lazyRequireGetter(
  * This object represents DOM panel. It's responsibility is to
  * render Document Object Model of the current debugger target.
  */
-function DomPanel(iframeWindow, toolbox) {
+function DomPanel(iframeWindow, toolbox, commands) {
   this.panelWin = iframeWindow;
   this._toolbox = toolbox;
+  this._commands = commands;
 
-  this.onTabNavigated = this.onTabNavigated.bind(this);
-  this.onTargetAvailable = this.onTargetAvailable.bind(this);
   this.onContentMessage = this.onContentMessage.bind(this);
   this.onPanelVisibilityChange = this.onPanelVisibilityChange.bind(this);
 
@@ -44,19 +43,16 @@ DomPanel.prototype = {
       this._resolveOpen = resolve;
     });
 
-    this.initialize();
+    await this.initialize();
 
     await onGetProperties;
-
-    this.isReady = true;
-    this.emit("ready");
 
     return this;
   },
 
   // Initialization
 
-  initialize: function() {
+  async initialize() {
     this.panelWin.addEventListener(
       "devtools/content/message",
       this.onContentMessage,
@@ -65,9 +61,21 @@ DomPanel.prototype = {
 
     this._toolbox.on("select", this.onPanelVisibilityChange);
 
-    this._toolbox.targetList.watchTargets(
-      [this._toolbox.targetList.TYPES.FRAME],
-      this.onTargetAvailable
+    // onTargetAvailable is mandatory when calling watchTargets
+    this._onTargetAvailable = () => {};
+    this._onTargetSelected = this._onTargetSelected.bind(this);
+    await this._commands.targetCommand.watchTargets({
+      types: [this._commands.targetCommand.TYPES.FRAME],
+      onAvailable: this._onTargetAvailable,
+      onSelected: this._onTargetSelected,
+    });
+
+    this.onResourceAvailable = this.onResourceAvailable.bind(this);
+    await this._commands.resourceCommand.watchResources(
+      [this._commands.resourceCommand.TYPES.DOCUMENT_EVENT],
+      {
+        onAvailable: this.onResourceAvailable,
+      }
     );
 
     // Export provider object with useful API for DOM panel.
@@ -93,7 +101,15 @@ DomPanel.prototype = {
     }
     this._destroyed = true;
 
-    this.currentTarget.off("navigate", this.onTabNavigated);
+    this._commands.targetCommand.unwatchTargets({
+      types: [this._commands.targetCommand.TYPES.FRAME],
+      onAvailable: this._onTargetAvailable,
+      onSelected: this._onTargetSelected,
+    });
+    this._commands.resourceCommand.unwatchResources(
+      [this._commands.resourceCommand.TYPES.DOCUMENT_EVENT],
+      { onAvailable: this.onResourceAvailable }
+    );
     this._toolbox.off("select", this.onPanelVisibilityChange);
 
     this.emit("destroyed");
@@ -121,27 +137,34 @@ DomPanel.prototype = {
   },
 
   /**
-   * Make sure the panel is refreshed when navigation occurs.
+   * Make sure the panel is refreshed, either when navigation occurs or when a frame is
+   * selected in the iframe picker.
    * The panel is refreshed immediately if it's currently selected or lazily when the user
    * actually selects it.
    */
-  onTabNavigated: function() {
+  forceRefresh: function() {
     this.shouldRefresh = true;
+    // This will end up calling scriptCommand execute method to retrieve the `window` grip
+    // on targetCommand.selectedTargetFront.
     this.refresh();
   },
 
-  onTargetAvailable: function({ targetFront }) {
-    // Only care about top-level targets.
-    if (!targetFront.isTopLevel) {
-      return;
+  _onTargetSelected: function({ targetFront }) {
+    this.forceRefresh();
+  },
+
+  onResourceAvailable: function(resources) {
+    for (const resource of resources) {
+      // Only consider top level document, and ignore remote iframes top document
+      if (
+        resource.resourceType ===
+          this._commands.resourceCommand.TYPES.DOCUMENT_EVENT &&
+        resource.name === "dom-complete" &&
+        resource.targetFront.isTopLevel
+      ) {
+        this.forceRefresh();
+      }
     }
-
-    this.shouldRefresh = true;
-    this.refresh();
-
-    // Whenever a new target is available, listen to navigate events on it so we can
-    // refresh the panel when we navigate within the same process.
-    this.currentTarget.on("navigate", this.onTabNavigated);
   },
 
   /**
@@ -196,10 +219,9 @@ DomPanel.prototype = {
   },
 
   getRootGrip: async function() {
-    // Attach Console. It might involve RDP communication, so wait
-    // asynchronously for the result
-    const consoleFront = await this.currentTarget.getFront("console");
-    const { result } = await consoleFront.evaluateJSAsync("window");
+    const { result } = await this._toolbox.commands.scriptCommand.execute(
+      "window"
+    );
     return result;
   },
 

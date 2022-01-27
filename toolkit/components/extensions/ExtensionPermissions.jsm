@@ -15,7 +15,7 @@ const { AppConstants } = ChromeUtils.import(
 XPCOMUtils.defineLazyModuleGetters(this, {
   ExtensionParent: "resource://gre/modules/ExtensionParent.jsm",
   JSONFile: "resource://gre/modules/JSONFile.jsm",
-  OS: "resource://gre/modules/osfile.jsm",
+  Services: "resource://gre/modules/Services.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(
@@ -71,16 +71,18 @@ class LegacyPermissionStore {
   }
 
   async _init() {
-    let path = OS.Path.join(OS.Constants.Path.profileDir, FILE_NAME);
+    let path = PathUtils.join(
+      Services.dirsvc.get("ProfD", Ci.nsIFile).path,
+      FILE_NAME
+    );
 
     prefs = new JSONFile({ path });
     prefs.data = {};
 
     try {
-      let { buffer } = await OS.File.read(path);
-      prefs.data = JSON.parse(new TextDecoder().decode(buffer));
+      prefs.data = await IOUtils.readJSON(path);
     } catch (e) {
-      if (!e.becauseNoSuchFile) {
+      if (!(e instanceof DOMException && e.name == "NotFoundError")) {
         Cu.reportError(e);
       }
     }
@@ -136,7 +138,7 @@ class PermissionStore {
   async _init() {
     const storePath = FileUtils.getDir("ProfD", ["extension-store"]).path;
     // Make sure the folder exists
-    await OS.File.makeDir(storePath, { ignoreExisting: true });
+    await IOUtils.makeDirectory(storePath, { ignoreExisting: true });
     this._store = await KeyValueService.getOrCreate(storePath, "permissions");
     if (!(await this._store.has(VERSION_KEY))) {
       await this.maybeMigrateData();
@@ -168,12 +170,15 @@ class PermissionStore {
 
   async maybeMigrateData() {
     let migrationWasSuccessful = false;
-    let oldStore = OS.Path.join(OS.Constants.Path.profileDir, FILE_NAME);
+    let oldStore = PathUtils.join(
+      Services.dirsvc.get("ProfD", Ci.nsIFile).path,
+      FILE_NAME
+    );
     try {
       await this.migrateFrom(oldStore);
       migrationWasSuccessful = true;
     } catch (e) {
-      if (!e.becauseNoSuchFile) {
+      if (!(e instanceof DOMException && e.name == "NotFoundError")) {
         Cu.reportError(e);
       }
     }
@@ -181,7 +186,7 @@ class PermissionStore {
     await this._store.put(VERSION_KEY, VERSION_VALUE);
 
     if (migrationWasSuccessful) {
-      OS.File.remove(oldStore);
+      IOUtils.remove(oldStore);
     }
   }
 
@@ -190,8 +195,7 @@ class PermissionStore {
     // start from scratch
     await this._store.clear();
 
-    let { buffer } = await OS.File.read(oldStore);
-    let json = JSON.parse(new TextDecoder().decode(buffer));
+    let json = await IOUtils.readJSON(oldStore);
     let data = this.validateMigratedData(json);
 
     if (data) {
@@ -288,6 +292,16 @@ var ExtensionPermissions = {
     return this._getCached(extensionId);
   },
 
+  _fixupAllUrlsPerms(perms) {
+    // Unfortunately, we treat <all_urls> as an API permission as well.
+    // If it is added to either, ensure it is added to both.
+    if (perms.origins.includes("<all_urls>")) {
+      perms.permissions.push("<all_urls>");
+    } else if (perms.permissions.includes("<all_urls>")) {
+      perms.origins.push("<all_urls>");
+    }
+  },
+
   /**
    * Add new permissions for the given extension.  `permissions` is
    * in the format that is passed to browser.permissions.request().
@@ -300,6 +314,8 @@ var ExtensionPermissions = {
     let { permissions, origins } = await this._get(extensionId);
 
     let added = emptyPermissions();
+
+    this._fixupAllUrlsPerms(perms);
 
     for (let perm of perms.permissions) {
       if (!permissions.includes(perm)) {
@@ -337,6 +353,8 @@ var ExtensionPermissions = {
     let { permissions, origins } = await this._get(extensionId);
 
     let removed = emptyPermissions();
+
+    this._fixupAllUrlsPerms(perms);
 
     for (let perm of perms.permissions) {
       let i = permissions.indexOf(perm);
@@ -393,5 +411,14 @@ var ExtensionPermissions = {
   async _uninit() {
     await store.uninitForTest();
     store = createStore(!this._useLegacyStorageBackend);
+  },
+
+  // Convenience listener members for all permission changes.
+  addListener(listener) {
+    Management.on("change-permissions", listener);
+  },
+
+  removeListener(listener) {
+    Management.off("change-permissions", listener);
   },
 };

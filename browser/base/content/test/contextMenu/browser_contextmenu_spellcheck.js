@@ -17,10 +17,6 @@ add_task(async function test_setup() {
   const contextmenu_common = chrome_base + "contextmenu_common.js";
   /* import-globals-from contextmenu_common.js */
   Services.scriptloader.loadSubScript(contextmenu_common, this);
-
-  // Ensure screenshots is really disabled (bug 1498738)
-  const addon = await AddonManager.getAddonByID("screenshots@mozilla.org");
-  await addon.disable({ allowSystemAddons: true });
 });
 
 add_task(async function test_text_input_spellcheck() {
@@ -28,6 +24,8 @@ add_task(async function test_text_input_spellcheck() {
     "#input_spellcheck_no_value",
     [
       "context-undo",
+      false,
+      "context-redo",
       false,
       "---",
       null,
@@ -39,8 +37,6 @@ add_task(async function test_text_input_spellcheck() {
       "context-paste",
       null, // ignore clipboard state
       "context-delete",
-      null,
-      "---",
       null,
       "context-selectall",
       null,
@@ -90,6 +86,8 @@ add_task(async function test_text_input_spellcheckwrong() {
       null,
       "context-undo",
       null,
+      "context-redo",
+      null,
       "---",
       null,
       "context-cut",
@@ -99,8 +97,6 @@ add_task(async function test_text_input_spellcheckwrong() {
       "context-paste",
       null, // ignore clipboard state
       "context-delete",
-      null,
-      "---",
       null,
       "context-selectall",
       null,
@@ -127,6 +123,8 @@ add_task(async function test_text_input_spellcheckwrong() {
 const kCorrectItems = [
   "context-undo",
   false,
+  "context-redo",
+  false,
   "---",
   null,
   "context-cut",
@@ -136,8 +134,6 @@ const kCorrectItems = [
   "context-paste",
   null, // ignore clipboard state
   "context-delete",
-  null,
-  "---",
   null,
   "context-selectall",
   null,

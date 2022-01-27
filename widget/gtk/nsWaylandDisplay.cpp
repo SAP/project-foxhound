@@ -6,77 +6,57 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsWaylandDisplay.h"
+
+#include <dlfcn.h>
+
+#include "base/message_loop.h"  // for MessageLoop
+#include "base/task.h"          // for NewRunnableMethod, etc
+#include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_widget.h"
-#include "DMABufLibWrapper.h"
+#include "WidgetUtilsGtk.h"
+
+struct _GdkSeat;
+typedef struct _GdkSeat GdkSeat;
 
 namespace mozilla {
 namespace widget {
 
-wl_display* WaylandDisplayGetWLDisplay(GdkDisplay* aGdkDisplay) {
-  if (!aGdkDisplay) {
-    aGdkDisplay = gdk_display_get_default();
-    if (!aGdkDisplay || GDK_IS_X11_DISPLAY(aGdkDisplay)) {
-      return nullptr;
-    }
-  }
-
-  return gdk_wayland_display_get_wl_display(aGdkDisplay);
-}
-
 // nsWaylandDisplay needs to be created for each calling thread(main thread,
 // compositor thread and render thread)
-#define MAX_DISPLAY_CONNECTIONS 5
+#define MAX_DISPLAY_CONNECTIONS 10
 
-static nsWaylandDisplay* gWaylandDisplays[MAX_DISPLAY_CONNECTIONS];
-static StaticMutex gWaylandDisplayArrayMutex;
-static StaticMutex gWaylandThreadLoopMutex;
+// An array of active wayland displays. We need a display for every thread
+// where is wayland interface used as we need to dispatch waylands events
+// there.
+static RefPtr<nsWaylandDisplay> gWaylandDisplays[MAX_DISPLAY_CONNECTIONS];
+static StaticMutex gWaylandDisplayArrayWriteMutex;
 
-void WaylandDisplayShutdown() {
-  StaticMutexAutoLock lock(gWaylandDisplayArrayMutex);
+// Dispatch events to Compositor/Render queues
+void WaylandDispatchDisplays() {
+  MOZ_ASSERT(NS_IsMainThread(),
+             "WaylandDispatchDisplays() is supposed to run in main thread");
   for (auto& display : gWaylandDisplays) {
     if (display) {
-      display->ShutdownThreadLoop();
+      display->DispatchEventQueue();
     }
   }
 }
 
-static void ReleaseDisplaysAtExit() {
-  StaticMutexAutoLock lock(gWaylandDisplayArrayMutex);
-  for (int i = 0; i < MAX_DISPLAY_CONNECTIONS; i++) {
-    delete gWaylandDisplays[i];
-    gWaylandDisplays[i] = nullptr;
-  }
-}
-
-static void DispatchDisplay(nsWaylandDisplay* aDisplay) {
-  aDisplay->DispatchEventQueue();
-}
-
-// Each thread which is using wayland connection (wl_display) has to operate
-// its own wl_event_queue. Main Firefox thread wl_event_queue is handled
-// by Gtk main loop, other threads/wl_event_queue has to be handled by us.
-//
-// nsWaylandDisplay is our interface to wayland compositor. It provides wayland
-// global objects as we need (wl_display, wl_shm) and operates wl_event_queue on
-// compositor (not the main) thread.
-void WaylandDispatchDisplays() {
-  StaticMutexAutoLock arrayLock(gWaylandDisplayArrayMutex);
+void WaylandDisplayRelease() {
+  StaticMutexAutoLock lock(gWaylandDisplayArrayWriteMutex);
   for (auto& display : gWaylandDisplays) {
     if (display) {
-      StaticMutexAutoLock loopLock(gWaylandThreadLoopMutex);
-      MessageLoop* loop = display->GetThreadLoop();
-      if (loop) {
-        loop->PostTask(NewRunnableFunction("WaylandDisplayDispatch",
-                                           &DispatchDisplay, display));
-      }
+      display = nullptr;
     }
   }
 }
 
 // Get WaylandDisplay for given wl_display and actual calling thread.
-static nsWaylandDisplay* WaylandDisplayGetLocked(GdkDisplay* aGdkDisplay,
-                                                 const StaticMutexAutoLock&) {
+RefPtr<nsWaylandDisplay> WaylandDisplayGet(GdkDisplay* aGdkDisplay) {
   wl_display* waylandDisplay = WaylandDisplayGetWLDisplay(aGdkDisplay);
+  if (!waylandDisplay) {
+    return nullptr;
+  }
 
   // Search existing display connections for wl_display:thread combination.
   for (auto& display : gWaylandDisplays) {
@@ -85,10 +65,10 @@ static nsWaylandDisplay* WaylandDisplayGetLocked(GdkDisplay* aGdkDisplay,
     }
   }
 
+  StaticMutexAutoLock arrayLock(gWaylandDisplayArrayWriteMutex);
   for (auto& display : gWaylandDisplays) {
     if (display == nullptr) {
       display = new nsWaylandDisplay(waylandDisplay);
-      atexit(ReleaseDisplaysAtExit);
       return display;
     }
   }
@@ -97,16 +77,15 @@ static nsWaylandDisplay* WaylandDisplayGetLocked(GdkDisplay* aGdkDisplay,
   return nullptr;
 }
 
-nsWaylandDisplay* WaylandDisplayGet(GdkDisplay* aGdkDisplay) {
+wl_display* WaylandDisplayGetWLDisplay(GdkDisplay* aGdkDisplay) {
   if (!aGdkDisplay) {
     aGdkDisplay = gdk_display_get_default();
-    if (!aGdkDisplay || GDK_IS_X11_DISPLAY(aGdkDisplay)) {
+    if (!GdkIsWaylandDisplay(aGdkDisplay)) {
       return nullptr;
     }
   }
 
-  StaticMutexAutoLock lock(gWaylandDisplayArrayMutex);
-  return WaylandDisplayGetLocked(aGdkDisplay, lock);
+  return gdk_wayland_display_get_wl_display(aGdkDisplay);
 }
 
 void nsWaylandDisplay::SetShm(wl_shm* aShm) { mShm = aShm; }
@@ -124,11 +103,36 @@ void nsWaylandDisplay::SetDataDeviceManager(
   mDataDeviceManager = aDataDeviceManager;
 }
 
-void nsWaylandDisplay::SetSeat(wl_seat* aSeat) { mSeat = aSeat; }
+wl_seat* nsWaylandDisplay::GetSeat() {
+  GdkDisplay* gdkDisplay = gdk_display_get_default();
+  if (!gdkDisplay) {
+    return nullptr;
+  }
+
+  static auto sGdkDisplayGetDefaultSeat = (GdkSeat * (*)(GdkDisplay*))
+      dlsym(RTLD_DEFAULT, "gdk_display_get_default_seat");
+  if (!sGdkDisplayGetDefaultSeat) {
+    return nullptr;
+  }
+
+  static auto sGdkWaylandSeatGetWlSeat = (struct wl_seat * (*)(GdkSeat*))
+      dlsym(RTLD_DEFAULT, "gdk_wayland_seat_get_wl_seat");
+  if (!sGdkWaylandSeatGetWlSeat) {
+    return nullptr;
+  }
+
+  GdkSeat* gdkSeat = sGdkDisplayGetDefaultSeat(gdkDisplay);
+  return sGdkWaylandSeatGetWlSeat(gdkSeat);
+}
 
 void nsWaylandDisplay::SetPrimarySelectionDeviceManager(
     gtk_primary_selection_device_manager* aPrimarySelectionDeviceManager) {
-  mPrimarySelectionDeviceManager = aPrimarySelectionDeviceManager;
+  mPrimarySelectionDeviceManagerGtk = aPrimarySelectionDeviceManager;
+}
+
+void nsWaylandDisplay::SetPrimarySelectionDeviceManager(
+    zwp_primary_selection_device_manager_v1* aPrimarySelectionDeviceManager) {
+  mPrimarySelectionDeviceManagerZwpV1 = aPrimarySelectionDeviceManager;
 }
 
 void nsWaylandDisplay::SetIdleInhibitManager(
@@ -136,99 +140,110 @@ void nsWaylandDisplay::SetIdleInhibitManager(
   mIdleInhibitManager = aIdleInhibitManager;
 }
 
+void nsWaylandDisplay::SetViewporter(wp_viewporter* aViewporter) {
+  mViewporter = aViewporter;
+}
+
+void nsWaylandDisplay::SetRelativePointerManager(
+    zwp_relative_pointer_manager_v1* aRelativePointerManager) {
+  mRelativePointerManager = aRelativePointerManager;
+}
+
+void nsWaylandDisplay::SetPointerConstraints(
+    zwp_pointer_constraints_v1* aPointerConstraints) {
+  mPointerConstraints = aPointerConstraints;
+}
+
 void nsWaylandDisplay::SetDmabuf(zwp_linux_dmabuf_v1* aDmabuf) {
   mDmabuf = aDmabuf;
 }
 
-static void dmabuf_modifiers(void* data,
-                             struct zwp_linux_dmabuf_v1* zwp_linux_dmabuf,
-                             uint32_t format, uint32_t modifier_hi,
-                             uint32_t modifier_lo) {
-  switch (format) {
-    case GBM_FORMAT_ARGB8888:
-      GetDMABufDevice()->AddFormatModifier(true, format, modifier_hi,
-                                           modifier_lo);
-      break;
-    case GBM_FORMAT_XRGB8888:
-      GetDMABufDevice()->AddFormatModifier(false, format, modifier_hi,
-                                           modifier_lo);
-      break;
-    default:
-      break;
-  }
+void nsWaylandDisplay::SetXdgActivation(xdg_activation_v1* aXdgActivation) {
+  mXdgActivation = aXdgActivation;
 }
-
-static void dmabuf_format(void* data,
-                          struct zwp_linux_dmabuf_v1* zwp_linux_dmabuf,
-                          uint32_t format) {
-  // XXX: deprecated
-}
-
-static const struct zwp_linux_dmabuf_v1_listener dmabuf_listener = {
-    dmabuf_format, dmabuf_modifiers};
 
 static void global_registry_handler(void* data, wl_registry* registry,
                                     uint32_t id, const char* interface,
                                     uint32_t version) {
-  auto display = reinterpret_cast<nsWaylandDisplay*>(data);
-  if (!display) return;
+  auto* display = static_cast<nsWaylandDisplay*>(data);
+  if (!display) {
+    return;
+  }
 
   if (strcmp(interface, "wl_shm") == 0) {
-    auto shm = static_cast<wl_shm*>(
-        wl_registry_bind(registry, id, &wl_shm_interface, 1));
+    auto* shm = WaylandRegistryBind<wl_shm>(registry, id, &wl_shm_interface, 1);
     wl_proxy_set_queue((struct wl_proxy*)shm, display->GetEventQueue());
     display->SetShm(shm);
   } else if (strcmp(interface, "wl_data_device_manager") == 0) {
     int data_device_manager_version = MIN(version, 3);
-    auto data_device_manager = static_cast<wl_data_device_manager*>(
-        wl_registry_bind(registry, id, &wl_data_device_manager_interface,
-                         data_device_manager_version));
+    auto* data_device_manager = WaylandRegistryBind<wl_data_device_manager>(
+        registry, id, &wl_data_device_manager_interface,
+        data_device_manager_version);
     wl_proxy_set_queue((struct wl_proxy*)data_device_manager,
                        display->GetEventQueue());
     display->SetDataDeviceManager(data_device_manager);
-  } else if (strcmp(interface, "wl_seat") == 0) {
-    auto seat = static_cast<wl_seat*>(
-        wl_registry_bind(registry, id, &wl_seat_interface, 1));
-    wl_proxy_set_queue((struct wl_proxy*)seat, display->GetEventQueue());
-    display->SetSeat(seat);
   } else if (strcmp(interface, "gtk_primary_selection_device_manager") == 0) {
-    auto primary_selection_device_manager =
-        static_cast<gtk_primary_selection_device_manager*>(wl_registry_bind(
-            registry, id, &gtk_primary_selection_device_manager_interface, 1));
+    auto* primary_selection_device_manager =
+        WaylandRegistryBind<gtk_primary_selection_device_manager>(
+            registry, id, &gtk_primary_selection_device_manager_interface, 1);
+    wl_proxy_set_queue((struct wl_proxy*)primary_selection_device_manager,
+                       display->GetEventQueue());
+    display->SetPrimarySelectionDeviceManager(primary_selection_device_manager);
+  } else if (strcmp(interface, "zwp_primary_selection_device_manager_v1") ==
+             0) {
+    auto* primary_selection_device_manager =
+        WaylandRegistryBind<gtk_primary_selection_device_manager>(
+            registry, id, &zwp_primary_selection_device_manager_v1_interface,
+            1);
     wl_proxy_set_queue((struct wl_proxy*)primary_selection_device_manager,
                        display->GetEventQueue());
     display->SetPrimarySelectionDeviceManager(primary_selection_device_manager);
   } else if (strcmp(interface, "zwp_idle_inhibit_manager_v1") == 0) {
-    auto idle_inhibit_manager =
-        static_cast<zwp_idle_inhibit_manager_v1*>(wl_registry_bind(
-            registry, id, &zwp_idle_inhibit_manager_v1_interface, 1));
+    auto* idle_inhibit_manager =
+        WaylandRegistryBind<zwp_idle_inhibit_manager_v1>(
+            registry, id, &zwp_idle_inhibit_manager_v1_interface, 1);
     wl_proxy_set_queue((struct wl_proxy*)idle_inhibit_manager,
                        display->GetEventQueue());
     display->SetIdleInhibitManager(idle_inhibit_manager);
+  } else if (strcmp(interface, "zwp_relative_pointer_manager_v1") == 0) {
+    auto* relative_pointer_manager =
+        WaylandRegistryBind<zwp_relative_pointer_manager_v1>(
+            registry, id, &zwp_relative_pointer_manager_v1_interface, 1);
+    wl_proxy_set_queue((struct wl_proxy*)relative_pointer_manager,
+                       display->GetEventQueue());
+    display->SetRelativePointerManager(relative_pointer_manager);
+  } else if (strcmp(interface, "zwp_pointer_constraints_v1") == 0) {
+    auto* pointer_constraints = WaylandRegistryBind<zwp_pointer_constraints_v1>(
+        registry, id, &zwp_pointer_constraints_v1_interface, 1);
+    wl_proxy_set_queue((struct wl_proxy*)pointer_constraints,
+                       display->GetEventQueue());
+    display->SetPointerConstraints(pointer_constraints);
   } else if (strcmp(interface, "wl_compositor") == 0) {
     // Requested wl_compositor version 4 as we need wl_surface_damage_buffer().
-    auto compositor = static_cast<wl_compositor*>(
-        wl_registry_bind(registry, id, &wl_compositor_interface, 4));
+    auto* compositor = WaylandRegistryBind<wl_compositor>(
+        registry, id, &wl_compositor_interface, 4);
     wl_proxy_set_queue((struct wl_proxy*)compositor, display->GetEventQueue());
     display->SetCompositor(compositor);
   } else if (strcmp(interface, "wl_subcompositor") == 0) {
-    auto subcompositor = static_cast<wl_subcompositor*>(
-        wl_registry_bind(registry, id, &wl_subcompositor_interface, 1));
+    auto* subcompositor = WaylandRegistryBind<wl_subcompositor>(
+        registry, id, &wl_subcompositor_interface, 1);
     wl_proxy_set_queue((struct wl_proxy*)subcompositor,
                        display->GetEventQueue());
     display->SetSubcompositor(subcompositor);
+  } else if (strcmp(interface, "wp_viewporter") == 0) {
+    auto* viewporter = WaylandRegistryBind<wp_viewporter>(
+        registry, id, &wp_viewporter_interface, 1);
+    wl_proxy_set_queue((struct wl_proxy*)viewporter, display->GetEventQueue());
+    display->SetViewporter(viewporter);
   } else if (strcmp(interface, "zwp_linux_dmabuf_v1") == 0 && version > 2) {
-    auto dmabuf = static_cast<zwp_linux_dmabuf_v1*>(
-        wl_registry_bind(registry, id, &zwp_linux_dmabuf_v1_interface, 3));
-    LOGDMABUF(("zwp_linux_dmabuf_v1 is available."));
+    auto* dmabuf = WaylandRegistryBind<zwp_linux_dmabuf_v1>(
+        registry, id, &zwp_linux_dmabuf_v1_interface, 3);
+    wl_proxy_set_queue((struct wl_proxy*)dmabuf, display->GetEventQueue());
     display->SetDmabuf(dmabuf);
-    // Get formats for main thread display only
-    if (display->IsMainThreadDisplay()) {
-      GetDMABufDevice()->ResetFormatsModifiers();
-      zwp_linux_dmabuf_v1_add_listener(dmabuf, &dmabuf_listener, data);
-    }
-  } else if (strcmp(interface, "wl_drm") == 0) {
-    LOGDMABUF(("wl_drm is available."));
+  } else if (strcmp(interface, "xdg_activation_v1") == 0) {
+    auto* activation = WaylandRegistryBind<xdg_activation_v1>(
+        registry, id, &xdg_activation_v1_interface, 1);
+    display->SetXdgActivation(activation);
   }
 }
 
@@ -239,7 +254,9 @@ static const struct wl_registry_listener registry_listener = {
     global_registry_handler, global_registry_remover};
 
 bool nsWaylandDisplay::DispatchEventQueue() {
-  wl_display_dispatch_queue_pending(mDisplay, mEventQueue);
+  if (mEventQueue) {
+    wl_display_dispatch_queue_pending(mDisplay, mEventQueue);
+  }
   return true;
 }
 
@@ -283,13 +300,26 @@ void nsWaylandDisplay::SyncBegin() {
   wl_display_flush(mDisplay);
 }
 
+void nsWaylandDisplay::QueueSyncBegin() {
+  RefPtr<nsWaylandDisplay> self(this);
+  NS_DispatchToMainThread(
+      NS_NewRunnableFunction("nsWaylandDisplay::QueueSyncBegin",
+                             [self]() -> void { self->SyncBegin(); }));
+}
+
 void nsWaylandDisplay::WaitForSyncEnd() {
+  MOZ_RELEASE_ASSERT(
+      NS_IsMainThread(),
+      "nsWaylandDisplay::WaitForSyncEnd() can be called in main thread only!");
+
   // We're done here
   if (!mSyncCallback) {
     return;
   }
 
   while (mSyncCallback != nullptr) {
+    // TODO: wl_display_dispatch_queue() should not be called while
+    // glib main loop is iterated at nsAppShell::ProcessNextNativeEvent().
     if (wl_display_dispatch_queue(mDisplay, mEventQueue) == -1) {
       NS_WARNING("wl_display_dispatch_queue failed!");
       SyncEnd();
@@ -302,71 +332,49 @@ bool nsWaylandDisplay::Matches(wl_display* aDisplay) {
   return mThreadId == PR_GetCurrentThread() && aDisplay == mDisplay;
 }
 
-class nsWaylandDisplayLoopObserver : public MessageLoop::DestructionObserver {
- public:
-  explicit nsWaylandDisplayLoopObserver(nsWaylandDisplay* aWaylandDisplay)
-      : mDisplay(aWaylandDisplay){};
-  virtual void WillDestroyCurrentMessageLoop() override {
-    mDisplay->ShutdownThreadLoop();
-    mDisplay = nullptr;
-    delete this;
-  }
+static void WlCrashHandler(const char* format, va_list args) {
+  MOZ_CRASH_UNSAFE(g_strdup_vprintf(format, args));
+}
 
- private:
-  nsWaylandDisplay* mDisplay;
-};
-
-nsWaylandDisplay::nsWaylandDisplay(wl_display* aDisplay, bool aLighWrapper)
-    : mThreadLoop(nullptr),
-      mThreadId(PR_GetCurrentThread()),
+nsWaylandDisplay::nsWaylandDisplay(wl_display* aDisplay)
+    : mThreadId(PR_GetCurrentThread()),
       mDisplay(aDisplay),
       mEventQueue(nullptr),
       mDataDeviceManager(nullptr),
       mCompositor(nullptr),
       mSubcompositor(nullptr),
-      mSeat(nullptr),
       mShm(nullptr),
       mSyncCallback(nullptr),
-      mPrimarySelectionDeviceManager(nullptr),
+      mPrimarySelectionDeviceManagerGtk(nullptr),
+      mPrimarySelectionDeviceManagerZwpV1(nullptr),
       mIdleInhibitManager(nullptr),
-      mRegistry(nullptr),
+      mRelativePointerManager(nullptr),
+      mPointerConstraints(nullptr),
+      mViewporter(nullptr),
       mDmabuf(nullptr),
+      mXdgActivation(nullptr),
       mExplicitSync(false) {
-  if (!aLighWrapper) {
-    mRegistry = wl_display_get_registry(mDisplay);
-    wl_registry_add_listener(mRegistry, &registry_listener, this);
-  }
+  // GTK sets the log handler on display creation, thus we overwrite it here
+  // in a similar fashion
+  wl_log_set_handler_client(WlCrashHandler);
 
+  wl_registry* registry = wl_display_get_registry(mDisplay);
+  wl_registry_add_listener(registry, &registry_listener, this);
   if (!NS_IsMainThread()) {
-    mThreadLoop = MessageLoop::current();
-    if (mThreadLoop) {
-      auto observer = new nsWaylandDisplayLoopObserver(this);
-      mThreadLoop->AddDestructionObserver(observer);
-    }
     mEventQueue = wl_display_create_queue(mDisplay);
-    wl_proxy_set_queue((struct wl_proxy*)mRegistry, mEventQueue);
+    wl_proxy_set_queue((struct wl_proxy*)registry, mEventQueue);
   }
-
-  if (!aLighWrapper) {
-    if (mEventQueue) {
-      wl_display_roundtrip_queue(mDisplay, mEventQueue);
-      wl_display_roundtrip_queue(mDisplay, mEventQueue);
-    } else {
-      wl_display_roundtrip(mDisplay);
-      wl_display_roundtrip(mDisplay);
-    }
+  if (mEventQueue) {
+    wl_display_roundtrip_queue(mDisplay, mEventQueue);
+    wl_display_roundtrip_queue(mDisplay, mEventQueue);
+  } else {
+    wl_display_roundtrip(mDisplay);
+    wl_display_roundtrip(mDisplay);
   }
-}
-
-void nsWaylandDisplay::ShutdownThreadLoop() {
-  StaticMutexAutoLock lock(gWaylandThreadLoopMutex);
-  mThreadLoop = nullptr;
+  wl_registry_destroy(registry);
 }
 
 nsWaylandDisplay::~nsWaylandDisplay() {
-  wl_registry_destroy(mRegistry);
-  mRegistry = nullptr;
-
   if (mEventQueue) {
     wl_event_queue_destroy(mEventQueue);
     mEventQueue = nullptr;

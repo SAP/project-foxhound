@@ -12,7 +12,7 @@ const {
   translateNodeFrontToGrip,
 } = require("devtools/client/inspector/shared/utils");
 
-const { REPS, MODE } = require("devtools/client/shared/components/reps/reps");
+const { REPS, MODE } = require("devtools/client/shared/components/reps/index");
 const { Rep } = REPS;
 const ElementNode = REPS.ElementNode;
 
@@ -20,15 +20,18 @@ const {
   getInspectorStr,
 } = require("devtools/client/inspector/animation/utils/l10n");
 
+const {
+  highlightNode,
+  unhighlightNode,
+} = require("devtools/client/inspector/boxmodel/actions/box-model-highlighter");
+
 class AnimationTarget extends Component {
   static get propTypes() {
     return {
       animation: PropTypes.object.isRequired,
-      emitEventForTest: PropTypes.func.isRequired,
+      dispatch: PropTypes.func.isRequired,
       getNodeFromActor: PropTypes.func.isRequired,
       highlightedNode: PropTypes.string.isRequired,
-      onHideBoxModelHighlighter: PropTypes.func.isRequired,
-      onShowBoxModelHighlighterForNode: PropTypes.func.isRequired,
       setHighlightedNode: PropTypes.func.isRequired,
       setSelectedNode: PropTypes.func.isRequired,
     };
@@ -94,10 +97,12 @@ class AnimationTarget extends Component {
     await this.ensureNodeFront();
 
     if (this.state.nodeFront) {
-      this.props.onShowBoxModelHighlighterForNode(this.state.nodeFront, {
-        hideInfoBar: true,
-        hideGuides: true,
-      });
+      this.props.dispatch(
+        highlightNode(this.state.nodeFront, {
+          hideInfoBar: true,
+          hideGuides: true,
+        })
+      );
     }
   }
 
@@ -110,13 +115,7 @@ class AnimationTarget extends Component {
   }
 
   render() {
-    const {
-      emitEventForTest,
-      onHideBoxModelHighlighter,
-      highlightedNode,
-      setHighlightedNode,
-    } = this.props;
-
+    const { dispatch, highlightedNode, setHighlightedNode } = this.props;
     const { nodeFront } = this.state;
 
     if (!nodeFront) {
@@ -124,8 +123,6 @@ class AnimationTarget extends Component {
         className: "animation-target",
       });
     }
-
-    emitEventForTest("animation-target-rendered");
 
     const isHighlighted = nodeFront.actorID === highlightedNode;
 
@@ -143,7 +140,7 @@ class AnimationTarget extends Component {
         onDOMNodeClick: () => this.select(),
         onDOMNodeMouseOut: () => {
           if (!isHighlighted) {
-            onHideBoxModelHighlighter();
+            dispatch(unhighlightNode());
           }
         },
         onDOMNodeMouseOver: () => {
@@ -156,7 +153,7 @@ class AnimationTarget extends Component {
 
           if (!isHighlighted) {
             // At first, hide highlighter which was created by onDOMNodeMouseOver.
-            onHideBoxModelHighlighter();
+            dispatch(unhighlightNode());
           }
 
           setHighlightedNode(isHighlighted ? null : nodeFront);

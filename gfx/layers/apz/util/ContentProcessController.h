@@ -39,8 +39,7 @@ class ContentProcessController final : public GeckoContentController {
 
   // GeckoContentController
 
-  void NotifyLayerTransforms(
-      const nsTArray<MatrixMessage>& aTransforms) override;
+  void NotifyLayerTransforms(nsTArray<MatrixMessage>&& aTransforms) override;
 
   void RequestContentRepaint(const RepaintRequest& aRequest) override;
 
@@ -76,6 +75,8 @@ class ContentProcessController final : public GeckoContentController {
   bool IsRepaintThread() override;
 
   void DispatchToRepaintThread(already_AddRefed<Runnable> aTask) override;
+
+  PresShell* GetTopLevelPresShell() const override;
 
  private:
   RefPtr<dom::BrowserChild> mBrowser;

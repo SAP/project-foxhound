@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 fa{
     Currencies{
         ADP{
@@ -140,11 +141,11 @@ fa{
         }
         BYB{
             "BYB",
-            "روبل جدید بیلوروسی (۱۹۹۴ تا ۱۹۹۹)",
+            "روبل جدید بلاروس (۱۹۹۴ تا ۱۹۹۹)",
         }
         BYN{
             "BYN",
-            "روبل بلاروسی",
+            "روبل بلاروس",
         }
         BYR{
             "BYR",
@@ -816,7 +817,7 @@ fa{
         }
         USD{
             "$",
-            "دلار امریکا",
+            "دلار آمریکا",
         }
         USN{
             "USN",
@@ -883,7 +884,7 @@ fa{
             "فرانک طلای فرانسه",
         }
         XOF{
-            "CFA",
+            "فرانک CFA",
             "فرانک CFA غرب افریقا",
         }
         XPD{
@@ -943,6 +944,7 @@ fa{
         AOA{"Kz"}
         ARS{"$"}
         AUD{"$"}
+        AZN{"₼"}
         BAM{"KM"}
         BBD{"$"}
         BDT{"৳"}
@@ -1173,9 +1175,13 @@ fa{
             one{"پولای بوتسوانا"}
             other{"پولای بوتسوانا"}
         }
+        BYB{
+            one{"روبل جدید بلاروس (۱۹۹۴ تا ۱۹۹۹)"}
+            other{"روبل جدید بلاروس (۱۹۹۴ تا ۱۹۹۹)"}
+        }
         BYN{
-            one{"روبل بلاروسی"}
-            other{"روبل بلاروسی"}
+            one{"روبل بلاروس"}
+            other{"روبل بلاروس"}
         }
         BYR{
             one{"روبل بلاروسی (۲۰۱۶–۲۰۰۰)"}
@@ -1802,8 +1808,8 @@ fa{
             other{"شیلینگ اوگاندا"}
         }
         USD{
-            one{"دلار امریکا"}
-            other{"دلار امریکا"}
+            one{"دلار آمریکا"}
+            other{"دلار آمریکا"}
         }
         USN{
             one{"دلار امریکا (روز بعد)"}
@@ -1882,7 +1888,7 @@ fa{
             other{"واحد ارز آزمایشی"}
         }
         XXX{
-            one{"(واحد ارز نامشخص)"}
+            one{"(ارز نامشخص)"}
             other{"(ارز نامشخص)"}
         }
         YDD{
@@ -1902,5 +1908,4 @@ fa{
             other{"کواچای زامبیا"}
         }
     }
-    Version{"37"}
 }

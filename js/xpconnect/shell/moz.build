@@ -7,60 +7,65 @@
 # Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
 #
 
-GeckoProgram('xpcshell', linkage='dependent')
+GeckoProgram("xpcshell", linkage="dependent")
 
 SOURCES += [
-    'xpcshell.cpp',
+    "xpcshell.cpp",
 ]
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
+if CONFIG["LIBFUZZER"]:
+    USE_LIBS += ["fuzzer"]
+
+if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     SOURCES += [
-        'xpcshellMacUtils.mm',
+        "xpcshellMacUtils.mm",
     ]
 
-include('/ipc/chromium/chromium-config.mozbuild')
+include("/ipc/chromium/chromium-config.mozbuild")
 
 LOCAL_INCLUDES += [
-    '/toolkit/xre',
+    "/toolkit/xre",
 ]
 
-if CONFIG['CC_TYPE'] == 'clang-cl':
+if CONFIG["CC_TYPE"] == "clang-cl":
     # Always enter a Windows program through wmain, whether or not we're
     # a console application.
-    WIN32_EXE_LDFLAGS += ['-ENTRY:wmainCRTStartup']
+    WIN32_EXE_LDFLAGS += ["-ENTRY:wmainCRTStartup"]
 
 # DELAYLOAD_DLLS in this block ensure that the DLL blocklist initializes
-if CONFIG['OS_ARCH'] == 'WINNT':
-    RCINCLUDE = 'xpcshell.rc'
-
-    if CONFIG['MOZ_SANDBOX']:
+if CONFIG["OS_ARCH"] == "WINNT":
+    if CONFIG["MOZ_SANDBOX"]:
         # For sandbox includes and the include dependencies those have
         LOCAL_INCLUDES += [
-            '/security/sandbox/chromium',
-            '/security/sandbox/chromium-shim',
+            "/security/sandbox/chromium",
+            "/security/sandbox/chromium-shim",
         ]
 
         OS_LIBS += [
-            'version',
+            "version",
         ]
 
         USE_LIBS += [
-            'sandbox_s',
+            "sandbox_s",
         ]
 
         DELAYLOAD_DLLS += [
-            'winmm.dll',
-            'user32.dll',
+            "winmm.dll",
+            "user32.dll",
         ]
 
     OS_LIBS += [
-        'ntdll',
+        "ntdll",
     ]
 
     DELAYLOAD_DLLS += [
-        'xul.dll',
+        "xul.dll",
     ]
 
-CFLAGS += CONFIG['TK_CFLAGS']
-CXXFLAGS += CONFIG['TK_CFLAGS']
-OS_LIBS += CONFIG['TK_LIBS']
+    # Don't build xpcshell.exe with CETCOMPAT, because we need to be able to
+    # only enable it for processes that are not using JIT in xul.dll.
+    LINK_FLAGS["CETCOMPAT"] = []
+
+CFLAGS += CONFIG["TK_CFLAGS"]
+CXXFLAGS += CONFIG["TK_CFLAGS"]
+OS_LIBS += CONFIG["TK_LIBS"]

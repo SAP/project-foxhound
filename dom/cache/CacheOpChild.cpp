@@ -14,12 +14,11 @@
 #include "mozilla/dom/cache/CacheStreamControlChild.h"
 #include "mozilla/dom/cache/CacheWorkerRef.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 // XXX Move this to ToJSValue.h
 template <typename T>
-MOZ_MUST_USE bool ToJSValue(JSContext* aCx, const SafeRefPtr<T>& aArgument,
-                            JS::MutableHandle<JS::Value> aValue) {
+[[nodiscard]] bool ToJSValue(JSContext* aCx, const SafeRefPtr<T>& aArgument,
+                             JS::MutableHandle<JS::Value> aValue) {
   return ToJSValue(aCx, *aArgument.unsafeGetRawPtr(), aValue);
 }
 
@@ -231,5 +230,4 @@ void CacheOpChild::HandleRequestList(
 }
 
 }  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

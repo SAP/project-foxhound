@@ -2,23 +2,10 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
-ChromeUtils.import(
-  "resource://testing-common/CustomizableUITestUtils.jsm",
-  this
+const { CustomizableUITestUtils } = ChromeUtils.import(
+  "resource://testing-common/CustomizableUITestUtils.jsm"
 );
 let gCUITestUtils = new CustomizableUITestUtils(window);
-
-registerCleanupFunction(() => {
-  Services.prefs.clearUserPref(
-    "browser.policies.runonce.setDefaultSearchEngine"
-  );
-  Services.prefs.clearUserPref(
-    "browser.policies.runonce.setDefaultPrivateSearchEngine"
-  );
-  Services.prefs.clearUserPref(
-    "browser.policies.runOncePerModification.addSearchEngines"
-  );
-});
 
 add_task(async function test_setup() {
   await gCUITestUtils.addSearchBar();
@@ -47,19 +34,18 @@ async function test_opensearch(shouldWork) {
   searchBarButton.click();
   await promiseSearchPopupShown;
   let oneOffsContainer = searchPopup.searchOneOffsContainer;
-  let engineListElement = oneOffsContainer.querySelector(".search-add-engines");
+  let engineElement = oneOffsContainer.querySelector(
+    ".searchbar-engine-one-off-add-engine"
+  );
   if (shouldWork) {
-    ok(
-      engineListElement.firstElementChild,
-      "There should be search engines available to add"
-    );
+    ok(engineElement, "There should be search engines available to add");
     ok(
       searchBar.getAttribute("addengines"),
       "Search bar should have addengines attribute"
     );
   } else {
     is(
-      engineListElement.firstElementChild,
+      engineElement,
       null,
       "There should be no search engines available to add"
     );
@@ -283,6 +269,7 @@ add_task(async function test_install_and_remove() {
   isnot(engine, null, "Specified search engine should be installed");
 
   is(engine.wrappedJSObject.iconURI.spec, iconURL, "Icon should be present");
+  is(engine.wrappedJSObject.queryCharset, "UTF-8", "Should default to utf-8");
 
   await setupPolicyEngineWithJson({
     policies: {
@@ -353,5 +340,131 @@ add_task(async function test_install_post_method_engine() {
       },
     },
   });
+  EnterprisePolicyTesting.resetRunOnceState();
+});
+
+add_task(async function test_install_with_encoding() {
+  // Make sure we are starting in an expected state to avoid false positive
+  // test results.
+  is(
+    Services.search.getEngineByName("Encoding"),
+    null,
+    'Engine "Encoding" should not be present when test starts'
+  );
+
+  await setupPolicyEngineWithJson({
+    policies: {
+      SearchEngines: {
+        Add: [
+          {
+            Name: "Encoding",
+            Encoding: "windows-1252",
+            URLTemplate: "http://example.com/?q={searchTerms}",
+          },
+        ],
+      },
+    },
+  });
+  // Get in line, because the Search policy callbacks are async.
+  await TestUtils.waitForTick();
+
+  let engine = Services.search.getEngineByName("Encoding");
+  is(
+    engine.wrappedJSObject.queryCharset,
+    "windows-1252",
+    "Should have correct encoding"
+  );
+
+  // Clean up
+  await Services.search.removeEngine(engine);
+  EnterprisePolicyTesting.resetRunOnceState();
+});
+
+add_task(async function test_install_and_update() {
+  await setupPolicyEngineWithJson({
+    policies: {
+      SearchEngines: {
+        Add: [
+          {
+            Name: "ToUpdate",
+            URLTemplate: "http://initial.example.com/?q={searchTerms}",
+          },
+        ],
+      },
+    },
+  });
+  // Get in line, because the Search policy callbacks are async.
+  await TestUtils.waitForTick();
+
+  let engine = Services.search.getEngineByName("ToUpdate");
+  isnot(engine, null, "Specified search engine should be installed");
+
+  is(
+    engine.getSubmission("test").uri.spec,
+    "http://initial.example.com/?q=test",
+    "Initial submission URL should be correct."
+  );
+
+  await setupPolicyEngineWithJson({
+    policies: {
+      SearchEngines: {
+        Add: [
+          {
+            Name: "ToUpdate",
+            URLTemplate: "http://update.example.com/?q={searchTerms}",
+          },
+        ],
+      },
+    },
+  });
+  // Get in line, because the Search policy callbacks are async.
+  await TestUtils.waitForTick();
+
+  is(
+    engine.getSubmission("test").uri.spec,
+    "http://update.example.com/?q=test",
+    "Updated Submission URL should be correct."
+  );
+
+  // Clean up
+  await Services.search.removeEngine(engine);
+  EnterprisePolicyTesting.resetRunOnceState();
+});
+
+add_task(async function test_install_with_suggest() {
+  // Make sure we are starting in an expected state to avoid false positive
+  // test results.
+  is(
+    Services.search.getEngineByName("Suggest"),
+    null,
+    'Engine "Suggest" should not be present when test starts'
+  );
+
+  await setupPolicyEngineWithJson({
+    policies: {
+      SearchEngines: {
+        Add: [
+          {
+            Name: "Suggest",
+            URLTemplate: "http://example.com/?q={searchTerms}",
+            SuggestURLTemplate: "http://suggest.example.com/?q={searchTerms}",
+          },
+        ],
+      },
+    },
+  });
+  // Get in line, because the Search policy callbacks are async.
+  await TestUtils.waitForTick();
+
+  let engine = Services.search.getEngineByName("Suggest");
+
+  is(
+    engine.getSubmission("test", "application/x-suggestions+json").uri.spec,
+    "http://suggest.example.com/?q=test",
+    "Updated Submission URL should be correct."
+  );
+
+  // Clean up
+  await Services.search.removeEngine(engine);
   EnterprisePolicyTesting.resetRunOnceState();
 });

@@ -9,7 +9,6 @@
 #include "mozilla/Attributes.h"        // for MOZ_STACK_CLASS, MOZ_RAII
 #include "mozilla/DebugOnly.h"         // for DebugOnly
 #include "mozilla/DoublyLinkedList.h"  // for DoublyLinkedList<>::Iterator
-#include "mozilla/GuardObjects.h"      // for MOZ_GUARD_OBJECT_NOTIFIER_PARAM
 #include "mozilla/HashTable.h"         // for HashSet<>::Range, HashMapEntry
 #include "mozilla/Maybe.h"             // for Maybe, Nothing, Some
 #include "mozilla/ScopeExit.h"         // for MakeScopeExit, ScopeExit
@@ -26,47 +25,48 @@
 #include <string.h>    // for strlen, strcmp
 #include <utility>     // for std::move
 
-#include "jsapi.h"        // for CallArgs, CallArgsFromVp
-#include "jsfriendapi.h"  // for GetErrorMessage
-#include "jstypes.h"      // for JS_PUBLIC_API
+#include "jsapi.h"    // for CallArgs, CallArgsFromVp
+#include "jstypes.h"  // for JS_PUBLIC_API
 
-#include "builtin/Array.h"               // for NewDenseFullyAllocatedArray
-#include "debugger/DebugAPI.h"           // for ResumeMode, DebugAPI
-#include "debugger/DebuggerMemory.h"     // for DebuggerMemory
-#include "debugger/DebugScript.h"        // for DebugScript
-#include "debugger/Environment.h"        // for DebuggerEnvironment
-#include "debugger/Frame.h"              // for DebuggerFrame
-#include "debugger/NoExecute.h"          // for EnterDebuggeeNoExecute
-#include "debugger/Object.h"             // for DebuggerObject
-#include "debugger/Script.h"             // for DebuggerScript
-#include "debugger/Source.h"             // for DebuggerSource
-#include "frontend/NameAnalysisTypes.h"  // for ParseGoal, ParseGoal::Script
-#include "frontend/ParseContext.h"       // for UsedNameTracker
-#include "frontend/Parser.h"             // for Parser
-#include "gc/Barrier.h"                  // for GCPtrNativeObject
-#include "gc/FreeOp.h"                   // for JSFreeOp
-#include "gc/GC.h"                       // for IterateLazyScripts
-#include "gc/GCMarker.h"                 // for GCMarker
-#include "gc/GCRuntime.h"                // for GCRuntime, AutoEnterIteration
-#include "gc/HashUtil.h"                 // for DependentAddPtr
-#include "gc/Marking.h"                  // for IsMarkedUnbarriered, IsMarked
-#include "gc/PublicIterators.h"          // for RealmsIter, CompartmentsIter
-#include "gc/Rooting.h"                  // for RootedNativeObject
-#include "gc/Statistics.h"               // for Statistics::SliceData
-#include "gc/Tracer.h"                   // for TraceEdge
-#include "gc/Zone.h"                     // for Zone
-#include "gc/ZoneAllocator.h"            // for ZoneAllocPolicy
+#include "builtin/Array.h"                // for NewDenseFullyAllocatedArray
+#include "debugger/DebugAPI.h"            // for ResumeMode, DebugAPI
+#include "debugger/DebuggerMemory.h"      // for DebuggerMemory
+#include "debugger/DebugScript.h"         // for DebugScript
+#include "debugger/Environment.h"         // for DebuggerEnvironment
+#include "debugger/Frame.h"               // for DebuggerFrame
+#include "debugger/NoExecute.h"           // for EnterDebuggeeNoExecute
+#include "debugger/Object.h"              // for DebuggerObject
+#include "debugger/Script.h"              // for DebuggerScript
+#include "debugger/Source.h"              // for DebuggerSource
+#include "frontend/CompilationStencil.h"  // for CompilationStencil
+#include "frontend/Parser.h"              // for Parser
+#include "gc/FreeOp.h"                    // for JSFreeOp
+#include "gc/GC.h"                        // for IterateScripts
+#include "gc/GCMarker.h"                  // for GCMarker
+#include "gc/GCRuntime.h"                 // for GCRuntime, AutoEnterIteration
+#include "gc/HashUtil.h"                  // for DependentAddPtr
+#include "gc/Marking.h"                   // for IsAboutToBeFinalized
+#include "gc/PublicIterators.h"           // for RealmsIter, CompartmentsIter
+#include "gc/Rooting.h"                   // for RootedNativeObject
+#include "gc/Statistics.h"                // for Statistics::SliceData
+#include "gc/Tracer.h"                    // for TraceEdge
+#include "gc/Zone.h"                      // for Zone
+#include "gc/ZoneAllocator.h"             // for ZoneAllocPolicy
 #include "jit/BaselineDebugModeOSR.h"  // for RecompileOnStackBaselineScriptsForDebugMode
 #include "jit/BaselineJIT.h"           // for FinishDiscardBaselineScript
-#include "jit/Ion.h"                   // for JitContext
-#include "jit/JitScript.h"             // for JitScript
+#include "jit/Invalidation.h"         // for RecompileInfoVector
+#include "jit/JitContext.h"           // for JitContext
+#include "jit/JitScript.h"            // for JitScript
 #include "jit/JSJitFrameIter.h"       // for InlineFrameIterator
 #include "jit/RematerializedFrame.h"  // for RematerializedFrame
+#include "js/CallAndConstruct.h"      // JS::IsCallable
 #include "js/Conversions.h"           // for ToBoolean, ToUint32
 #include "js/Debug.h"                 // for Builder::Object, Builder
+#include "js/friend/ErrorMessages.h"  // for GetErrorMessage, JSMSG_*
 #include "js/GCAPI.h"                 // for GarbageCollectionEvent
 #include "js/HeapAPI.h"               // for ExposeObjectToActiveJS
 #include "js/Promise.h"               // for AutoDebuggerJobQueueInterruption
+#include "js/PropertyAndElement.h"    // for JS_GetProperty
 #include "js/Proxy.h"                 // for PropertyDescriptor
 #include "js/SourceText.h"            // for SourceOwnership, SourceText
 #include "js/StableStringChars.h"     // for AutoStableStringChars
@@ -89,8 +89,7 @@
 #include "vm/JSAtom.h"                // for Atomize, ClassName
 #include "vm/JSContext.h"             // for JSContext
 #include "vm/JSFunction.h"            // for JSFunction
-#include "vm/JSObject.h"              // for JSObject, RequireObject
-#include "vm/ObjectGroup.h"           // for TenuredObject
+#include "vm/JSObject.h"              // for JSObject, RequireObject,
 #include "vm/ObjectOperations.h"      // for DefineDataProperty
 #include "vm/PlainObject.h"           // for js::PlainObject
 #include "vm/PromiseObject.h"         // for js::PromiseObject
@@ -102,16 +101,16 @@
 #include "vm/Scope.h"                 // for Scope
 #include "vm/StringType.h"            // for JSString, PropertyName
 #include "vm/TraceLogging.h"          // for TraceLoggerForCurrentThread
-#include "vm/TypeInference.h"         // for TypeZone
 #include "vm/WrapperObject.h"         // for CrossCompartmentWrapperObject
 #include "wasm/WasmDebug.h"           // for DebugState
 #include "wasm/WasmInstance.h"        // for Instance
 #include "wasm/WasmJS.h"              // for WasmInstanceObject
 #include "wasm/WasmRealm.h"           // for Realm
-#include "wasm/WasmTypes.h"           // for WasmInstanceObjectVector
+#include "wasm/WasmTypeDecls.h"       // for WasmInstanceObjectVector
 
 #include "debugger/DebugAPI-inl.h"
-#include "debugger/Frame-inl.h"    // for DebuggerFrame::hasGeneratorInfo
+#include "debugger/Environment-inl.h"  // for DebuggerEnvironment::owner
+#include "debugger/Frame-inl.h"        // for DebuggerFrame::hasGeneratorInfo
 #include "debugger/Object-inl.h"   // for DebuggerObject::owner and isInstance.
 #include "debugger/Script-inl.h"   // for DebuggerScript::getReferent
 #include "gc/GC-inl.h"             // for ZoneCellIter
@@ -127,7 +126,6 @@
 #include "vm/ObjectOperations-inl.h"  // for GetProperty, HasProperty
 #include "vm/Realm-inl.h"             // for AutoRealm::AutoRealm
 #include "vm/Stack-inl.h"             // for AbstractFramePtr::script
-#include "vm/TypeInference-inl.h"     // for AutoEnterAnalysis
 
 namespace js {
 
@@ -175,11 +173,44 @@ JSScript* js::GetOrCreateFunctionScript(JSContext* cx, HandleFunction fun) {
   return JSFunction::getOrCreateScript(cx, fun);
 }
 
+ArrayObject* js::GetFunctionParameterNamesArray(JSContext* cx,
+                                                HandleFunction fun) {
+  RootedValueVector names(cx);
+
+  // The default value for each argument is |undefined|.
+  if (!names.growBy(fun->nargs())) {
+    return nullptr;
+  }
+
+  if (IsInterpretedNonSelfHostedFunction(fun) && fun->nargs() > 0) {
+    RootedScript script(cx, GetOrCreateFunctionScript(cx, fun));
+    if (!script) {
+      return nullptr;
+    }
+
+    MOZ_ASSERT(fun->nargs() == script->numArgs());
+
+    PositionalFormalParameterIter fi(script);
+    for (size_t i = 0; i < fun->nargs(); i++, fi++) {
+      MOZ_ASSERT(fi.argumentSlot() == i);
+      if (JSAtom* atom = fi.name()) {
+        // Skip any internal, non-identifier names, like for example ".args".
+        if (IsIdentifier(atom)) {
+          cx->markAtom(atom);
+          names[i].setString(atom);
+        }
+      }
+    }
+  }
+
+  return NewDenseCopiedArray(cx, names.length(), names.begin());
+}
+
 bool js::ValueToIdentifier(JSContext* cx, HandleValue v, MutableHandleId id) {
   if (!ToPropertyKey(cx, v, id)) {
     return false;
   }
-  if (!JSID_IS_ATOM(id) || !IsIdentifier(JSID_TO_ATOM(id))) {
+  if (!id.isAtom() || !IsIdentifier(id.toAtom())) {
     RootedValue val(cx, v);
     ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_SEARCH_STACK, val,
                      nullptr, "not an identifier");
@@ -214,12 +245,6 @@ bool DebugAPI::slowPathCheckNoExecute(JSContext* cx, HandleScript script) {
   return EnterDebuggeeNoExecute::reportIfFoundInStack(cx, script);
 }
 
-static inline void NukeDebuggerWrapper(NativeObject* wrapper) {
-  // In some OOM failure cases, we need to destroy the edge to the referent,
-  // to avoid trying to trace it during untimely collections.
-  wrapper->setPrivate(nullptr);
-}
-
 static void PropagateForcedReturn(JSContext* cx, AbstractFramePtr frame,
                                   HandleValue rval) {
   // The Debugger's hooks may return a value that affects the completion
@@ -235,20 +260,20 @@ static void PropagateForcedReturn(JSContext* cx, AbstractFramePtr frame,
   frame.setReturnValue(rval);
 }
 
-static MOZ_MUST_USE bool AdjustGeneratorResumptionValue(JSContext* cx,
-                                                        AbstractFramePtr frame,
-                                                        ResumeMode& resumeMode,
-                                                        MutableHandleValue vp);
+[[nodiscard]] static bool AdjustGeneratorResumptionValue(JSContext* cx,
+                                                         AbstractFramePtr frame,
+                                                         ResumeMode& resumeMode,
+                                                         MutableHandleValue vp);
 
-static MOZ_MUST_USE bool ApplyFrameResumeMode(JSContext* cx,
-                                              AbstractFramePtr frame,
-                                              ResumeMode resumeMode,
-                                              HandleValue rv,
-                                              HandleSavedFrame exnStack) {
+[[nodiscard]] static bool ApplyFrameResumeMode(JSContext* cx,
+                                               AbstractFramePtr frame,
+                                               ResumeMode resumeMode,
+                                               HandleValue rv,
+                                               HandleSavedFrame exnStack) {
   RootedValue rval(cx, rv);
 
-  // The value passed in here is unwrapped had has no guarantees about what
-  // compartment it may be associated with, so we explcitly wrap it into the
+  // The value passed in here is unwrapped and has no guarantees about what
+  // compartment it may be associated with, so we explicitly wrap it into the
   // debuggee compartment.
   if (!cx->compartment()->wrap(cx, &rval)) {
     return false;
@@ -268,7 +293,7 @@ static MOZ_MUST_USE bool ApplyFrameResumeMode(JSContext* cx,
       if (exnStack) {
         cx->setPendingException(rval, exnStack);
       } else {
-        cx->setPendingExceptionAndCaptureStack(rval);
+        cx->setPendingException(rval, ShouldCaptureStack::Always);
       }
       return false;
 
@@ -612,17 +637,18 @@ bool Debugger::getFrame(JSContext* cx, const FrameIter& iter,
   AbstractFramePtr referent = iter.abstractFramePtr();
   MOZ_ASSERT_IF(referent.hasScript(), !referent.script()->selfHosted());
 
-  if (referent.hasScript() &&
-      !referent.script()->ensureHasAnalyzedArgsUsage(cx)) {
-    return false;
-  }
-
   FrameMap::AddPtr p = frames.lookupForAdd(referent);
   if (!p) {
     Rooted<AbstractGeneratorObject*> genObj(cx);
     if (referent.isGeneratorFrame()) {
-      AutoRealm ar(cx, referent.callee());
-      genObj = GetGeneratorObjectForFrame(cx, referent);
+      if (referent.isFunctionFrame()) {
+        AutoRealm ar(cx, referent.callee());
+        genObj = GetGeneratorObjectForFrame(cx, referent);
+      } else {
+        MOZ_ASSERT(referent.isModuleFrame());
+        AutoRealm ar(cx, referent.script()->module());
+        genObj = GetGeneratorObjectForFrame(cx, referent);
+      }
 
       // If this frame has a generator associated with it, but no on-stack
       // Debugger.Frame object was found, there should not be a suspended
@@ -965,6 +991,16 @@ NativeResumeMode DebugAPI::slowPathOnNativeCall(JSContext* cx,
     return NativeResumeMode::Abort;
   }
 
+  // Hook must follow normal native function conventions and not return
+  // primitive values.
+  if (resumeMode == ResumeMode::Return) {
+    if (args.isConstructing() && !rval.isObject()) {
+      JS_ReportErrorASCII(
+          cx, "onNativeCall hook must return an object for constructor call");
+      return NativeResumeMode::Abort;
+    }
+  }
+
   // The value is not in any particular compartment, so it needs to be
   // explicitly wrapped into the debuggee compartment.
   if (!cx->compartment()->wrap(cx, &rval)) {
@@ -976,7 +1012,7 @@ NativeResumeMode DebugAPI::slowPathOnNativeCall(JSContext* cx,
       break;
 
     case ResumeMode::Throw:
-      cx->setPendingExceptionAndCaptureStack(rval);
+      cx->setPendingException(rval, ShouldCaptureStack::Always);
       return NativeResumeMode::Abort;
 
     case ResumeMode::Terminate:
@@ -1051,7 +1087,7 @@ class MOZ_RAII AutoSetGeneratorRunning {
  */
 /* static */
 bool DebugAPI::slowPathOnLeaveFrame(JSContext* cx, AbstractFramePtr frame,
-                                    jsbytecode* pc, bool frameOk) {
+                                    const jsbytecode* pc, bool frameOk) {
   MOZ_ASSERT_IF(!frame.isWasmDebugFrame(), pc);
 
   mozilla::DebugOnly<Handle<GlobalObject*>> debuggeeGlobal = cx->global();
@@ -1076,15 +1112,22 @@ bool DebugAPI::slowPathOnLeaveFrame(JSContext* cx, AbstractFramePtr frame,
   // The onPop handler and associated clean up logic should not run multiple
   // times on the same frame. If slowPathOnLeaveFrame has already been
   // called, the frame will not be present in the Debugger frame maps.
-  Rooted<Debugger::DebuggerFrameVector> frames(
-      cx, Debugger::DebuggerFrameVector(cx));
+  Rooted<Debugger::DebuggerFrameVector> frames(cx);
   if (!Debugger::getDebuggerFrames(frame, &frames)) {
+    // There is at least one match Debugger.Frame we failed to process, so drop
+    // the pending exception and raise an out-of-memory instead.
+    if (!frameOk) {
+      cx->clearPendingException();
+    }
+    ReportOutOfMemory(cx);
     return false;
   }
   if (frames.empty()) {
     return frameOk;
   }
 
+  // Convert current exception state into a Completion and clear exception off
+  // of the JSContext.
   completion = Completion::fromJSFramePop(cx, frame, pc, frameOk);
 
   ResumeMode resumeMode = ResumeMode::Continue;
@@ -1218,7 +1261,7 @@ bool DebugAPI::slowPathOnNewGenerator(JSContext* cx, AbstractFramePtr frame,
 
         AutoRealm ar(cx, frameObj);
 
-        if (!frameObj->setGeneratorInfo(cx, genObj)) {
+        if (!DebuggerFrame::setGeneratorInfo(cx, frameObj, genObj)) {
           // This leaves `genObj` and `frameObj` unassociated. It's OK
           // because we won't pause again with this generator on the stack:
           // the caller will immediately discard `genObj` and unwind `frame`.
@@ -1346,7 +1389,9 @@ bool Debugger::wrapEnvironment(JSContext* cx, Handle<Env*> env,
     }
 
     if (!p.add(cx, environments, env, envobj)) {
-      NukeDebuggerWrapper(envobj);
+      // We need to destroy the edge to the referent, to avoid trying to trace
+      // it during untimely collections.
+      envobj->clearReferent();
       return false;
     }
 
@@ -1369,19 +1414,19 @@ bool Debugger::wrapDebuggeeValue(JSContext* cx, MutableHandleValue vp) {
 
     vp.setObject(*dobj);
   } else if (vp.isMagic()) {
-    RootedPlainObject optObj(cx, NewBuiltinClassInstance<PlainObject>(cx));
+    RootedPlainObject optObj(cx, NewPlainObject(cx));
     if (!optObj) {
       return false;
     }
 
-    // We handle three sentinel values: missing arguments (overloading
-    // JS_OPTIMIZED_ARGUMENTS), optimized out slots (JS_OPTIMIZED_OUT),
+    // We handle three sentinel values: missing arguments
+    // (JS_MISSING_ARGUMENTS), optimized out slots (JS_OPTIMIZED_OUT),
     // and uninitialized bindings (JS_UNINITIALIZED_LEXICAL).
     //
     // Other magic values should not have escaped.
     PropertyName* name;
     switch (vp.whyMagic()) {
-      case JS_OPTIMIZED_ARGUMENTS:
+      case JS_MISSING_ARGUMENTS:
         name = cx->names().missingArguments;
         break;
       case JS_OPTIMIZED_OUT:
@@ -1437,7 +1482,9 @@ bool Debugger::wrapDebuggeeObject(JSContext* cx, HandleObject obj,
     }
 
     if (!p.add(cx, objects, obj, dobj)) {
-      NukeDebuggerWrapper(dobj);
+      // We need to destroy the edge to the referent, to avoid trying to trace
+      // it during untimely collections.
+      dobj->clearReferent();
       return false;
     }
 
@@ -1525,8 +1572,8 @@ bool Debugger::unwrapPropertyDescriptor(
     desc.setValue(value);
   }
 
-  if (desc.hasGetterObject()) {
-    RootedObject get(cx, desc.getterObject());
+  if (desc.hasGetter()) {
+    RootedObject get(cx, desc.getter());
     if (get) {
       if (!unwrapDebuggeeObject(cx, &get)) {
         return false;
@@ -1535,11 +1582,11 @@ bool Debugger::unwrapPropertyDescriptor(
         return false;
       }
     }
-    desc.setGetterObject(get);
+    desc.setGetter(get);
   }
 
-  if (desc.hasSetterObject()) {
-    RootedObject set(cx, desc.setterObject());
+  if (desc.hasSetter()) {
+    RootedObject set(cx, desc.setter());
     if (set) {
       if (!unwrapDebuggeeObject(cx, &set)) {
         return false;
@@ -1548,7 +1595,7 @@ bool Debugger::unwrapPropertyDescriptor(
         return false;
       }
     }
-    desc.setSetterObject(set);
+    desc.setSetter(set);
   }
 
   return true;
@@ -1609,7 +1656,7 @@ bool js::ParseResumptionValue(JSContext* cx, HandleValue rval,
 }
 
 static bool CheckResumptionValue(JSContext* cx, AbstractFramePtr frame,
-                                 jsbytecode* pc, ResumeMode resumeMode,
+                                 const jsbytecode* pc, ResumeMode resumeMode,
                                  MutableHandleValue vp) {
   // Only forced returns from a frame need to be validated because forced
   // throw values behave just like debuggee `throw` statements. Since
@@ -1675,14 +1722,20 @@ static bool CheckResumptionValue(JSContext* cx, AbstractFramePtr frame,
 // control of the uncaughtExceptionHook, because this code assumes we won't
 // change our minds and continue execution--we must not close the generator
 // object unless we're really going to force-return.
-static MOZ_MUST_USE bool AdjustGeneratorResumptionValue(JSContext* cx,
-                                                        AbstractFramePtr frame,
-                                                        ResumeMode& resumeMode,
-                                                        MutableHandleValue vp) {
+[[nodiscard]] static bool AdjustGeneratorResumptionValue(
+    JSContext* cx, AbstractFramePtr frame, ResumeMode& resumeMode,
+    MutableHandleValue vp) {
   if (resumeMode != ResumeMode::Return && resumeMode != ResumeMode::Throw) {
     return true;
   }
-  if (!frame || !frame.isFunctionFrame()) {
+
+  if (!frame) {
+    return true;
+  }
+  // Async modules need to be handled separately, as they do not have a callee.
+  // frame.callee will throw if it is called on a moduleFrame.
+  bool isAsyncModule = frame.isModuleFrame() && frame.script()->isAsync();
+  if (!frame.isFunctionFrame() && !isAsyncModule) {
     return true;
   }
 
@@ -1693,7 +1746,9 @@ static MOZ_MUST_USE bool AdjustGeneratorResumptionValue(JSContext* cx,
   // avoid re-entering the debugger from it.
   //
   // Similarly treat `{throw: <value>}` like a `throw` statement.
-  if (frame.callee()->isGenerator()) {
+  //
+  // Note: Async modules use the same handling as async functions.
+  if (frame.isFunctionFrame() && frame.callee()->isGenerator()) {
     // Throw doesn't require any special processing for (async) generators.
     if (resumeMode == ResumeMode::Throw) {
       return true;
@@ -1731,7 +1786,7 @@ static MOZ_MUST_USE bool AdjustGeneratorResumptionValue(JSContext* cx,
     if (genObj->is<AsyncGeneratorObject>()) {
       genObj->as<AsyncGeneratorObject>().setCompleted();
     }
-  } else if (frame.callee()->isAsync()) {
+  } else if (isAsyncModule || frame.callee()->isAsync()) {
     if (AbstractGeneratorObject* genObj =
             GetGeneratorObjectForFrame(cx, frame)) {
       // Throw doesn't require any special processing for async functions when
@@ -1777,7 +1832,7 @@ static MOZ_MUST_USE bool AdjustGeneratorResumptionValue(JSContext* cx,
 }
 
 bool Debugger::processParsedHandlerResult(JSContext* cx, AbstractFramePtr frame,
-                                          jsbytecode* pc, bool success,
+                                          const jsbytecode* pc, bool success,
                                           ResumeMode resumeMode,
                                           HandleValue value,
                                           ResumeMode& resultMode,
@@ -1822,7 +1877,7 @@ bool Debugger::processHandlerResult(JSContext* cx, bool success, HandleValue rv,
 }
 
 bool Debugger::prepareResumption(JSContext* cx, AbstractFramePtr frame,
-                                 jsbytecode* pc, ResumeMode& resumeMode,
+                                 const jsbytecode* pc, ResumeMode& resumeMode,
                                  MutableHandleValue vp) {
   return unwrapDebuggeeValue(cx, vp) &&
          CheckResumptionValue(cx, frame, pc, resumeMode, vp);
@@ -2034,9 +2089,7 @@ struct MOZ_STACK_CLASS Completion::BuildValueMatcher {
   }
 
  private:
-  NativeObject* newObject() const {
-    return NewBuiltinClassInstance<PlainObject>(cx);
-  }
+  NativeObject* newObject() const { return NewPlainObject(cx); }
 
   bool add(HandleNativeObject obj, PropertyName* name,
            HandleValue value) const {
@@ -2361,7 +2414,7 @@ static bool RememberSourceURL(JSContext* cx, HandleScript script) {
     return true;
   }
 
-  RootedObject holder(cx, script->global().getSourceURLsHolder());
+  Rooted<ArrayObject*> holder(cx, script->global().getSourceURLsHolder());
   if (!holder) {
     holder = NewDenseEmptyArray(cx);
     if (!holder) {
@@ -2370,7 +2423,7 @@ static bool RememberSourceURL(JSContext* cx, HandleScript script) {
     script->global().setSourceURLsHolder(holder);
   }
 
-  if (holder->as<ArrayObject>().length() >= SourceURLRealmLimit) {
+  if (holder->length() >= SourceURLRealmLimit) {
     return true;
   }
 
@@ -2547,9 +2600,9 @@ bool DebugAPI::onSingleStep(JSContext* cx) {
 
   // Build list of Debugger.Frame instances referring to this frame with
   // onStep handlers.
-  Rooted<Debugger::DebuggerFrameVector> frames(
-      cx, Debugger::DebuggerFrameVector(cx));
+  Rooted<Debugger::DebuggerFrameVector> frames(cx);
   if (!Debugger::getDebuggerFrames(iter.abstractFramePtr(), &frames)) {
+    ReportOutOfMemory(cx);
     return false;
   }
 
@@ -2844,25 +2897,12 @@ bool Debugger::appendAllocationSite(JSContext* cx, HandleObject obj,
     return false;
   }
 
-  // Try to get the constructor name from the ObjectGroup's TypeNewScript.
-  // This is only relevant for native objects.
-  RootedAtom ctorName(cx);
-  if (obj->is<NativeObject>()) {
-    AutoRealm ar(cx, obj);
-    if (!JSObject::constructorDisplayAtom(cx, obj, &ctorName)) {
-      return false;
-    }
-  }
-  if (ctorName) {
-    cx->markAtom(ctorName);
-  }
-
   auto className = obj->getClass()->name;
   auto size =
       JS::ubi::Node(obj.get()).size(cx->runtime()->debuggerMallocSizeOf);
   auto inNursery = gc::IsInsideNursery(obj);
 
-  if (!allocationsLog.emplaceBack(wrappedFrame, when, className, ctorName, size,
+  if (!allocationsLog.emplaceBack(wrappedFrame, when, className, size,
                                   inNursery)) {
     ReportOutOfMemory(cx);
     return false;
@@ -2943,11 +2983,7 @@ class MOZ_RAII ExecutionObservableRealms
   HashSet<Zone*> zones_;
 
  public:
-  explicit ExecutionObservableRealms(
-      JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : realms_(cx), zones_(cx) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
+  explicit ExecutionObservableRealms(JSContext* cx) : realms_(cx), zones_(cx) {}
 
   bool add(Realm* realm) {
     return realms_.put(realm) && zones_.put(realm->zone());
@@ -2966,8 +3002,6 @@ class MOZ_RAII ExecutionObservableRealms
     // don't match.
     return iter.hasUsableAbstractFramePtr() && realms_.has(iter.realm());
   }
-
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 // Given a particular AbstractFramePtr F that has become observable, this
@@ -2979,11 +3013,7 @@ class MOZ_RAII ExecutionObservableFrame
   AbstractFramePtr frame_;
 
  public:
-  explicit ExecutionObservableFrame(
-      AbstractFramePtr frame MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : frame_(frame) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
+  explicit ExecutionObservableFrame(AbstractFramePtr frame) : frame_(frame) {}
 
   Zone* singleZone() const override {
     // We never inline across realms, let alone across zones, so
@@ -3035,8 +3065,6 @@ class MOZ_RAII ExecutionObservableFrame
     return iter.hasUsableAbstractFramePtr() &&
            iter.abstractFramePtr() == frame_;
   }
-
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 class MOZ_RAII ExecutionObservableScript
@@ -3044,11 +3072,8 @@ class MOZ_RAII ExecutionObservableScript
   RootedScript script_;
 
  public:
-  ExecutionObservableScript(JSContext* cx,
-                            JSScript* script MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : script_(cx, script) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
+  ExecutionObservableScript(JSContext* cx, JSScript* script)
+      : script_(cx, script) {}
 
   Zone* singleZone() const override { return script_->zone(); }
   JSScript* singleScriptForZoneInvalidation() const override { return script_; }
@@ -3071,8 +3096,6 @@ class MOZ_RAII ExecutionObservableScript
     return iter.hasUsableAbstractFramePtr() && !iter.isWasm() &&
            iter.abstractFramePtr().script() == script_;
   }
-
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 /* static */
@@ -3084,7 +3107,6 @@ bool Debugger::updateExecutionObservabilityOfFrames(
   {
     jit::JitContext jctx(cx, nullptr);
     if (!jit::RecompileOnStackBaselineScriptsForDebugMode(cx, obs, observing)) {
-      ReportOutOfMemory(cx);
       return false;
     }
   }
@@ -3130,13 +3152,14 @@ static inline void MarkJitScriptActiveIfObservable(
 
 static bool AppendAndInvalidateScript(JSContext* cx, Zone* zone,
                                       JSScript* script,
+                                      jit::RecompileInfoVector& invalid,
                                       Vector<JSScript*>& scripts) {
-  // Enter the script's realm as addPendingRecompile attempts to
+  // Enter the script's realm as AddPendingInvalidation attempts to
   // cancel off-thread compilations, whose books are kept on the
   // script's realm.
   MOZ_ASSERT(script->zone() == zone);
   AutoRealm ar(cx, script);
-  zone->types.addPendingRecompile(cx, script);
+  AddPendingInvalidation(invalid, script);
   return scripts.append(script);
 }
 
@@ -3154,10 +3177,10 @@ static bool UpdateExecutionObservabilityOfScriptsInZone(
   // Iterate through observable scripts, invalidating their Ion scripts and
   // appending them to a vector for discarding their baseline scripts later.
   {
-    AutoEnterAnalysis enter(fop, zone);
+    RecompileInfoVector invalid;
     if (JSScript* script = obs.singleScriptForZoneInvalidation()) {
       if (obs.shouldRecompileOrInvalidate(script)) {
-        if (!AppendAndInvalidateScript(cx, zone, script, scripts)) {
+        if (!AppendAndInvalidateScript(cx, zone, script, invalid, scripts)) {
           return false;
         }
       }
@@ -3169,12 +3192,13 @@ static bool UpdateExecutionObservabilityOfScriptsInZone(
         }
         JSScript* script = base->asJSScript();
         if (obs.shouldRecompileOrInvalidate(script)) {
-          if (!AppendAndInvalidateScript(cx, zone, script, scripts)) {
+          if (!AppendAndInvalidateScript(cx, zone, script, invalid, scripts)) {
             return false;
           }
         }
       }
     }
+    Invalidate(cx, invalid);
   }
 
   // Code below this point must be infallible to ensure the active bit of
@@ -3633,6 +3657,8 @@ void Debugger::traceCrossCompartmentEdges(JSTracer* trc) {
  */
 /* static */
 void DebugAPI::traceCrossCompartmentEdges(JSTracer* trc) {
+  MOZ_ASSERT(JS::RuntimeHeapIsMajorCollecting());
+
   JSRuntime* rt = trc->runtime();
   gc::State state = rt->gc.state();
 
@@ -3742,7 +3768,7 @@ void DebugAPI::traceFramesWithLiveHooks(JSTracer* tracer) {
     for (Debugger::FrameMap::Range r = dbg->frames.all(); !r.empty();
          r.popFront()) {
       HeapPtr<DebuggerFrame*>& frameobj = r.front().value();
-      MOZ_ASSERT(frameobj->isOnStackMaybeForwarded());
+      MOZ_ASSERT(frameobj->isOnStack());
       if (frameobj->hasAnyHooks()) {
         TraceEdge(tracer, &frameobj, "Debugger.Frame with live hooks");
       }
@@ -3754,9 +3780,9 @@ void DebugAPI::slowPathTraceGeneratorFrame(JSTracer* tracer,
                                            AbstractGeneratorObject* generator) {
   MOZ_ASSERT(generator->realm()->isDebuggee());
 
-  // Ignore callback tracers.
+  // Ignore generic tracers.
   //
-  // There are two kinds of callback tracers we need to bar: MovingTracers used
+  // There are two kinds of generic tracers we need to bar: MovingTracers used
   // by compacting GC; and CompartmentCheckTracers.
   //
   // MovingTracers are used by the compacting GC to update pointers to objects
@@ -3793,10 +3819,10 @@ void DebugAPI::slowPathTraceGeneratorFrame(JSTracer* tracer,
   // safely hide the edges from CompartmentCheckTracers.
   //
   // We can't quite recognize MovingTracers and CompartmentCheckTracers
-  // precisely, but they're both callback tracers, so we just show them all the
+  // precisely, but they're both generic tracers, so we just show them all the
   // door. This means the generator -> Debugger.Frame edge is going to be
   // invisible to some traversals. We'll cope with that when it's a problem.
-  if (tracer->isCallbackTracer()) {
+  if (tracer->isGenericTracer()) {
     return;
   }
 
@@ -3860,7 +3886,7 @@ void Debugger::trace(JSTracer* trc) {
   for (FrameMap::Range r = frames.all(); !r.empty(); r.popFront()) {
     HeapPtr<DebuggerFrame*>& frameobj = r.front().value();
     TraceEdge(trc, &frameobj, "live Debugger.Frame");
-    MOZ_ASSERT(frameobj->isOnStackMaybeForwarded());
+    MOZ_ASSERT(frameobj->isOnStack());
   }
 
   allocationsLog.trace(trc);
@@ -3896,7 +3922,7 @@ void DebugAPI::sweepAll(JSFreeOp* fop) {
       for (Debugger::GeneratorWeakMap::Enum e(dbg->generatorFrames); !e.empty();
            e.popFront()) {
         DebuggerFrame* frameObj = e.front().value();
-        if (IsAboutToBeFinalizedUnbarriered(&frameObj)) {
+        if (IsAboutToBeFinalizedUnbarriered(frameObj)) {
           // If the DebuggerFrame is being finalized, that means either:
           //  1) It is not present in "frames".
           //  2) The Debugger itself is also being finalized.
@@ -3914,11 +3940,11 @@ void DebugAPI::sweepAll(JSFreeOp* fop) {
     // Detach dying debuggers and debuggees from each other. Since this
     // requires access to both objects it must be done before either
     // object is finalized.
-    bool debuggerDying = IsAboutToBeFinalized(&dbg->object);
+    bool debuggerDying = IsAboutToBeFinalized(dbg->object);
     for (WeakGlobalObjectSet::Enum e(dbg->debuggees); !e.empty();
          e.popFront()) {
       GlobalObject* global = e.front().unbarrieredGet();
-      if (debuggerDying || IsAboutToBeFinalizedUnbarriered(&global)) {
+      if (debuggerDying || IsAboutToBeFinalizedUnbarriered(global)) {
         dbg->removeDebuggeeGlobal(fop, e.front().unbarrieredGet(), &e,
                                   Debugger::FromSweep::Yes);
       }
@@ -3999,9 +4025,7 @@ const JSClassOps DebuggerInstanceObject::classOps_ = {
 };
 
 const JSClass DebuggerInstanceObject::class_ = {
-    "Debugger",
-    JSCLASS_HAS_PRIVATE |
-        JSCLASS_HAS_RESERVED_SLOTS(Debugger::JSSLOT_DEBUG_COUNT),
+    "Debugger", JSCLASS_HAS_RESERVED_SLOTS(Debugger::JSSLOT_DEBUG_COUNT),
     &classOps_};
 
 static Debugger* Debugger_fromThisValue(JSContext* cx, const CallArgs& args,
@@ -4514,7 +4538,7 @@ bool Debugger::CallData::getDebuggees() {
   if (!arrobj) {
     return false;
   }
-  arrobj->ensureDenseInitializedLength(cx, 0, count);
+  arrobj->ensureDenseInitializedLength(0, count);
   for (i = 0; i < count; i++) {
     RootedValue v(cx, debuggees[i]);
     if (!dbg->wrapDebuggeeValue(cx, &v)) {
@@ -4550,11 +4574,15 @@ bool Debugger::CallData::getNewestFrame() {
 }
 
 bool Debugger::CallData::clearAllBreakpoints() {
-  for (WeakGlobalObjectSet::Range r = dbg->debuggees.all(); !r.empty();
-       r.popFront()) {
-    DebugScript::clearBreakpointsIn(cx->runtime()->defaultFreeOp(),
-                                    r.front()->realm(), dbg, nullptr);
+  JSFreeOp* fop = cx->defaultFreeOp();
+  Breakpoint* nextbp;
+  for (Breakpoint* bp = dbg->firstBreakpoint(); bp; bp = nextbp) {
+    nextbp = bp->nextInDebugger();
+
+    bp->remove(fop);
   }
+  MOZ_ASSERT(!dbg->firstBreakpoint());
+
   return true;
 }
 
@@ -4615,7 +4643,7 @@ bool Debugger::construct(JSContext* cx, unsigned argc, Value* vp) {
 
     // The object owns the released pointer.
     debugger = dbg.release();
-    InitObjectPrivate(obj, debugger, MemoryUse::Debugger);
+    InitReservedSlot(obj, JSSLOT_DEBUG_DEBUGGER, debugger, MemoryUse::Debugger);
   }
 
   // Add the initial debuggees, if any.
@@ -4876,8 +4904,7 @@ class MOZ_STACK_CLASS Debugger::QueryBase {
       : cx(cx),
         debugger(dbg),
         iterMarker(&cx->runtime()->gc),
-        realms(cx->zone()),
-        oom(false) {}
+        realms(cx->zone()) {}
 
   // The context in which we should do our work.
   JSContext* cx;
@@ -4894,7 +4921,7 @@ class MOZ_STACK_CLASS Debugger::QueryBase {
   RealmSet realms;
 
   // Indicates whether OOM has occurred while matching.
-  bool oom;
+  bool oom = false;
 
   bool addRealm(Realm* realm) { return realms.put(realm); }
 
@@ -4935,13 +4962,9 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
       : QueryBase(cx, dbg),
         url(cx),
         displayURLString(cx),
-        hasSource(false),
         source(cx, AsVariant(static_cast<ScriptSourceObject*>(nullptr))),
-        hasLine(false),
-        line(0),
-        innermost(false),
-        innermostForRealm(cx, cx->zone()),
         scriptVector(cx, BaseScriptVector(cx)),
+        partialMatchVector(cx, BaseScriptVector(cx)),
         wasmInstanceVector(cx, WasmInstanceObjectVector(cx)) {}
 
   /*
@@ -5060,13 +5083,14 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
         return false;
       }
       double doubleLine = lineProperty.toNumber();
-      if (doubleLine <= 0 || (unsigned int)doubleLine != doubleLine) {
+      uint32_t uintLine = (uint32_t)doubleLine;
+      if (doubleLine <= 0 || uintLine != doubleLine) {
         JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                   JSMSG_DEBUG_BAD_LINE);
         return false;
       }
       hasLine = true;
-      line = doubleLine;
+      line = uintLine;
     } else {
       JS_ReportErrorNumberASCII(
           cx, GetErrorMessage, nullptr, JSMSG_UNEXPECTED_TYPE,
@@ -5112,14 +5136,6 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
       return false;
     }
 
-    bool delazified = false;
-    if (needsDelazifyBeforeQuery()) {
-      if (!delazifyScripts()) {
-        return false;
-      }
-      delazified = true;
-    }
-
     Realm* singletonRealm = nullptr;
     if (realms.count() == 1) {
       singletonRealm = realms.all().front();
@@ -5127,25 +5143,131 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
 
     // Search each realm for debuggee scripts.
     MOZ_ASSERT(scriptVector.empty());
+    MOZ_ASSERT(partialMatchVector.empty());
     oom = false;
     IterateScripts(cx, singletonRealm, this, considerScript);
-    if (!delazified) {
-      IterateLazyScripts(cx, singletonRealm, this, considerLazyScript);
-    }
     if (oom) {
       ReportOutOfMemory(cx);
       return false;
     }
 
-    // For most queries, we just accumulate results in 'scriptVector' as we find
-    // them. But if this is an 'innermost' query, then we've accumulated the
-    // results in the 'innermostForRealm' map. In that case, we now need to walk
-    // that map and populate 'scriptVector'.
+    // If we are filtering by line number, the lazy BaseScripts were not checked
+    // yet since they do not implement `GetScriptLineExtent`. Instead we revisit
+    // each result script and delazify its children and add any matching ones to
+    // the results list.
+    MOZ_ASSERT(hasLine || partialMatchVector.empty());
+    Rooted<BaseScript*> script(cx);
+    RootedFunction fun(cx);
+    while (!partialMatchVector.empty()) {
+      script = partialMatchVector.popCopy();
+
+      // As a performance optimization, we can skip scripts that are definitely
+      // out-of-bounds for the target line. This was checked before adding to
+      // the partialMatchVector, but the bound may have improved since then.
+      if (script->extent().sourceEnd <= sourceOffsetLowerBound) {
+        continue;
+      }
+
+      MOZ_ASSERT(script->isFunction());
+      MOZ_ASSERT(script->isReadyForDelazification());
+
+      fun = script->function();
+
+      // Ignore any delazification placeholder functions. These should not be
+      // exposed to debugger in any way.
+      if (fun->isGhost()) {
+        continue;
+      }
+
+      // Delazify script.
+      JSScript* compiledScript = GetOrCreateFunctionScript(cx, fun);
+      if (!compiledScript) {
+        return false;
+      }
+
+      // If target line isn't in script, we are done with it.
+      if (!scriptIsLineMatch(compiledScript)) {
+        continue;
+      }
+
+      // Add script to results now that we've completed checks.
+      if (!scriptVector.append(compiledScript)) {
+        return false;
+      }
+
+      // If script was a leaf we are done with it. This is an optional
+      // optimization to avoid inspecting the `gcthings` list below.
+      if (!script->hasInnerFunctions()) {
+        continue;
+      }
+
+      // Now add inner scripts to `partialMatchVector` work list to determine if
+      // they are matches. Note that out IterateScripts callback ignored them
+      // already since they did not have a compiled parent at the time.
+      for (JS::GCCellPtr thing : script->gcthings()) {
+        if (!thing.is<JSObject>() || !thing.as<JSObject>().is<JSFunction>()) {
+          continue;
+        }
+        JSFunction* fun = &thing.as<JSObject>().as<JSFunction>();
+        if (!fun->hasBaseScript()) {
+          continue;
+        }
+        BaseScript* inner = fun->baseScript();
+        MOZ_ASSERT(inner);
+        if (!inner) {
+          // If the function doesn't have script, ignore it.
+          continue;
+        }
+
+        if (!scriptIsPartialLineMatch(inner)) {
+          continue;
+        }
+
+        // Add the matching inner script to the back of the results queue
+        // where it will be processed recursively.
+        if (!partialMatchVector.append(inner)) {
+          return false;
+        }
+      }
+    }
+
+    // If this is an 'innermost' query, we want to filter the results again to
+    // only return the innermost script for each realm. To do this we build a
+    // hashmap to track innermost and then recreate the `scriptVector` with the
+    // results that remain in the hashmap.
     if (innermost) {
+      using RealmToScriptMap =
+          GCHashMap<Realm*, BaseScript*, DefaultHasher<Realm*>>;
+
+      Rooted<RealmToScriptMap> innermostForRealm(cx, cx);
+
+      // Visit each candidate script and find innermost in each realm.
+      for (BaseScript* script : scriptVector) {
+        Realm* realm = script->realm();
+        RealmToScriptMap::AddPtr p = innermostForRealm.lookupForAdd(realm);
+        if (p) {
+          // Is our newly found script deeper than the last one we found?
+          BaseScript* incumbent = p->value();
+          if (script->asJSScript()->innermostScope()->chainLength() >
+              incumbent->asJSScript()->innermostScope()->chainLength()) {
+            p->value() = script;
+          }
+        } else {
+          // This is the first matching script we've encountered for this
+          // realm, so it is thus the innermost such script.
+          if (!innermostForRealm.add(p, realm, script)) {
+            return false;
+          }
+        }
+      }
+
+      // Reset the results vector.
+      scriptVector.clear();
+
+      // Re-add only the innermost scripts to the results.
       for (RealmToScriptMap::Range r = innermostForRealm.all(); !r.empty();
            r.popFront()) {
         if (!scriptVector.append(r.front().value())) {
-          ReportOutOfMemory(cx);
           return false;
         }
       }
@@ -5189,27 +5311,29 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
    * to this instance. Ideally we'd use a Maybe here, but Maybe interacts
    * very badly with Rooted's LIFO invariant.
    */
-  bool hasSource;
+  bool hasSource = false;
   Rooted<DebuggerSourceReferent> source;
 
   /* True if the query contained a 'line' property. */
-  bool hasLine;
+  bool hasLine = false;
 
   /* The line matching scripts must cover. */
-  unsigned int line;
+  uint32_t line = 0;
+
+  // As a performance optimization (and to avoid delazifying as many scripts),
+  // we would like to know the source offset of the target line.
+  //
+  // Since we do not have a simple way to compute this precisely, we instead
+  // track a lower-bound of the offset value. As we collect SourceExtent
+  // examples with (line,column) <-> sourceStart mappings, we can improve the
+  // bound. The target line is within the range [sourceOffsetLowerBound, Inf).
+  //
+  // NOTE: Using a SourceExtent for updating the bound happens independently of
+  //       if the script matches the target line or not in the in the end.
+  mutable uint32_t sourceOffsetLowerBound = 0;
 
   /* True if the query has an 'innermost' property whose value is true. */
-  bool innermost;
-
-  using RealmToScriptMap =
-      GCHashMap<Realm*, JSScript*, DefaultHasher<Realm*>, ZoneAllocPolicy>;
-
-  /*
-   * For 'innermost' queries, a map from realms to the innermost script
-   * we've seen so far in that realm. (Template instantiation code size
-   * explosion ho!)
-   */
-  Rooted<RealmToScriptMap> innermostForRealm;
+  bool innermost = false;
 
   /*
    * Accumulate the scripts in an Rooted<BaseScriptVector> instead of creating
@@ -5217,6 +5341,16 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
    * we use the CellIter.
    */
   Rooted<BaseScriptVector> scriptVector;
+
+  /*
+   * While in the CellIter we may find BaseScripts that need to be compiled
+   * before the query can be fully checked. Since we cannot compile while under
+   * CellIter we accumulate them here instead.
+   *
+   * This occurs when matching line numbers since `GetScriptLineExtent` cannot
+   * be computed without bytecode existing.
+   */
+  Rooted<BaseScriptVector> partialMatchVector;
 
   /*
    * Like above, but for wasm modules.
@@ -5240,41 +5374,59 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
     return true;
   }
 
-  bool delazifyScripts() {
-    // All scripts in debuggee realms must be visible, so delazify
-    // everything.
-    for (auto r = realms.all(); !r.empty(); r.popFront()) {
-      Realm* realm = r.front();
-      if (!realm->ensureDelazifyScriptsForDebugger(cx)) {
-        return false;
-      }
+  void updateSourceOffsetLowerBound(const SourceExtent& extent) {
+    // We trying to find the offset of (target-line, 0) so just ignore any
+    // extents on target line to keep things simple.
+    MOZ_ASSERT(extent.lineno <= line);
+    if (extent.lineno == line) {
+      return;
     }
-    return true;
+
+    // The extent.sourceStart position is now definitely *before* the target
+    // line, so update sourceOffsetLowerBound if extent.sourceStart is a tighter
+    // bound.
+    if (extent.sourceStart > sourceOffsetLowerBound) {
+      sourceOffsetLowerBound = extent.sourceStart;
+    }
+  }
+
+  // A partial match is a script that starts before the target line, but may or
+  // may not end before it. If we can prove the script definitely ends before
+  // the target line, we may return false here.
+  bool scriptIsPartialLineMatch(BaseScript* script) {
+    const SourceExtent& extent = script->extent();
+
+    // Check that start of script is before or on target line.
+    if (extent.lineno > line) {
+      return false;
+    }
+
+    // Use the implicit (line, column) <-> sourceStart mapping from the
+    // SourceExtent to update our bounds on possible matches. We call this
+    // without knowing if the script is a match or not.
+    updateSourceOffsetLowerBound(script->extent());
+
+    // As an optional performance optimization, we rule out any script that ends
+    // before the lower-bound on where target line exists.
+    return extent.sourceEnd > sourceOffsetLowerBound;
+  }
+
+  // True if any part of script source is on the target line.
+  bool scriptIsLineMatch(JSScript* script) {
+    MOZ_ASSERT(scriptIsPartialLineMatch(script));
+
+    uint32_t lineCount = GetScriptLineExtent(script);
+    return (script->lineno() + lineCount > line);
   }
 
   static void considerScript(JSRuntime* rt, void* data, BaseScript* script,
                              const JS::AutoRequireNoGC& nogc) {
     ScriptQuery* self = static_cast<ScriptQuery*>(data);
-    self->consider(script->asJSScript(), nogc);
-  }
-
-  static void considerLazyScript(JSRuntime* rt, void* data, BaseScript* script,
-                                 const JS::AutoRequireNoGC& nogc) {
-    ScriptQuery* self = static_cast<ScriptQuery*>(data);
-    self->considerLazy(script, nogc);
-  }
-
-  bool needsDelazifyBeforeQuery() const {
-    // * innermost
-    //   Currently not supported, since this is not used outside of test.
-    //
-    // * hasLine
-    //   Only JSScript supports GetScriptLineExtent.
-    return innermost || hasLine;
+    self->consider(script, nogc);
   }
 
   template <typename T>
-  MOZ_MUST_USE bool commonFilter(T script, const JS::AutoRequireNoGC& nogc) {
+  [[nodiscard]] bool commonFilter(T script, const JS::AutoRequireNoGC& nogc) {
     if (urlCString) {
       bool gotFilename = false;
       if (script->filename() &&
@@ -5311,86 +5463,53 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
   }
 
   /*
-   * If |script| matches this query, append it to |scriptVector| or place it
-   * in |innermostForRealm|, as appropriate. Set |oom| if an out of memory
-   * condition occurred.
+   * If |script| matches this query, append it to |scriptVector|. Set |oom| if
+   * an out of memory condition occurred.
    */
-  void consider(JSScript* script, const JS::AutoRequireNoGC& nogc) {
+  void consider(BaseScript* script, const JS::AutoRequireNoGC& nogc) {
     if (oom || script->selfHosted()) {
       return;
     }
+
     Realm* realm = script->realm();
     if (!realms.has(realm)) {
       return;
     }
+
     if (!commonFilter(script, nogc)) {
       return;
     }
+
+    bool partial = false;
+
     if (hasLine) {
-      if (line < script->lineno() ||
-          script->lineno() + GetScriptLineExtent(script) < line) {
+      if (!scriptIsPartialLineMatch(script)) {
         return;
       }
-    }
 
-    if (innermost) {
-      // For 'innermost' queries, we don't place scripts in
-      // |scriptVector| right away; we may later find another script that
-      // is nested inside this one. Instead, we record the innermost
-      // script we've found so far for each realm in innermostForRealm,
-      // and only populate |scriptVector| at the bottom of findScripts,
-      // when we've traversed all the scripts.
-      //
-      // So: check this script against the innermost one we've found so
-      // far (if any), as recorded in innermostForRealm, and replace that
-      // if it's better.
-      RealmToScriptMap::AddPtr p = innermostForRealm.lookupForAdd(realm);
-      if (p) {
-        // Is our newly found script deeper than the last one we found?
-        JSScript* incumbent = p->value();
-        if (script->innermostScope()->chainLength() >
-            incumbent->innermostScope()->chainLength()) {
-          p->value() = script;
-        }
-      } else {
-        // This is the first matching script we've encountered for this
-        // realm, so it is thus the innermost such script.
-        if (!innermostForRealm.add(p, realm, script)) {
-          oom = true;
+      if (script->hasBytecode()) {
+        // Check if line is within script (or any of its inner scripts).
+        if (!scriptIsLineMatch(script->asJSScript())) {
           return;
         }
+      } else {
+        // GetScriptLineExtent is not available on lazy scripts so instead to
+        // the partial match list for be compiled and reprocessed later. We only
+        // add scripts that are ready for delazification and they may in turn
+        // process their inner functions.
+        if (!script->isReadyForDelazification()) {
+          return;
+        }
+        partial = true;
       }
-    } else {
-      // Record this matching script in the results scriptVector.
-      if (!scriptVector.append(script)) {
-        oom = true;
-        return;
-      }
-    }
-  }
-
-  void considerLazy(BaseScript* lazyScript, const JS::AutoRequireNoGC& nogc) {
-    MOZ_ASSERT(!needsDelazifyBeforeQuery());
-
-    if (oom) {
-      return;
-    }
-    Realm* realm = lazyScript->realm();
-    if (!realms.has(realm)) {
-      return;
     }
 
-    // If the script is already delazified, it should be in scriptVector.
-    if (lazyScript->hasBytecode()) {
-      return;
-    }
+    // If innermost filter is required, we collect everything that matches the
+    // line number and filter at the end of `findScripts`.
+    MOZ_ASSERT_IF(innermost, hasLine);
 
-    if (!commonFilter(lazyScript, nogc)) {
-      return;
-    }
-
-    /* Record this matching script in the results scriptVector. */
-    if (!scriptVector.append(lazyScript)) {
+    Rooted<BaseScriptVector>& vec = partial ? partialMatchVector : scriptVector;
+    if (!vec.append(script)) {
       oom = true;
     }
   }
@@ -5441,7 +5560,7 @@ bool Debugger::CallData::findScripts() {
     return false;
   }
 
-  result->ensureDenseInitializedLength(cx, 0, resultLength);
+  result->ensureDenseInitializedLength(0, resultLength);
 
   for (size_t i = 0; i < scripts.length(); i++) {
     JSObject* scriptObject = dbg->wrapScript(cx, scripts[i]);
@@ -5489,7 +5608,6 @@ class MOZ_STACK_CLASS Debugger::SourceQuery : public Debugger::QueryBase {
     MOZ_ASSERT(sources.empty());
     oom = false;
     IterateScripts(cx, singletonRealm, this, considerScript);
-    IterateLazyScripts(cx, singletonRealm, this, considerLazyScript);
     if (oom) {
       ReportOutOfMemory(cx);
       return false;
@@ -5519,50 +5637,20 @@ class MOZ_STACK_CLASS Debugger::SourceQuery : public Debugger::QueryBase {
   static void considerScript(JSRuntime* rt, void* data, BaseScript* script,
                              const JS::AutoRequireNoGC& nogc) {
     SourceQuery* self = static_cast<SourceQuery*>(data);
-    self->consider(script->asJSScript(), nogc);
+    self->consider(script, nogc);
   }
 
-  static void considerLazyScript(JSRuntime* rt, void* data, BaseScript* script,
-                                 const JS::AutoRequireNoGC& nogc) {
-    SourceQuery* self = static_cast<SourceQuery*>(data);
-    self->considerLazy(script, nogc);
-  }
-
-  void consider(JSScript* script, const JS::AutoRequireNoGC& nogc) {
+  void consider(BaseScript* script, const JS::AutoRequireNoGC& nogc) {
     if (oom || script->selfHosted()) {
       return;
     }
+
     Realm* realm = script->realm();
     if (!realms.has(realm)) {
       return;
     }
 
-    if (!script->sourceObject()) {
-      return;
-    }
-
-    ScriptSourceObject* source =
-        &UncheckedUnwrap(script->sourceObject())->as<ScriptSourceObject>();
-    if (!sources.put(source)) {
-      oom = true;
-    }
-  }
-
-  void considerLazy(BaseScript* lazyScript, const JS::AutoRequireNoGC& nogc) {
-    if (oom) {
-      return;
-    }
-    Realm* realm = lazyScript->realm();
-    if (!realms.has(realm)) {
-      return;
-    }
-
-    // If the script is already delazified, it should already be handled.
-    if (lazyScript->hasBytecode()) {
-      return;
-    }
-
-    ScriptSourceObject* source = lazyScript->sourceObject();
+    ScriptSourceObject* source = script->sourceObject();
     if (!sources.put(source)) {
       oom = true;
     }
@@ -5600,7 +5688,7 @@ bool Debugger::CallData::findSources() {
     return false;
   }
 
-  result->ensureDenseInitializedLength(cx, 0, resultLength);
+  result->ensureDenseInitializedLength(0, resultLength);
 
   size_t i = 0;
   for (auto iter = sources.get().iter(); !iter.done(); iter.next()) {
@@ -5821,7 +5909,7 @@ bool Debugger::CallData::findObjects() {
     return false;
   }
 
-  result->ensureDenseInitializedLength(cx, 0, length);
+  result->ensureDenseInitializedLength(0, length);
 
   for (size_t i = 0; i < length; i++) {
     RootedValue debuggeeVal(cx, ObjectValue(*query.objects[i]));
@@ -5859,10 +5947,6 @@ bool Debugger::CallData::findAllGlobals() {
       r->compartment()->gcState.scheduledForDestruction = false;
 
       GlobalObject* global = r->maybeGlobal();
-
-      if (cx->runtime()->isSelfHostingGlobal(global)) {
-        continue;
-      }
 
       // We pulled |global| out of nowhere, so it's possible that it was
       // marked gray by XPConnect. Since we're now exposing it to JS code,
@@ -5971,16 +6055,23 @@ bool Debugger::isCompilableUnit(JSContext* cx, unsigned argc, Value* vp) {
   bool result = true;
 
   CompileOptions options(cx);
+  Rooted<frontend::CompilationInput> input(cx,
+                                           frontend::CompilationInput(options));
+  if (!input.get().initForGlobal(cx)) {
+    return false;
+  }
+
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
-  frontend::CompilationInfo compilationInfo(cx, allocScope, options);
-  if (!compilationInfo.init(cx)) {
+  frontend::CompilationState compilationState(cx, allocScope, input.get());
+  if (!compilationState.init(cx)) {
     return false;
   }
 
   JS::AutoSuppressWarningReporter suppressWarnings(cx);
   frontend::Parser<frontend::FullParseHandler, char16_t> parser(
       cx, options, chars.twoByteChars(), length,
-      /* foldConstants = */ true, compilationInfo, nullptr, nullptr);
+      /* foldConstants = */ true, compilationState,
+      /* syntaxParser = */ nullptr);
   if (!parser.checkOptions() || !parser.parse()) {
     // We ran into an error. If it was because we ran out of memory we report
     // it in the usual way.
@@ -6215,7 +6306,9 @@ typename Map::WrapperType* Debugger::wrapVariantReferent(
     }
 
     if (!p.add(cx, map, untaggedReferent, wrapper)) {
-      NukeDebuggerWrapper(wrapper);
+      // We need to destroy the edge to the referent, to avoid trying to trace
+      // it during untimely collections.
+      wrapper->clearReferent();
       return nullptr;
     }
   }
@@ -6282,18 +6375,6 @@ DebuggerSource* Debugger::wrapWasmSource(
   return wrapVariantReferent(cx, referent);
 }
 
-bool DebugAPI::getScriptInstrumentationId(JSContext* cx, HandleObject dbgObject,
-                                          HandleScript script,
-                                          MutableHandleValue rval) {
-  Debugger* dbg = Debugger::fromJSObject(dbgObject);
-  DebuggerScript* dbgScript = dbg->wrapScript(cx, script);
-  if (!dbgScript) {
-    return false;
-  }
-  rval.set(dbgScript->getInstrumentationId());
-  return true;
-}
-
 bool Debugger::observesFrame(AbstractFramePtr frame) const {
   if (frame.isWasmDebugFrame()) {
     return observesWasm(frame.wasmInstance());
@@ -6353,12 +6434,13 @@ bool Debugger::replaceFrameGuts(JSContext* cx, AbstractFramePtr from,
   });
 
   // Forward live Debugger.Frame objects.
-  Rooted<DebuggerFrameVector> frames(cx, DebuggerFrameVector(cx));
+  Rooted<DebuggerFrameVector> frames(cx);
   if (!getDebuggerFrames(from, &frames)) {
     // An OOM here means that all Debuggers' frame maps still contain
     // entries for 'from' and no entries for 'to'. Since the 'from' frame
     // will be gone, they are removed by terminateDebuggerFramesOnExit
     // above.
+    ReportOutOfMemory(cx);
     return false;
   }
 
@@ -6578,7 +6660,7 @@ bool Builder::Object::defineProperty(JSContext* cx, const char* name,
 Builder::Object Builder::newObject(JSContext* cx) {
   AutoRealm ar(cx, debuggerObject);
 
-  RootedPlainObject obj(cx, NewBuiltinClassInstance<PlainObject>(cx));
+  RootedPlainObject obj(cx, NewPlainObject(cx));
 
   // If the allocation failed, this will return a false Object, as the spec
   // promises.
@@ -6651,7 +6733,8 @@ extern JS_PUBLIC_API bool JS_DefineDebuggerObject(JSContext* cx,
   if (!debuggeeWouldRunProto) {
     return false;
   }
-  debuggeeWouldRunCtor = global->getConstructor(JSProto_DebuggeeWouldRun);
+  debuggeeWouldRunCtor =
+      ObjectValue(global->getConstructor(JSProto_DebuggeeWouldRun));
   RootedId debuggeeWouldRunId(
       cx, NameToId(ClassName(JSProto_DebuggeeWouldRun, cx)));
   if (!DefineDataProperty(cx, debugCtor, debuggeeWouldRunId,
@@ -6721,7 +6804,6 @@ bool Debugger::isDebuggerCrossCompartmentEdge(JSObject* obj,
 }
 
 static void CheckDebuggeeThingRealm(Realm* realm, bool invisibleOk) {
-  MOZ_ASSERT(!realm->creationOptions().mergeable());
   MOZ_ASSERT_IF(!invisibleOk, !realm->creationOptions().invisibleToDebugger());
 }
 
@@ -6785,7 +6867,7 @@ static bool DefineStringProperty(JSContext* cx, HandleObject obj,
 }
 
 JSObject* GarbageCollectionEvent::toJSObject(JSContext* cx) const {
-  RootedObject obj(cx, NewBuiltinClassInstance<PlainObject>(cx));
+  RootedObject obj(cx, NewPlainObject(cx));
   RootedValue gcCycleNumberVal(cx, NumberValue(majorGCNumber_));
   if (!obj ||
       !DefineStringProperty(cx, obj, cx->names().nonincrementalReason,
@@ -6805,8 +6887,7 @@ JSObject* GarbageCollectionEvent::toJSObject(JSContext* cx) const {
 
   size_t idx = 0;
   for (auto range = collections.all(); !range.empty(); range.popFront()) {
-    RootedPlainObject collectionObj(cx,
-                                    NewBuiltinClassInstance<PlainObject>(cx));
+    RootedPlainObject collectionObj(cx, NewPlainObject(cx));
     if (!collectionObj) {
       return nullptr;
     }
@@ -6874,7 +6955,7 @@ JS_PUBLIC_API bool FireOnGarbageCollectionHook(
     Debugger* dbg = Debugger::fromJSObject(triggered.back());
 
     if (dbg->getHook(Debugger::OnGarbageCollection)) {
-      mozilla::Unused << dbg->enterDebuggerHook(cx, [&]() -> bool {
+      (void)dbg->enterDebuggerHook(cx, [&]() -> bool {
         return dbg->fireOnGarbageCollectionHook(cx, data);
       });
       MOZ_ASSERT(!cx->isExceptionPending());

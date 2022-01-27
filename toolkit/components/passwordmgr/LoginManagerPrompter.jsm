@@ -66,6 +66,34 @@ const NOTIFICATION_TIMEOUT_MS = 10 * 1000; // 10 seconds
  */
 const ATTENTION_NOTIFICATION_TIMEOUT_MS = 60 * 1000; // 1 minute
 
+function autocompleteSelected(popup) {
+  let doc = popup.ownerDocument;
+  let nameField = doc.getElementById("password-notification-username");
+  let passwordField = doc.getElementById("password-notification-password");
+
+  let activeElement = nameField.ownerDocument.activeElement;
+  if (activeElement == nameField) {
+    popup.onUsernameSelect();
+  } else if (activeElement == passwordField) {
+    popup.onPasswordSelect();
+  }
+}
+
+const observer = {
+  QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
+
+  // nsIObserver
+  observe(subject, topic, data) {
+    switch (topic) {
+      case "autocomplete-did-enter-text": {
+        let input = subject.QueryInterface(Ci.nsIAutoCompleteInput);
+        autocompleteSelected(input.popupElement);
+        break;
+      }
+    }
+  },
+};
+
 /**
  * Implements interfaces for prompting the user to enter/save/change login info
  * found in HTML forms.
@@ -110,7 +138,7 @@ class LoginManagerPrompter {
   ) {
     log.debug("promptToSavePassword");
     let inPrivateBrowsing = PrivateBrowsingUtils.isBrowserPrivate(aBrowser);
-    LoginManagerPrompter._showLoginCaptureDoorhanger(
+    let notification = LoginManagerPrompter._showLoginCaptureDoorhanger(
       aBrowser,
       aLogin,
       "password-save",
@@ -125,6 +153,13 @@ class LoginManagerPrompter {
       }
     );
     Services.obs.notifyObservers(aLogin, "passwordmgr-prompt-save");
+
+    return {
+      dismiss() {
+        let { PopupNotifications } = aBrowser.ownerGlobal.wrappedJSObject;
+        PopupNotifications.remove(notification);
+      },
+    };
   }
 
   /**
@@ -176,7 +211,7 @@ class LoginManagerPrompter {
     );
 
     let saveMsgNames = {
-      prompt: login.username === "" ? "saveLoginMsgNoUser" : "saveLoginMsg",
+      prompt: login.username === "" ? "saveLoginMsgNoUser2" : "saveLoginMsg2",
       buttonLabel: "saveLoginButtonAllow.label",
       buttonAccessKey: "saveLoginButtonAllow.accesskey",
       secondaryButtonLabel: "saveLoginButtonDeny.label",
@@ -184,7 +219,8 @@ class LoginManagerPrompter {
     };
 
     let changeMsgNames = {
-      prompt: login.username === "" ? "updateLoginMsgNoUser" : "updateLoginMsg",
+      prompt:
+        login.username === "" ? "updateLoginMsgNoUser3" : "updateLoginMsg3",
       buttonLabel: "updateLoginButtonText",
       buttonAccessKey: "updateLoginButtonAccessKey",
       secondaryButtonLabel: "updateLoginButtonDeny.label",
@@ -198,13 +234,11 @@ class LoginManagerPrompter {
       changeMsgNames.prompt = messageStringID;
     }
 
-    let brandBundle = Services.strings.createBundle(BRAND_BUNDLE);
-    let brandShortName = brandBundle.GetStringFromName("brandShortName");
     let host = this._getShortDisplayHost(login.origin);
     let promptMsg =
       type == "password-save"
-        ? this._getLocalizedString(saveMsgNames.prompt, [brandShortName, host])
-        : this._getLocalizedString(changeMsgNames.prompt);
+        ? this._getLocalizedString(saveMsgNames.prompt, [host])
+        : this._getLocalizedString(changeMsgNames.prompt, [host]);
 
     let histogramName =
       type == "password-save"
@@ -218,7 +252,9 @@ class LoginManagerPrompter {
     let wasModifiedEvent = {
       // Values are mutated
       did_edit_un: "false",
+      did_select_un: "false",
       did_edit_pw: "false",
+      did_select_pw: "false",
     };
 
     let updateButtonStatus = element => {
@@ -312,12 +348,24 @@ class LoginManagerPrompter {
 
     let onUsernameInput = () => {
       wasModifiedEvent.did_edit_un = "true";
+      wasModifiedEvent.did_select_un = "false";
       onInput();
+    };
+
+    let onUsernameSelect = () => {
+      wasModifiedEvent.did_edit_un = "false";
+      wasModifiedEvent.did_select_un = "true";
     };
 
     let onPasswordInput = () => {
       wasModifiedEvent.did_edit_pw = "true";
+      wasModifiedEvent.did_select_pw = "false";
       onInput();
+    };
+
+    let onPasswordSelect = () => {
+      wasModifiedEvent.did_edit_pw = "false";
+      wasModifiedEvent.did_select_pw = "true";
     };
 
     let onKeyUp = e => {
@@ -559,9 +607,7 @@ class LoginManagerPrompter {
           // visible icon as the anchor.
           const anchor = browser.ownerDocument.getElementById("identity-icon");
           log.debug("Showing the ConfirmationHint");
-          anchor.ownerGlobal.ConfirmationHint.show(anchor, "loginRemoved", {
-            hideArrow: true,
-          });
+          anchor.ownerGlobal.ConfirmationHint.show(anchor, "loginRemoved");
         },
       });
     }
@@ -671,11 +717,15 @@ class LoginManagerPrompter {
                   // one that is already saved and we don't want to reveal
                   // it as the submitter of this form may not be the account
                   // owner, they may just be using the saved password.
-                  (messageStringID == "updateLoginMsgAddUsername" &&
+                  (messageStringID == "updateLoginMsgAddUsername2" &&
                     login.timePasswordChanged <
                       Date.now() - VISIBILITY_TOGGLE_MAX_PW_AGE_MS);
-                toggleBtn.setAttribute("hidden", hideToggle);
+                toggleBtn.hidden = hideToggle;
               }
+
+              let popup = chromeDoc.getElementById("PopupAutoComplete");
+              popup.onUsernameSelect = onUsernameSelect;
+              popup.onPasswordSelect = onPasswordSelect;
 
               LoginManagerPrompter._setUsernameAutocomplete(
                 login,
@@ -741,6 +791,8 @@ class LoginManagerPrompter {
       log.debug("Showing the ConfirmationHint");
       anchor.ownerGlobal.ConfirmationHint.show(anchor, "passwordSaved");
     }
+
+    return notification;
   }
 
   /**
@@ -792,10 +844,10 @@ class LoginManagerPrompter {
       // If the saved password matches the password we're prompting with then we
       // are only prompting to let the user add a username since there was one in
       // the form. Change the message so the purpose of the prompt is clearer.
-      messageStringID = "updateLoginMsgAddUsername";
+      messageStringID = "updateLoginMsgAddUsername2";
     }
 
-    LoginManagerPrompter._showLoginCaptureDoorhanger(
+    let notification = LoginManagerPrompter._showLoginCaptureDoorhanger(
       aBrowser,
       login,
       "password-change",
@@ -818,6 +870,13 @@ class LoginManagerPrompter {
       "passwordmgr-prompt-change",
       oldGUID
     );
+
+    return {
+      dismiss() {
+        let { PopupNotifications } = aBrowser.ownerGlobal.wrappedJSObject;
+        PopupNotifications.remove(notification);
+      },
+    };
   }
 
   /**
@@ -1015,6 +1074,12 @@ class LoginManagerPrompter {
       return [];
     }
 
+    // Don't reprompt for Primary Password, as we already prompted at least once
+    // to show the doorhanger if it is locked
+    if (!Services.logins.isLoggedIn) {
+      return [];
+    }
+
     let baseDomainLogins = await Services.logins.searchLoginsAsync({
       origin: login.origin,
       schemeUpgrades: LoginHelper.schemeUpgrades,
@@ -1044,6 +1109,9 @@ class LoginManagerPrompter {
       .filter(suggestion => !!suggestion.text);
   }
 }
+
+// Add this observer once for the process.
+Services.obs.addObserver(observer, "autocomplete-did-enter-text");
 
 XPCOMUtils.defineLazyGetter(this, "log", () => {
   return LoginHelper.createLogger("LoginManagerPrompter");

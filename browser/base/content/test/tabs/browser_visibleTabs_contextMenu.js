@@ -44,8 +44,16 @@ add_task(async function test() {
   // Check the context menu on the pinned tab
   updateTabContextMenu(pinned);
   ok(
+    !document.getElementById("context_closeTabOptions").disabled,
+    "Close Multiple Tabs is enabled on pinned tab"
+  );
+  ok(
     !document.getElementById("context_closeOtherTabs").disabled,
     "Close Other Tabs is enabled on pinned tab"
+  );
+  ok(
+    document.getElementById("context_closeTabsToTheStart").disabled,
+    "Close Tabs To The Start is disabled on pinned tab"
   );
   ok(
     !document.getElementById("context_closeTabsToTheEnd").disabled,
@@ -55,8 +63,16 @@ add_task(async function test() {
   // Check the context menu on the unpinned visible tab
   updateTabContextMenu(testTab);
   ok(
+    document.getElementById("context_closeTabOptions").disabled,
+    "Close Multiple Tabs is disabled on single unpinned tab"
+  );
+  ok(
     document.getElementById("context_closeOtherTabs").disabled,
     "Close Other Tabs is disabled on single unpinned tab"
+  );
+  ok(
+    document.getElementById("context_closeTabsToTheStart").disabled,
+    "Close Tabs To The Start is disabled on single unpinned tab"
   );
   ok(
     document.getElementById("context_closeTabsToTheEnd").disabled,
@@ -70,8 +86,16 @@ add_task(async function test() {
   // Check the context menu now
   updateTabContextMenu(testTab);
   ok(
+    !document.getElementById("context_closeTabOptions").disabled,
+    "Close Multiple Tabs is enabled on unpinned tab when there's another unpinned tab"
+  );
+  ok(
     !document.getElementById("context_closeOtherTabs").disabled,
     "Close Other Tabs is enabled on unpinned tab when there's another unpinned tab"
+  );
+  ok(
+    !document.getElementById("context_closeTabsToTheStart").disabled,
+    "Close Tabs To The Start is enabled on last unpinned tab when there's another unpinned tab"
   );
   ok(
     document.getElementById("context_closeTabsToTheEnd").disabled,

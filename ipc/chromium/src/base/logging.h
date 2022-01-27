@@ -97,7 +97,7 @@ const mozilla::EmptyLog& operator<<(const mozilla::EmptyLog& log, const T&) {
 
 #ifdef DEBUG
 #  define DLOG(info) CHROMIUM_LOG(info)
-#  define DLOG_IF(info) LOG_IF(info)
+#  define DLOG_IF(info, condition) LOG_IF(info, condition)
 #  define DCHECK(condition) CHECK(condition)
 #else
 #  define DLOG(info) mozilla::EmptyLog()
@@ -105,6 +105,8 @@ const mozilla::EmptyLog& operator<<(const mozilla::EmptyLog& log, const T&) {
 #  define DCHECK(condition) \
     while (false && (condition)) mozilla::EmptyLog()
 #endif
+
+#define DVLOG(level) DLOG(INFO)
 
 #undef LOG_ASSERT
 #define LOG_ASSERT(cond) CHECK(0)

@@ -18,6 +18,8 @@
 #include "mozStorageStatementParams.h"
 
 #include "jsapi.h"
+#include "js/PropertyAndElement.h"  // JS_DefineFunction, JS_DefineProperty, JS_DefinePropertyById
+#include "js/Value.h"
 
 #include "xpc_make_class.h"
 

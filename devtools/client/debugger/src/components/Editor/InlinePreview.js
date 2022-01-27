@@ -2,11 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// @flow
 import React, { PureComponent } from "react";
-import Reps from "devtools-reps";
-
-import actions from "../../actions";
+import Reps from "devtools/client/shared/components/reps/index";
 
 const {
   REPS: {
@@ -16,18 +13,9 @@ const {
   MODE,
 } = Reps;
 
-type Props = {
-  line: number,
-  value: any,
-  variable: string,
-  openElementInInspector: typeof actions.openElementInInspectorCommand,
-  highlightDomElement: typeof actions.highlightDomElement,
-  unHighlightDomElement: typeof actions.unHighlightDomElement,
-};
-
 // Renders single variable preview inside a codemirror line widget
-class InlinePreview extends PureComponent<Props> {
-  showInScopes(variable: string) {
+class InlinePreview extends PureComponent {
+  showInScopes(variable) {
     // TODO: focus on variable value in the scopes sidepanel
     // we will need more info from parent comp
   }

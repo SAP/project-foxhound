@@ -30,8 +30,9 @@ gboolean toplevel_event_watcher(GSignalInvocationHint* ihint,
                                 const GValue* param_values, gpointer data) {
   static GQuark sQuark_gecko_acc_obj = 0;
 
-  if (!sQuark_gecko_acc_obj)
+  if (!sQuark_gecko_acc_obj) {
     sQuark_gecko_acc_obj = g_quark_from_static_string("GeckoAccObj");
+  }
 
   if (nsAccessibilityService::IsShutdown()) return TRUE;
 
@@ -48,13 +49,14 @@ gboolean toplevel_event_watcher(GSignalInvocationHint* ihint,
        role == ATK_ROLE_COLOR_CHOOSER || role == ATK_ROLE_FONT_CHOOSER)) {
     if (data == reinterpret_cast<gpointer>(nsIAccessibleEvent::EVENT_SHOW)) {
       // Attach the dialog accessible to app accessible tree
-      Accessible* windowAcc = GetAccService()->AddNativeRootAccessible(child);
+      LocalAccessible* windowAcc =
+          GetAccService()->AddNativeRootAccessible(child);
       g_object_set_qdata(G_OBJECT(child), sQuark_gecko_acc_obj,
                          reinterpret_cast<gpointer>(windowAcc));
 
     } else {
       // Deattach the dialog accessible
-      Accessible* windowAcc = reinterpret_cast<Accessible*>(
+      LocalAccessible* windowAcc = reinterpret_cast<LocalAccessible*>(
           g_object_get_qdata(G_OBJECT(child), sQuark_gecko_acc_obj));
       if (windowAcc) {
         GetAccService()->RemoveNativeRootAccessible(windowAcc);
@@ -83,7 +85,7 @@ void ApplicationAccessibleWrap::GetNativeInterface(void** aOutAccessible) {
         g_object_new(MAI_TYPE_ATK_OBJECT, nullptr));
     if (!mAtkObject) return;
 
-    atk_object_initialize(mAtkObject, this);
+    atk_object_initialize(mAtkObject, static_cast<Accessible*>(this));
     mAtkObject->role = ATK_ROLE_INVALID;
     mAtkObject->layer = ATK_LAYER_INVALID;
   }
@@ -109,7 +111,7 @@ gboolean fireRootAccessibleAddedCB(gpointer data) {
 }
 
 bool ApplicationAccessibleWrap::InsertChildAt(uint32_t aIdx,
-                                              Accessible* aChild) {
+                                              LocalAccessible* aChild) {
   if (!ApplicationAccessible::InsertChildAt(aIdx, aChild)) return false;
 
   AtkObject* atkAccessible = AccessibleWrap::GetAtkObject(aChild);
@@ -133,7 +135,7 @@ bool ApplicationAccessibleWrap::InsertChildAt(uint32_t aIdx,
   return true;
 }
 
-bool ApplicationAccessibleWrap::RemoveChild(Accessible* aChild) {
+bool ApplicationAccessibleWrap::RemoveChild(LocalAccessible* aChild) {
   int32_t index = aChild->IndexInParent();
 
   AtkObject* atkAccessible = AccessibleWrap::GetAtkObject(aChild);

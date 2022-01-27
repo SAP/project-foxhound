@@ -10,6 +10,8 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/MathAlgorithms.h"
 
+#include <algorithm>
+
 #include "jit/arm64/vixl/Instructions-vixl.h"
 #include "jit/shared/Architecture-shared.h"
 
@@ -22,14 +24,19 @@ namespace js {
 namespace jit {
 
 // AArch64 has 32 64-bit integer registers, x0 though x31.
-//  x31 is special and functions as both the stack pointer and a zero register.
+//
+//  x31 (or, more accurately, the integer register with encoding 31, since
+//  there is no x31 per se) is special and functions as both the stack pointer
+//  and a zero register.
+//
 //  The bottom 32 bits of each of the X registers is accessible as w0 through
-//  w31. The program counter is no longer accessible as a register.
+//  w31. The program counter is not accessible as a register.
+//
 // SIMD and scalar floating-point registers share a register bank.
 //  32 bit float registers are s0 through s31.
 //  64 bit double registers are d0 through d31.
 //  128 bit SIMD registers are v0 through v31.
-// e.g., s0 is the bottom 32 bits of d0, which is the bottom 64 bits of v0.
+//  e.g., s0 is the bottom 32 bits of d0, which is the bottom 64 bits of v0.
 
 // AArch64 Calling Convention:
 //  x0 - x7: arguments and return value
@@ -129,11 +136,6 @@ class Registers {
   typedef uint32_t Encoding;
   typedef uint32_t SetType;
 
-  // If SP is used as the base register for a memory load or store, then the
-  // value of the stack pointer prior to adding any offset must be quadword (16
-  // byte) aligned, or else a stack aligment exception will be generated.
-  static const Code StackPointer = sp;
-
   static const Code Invalid = 0xFF;
 
   union RegisterContent {
@@ -219,6 +221,107 @@ typedef uint32_t PackedRegisterMask;
 
 template <typename T>
 class TypedRegisterSet;
+
+// 128-bit bitset for FloatRegisters::SetType.
+
+class Bitset128 {
+  // The order (hi, lo) looks best in the debugger.
+  uint64_t hi, lo;
+
+ public:
+  MOZ_IMPLICIT constexpr Bitset128(uint64_t initial) : hi(0), lo(initial) {}
+  MOZ_IMPLICIT constexpr Bitset128(const Bitset128& that)
+      : hi(that.hi), lo(that.lo) {}
+
+  constexpr Bitset128(uint64_t hi, uint64_t lo) : hi(hi), lo(lo) {}
+
+  constexpr uint64_t high() const { return hi; }
+
+  constexpr uint64_t low() const { return lo; }
+
+  constexpr Bitset128 operator|(Bitset128 that) const {
+    return Bitset128(hi | that.hi, lo | that.lo);
+  }
+
+  constexpr Bitset128 operator&(Bitset128 that) const {
+    return Bitset128(hi & that.hi, lo & that.lo);
+  }
+
+  constexpr Bitset128 operator^(Bitset128 that) const {
+    return Bitset128(hi ^ that.hi, lo ^ that.lo);
+  }
+
+  constexpr Bitset128 operator~() const { return Bitset128(~hi, ~lo); }
+
+  // We must avoid shifting by the word width, which is complex.  Inlining plus
+  // shift-by-constant will remove a lot of code in the normal case.
+
+  constexpr Bitset128 operator<<(size_t shift) const {
+    if (shift == 0) {
+      return *this;
+    }
+    if (shift < 64) {
+      return Bitset128((hi << shift) | (lo >> (64 - shift)), lo << shift);
+    }
+    if (shift == 64) {
+      return Bitset128(lo, 0);
+    }
+    return Bitset128(lo << (shift - 64), 0);
+  }
+
+  constexpr Bitset128 operator>>(size_t shift) const {
+    if (shift == 0) {
+      return *this;
+    }
+    if (shift < 64) {
+      return Bitset128(hi >> shift, (lo >> shift) | (hi << (64 - shift)));
+    }
+    if (shift == 64) {
+      return Bitset128(0, hi);
+    }
+    return Bitset128(0, hi >> (shift - 64));
+  }
+
+  constexpr bool operator==(Bitset128 that) const {
+    return lo == that.lo && hi == that.hi;
+  }
+
+  constexpr bool operator!=(Bitset128 that) const {
+    return lo != that.lo || hi != that.hi;
+  }
+
+  constexpr bool operator!() const { return (hi | lo) == 0; }
+
+  Bitset128& operator|=(const Bitset128& that) {
+    hi |= that.hi;
+    lo |= that.lo;
+    return *this;
+  }
+
+  Bitset128& operator&=(const Bitset128& that) {
+    hi &= that.hi;
+    lo &= that.lo;
+    return *this;
+  }
+
+  uint32_t size() const {
+    return mozilla::CountPopulation64(hi) + mozilla::CountPopulation64(lo);
+  }
+
+  uint32_t countTrailingZeroes() const {
+    if (lo) {
+      return mozilla::CountTrailingZeroes64(lo);
+    }
+    return mozilla::CountTrailingZeroes64(hi) + 64;
+  }
+
+  uint32_t countLeadingZeroes() const {
+    if (hi) {
+      return mozilla::CountLeadingZeroes64(hi);
+    }
+    return mozilla::CountLeadingZeroes64(lo) + 64;
+  }
+};
 
 class FloatRegisters {
  public:
@@ -324,22 +427,31 @@ class FloatRegisters {
   // Eight bits: (invalid << 7) | (kind << 5) | encoding
   typedef uint8_t Code;
   typedef FPRegisterID Encoding;
-  typedef uint64_t SetType;
+  typedef Bitset128 SetType;
 
-  enum Kind : uint8_t { Double, Single, NumTypes };
+  enum Kind : uint8_t { Single, Double, Simd128, NumTypes };
 
   static constexpr Code Invalid = 0x80;
 
   static const char* GetName(uint32_t code) {
-    // Doubles precede singles, see `Kind` enum above.
+    // clang-format off
     static const char* const Names[] = {
+        "s0",  "s1",  "s2",  "s3",  "s4",  "s5",  "s6",  "s7",  "s8",  "s9",
+        "s10", "s11", "s12", "s13", "s14", "s15", "s16", "s17", "s18", "s19",
+        "s20", "s21", "s22", "s23", "s24", "s25", "s26", "s27", "s28", "s29",
+        "s30", "s31",
+
         "d0",  "d1",  "d2",  "d3",  "d4",  "d5",  "d6",  "d7",  "d8",  "d9",
         "d10", "d11", "d12", "d13", "d14", "d15", "d16", "d17", "d18", "d19",
         "d20", "d21", "d22", "d23", "d24", "d25", "d26", "d27", "d28", "d29",
-        "d30", "d31", "s0",  "s1",  "s2",  "s3",  "s4",  "s5",  "s6",  "s7",
-        "s8",  "s9",  "s10", "s11", "s12", "s13", "s14", "s15", "s16", "s17",
-        "s18", "s19", "s20", "s21", "s22", "s23", "s24", "s25", "s26", "s27",
-        "s28", "s29", "s30", "s31"};
+        "d30", "d31",
+
+        "v0",  "v1",  "v2",  "v3",  "v4",  "v5",  "v6",  "v7",  "v8",  "v9",
+        "v10", "v11", "v12", "v13", "v14", "v15", "v16", "v17", "v18", "v19",
+        "v20", "v21", "v22", "v23", "v24", "v25", "v26", "v27", "v28", "v29",
+        "v30", "v31",
+    };
+    // clang-format on
     static_assert(Total == sizeof(Names) / sizeof(Names[0]),
                   "Table is the correct size");
     if (code >= Total) {
@@ -357,54 +469,76 @@ class FloatRegisters {
   static_assert(sizeof(SetType) * 8 >= Total,
                 "SetType should be large enough to enumerate all registers.");
 
-  static const SetType SpreadSingle = SetType(1)
-                                      << (uint32_t(Single) * TotalPhys);
-  static const SetType SpreadDouble = SetType(1)
-                                      << (uint32_t(Double) * TotalPhys);
-  static const SetType Spread = SpreadSingle | SpreadDouble;
+  static constexpr unsigned ShiftSingle = uint32_t(Single) * TotalPhys;
+  static constexpr unsigned ShiftDouble = uint32_t(Double) * TotalPhys;
+  static constexpr unsigned ShiftSimd128 = uint32_t(Simd128) * TotalPhys;
 
-  static const SetType AllPhysMask = (SetType(1) << TotalPhys) - 1;
-  static const SetType AllMask = AllPhysMask * Spread;
-  static const SetType AllDoubleMask = AllPhysMask * SpreadDouble;
-  static const SetType AllSingleMask = AllPhysMask * SpreadSingle;
-  static const SetType NoneMask = SetType(0);
+  static constexpr SetType NoneMask = SetType(0);
+  static constexpr SetType AllPhysMask = ~(~SetType(0) << TotalPhys);
+  static constexpr SetType AllSingleMask = AllPhysMask << ShiftSingle;
+  static constexpr SetType AllDoubleMask = AllPhysMask << ShiftDouble;
+  static constexpr SetType AllSimd128Mask = AllPhysMask << ShiftSimd128;
+  static constexpr SetType AllMask =
+      AllDoubleMask | AllSingleMask | AllSimd128Mask;
+  static constexpr SetType AliasMask = (SetType(1) << ShiftSingle) |
+                                       (SetType(1) << ShiftDouble) |
+                                       (SetType(1) << ShiftSimd128);
+
+  static_assert(ShiftSingle == 0,
+                "Or the NonVolatileMask must be computed differently");
+
+  // s31 is the ScratchFloatReg.
+  static constexpr SetType NonVolatileSingleMask =
+      SetType((1 << FloatRegisters::s8) | (1 << FloatRegisters::s9) |
+              (1 << FloatRegisters::s10) | (1 << FloatRegisters::s11) |
+              (1 << FloatRegisters::s12) | (1 << FloatRegisters::s13) |
+              (1 << FloatRegisters::s14) | (1 << FloatRegisters::s15) |
+              (1 << FloatRegisters::s16) | (1 << FloatRegisters::s17) |
+              (1 << FloatRegisters::s18) | (1 << FloatRegisters::s19) |
+              (1 << FloatRegisters::s20) | (1 << FloatRegisters::s21) |
+              (1 << FloatRegisters::s22) | (1 << FloatRegisters::s23) |
+              (1 << FloatRegisters::s24) | (1 << FloatRegisters::s25) |
+              (1 << FloatRegisters::s26) | (1 << FloatRegisters::s27) |
+              (1 << FloatRegisters::s28) | (1 << FloatRegisters::s29) |
+              (1 << FloatRegisters::s30));
+
+  static constexpr SetType NonVolatileMask =
+      (NonVolatileSingleMask << ShiftSingle) |
+      (NonVolatileSingleMask << ShiftDouble) |
+      (NonVolatileSingleMask << ShiftSimd128);
+
+  static constexpr SetType VolatileMask = AllMask & ~NonVolatileMask;
+
+  static constexpr SetType WrapperMask = VolatileMask;
+
+  static_assert(ShiftSingle == 0,
+                "Or the NonAllocatableMask must be computed differently");
 
   // d31 is the ScratchFloatReg.
-  static const SetType NonVolatileMask =
-      SetType((1 << FloatRegisters::d8) | (1 << FloatRegisters::d9) |
-              (1 << FloatRegisters::d10) | (1 << FloatRegisters::d11) |
-              (1 << FloatRegisters::d12) | (1 << FloatRegisters::d13) |
-              (1 << FloatRegisters::d14) | (1 << FloatRegisters::d15) |
-              (1 << FloatRegisters::d16) | (1 << FloatRegisters::d17) |
-              (1 << FloatRegisters::d18) | (1 << FloatRegisters::d19) |
-              (1 << FloatRegisters::d20) | (1 << FloatRegisters::d21) |
-              (1 << FloatRegisters::d22) | (1 << FloatRegisters::d23) |
-              (1 << FloatRegisters::d24) | (1 << FloatRegisters::d25) |
-              (1 << FloatRegisters::d26) | (1 << FloatRegisters::d27) |
-              (1 << FloatRegisters::d28) | (1 << FloatRegisters::d29) |
-              (1 << FloatRegisters::d30)) *
-      Spread;
+  static constexpr SetType NonAllocatableSingleMask =
+      (SetType(1) << FloatRegisters::s31);
 
-  static const SetType VolatileMask = AllMask & ~NonVolatileMask;
+  static constexpr SetType NonAllocatableMask =
+      NonAllocatableSingleMask | (NonAllocatableSingleMask << ShiftDouble) |
+      (NonAllocatableSingleMask << ShiftSimd128);
 
-  static const SetType WrapperMask = VolatileMask;
+  static constexpr SetType AllocatableMask = AllMask & ~NonAllocatableMask;
 
-  // d31 is the ScratchFloatReg.
-  static const SetType NonAllocatableMask =
-      (SetType(1) << FloatRegisters::d31) * Spread;
-
-  static const SetType AllocatableMask = AllMask & ~NonAllocatableMask;
+  // Content spilled during bailouts.
   union RegisterContent {
     float s;
     double d;
+    uint8_t v128[16];
   };
 
   static constexpr Encoding encoding(Code c) {
+    // assert() not available in constexpr function.
     // assert(c < Total);
     return Encoding(c & 31);
   }
 
   static constexpr Kind kind(Code c) {
+    // assert() not available in constexpr function.
     // assert(c < Total && ((c >> 5) & 3) < NumTypes);
     return Kind((c >> 5) & 3);
   }
@@ -415,13 +549,12 @@ class FloatRegisters {
   }
 };
 
-// In bytes: slots needed for potential memory->memory move spills.
-//   +8 for cycles
-//   +8 for gpr spills
-//   +8 for double spills
-static const uint32_t ION_FRAME_SLACK_SIZE = 24;
+static const uint32_t SpillSlotSize =
+    std::max(sizeof(Registers::RegisterContent),
+             sizeof(FloatRegisters::RegisterContent));
 
 static const uint32_t ShadowStackSpace = 0;
+static const uint32_t SizeOfReturnAddressAfterCall = 0u;
 
 // When our only strategy for far jumps is to encode the offset directly, and
 // not insert any jump islands during assembly for even further jumps, then the
@@ -446,26 +579,31 @@ struct FloatRegister {
   typedef Codes::SetType SetType;
 
   static uint32_t SetSize(SetType x) {
-    static_assert(sizeof(SetType) == 8, "SetType must be 64 bits");
+    static_assert(sizeof(SetType) == 16, "SetType must be 128 bits");
+    x |= x >> FloatRegisters::TotalPhys;
     x |= x >> FloatRegisters::TotalPhys;
     x &= FloatRegisters::AllPhysMask;
-    return mozilla::CountPopulation32(x);
+    MOZ_ASSERT(x.high() == 0);
+    MOZ_ASSERT((x.low() >> 32) == 0);
+    return mozilla::CountPopulation32(x.low());
   }
 
   static uint32_t FirstBit(SetType x) {
-    static_assert(sizeof(SetType) == 8, "SetType");
-    return mozilla::CountTrailingZeroes64(x);
+    static_assert(sizeof(SetType) == 16, "SetType");
+    return x.countTrailingZeroes();
   }
   static uint32_t LastBit(SetType x) {
-    static_assert(sizeof(SetType) == 8, "SetType");
-    return 63 - mozilla::CountLeadingZeroes64(x);
+    static_assert(sizeof(SetType) == 16, "SetType");
+    return 127 - x.countLeadingZeroes();
   }
+
+  static constexpr size_t SizeOfSimd128 = 16;
 
  private:
   // These fields only hold valid values: an invalid register is always
   // represented as a valid encoding and kind with the invalid_ bit set.
   uint8_t encoding_;  // 32 encodings
-  uint8_t kind_;      // Double, Single; more later
+  uint8_t kind_;      // Double, Single, Simd128
   bool invalid_;
 
   typedef Codes::Kind Kind;
@@ -494,7 +632,7 @@ struct FloatRegister {
   }
   bool isSimd128() const {
     MOZ_ASSERT(!invalid_);
-    return false;
+    return kind_ == FloatRegisters::Simd128;
   }
   bool isInvalid() const { return invalid_; }
 
@@ -506,15 +644,21 @@ struct FloatRegister {
     MOZ_ASSERT(!invalid_);
     return FloatRegister(Encoding(encoding_), FloatRegisters::Double);
   }
-  FloatRegister asSimd128() const { MOZ_CRASH(); }
+  FloatRegister asSimd128() const {
+    MOZ_ASSERT(!invalid_);
+    return FloatRegister(Encoding(encoding_), FloatRegisters::Simd128);
+  }
 
   constexpr uint32_t size() const {
     MOZ_ASSERT(!invalid_);
     if (kind_ == FloatRegisters::Double) {
       return sizeof(double);
     }
-    MOZ_ASSERT(kind_ == FloatRegisters::Single);
-    return sizeof(float);
+    if (kind_ == FloatRegisters::Single) {
+      return sizeof(float);
+    }
+    MOZ_ASSERT(kind_ == FloatRegisters::Simd128);
+    return SizeOfSimd128;
   }
 
   constexpr Code code() const {
@@ -559,14 +703,11 @@ struct FloatRegister {
     MOZ_ASSERT(!invalid_);
     MOZ_ASSERT(aliasIdx < numAliased());
     return FloatRegister(Encoding(encoding_),
-                         Kind((aliasIdx + kind_) % numAliased()));
+                         Kind((aliasIdx + kind_) % Codes::NumTypes));
   }
-  FloatRegister alignedAliased(uint32_t aliasIdx) {
-    MOZ_ASSERT(aliasIdx < numAliased());
-    return aliased(aliasIdx);
-  }
+  FloatRegister alignedAliased(uint32_t aliasIdx) { return aliased(aliasIdx); }
   SetType alignedOrDominatedAliasedSet() const {
-    return Codes::Spread << encoding_;
+    return Codes::AliasMask << encoding_;
   }
 
   static constexpr RegTypeName DefaultType = RegTypeName::Float64;
@@ -586,6 +727,11 @@ struct FloatRegister {
       const TypedRegisterSet<FloatRegister>& s);
   static uint32_t GetPushSizeInBytes(const TypedRegisterSet<FloatRegister>& s);
   uint32_t getRegisterDumpOffsetInBytes();
+
+  // For N in 0..31, if any of sN, dN or qN is a member of `s`, the
+  // returned set will contain all of sN, dN and qN.
+  static TypedRegisterSet<FloatRegister> BroadcastToAllSizes(
+      const TypedRegisterSet<FloatRegister>& s);
 };
 
 template <>
@@ -598,6 +744,12 @@ template <>
 inline FloatRegister::SetType
 FloatRegister::LiveAsIndexableSet<RegTypeName::Float64>(SetType set) {
   return set & FloatRegisters::AllDoubleMask;
+}
+
+template <>
+inline FloatRegister::SetType
+FloatRegister::LiveAsIndexableSet<RegTypeName::Vector128>(SetType set) {
+  return set & FloatRegisters::AllSimd128Mask;
 }
 
 template <>
@@ -615,6 +767,8 @@ inline bool hasUnaliasedDouble() { return false; }
 inline bool hasMultiAlias() { return false; }
 
 uint32_t GetARM64Flags();
+
+bool CanFlushICacheFromBackgroundThreads();
 
 }  // namespace jit
 }  // namespace js

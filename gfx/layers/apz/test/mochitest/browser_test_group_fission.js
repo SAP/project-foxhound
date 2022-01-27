@@ -22,20 +22,17 @@ add_task(async function test_main() {
     );
   }
 
-  var utils = SpecialPowers.getDOMWindowUtils(window);
-  var isWebRender = utils.layerManagerType == "WebRender";
-
   // Each of these subtests is a dictionary that contains:
-  // url (required): URL of the subtest that will get opened in a new tab
+  // file (required): filename of the subtest that will get opened in a new tab
   //   in the top-level fission-enabled browser window.
   // setup (optional): function that takes the top-level fission window and is
   //   run once after the subtest is loaded but before it is started.
   var subtests = [
-    { url: httpURL("helper_fission_basic.html") },
-    { url: httpURL("helper_fission_transforms.html") },
-    { url: httpURL("helper_fission_scroll_oopif.html") },
+    { file: "helper_fission_basic.html" },
+    { file: "helper_fission_transforms.html" },
+    { file: "helper_fission_scroll_oopif.html" },
     {
-      url: httpURL("helper_fission_event_region_override.html"),
+      file: "helper_fission_event_region_override.html",
       setup(win) {
         win.document.addEventListener("wheel", e => e.preventDefault(), {
           once: true,
@@ -43,25 +40,32 @@ add_task(async function test_main() {
         });
       },
     },
-    { url: httpURL("helper_fission_animation_styling_in_oopif.html") },
-    { url: httpURL("helper_fission_force_empty_hit_region.html") },
-    { url: httpURL("helper_fission_touch.html") },
+    { file: "helper_fission_animation_styling_in_oopif.html" },
+    { file: "helper_fission_force_empty_hit_region.html" },
+    { file: "helper_fission_touch.html" },
+    {
+      file: "helper_fission_tap.html",
+      prefs: [["apz.max_tap_time", 10000]],
+    },
+    { file: "helper_fission_inactivescroller_under_oopif.html" },
+    {
+      file: "helper_fission_tap_on_zoomed.html",
+      prefs: [["apz.max_tap_time", 10000]],
+    },
+    {
+      file: "helper_fission_tap_in_nested_iframe_on_zoomed.html",
+      prefs: [["apz.max_tap_time", 10000]],
+    },
+    { file: "helper_fission_scroll_handoff.html" },
+    { file: "helper_fission_large_subframe.html" },
+    { file: "helper_fission_initial_displayport.html" },
+    { file: "helper_fission_checkerboard_severity.html" },
+    { file: "helper_fission_setResolution.html" },
+    { file: "helper_fission_inactivescroller_positionedcontent.html" },
+    { file: "helper_fission_irregular_areas.html" },
+    { file: "helper_fission_animation_styling_in_transformed_oopif.html" },
     // add additional tests here
   ];
-  if (isWebRender) {
-    subtests = subtests.concat([
-      // add additional WebRender-specific tests here
-    ]);
-  } else {
-    subtests = subtests.concat([
-      // Bug 1576514: On WebRender this test casues an assertion.
-      {
-        url: httpURL(
-          "helper_fission_animation_styling_in_transformed_oopif.html"
-        ),
-      },
-    ]);
-  }
 
   // ccov builds run slower and need longer, so let's scale up the timeout
   // by the number of tests we're running.
@@ -92,13 +96,30 @@ add_task(async function test_main() {
   });
 
   try {
+    var onlyOneSubtest = SpecialPowers.getCharPref(
+      "apz.subtest",
+      /*default = */ ""
+    );
+
     for (var subtest of subtests) {
-      dump(`Starting test ${subtest.url}\n`);
+      if (onlyOneSubtest && onlyOneSubtest != subtest.file) {
+        SimpleTest.ok(
+          true,
+          "Skipping " +
+            subtest.file +
+            " because only " +
+            onlyOneSubtest +
+            " is being run"
+        );
+        continue;
+      }
+      let url = httpURL(subtest.file);
+      dump(`Starting test ${url}\n`);
 
       // Load the test URL and tell it to get started, and wait until it reports
       // completion.
       await BrowserTestUtils.withNewTab(
-        { gBrowser: fissionWindow.gBrowser, url: subtest.url },
+        { gBrowser: fissionWindow.gBrowser, url },
         async browser => {
           let tabActor = browser.browsingContext.currentWindowGlobal.getActor(
             "FissionTestHelper"
@@ -112,7 +133,7 @@ add_task(async function test_main() {
         }
       );
 
-      dump(`Finished test ${subtest.url}\n`);
+      dump(`Finished test ${url}\n`);
     }
   } finally {
     // Delete stuff we added to FissionTestHelperParent, beacuse the object will

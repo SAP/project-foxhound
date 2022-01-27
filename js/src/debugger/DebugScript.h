@@ -11,8 +11,10 @@
 #include <stddef.h>  // for size_t
 #include <stdint.h>  // for uint32_t
 
-#include "jsapi.h"
 #include "jstypes.h"
+
+#include "gc/WeakMap.h"
+#include "vm/NativeObject.h"
 
 namespace JS {
 class JS_PUBLIC_API Realm;
@@ -22,11 +24,13 @@ namespace js {
 
 class JSBreakpointSite;
 class Debugger;
+class DebugScriptObject;
 
 // DebugScript manages the internal debugger state for a JSScript, which may be
 // associated with multiple Debuggers.
 class DebugScript {
   friend class DebugAPI;
+  friend class DebugScriptObject;
 
   /*
    * If this is a generator script, this is the number of Debugger.Frames
@@ -49,16 +53,21 @@ class DebugScript {
   uint32_t stepperCount;
 
   /*
+   * The size of the script as reported by BaseScript::length. This is the
+   * length of the DebugScript::breakpoints array, below.
+   */
+  size_t codeLength;
+
+  /*
    * Number of breakpoint sites at opcodes in the script. This is the number
-   * of populated entries in DebugScript::breakpoints, below.
+   * of populated entries in DebugScript::breakpoints.
    */
   uint32_t numSites;
 
   /*
    * Breakpoints set in our script. For speed and simplicity, this array is
    * parallel to script->code(): the JSBreakpointSite for the opcode at
-   * script->code()[offset] is debugScript->breakpoints[offset]. Naturally,
-   * this array's true length is script->length().
+   * script->code()[offset] is debugScript->breakpoints[offset].
    */
   JSBreakpointSite* breakpoints[1];
 
@@ -75,22 +84,20 @@ class DebugScript {
            codeLength * sizeof(JSBreakpointSite*);
   }
 
-  void trace(JSTracer* trc, JSScript* owner);
-  void delete_(JSFreeOp* fop, JSScript* owner);
+  void trace(JSTracer* trc);
+  void delete_(JSFreeOp* fop, DebugScriptObject* owner);
 
   static DebugScript* get(JSScript* script);
-  static DebugScript* getOrCreate(JSContext* cx, JSScript* script);
+  static DebugScript* getOrCreate(JSContext* cx, HandleScript script);
 
  public:
   static JSBreakpointSite* getBreakpointSite(JSScript* script, jsbytecode* pc);
   static JSBreakpointSite* getOrCreateBreakpointSite(JSContext* cx,
-                                                     JSScript* script,
+                                                     HandleScript script,
                                                      jsbytecode* pc);
   static void destroyBreakpointSite(JSFreeOp* fop, JSScript* script,
                                     jsbytecode* pc);
 
-  static void clearBreakpointsIn(JSFreeOp* fop, JS::Realm* realm, Debugger* dbg,
-                                 JSObject* handler);
   static void clearBreakpointsIn(JSFreeOp* fop, JSScript* script, Debugger* dbg,
                                  JSObject* handler);
 
@@ -104,8 +111,8 @@ class DebugScript {
    *
    * Only incrementing is fallible, as it could allocate a DebugScript.
    */
-  static MOZ_MUST_USE bool incrementStepperCount(JSContext* cx,
-                                                 JSScript* script);
+  [[nodiscard]] static bool incrementStepperCount(JSContext* cx,
+                                                  HandleScript script);
   static void decrementStepperCount(JSFreeOp* fop, JSScript* script);
 
   /*
@@ -114,9 +121,38 @@ class DebugScript {
    *
    * Only incrementing is fallible, as it could allocate a DebugScript.
    */
-  static MOZ_MUST_USE bool incrementGeneratorObserverCount(JSContext* cx,
-                                                           JSScript* script);
+  [[nodiscard]] static bool incrementGeneratorObserverCount(
+      JSContext* cx, HandleScript script);
   static void decrementGeneratorObserverCount(JSFreeOp* fop, JSScript* script);
+};
+
+using UniqueDebugScript = js::UniquePtr<DebugScript, JS::FreePolicy>;
+
+// A JSObject that wraps a DebugScript, so we can use it as the value in a
+// WeakMap. This object owns the DebugScript and is responsible for deleting it.
+class DebugScriptObject : public NativeObject {
+ public:
+  static const JSClass class_;
+
+  enum { ScriptSlot, SlotCount };
+
+  static DebugScriptObject* create(JSContext* cx, UniqueDebugScript debugScript,
+                                   size_t nbytes);
+
+  DebugScript* debugScript() const;
+
+ private:
+  static const JSClassOps classOps_;
+
+  static void trace(JSTracer* trc, JSObject* obj);
+  static void finalize(JSFreeOp* fop, JSObject* obj);
+};
+
+// A weak map from JSScripts to DebugScriptObjects.
+class DebugScriptMap
+    : public WeakMap<HeapPtr<JSScript*>, HeapPtr<DebugScriptObject*>> {
+ public:
+  explicit DebugScriptMap(JSContext* cx) : WeakMap(cx) {}
 };
 
 } /* namespace js */

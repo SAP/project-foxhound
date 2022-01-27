@@ -16,8 +16,7 @@
 #include "nsStyledElement.h"
 #include "HTMLCanvasElement.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // Ref counting and cycle collection
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(AnonymousContent, AddRef)
@@ -180,7 +179,7 @@ bool AnonymousContent::WrapObject(JSContext* aCx,
 
 void AnonymousContent::GetComputedStylePropertyValue(
     const nsAString& aElementId, const nsACString& aPropertyName,
-    DOMString& aResult, ErrorResult& aRv) {
+    nsACString& aResult, ErrorResult& aRv) {
   Element* element = GetElementById(aElementId);
   if (!element) {
     aRv.Throw(NS_ERROR_NOT_AVAILABLE);
@@ -193,7 +192,8 @@ void AnonymousContent::GetComputedStylePropertyValue(
   }
 
   RefPtr<nsComputedDOMStyle> cs = new nsComputedDOMStyle(
-      element, u""_ns, element->OwnerDoc(), nsComputedDOMStyle::eAll);
+      element, PseudoStyleType::NotPseudo, element->OwnerDoc(),
+      nsComputedDOMStyle::StyleType::All);
   aRv = cs->GetPropertyValue(aPropertyName, aResult);
 }
 
@@ -216,8 +216,7 @@ void AnonymousContent::SetStyle(const nsACString& aProperty,
 
   nsGenericHTMLElement* element = nsGenericHTMLElement::FromNode(mContentNode);
   nsCOMPtr<nsICSSDeclaration> declaration = element->Style();
-  declaration->SetProperty(aProperty, aValue, EmptyString(), IgnoreErrors());
+  declaration->SetProperty(aProperty, aValue, ""_ns, IgnoreErrors());
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

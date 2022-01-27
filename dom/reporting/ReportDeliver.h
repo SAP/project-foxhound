@@ -9,6 +9,11 @@
 
 #include "nsIObserver.h"
 #include "nsITimer.h"
+#include "nsString.h"
+#include "nsTArray.h"
+
+// XXX Avoid including this here by moving function bodies to the cpp file
+#include "nsIPrincipal.h"
 
 class nsIPrincipal;
 class nsPIDOMWindowInner;
@@ -18,11 +23,14 @@ namespace dom {
 
 class ReportBody;
 
-class ReportDeliver final : public nsIObserver, public nsITimerCallback {
+class ReportDeliver final : public nsIObserver,
+                            public nsITimerCallback,
+                            public nsINamed {
  public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
   NS_DECL_NSITIMERCALLBACK
+  NS_DECL_NSINAMED
 
   struct ReportData {
     nsString mType;

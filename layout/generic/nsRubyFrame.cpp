@@ -14,8 +14,10 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/WritingModes.h"
+#include "nsLayoutUtils.h"
 #include "nsLineLayout.h"
 #include "nsPresContext.h"
+#include "nsContainerFrameInlines.h"
 #include "nsRubyBaseContainerFrame.h"
 #include "nsRubyTextContainerFrame.h"
 
@@ -59,23 +61,25 @@ nsresult nsRubyFrame::GetFrameName(nsAString& aResult) const {
 /* virtual */
 void nsRubyFrame::AddInlineMinISize(gfxContext* aRenderingContext,
                                     nsIFrame::InlineMinISizeData* aData) {
-  for (nsIFrame* frame = this; frame; frame = frame->GetNextInFlow()) {
+  auto handleChildren = [aRenderingContext](auto frame, auto data) {
     for (RubySegmentEnumerator e(static_cast<nsRubyFrame*>(frame)); !e.AtEnd();
          e.Next()) {
-      e.GetBaseContainer()->AddInlineMinISize(aRenderingContext, aData);
+      e.GetBaseContainer()->AddInlineMinISize(aRenderingContext, data);
     }
-  }
+  };
+  DoInlineIntrinsicISize(aData, handleChildren);
 }
 
 /* virtual */
 void nsRubyFrame::AddInlinePrefISize(gfxContext* aRenderingContext,
                                      nsIFrame::InlinePrefISizeData* aData) {
-  for (nsIFrame* frame = this; frame; frame = frame->GetNextInFlow()) {
+  auto handleChildren = [aRenderingContext](auto frame, auto data) {
     for (RubySegmentEnumerator e(static_cast<nsRubyFrame*>(frame)); !e.AtEnd();
          e.Next()) {
-      e.GetBaseContainer()->AddInlinePrefISize(aRenderingContext, aData);
+      e.GetBaseContainer()->AddInlinePrefISize(aRenderingContext, data);
     }
-  }
+  };
+  DoInlineIntrinsicISize(aData, handleChildren);
   aData->mLineIsEmpty = false;
 }
 
@@ -116,7 +120,8 @@ void nsRubyFrame::Reflow(nsPresContext* aPresContext,
   // Begin the span for the ruby frame
   WritingMode frameWM = aReflowInput.GetWritingMode();
   WritingMode lineWM = aReflowInput.mLineLayout->GetWritingMode();
-  LogicalMargin borderPadding = aReflowInput.ComputedLogicalBorderPadding();
+  LogicalMargin borderPadding =
+      aReflowInput.ComputedLogicalBorderPadding(frameWM);
   nsLayoutUtils::SetBSizeFromFontMetrics(this, aDesiredSize, borderPadding,
                                          lineWM, frameWM);
 
@@ -128,10 +133,9 @@ void nsRubyFrame::Reflow(nsPresContext* aPresContext,
   }
   NS_ASSERTION(aReflowInput.AvailableISize() != NS_UNCONSTRAINEDSIZE,
                "should no longer use available widths");
-  nscoord availableISize = aReflowInput.AvailableISize();
-  availableISize -= startEdge + borderPadding.IEnd(frameWM);
-  aReflowInput.mLineLayout->BeginSpan(this, &aReflowInput, startEdge,
-                                      availableISize, &mBaseline);
+  nscoord endEdge = aReflowInput.AvailableISize() - borderPadding.IEnd(frameWM);
+  aReflowInput.mLineLayout->BeginSpan(this, &aReflowInput, startEdge, endEdge,
+                                      &mBaseline);
 
   for (RubySegmentEnumerator e(this); !e.AtEnd(); e.Next()) {
     ReflowSegment(aPresContext, aReflowInput, aDesiredSize.BlockStartAscent(),
@@ -182,8 +186,7 @@ void nsRubyFrame::ReflowSegment(nsPresContext* aPresContext,
   WritingMode lineWM = aReflowInput.mLineLayout->GetWritingMode();
   LogicalSize availSize(lineWM, aReflowInput.AvailableISize(),
                         aReflowInput.AvailableBSize());
-  WritingMode rubyWM = GetWritingMode();
-  NS_ASSERTION(!rubyWM.IsOrthogonalTo(lineWM),
+  NS_ASSERTION(!GetWritingMode().IsOrthogonalTo(lineWM),
                "Ruby frame writing-mode shouldn't be orthogonal to its line");
 
   AutoRubyTextContainerArray textContainers(aBaseContainer);
@@ -282,6 +285,7 @@ void nsRubyFrame::ReflowSegment(nsPresContext* aPresContext,
   RubyBlockLeadings descLeadings = aBaseContainer->GetDescendantLeadings();
   offsetRect.BStart(lineWM) -= descLeadings.mStart;
   offsetRect.BSize(lineWM) += descLeadings.mStart + descLeadings.mEnd;
+  Maybe<LineRelativeDir> lastLineSide;
   for (uint32_t i = 0; i < rtcCount; i++) {
     nsRubyTextContainerFrame* textContainer = textContainers[i];
     WritingMode rtcWM = textContainer->GetWritingMode();
@@ -296,29 +300,46 @@ void nsRubyFrame::ReflowSegment(nsPresContext* aPresContext,
     // handled when reflowing the base containers.
     NS_ASSERTION(textReflowStatus.IsEmpty(),
                  "Ruby text container must not break itself inside");
-    // The metrics is initialized with reflow input of this ruby frame,
-    // hence the writing-mode is tied to rubyWM instead of rtcWM.
-    LogicalSize size = textMetrics.Size(rubyWM).ConvertTo(lineWM, rubyWM);
+    const LogicalSize size = textMetrics.Size(lineWM);
     textContainer->SetSize(lineWM, size);
 
     nscoord reservedISize = RubyUtils::GetReservedISize(textContainer);
     segmentISize = std::max(segmentISize, size.ISize(lineWM) + reservedISize);
 
-    auto rubyPosition = textContainer->StyleText()->mRubyPosition;
-    MOZ_ASSERT(rubyPosition == StyleRubyPosition::Over ||
-               rubyPosition == StyleRubyPosition::Under);
-    Maybe<LogicalSide> side;
-    if (rubyPosition == StyleRubyPosition::Over) {
-      side.emplace(lineWM.LogicalSideForLineRelativeDir(eLineRelativeDirOver));
-    } else if (rubyPosition == StyleRubyPosition::Under) {
-      side.emplace(lineWM.LogicalSideForLineRelativeDir(eLineRelativeDirUnder));
-    } else {
-      // XXX inter-character support in bug 1055672
-      MOZ_ASSERT_UNREACHABLE("Unsupported ruby-position");
+    Maybe<LineRelativeDir> lineSide;
+    switch (textContainer->StyleText()->mRubyPosition) {
+      case StyleRubyPosition::Over:
+        lineSide.emplace(eLineRelativeDirOver);
+        break;
+      case StyleRubyPosition::Under:
+        lineSide.emplace(eLineRelativeDirUnder);
+        break;
+      case StyleRubyPosition::AlternateOver:
+        if (lastLineSide.isSome() &&
+            lastLineSide.value() == eLineRelativeDirOver) {
+          lineSide.emplace(eLineRelativeDirUnder);
+        } else {
+          lineSide.emplace(eLineRelativeDirOver);
+        }
+        break;
+      case StyleRubyPosition::AlternateUnder:
+        if (lastLineSide.isSome() &&
+            lastLineSide.value() == eLineRelativeDirUnder) {
+          lineSide.emplace(eLineRelativeDirOver);
+        } else {
+          lineSide.emplace(eLineRelativeDirUnder);
+        }
+        break;
+      default:
+        // XXX inter-character support in bug 1055672
+        MOZ_ASSERT_UNREACHABLE("Unsupported ruby-position");
     }
+    lastLineSide = lineSide;
 
     LogicalPoint position(lineWM);
-    if (side.isSome()) {
+    if (lineSide.isSome()) {
+      LogicalSide logicalSide =
+          lineWM.LogicalSideForLineRelativeDir(lineSide.value());
       if (StaticPrefs::layout_css_ruby_intercharacter_enabled() &&
           rtcWM.IsVerticalRL() &&
           lineWM.GetInlineDir() == WritingMode::eInlineLTR) {
@@ -332,11 +353,11 @@ void nsRubyFrame::ReflowSegment(nsPresContext* aPresContext,
                 : 0);
         position = offsetRect.Origin(lineWM) + offset;
         aReflowInput.mLineLayout->AdvanceICoord(size.ISize(lineWM));
-      } else if (side.value() == eLogicalSideBStart) {
+      } else if (logicalSide == eLogicalSideBStart) {
         offsetRect.BStart(lineWM) -= size.BSize(lineWM);
         offsetRect.BSize(lineWM) += size.BSize(lineWM);
         position = offsetRect.Origin(lineWM);
-      } else if (side.value() == eLogicalSideBEnd) {
+      } else if (logicalSide == eLogicalSideBEnd) {
         position = offsetRect.Origin(lineWM) +
                    LogicalPoint(lineWM, 0, offsetRect.BSize(lineWM));
         offsetRect.BSize(lineWM) += size.BSize(lineWM);

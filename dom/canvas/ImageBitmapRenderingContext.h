@@ -5,6 +5,13 @@
 #ifndef ImageBitmapRenderingContext_h
 #define ImageBitmapRenderingContext_h
 
+#include "mozilla/dom/ImageBitmap.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/DataSurfaceHelpers.h"
+#include "mozilla/gfx/Point.h"
+#include "mozilla/layers/WebRenderUserData.h"
+#include "imgIEncoder.h"
+#include "ImageEncoder.h"
 #include "nsICanvasRenderingContextInternal.h"
 #include "nsWrapperCache.h"
 
@@ -71,9 +78,9 @@ class ImageBitmapRenderingContext final
   virtual void SetOpaqueValueFromOpaqueAttr(bool aOpaqueAttrValue) override;
   virtual bool GetIsOpaque() override;
   NS_IMETHOD Reset() override;
-  virtual already_AddRefed<Layer> GetCanvasLayer(
-      nsDisplayListBuilder* aBuilder, Layer* aOldLayer,
-      LayerManager* aManager) override;
+  virtual already_AddRefed<layers::Image> GetAsImage() override {
+    return ClipToIntrinsicSize();
+  }
   bool UpdateWebRenderCanvasData(nsDisplayListBuilder* aBuilder,
                                  WebRenderCanvasData* aCanvasData) override;
   virtual void MarkContextClean() override;

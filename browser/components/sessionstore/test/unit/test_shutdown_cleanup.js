@@ -19,14 +19,13 @@ const { SessionFile } = ChromeUtils.import(
   "resource:///modules/sessionstore/SessionFile.jsm"
 );
 const { Paths } = SessionFile;
-
-const { File } = OS;
-
 const MAX_ENTRIES = 9;
 const URL = "http://example.com/#";
 
 // We need a XULAppInfo to initialize SessionFile
-ChromeUtils.import("resource://testing-common/AppInfo.jsm", this);
+const { updateAppInfo } = ChromeUtils.import(
+  "resource://testing-common/AppInfo.jsm"
+);
 updateAppInfo({
   name: "SessionRestoreTest",
   ID: "{230de50e-4cd1-11dc-8314-0800200c9a66}",
@@ -75,9 +74,7 @@ function createSessionState(index) {
 
 async function writeAndParse(state, path, options = {}) {
   await SessionWorker.post("write", [state, options]);
-  return JSON.parse(
-    await File.read(path, { encoding: "utf-8", compression: "lz4" })
-  );
+  return JSON.parse(await IOUtils.readUTF8(path, { decompress: true }));
 }
 
 add_task(async function test_shistory_cap_none() {

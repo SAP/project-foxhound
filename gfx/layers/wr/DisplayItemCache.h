@@ -10,11 +10,11 @@
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "nsTArray.h"
 
+namespace mozilla {
+
 class nsDisplayList;
 class nsDisplayListBuilder;
 class nsPaintedDisplayItem;
-
-namespace mozilla {
 
 namespace wr {
 class DisplayListBuilder;
@@ -100,9 +100,9 @@ class DisplayItemCache final {
   /**
    * Suppress display item caching. This doesn't clear any existing cached
    * items or change the underlying capacity, it just makes IsEnabled() return
-   * false. It is not meant to be flipped in the middle of a display list build,
-   * but rather set before the display list build starts to suppress use of the
-   * cache for that display list build.
+   * false.
+   * It will also make CanReuseItem return false for the duration of the
+   * suppression.
    */
   bool SetSuppressed(bool aSuppressed) {
     if (aSuppressed == mSuppressed) {

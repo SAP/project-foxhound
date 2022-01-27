@@ -7,10 +7,16 @@
 #ifndef mozilla_HoldDropJSObjects_h
 #define mozilla_HoldDropJSObjects_h
 
-#include "nsCycleCollectionParticipant.h"
+#include <type_traits>
+#include "nsCycleCollectionNoteChild.h"
 
 class nsISupports;
 class nsScriptObjectTracer;
+class nsCycleCollectionParticipant;
+
+namespace JS {
+class Zone;
+}
 
 // Only HoldJSObjects and DropJSObjects should be called directly.
 
@@ -25,7 +31,8 @@ void DropJSObjectsImpl(nsISupports* aHolder);
 
 }  // namespace cyclecollector
 
-template <class T, bool isISupports = std::is_base_of<nsISupports, T>::value>
+template <class T, bool isISupports = std::is_base_of<nsISupports, T>::value,
+          typename P = typename T::NS_CYCLE_COLLECTION_INNERCLASS>
 struct HoldDropJSObjectsHelper {
   static void Hold(T* aHolder) {
     cyclecollector::HoldJSObjectsImpl(aHolder,
@@ -44,13 +51,31 @@ struct HoldDropJSObjectsHelper<T, true> {
   }
 };
 
+/**
+  Classes that hold strong references to JS GC things such as `JSObjects` and
+  `JS::Values` (e.g. `JS::Heap<JSObject*> mFoo;`) must use these, generally by
+  calling `HoldJSObjects(this)` and `DropJSObjects(this)` in the ctor and dtor
+  respectively.
+
+  For classes that are wrapper cached and hold no other strong references to JS
+  GC things, there's no need to call these; it will be taken care of
+  automatically by nsWrapperCache.
+**/
 template <class T>
 void HoldJSObjects(T* aHolder) {
+  static_assert(!std::is_base_of<nsCycleCollectionParticipant, T>::value,
+                "Don't call this on the CC participant but on the object that "
+                "it's for (in an Unlink implementation it's usually stored in "
+                "a variable named 'tmp').");
   HoldDropJSObjectsHelper<T>::Hold(aHolder);
 }
 
 template <class T>
 void DropJSObjects(T* aHolder) {
+  static_assert(!std::is_base_of<nsCycleCollectionParticipant, T>::value,
+                "Don't call this on the CC participant but on the object that "
+                "it's for (in an Unlink implementation it's usually stored in "
+                "a variable named 'tmp').");
   HoldDropJSObjectsHelper<T>::Drop(aHolder);
 }
 

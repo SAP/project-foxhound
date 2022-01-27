@@ -4,6 +4,8 @@
   <script src="/tests/SimpleTest/EventUtils.js"></script>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script src="/tests/SimpleTest/SpecialPowers.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
+  <script src="/tests/gfx/layers/apz/test/mochitest/apz_test_utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css">
   <style>
     #target {
@@ -16,23 +18,6 @@
 <body>
 <div id="target"></div>
 <script type="application/javascript">
-
-function synthesizeNativeMouseClickWithControl(aTarget, aOffsetX, aOffsetY) {
-  const NSLeftMouseDown = 1;
-  const NSLeftMouseUp = 2;
-
-  const NSControlKeyMask = 1 << 18;
-
-  let utils = SpecialPowers.getDOMWindowUtils(window);
-
-  let rect = aTarget.getBoundingClientRect();
-  let x = aOffsetX + window.mozInnerScreenX + rect.left;
-  let y = aOffsetY + window.mozInnerScreenY + rect.top;
-  let scale = utils.screenPixelsPerCSSPixel;
-
-  utils.sendNativeMouseEvent(x * scale, y * scale, NSLeftMouseDown, NSControlKeyMask, aTarget);
-  utils.sendNativeMouseEvent(x * scale, y * scale, NSLeftMouseUp, NSControlKeyMask, aTarget);
-}
 
 function waitAndCheckMouseEvents(aTarget, aExpectedEvents) {
   return new Promise((aResolve, aReject) => {
@@ -80,6 +65,12 @@ function waitAndCheckMouseEvents(aTarget, aExpectedEvents) {
 
 add_task(async function Init() {
   await SimpleTest.promiseFocus();
+  await waitUntilApzStable();
+
+  let target = document.getElementById("target");
+  target.addEventListener("click", function() {
+    ok(false, `should not receive click event`);
+  });
 });
 
 add_task(async function TestMouseClickWithControl() {
@@ -90,9 +81,14 @@ add_task(async function TestMouseClickWithControl() {
   let target = document.getElementById("target");
   let promise = waitAndCheckMouseEvents(target, [["mousedown", 0, true],
                                                  ["contextmenu", 0, true],
-                                                 ["mouseup", 0, true],
-                                                 ["click", 0, true]]);
-  synthesizeNativeMouseClickWithControl(target, 10, 10);
+                                                 ["mouseup", 0, true]]);
+  synthesizeNativeMouseEvent({
+    type: "click",
+    target,
+    offsetX: 10,
+    offsetY: 10,
+    modifiers: { ctrlKey: true },
+  });
   await promise;
 });
 
@@ -106,7 +102,13 @@ add_task(async function TestOldBehavior() {
                                                  ["contextmenu", 2, true],
                                                  ["mouseup", 2, true],
                                                  ["auxclick", 2, true]]);
-  synthesizeNativeMouseClickWithControl(target, 10, 10);
+  synthesizeNativeMouseEvent({
+    type: "click",
+    target,
+    offsetX: 10,
+    offsetY: 10,
+    modifiers: { ctrlKey: true },
+  });
   await promise;
 });
 </script>

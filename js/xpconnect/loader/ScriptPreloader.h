@@ -6,6 +6,7 @@
 #ifndef ScriptPreloader_h
 #define ScriptPreloader_h
 
+#include "mozilla/Atomics.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/LinkedList.h"
@@ -25,10 +26,19 @@
 #include "nsIThread.h"
 #include "nsITimer.h"
 
-#include "jsapi.h"
-#include "js/GCAnnotations.h"
+#include "js/CompileOptions.h"  // JS::DecodeOptions
+#include "js/experimental/JSStencil.h"
+#include "js/GCAnnotations.h"  // for JS_HAZ_NON_GC_POINTER
+#include "js/RootingAPI.h"     // for Handle, Heap
+#include "js/Transcoding.h"  // for TranscodeBuffer, TranscodeRange, TranscodeSources
+#include "js/TypeDecls.h"  // for HandleObject, HandleScript
 
 #include <prio.h>
+
+namespace JS {
+class CompileOptions;
+class OffThreadToken;
+}  // namespace JS
 
 namespace mozilla {
 namespace dom {
@@ -60,6 +70,7 @@ using namespace mozilla::loader;
 class ScriptPreloader : public nsIObserver,
                         public nsIMemoryReporter,
                         public nsIRunnable,
+                        public nsINamed,
                         public nsIAsyncShutdownBlocker {
   MOZ_DEFINE_MALLOC_SIZE_OF(MallocSizeOf)
 
@@ -70,16 +81,33 @@ class ScriptPreloader : public nsIObserver,
   NS_DECL_NSIOBSERVER
   NS_DECL_NSIMEMORYREPORTER
   NS_DECL_NSIRUNNABLE
+  NS_DECL_NSINAMED
   NS_DECL_NSIASYNCSHUTDOWNBLOCKER
 
+ private:
+  static StaticRefPtr<ScriptPreloader> gScriptPreloader;
+  static StaticRefPtr<ScriptPreloader> gChildScriptPreloader;
+  static UniquePtr<AutoMemMap> gCacheData;
+  static UniquePtr<AutoMemMap> gChildCacheData;
+
+ public:
   static ScriptPreloader& GetSingleton();
   static ScriptPreloader& GetChildSingleton();
 
+  static void DeleteSingleton();
+  static void DeleteCacheDataSingleton();
+
   static ProcessType GetChildProcessType(const nsACString& remoteType);
 
-  // Retrieves the script with the given cache key from the script cache.
-  // Returns null if the script is not cached.
-  JSScript* GetCachedScript(JSContext* cx, const nsCString& name);
+  // Fill some options that should be consistent across all scripts stored
+  // into preloader cache.
+  static void FillCompileOptionsForCachedStencil(JS::CompileOptions& options);
+  static void FillDecodeOptionsForCachedStencil(JS::DecodeOptions& options);
+
+  // Retrieves the stencil with the given cache key from the cache.
+  // Returns null if the stencil is not cached.
+  already_AddRefed<JS::Stencil> GetCachedStencil(
+      JSContext* cx, const JS::DecodeOptions& options, const nsCString& path);
 
   // Notes the execution of a script with the given URL and cache key.
   // Depending on the stage of startup, the script may be serialized and
@@ -88,12 +116,14 @@ class ScriptPreloader : public nsIObserver,
   // If isRunOnce is true, this script is expected to run only once per
   // process per browser session. A cached instance will not be kept alive
   // for repeated execution.
-  void NoteScript(const nsCString& url, const nsCString& cachePath,
-                  JS::HandleScript script, bool isRunOnce = false);
+  void NoteStencil(const nsCString& url, const nsCString& cachePath,
+                   JS::Stencil* stencil, bool isRunOnce = false);
 
-  void NoteScript(const nsCString& url, const nsCString& cachePath,
-                  ProcessType processType, nsTArray<uint8_t>&& xdrData,
-                  TimeStamp loadTime);
+  // Notes the IPC arrival of the XDR data of a stencil compiled by some
+  // child process. See ScriptCacheChild::SendScriptsAndFinalize.
+  void NoteStencil(const nsCString& url, const nsCString& cachePath,
+                   ProcessType processType, nsTArray<uint8_t>&& xdrData,
+                   TimeStamp loadTime);
 
   // Initializes the script cache from the startup script cache file.
   Result<Ok, nsresult> InitCache(const nsAString& = u"scriptCache"_ns);
@@ -101,15 +131,14 @@ class ScriptPreloader : public nsIObserver,
   Result<Ok, nsresult> InitCache(const Maybe<ipc::FileDescriptor>& cacheFile,
                                  ScriptCacheChild* cacheChild);
 
-  bool Active() { return mCacheInitialized && !mStartupFinished; }
+  bool Active() const { return mCacheInitialized && !mStartupFinished; }
 
  private:
   Result<Ok, nsresult> InitCacheInternal(JS::HandleObject scope = nullptr);
-  JSScript* GetCachedScriptInternal(JSContext* cx, const nsCString& name);
+  already_AddRefed<JS::Stencil> GetCachedStencilInternal(
+      JSContext* cx, const JS::DecodeOptions& options, const nsCString& path);
 
  public:
-  void Trace(JSTracer* trc);
-
   static ProcessType CurrentProcessType() {
     MOZ_ASSERT(sProcessType != ProcessType::Uninitialized);
     return sProcessType;
@@ -118,7 +147,7 @@ class ScriptPreloader : public nsIObserver,
   static void InitContentChild(dom::ContentParent& parent);
 
  protected:
-  virtual ~ScriptPreloader() = default;
+  virtual ~ScriptPreloader();
 
  private:
   enum class ScriptStatus {
@@ -126,46 +155,43 @@ class ScriptPreloader : public nsIObserver,
     Saved,
   };
 
-  // Represents a cached JS script, either initially read from the script
-  // cache file, to be added to the next session's script cache file, or
+  // Represents a cached script stencil, either initially read from the
+  // cache file, to be added to the next session's stencil cache file, or
   // both.
   //
-  // A script which was read from the cache file may be in any of the
-  // following states:
-  //
-  //  - Read from the cache, and being compiled off thread. In this case,
+  //  - Read from the cache, and being decoded off thread. In this case,
   //    mReadyToExecute is false, and mToken is null.
-  //  - Off-thread compilation has finished, but the script has not yet been
+  //  - Off-thread decode has finished, but the stencil has not yet been
   //    executed. In this case, mReadyToExecute is true, and mToken has a
   //    non-null value.
   //  - Read from the cache, but too small or needed to immediately to be
   //    compiled off-thread. In this case, mReadyToExecute is true, and both
-  //    mToken and mScript are null.
+  //    mToken and mStencil are null.
   //  - Fully decoded, and ready to be added to the next session's cache
-  //    file. In this case, mReadyToExecute is true, and mScript is non-null.
+  //    file. In this case, mReadyToExecute is true, and mStencil is non-null.
   //
-  // A script to be added to the next session's cache file always has a
-  // non-null mScript value. If it was read from the last session's cache
+  // A stencil to be added to the next session's cache file always has a
+  // non-null mStencil value. If it was read from the last session's cache
   // file, it also has a non-empty mXDRRange range, which will be stored in
   // the next session's cache file. If it was compiled in this session, its
   // mXDRRange will initially be empty, and its mXDRData buffer will be
   // populated just before it is written to the cache file.
-  class CachedScript : public LinkedListElement<CachedScript> {
+  class CachedStencil : public LinkedListElement<CachedStencil> {
    public:
-    CachedScript(CachedScript&&) = delete;
+    CachedStencil(CachedStencil&&) = delete;
 
-    CachedScript(ScriptPreloader& cache, const nsCString& url,
-                 const nsCString& cachePath, JSScript* script)
+    CachedStencil(ScriptPreloader& cache, const nsCString& url,
+                  const nsCString& cachePath, JS::Stencil* stencil)
         : mCache(cache),
           mURL(url),
           mCachePath(cachePath),
-          mScript(script),
+          mStencil(stencil),
           mReadyToExecute(true),
           mIsRunOnce(false) {}
 
-    inline CachedScript(ScriptPreloader& cache, InputBuffer& buf);
+    inline CachedStencil(ScriptPreloader& cache, InputBuffer& buf);
 
-    ~CachedScript() = default;
+    ~CachedStencil() = default;
 
     ScriptStatus Status() const {
       return mProcessTypes.isEmpty() ? ScriptStatus::Restored
@@ -178,19 +204,19 @@ class ScriptPreloader : public nsIObserver,
     // earlier are stored earlier, and scripts needed at approximately the
     // same time are stored approximately contiguously.
     struct Comparator {
-      bool Equals(const CachedScript* a, const CachedScript* b) const {
+      bool Equals(const CachedStencil* a, const CachedStencil* b) const {
         return a->mLoadTime == b->mLoadTime;
       }
 
-      bool LessThan(const CachedScript* a, const CachedScript* b) const {
+      bool LessThan(const CachedStencil* a, const CachedStencil* b) const {
         return a->mLoadTime < b->mLoadTime;
       }
     };
 
-    struct StatusMatcher final : public Matcher<CachedScript*> {
+    struct StatusMatcher final : public Matcher<CachedStencil*> {
       explicit StatusMatcher(ScriptStatus status) : mStatus(status) {}
 
-      virtual bool Matches(CachedScript* script) override {
+      virtual bool Matches(CachedStencil* script) override {
         return script->Status() == mStatus;
       }
 
@@ -200,7 +226,7 @@ class ScriptPreloader : public nsIObserver,
     void FreeData() {
       // If the script data isn't mmapped, we need to release both it
       // and the Range that points to it at the same time.
-      if (!mXDRData.empty()) {
+      if (!IsMemMapped()) {
         mXDRRange.reset();
         mXDRData.destroy();
       }
@@ -220,9 +246,9 @@ class ScriptPreloader : public nsIObserver,
     // If this method returns false, callers may set mScript to a cached
     // JSScript instance for this entry. If it returns true, they should
     // not.
-    bool MaybeDropScript() {
+    bool MaybeDropStencil() {
       if (mIsRunOnce && (HasRange() || !mCache.WillWriteScripts())) {
-        mScript = nullptr;
+        mStencil = nullptr;
         return true;
       }
       return false;
@@ -260,6 +286,8 @@ class ScriptPreloader : public nsIObserver,
 
     bool HasRange() { return mXDRRange.isSome(); }
 
+    bool IsMemMapped() const { return mXDRData.empty(); }
+
     nsTArray<uint8_t>& Array() {
       MOZ_ASSERT(HasArray());
       return mXDRData.ref<nsTArray<uint8_t>>();
@@ -267,7 +295,8 @@ class ScriptPreloader : public nsIObserver,
 
     bool HasArray() { return mXDRData.constructed<nsTArray<uint8_t>>(); }
 
-    JSScript* GetJSScript(JSContext* cx);
+    already_AddRefed<JS::Stencil> GetStencil(JSContext* cx,
+                                             const JS::DecodeOptions& options);
 
     size_t HeapSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) {
       auto size = mallocSizeOf(this);
@@ -276,8 +305,10 @@ class ScriptPreloader : public nsIObserver,
         size += Array().ShallowSizeOfExcludingThis(mallocSizeOf);
       } else if (HasBuffer()) {
         size += Buffer().sizeOfExcludingThis(mallocSizeOf);
-      } else {
-        return size;
+      }
+
+      if (mStencil) {
+        size += JS::SizeOfStencil(mStencil, mallocSizeOf);
       }
 
       // Note: mURL and mCachePath use the same string for scripts loaded
@@ -305,7 +336,7 @@ class ScriptPreloader : public nsIObserver,
 
     TimeStamp mLoadTime{};
 
-    JS::Heap<JSScript*> mScript;
+    RefPtr<JS::Stencil> mStencil;
 
     // True if this script is ready to be executed. This means that either the
     // off-thread portion of an off-thread decode has finished, or the script
@@ -332,12 +363,16 @@ class ScriptPreloader : public nsIObserver,
 
     // XDR data which was generated from a script compiled during this
     // session, and will be written to the cache file.
+    //
+    // The format is JS::TranscodeBuffer if the script was XDR'd as part
+    // of this process, or nsTArray<> if the script was transfered by IPC
+    // from a child process.
     MaybeOneOf<JS::TranscodeBuffer, nsTArray<uint8_t>> mXDRData;
   } JS_HAZ_NON_GC_POINTER;
 
   template <ScriptStatus status>
-  static Matcher<CachedScript*>* Match() {
-    static CachedScript::StatusMatcher matcher{status};
+  static Matcher<CachedStencil*>* Match() {
+    static CachedStencil::StatusMatcher matcher{status};
     return &matcher;
   }
 
@@ -374,7 +409,7 @@ class ScriptPreloader : public nsIObserver,
   // thread for quite as long.
   static constexpr int MAX_MAINTHREAD_DECODE_SIZE = 50 * 1024;
 
-  ScriptPreloader();
+  explicit ScriptPreloader(AutoMemMap* cacheData);
 
   void Cleanup();
 
@@ -411,12 +446,13 @@ class ScriptPreloader : public nsIObserver,
 
   // Waits for the given cached script to finish compiling off-thread, or
   // decodes it synchronously on the main thread, as appropriate.
-  JSScript* WaitForCachedScript(JSContext* cx, CachedScript* script);
+  already_AddRefed<JS::Stencil> WaitForCachedStencil(
+      JSContext* cx, const JS::DecodeOptions& options, CachedStencil* script);
 
   void DecodeNextBatch(size_t chunkSize, JS::HandleObject scope = nullptr);
 
   static void OffThreadDecodeCallback(JS::OffThreadToken* token, void* context);
-  void MaybeFinishOffThreadDecode();
+  void FinishOffThreadDecode(JS::OffThreadToken* token);
   void DoFinishOffThreadDecode();
 
   already_AddRefed<nsIAsyncShutdownClient> GetShutdownBarrier();
@@ -427,7 +463,7 @@ class ScriptPreloader : public nsIObserver,
             mallocSizeOf(mSaveThread.get()) + mallocSizeOf(mProfD.get()));
   }
 
-  using ScriptHash = nsClassHashtable<nsCStringHashKey, CachedScript>;
+  using ScriptHash = nsClassHashtable<nsCStringHashKey, CachedStencil>;
 
   template <ScriptStatus status>
   static size_t SizeOfHashEntries(ScriptHash& scripts,
@@ -448,23 +484,28 @@ class ScriptPreloader : public nsIObserver,
   bool mCacheInitialized = false;
   bool mSaveComplete = false;
   bool mDataPrepared = false;
+  // May only be changed on the main thread, while `mSaveMonitor` is held.
   bool mCacheInvalidated = false;
 
   // The list of scripts that we read from the initial startup cache file,
   // but have yet to initiate a decode task for.
-  LinkedList<CachedScript> mPendingScripts;
+  LinkedList<CachedStencil> mPendingScripts;
 
   // The lists of scripts and their sources that make up the chunk currently
   // being decoded in a background thread.
   JS::TranscodeSources mParsingSources;
-  Vector<CachedScript*> mParsingScripts;
+  Vector<CachedStencil*> mParsingScripts;
 
   // The token for the completed off-thread decode task.
-  JS::OffThreadToken* mToken = nullptr;
+  Atomic<JS::OffThreadToken*, ReleaseAcquire> mToken{nullptr};
 
   // True if a runnable has been dispatched to the main thread to finish an
-  // off-thread decode operation.
+  // off-thread decode operation. Access only while 'mMonitor' is held.
   bool mFinishDecodeRunnablePending = false;
+
+  // True is main-thread is blocked and we should notify with Monitor. Access
+  // only while `mMonitor` is held.
+  bool mWaitingForDecode = false;
 
   // The process type of the current process.
   static ProcessType sProcessType;
@@ -484,7 +525,10 @@ class ScriptPreloader : public nsIObserver,
   nsCOMPtr<nsITimer> mSaveTimer;
 
   // The mmapped cache data from this session's cache file.
-  AutoMemMap mCacheData;
+  // The instance is held by either `gCacheData` or `gChildCacheData` static
+  // fields, and its lifetime is guaranteed to be longer than ScriptPreloader
+  // instance.
+  AutoMemMap* mCacheData;
 
   Monitor mMonitor;
   Monitor mSaveMonitor;

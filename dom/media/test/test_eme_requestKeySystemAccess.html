@@ -467,17 +467,10 @@ var tests = [
   },
 ];
 
-function beginTest() {
-  Promise.all(tests.map(Test)).then(function() { SimpleTest.finish(); });
-}
-
-if (!IsMacOSSnowLeopardOrEarlier()) {
-  SimpleTest.waitForExplicitFinish();
-  SetupEMEPref(beginTest);
-} else {
-  todo(false, "Test disabled on this platform.");
-}
-
+SimpleTest.waitForExplicitFinish();
+Promise.all(tests.map(Test)).then(function() {
+  SimpleTest.finish();
+});
 </script>
 </pre>
 </body>

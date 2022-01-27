@@ -39,12 +39,12 @@ Running in Android (GeckoView)
 You can run the tests against a Gecko-based browser (GeckoView) on an
 Android emulator. As shown below, to do so you must start an emulator,
 build Firefox for Android and then run mach wpt with the
-`org.mozilla.geckoview.test` package. The package will be installed
+`org.mozilla.geckoview.test_runner` package. The package will be installed
 interactively by `mach` and tests will run against TestRunnerActivity.
 
     ./mach android-emulator --version x86-7.0
     ./mach build
-    ./mach wpt --package=org.mozilla.geckoview.test
+    ./mach wpt --package=org.mozilla.geckoview.test_runner
 
 FAQ
 ---
@@ -81,6 +81,13 @@ FAQ
   For testharness tests this is possible using the
   [testdriver](https://web-platform-tests.org/writing-tests/testdriver.html)
   API.
+
+  For Gecko-specific testharness tests, the specialPowers extension is
+  available. Note that this should only be used when no other approach
+  works; such tests can't be shared with other browsers. If you're
+  using specialPowers for something that could be tested in other
+  browsers if we extended testdriver or added test-only APIs, please
+  file a bug.
 
 Writing tests
 -------------

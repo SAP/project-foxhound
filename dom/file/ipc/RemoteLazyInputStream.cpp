@@ -29,7 +29,7 @@ class RemoteLazyInputStream;
 
 namespace {
 
-class InputStreamCallbackRunnable final : public CancelableRunnable {
+class InputStreamCallbackRunnable final : public DiscardableRunnable {
  public:
   // Note that the execution can be synchronous in case the event target is
   // null.
@@ -60,7 +60,7 @@ class InputStreamCallbackRunnable final : public CancelableRunnable {
  private:
   InputStreamCallbackRunnable(nsIInputStreamCallback* aCallback,
                               RemoteLazyInputStream* aStream)
-      : CancelableRunnable("dom::InputStreamCallbackRunnable"),
+      : DiscardableRunnable("dom::InputStreamCallbackRunnable"),
         mCallback(aCallback),
         mStream(aStream) {
     MOZ_ASSERT(mCallback);
@@ -71,7 +71,7 @@ class InputStreamCallbackRunnable final : public CancelableRunnable {
   RefPtr<RemoteLazyInputStream> mStream;
 };
 
-class FileMetadataCallbackRunnable final : public CancelableRunnable {
+class FileMetadataCallbackRunnable final : public DiscardableRunnable {
  public:
   static void Execute(nsIFileMetadataCallback* aCallback,
                       nsIEventTarget* aEventTarget,
@@ -97,7 +97,7 @@ class FileMetadataCallbackRunnable final : public CancelableRunnable {
  private:
   FileMetadataCallbackRunnable(nsIFileMetadataCallback* aCallback,
                                RemoteLazyInputStream* aStream)
-      : CancelableRunnable("dom::FileMetadataCallbackRunnable"),
+      : DiscardableRunnable("dom::FileMetadataCallbackRunnable"),
         mCallback(aCallback),
         mStream(aStream) {
     MOZ_ASSERT(mCallback);
@@ -281,6 +281,10 @@ NS_IMETHODIMP
 RemoteLazyInputStream::Close() {
   nsCOMPtr<nsIAsyncInputStream> asyncRemoteStream;
   nsCOMPtr<nsIInputStream> remoteStream;
+
+  nsCOMPtr<nsIInputStreamCallback> inputStreamCallback;
+  nsCOMPtr<nsIEventTarget> inputStreamCallbackEventTarget;
+
   {
     MutexAutoLock lock(mMutex);
 
@@ -292,13 +296,20 @@ RemoteLazyInputStream::Close() {
     asyncRemoteStream.swap(mAsyncRemoteStream);
     remoteStream.swap(mRemoteStream);
 
-    mInputStreamCallback = nullptr;
-    mInputStreamCallbackEventTarget = nullptr;
-
+    // TODO(Bug 1737783): Notify to the mFileMetadataCallback that this
+    // lazy input stream has been closed.
     mFileMetadataCallback = nullptr;
     mFileMetadataCallbackEventTarget = nullptr;
 
+    inputStreamCallback = std::move(mInputStreamCallback);
+    inputStreamCallbackEventTarget = std::move(mInputStreamCallbackEventTarget);
+
     mState = eClosed;
+  }
+
+  if (inputStreamCallback) {
+    InputStreamCallbackRunnable::Execute(inputStreamCallback,
+                                         inputStreamCallbackEventTarget, this);
   }
 
   if (asyncRemoteStream) {
@@ -355,7 +366,7 @@ RemoteLazyInputStream::CloneWithRange(uint64_t aStart, uint64_t aLength,
 
   // Too short or out of range.
   if (aLength == 0 || aStart >= mLength) {
-    return NS_NewCStringInputStream(aResult, EmptyCString());
+    return NS_NewCStringInputStream(aResult, ""_ns);
   }
 
   MOZ_ASSERT(mActor);
@@ -849,7 +860,7 @@ RemoteLazyInputStream::Length(int64_t* aLength) {
 
 namespace {
 
-class InputStreamLengthCallbackRunnable final : public CancelableRunnable {
+class InputStreamLengthCallbackRunnable final : public DiscardableRunnable {
  public:
   static void Execute(nsIInputStreamLengthCallback* aCallback,
                       nsIEventTarget* aEventTarget,
@@ -876,7 +887,7 @@ class InputStreamLengthCallbackRunnable final : public CancelableRunnable {
   InputStreamLengthCallbackRunnable(nsIInputStreamLengthCallback* aCallback,
                                     RemoteLazyInputStream* aStream,
                                     int64_t aLength)
-      : CancelableRunnable("dom::InputStreamLengthCallbackRunnable"),
+      : DiscardableRunnable("dom::InputStreamLengthCallbackRunnable"),
         mCallback(aCallback),
         mStream(aStream),
         mLength(aLength) {

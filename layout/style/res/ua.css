@@ -131,10 +131,12 @@
 }
 
 /* https://drafts.csswg.org/css-lists-3/#ua-stylesheet */
-*|*::marker {
+::marker {
   text-align: end;
+  text-transform: none;
   unicode-bidi: isolate;
   font-variant-numeric: tabular-nums;
+  white-space: pre;
 }
 
 /* SVG documents don't always load this file but they do have links.
@@ -142,19 +144,31 @@
  * the same changes to svg.css.
  */
 
-/* Links */
+/* Links and focusable content */
 
-*|*:any-link {
+:any-link {
   cursor: pointer;
 }
 
-*|*:any-link:-moz-focusring {
+:link {
+  color: LinkText;
+}
+
+:any-link:active {
+  color: ActiveText;
+}
+
+:visited {
+  color: VisitedText;
+}
+
+:focus-visible {
   /* Don't specify the outline-color, we should always use initial value. */
   outline: 1px dotted;
 }
 
 /* Inert subtrees */
-*|*:-moz-inert {
+:-moz-inert {
   -moz-inert: inert;
 }
 
@@ -199,8 +213,7 @@
   overflow-clip-box: inherit;
 }
 
-*|*::-moz-scrolled-content, *|*::-moz-scrolled-canvas,
-*|*::-moz-scrolled-page-sequence {
+*|*::-moz-scrolled-content, *|*::-moz-scrolled-canvas {
   /* e.g., text inputs, select boxes */
   padding: inherit;
   /* The display doesn't affect the kind of frame constructed here.  This just
@@ -210,8 +223,9 @@
      blocks with overflow: scroll; */
   unicode-bidi: inherit;
   text-overflow: inherit;
-  /* Please keep the Multicol/Flex/Grid/Align sections below in sync with
-     ::-moz-fieldset-content/::-moz-button-content in forms.css */
+  /* Please keep the declarations below in sync with ::-moz-fieldset-content /
+     ::-moz-button-content in forms.css */
+  content: inherit;
   /* Multicol container */
   column-count: inherit;
   column-width: inherit;
@@ -253,9 +267,6 @@
 
 *|*::-moz-viewport-scroll {
   overflow: auto;
-%ifdef XP_WIN
-  resize: both;
-%endif
 }
 
 *|*::-moz-column-set,
@@ -293,17 +304,19 @@
   display: block;
 }
 
-*|*::-moz-page-sequence, *|*::-moz-scrolled-page-sequence {
+*|*::-moz-page-sequence {
   /* Collection of pages in print/print preview. Visual styles may only appear
    * in print preview. */
   display: block;
   background: linear-gradient(#606060, #8a8a8a) fixed;
+  /* We always fill the available space in both directions */
   height: 100%;
+  width: 100%;
 }
 
-*|*::-moz-page {
-  /* Individual page in print/print preview. Visual styles may only appear
-   * in print preview. */
+*|*::-moz-printed-sheet {
+  /* Individual sheet of paper in print/print preview. Visual styles may only
+   * appear in print preview. */
   display: block;
   background: white;
   box-shadow: 5px 5px 8px #202020;
@@ -312,18 +325,18 @@
   margin: 0.125in 0.25in;
 }
 
-@media (monochrome) {
+@media (monochrome) and (-moz-print-preview) {
   *|*::-moz-page {
     filter: grayscale(1);
   }
 }
 
-*|*::-moz-pagecontent {
+*|*::-moz-page-content {
   display: block;
   margin: auto;
 }
 
-*|*::-moz-pagebreak {
+*|*::-moz-page-break {
   display: block;
 }
 
@@ -355,7 +368,7 @@
   transform: none !important;
 }
 
-xul|*:fullscreen:not(:root):not([hidden="true"]) {
+xul|*:fullscreen:not(:root, [hidden="true"]) {
   /* The position: fixed; property above used to force the computed display
    * value to block. It is no longer the case now, so we manually set it here to
    * maintain the old behaviour. We should probably not do this, but we don't
@@ -363,9 +376,24 @@ xul|*:fullscreen:not(:root):not([hidden="true"]) {
   display: block;
 }
 
+/**
+ * Ensure we recompute the default color for the root based on its
+ * computed color-scheme. This matches other browsers.
+ *
+ * For the default background, we look at the root
+ * element style frame in
+ * PresShell::GetDefaultBackgroundColorToDraw, however we
+ * can't make the initial style (the style the root element
+ * inherits from) depend on the root element's style, as that
+ * is trivially cyclic.
+ */
+:root {
+  color: CanvasText;
+}
+
 /* Selectors here should match the check in
  * nsViewportFrame.cpp:ShouldInTopLayerForFullscreen() */
-*|*:fullscreen:not(:root):not(:-moz-browser-frame) {
+*|*:fullscreen:not(:root, :-moz-browser-frame) {
   -moz-top-layer: top !important;
 }
 
@@ -411,7 +439,6 @@ parsererror|sourcetext {
 
 div:-moz-native-anonymous.moz-accessiblecaret {
   /* Add transition effect to make caret size changing smoother. */
-  transition-duration: 250ms;
   transition-property: width, height, margin-left;
 
   position: absolute;
@@ -434,7 +461,12 @@ div:-moz-native-anonymous.moz-accessiblecaret > #image {
 }
 
 div:-moz-native-anonymous.moz-accessiblecaret.normal > #image {
-  background-image: url("resource://gre-resources/accessiblecaret-normal@1x.png");
+  background-image: image-set(
+    url("resource://gre-resources/accessiblecaret-normal@1x.png"),
+    url("resource://gre-resources/accessiblecaret-normal@1.5x.png") 1.5x,
+    url("resource://gre-resources/accessiblecaret-normal@2x.png") 2x,
+    url("resource://gre-resources/accessiblecaret-normal@2.25x.png") 2.25x
+  );
 }
 
 div:-moz-native-anonymous.moz-accessiblecaret.left > :is(#text-overlay, #image) {
@@ -442,7 +474,12 @@ div:-moz-native-anonymous.moz-accessiblecaret.left > :is(#text-overlay, #image) 
 }
 
 div:-moz-native-anonymous.moz-accessiblecaret.left > #image {
-  background-image: url("resource://gre-resources/accessiblecaret-tilt-left@1x.png");
+  background-image: image-set(
+    url("resource://gre-resources/accessiblecaret-tilt-left@1x.png"),
+    url("resource://gre-resources/accessiblecaret-tilt-left@1.5x.png") 1.5x,
+    url("resource://gre-resources/accessiblecaret-tilt-left@2x.png") 2x,
+    url("resource://gre-resources/accessiblecaret-tilt-left@2.25x.png") 2.25x
+  );
 }
 
 div:-moz-native-anonymous.moz-accessiblecaret.right > :is(#text-overlay, #image) {
@@ -450,53 +487,20 @@ div:-moz-native-anonymous.moz-accessiblecaret.right > :is(#text-overlay, #image)
 }
 
 div:-moz-native-anonymous.moz-accessiblecaret.right > #image {
-  background-image: url("resource://gre-resources/accessiblecaret-tilt-right@1x.png");
+  background-image: image-set(
+    url("resource://gre-resources/accessiblecaret-tilt-right@1x.png"),
+    url("resource://gre-resources/accessiblecaret-tilt-right@1.5x.png") 1.5x,
+    url("resource://gre-resources/accessiblecaret-tilt-right@2x.png") 2x,
+    url("resource://gre-resources/accessiblecaret-tilt-right@2.25x.png") 2.25x
+  );
 }
 
 div:-moz-native-anonymous.moz-accessiblecaret.none {
   display: none;
 }
 
-@media (min-resolution: 1.5dppx) {
-  div:-moz-native-anonymous.moz-accessiblecaret.normal > #image {
-    background-image: url("resource://gre-resources/accessiblecaret-normal@1.5x.png");
-  }
-
-  div:-moz-native-anonymous.moz-accessiblecaret.left > #image {
-    background-image: url("resource://gre-resources/accessiblecaret-tilt-left@1.5x.png");
-  }
-
-  div:-moz-native-anonymous.moz-accessiblecaret.right > #image {
-    background-image: url("resource://gre-resources/accessiblecaret-tilt-right@1.5x.png");
-  }
-}
-
-@media (min-resolution: 2dppx) {
-  div:-moz-native-anonymous.moz-accessiblecaret.normal > #image {
-    background-image: url("resource://gre-resources/accessiblecaret-normal@2x.png");
-  }
-
-  div:-moz-native-anonymous.moz-accessiblecaret.left > #image {
-    background-image: url("resource://gre-resources/accessiblecaret-tilt-left@2x.png");
-  }
-
-  div:-moz-native-anonymous.moz-accessiblecaret.right > #image {
-    background-image: url("resource://gre-resources/accessiblecaret-tilt-right@2x.png");
-  }
-}
-
-@media (min-resolution: 2.25dppx) {
-  div:-moz-native-anonymous.moz-accessiblecaret.normal > #image {
-    background-image: url("resource://gre-resources/accessiblecaret-normal@2.25x.png");
-  }
-
-  div:-moz-native-anonymous.moz-accessiblecaret.left > #image {
-    background-image: url("resource://gre-resources/accessiblecaret-tilt-left@2.25x.png");
-  }
-
-  div:-moz-native-anonymous.moz-accessiblecaret.right > #image {
-    background-image: url("resource://gre-resources/accessiblecaret-tilt-right@2.25x.png");
-  }
+div:-moz-native-anonymous.moz-accessiblecaret.hidden {
+  visibility: hidden;
 }
 
 %ifdef ANDROID
@@ -512,7 +516,7 @@ div:-moz-native-anonymous.moz-accessiblecaret > #image {
 }
 
 div:-moz-native-anonymous.moz-accessiblecaret.normal > #image {
-  background-image: url("chrome://geckoview/skin/images/accessiblecaret-normal-hdpi.png");
+  background-image: url("chrome://geckoview/skin/images/accessiblecaret-normal.svg");
 }
 
 div:-moz-native-anonymous.moz-accessiblecaret.left > :is(#text-overlay, #image) {
@@ -520,7 +524,7 @@ div:-moz-native-anonymous.moz-accessiblecaret.left > :is(#text-overlay, #image) 
 }
 
 div:-moz-native-anonymous.moz-accessiblecaret.left > #image {
-  background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-left-hdpi.png");
+  background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-left.svg");
 }
 
 div:-moz-native-anonymous.moz-accessiblecaret.right > :is(#text-overlay, #image) {
@@ -528,50 +532,9 @@ div:-moz-native-anonymous.moz-accessiblecaret.right > :is(#text-overlay, #image)
 }
 
 div:-moz-native-anonymous.moz-accessiblecaret.right > #image {
-  background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-right-hdpi.png");
+  background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-right.svg");
 }
 
-@media (min-resolution: 1.5dppx) {
-  div:-moz-native-anonymous.moz-accessiblecaret.normal > #image {
-    background-image: url("chrome://geckoview/skin/images/accessiblecaret-normal-hdpi.png");
-  }
-
-  div:-moz-native-anonymous.moz-accessiblecaret.left > #image {
-    background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-left-hdpi.png");
-  }
-
-  div:-moz-native-anonymous.moz-accessiblecaret.right > #image {
-    background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-right-hdpi.png");
-  }
-}
-
-@media (min-resolution: 2dppx) {
-  div:-moz-native-anonymous.moz-accessiblecaret.normal > #image {
-    background-image: url("chrome://geckoview/skin/images/accessiblecaret-normal-xhdpi.png");
-  }
-
-  div:-moz-native-anonymous.moz-accessiblecaret.left > #image {
-    background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-left-xhdpi.png");
-  }
-
-  div:-moz-native-anonymous.moz-accessiblecaret.right > #image {
-    background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-right-xhdpi.png");
-  }
-}
-
-@media (min-resolution: 2.25dppx) {
-  div:-moz-native-anonymous.moz-accessiblecaret.normal > #image {
-    background-image: url("chrome://geckoview/skin/images/accessiblecaret-normal-xxhdpi.png");
-  }
-
-  div:-moz-native-anonymous.moz-accessiblecaret.left > #image {
-    background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-left-xxhdpi.png");
-  }
-
-  div:-moz-native-anonymous.moz-accessiblecaret.right > #image {
-    background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-right-xxhdpi.png");
-  }
-}
 %endif
 
 /* Custom content container in the CanvasFrame, positioned on top of everything

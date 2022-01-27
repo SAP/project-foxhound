@@ -23,22 +23,29 @@ class UnscaledFontMac final : public UnscaledFont {
  public:
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(UnscaledFontMac, override)
   explicit UnscaledFontMac(CGFontRef aFont, bool aIsDataFont = false)
-      : mFont(aFont),
-        mIsDataFont(aIsDataFont),
-        mHasColorGlyphs(CheckForColorGlyphs()) {
+      : mFont(aFont), mIsDataFont(aIsDataFont) {
     CFRetain(mFont);
   }
-  UnscaledFontMac(CGFontRef aFont, bool aIsDataFont, bool aHasColorGlyphs)
-      : mFont(aFont),
-        mIsDataFont(aIsDataFont),
-        mHasColorGlyphs(aHasColorGlyphs) {
+  explicit UnscaledFontMac(CTFontDescriptorRef aFontDesc, CGFontRef aFont,
+                           bool aIsDataFont = false)
+      : mFontDesc(aFontDesc), mFont(aFont), mIsDataFont(aIsDataFont) {
+    CFRetain(mFontDesc);
     CFRetain(mFont);
   }
+
   virtual ~UnscaledFontMac() {
-    if (mAxesCache) {
-      CFRelease(mAxesCache);
+    if (mCTAxesCache) {
+      CFRelease(mCTAxesCache);
     }
-    CFRelease(mFont);
+    if (mCGAxesCache) {
+      CFRelease(mCGAxesCache);
+    }
+    if (mFontDesc) {
+      CFRelease(mFontDesc);
+    }
+    if (mFont) {
+      CFRelease(mFont);
+    }
   }
 
   FontType GetType() const override { return FontType::MAC; }
@@ -48,8 +55,6 @@ class UnscaledFontMac final : public UnscaledFont {
   bool GetFontFileData(FontFileDataOutput aDataCallback, void* aBaton) override;
 
   bool IsDataFont() const { return mIsDataFont; }
-
-  bool HasColorGlyphs() const { return mHasColorGlyphs; }
 
   already_AddRefed<ScaledFont> CreateScaledFont(
       Float aGlyphSize, const uint8_t* aInstanceData,
@@ -62,24 +67,25 @@ class UnscaledFontMac final : public UnscaledFont {
       const FontVariation* aVariations, uint32_t aNumVariations) override;
 
   static CGFontRef CreateCGFontWithVariations(CGFontRef aFont,
-                                              CFArrayRef& aAxesCache,
+                                              CFArrayRef& aCGAxesCache,
+                                              CFArrayRef& aCTAxesCache,
                                               uint32_t aVariationCount,
                                               const FontVariation* aVariations);
 
   bool GetFontDescriptor(FontDescriptorOutput aCb, void* aBaton) override;
 
-  CFArrayRef& AxesCache() { return mAxesCache; }
+  CFArrayRef& CGAxesCache() { return mCGAxesCache; }
+  CFArrayRef& CTAxesCache() { return mCTAxesCache; }
 
   static already_AddRefed<UnscaledFont> CreateFromFontDescriptor(
       const uint8_t* aData, uint32_t aDataLength, uint32_t aIndex);
 
  private:
-  bool CheckForColorGlyphs();
-
-  CGFontRef mFont;
-  CFArrayRef mAxesCache = nullptr;  // Cached array of variation axis details
+  CTFontDescriptorRef mFontDesc = nullptr;
+  CGFontRef mFont = nullptr;
+  CFArrayRef mCGAxesCache = nullptr;  // Cached arrays of variation axis details
+  CFArrayRef mCTAxesCache = nullptr;
   bool mIsDataFont;
-  bool mHasColorGlyphs;
 };
 
 }  // namespace gfx

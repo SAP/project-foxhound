@@ -16,9 +16,10 @@
 #include "Key.h"
 #include "ThreadLocal.h"
 
-namespace mozilla {
-namespace dom {
-namespace indexedDB {
+#include "mozilla/dom/Event.h"
+#include "nsReadableUtils.h"
+
+namespace mozilla::dom::indexedDB {
 
 namespace {
 static const char kQuote = '\"';
@@ -38,20 +39,15 @@ void LoggingHelper(bool aUseProfiler, const char* aFmt, va_list args) {
   static const mozilla::LogLevel logLevel = LogLevel::Warning;
 
   if (MOZ_LOG_TEST(logModule, logLevel) ||
-#ifdef MOZ_GECKO_PROFILER
-      (aUseProfiler && profiler_thread_is_being_profiled())
-#else
-      false
-#endif
-  ) {
+      (aUseProfiler && profiler_thread_is_being_profiled_for_markers())) {
     nsAutoCString message;
 
-    message.AppendPrintf(aFmt, args);
+    message.AppendVprintf(aFmt, args);
 
     MOZ_LOG(logModule, logLevel, ("%s", message.get()));
 
     if (aUseProfiler) {
-      PROFILER_ADD_MARKER(message.get(), DOM);
+      PROFILER_MARKER_UNTYPED(message, DOM);
     }
   }
 }
@@ -106,17 +102,12 @@ LoggingString::LoggingString(const IDBTransaction& aTransaction)
     : nsAutoCString(kOpenBracket) {
   constexpr auto kCommaSpace = ", "_ns;
 
-  const nsTArray<nsString>& stores = aTransaction.ObjectStoreNamesInternal();
-
-  for (uint32_t count = stores.Length(), index = 0; index < count; index++) {
-    Append(kQuote);
-    AppendUTF16toUTF8(stores[index], *this);
-    Append(kQuote);
-
-    if (index != count - 1) {
-      Append(kCommaSpace);
-    }
-  }
+  StringJoinAppend(*this, kCommaSpace, aTransaction.ObjectStoreNamesInternal(),
+                   [](nsACString& dest, const auto& store) {
+                     dest.Append(kQuote);
+                     AppendUTF16toUTF8(store, dest);
+                     dest.Append(kQuote);
+                   });
 
   Append(kCloseBracket);
   Append(kCommaSpace);
@@ -287,6 +278,4 @@ void LoggingHelper(const char* aDetailedFmt, const char* aConciseFmt, ...) {
   }
 }
 
-}  // namespace indexedDB
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::indexedDB

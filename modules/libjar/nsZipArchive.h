@@ -19,13 +19,11 @@
 #include "mozilla/ArenaAllocator.h"
 #include "mozilla/FileUtils.h"
 #include "mozilla/FileLocation.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/UniquePtr.h"
 
 class nsZipFind;
 struct PRFileDesc;
-#ifdef MOZ_JAR_BROTLI
-struct BrotliDecoderStateStruct;
-#endif
 
 /**
  * This file defines some of the basic structures used by libjar to
@@ -219,6 +217,8 @@ class nsZipArchive final {
   // variable avoids grabbing zipLog's lock when not necessary.
   bool mUseZipLog;
 
+  mozilla::Mutex mLock{"nsZipArchive"};
+
  private:
   //--- private methods ---
   nsZipItem* CreateZipItem();
@@ -298,9 +298,6 @@ class nsZipCursor final {
   uint8_t* mBuf;
   uint32_t mBufSize;
   z_stream mZs;
-#ifdef MOZ_JAR_BROTLI
-  BrotliDecoderStateStruct* mBrotliState;
-#endif
   uint32_t mCRC;
   bool mDoCRC;
 };

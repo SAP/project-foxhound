@@ -41,7 +41,7 @@ class CacheIndexIterator;
 const uint16_t kIndexTimeNotAvailable = 0xFFFFU;
 const uint16_t kIndexTimeOutOfBound = 0xFFFEU;
 
-typedef struct {
+using CacheIndexHeader = struct {
   // Version of the index. The index must be ignored and deleted when the file
   // on disk was written with a newer version.
   uint32_t mVersion;
@@ -58,22 +58,28 @@ typedef struct {
   // journal and start update process whenever this flag is set during index
   // parsing.
   uint32_t mIsDirty;
-} CacheIndexHeader;
+
+  // The amount of data written to the cache. When it reaches
+  // kTelemetryReportBytesLimit a telemetry report is sent and the counter is
+  // reset.
+  uint32_t mKBWritten;
+};
 
 static_assert(sizeof(CacheIndexHeader::mVersion) +
                       sizeof(CacheIndexHeader::mTimeStamp) +
-                      sizeof(CacheIndexHeader::mIsDirty) ==
+                      sizeof(CacheIndexHeader::mIsDirty) +
+                      sizeof(CacheIndexHeader::mKBWritten) ==
                   sizeof(CacheIndexHeader),
               "Unexpected sizeof(CacheIndexHeader)!");
 
 #pragma pack(push, 1)
 struct CacheIndexRecord {
-  SHA1Sum::Hash mHash;
-  uint32_t mFrecency;
-  OriginAttrsHash mOriginAttrsHash;
-  uint16_t mOnStartTime;
-  uint16_t mOnStopTime;
-  uint8_t mContentType;
+  SHA1Sum::Hash mHash{};
+  uint32_t mFrecency{0};
+  OriginAttrsHash mOriginAttrsHash{0};
+  uint16_t mOnStartTime{kIndexTimeNotAvailable};
+  uint16_t mOnStopTime{kIndexTimeNotAvailable};
+  uint8_t mContentType{nsICacheEntry::CONTENT_TYPE_UNKNOWN};
 
   /*
    *    1000 0000 0000 0000 0000 0000 0000 0000 : initialized
@@ -86,15 +92,9 @@ struct CacheIndexRecord {
    *    0000 0001 0000 0000 0000 0000 0000 0000 : reserved
    *    0000 0000 1111 1111 1111 1111 1111 1111 : file size (in kB)
    */
-  uint32_t mFlags;
+  uint32_t mFlags{0};
 
-  CacheIndexRecord()
-      : mFrecency(0),
-        mOriginAttrsHash(0),
-        mOnStartTime(kIndexTimeNotAvailable),
-        mOnStopTime(kIndexTimeNotAvailable),
-        mContentType(nsICacheEntry::CONTENT_TYPE_UNKNOWN),
-        mFlags(0) {}
+  CacheIndexRecord() = default;
 };
 #pragma pack(pop)
 
@@ -108,17 +108,29 @@ static_assert(sizeof(CacheIndexRecord::mHash) +
                   sizeof(CacheIndexRecord),
               "Unexpected sizeof(CacheIndexRecord)!");
 
+class CacheIndexRecordWrapper final {
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CacheIndexRecordWrapper)
+
+  CacheIndexRecordWrapper() : mRec(MakeUnique<CacheIndexRecord>()) {}
+  CacheIndexRecord* Get() { return mRec.get(); }
+
+ private:
+  ~CacheIndexRecordWrapper() = default;
+  UniquePtr<CacheIndexRecord> mRec;
+};
+
 class CacheIndexEntry : public PLDHashEntryHdr {
  public:
-  typedef const SHA1Sum::Hash& KeyType;
-  typedef const SHA1Sum::Hash* KeyTypePointer;
+  using KeyType = const SHA1Sum::Hash&;
+  using KeyTypePointer = const SHA1Sum::Hash*;
 
   explicit CacheIndexEntry(KeyTypePointer aKey) {
     MOZ_COUNT_CTOR(CacheIndexEntry);
-    mRec = MakeUnique<CacheIndexRecord>();
+    mRec = new CacheIndexRecordWrapper();
     LOG(("CacheIndexEntry::CacheIndexEntry() - Created record [rec=%p]",
-         mRec.get()));
-    memcpy(&mRec->mHash, aKey, sizeof(SHA1Sum::Hash));
+         mRec->Get()));
+    memcpy(&mRec->Get()->mHash, aKey, sizeof(SHA1Sum::Hash));
   }
   CacheIndexEntry(const CacheIndexEntry& aOther) {
     MOZ_ASSERT_UNREACHABLE("CacheIndexEntry copy constructor is forbidden!");
@@ -126,12 +138,12 @@ class CacheIndexEntry : public PLDHashEntryHdr {
   ~CacheIndexEntry() {
     MOZ_COUNT_DTOR(CacheIndexEntry);
     LOG(("CacheIndexEntry::~CacheIndexEntry() - Deleting record [rec=%p]",
-         mRec.get()));
+         mRec->Get()));
   }
 
   // KeyEquals(): does this entry match this key?
   bool KeyEquals(KeyTypePointer aKey) const {
-    return memcmp(&mRec->mHash, aKey, sizeof(SHA1Sum::Hash)) == 0;
+    return memcmp(&mRec->Get()->mHash, aKey, sizeof(SHA1Sum::Hash)) == 0;
   }
 
   // KeyToPointer(): Convert KeyType to KeyTypePointer
@@ -147,88 +159,93 @@ class CacheIndexEntry : public PLDHashEntryHdr {
   enum { ALLOW_MEMMOVE = true };
 
   bool operator==(const CacheIndexEntry& aOther) const {
-    return KeyEquals(&aOther.mRec->mHash);
+    return KeyEquals(&aOther.mRec->Get()->mHash);
   }
 
   CacheIndexEntry& operator=(const CacheIndexEntry& aOther) {
-    MOZ_ASSERT(
-        memcmp(&mRec->mHash, &aOther.mRec->mHash, sizeof(SHA1Sum::Hash)) == 0);
-    mRec->mFrecency = aOther.mRec->mFrecency;
-    mRec->mOriginAttrsHash = aOther.mRec->mOriginAttrsHash;
-    mRec->mOnStartTime = aOther.mRec->mOnStartTime;
-    mRec->mOnStopTime = aOther.mRec->mOnStopTime;
-    mRec->mContentType = aOther.mRec->mContentType;
-    mRec->mFlags = aOther.mRec->mFlags;
+    MOZ_ASSERT(memcmp(&mRec->Get()->mHash, &aOther.mRec->Get()->mHash,
+                      sizeof(SHA1Sum::Hash)) == 0);
+    mRec->Get()->mFrecency = aOther.mRec->Get()->mFrecency;
+    mRec->Get()->mOriginAttrsHash = aOther.mRec->Get()->mOriginAttrsHash;
+    mRec->Get()->mOnStartTime = aOther.mRec->Get()->mOnStartTime;
+    mRec->Get()->mOnStopTime = aOther.mRec->Get()->mOnStopTime;
+    mRec->Get()->mContentType = aOther.mRec->Get()->mContentType;
+    mRec->Get()->mFlags = aOther.mRec->Get()->mFlags;
     return *this;
   }
 
   void InitNew() {
-    mRec->mFrecency = 0;
-    mRec->mOriginAttrsHash = 0;
-    mRec->mOnStartTime = kIndexTimeNotAvailable;
-    mRec->mOnStopTime = kIndexTimeNotAvailable;
-    mRec->mContentType = nsICacheEntry::CONTENT_TYPE_UNKNOWN;
-    mRec->mFlags = 0;
+    mRec->Get()->mFrecency = 0;
+    mRec->Get()->mOriginAttrsHash = 0;
+    mRec->Get()->mOnStartTime = kIndexTimeNotAvailable;
+    mRec->Get()->mOnStopTime = kIndexTimeNotAvailable;
+    mRec->Get()->mContentType = nsICacheEntry::CONTENT_TYPE_UNKNOWN;
+    mRec->Get()->mFlags = 0;
   }
 
   void Init(OriginAttrsHash aOriginAttrsHash, bool aAnonymous, bool aPinned) {
-    MOZ_ASSERT(mRec->mFrecency == 0);
-    MOZ_ASSERT(mRec->mOriginAttrsHash == 0);
-    MOZ_ASSERT(mRec->mOnStartTime == kIndexTimeNotAvailable);
-    MOZ_ASSERT(mRec->mOnStopTime == kIndexTimeNotAvailable);
-    MOZ_ASSERT(mRec->mContentType == nsICacheEntry::CONTENT_TYPE_UNKNOWN);
+    MOZ_ASSERT(mRec->Get()->mFrecency == 0);
+    MOZ_ASSERT(mRec->Get()->mOriginAttrsHash == 0);
+    MOZ_ASSERT(mRec->Get()->mOnStartTime == kIndexTimeNotAvailable);
+    MOZ_ASSERT(mRec->Get()->mOnStopTime == kIndexTimeNotAvailable);
+    MOZ_ASSERT(mRec->Get()->mContentType ==
+               nsICacheEntry::CONTENT_TYPE_UNKNOWN);
     // When we init the entry it must be fresh and may be dirty
-    MOZ_ASSERT((mRec->mFlags & ~kDirtyMask) == kFreshMask);
+    MOZ_ASSERT((mRec->Get()->mFlags & ~kDirtyMask) == kFreshMask);
 
-    mRec->mOriginAttrsHash = aOriginAttrsHash;
-    mRec->mFlags |= kInitializedMask;
+    mRec->Get()->mOriginAttrsHash = aOriginAttrsHash;
+    mRec->Get()->mFlags |= kInitializedMask;
     if (aAnonymous) {
-      mRec->mFlags |= kAnonymousMask;
+      mRec->Get()->mFlags |= kAnonymousMask;
     }
     if (aPinned) {
-      mRec->mFlags |= kPinnedMask;
+      mRec->Get()->mFlags |= kPinnedMask;
     }
   }
 
-  const SHA1Sum::Hash* Hash() const { return &mRec->mHash; }
+  const SHA1Sum::Hash* Hash() const { return &mRec->Get()->mHash; }
 
-  bool IsInitialized() const { return !!(mRec->mFlags & kInitializedMask); }
+  bool IsInitialized() const {
+    return !!(mRec->Get()->mFlags & kInitializedMask);
+  }
 
   mozilla::net::OriginAttrsHash OriginAttrsHash() const {
-    return mRec->mOriginAttrsHash;
+    return mRec->Get()->mOriginAttrsHash;
   }
 
-  bool Anonymous() const { return !!(mRec->mFlags & kAnonymousMask); }
+  bool Anonymous() const { return !!(mRec->Get()->mFlags & kAnonymousMask); }
 
-  bool IsRemoved() const { return !!(mRec->mFlags & kRemovedMask); }
-  void MarkRemoved() { mRec->mFlags |= kRemovedMask; }
+  bool IsRemoved() const { return !!(mRec->Get()->mFlags & kRemovedMask); }
+  void MarkRemoved() { mRec->Get()->mFlags |= kRemovedMask; }
 
-  bool IsDirty() const { return !!(mRec->mFlags & kDirtyMask); }
-  void MarkDirty() { mRec->mFlags |= kDirtyMask; }
-  void ClearDirty() { mRec->mFlags &= ~kDirtyMask; }
+  bool IsDirty() const { return !!(mRec->Get()->mFlags & kDirtyMask); }
+  void MarkDirty() { mRec->Get()->mFlags |= kDirtyMask; }
+  void ClearDirty() { mRec->Get()->mFlags &= ~kDirtyMask; }
 
-  bool IsFresh() const { return !!(mRec->mFlags & kFreshMask); }
-  void MarkFresh() { mRec->mFlags |= kFreshMask; }
+  bool IsFresh() const { return !!(mRec->Get()->mFlags & kFreshMask); }
+  void MarkFresh() { mRec->Get()->mFlags |= kFreshMask; }
 
-  bool IsPinned() const { return !!(mRec->mFlags & kPinnedMask); }
+  bool IsPinned() const { return !!(mRec->Get()->mFlags & kPinnedMask); }
 
-  void SetFrecency(uint32_t aFrecency) { mRec->mFrecency = aFrecency; }
-  uint32_t GetFrecency() const { return mRec->mFrecency; }
+  void SetFrecency(uint32_t aFrecency) { mRec->Get()->mFrecency = aFrecency; }
+  uint32_t GetFrecency() const { return mRec->Get()->mFrecency; }
 
   void SetHasAltData(bool aHasAltData) {
-    aHasAltData ? mRec->mFlags |= kHasAltDataMask
-                : mRec->mFlags &= ~kHasAltDataMask;
+    aHasAltData ? mRec->Get()->mFlags |= kHasAltDataMask
+                : mRec->Get()->mFlags &= ~kHasAltDataMask;
   }
-  bool GetHasAltData() const { return !!(mRec->mFlags & kHasAltDataMask); }
+  bool GetHasAltData() const {
+    return !!(mRec->Get()->mFlags & kHasAltDataMask);
+  }
 
-  void SetOnStartTime(uint16_t aTime) { mRec->mOnStartTime = aTime; }
-  uint16_t GetOnStartTime() const { return mRec->mOnStartTime; }
+  void SetOnStartTime(uint16_t aTime) { mRec->Get()->mOnStartTime = aTime; }
+  uint16_t GetOnStartTime() const { return mRec->Get()->mOnStartTime; }
 
-  void SetOnStopTime(uint16_t aTime) { mRec->mOnStopTime = aTime; }
-  uint16_t GetOnStopTime() const { return mRec->mOnStopTime; }
+  void SetOnStopTime(uint16_t aTime) { mRec->Get()->mOnStopTime = aTime; }
+  uint16_t GetOnStopTime() const { return mRec->Get()->mOnStopTime; }
 
-  void SetContentType(uint8_t aType) { mRec->mContentType = aType; }
-  uint8_t GetContentType() const { return GetContentType(mRec.get()); }
+  void SetContentType(uint8_t aType) { mRec->Get()->mContentType = aType; }
+  uint8_t GetContentType() const { return GetContentType(mRec->Get()); }
   static uint8_t GetContentType(CacheIndexRecord* aRec) {
     if (aRec->mContentType >= nsICacheEntry::CONTENT_TYPE_LAST) {
       LOG(
@@ -249,11 +266,11 @@ class CacheIndexEntry : public PLDHashEntryHdr {
            kFileSizeMask));
       aFileSize = kFileSizeMask;
     }
-    mRec->mFlags &= ~kFileSizeMask;
-    mRec->mFlags |= aFileSize;
+    mRec->Get()->mFlags &= ~kFileSizeMask;
+    mRec->Get()->mFlags |= aFileSize;
   }
   // Returns filesize in kilobytes.
-  uint32_t GetFileSize() const { return GetFileSize(*mRec); }
+  uint32_t GetFileSize() const { return GetFileSize(*(mRec->Get())); }
   static uint32_t GetFileSize(const CacheIndexRecord& aRec) {
     return aRec.mFlags & kFileSizeMask;
   }
@@ -264,38 +281,39 @@ class CacheIndexEntry : public PLDHashEntryHdr {
 
   void WriteToBuf(void* aBuf) {
     uint8_t* ptr = static_cast<uint8_t*>(aBuf);
-    memcpy(ptr, mRec->mHash, sizeof(SHA1Sum::Hash));
+    memcpy(ptr, mRec->Get()->mHash, sizeof(SHA1Sum::Hash));
     ptr += sizeof(SHA1Sum::Hash);
-    NetworkEndian::writeUint32(ptr, mRec->mFrecency);
+    NetworkEndian::writeUint32(ptr, mRec->Get()->mFrecency);
     ptr += sizeof(uint32_t);
-    NetworkEndian::writeUint64(ptr, mRec->mOriginAttrsHash);
+    NetworkEndian::writeUint64(ptr, mRec->Get()->mOriginAttrsHash);
     ptr += sizeof(uint64_t);
-    NetworkEndian::writeUint16(ptr, mRec->mOnStartTime);
+    NetworkEndian::writeUint16(ptr, mRec->Get()->mOnStartTime);
     ptr += sizeof(uint16_t);
-    NetworkEndian::writeUint16(ptr, mRec->mOnStopTime);
+    NetworkEndian::writeUint16(ptr, mRec->Get()->mOnStopTime);
     ptr += sizeof(uint16_t);
-    *ptr = mRec->mContentType;
+    *ptr = mRec->Get()->mContentType;
     ptr += sizeof(uint8_t);
     // Dirty and fresh flags should never go to disk, since they make sense only
     // during current session.
-    NetworkEndian::writeUint32(ptr, mRec->mFlags & ~(kDirtyMask | kFreshMask));
+    NetworkEndian::writeUint32(
+        ptr, mRec->Get()->mFlags & ~(kDirtyMask | kFreshMask));
   }
 
   void ReadFromBuf(void* aBuf) {
     const uint8_t* ptr = static_cast<const uint8_t*>(aBuf);
-    MOZ_ASSERT(memcmp(&mRec->mHash, ptr, sizeof(SHA1Sum::Hash)) == 0);
+    MOZ_ASSERT(memcmp(&mRec->Get()->mHash, ptr, sizeof(SHA1Sum::Hash)) == 0);
     ptr += sizeof(SHA1Sum::Hash);
-    mRec->mFrecency = NetworkEndian::readUint32(ptr);
+    mRec->Get()->mFrecency = NetworkEndian::readUint32(ptr);
     ptr += sizeof(uint32_t);
-    mRec->mOriginAttrsHash = NetworkEndian::readUint64(ptr);
+    mRec->Get()->mOriginAttrsHash = NetworkEndian::readUint64(ptr);
     ptr += sizeof(uint64_t);
-    mRec->mOnStartTime = NetworkEndian::readUint16(ptr);
+    mRec->Get()->mOnStartTime = NetworkEndian::readUint16(ptr);
     ptr += sizeof(uint16_t);
-    mRec->mOnStopTime = NetworkEndian::readUint16(ptr);
+    mRec->Get()->mOnStopTime = NetworkEndian::readUint16(ptr);
     ptr += sizeof(uint16_t);
-    mRec->mContentType = *ptr;
+    mRec->Get()->mContentType = *ptr;
     ptr += sizeof(uint8_t);
-    mRec->mFlags = NetworkEndian::readUint32(ptr);
+    mRec->Get()->mFlags = NetworkEndian::readUint32(ptr);
   }
 
   void Log() const {
@@ -304,29 +322,25 @@ class CacheIndexEntry : public PLDHashEntryHdr {
          " initialized=%u, removed=%u, dirty=%u, anonymous=%u, "
          "originAttrsHash=%" PRIx64 ", frecency=%u, hasAltData=%u, "
          "onStartTime=%u, onStopTime=%u, contentType=%u, size=%u]",
-         this, LOGSHA1(mRec->mHash), IsFresh(), IsInitialized(), IsRemoved(),
-         IsDirty(), Anonymous(), OriginAttrsHash(), GetFrecency(),
+         this, LOGSHA1(mRec->Get()->mHash), IsFresh(), IsInitialized(),
+         IsRemoved(), IsDirty(), Anonymous(), OriginAttrsHash(), GetFrecency(),
          GetHasAltData(), GetOnStartTime(), GetOnStopTime(), GetContentType(),
          GetFileSize()));
   }
 
-  static bool RecordMatchesLoadContextInfo(CacheIndexRecord* aRec,
+  static bool RecordMatchesLoadContextInfo(CacheIndexRecordWrapper* aRec,
                                            nsILoadContextInfo* aInfo) {
     MOZ_ASSERT(aInfo);
 
-    if (!aInfo->IsPrivate() &&
-        GetOriginAttrsHash(*aInfo->OriginAttributesPtr()) ==
-            aRec->mOriginAttrsHash &&
-        aInfo->IsAnonymous() == !!(aRec->mFlags & kAnonymousMask)) {
-      return true;
-    }
-
-    return false;
+    return !aInfo->IsPrivate() &&
+           GetOriginAttrsHash(*aInfo->OriginAttributesPtr()) ==
+               aRec->Get()->mOriginAttrsHash &&
+           aInfo->IsAnonymous() == !!(aRec->Get()->mFlags & kAnonymousMask);
   }
 
   // Memory reporting
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
-    return mallocSizeOf(mRec.get());
+    return mallocSizeOf(mRec->Get());
   }
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
@@ -337,6 +351,7 @@ class CacheIndexEntry : public PLDHashEntryHdr {
   friend class CacheIndexEntryUpdate;
   friend class CacheIndex;
   friend class CacheIndexEntryAutoManage;
+  friend struct CacheIndexRecord;
 
   static const uint32_t kInitializedMask = 0x80000000;
   static const uint32_t kAnonymousMask = 0x40000000;
@@ -364,7 +379,7 @@ class CacheIndexEntry : public PLDHashEntryHdr {
   // FileSize in kilobytes
   static const uint32_t kFileSizeMask = 0x00FFFFFF;
 
-  UniquePtr<CacheIndexRecord> mRec;
+  RefPtr<CacheIndexRecordWrapper> mRec;
 };
 
 class CacheIndexEntryUpdate : public CacheIndexEntry {
@@ -380,8 +395,8 @@ class CacheIndexEntryUpdate : public CacheIndexEntry {
   }
 
   CacheIndexEntryUpdate& operator=(const CacheIndexEntry& aOther) {
-    MOZ_ASSERT(
-        memcmp(&mRec->mHash, &aOther.mRec->mHash, sizeof(SHA1Sum::Hash)) == 0);
+    MOZ_ASSERT(memcmp(&mRec->Get()->mHash, &aOther.mRec->Get()->mHash,
+                      sizeof(SHA1Sum::Hash)) == 0);
     mUpdateFlags = 0;
     *(static_cast<CacheIndexEntry*>(this)) = aOther;
     return *this;
@@ -425,34 +440,35 @@ class CacheIndexEntryUpdate : public CacheIndexEntry {
   }
 
   void ApplyUpdate(CacheIndexEntry* aDst) {
-    MOZ_ASSERT(
-        memcmp(&mRec->mHash, &aDst->mRec->mHash, sizeof(SHA1Sum::Hash)) == 0);
+    MOZ_ASSERT(memcmp(&mRec->Get()->mHash, &aDst->mRec->Get()->mHash,
+                      sizeof(SHA1Sum::Hash)) == 0);
     if (mUpdateFlags & kFrecencyUpdatedMask) {
-      aDst->mRec->mFrecency = mRec->mFrecency;
+      aDst->mRec->Get()->mFrecency = mRec->Get()->mFrecency;
     }
-    aDst->mRec->mOriginAttrsHash = mRec->mOriginAttrsHash;
+    aDst->mRec->Get()->mOriginAttrsHash = mRec->Get()->mOriginAttrsHash;
     if (mUpdateFlags & kOnStartTimeUpdatedMask) {
-      aDst->mRec->mOnStartTime = mRec->mOnStartTime;
+      aDst->mRec->Get()->mOnStartTime = mRec->Get()->mOnStartTime;
     }
     if (mUpdateFlags & kOnStopTimeUpdatedMask) {
-      aDst->mRec->mOnStopTime = mRec->mOnStopTime;
+      aDst->mRec->Get()->mOnStopTime = mRec->Get()->mOnStopTime;
     }
     if (mUpdateFlags & kContentTypeUpdatedMask) {
-      aDst->mRec->mContentType = mRec->mContentType;
+      aDst->mRec->Get()->mContentType = mRec->Get()->mContentType;
     }
     if (mUpdateFlags & kHasAltDataUpdatedMask &&
-        ((aDst->mRec->mFlags ^ mRec->mFlags) & kHasAltDataMask)) {
+        ((aDst->mRec->Get()->mFlags ^ mRec->Get()->mFlags) & kHasAltDataMask)) {
       // Toggle the bit if we need to.
-      aDst->mRec->mFlags ^= kHasAltDataMask;
+      aDst->mRec->Get()->mFlags ^= kHasAltDataMask;
     }
 
     if (mUpdateFlags & kFileSizeUpdatedMask) {
       // Copy all flags except |HasAltData|.
-      aDst->mRec->mFlags |= (mRec->mFlags & ~kHasAltDataMask);
+      aDst->mRec->Get()->mFlags |= (mRec->Get()->mFlags & ~kHasAltDataMask);
     } else {
       // Copy all flags except |HasAltData| and file size.
-      aDst->mRec->mFlags &= kFileSizeMask;
-      aDst->mRec->mFlags |= (mRec->mFlags & ~kHasAltDataMask & ~kFileSizeMask);
+      aDst->mRec->Get()->mFlags &= kFileSizeMask;
+      aDst->mRec->Get()->mFlags |=
+          (mRec->Get()->mFlags & ~kHasAltDataMask & ~kFileSizeMask);
     }
   }
 
@@ -469,20 +485,7 @@ class CacheIndexEntryUpdate : public CacheIndexEntry {
 
 class CacheIndexStats {
  public:
-  CacheIndexStats()
-      : mCount(0),
-        mNotInitialized(0),
-        mRemoved(0),
-        mDirty(0),
-        mFresh(0),
-        mEmpty(0),
-        mSize(0)
-#ifdef DEBUG
-        ,
-        mStateLogged(false),
-        mDisableLogging(false)
-#endif
-  {
+  CacheIndexStats() {
     for (uint32_t i = 0; i < nsICacheEntry::CONTENT_TYPE_LAST; ++i) {
       mCountByType[i] = 0;
       mSizeByType[i] = 0;
@@ -667,25 +670,25 @@ class CacheIndexStats {
   }
 
  private:
-  uint32_t mCount;
-  uint32_t mCountByType[nsICacheEntry::CONTENT_TYPE_LAST];
-  uint32_t mNotInitialized;
-  uint32_t mRemoved;
-  uint32_t mDirty;
-  uint32_t mFresh;
-  uint32_t mEmpty;
-  uint32_t mSize;
-  uint32_t mSizeByType[nsICacheEntry::CONTENT_TYPE_LAST];
+  uint32_t mCount{0};
+  uint32_t mCountByType[nsICacheEntry::CONTENT_TYPE_LAST]{0};
+  uint32_t mNotInitialized{0};
+  uint32_t mRemoved{0};
+  uint32_t mDirty{0};
+  uint32_t mFresh{0};
+  uint32_t mEmpty{0};
+  uint32_t mSize{0};
+  uint32_t mSizeByType[nsICacheEntry::CONTENT_TYPE_LAST]{0};
 #ifdef DEBUG
   // We completely remove the data about an entry from the stats in
   // BeforeChange() and set this flag to true. The entry is then modified,
   // deleted or created and the data is again put into the stats and this flag
   // set to false. Statistics must not be read during this time since the
   // information is not correct.
-  bool mStateLogged;
+  bool mStateLogged{false};
 
   // Disables logging in this instance of CacheIndexStats
-  bool mDisableLogging;
+  bool mDisableLogging{false};
 #endif
 };
 
@@ -809,12 +812,14 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
   friend class CacheIndexEntryAutoManage;
   friend class FileOpenHelper;
   friend class CacheIndexIterator;
+  friend struct CacheIndexRecord;
 
   virtual ~CacheIndex();
 
   NS_IMETHOD OnFileOpened(CacheFileHandle* aHandle, nsresult aResult) override;
   void OnFileOpenedInternal(FileOpenHelper* aOpener, CacheFileHandle* aHandle,
-                            nsresult aResult);
+                            nsresult aResult,
+                            const StaticMutexAutoLock& aProofOfLock);
   NS_IMETHOD OnDataWritten(CacheFileHandle* aHandle, const char* aBuf,
                            nsresult aResult) override;
   NS_IMETHOD OnDataRead(CacheFileHandle* aHandle, char* aBuf,
@@ -823,7 +828,8 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
   NS_IMETHOD OnEOFSet(CacheFileHandle* aHandle, nsresult aResult) override;
   NS_IMETHOD OnFileRenamed(CacheFileHandle* aHandle, nsresult aResult) override;
 
-  nsresult InitInternal(nsIFile* aCacheDirectory);
+  nsresult InitInternal(nsIFile* aCacheDirectory,
+                        const StaticMutexAutoLock& aProofOfLock);
   void PreShutdownInternal();
 
   // This method returns false when index is not initialized or is shut down.
@@ -846,7 +852,7 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
                               const uint32_t* aSize);
 
   // Merge all pending operations from mPendingUpdates into mIndex.
-  void ProcessPendingOperations();
+  void ProcessPendingOperations(const StaticMutexAutoLock& aProofOfLock);
 
   // Following methods perform writing of the index file.
   //
@@ -858,14 +864,14 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
   //
   // Starts writing of index when both limits (minimal delay between writes and
   // minimum number of changes in index) were exceeded.
-  bool WriteIndexToDiskIfNeeded();
+  bool WriteIndexToDiskIfNeeded(const StaticMutexAutoLock& aProofOfLock);
   // Starts writing of index file.
-  void WriteIndexToDisk();
+  void WriteIndexToDisk(const StaticMutexAutoLock& aProofOfLock);
   // Serializes part of mIndex hashtable to the write buffer a writes the buffer
   // to the file.
-  void WriteRecords();
+  void WriteRecords(const StaticMutexAutoLock& aProofOfLock);
   // Finalizes writing process.
-  void FinishWrite(bool aSucceeded);
+  void FinishWrite(bool aSucceeded, const StaticMutexAutoLock& aProofOfLock);
 
   // Following methods perform writing of the journal during shutdown. All these
   // methods must be called only during shutdown since they write/delete files
@@ -918,17 +924,17 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
   // FF crashes during parsing of the index.
   //
   // Initiates reading index from disk.
-  void ReadIndexFromDisk();
+  void ReadIndexFromDisk(const StaticMutexAutoLock& aProofOfLock);
   // Starts reading data from index file.
-  void StartReadingIndex();
+  void StartReadingIndex(const StaticMutexAutoLock& aProofOfLock);
   // Parses data read from index file.
-  void ParseRecords();
+  void ParseRecords(const StaticMutexAutoLock& aProofOfLock);
   // Starts reading data from journal file.
-  void StartReadingJournal();
+  void StartReadingJournal(const StaticMutexAutoLock& aProofOfLock);
   // Parses data read from journal file.
-  void ParseJournal();
+  void ParseJournal(const StaticMutexAutoLock& aProofOfLock);
   // Merges entries from journal into mIndex.
-  void MergeJournal();
+  void MergeJournal(const StaticMutexAutoLock& aProofOfLock);
   // In debug build this method checks that we have no fresh entry in mIndex
   // after we finish reading index and before we process pending operations.
   void EnsureNoFreshEntry();
@@ -936,12 +942,12 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
   // to make sure mIndexStats contains correct information.
   void EnsureCorrectStats();
   // Finalizes reading process.
-  void FinishRead(bool aSucceeded);
+  void FinishRead(bool aSucceeded, const StaticMutexAutoLock& aProofOfLock);
 
   // Following methods perform updating and building of the index.
   // Timer callback that starts update or build process.
   static void DelayedUpdate(nsITimer* aTimer, void* aClosure);
-  void DelayedUpdateLocked();
+  void DelayedUpdateLocked(const StaticMutexAutoLock& aProofOfLock);
   // Posts timer event that start update or build process.
   nsresult ScheduleUpdateTimer(uint32_t aDelay);
   nsresult SetupDirectoryEnumerator();
@@ -952,20 +958,22 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
   bool IsUpdatePending();
   // Iterates through all files in entries directory that we didn't create/open
   // during this session, parses them and adds the entries to the index.
-  void BuildIndex();
+  void BuildIndex(const StaticMutexAutoLock& aProofOfLock);
 
-  bool StartUpdatingIndexIfNeeded(bool aSwitchingToReadyState = false);
+  bool StartUpdatingIndexIfNeeded(const StaticMutexAutoLock& aProofOfLock,
+                                  bool aSwitchingToReadyState = false);
   // Starts update or build process or fires a timer when it is too early after
   // startup.
-  void StartUpdatingIndex(bool aRebuild);
+  void StartUpdatingIndex(bool aRebuild,
+                          const StaticMutexAutoLock& aProofOfLock);
   // Iterates through all files in entries directory that we didn't create/open
   // during this session and theirs last modified time is newer than timestamp
   // in the index header. Parses the files and adds the entries to the index.
-  void UpdateIndex();
+  void UpdateIndex(const StaticMutexAutoLock& aProofOfLock);
   // Finalizes update or build process.
-  void FinishUpdate(bool aSucceeded);
+  void FinishUpdate(bool aSucceeded, const StaticMutexAutoLock& aProofOfLock);
 
-  void RemoveNonFreshEntries();
+  void RemoveNonFreshEntries(const StaticMutexAutoLock& aProofOfLock);
 
   enum EState {
     // Initial state in which the index is not usable
@@ -1018,7 +1026,7 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
   };
 
   static char const* StateString(EState aState);
-  void ChangeState(EState aNewState);
+  void ChangeState(EState aNewState, const StaticMutexAutoLock& aProofOfLock);
   void NotifyAsyncGetDiskConsumptionCallbacks();
 
   // Allocates and releases buffer used for reading and writing index.
@@ -1026,15 +1034,16 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
   void ReleaseBuffer();
 
   // Methods used by CacheIndexEntryAutoManage to keep the iterators up to date.
-  void AddRecordToIterators(CacheIndexRecord* aRecord);
-  void RemoveRecordFromIterators(CacheIndexRecord* aRecord);
-  void ReplaceRecordInIterators(CacheIndexRecord* aOldRecord,
-                                CacheIndexRecord* aNewRecord);
+  void AddRecordToIterators(CacheIndexRecordWrapper* aRecord,
+                            const StaticMutexAutoLock& aProofOfLock);
+  void RemoveRecordFromIterators(CacheIndexRecordWrapper* aRecord,
+                                 const StaticMutexAutoLock& aProofOfLock);
+  void ReplaceRecordInIterators(CacheIndexRecordWrapper* aOldRecord,
+                                CacheIndexRecordWrapper* aNewRecord,
+                                const StaticMutexAutoLock& aProofOfLock);
 
   // Memory reporting (private part)
   size_t SizeOfExcludingThisInternal(mozilla::MallocSizeOf mallocSizeOf) const;
-
-  void ReportHashStats();
 
   // Reports telemetry about cache, i.e. size, entry count and content type
   // stats.
@@ -1045,35 +1054,35 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
 
   nsCOMPtr<nsIFile> mCacheDirectory;
 
-  EState mState;
+  EState mState{INITIAL};
   // Timestamp of time when the index was initialized. We use it to delay
   // initial update or build of index.
   TimeStamp mStartTime;
   // Set to true in PreShutdown(), it is checked on variaous places to prevent
   // starting any process (write, update, etc.) during shutdown.
-  bool mShuttingDown;
+  bool mShuttingDown{false};
   // When set to true, update process should start as soon as possible. This
   // flag is set whenever we find some inconsistency which would be fixed by
   // update process. The flag is checked always when switching to READY state.
   // To make sure we start the update process as soon as possible, methods that
   // set this flag should also call StartUpdatingIndexIfNeeded() to cover the
   // case when we are currently in READY state.
-  bool mIndexNeedsUpdate;
+  bool mIndexNeedsUpdate{false};
   // Set at the beginning of RemoveAll() which clears the whole index. When
   // removing all entries we must stop any pending reading, writing, updating or
   // building operation. This flag is checked at various places and it prevents
   // we won't start another operation (e.g. canceling reading of the index would
   // normally start update or build process)
-  bool mRemovingAll;
+  bool mRemovingAll{false};
   // Whether the index file on disk exists and is valid.
-  bool mIndexOnDiskIsValid;
+  bool mIndexOnDiskIsValid{false};
   // When something goes wrong during updating or building process, we don't
   // mark index clean (and also don't write journal) to ensure that update or
   // build will be initiated on the next start.
-  bool mDontMarkIndexClean;
+  bool mDontMarkIndexClean{false};
   // Timestamp value from index file. It is used during update process to skip
   // entries that were last modified before this timestamp.
-  uint32_t mIndexTimeStamp;
+  uint32_t mIndexTimeStamp{0};
   // Timestamp of last time the index was dumped to disk.
   // NOTE: The index might not be necessarily dumped at this time. The value
   // is used to schedule next dump of the index.
@@ -1082,28 +1091,28 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
   // Timer of delayed update/build.
   nsCOMPtr<nsITimer> mUpdateTimer;
   // True when build or update event is posted
-  bool mUpdateEventPending;
+  bool mUpdateEventPending{false};
 
   // Helper members used when reading/writing index from/to disk.
   // Contains number of entries that should be skipped:
   //  - in hashtable when writing index because they were already written
   //  - in index file when reading index because they were already read
-  uint32_t mSkipEntries;
+  uint32_t mSkipEntries{0};
   // Number of entries that should be written to disk. This is number of entries
   // in hashtable that are initialized and are not marked as removed when
   // writing begins.
-  uint32_t mProcessEntries;
-  char* mRWBuf;
-  uint32_t mRWBufSize;
-  uint32_t mRWBufPos;
+  uint32_t mProcessEntries{0};
+  char* mRWBuf{nullptr};
+  uint32_t mRWBufSize{0};
+  uint32_t mRWBufPos{0};
   RefPtr<CacheHash> mRWHash;
 
   // True if read or write operation is pending. It is used to ensure that
   // mRWBuf is not freed until OnDataRead or OnDataWritten is called.
-  bool mRWPending;
+  bool mRWPending{false};
 
   // Reading of journal succeeded if true.
-  bool mJournalReadSuccessfully;
+  bool mJournalReadSuccessfully{false};
 
   // Handle used for writing and reading index file.
   RefPtr<CacheFileHandle> mIndexHandle;
@@ -1146,7 +1155,7 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
   class FrecencyArray {
     class Iterator {
      public:
-      explicit Iterator(nsTArray<CacheIndexRecord*>* aRecs)
+      explicit Iterator(nsTArray<RefPtr<CacheIndexRecordWrapper>>* aRecs)
           : mRecs(aRecs), mIdx(0) {
         while (!Done() && !(*mRecs)[mIdx]) {
           mIdx++;
@@ -1155,7 +1164,7 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
 
       bool Done() const { return mIdx == mRecs->Length(); }
 
-      CacheIndexRecord* Get() const {
+      CacheIndexRecordWrapper* Get() const {
         MOZ_ASSERT(!Done());
         return (*mRecs)[mIdx];
       }
@@ -1169,35 +1178,38 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
       }
 
      private:
-      nsTArray<CacheIndexRecord*>* mRecs;
+      nsTArray<RefPtr<CacheIndexRecordWrapper>>* mRecs;
       uint32_t mIdx;
     };
 
    public:
     Iterator Iter() { return Iterator(&mRecs); }
 
-    FrecencyArray() : mUnsortedElements(0), mRemovedElements(0) {}
+    FrecencyArray() = default;
 
     // Methods used by CacheIndexEntryAutoManage to keep the array up to date.
-    void AppendRecord(CacheIndexRecord* aRecord);
-    void RemoveRecord(CacheIndexRecord* aRecord);
-    void ReplaceRecord(CacheIndexRecord* aOldRecord,
-                       CacheIndexRecord* aNewRecord);
-    void SortIfNeeded();
+    void AppendRecord(CacheIndexRecordWrapper* aRecord,
+                      const StaticMutexAutoLock& aProofOfLock);
+    void RemoveRecord(CacheIndexRecordWrapper* aRecord,
+                      const StaticMutexAutoLock& aProofOfLock);
+    void ReplaceRecord(CacheIndexRecordWrapper* aOldRecord,
+                       CacheIndexRecordWrapper* aNewRecord,
+                       const StaticMutexAutoLock& aProofOfLock);
+    void SortIfNeeded(const StaticMutexAutoLock& aProofOfLock);
 
     size_t Length() const { return mRecs.Length() - mRemovedElements; }
-    void Clear() { mRecs.Clear(); }
+    void Clear(const StaticMutexAutoLock& aProofOfLock) { mRecs.Clear(); }
 
    private:
     friend class CacheIndex;
 
-    nsTArray<CacheIndexRecord*> mRecs;
-    uint32_t mUnsortedElements;
+    nsTArray<RefPtr<CacheIndexRecordWrapper>> mRecs;
+    uint32_t mUnsortedElements{0};
     // Instead of removing elements from the array immediately, we null them out
     // and the iterator skips them when accessing the array. The null pointers
     // are placed at the end during sorting and we strip them out all at once.
     // This saves moving a lot of memory in nsTArray::RemoveElementsAt.
-    uint32_t mRemovedElements;
+    uint32_t mRemovedElements{0};
   };
 
   FrecencyArray mFrecencyArray;
@@ -1207,7 +1219,7 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
   // This flag is true iff we are between CacheStorageService:Clear() and
   // processing all contexts to be evicted.  It will make UI to show
   // "calculating" instead of any intermediate cache size.
-  bool mAsyncGetDiskConsumptionBlocked;
+  bool mAsyncGetDiskConsumptionBlocked{false};
 
   class DiskConsumptionObserver : public Runnable {
    public:
@@ -1256,10 +1268,10 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
   };
 
   // List of async observers that want to get disk consumption information
-  nsTArray<RefPtr<DiskConsumptionObserver> > mDiskConsumptionObservers;
+  nsTArray<RefPtr<DiskConsumptionObserver>> mDiskConsumptionObservers;
 
   // Number of bytes written to the cache since the last telemetry report
-  uint64_t mTotalBytesWritten;
+  uint64_t mTotalBytesWritten{0};
 };
 
 }  // namespace net

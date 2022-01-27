@@ -29,12 +29,12 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
 
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "updateManager",
-  "@mozilla.org/updates/update-manager;1",
-  "nsIUpdateManager"
-);
+XPCOMUtils.defineLazyGetter(this, "updateManager", () => {
+  return (
+    Cc["@mozilla.org/updates/update-manager;1"] &&
+    Cc["@mozilla.org/updates/update-manager;1"].getService(Ci.nsIUpdateManager)
+  );
+});
 
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
@@ -118,8 +118,7 @@ class ProviderSearchTips extends UrlbarProvider {
   }
 
   get PRIORITY() {
-    // Search tips are prioritized over the UnifiedComplete and top sites
-    // providers.
+    // Search tips are prioritized over the Places and top sites providers.
     return UrlbarProviderTopSites.PRIORITY + 1;
   }
 
@@ -181,7 +180,7 @@ class ProviderSearchTips extends UrlbarProvider {
       {
         type: tip,
         buttonTextData: { id: "urlbar-search-tips-confirm" },
-        icon: defaultEngine.iconURI.spec,
+        icon: defaultEngine.iconURI?.spec,
       }
     );
 
@@ -224,17 +223,28 @@ class ProviderSearchTips extends UrlbarProvider {
     let window = BrowserWindowTracker.getTopWindow();
     window.gURLBar.value = "";
     window.gURLBar.setPageProxyState("invalid");
+    window.gURLBar.removeAttribute("suppress-focus-border");
     window.gURLBar.focus();
   }
 
   /**
-   * Called when the user starts and ends an engagement with the urlbar.
+   * Called when the user starts and ends an engagement with the urlbar.  For
+   * details on parameters, see UrlbarProvider.onEngagement().
    *
-   * @param {boolean} isPrivate True if the engagement is in a private context.
-   * @param {string} state The state of the engagement, one of: start,
-   *        engagement, abandonment, discard.
+   * @param {boolean} isPrivate
+   *   True if the engagement is in a private context.
+   * @param {string} state
+   *   The state of the engagement, one of: start, engagement, abandonment,
+   *   discard
+   * @param {UrlbarQueryContext} queryContext
+   *   The engagement's query context.  This is *not* guaranteed to be defined
+   *   when `state` is "start".  It will always be defined for "engagement" and
+   *   "abandonment".
+   * @param {object} details
+   *   This is defined only when `state` is "engagement" or "abandonment", and
+   *   it describes the search string and picked result.
    */
-  onEngagement(isPrivate, state) {
+  onEngagement(isPrivate, state, queryContext, details) {
     if (
       this.showedTipTypeInCurrentEngagement != TIPS.NONE &&
       state == "engagement"
@@ -313,7 +323,7 @@ class ProviderSearchTips extends UrlbarProvider {
       return;
     }
 
-    this._maybeShowTipForUrl(uri.spec).catch(Cu.reportError);
+    this._maybeShowTipForUrl(uri.spec).catch(ex => this.logger.error(ex));
   }
 
   /**
@@ -351,26 +361,14 @@ class ProviderSearchTips extends UrlbarProvider {
       return;
     }
 
-    // Don't show a tip if the browser is already showing some other
-    // notification.
-    if ((await isBrowserShowingNotification()) && !ignoreShowLimits) {
-      return;
-    }
-
     // Don't show a tip if the browser has been updated recently.
     let date = await lastBrowserUpdateDate();
     if (Date.now() - date <= LAST_UPDATE_THRESHOLD_MS && !ignoreShowLimits) {
       return;
     }
 
-    // At this point, we're showing a tip.
-    this.disableTipsForCurrentSession = true;
-
-    // Store the new shown count.
-    UrlbarPrefs.set(`tipShownCount.${tip}`, shownCount + 1);
-
     // Start a search.
-    setTimeout(() => {
+    setTimeout(async () => {
       if (this._maybeShowTipForUrlInstance != instance) {
         return;
       }
@@ -385,6 +383,21 @@ class ProviderSearchTips extends UrlbarProvider {
         return;
       }
 
+      // Don't show a tip if the browser is already showing some other
+      // notification.
+      if (
+        (!ignoreShowLimits && (await isBrowserShowingNotification())) ||
+        this._maybeShowTipForUrlInstance != instance
+      ) {
+        return;
+      }
+
+      // At this point, we're showing a tip.
+      this.disableTipsForCurrentSession = true;
+
+      // Store the new shown count.
+      UrlbarPrefs.set(`tipShownCount.${tip}`, shownCount + 1);
+
       this.currentTip = tip;
       window.gURLBar.search("", { focus: tip == TIPS.ONBOARD });
     }, SHOW_TIP_DELAY_MS);
@@ -397,7 +410,7 @@ async function isBrowserShowingNotification() {
   // urlbar view and notification box (info bar)
   if (
     window.gURLBar.view.isOpen ||
-    window.gHighPriorityNotificationBox.currentNotification ||
+    window.gNotificationBox.currentNotification ||
     window.gBrowser.getNotificationBox().currentNotification
   ) {
     return true;
@@ -414,7 +427,11 @@ async function isBrowserShowingNotification() {
 
   // tracking protection and identity box doorhangers
   if (
-    ["tracking-protection-icon-container", "identity-box"].some(
+    [
+      "tracking-protection-icon-container",
+      "identity-icon-box",
+      "identity-permission-box",
+    ].some(
       id => window.document.getElementById(id).getAttribute("open") == "true"
     )
   ) {
@@ -437,6 +454,12 @@ async function isBrowserShowingNotification() {
     if (node.getAttribute("open") == "true") {
       return true;
     }
+  }
+
+  // Other modals like spotlight messages or default browser prompt
+  // can be shown at startup
+  if (window.gDialogBox.isOpen) {
+    return true;
   }
 
   // On startup, the default browser check normally opens after the Search Tip.

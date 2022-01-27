@@ -8,8 +8,16 @@
 #define mozilla_net_CookieJarSettings_h
 
 #include "nsICookieJarSettings.h"
-#include "nsDataHashtable.h"
 #include "nsTArray.h"
+
+#define COOKIEJARSETTINGS_CONTRACTID "@mozilla.org/cookieJarSettings;1"
+// 4ce234f1-52e8-47a9-8c8d-b02f815733c7
+#define COOKIEJARSETTINGS_CID                        \
+  {                                                  \
+    0x4ce234f1, 0x52e8, 0x47a9, {                    \
+      0x8c, 0x8d, 0xb0, 0x2f, 0x81, 0x57, 0x33, 0xc7 \
+    }                                                \
+  }
 
 class nsIPermission;
 
@@ -111,10 +119,20 @@ class CookieJarSettings final : public nsICookieJarSettings {
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSICOOKIEJARSETTINGS
+  NS_DECL_NSISERIALIZABLE
 
   static already_AddRefed<nsICookieJarSettings> GetBlockingAll();
 
-  static already_AddRefed<nsICookieJarSettings> Create();
+  enum CreateMode { eRegular, ePrivate };
+
+  static already_AddRefed<nsICookieJarSettings> Create(CreateMode aMode);
+
+  static already_AddRefed<nsICookieJarSettings> Create(
+      nsIPrincipal* aPrincipal);
+
+  // This function should be only called for XPCOM. You should never use this
+  // for other purposes.
+  static already_AddRefed<nsICookieJarSettings> CreateForXPCOM();
 
   static already_AddRefed<nsICookieJarSettings> Create(
       uint32_t aCookieBehavior, const nsAString& aPartitionKey,
@@ -139,6 +157,9 @@ class CookieJarSettings final : public nsICookieJarSettings {
   void UpdateIsOnContentBlockingAllowList(nsIChannel* aChannel);
 
   void SetPartitionKey(nsIURI* aURI);
+  void SetPartitionKey(const nsAString& aPartitionKey) {
+    mPartitionKey = aPartitionKey;
+  }
   const nsAString& GetPartitionKey() { return mPartitionKey; };
 
   // Utility function to test if the passed cookiebahvior is

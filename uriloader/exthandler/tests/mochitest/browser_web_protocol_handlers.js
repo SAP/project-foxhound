@@ -3,6 +3,10 @@ let testURL =
   "uriloader/exthandler/tests/mochitest/protocolHandler.html";
 
 add_task(async function() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.external_protocol_requires_permission", false]],
+  });
+
   // Load a page registering a protocol handler.
   let browser = gBrowser.selectedBrowser;
   BrowserTestUtils.loadURI(browser, testURL);
@@ -14,7 +18,7 @@ add_task(async function() {
     gBrowser.getNotificationBox().getNotificationWithValue(notificationValue);
   await BrowserTestUtils.waitForCondition(getNotification);
   let notification = getNotification();
-  let button = notification.querySelector("button");
+  let button = notification.buttonContainer.querySelector("button");
   ok(button, "got registration button");
   button.click();
 

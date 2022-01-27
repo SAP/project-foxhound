@@ -13,6 +13,13 @@ const { PromptUtils } = ChromeUtils.import(
   "resource://gre/modules/SharedPromptUtils.jsm"
 );
 
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "gPrompterService",
+  "@mozilla.org/login-manager/prompter;1",
+  Ci.nsILoginManagerPrompter
+);
+
 /* eslint-disable block-scoped-var, no-var */
 
 ChromeUtils.defineModuleGetter(
@@ -94,9 +101,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
  * Invoked by [toolkit/components/prompts/src/Prompter.jsm]
  */
 function LoginManagerAuthPromptFactory() {
-  Services.obs.addObserver(this, "quit-application-granted", true);
   Services.obs.addObserver(this, "passwordmgr-crypto-login", true);
-  Services.obs.addObserver(this, "passwordmgr-crypto-loginCanceled", true);
 }
 
 LoginManagerAuthPromptFactory.prototype = {
@@ -107,20 +112,24 @@ LoginManagerAuthPromptFactory.prototype = {
     "nsISupportsWeakReference",
   ]),
 
-  _asyncPrompts: {},
-  _asyncPromptInProgress: false,
+  // Tracks pending auth prompts per top level browser and hash key.
+  // browser -> hashkey -> prompt
+  // This enables us to consolidate auth prompts with the same browser and
+  // hashkey (level, origin, realm).
+  _pendingPrompts: new WeakMap(),
+  _pendingSavePrompts: new WeakMap(),
+  // We use a separate bucket for when we don't have a browser.
+  // _noBrowser -> hashkey -> prompt
+  _noBrowser: {},
+  // Promise used to defer prompts if the password manager isn't ready when
+  // they're called.
+  _uiBusyPromise: null,
 
   observe(subject, topic, data) {
     this.log("Observed: " + topic);
-    if (topic == "quit-application-granted") {
-      this._cancelPendingPrompts();
-    } else if (topic == "passwordmgr-crypto-login") {
-      // Start processing the deferred prompters.
-      this._doAsyncPrompt();
-    } else if (topic == "passwordmgr-crypto-loginCanceled") {
-      // User canceled a Master Password prompt, so go ahead and cancel
-      // all pending auth prompts to avoid nagging over and over.
-      this._cancelPendingPrompts();
+    if (topic == "passwordmgr-crypto-login") {
+      // Show the deferred prompters.
+      this._uiBusyPromise?.resolve();
     }
   },
 
@@ -130,143 +139,132 @@ LoginManagerAuthPromptFactory.prototype = {
     return prompt;
   },
 
-  _doAsyncPrompt() {
-    if (this._asyncPromptInProgress) {
-      this.log("_doAsyncPrompt bypassed, already in progress");
+  getPendingPrompt(browser, hashKey) {
+    // If there is already a matching auth prompt which has no browser
+    // associated we can reuse it. This way we avoid showing tab level prompts
+    // when there is already a pending window prompt.
+    let pendingNoBrowserPrompt = this._pendingPrompts
+      .get(this._noBrowser)
+      ?.get(hashKey);
+    if (pendingNoBrowserPrompt) {
+      return pendingNoBrowserPrompt;
+    }
+    return this._pendingPrompts.get(browser)?.get(hashKey);
+  },
+
+  _dismissPendingSavePrompt(browser) {
+    this._pendingSavePrompts.get(browser)?.dismiss();
+    this._pendingSavePrompts.delete(browser);
+  },
+
+  _setPendingSavePrompt(browser, prompt) {
+    this._pendingSavePrompts.set(browser, prompt);
+  },
+
+  _setPendingPrompt(prompt, hashKey) {
+    let browser = prompt.prompter.browser || this._noBrowser;
+    let hashToPrompt = this._pendingPrompts.get(browser);
+    if (!hashToPrompt) {
+      hashToPrompt = new Map();
+      this._pendingPrompts.set(browser, hashToPrompt);
+    }
+    hashToPrompt.set(hashKey, prompt);
+  },
+
+  _removePendingPrompt(prompt, hashKey) {
+    let browser = prompt.prompter.browser || this._noBrowser;
+    let hashToPrompt = this._pendingPrompts.get(browser);
+    if (!hashToPrompt) {
       return;
     }
-
-    // Find the first prompt key we have in the queue
-    var hashKey = null;
-    for (hashKey in this._asyncPrompts) {
-      break;
+    hashToPrompt.delete(hashKey);
+    if (!hashToPrompt.size) {
+      this._pendingPrompts.delete(browser);
     }
+  },
 
-    if (!hashKey) {
-      this.log("_doAsyncPrompt:run bypassed, no prompts in the queue");
-      return;
-    }
+  async _waitForLoginsUI(prompt) {
+    await this._uiBusyPromise;
 
-    // If login manger has logins for this host, defer prompting if we're
-    // already waiting on a master password entry.
-    var prompt = this._asyncPrompts[hashKey];
-    var prompter = prompt.prompter;
-    var [origin, httpRealm] = prompter._getAuthTarget(
+    let [origin, httpRealm] = prompt.prompter._getAuthTarget(
       prompt.channel,
       prompt.authInfo
     );
 
-    if (Services.logins.uiBusy) {
-      let hasLogins = Services.logins.countLogins(origin, null, httpRealm) > 0;
+    // No UI to wait for.
+    if (!Services.logins.uiBusy) {
+      return;
+    }
+
+    let hasLogins = Services.logins.countLogins(origin, null, httpRealm) > 0;
+    if (
+      !hasLogins &&
+      LoginHelper.schemeUpgrades &&
+      origin.startsWith("https://")
+    ) {
+      let httpOrigin = origin.replace(/^https:\/\//, "http://");
+      hasLogins = Services.logins.countLogins(httpOrigin, null, httpRealm) > 0;
+    }
+    // We don't depend on saved logins.
+    if (!hasLogins) {
+      return;
+    }
+
+    this.log("Waiting for master password UI");
+
+    this._uiBusyPromise = new Promise();
+    await this._uiBusyPromise;
+  },
+
+  async _doAsyncPrompt(prompt, hashKey) {
+    this._setPendingPrompt(prompt, hashKey);
+
+    // UI might be busy due to the master password dialog. Wait for it to close.
+    await this._waitForLoginsUI(prompt);
+
+    let ok = false;
+    let promptAborted = false;
+    try {
+      this.log("_doAsyncPrompt - performing the prompt for '" + hashKey + "'");
+      ok = await prompt.prompter.promptAuthInternal(
+        prompt.channel,
+        prompt.level,
+        prompt.authInfo
+      );
+    } catch (e) {
       if (
-        !hasLogins &&
-        LoginHelper.schemeUpgrades &&
-        origin.startsWith("https://")
+        e instanceof Components.Exception &&
+        e.result == Cr.NS_ERROR_NOT_AVAILABLE
       ) {
-        let httpOrigin = origin.replace(/^https:\/\//, "http://");
-        hasLogins =
-          Services.logins.countLogins(httpOrigin, null, httpRealm) > 0;
-      }
-      if (hasLogins) {
-        this.log("_doAsyncPrompt:run bypassed, master password UI busy");
-        return;
+        this.log(
+          "_doAsyncPrompt bypassed, UI is not available in this context"
+        );
+        // Prompts throw NS_ERROR_NOT_AVAILABLE if they're aborted.
+        promptAborted = true;
+      } else {
+        Cu.reportError("LoginManagerAuthPrompter: _doAsyncPrompt " + e + "\n");
       }
     }
 
-    var self = this;
+    this._removePendingPrompt(prompt, hashKey);
 
-    var runnable = {
-      cancel: false,
-      run() {
-        var ok = false;
-        if (!this.cancel) {
-          try {
-            self.log(
-              "_doAsyncPrompt:run - performing the prompt for '" + hashKey + "'"
-            );
-            ok = prompter.promptAuth(
-              prompt.channel,
-              prompt.level,
-              prompt.authInfo
-            );
-          } catch (e) {
-            if (
-              e instanceof Components.Exception &&
-              e.result == Cr.NS_ERROR_NOT_AVAILABLE
-            ) {
-              self.log(
-                "_doAsyncPrompt:run bypassed, UI is not available in this context"
-              );
-            } else {
-              Cu.reportError(
-                "LoginManagerAuthPrompter: _doAsyncPrompt:run: " + e + "\n"
-              );
-            }
-          }
-
-          delete self._asyncPrompts[hashKey];
-          prompt.inProgress = false;
-          self._asyncPromptInProgress = false;
-        }
-
-        for (var consumer of prompt.consumers) {
-          if (!consumer.callback) {
-            // Not having a callback means that consumer didn't provide it
-            // or canceled the notification
-            continue;
-          }
-
-          self.log("Calling back to " + consumer.callback + " ok=" + ok);
-          try {
-            if (ok) {
-              consumer.callback.onAuthAvailable(
-                consumer.context,
-                prompt.authInfo
-              );
-            } else {
-              consumer.callback.onAuthCancelled(consumer.context, !this.cancel);
-            }
-          } catch (e) {
-            /* Throw away exceptions caused by callback */
-          }
-        }
-        self._doAsyncPrompt();
-      },
-    };
-
-    this._asyncPromptInProgress = true;
-    prompt.inProgress = true;
-
-    Services.tm.dispatchToMainThread(runnable);
-    this.log("_doAsyncPrompt:run dispatched");
-  },
-
-  _cancelPendingPrompts() {
-    this.log("Canceling all pending prompts...");
-    var asyncPrompts = this._asyncPrompts;
-    this.__proto__._asyncPrompts = {};
-
-    for (var hashKey in asyncPrompts) {
-      let prompt = asyncPrompts[hashKey];
-      // Watch out! If this prompt is currently prompting, let it handle
-      // notifying the callbacks of success/failure, since it's already
-      // asking the user for input. Reusing a callback can be crashy.
-      if (prompt.inProgress) {
-        this.log("skipping a prompt in progress");
+    // Handle callbacks
+    for (var consumer of prompt.consumers) {
+      if (!consumer.callback) {
+        // Not having a callback means that consumer didn't provide it
+        // or canceled the notification
         continue;
       }
 
-      for (var consumer of prompt.consumers) {
-        if (!consumer.callback) {
-          continue;
+      this.log("Calling back to " + consumer.callback + " ok=" + ok);
+      try {
+        if (ok) {
+          consumer.callback.onAuthAvailable(consumer.context, prompt.authInfo);
+        } else {
+          consumer.callback.onAuthCancelled(consumer.context, !promptAborted);
         }
-
-        this.log("Canceling async auth prompt callback " + consumer.callback);
-        try {
-          consumer.callback.onAuthCancelled(consumer.context, true);
-        } catch (e) {
-          /* Just ignore exceptions from the callback */
-        }
+      } catch (e) {
+        /* Throw away exceptions caused by callback */
       }
     }
   },
@@ -307,7 +305,6 @@ LoginManagerAuthPrompter.prototype = {
   _factory: null,
   _chromeWindow: null,
   _browser: null,
-  _openerBrowser: null,
 
   __strBundle: null, // String bundle for L10N
   get _strBundle() {
@@ -417,23 +414,16 @@ LoginManagerAuthPrompter.prototype = {
     }
 
     let foundLogins = null;
+    let canRememberLogin = false;
     var selectedLogin = null;
-    var checkBox = { value: false };
-    var checkBoxLabel = null;
     var [origin, realm, unused] = this._getRealmInfo(aPasswordRealm);
 
     // If origin is null, we can't save this login.
     if (origin) {
-      var canRememberLogin = false;
       if (this._allowRememberLogin) {
         canRememberLogin =
           aSavePassword == Ci.nsIAuthPrompt.SAVE_PASSWORD_PERMANENTLY &&
           Services.logins.getLoginSavingEnabled(origin);
-      }
-
-      // if checkBoxLabel is null, the checkbox won't be shown at all.
-      if (canRememberLogin) {
-        checkBoxLabel = this._getLocalizedString("rememberPassword");
       }
 
       // Look for existing logins.
@@ -455,7 +445,6 @@ LoginManagerAuthPrompter.prototype = {
         }
 
         if (selectedLogin) {
-          checkBox.value = true;
           aUsername.value = selectedLogin.username;
           // If the caller provided a password, prefer it.
           if (!aPassword.value) {
@@ -471,12 +460,10 @@ LoginManagerAuthPrompter.prototype = {
       aDialogTitle,
       aText,
       aUsername,
-      aPassword,
-      checkBoxLabel,
-      checkBox
+      aPassword
     );
 
-    if (!ok || !checkBox.value || !origin) {
+    if (!ok || !canRememberLogin) {
       return ok;
     }
 
@@ -544,23 +531,16 @@ LoginManagerAuthPrompter.prototype = {
       );
     }
 
-    var checkBox = { value: false };
-    var checkBoxLabel = null;
     var [origin, realm, username] = this._getRealmInfo(aPasswordRealm);
 
     username = decodeURIComponent(username);
 
+    let canRememberLogin = false;
     // If origin is null, we can't save this login.
     if (origin && !this._inPrivateBrowsing) {
-      var canRememberLogin =
+      canRememberLogin =
         aSavePassword == Ci.nsIAuthPrompt.SAVE_PASSWORD_PERMANENTLY &&
         Services.logins.getLoginSavingEnabled(origin);
-
-      // if checkBoxLabel is null, the checkbox won't be shown at all.
-      if (canRememberLogin) {
-        checkBoxLabel = this._getLocalizedString("rememberPassword");
-      }
-
       if (!aPassword.value) {
         // Look for existing logins.
         var foundLogins = Services.logins.findLogins(origin, null, realm);
@@ -583,12 +563,10 @@ LoginManagerAuthPrompter.prototype = {
       this._chromeWindow,
       aDialogTitle,
       aText,
-      aPassword,
-      checkBoxLabel,
-      checkBox
+      aPassword
     );
 
-    if (ok && checkBox.value && origin && aPassword.value) {
+    if (ok && canRememberLogin && aPassword.value) {
       let newLogin = new LoginInfo(
         origin,
         null,
@@ -637,22 +615,10 @@ LoginManagerAuthPrompter.prototype = {
     return [formattedOrigin, formattedOrigin + pathname, uri.username];
   },
 
-  /* ---------- nsIAuthPrompt2 prompts ---------- */
-
-  /**
-   * Implementation of nsIAuthPrompt2.
-   *
-   * @param {nsIChannel} aChannel
-   * @param {int}        aLevel
-   * @param {nsIAuthInformation} aAuthInfo
-   */
-  promptAuth(aChannel, aLevel, aAuthInfo) {
+  async promptAuthInternal(aChannel, aLevel, aAuthInfo) {
     var selectedLogin = null;
-    var checkbox = { value: false };
-    var checkboxLabel = null;
     var epicfail = false;
     var canAutologin = false;
-    var notifyObj;
     var foundLogins;
     let autofilled = false;
 
@@ -662,12 +628,12 @@ LoginManagerAuthPrompter.prototype = {
       // If the user submits a login but it fails, we need to remove the
       // notification prompt that was displayed. Conveniently, the user will
       // be prompted for authentication again, which brings us here.
-      this._removeLoginNotifications();
+      this._factory._dismissPendingSavePrompt(this._browser);
 
       var [origin, httpRealm] = this._getAuthTarget(aChannel, aAuthInfo);
 
       // Looks for existing logins to prefill the prompt with.
-      foundLogins = LoginHelper.searchLoginsWithObject({
+      foundLogins = await Services.logins.searchLoginsAsync({
         origin,
         httpRealm,
         schemeUpgrades: LoginHelper.schemeUpgrades,
@@ -702,19 +668,11 @@ LoginManagerAuthPrompter.prototype = {
           this.log("Autologin enabled, skipping auth prompt.");
           canAutologin = true;
         }
-
-        checkbox.value = true;
       }
 
       var canRememberLogin = Services.logins.getLoginSavingEnabled(origin);
       if (!this._allowRememberLogin) {
         canRememberLogin = false;
-      }
-
-      // if checkboxLabel is null, the checkbox won't be shown at all.
-      notifyObj = this._getPopupNote();
-      if (canRememberLogin && !notifyObj) {
-        checkboxLabel = this._getLocalizedString("rememberPassword");
       }
     } catch (e) {
       // Ignore any errors and display the prompt anyway.
@@ -756,13 +714,13 @@ LoginManagerAuthPrompter.prototype = {
           this._browser
         );
       }
-      ok = Services.prompt.promptAuth(
-        this._chromeWindow,
+
+      ok = await Services.prompt.asyncPromptAuth(
+        this._browser?.browsingContext,
+        LoginManagerAuthPrompter.promptAuthModalType,
         aChannel,
         aLevel,
-        aAuthInfo,
-        checkboxLabel,
-        checkbox
+        aAuthInfo
       );
     }
 
@@ -774,12 +732,7 @@ LoginManagerAuthPrompter.prototype = {
       PromptAbuseHelper.resetPromptAbuseCounter(baseDomain, browser);
     }
 
-    // If there's a notification prompt, use it to allow the user to
-    // determine if the login should be saved. If there isn't a
-    // notification prompt, only save the login if the user set the
-    // checkbox to do so.
-    var rememberLogin = notifyObj ? canRememberLogin : checkbox.value;
-    if (!ok || !rememberLogin || epicfail) {
+    if (!ok || !canRememberLogin || epicfail) {
       return ok;
     }
 
@@ -808,20 +761,12 @@ LoginManagerAuthPrompter.prototype = {
             ")"
         );
 
-        if (notifyObj) {
-          let promptBrowser = LoginHelper.getBrowserForPrompt(browser);
-          LoginManagerPrompter._showLoginCaptureDoorhanger(
-            promptBrowser,
-            newLogin,
-            "password-save",
-            {
-              dismissed: this._inPrivateBrowsing,
-            }
-          );
-          Services.obs.notifyObservers(newLogin, "passwordmgr-prompt-save");
-        } else {
-          Services.logins.addLogin(newLogin);
-        }
+        let promptBrowser = LoginHelper.getBrowserForPrompt(browser);
+        let savePrompt = gPrompterService.promptToSavePassword(
+          promptBrowser,
+          newLogin
+        );
+        this._factory._setPendingSavePrompt(promptBrowser, savePrompt);
       } else if (password != selectedLogin.password) {
         this.log(
           "Updating password for " +
@@ -832,11 +777,13 @@ LoginManagerAuthPrompter.prototype = {
             httpRealm +
             ")"
         );
-        if (notifyObj) {
-          this._showChangeLoginNotification(browser, selectedLogin, newLogin);
-        } else {
-          this._updateLogin(selectedLogin, newLogin);
-        }
+        let promptBrowser = LoginHelper.getBrowserForPrompt(browser);
+        let savePrompt = gPrompterService.promptToChangePassword(
+          promptBrowser,
+          selectedLogin,
+          newLogin
+        );
+        this._factory._setPendingSavePrompt(promptBrowser, savePrompt);
       } else {
         this.log("Login unchanged, no further action needed.");
         Services.logins.recordPasswordUse(
@@ -853,6 +800,28 @@ LoginManagerAuthPrompter.prototype = {
     return ok;
   },
 
+  /* ---------- nsIAuthPrompt2 prompts ---------- */
+
+  /**
+   * Implementation of nsIAuthPrompt2.
+   *
+   * @param {nsIChannel} aChannel
+   * @param {int}        aLevel
+   * @param {nsIAuthInformation} aAuthInfo
+   */
+  promptAuth(aChannel, aLevel, aAuthInfo) {
+    let closed = false;
+    let result = false;
+    this.promptAuthInternal(aChannel, aLevel, aAuthInfo)
+      .then(ok => (result = ok))
+      .finally(() => (closed = true));
+    Services.tm.spinEventLoopUntilOrQuit(
+      "LoginManagerAuthPrompter.jsm:promptAuth",
+      () => closed
+    );
+    return result;
+  },
+
   asyncPromptAuth(aChannel, aCallback, aContext, aLevel, aAuthInfo) {
     var cancelable = null;
 
@@ -862,36 +831,37 @@ LoginManagerAuthPrompter.prototype = {
       // If the user submits a login but it fails, we need to remove the
       // notification prompt that was displayed. Conveniently, the user will
       // be prompted for authentication again, which brings us here.
-      this._removeLoginNotifications();
+      this._factory._dismissPendingSavePrompt(this._browser);
 
       cancelable = this._newAsyncPromptConsumer(aCallback, aContext);
 
-      var [origin, httpRealm] = this._getAuthTarget(aChannel, aAuthInfo);
+      let [origin, httpRealm] = this._getAuthTarget(aChannel, aAuthInfo);
 
-      var hashKey = aLevel + "|" + origin + "|" + httpRealm;
+      let hashKey = aLevel + "|" + origin + "|" + httpRealm;
       this.log("Async prompt key = " + hashKey);
-      var asyncPrompt = this._factory._asyncPrompts[hashKey];
-      if (asyncPrompt) {
+      let pendingPrompt = this._factory.getPendingPrompt(
+        this._browser,
+        hashKey
+      );
+      if (pendingPrompt) {
         this.log(
           "Prompt bound to an existing one in the queue, callback = " +
             aCallback
         );
-        asyncPrompt.consumers.push(cancelable);
+        pendingPrompt.consumers.push(cancelable);
         return cancelable;
       }
 
-      this.log("Adding new prompt to the queue, callback = " + aCallback);
-      asyncPrompt = {
+      this.log("Adding new async prompt, callback = " + aCallback);
+      let asyncPrompt = {
         consumers: [cancelable],
         channel: aChannel,
         authInfo: aAuthInfo,
         level: aLevel,
-        inProgress: false,
         prompter: this,
       };
 
-      this._factory._asyncPrompts[hashKey] = asyncPrompt;
-      this._factory._doAsyncPrompt();
+      this._factory._doAsyncPrompt(asyncPrompt, hashKey);
     } catch (e) {
       Cu.reportError(
         "LoginManagerAuthPrompter: " +
@@ -923,7 +893,6 @@ LoginManagerAuthPrompter.prototype = {
       this._chromeWindow = win;
       this._browser = browser;
     }
-    this._openerBrowser = null;
     this._factory = aFactory || null;
 
     this.log("===== initialized =====");
@@ -933,84 +902,8 @@ LoginManagerAuthPrompter.prototype = {
     this._browser = aBrowser;
   },
 
-  set openerBrowser(aOpenerBrowser) {
-    this._openerBrowser = aOpenerBrowser;
-  },
-
-  _removeLoginNotifications() {
-    var popupNote = this._getPopupNote();
-    if (popupNote) {
-      popupNote = popupNote.getNotification("password");
-    }
-    if (popupNote) {
-      popupNote.remove();
-    }
-  },
-
-  /**
-   * Shows the Change Password popup notification.
-   *
-   * @param aBrowser
-   *        The relevant <browser>.
-   * @param aOldLogin
-   *        The stored login we want to update.
-   * @param aNewLogin
-   *        The login object with the changes we want to make.
-   * @param dismissed
-   *        A boolean indicating if the prompt should be automatically
-   *        dismissed on being shown.
-   * @param notifySaved
-   *        A boolean value indicating whether the notification should indicate that
-   *        a login has been saved
-   */
-  _showChangeLoginNotification(
-    aBrowser,
-    aOldLogin,
-    aNewLogin,
-    dismissed = false,
-    notifySaved = false,
-    autoSavedLoginGuid = ""
-  ) {
-    let login = aOldLogin.clone();
-    login.origin = aNewLogin.origin;
-    login.formActionOrigin = aNewLogin.formActionOrigin;
-    login.password = aNewLogin.password;
-    login.username = aNewLogin.username;
-
-    let messageStringID;
-    if (
-      aOldLogin.username === "" &&
-      login.username !== "" &&
-      login.password == aOldLogin.password
-    ) {
-      // If the saved password matches the password we're prompting with then we
-      // are only prompting to let the user add a username since there was one in
-      // the form. Change the message so the purpose of the prompt is clearer.
-      messageStringID = "updateLoginMsgAddUsername";
-    }
-
-    let promptBrowser = LoginHelper.getBrowserForPrompt(aBrowser);
-    LoginManagerPrompter._showLoginCaptureDoorhanger(
-      promptBrowser,
-      login,
-      "password-change",
-      {
-        dismissed,
-        extraAttr: notifySaved ? "attention" : "",
-      },
-      {
-        notifySaved,
-        messageStringID,
-        autoSavedLoginGuid,
-      }
-    );
-
-    let oldGUID = aOldLogin.QueryInterface(Ci.nsILoginMetaInfo).guid;
-    Services.obs.notifyObservers(
-      aNewLogin,
-      "passwordmgr-prompt-change",
-      oldGUID
-    );
+  get browser() {
+    return this._browser;
   },
 
   /* ---------- Internal Methods ---------- */
@@ -1050,48 +943,6 @@ LoginManagerAuthPrompter.prototype = {
     }
 
     return { win: chromeWin, browser };
-  },
-
-  _getNotifyWindow() {
-    if (this._openerBrowser) {
-      let chromeDoc = this._chromeWindow.document.documentElement;
-
-      // Check to see if the current window was opened with chrome
-      // disabled, and if so use the opener window. But if the window
-      // has been used to visit other pages (ie, has a history),
-      // assume it'll stick around and *don't* use the opener.
-      if (chromeDoc.getAttribute("chromehidden") && !this._browser.canGoBack) {
-        this.log("Using opener window for notification prompt.");
-        return {
-          win: this._openerBrowser.ownerGlobal,
-          browser: this._openerBrowser,
-        };
-      }
-    }
-
-    return {
-      win: this._chromeWindow,
-      browser: this._browser,
-    };
-  },
-
-  /**
-   * Returns the popup notification to this prompter,
-   * or null if there isn't one available.
-   */
-  _getPopupNote() {
-    let popupNote = null;
-
-    try {
-      let { win: notifyWin } = this._getNotifyWindow();
-
-      // .wrappedJSObject needed here -- see bug 422974 comment 5.
-      popupNote = notifyWin.wrappedJSObject.PopupNotifications;
-    } catch (e) {
-      this.log("Popup notifications not available on window");
-    }
-
-    return popupNote;
   },
 
   /**
@@ -1295,6 +1146,13 @@ XPCOMUtils.defineLazyGetter(LoginManagerAuthPrompter.prototype, "log", () => {
   let logger = LoginHelper.createLogger("LoginManagerAuthPrompter");
   return logger.log.bind(logger);
 });
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  LoginManagerAuthPrompter,
+  "promptAuthModalType",
+  "prompts.modalType.httpAuth",
+  Services.prompt.MODAL_TYPE_WINDOW
+);
 
 const EXPORTED_SYMBOLS = [
   "LoginManagerAuthPromptFactory",

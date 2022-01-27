@@ -20,14 +20,14 @@ add_task(async function() {
     true,
     event => event.target == gIdentityHandler._identityPopup
   );
-  gIdentityHandler._identityBox.click();
+  gIdentityHandler._identityIconBox.click();
   await promisePanelOpen;
 
   let promiseViewShown = BrowserTestUtils.waitForEvent(
     gIdentityHandler._identityPopup,
     "ViewShown"
   );
-  document.getElementById("identity-popup-security-expander").click();
+  document.getElementById("identity-popup-security-button").click();
   await promiseViewShown;
 
   is_element_visible(
@@ -53,17 +53,17 @@ add_task(async function() {
     .getPropertyValue("background-image");
   is(
     identityIconImage,
-    'url("chrome://browser/skin/connection-mixed-passive-loaded.svg")',
+    'url("chrome://global/skin/icons/security-warning.svg")',
     "Using expected icon image in the identity block"
   );
   is(
     securityViewBG,
-    'url("chrome://browser/skin/connection-mixed-passive-loaded.svg")',
+    'url("chrome://global/skin/icons/security-warning.svg")',
     "Using expected icon image in the Control Center main view"
   );
   is(
     securityContentBG,
-    'url("chrome://browser/skin/connection-mixed-passive-loaded.svg")',
+    'url("chrome://global/skin/icons/security-warning.svg")',
     "Using expected icon image in the Control Center subview"
   );
 
@@ -72,6 +72,6 @@ add_task(async function() {
   let certOverrideService = Cc[
     "@mozilla.org/security/certoverride;1"
   ].getService(Ci.nsICertOverrideService);
-  certOverrideService.clearValidityOverride("expired.example.com", -1);
+  certOverrideService.clearValidityOverride("expired.example.com", -1, {});
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });

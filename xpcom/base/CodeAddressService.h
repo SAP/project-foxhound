@@ -7,14 +7,15 @@
 #ifndef CodeAddressService_h__
 #define CodeAddressService_h__
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include "mozilla/AllocPolicy.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/HashTable.h"
-#include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/StackWalk.h"
-#include "mozilla/Types.h"
 
 namespace mozilla {
 
@@ -203,12 +204,15 @@ class CodeAddressService
     }
   }
 
-  void GetLocation(uint32_t aFrameNumber, const void* aPc, char* aBuf,
-                   size_t aBufLen) {
+  // Returns the minimum number of characters necessary to format the frame
+  // information, without the terminating null. The buffer will be truncated
+  // if the returned value is greater than aBufLen-1.
+  int GetLocation(uint32_t aFrameNumber, const void* aPc, char* aBuf,
+                  size_t aBufLen) {
     Entry& entry = GetEntry(aPc);
-    MozFormatCodeAddress(aBuf, aBufLen, aFrameNumber, entry.mPc,
-                         entry.mFunction, entry.mLibrary, entry.mLOffset,
-                         entry.mFileName, entry.mLineNo);
+    return MozFormatCodeAddress(aBuf, aBufLen, aFrameNumber, entry.mPc,
+                                entry.mFunction, entry.mLibrary, entry.mLOffset,
+                                entry.mFileName, entry.mLineNo);
   }
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {

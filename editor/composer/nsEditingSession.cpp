@@ -19,30 +19,32 @@
 #include "nsContentUtils.h"
 #include "nsDebug.h"  // for NS_ENSURE_SUCCESS, etc
 #include "nsEditingSession.h"
-#include "nsError.h"                     // for NS_ERROR_FAILURE, NS_OK, etc
-#include "nsIChannel.h"                  // for nsIChannel
-#include "nsIContentViewer.h"            // for nsIContentViewer
-#include "nsIControllers.h"              // for nsIControllers
-#include "nsID.h"                        // for NS_GET_IID, etc
-#include "nsHTMLDocument.h"              // for nsHTMLDocument
-#include "nsIDocShell.h"                 // for nsIDocShell
-#include "mozilla/dom/Document.h"        // for Document
-#include "nsIEditor.h"                   // for nsIEditor
-#include "nsIInterfaceRequestorUtils.h"  // for do_GetInterface
-#include "nsIRefreshURI.h"               // for nsIRefreshURI
-#include "nsIRequest.h"                  // for nsIRequest
-#include "nsITimer.h"                    // for nsITimer, etc
-#include "nsIWeakReference.h"            // for nsISupportsWeakReference, etc
-#include "nsIWebNavigation.h"            // for nsIWebNavigation
-#include "nsIWebProgress.h"              // for nsIWebProgress, etc
-#include "nsLiteralString.h"             // for NS_LITERAL_STRING
-#include "nsPIDOMWindow.h"               // for nsPIDOMWindow
-#include "nsPresContext.h"               // for nsPresContext
-#include "nsReadableUtils.h"             // for AppendUTF16toUTF8
-#include "nsStringFwd.h"                 // for nsString
-#include "mozilla/dom/Selection.h"       // for AutoHideSelectionChanges, etc
-#include "nsFrameSelection.h"            // for nsFrameSelection
-#include "nsBaseCommandController.h"     // for nsBaseCommandController
+#include "nsError.h"                      // for NS_ERROR_FAILURE, NS_OK, etc
+#include "nsIChannel.h"                   // for nsIChannel
+#include "nsIContentViewer.h"             // for nsIContentViewer
+#include "nsIControllers.h"               // for nsIControllers
+#include "nsID.h"                         // for NS_GET_IID, etc
+#include "nsHTMLDocument.h"               // for nsHTMLDocument
+#include "nsIDocShell.h"                  // for nsIDocShell
+#include "mozilla/dom/Document.h"         // for Document
+#include "nsIEditor.h"                    // for nsIEditor
+#include "nsIInterfaceRequestorUtils.h"   // for do_GetInterface
+#include "nsIRefreshURI.h"                // for nsIRefreshURI
+#include "nsIRequest.h"                   // for nsIRequest
+#include "nsITimer.h"                     // for nsITimer, etc
+#include "nsIWeakReference.h"             // for nsISupportsWeakReference, etc
+#include "nsIWebNavigation.h"             // for nsIWebNavigation
+#include "nsIWebProgress.h"               // for nsIWebProgress, etc
+#include "nsLiteralString.h"              // for NS_LITERAL_STRING
+#include "nsPIDOMWindow.h"                // for nsPIDOMWindow
+#include "nsPresContext.h"                // for nsPresContext
+#include "nsReadableUtils.h"              // for AppendUTF16toUTF8
+#include "nsStringFwd.h"                  // for nsString
+#include "mozilla/dom/BrowsingContext.h"  // for BrowsingContext
+#include "mozilla/dom/Selection.h"        // for AutoHideSelectionChanges, etc
+#include "mozilla/dom/WindowContext.h"    // for WindowContext
+#include "nsFrameSelection.h"             // for nsFrameSelection
+#include "nsBaseCommandController.h"      // for nsBaseCommandController
 #include "mozilla/dom/LoadURIOptionsBinding.h"
 
 class nsISupports;
@@ -119,7 +121,7 @@ nsEditingSession::MakeWindowEditable(mozIDOMWindowProxy* aWindow,
 
   nsresult rv;
   if (!mInteractive) {
-    rv = DisableJSAndPlugins(*docShell);
+    rv = DisableJSAndPlugins(window->GetCurrentInnerWindow());
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -171,27 +173,25 @@ nsEditingSession::MakeWindowEditable(mozIDOMWindowProxy* aWindow,
   return rv;
 }
 
-nsresult nsEditingSession::DisableJSAndPlugins(nsIDocShell& aDocShell) {
-  bool tmp;
-  nsresult rv = aDocShell.GetAllowJavascript(&tmp);
-  NS_ENSURE_SUCCESS(rv, rv);
+nsresult nsEditingSession::DisableJSAndPlugins(nsPIDOMWindowInner* aWindow) {
+  WindowContext* wc = aWindow->GetWindowContext();
+  BrowsingContext* bc = wc->GetBrowsingContext();
 
-  mScriptsEnabled = tmp;
+  mScriptsEnabled = wc->GetAllowJavascript();
 
-  rv = aDocShell.SetAllowJavascript(false);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(wc->SetAllowJavascript(false));
 
   // Disable plugins in this document:
-  mPluginsEnabled = aDocShell.PluginsAllowedInCurrentDoc();
+  mPluginsEnabled = bc->GetAllowPlugins();
 
-  aDocShell.GetBrowsingContext()->SetAllowPlugins(false);
+  MOZ_TRY(bc->SetAllowPlugins(false));
 
   mDisabledJSAndPlugins = true;
 
   return NS_OK;
 }
 
-nsresult nsEditingSession::RestoreJSAndPlugins(nsPIDOMWindowOuter* aWindow) {
+nsresult nsEditingSession::RestoreJSAndPlugins(nsPIDOMWindowInner* aWindow) {
   if (!mDisabledJSAndPlugins) {
     return NS_OK;
   }
@@ -202,18 +202,15 @@ nsresult nsEditingSession::RestoreJSAndPlugins(nsPIDOMWindowOuter* aWindow) {
     // DetachFromWindow may call this method with nullptr.
     return NS_ERROR_FAILURE;
   }
-  nsIDocShell* docShell = aWindow->GetDocShell();
-  NS_ENSURE_TRUE(docShell, NS_ERROR_FAILURE);
 
-  nsresult rv = docShell->SetAllowJavascript(mScriptsEnabled);
-  NS_ENSURE_SUCCESS(rv, rv);
+  WindowContext* wc = aWindow->GetWindowContext();
+  BrowsingContext* bc = wc->GetBrowsingContext();
+
+  MOZ_TRY(wc->SetAllowJavascript(mScriptsEnabled));
 
   // Disable plugins in this document:
-  auto* browsingContext = aWindow->GetBrowsingContext();
-  NS_ENSURE_TRUE(browsingContext, NS_ERROR_FAILURE);
-  browsingContext->SetAllowPlugins(mPluginsEnabled);
 
-  return NS_OK;
+  return bc->SetAllowPlugins(mPluginsEnabled);
 }
 
 /*---------------------------------------------------------------------------
@@ -233,30 +230,27 @@ nsEditingSession::WindowIsEditable(mozIDOMWindowProxy* aWindow,
   return docShell->GetEditable(outIsEditable);
 }
 
-// These are MIME types that are automatically parsed as "text/plain"
-//   and thus we can edit them as plaintext
-// Note: in older versions, we attempted to convert the mimetype of
-//   the network channel for these and "text/xml" to "text/plain",
-//   but further investigation reveals that strategy doesn't work
-const char* const gSupportedTextTypes[] = {
-    "text/plain",
-    "text/css",
-    "text/rdf",
-    "text/xsl",
-    "text/javascript",  // obsolete type
-    "text/ecmascript",  // obsolete type
-    "application/javascript",
-    "application/ecmascript",
-    "application/x-javascript",  // obsolete type
-    "text/xul",                  // obsolete type
-    nullptr                      // IMPORTANT! Null must be at end
-};
+bool IsSupportedTextType(const nsAString& aMIMEType) {
+  // These are MIME types that are automatically parsed as "text/plain"
+  //   and thus we can edit them as plaintext
+  // Note: in older versions, we attempted to convert the mimetype of
+  //   the network channel for these and "text/xml" to "text/plain",
+  //   but further investigation reveals that strategy doesn't work
+  static constexpr nsLiteralString sSupportedTextTypes[] = {
+      u"text/plain"_ns,
+      u"text/css"_ns,
+      u"text/rdf"_ns,
+      u"text/xsl"_ns,
+      u"text/javascript"_ns,  // obsolete type
+      u"text/ecmascript"_ns,  // obsolete type
+      u"application/javascript"_ns,
+      u"application/ecmascript"_ns,
+      u"application/x-javascript"_ns,  // obsolete type
+      u"text/xul"_ns                   // obsolete type
+  };
 
-bool IsSupportedTextType(const char* aMIMEType) {
-  NS_ENSURE_TRUE(aMIMEType, false);
-
-  for (size_t i = 0; gSupportedTextTypes[i]; ++i) {
-    if (!strcmp(gSupportedTextTypes[i], aMIMEType)) {
+  for (const nsLiteralString& supportedTextType : sSupportedTextTypes) {
+    if (aMIMEType.Equals(supportedTextType)) {
       return true;
     }
   }
@@ -271,25 +265,22 @@ nsresult nsEditingSession::SetupEditorOnWindow(nsPIDOMWindowOuter& aWindow) {
   // must get the content type
   // Note: the doc gets this from the network channel during StartPageLoad,
   //    so we don't have to get it from there ourselves
-  nsAutoCString mimeCType;
+  nsAutoString mimeType;
 
   // then lets check the mime type
   if (RefPtr<Document> doc = aWindow.GetDoc()) {
-    nsAutoString mimeType;
     doc->GetContentType(mimeType);
-    AppendUTF16toUTF8(mimeType, mimeCType);
 
-    if (IsSupportedTextType(mimeCType.get())) {
+    if (IsSupportedTextType(mimeType)) {
       mEditorType.AssignLiteral("text");
-      mimeCType = "text/plain";
-    } else if (!mimeCType.EqualsLiteral("text/html") &&
-               !mimeCType.EqualsLiteral("application/xhtml+xml")) {
+      mimeType.AssignLiteral("text/plain");
+    } else if (!doc->IsHTMLOrXHTML()) {
       // Neither an acceptable text or html type.
       mEditorStatus = eEditorErrorCantEditMimeType;
 
       // Turn editor into HTML -- we will load blank page later
       mEditorType.AssignLiteral("html");
-      mimeCType.AssignLiteral("text/html");
+      mimeType.AssignLiteral("text/html");
     }
 
     // Flush out frame construction to make sure that the subframe's
@@ -311,7 +302,7 @@ nsresult nsEditingSession::SetupEditorOnWindow(nsPIDOMWindowOuter& aWindow) {
     mEditorFlags =
         nsIEditor::eEditorPlaintextMask | nsIEditor::eEditorEnableWrapHackMask;
   } else if (mEditorType.EqualsLiteral("htmlmail")) {
-    if (mimeCType.EqualsLiteral("text/html")) {
+    if (mimeType.EqualsLiteral("text/html")) {
       needHTMLController = true;
       mEditorFlags = nsIEditor::eEditorMailMask;
     } else {
@@ -376,10 +367,10 @@ nsresult nsEditingSession::SetupEditorOnWindow(nsPIDOMWindowOuter& aWindow) {
   // create and set editor
   // Try to reuse an existing editor
   nsCOMPtr<nsIEditor> editor = do_QueryReferent(mExistingEditor);
-  RefPtr<HTMLEditor> htmlEditor = editor ? editor->AsHTMLEditor() : nullptr;
-  MOZ_ASSERT(!editor || htmlEditor);
+  RefPtr<HTMLEditor> htmlEditor = HTMLEditor::GetFrom(editor);
+  MOZ_ASSERT_IF(editor, htmlEditor);
   if (htmlEditor) {
-    htmlEditor->PreDestroy(false);
+    htmlEditor->PreDestroy();
   } else {
     htmlEditor = new HTMLEditor();
     mExistingEditor =
@@ -399,7 +390,7 @@ nsresult nsEditingSession::SetupEditorOnWindow(nsPIDOMWindowOuter& aWindow) {
   }
 
   // Set mimetype on editor
-  rv = htmlEditor->SetContentsMIMEType(mimeCType.get());
+  rv = htmlEditor->SetContentsMIMEType(mimeType);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIContentViewer> contentViewer;
@@ -416,8 +407,7 @@ nsresult nsEditingSession::SetupEditorOnWindow(nsPIDOMWindowOuter& aWindow) {
   // Important! We must have this to broadcast the "obs_documentCreated" message
   htmlEditor->SetComposerCommandsUpdater(mComposerCommandsUpdater);
 
-  rv = htmlEditor->Init(*doc, nullptr /* root content */, nullptr, mEditorFlags,
-                        EmptyString());
+  rv = htmlEditor->Init(*doc, mEditorFlags);
   NS_ENSURE_SUCCESS(rv, rv);
 
   RefPtr<Selection> selection = htmlEditor->GetSelection();
@@ -515,7 +505,7 @@ nsEditingSession::TearDownEditorOnWindow(mozIDOMWindowProxy* aWindow) {
 
   if (stopEditing) {
     // Make things the way they were before we started editing.
-    RestoreJSAndPlugins(window);
+    RestoreJSAndPlugins(window->GetCurrentInnerWindow());
     RestoreAnimationMode(window);
 
     if (mMakeWholeDocumentEditable) {
@@ -1197,7 +1187,7 @@ nsresult nsEditingSession::DetachFromWindow(nsPIDOMWindowOuter* aWindow) {
   // make things the way they were before we started editing.
   RemoveEditorControllers(aWindow);
   RemoveWebProgressListener(aWindow);
-  RestoreJSAndPlugins(aWindow);
+  RestoreJSAndPlugins(aWindow->GetCurrentInnerWindow());
   RestoreAnimationMode(aWindow);
 
   // Kill our weak reference to our original window, in case
@@ -1215,7 +1205,7 @@ nsresult nsEditingSession::ReattachToWindow(nsPIDOMWindowOuter* aWindow) {
                "mComposerCommandsUpdater should exist.");
 
   // Imitate nsEditorDocShell::MakeEditable() to reattach the
-  // old editor ot the window.
+  // old editor to the window.
   nsresult rv;
 
   nsIDocShell* docShell = aWindow->GetDocShell();
@@ -1224,7 +1214,7 @@ nsresult nsEditingSession::ReattachToWindow(nsPIDOMWindowOuter* aWindow) {
 
   // Disable plugins.
   if (!mInteractive) {
-    rv = DisableJSAndPlugins(*docShell);
+    rv = DisableJSAndPlugins(aWindow->GetCurrentInnerWindow());
     NS_ENSURE_SUCCESS(rv, rv);
   }
 

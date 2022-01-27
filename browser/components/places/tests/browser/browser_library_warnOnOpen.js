@@ -125,11 +125,11 @@ add_task(async function test_warnOnOpenLinks() {
   info("Context menu opened as expected");
 
   let openTabs = gLibrary.document.getElementById(
-    "placesContext_openLinks:tabs"
+    "placesContext_openBookmarkLinks:tabs"
   );
   let promiseLoaded = BrowserTestUtils.promiseAlertDialog("cancel");
 
-  EventUtils.synthesizeMouseAtCenter(openTabs, {}, gLibrary);
+  placesContext.activateItem(openTabs, {});
 
   await promiseLoaded;
 

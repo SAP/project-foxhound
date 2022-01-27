@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 he{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"אביג׳אן"}
@@ -613,7 +613,7 @@ he{
             ec{"דומון ד׳אורוויל"}
         }
         "Antarctica:Macquarie"{
-            ec{"מקרי"}
+            ec{"מקווארי"}
         }
         "Antarctica:Mawson"{
             ec{"מוסון"}
@@ -1928,6 +1928,9 @@ he{
             ld{"שעון יקטרינבורג (קיץ)"}
             lg{"שעון יקטרינבורג"}
             ls{"שעון יקטרינבורג (חורף)"}
+        }
+        "meta:Yukon"{
+            ls{"שעון יוקון"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}‎"}

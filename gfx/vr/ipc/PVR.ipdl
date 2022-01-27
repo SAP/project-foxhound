@@ -4,7 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 using mozilla::TimeStamp from "mozilla/TimeStamp.h";
-using mozilla::gfx::VRControllerType from "VRMessageUtils.h";
+using mozilla::gfx::VRControllerType from "moz_external_vr.h";
 using mozilla::dom::NativeThreadId from "mozilla/dom/NativeThreadId.h";
 include "VRMessageUtils.h";
 
@@ -13,11 +13,10 @@ include MemoryReportTypes;
 include PrefsTypes;
 include protocol PVRGPU;
 
-include "VRMessageUtils.h";
-
 namespace mozilla {
 namespace gfx {
 
+[NeedsOtherPid]
 async protocol PVR
 {
 parent:
@@ -31,7 +30,9 @@ parent:
   async RequestMemoryReport(uint32_t generation,
                             bool anonymize,
                             bool minimizeMemoryUsage,
-                            FileDescriptor? DMDFile);
+                            FileDescriptor? DMDFile)
+      returns (uint32_t aGeneration);
+
 child:
   // Sent when the GPU process has initialized devices. This occurs once, after
   // Init().
@@ -40,7 +41,6 @@ child:
   async OpenVRControllerManifestPathToParent(VRControllerType aType, nsCString aPath);
   async InitCrashReporter(NativeThreadId threadId);
   async AddMemoryReport(MemoryReport aReport);
-  async FinishMemoryReport(uint32_t aGeneration);
 };
 
 } // namespace gfx

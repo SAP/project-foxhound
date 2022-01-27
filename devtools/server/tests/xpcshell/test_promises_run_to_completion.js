@@ -36,7 +36,9 @@
 const Debugger = require("Debugger");
 
 function test_promises_run_to_completion() {
-  const g = testGlobal("test global for test_promises_run_to_completion.js");
+  const g = createTestGlobal(
+    "test global for test_promises_run_to_completion.js"
+  );
   const dbg = new Debugger(g);
   g.Assert = Assert;
   const log = [""];
@@ -121,7 +123,10 @@ function force_microtask_checkpoint() {
   Services.tm.dispatchToMainThread(() => {
     ran = true;
   });
-  Services.tm.spinEventLoopUntil(() => ran);
+  Services.tm.spinEventLoopUntil(
+    "Test(test_promises_run_to_completion.js:force_microtask_checkpoint)",
+    () => ran
+  );
 }
 
 add_test(test_promises_run_to_completion);

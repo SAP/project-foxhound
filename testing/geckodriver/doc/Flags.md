@@ -1,7 +1,57 @@
 Flags
 =====
 
-#### <code>-b <var>BINARY</var></code>/<code>--binary <var>BINARY</var></code>
+#### <code>&#x2D;&#x2D;android-storage <var>ANDROID_STORAGE</var></code>
+
+**Deprecation warning**: This argument is deprecated and planned to be removed
+with the 0.31.0 release of geckodriver. As such it shouldn't be used with version
+0.30.0 or later anymore. By default the automatic detection will now use the
+external storage location, which is always readable and writeable.
+
+Selects the test data location on the Android device, eg. the Firefox profile.
+By default `auto` is used.
+
+<style type="text/css">
+  table { width: 100%; margin-bottom: 2em; }
+  table, th, td { border: solid gray 1px; }
+  td, th { padding: 10px; text-align: left; vertical-align: middle; }
+  td:nth-child(1), th:nth-child(1) { width: 10em; text-align: center; }
+</style>
+
+<table>
+ <thead>
+  <tr>
+    <th>Value
+    <th>Description
+  </tr>
+ </thead>
+
+ <tr>
+  <td>auto
+  <td>Best suitable location based on whether the device is rooted.<br/>
+    If the device is rooted <code>internal</code> is used, otherwise <code>app</code>.
+ <tr>
+  <td>app
+  <td><p>Location: <code>/data/data/%androidPackage%/test_root</code></p>
+    Based on the <code>androidPackage</code> capability that is passed as part of
+    <code>moz:firefoxOptions</code> when creating a new session. Commands that
+    change data in the app's directory are executed using run-as. This requires
+    that the installed app is debuggable.
+ <tr>
+  <td>internal
+  <td><p>Location: <code>/data/local/tmp/test_root</code></p>
+    The device must be rooted since when the app runs, files that are created
+    in the profile, which is owned by the app user, cannot be changed by the
+    shell user. Commands will be executed via <code>su</code>.
+ <tr>
+  <td>sdcard
+  <td><p>Location: <code>$EXTERNAL_STORAGE/Android/data/%androidPackage%/files/test_root</code></p>
+    This location is supported by all versions of Android whether if the device
+    is rooted or not.
+</table>
+
+
+#### <code>-b <var>BINARY</var></code> / <code>&#x2D;&#x2D;binary <var>BINARY</var></code>
 
 Path to the Firefox binary to use.  By default geckodriver tries to
 find and use the system installation of Firefox, but that behaviour
@@ -28,7 +78,7 @@ scanning the Windows registry.
 [whereis(1)]: http://www.manpagez.com/man/1/whereis/
 
 
-#### `--connect-existing`
+#### <code>&#x2D;&#x2D;connect-existing</code>
 
 Connect geckodriver to an existing Firefox instance.  This means
 geckodriver will abstain from the default of starting a new Firefox
@@ -39,23 +89,29 @@ To enable the remote protocol in Firefox, you can pass the
 `-marionette` flag.  Unless the `marionette.port` preference
 has been user-set, Marionette will listen on port 2828.  So when
 using `--connect-existing` it is likely you will also have to use
-[`--marionette-port`] to set the correct port.
+`--marionette-port` to set the correct port.
 
-[`--marionette-port`]: #marionette-port
+[`&#x2D;&#x2D;marionette-port`]: #marionette-port
 
 
-#### <code>--host <var>HOST</var></code>
+#### <code>&#x2D;&#x2D;host <var>HOST</var></code>
 
 Host to use for the WebDriver server.  Defaults to 127.0.0.1.
 
 
-#### <code>--log <var>LEVEL</var></code>
+#### <code>&#x2D;&#x2D;log <var>LEVEL</var></code>
 
 Set the Gecko and geckodriver log level.  Possible values are `fatal`,
 `error`, `warn`, `info`, `config`, `debug`, and `trace`.
 
 
-#### <code>--marionette-port <var>PORT</var></code>
+#### <code>&#x2D;&#x2D;marionette-host <var>HOST</var></code>
+
+Selects the host for geckodriver’s connection to the [Marionette]
+remote protocol. Defaults to 127.0.0.1.
+
+
+#### <code>&#x2D;&#x2D;marionette-port <var>PORT</var></code>
 
 Selects the port for geckodriver’s connection to the [Marionette]
 remote protocol.
@@ -64,13 +120,13 @@ In the default mode where geckodriver starts and manages the Firefox
 process, it will pick a free port assigned by the system and set the
 `marionette.port` preference in the profile.
 
-When [`--connect-existing`] is used and the Firefox process is not
+When `--connect-existing` is used and the Firefox process is not
 under geckodriver’s control, it will simply connect to <var>PORT</var>.
 
 [`--connect-existing`]: #connect-existing
 
 
-#### <code>-p <var>PORT</var></code>/<code>--port <var>PORT</var></code>
+#### <code>-p <var>PORT</var></code> / <code>&#x2D;&#x2D;port <var>PORT</var></code>
 
 Port to use for the WebDriver server.  Defaults to 4444.
 
@@ -78,10 +134,37 @@ A helpful trick is that it is possible to bind to 0 to get the
 system to atomically assign a free port.
 
 
-#### <code>--jsdebugger</code>
+#### <code>&#x2D;&#x2D;jsdebugger</code>
 
 Attach [browser toolbox] debugger when Firefox starts.  This is
 useful for debugging [Marionette] internals.
+
+To be prompted at the start of the test run or between tests,
+you can set the `marionette.debugging.clicktostart` preference to
+`true`.
+
+For reference, below is the list of preferences that enables the
+chrome debugger. These are all set implicitly when the
+argument is passed to geckodriver.
+
+  * `devtools.browsertoolbox.panel` -> `jsdebugger`
+
+    Selects the Debugger panel by default.
+
+  * `devtools.chrome.enabled` → true
+
+    Enables debugging of chrome code.
+
+  * `devtools.debugger.prompt-connection` → false
+
+    Controls the remote connection prompt.  Note that this will
+    automatically expose your Firefox instance to localhost.
+
+  * `devtools.debugger.remote-enabled` → true
+
+    Allows a remote debugger to connect, which is necessary for
+    debugging chrome code.
+
 
 [browser toolbox]: https://developer.mozilla.org/en-US/docs/Tools/Browser_Toolbox
 

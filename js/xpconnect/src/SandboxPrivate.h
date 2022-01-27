@@ -8,12 +8,16 @@
 #define __SANDBOXPRIVATE_H__
 
 #include "mozilla/WeakPtr.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StorageAccess.h"
+#include "mozilla/net/CookieJarSettings.h"
 #include "nsIGlobalObject.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIPrincipal.h"
 #include "nsWeakReference.h"
 #include "nsWrapperCache.h"
 
+#include "js/Object.h"  // JS::GetPrivate, JS::SetPrivate
 #include "js/RootingAPI.h"
 
 class SandboxPrivate : public nsIGlobalObject,
@@ -35,13 +39,14 @@ class SandboxPrivate : public nsIGlobalObject,
     // The type used to cast to void needs to match the one in GetPrivate.
     nsIScriptObjectPrincipal* sop =
         static_cast<nsIScriptObjectPrincipal*>(sbp.forget().take());
-    JS_SetPrivate(global, sop);
+    JS::SetObjectISupports(global, sop);
   }
 
   static SandboxPrivate* GetPrivate(JSObject* obj) {
     // The type used to cast to void needs to match the one in Create.
-    return static_cast<SandboxPrivate*>(
-        static_cast<nsIScriptObjectPrincipal*>(JS_GetPrivate(obj)));
+    nsIScriptObjectPrincipal* sop =
+        JS::GetObjectISupports<nsIScriptObjectPrincipal>(obj);
+    return static_cast<SandboxPrivate*>(sop);
   }
 
   nsIPrincipal* GetPrincipal() override { return mPrincipal; }
@@ -53,6 +58,18 @@ class SandboxPrivate : public nsIGlobalObject,
   JSObject* GetGlobalJSObject() override { return GetWrapper(); }
   JSObject* GetGlobalJSObjectPreserveColor() const override {
     return GetWrapperPreserveColor();
+  }
+
+  mozilla::StorageAccess GetStorageAccess() final {
+    MOZ_ASSERT(NS_IsMainThread());
+    if (mozilla::StaticPrefs::dom_serviceWorkers_testing_enabled()) {
+      // XXX: This is a hack to workaround bug 1732159 and is not intended
+      return mozilla::StorageAccess::eAllow;
+    }
+    nsCOMPtr<nsICookieJarSettings> cookieJarSettings =
+        mozilla::net::CookieJarSettings::Create(mPrincipal);
+    return mozilla::StorageAllowedForServiceWorker(mPrincipal,
+                                                   cookieJarSettings);
   }
 
   void ForgetGlobalObject(JSObject* obj) { ClearWrapper(obj); }

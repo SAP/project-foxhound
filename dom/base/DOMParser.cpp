@@ -13,6 +13,7 @@
 #include "nsDOMString.h"
 #include "MainThreadUtils.h"
 #include "SystemPrincipal.h"
+#include "nsIScriptGlobalObject.h"
 #include "nsIStreamListener.h"
 #include "nsStringStream.h"
 #include "nsCRT.h"
@@ -25,8 +26,8 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/NullPrincipal.h"
-#include "NullPrincipalURI.h"
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/ScriptSettings.h"
 
 using namespace mozilla;
@@ -136,7 +137,7 @@ already_AddRefed<Document> DOMParser::ParseFromBuffer(const Uint8Array& aBuf,
                                                       SupportedType aType,
                                                       ErrorResult& aRv) {
   aBuf.ComputeState();
-  return ParseFromBuffer(MakeSpan(aBuf.Data(), aBuf.Length()), aType, aRv);
+  return ParseFromBuffer(Span(aBuf.Data(), aBuf.Length()), aType, aRv);
 }
 
 already_AddRefed<Document> DOMParser::ParseFromBuffer(Span<const uint8_t> aBuf,
@@ -146,7 +147,7 @@ already_AddRefed<Document> DOMParser::ParseFromBuffer(Span<const uint8_t> aBuf,
   nsCOMPtr<nsIInputStream> stream;
   nsresult rv = NS_NewByteInputStream(
       getter_AddRefs(stream),
-      MakeSpan(reinterpret_cast<const char*>(aBuf.Elements()), aBuf.Length()),
+      Span(reinterpret_cast<const char*>(aBuf.Elements()), aBuf.Length()),
       NS_ASSIGNMENT_DEPEND);
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
@@ -267,8 +268,8 @@ already_AddRefed<DOMParser> DOMParser::Constructor(const GlobalObject& aOwner,
   nsCOMPtr<nsIURI> documentURI;
   nsIURI* baseURI = nullptr;
   if (docPrincipal->IsSystemPrincipal()) {
-    documentURI = new NullPrincipalURI();
-    docPrincipal = NullPrincipal::Create(OriginAttributes(), documentURI);
+    docPrincipal = NullPrincipal::Create(OriginAttributes());
+    documentURI = docPrincipal->GetURI();
   } else {
     // Grab document and base URIs off the window our constructor was
     // called on. Error out if anything untoward happens.
@@ -297,10 +298,10 @@ already_AddRefed<DOMParser> DOMParser::Constructor(const GlobalObject& aOwner,
 
 // static
 already_AddRefed<DOMParser> DOMParser::CreateWithoutGlobal(ErrorResult& aRv) {
-  nsCOMPtr<nsIURI> documentURI = new NullPrincipalURI();
   nsCOMPtr<nsIPrincipal> docPrincipal =
-      NullPrincipal::Create(OriginAttributes(), documentURI);
+      NullPrincipal::Create(OriginAttributes());
 
+  nsCOMPtr<nsIURI> documentURI = docPrincipal->GetURI();
   if (!documentURI) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;
@@ -326,9 +327,9 @@ already_AddRefed<Document> DOMParser::SetUpDocument(DocumentFlavor aFlavor,
   NS_ASSERTION(mDocumentURI, "Must have document URI by now");
 
   nsCOMPtr<Document> doc;
-  nsresult rv = NS_NewDOMDocument(
-      getter_AddRefs(doc), EmptyString(), EmptyString(), nullptr, mDocumentURI,
-      mBaseURI, mPrincipal, true, scriptHandlingObject, aFlavor);
+  nsresult rv = NS_NewDOMDocument(getter_AddRefs(doc), u""_ns, u""_ns, nullptr,
+                                  mDocumentURI, mBaseURI, mPrincipal, true,
+                                  scriptHandlingObject, aFlavor);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
     return nullptr;

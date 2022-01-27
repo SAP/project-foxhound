@@ -26,7 +26,8 @@ exports.CSS_PROPERTIES = {
       "animation-iteration-count",
       "animation-direction",
       "animation-fill-mode",
-      "animation-play-state"
+      "animation-play-state",
+      "animation-timeline"
     ],
     "supports": [
       "timing-function"
@@ -34,6 +35,7 @@ exports.CSS_PROPERTIES = {
     "values": [
       "alternate",
       "alternate-reverse",
+      "auto",
       "backwards",
       "both",
       "cubic-bezier",
@@ -192,16 +194,12 @@ exports.CSS_PROPERTIES = {
     ],
     "supports": [],
     "values": [
-      "-moz-gtk-info-bar",
       "-moz-mac-active-source-list-selection",
       "-moz-mac-disclosure-button-closed",
       "-moz-mac-disclosure-button-open",
-      "-moz-mac-fullscreen-button",
       "-moz-mac-help-button",
       "-moz-mac-source-list",
       "-moz-mac-source-list-selection",
-      "-moz-mac-vibrancy-dark",
-      "-moz-mac-vibrancy-light",
       "-moz-mac-vibrant-titlebar-dark",
       "-moz-mac-vibrant-titlebar-light",
       "-moz-menulist-arrow-button",
@@ -228,7 +226,6 @@ exports.CSS_PROPERTIES = {
       "button-arrow-next",
       "button-arrow-previous",
       "button-arrow-up",
-      "button-focus",
       "checkbox",
       "checkbox-container",
       "checkbox-label",
@@ -268,9 +265,7 @@ exports.CSS_PROPERTIES = {
       "resizer",
       "resizerpanel",
       "revert",
-      "scrollbar",
       "scrollbar-horizontal",
-      "scrollbar-small",
       "scrollbar-vertical",
       "scrollbarbutton-down",
       "scrollbarbutton-left",
@@ -454,13 +449,16 @@ exports.CSS_PROPERTIES = {
       "-webkit-repeating-linear-gradient",
       "-webkit-repeating-radial-gradient",
       "auto",
+      "conic-gradient",
       "fill",
+      "image-set",
       "inherit",
       "initial",
       "linear-gradient",
       "none",
       "radial-gradient",
       "repeat",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -677,35 +675,6 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
-  "-moz-context-properties": {
-    "isInherited": true,
-    "subproperties": [
-      "-moz-context-properties"
-    ],
-    "supports": [],
-    "values": [
-      "inherit",
-      "initial",
-      "none",
-      "revert",
-      "unset"
-    ]
-  },
-  "-moz-control-character-visibility": {
-    "isInherited": true,
-    "subproperties": [
-      "-moz-control-character-visibility"
-    ],
-    "supports": [],
-    "values": [
-      "hidden",
-      "inherit",
-      "initial",
-      "revert",
-      "unset",
-      "visible"
-    ]
-  },
   "-moz-float-edge": {
     "isInherited": false,
     "subproperties": [
@@ -838,74 +807,6 @@ exports.CSS_PROPERTIES = {
       "vertical"
     ]
   },
-  "-moz-outline-radius": {
-    "isInherited": false,
-    "subproperties": [
-      "-moz-outline-radius-topleft",
-      "-moz-outline-radius-topright",
-      "-moz-outline-radius-bottomright",
-      "-moz-outline-radius-bottomleft"
-    ],
-    "supports": [],
-    "values": [
-      "inherit",
-      "initial",
-      "revert",
-      "unset"
-    ]
-  },
-  "-moz-outline-radius-bottomleft": {
-    "isInherited": false,
-    "subproperties": [
-      "-moz-outline-radius-bottomleft"
-    ],
-    "supports": [],
-    "values": [
-      "inherit",
-      "initial",
-      "revert",
-      "unset"
-    ]
-  },
-  "-moz-outline-radius-bottomright": {
-    "isInherited": false,
-    "subproperties": [
-      "-moz-outline-radius-bottomright"
-    ],
-    "supports": [],
-    "values": [
-      "inherit",
-      "initial",
-      "revert",
-      "unset"
-    ]
-  },
-  "-moz-outline-radius-topleft": {
-    "isInherited": false,
-    "subproperties": [
-      "-moz-outline-radius-topleft"
-    ],
-    "supports": [],
-    "values": [
-      "inherit",
-      "initial",
-      "revert",
-      "unset"
-    ]
-  },
-  "-moz-outline-radius-topright": {
-    "isInherited": false,
-    "subproperties": [
-      "-moz-outline-radius-topright"
-    ],
-    "supports": [],
-    "values": [
-      "inherit",
-      "initial",
-      "revert",
-      "unset"
-    ]
-  },
   "-moz-padding-end": {
     "isInherited": false,
     "subproperties": [
@@ -967,7 +868,7 @@ exports.CSS_PROPERTIES = {
   "-moz-tab-size": {
     "isInherited": true,
     "subproperties": [
-      "-moz-tab-size"
+      "tab-size"
     ],
     "supports": [],
     "values": [
@@ -1335,7 +1236,8 @@ exports.CSS_PROPERTIES = {
       "animation-iteration-count",
       "animation-direction",
       "animation-fill-mode",
-      "animation-play-state"
+      "animation-play-state",
+      "animation-timeline"
     ],
     "supports": [
       "timing-function"
@@ -1343,6 +1245,7 @@ exports.CSS_PROPERTIES = {
     "values": [
       "alternate",
       "alternate-reverse",
+      "auto",
       "backwards",
       "both",
       "cubic-bezier",
@@ -1501,16 +1404,12 @@ exports.CSS_PROPERTIES = {
     ],
     "supports": [],
     "values": [
-      "-moz-gtk-info-bar",
       "-moz-mac-active-source-list-selection",
       "-moz-mac-disclosure-button-closed",
       "-moz-mac-disclosure-button-open",
-      "-moz-mac-fullscreen-button",
       "-moz-mac-help-button",
       "-moz-mac-source-list",
       "-moz-mac-source-list-selection",
-      "-moz-mac-vibrancy-dark",
-      "-moz-mac-vibrancy-light",
       "-moz-mac-vibrant-titlebar-dark",
       "-moz-mac-vibrant-titlebar-light",
       "-moz-menulist-arrow-button",
@@ -1537,7 +1436,6 @@ exports.CSS_PROPERTIES = {
       "button-arrow-next",
       "button-arrow-previous",
       "button-arrow-up",
-      "button-focus",
       "checkbox",
       "checkbox-container",
       "checkbox-label",
@@ -1577,9 +1475,7 @@ exports.CSS_PROPERTIES = {
       "resizer",
       "resizerpanel",
       "revert",
-      "scrollbar",
       "scrollbar-horizontal",
-      "scrollbar-small",
       "scrollbar-vertical",
       "scrollbarbutton-down",
       "scrollbarbutton-left",
@@ -1740,13 +1636,16 @@ exports.CSS_PROPERTIES = {
       "-webkit-repeating-linear-gradient",
       "-webkit-repeating-radial-gradient",
       "auto",
+      "conic-gradient",
       "fill",
+      "image-set",
       "inherit",
       "initial",
       "linear-gradient",
       "none",
       "radial-gradient",
       "repeat",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -1966,11 +1865,9 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-available",
-      "-moz-fit-content",
-      "-moz-max-content",
-      "-moz-min-content",
       "auto",
       "content",
+      "fit-content",
       "inherit",
       "initial",
       "max-content",
@@ -1987,11 +1884,9 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-available",
-      "-moz-fit-content",
-      "-moz-max-content",
-      "-moz-min-content",
       "auto",
       "content",
+      "fit-content",
       "inherit",
       "initial",
       "max-content",
@@ -2155,11 +2050,13 @@ exports.CSS_PROPERTIES = {
       "border-box",
       "bottom",
       "center",
+      "conic-gradient",
       "contain",
       "content-box",
       "cover",
       "exclude",
       "fill-box",
+      "image-set",
       "inherit",
       "initial",
       "intersect",
@@ -2175,6 +2072,7 @@ exports.CSS_PROPERTIES = {
       "repeat",
       "repeat-x",
       "repeat-y",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -2246,11 +2144,14 @@ exports.CSS_PROPERTIES = {
       "-webkit-radial-gradient",
       "-webkit-repeating-linear-gradient",
       "-webkit-repeating-radial-gradient",
+      "conic-gradient",
+      "image-set",
       "inherit",
       "initial",
       "linear-gradient",
       "none",
       "radial-gradient",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -2691,6 +2592,29 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
+  "accent-color": {
+    "isInherited": true,
+    "subproperties": [
+      "accent-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "auto",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
   "align-content": {
     "isInherited": false,
     "subproperties": [
@@ -2768,6 +2692,34 @@ exports.CSS_PROPERTIES = {
       "safe",
       "self-end",
       "self-start",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
+  "align-tracks": {
+    "isInherited": false,
+    "subproperties": [
+      "align-tracks"
+    ],
+    "supports": [],
+    "values": [
+      "baseline",
+      "center",
+      "end",
+      "first baseline",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "last baseline",
+      "normal",
+      "revert",
+      "safe",
+      "space-around",
+      "space-between",
+      "space-evenly",
       "start",
       "stretch",
       "unsafe",
@@ -2878,6 +2830,7 @@ exports.CSS_PROPERTIES = {
       "animation-play-state",
       "animation-fill-mode",
       "animation-delay",
+      "animation-timeline",
       "transform",
       "rotate",
       "scale",
@@ -2911,6 +2864,7 @@ exports.CSS_PROPERTIES = {
       "shape-outside",
       "touch-action",
       "-webkit-line-clamp",
+      "scrollbar-gutter",
       "column-width",
       "column-count",
       "column-fill",
@@ -2946,6 +2900,8 @@ exports.CSS_PROPERTIES = {
       "font-variation-settings",
       "font-language-override",
       "font-optical-sizing",
+      "math-depth",
+      "math-style",
       "-moz-osx-font-smoothing",
       "visibility",
       "writing-mode",
@@ -2997,7 +2953,7 @@ exports.CSS_PROPERTIES = {
       "text-emphasis-style",
       "text-emphasis-position",
       "text-emphasis-color",
-      "-moz-tab-size",
+      "tab-size",
       "line-break",
       "-webkit-text-fill-color",
       "-webkit-text-stroke-color",
@@ -3016,6 +2972,8 @@ exports.CSS_PROPERTIES = {
       "-moz-user-modify",
       "-moz-user-focus",
       "caret-color",
+      "accent-color",
+      "color-scheme",
       "scrollbar-color",
       "list-style-position",
       "list-style-type",
@@ -3033,11 +2991,8 @@ exports.CSS_PROPERTIES = {
       "outline-color",
       "outline-style",
       "outline-width",
-      "-moz-outline-radius-topleft",
-      "-moz-outline-radius-topright",
-      "-moz-outline-radius-bottomright",
-      "-moz-outline-radius-bottomleft",
       "outline-offset",
+      "size",
       "padding-top",
       "padding-right",
       "padding-bottom",
@@ -3112,6 +3067,7 @@ exports.CSS_PROPERTIES = {
       "rx",
       "ry",
       "r",
+      "d",
       "table-layout",
       "text-overflow",
       "text-decoration-line",
@@ -3149,7 +3105,8 @@ exports.CSS_PROPERTIES = {
       "animation-iteration-count",
       "animation-direction",
       "animation-fill-mode",
-      "animation-play-state"
+      "animation-play-state",
+      "animation-timeline"
     ],
     "supports": [
       "timing-function"
@@ -3157,6 +3114,7 @@ exports.CSS_PROPERTIES = {
     "values": [
       "alternate",
       "alternate-reverse",
+      "auto",
       "backwards",
       "both",
       "cubic-bezier",
@@ -3315,16 +3273,12 @@ exports.CSS_PROPERTIES = {
     ],
     "supports": [],
     "values": [
-      "-moz-gtk-info-bar",
       "-moz-mac-active-source-list-selection",
       "-moz-mac-disclosure-button-closed",
       "-moz-mac-disclosure-button-open",
-      "-moz-mac-fullscreen-button",
       "-moz-mac-help-button",
       "-moz-mac-source-list",
       "-moz-mac-source-list-selection",
-      "-moz-mac-vibrancy-dark",
-      "-moz-mac-vibrancy-light",
       "-moz-mac-vibrant-titlebar-dark",
       "-moz-mac-vibrant-titlebar-light",
       "-moz-menulist-arrow-button",
@@ -3351,7 +3305,6 @@ exports.CSS_PROPERTIES = {
       "button-arrow-next",
       "button-arrow-previous",
       "button-arrow-up",
-      "button-focus",
       "checkbox",
       "checkbox-container",
       "checkbox-label",
@@ -3391,9 +3344,7 @@ exports.CSS_PROPERTIES = {
       "resizer",
       "resizerpanel",
       "revert",
-      "scrollbar",
       "scrollbar-horizontal",
-      "scrollbar-small",
       "scrollbar-vertical",
       "scrollbarbutton-down",
       "scrollbarbutton-left",
@@ -3437,6 +3388,20 @@ exports.CSS_PROPERTIES = {
       "treeview",
       "unset",
       "window"
+    ]
+  },
+  "aspect-ratio": {
+    "isInherited": false,
+    "subproperties": [
+      "aspect-ratio"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
     ]
   },
   "backface-visibility": {
@@ -3488,6 +3453,7 @@ exports.CSS_PROPERTIES = {
       "border-box",
       "bottom",
       "center",
+      "conic-gradient",
       "contain",
       "content-box",
       "cover",
@@ -3495,6 +3461,7 @@ exports.CSS_PROPERTIES = {
       "fixed",
       "hsl",
       "hsla",
+      "image-set",
       "inherit",
       "initial",
       "left",
@@ -3507,6 +3474,7 @@ exports.CSS_PROPERTIES = {
       "repeat",
       "repeat-x",
       "repeat-y",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -3627,11 +3595,14 @@ exports.CSS_PROPERTIES = {
       "-webkit-radial-gradient",
       "-webkit-repeating-linear-gradient",
       "-webkit-repeating-radial-gradient",
+      "conic-gradient",
+      "image-set",
       "inherit",
       "initial",
       "linear-gradient",
       "none",
       "radial-gradient",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -3749,10 +3720,8 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-available",
-      "-moz-fit-content",
-      "-moz-max-content",
-      "-moz-min-content",
       "auto",
+      "fit-content",
       "inherit",
       "initial",
       "max-content",
@@ -4327,13 +4296,16 @@ exports.CSS_PROPERTIES = {
       "-webkit-repeating-linear-gradient",
       "-webkit-repeating-radial-gradient",
       "auto",
+      "conic-gradient",
       "fill",
+      "image-set",
       "inherit",
       "initial",
       "linear-gradient",
       "none",
       "radial-gradient",
       "repeat",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -4408,11 +4380,14 @@ exports.CSS_PROPERTIES = {
       "-webkit-radial-gradient",
       "-webkit-repeating-linear-gradient",
       "-webkit-repeating-radial-gradient",
+      "conic-gradient",
+      "image-set",
       "inherit",
       "initial",
       "linear-gradient",
       "none",
       "radial-gradient",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -5269,6 +5244,8 @@ exports.CSS_PROPERTIES = {
     "values": [
       "auto",
       "avoid",
+      "avoid-column",
+      "avoid-page",
       "inherit",
       "initial",
       "revert",
@@ -5459,6 +5436,23 @@ exports.CSS_PROPERTIES = {
       "linearrgb",
       "revert",
       "srgb",
+      "unset"
+    ]
+  },
+  "color-scheme": {
+    "isInherited": true,
+    "subproperties": [
+      "color-scheme"
+    ],
+    "supports": [],
+    "values": [
+      "dark",
+      "inherit",
+      "initial",
+      "light",
+      "normal",
+      "only",
+      "revert",
       "unset"
     ]
   },
@@ -5678,6 +5672,7 @@ exports.CSS_PROPERTIES = {
       "close-quote",
       "counter",
       "counters",
+      "image-set",
       "inherit",
       "initial",
       "no-close-quote",
@@ -5757,6 +5752,7 @@ exports.CSS_PROPERTIES = {
       "grab",
       "grabbing",
       "help",
+      "image-set",
       "inherit",
       "initial",
       "move",
@@ -5808,6 +5804,21 @@ exports.CSS_PROPERTIES = {
     "values": [
       "inherit",
       "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "d": {
+    "isInherited": false,
+    "subproperties": [
+      "d"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "path",
       "revert",
       "unset"
     ]
@@ -6000,11 +6011,9 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-available",
-      "-moz-fit-content",
-      "-moz-max-content",
-      "-moz-min-content",
       "auto",
       "content",
+      "fit-content",
       "inherit",
       "initial",
       "max-content",
@@ -6021,11 +6030,9 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-available",
-      "-moz-fit-content",
-      "-moz-max-content",
-      "-moz-min-content",
       "auto",
       "content",
+      "fit-content",
       "inherit",
       "initial",
       "max-content",
@@ -6345,6 +6352,10 @@ exports.CSS_PROPERTIES = {
     ],
     "supports": [],
     "values": [
+      "cap-height",
+      "ch-width",
+      "ic-height",
+      "ic-width",
       "inherit",
       "initial",
       "none",
@@ -6399,7 +6410,9 @@ exports.CSS_PROPERTIES = {
     "values": [
       "inherit",
       "initial",
+      "none",
       "revert",
+      "small-caps",
       "style",
       "unset",
       "weight"
@@ -6943,10 +6956,8 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-available",
-      "-moz-fit-content",
-      "-moz-max-content",
-      "-moz-min-content",
       "auto",
+      "fit-content",
       "inherit",
       "initial",
       "max-content",
@@ -7000,7 +7011,9 @@ exports.CSS_PROPERTIES = {
       "initial",
       "optimizequality",
       "optimizespeed",
+      "pixelated",
       "revert",
+      "smooth",
       "unset"
     ]
   },
@@ -7030,10 +7043,8 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-available",
-      "-moz-fit-content",
-      "-moz-max-content",
-      "-moz-min-content",
       "auto",
+      "fit-content",
       "inherit",
       "initial",
       "max-content",
@@ -7247,6 +7258,33 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
+  "justify-tracks": {
+    "isInherited": false,
+    "subproperties": [
+      "justify-tracks"
+    ],
+    "supports": [],
+    "values": [
+      "center",
+      "end",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "left",
+      "normal",
+      "revert",
+      "right",
+      "safe",
+      "space-around",
+      "space-between",
+      "space-evenly",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
   "left": {
     "isInherited": false,
     "subproperties": [
@@ -7337,8 +7375,21 @@ exports.CSS_PROPERTIES = {
       "list-style-image",
       "list-style-type"
     ],
-    "supports": [],
+    "supports": [
+      "gradient"
+    ],
     "values": [
+      "-moz-element",
+      "-moz-image-rect",
+      "-moz-linear-gradient",
+      "-moz-radial-gradient",
+      "-moz-repeating-linear-gradient",
+      "-moz-repeating-radial-gradient",
+      "-webkit-gradient",
+      "-webkit-linear-gradient",
+      "-webkit-radial-gradient",
+      "-webkit-repeating-linear-gradient",
+      "-webkit-repeating-radial-gradient",
       "arabic-indic",
       "armenian",
       "bengali",
@@ -7348,6 +7399,7 @@ exports.CSS_PROPERTIES = {
       "cjk-earthly-branch",
       "cjk-heavenly-stem",
       "cjk-ideographic",
+      "conic-gradient",
       "decimal",
       "decimal-leading-zero",
       "devanagari",
@@ -7361,6 +7413,7 @@ exports.CSS_PROPERTIES = {
       "hebrew",
       "hiragana",
       "hiragana-iroha",
+      "image-set",
       "inherit",
       "initial",
       "inside",
@@ -7374,6 +7427,7 @@ exports.CSS_PROPERTIES = {
       "korean-hanja-formal",
       "korean-hanja-informal",
       "lao",
+      "linear-gradient",
       "lower-alpha",
       "lower-armenian",
       "lower-greek",
@@ -7386,6 +7440,10 @@ exports.CSS_PROPERTIES = {
       "oriya",
       "outside",
       "persian",
+      "radial-gradient",
+      "repeating-conic-gradient",
+      "repeating-linear-gradient",
+      "repeating-radial-gradient",
       "revert",
       "simp-chinese-formal",
       "simp-chinese-informal",
@@ -7410,11 +7468,31 @@ exports.CSS_PROPERTIES = {
     "subproperties": [
       "list-style-image"
     ],
-    "supports": [],
+    "supports": [
+      "gradient"
+    ],
     "values": [
+      "-moz-element",
+      "-moz-image-rect",
+      "-moz-linear-gradient",
+      "-moz-radial-gradient",
+      "-moz-repeating-linear-gradient",
+      "-moz-repeating-radial-gradient",
+      "-webkit-gradient",
+      "-webkit-linear-gradient",
+      "-webkit-radial-gradient",
+      "-webkit-repeating-linear-gradient",
+      "-webkit-repeating-radial-gradient",
+      "conic-gradient",
+      "image-set",
       "inherit",
       "initial",
+      "linear-gradient",
       "none",
+      "radial-gradient",
+      "repeating-conic-gradient",
+      "repeating-linear-gradient",
+      "repeating-radial-gradient",
       "revert",
       "unset",
       "url"
@@ -7760,11 +7838,13 @@ exports.CSS_PROPERTIES = {
       "border-box",
       "bottom",
       "center",
+      "conic-gradient",
       "contain",
       "content-box",
       "cover",
       "exclude",
       "fill-box",
+      "image-set",
       "inherit",
       "initial",
       "intersect",
@@ -7780,6 +7860,7 @@ exports.CSS_PROPERTIES = {
       "repeat",
       "repeat-x",
       "repeat-y",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -7851,11 +7932,14 @@ exports.CSS_PROPERTIES = {
       "-webkit-radial-gradient",
       "-webkit-repeating-linear-gradient",
       "-webkit-repeating-radial-gradient",
+      "conic-gradient",
+      "image-set",
       "inherit",
       "initial",
       "linear-gradient",
       "none",
       "radial-gradient",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -7999,6 +8083,38 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
+  "masonry-auto-flow": {
+    "isInherited": false,
+    "subproperties": [
+      "masonry-auto-flow"
+    ],
+    "supports": [],
+    "values": [
+      "definite-first",
+      "inherit",
+      "initial",
+      "next",
+      "ordered",
+      "pack",
+      "revert",
+      "unset"
+    ]
+  },
+  "math-style": {
+    "isInherited": true,
+    "subproperties": [
+      "math-style"
+    ],
+    "supports": [],
+    "values": [
+      "compact",
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
   "max-block-size": {
     "isInherited": false,
     "subproperties": [
@@ -8007,9 +8123,7 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-available",
-      "-moz-fit-content",
-      "-moz-max-content",
-      "-moz-min-content",
+      "fit-content",
       "inherit",
       "initial",
       "max-content",
@@ -8027,9 +8141,7 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-available",
-      "-moz-fit-content",
-      "-moz-max-content",
-      "-moz-min-content",
+      "fit-content",
       "inherit",
       "initial",
       "max-content",
@@ -8047,9 +8159,7 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-available",
-      "-moz-fit-content",
-      "-moz-max-content",
-      "-moz-min-content",
+      "fit-content",
       "inherit",
       "initial",
       "max-content",
@@ -8067,9 +8177,7 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-available",
-      "-moz-fit-content",
-      "-moz-max-content",
-      "-moz-min-content",
+      "fit-content",
       "inherit",
       "initial",
       "max-content",
@@ -8087,10 +8195,8 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-available",
-      "-moz-fit-content",
-      "-moz-max-content",
-      "-moz-min-content",
       "auto",
+      "fit-content",
       "inherit",
       "initial",
       "max-content",
@@ -8107,10 +8213,8 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-available",
-      "-moz-fit-content",
-      "-moz-max-content",
-      "-moz-min-content",
       "auto",
+      "fit-content",
       "inherit",
       "initial",
       "max-content",
@@ -8127,10 +8231,8 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-available",
-      "-moz-fit-content",
-      "-moz-max-content",
-      "-moz-min-content",
       "auto",
+      "fit-content",
       "inherit",
       "initial",
       "max-content",
@@ -8147,10 +8249,8 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-available",
-      "-moz-fit-content",
-      "-moz-max-content",
-      "-moz-min-content",
       "auto",
+      "fit-content",
       "inherit",
       "initial",
       "max-content",
@@ -8462,6 +8562,7 @@ exports.CSS_PROPERTIES = {
     "values": [
       "-moz-hidden-unscrollable",
       "auto",
+      "clip",
       "hidden",
       "inherit",
       "initial",
@@ -8495,6 +8596,7 @@ exports.CSS_PROPERTIES = {
     "values": [
       "-moz-hidden-unscrollable",
       "auto",
+      "clip",
       "hidden",
       "inherit",
       "initial",
@@ -8513,6 +8615,7 @@ exports.CSS_PROPERTIES = {
     "values": [
       "-moz-hidden-unscrollable",
       "auto",
+      "clip",
       "hidden",
       "inherit",
       "initial",
@@ -8547,6 +8650,7 @@ exports.CSS_PROPERTIES = {
     "values": [
       "-moz-hidden-unscrollable",
       "auto",
+      "clip",
       "hidden",
       "inherit",
       "initial",
@@ -8565,6 +8669,7 @@ exports.CSS_PROPERTIES = {
     "values": [
       "-moz-hidden-unscrollable",
       "auto",
+      "clip",
       "hidden",
       "inherit",
       "initial",
@@ -8850,6 +8955,8 @@ exports.CSS_PROPERTIES = {
     "values": [
       "auto",
       "avoid",
+      "avoid-column",
+      "avoid-page",
       "inherit",
       "initial",
       "revert",
@@ -9148,6 +9255,7 @@ exports.CSS_PROPERTIES = {
     ],
     "supports": [],
     "values": [
+      "alternate",
       "inherit",
       "initial",
       "over",
@@ -9644,8 +9752,10 @@ exports.CSS_PROPERTIES = {
       "-webkit-repeating-radial-gradient",
       "border-box",
       "circle",
+      "conic-gradient",
       "content-box",
       "ellipse",
+      "image-set",
       "inherit",
       "initial",
       "inset",
@@ -9655,6 +9765,7 @@ exports.CSS_PROPERTIES = {
       "padding-box",
       "polygon",
       "radial-gradient",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -9675,6 +9786,32 @@ exports.CSS_PROPERTIES = {
       "inherit",
       "initial",
       "optimizespeed",
+      "revert",
+      "unset"
+    ]
+  },
+  "size": {
+    "isInherited": false,
+    "subproperties": [
+      "size"
+    ],
+    "supports": [],
+    "values": [
+      "a3",
+      "a4",
+      "a5",
+      "auto",
+      "b4",
+      "b5",
+      "inherit",
+      "initial",
+      "jis-b4",
+      "jis-b5",
+      "landscape",
+      "ledger",
+      "legal",
+      "letter",
+      "portrait",
       "revert",
       "unset"
     ]
@@ -9837,6 +9974,19 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "context-value",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "tab-size": {
+    "isInherited": true,
+    "subproperties": [
+      "tab-size"
+    ],
+    "supports": [],
+    "values": [
       "inherit",
       "initial",
       "revert",
@@ -10333,6 +10483,7 @@ exports.CSS_PROPERTIES = {
       "none",
       "pan-x",
       "pan-y",
+      "pinch-zoom",
       "revert",
       "unset"
     ]
@@ -10649,10 +10800,8 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-available",
-      "-moz-fit-content",
-      "-moz-max-content",
-      "-moz-min-content",
       "auto",
+      "fit-content",
       "inherit",
       "initial",
       "max-content",
@@ -10792,23 +10941,23 @@ exports.CSS_PROPERTIES = {
  * A list of the pseudo elements.
  */
 exports.PSEUDO_ELEMENTS = [
-  ":after",
-  ":before",
-  ":marker",
-  ":backdrop",
-  ":cue",
-  ":first-letter",
-  ":first-line",
-  ":selection",
-  ":-moz-focus-inner",
-  ":-moz-progress-bar",
-  ":-moz-range-track",
-  ":-moz-range-progress",
-  ":-moz-range-thumb",
-  ":-moz-meter-bar",
-  ":placeholder",
-  ":-moz-color-swatch",
-  ":file-chooser-button"
+  "::after",
+  "::before",
+  "::marker",
+  "::backdrop",
+  "::cue",
+  "::first-letter",
+  "::first-line",
+  "::selection",
+  "::-moz-focus-inner",
+  "::-moz-progress-bar",
+  "::-moz-range-track",
+  "::-moz-range-progress",
+  "::-moz-range-thumb",
+  "::-moz-meter-bar",
+  "::placeholder",
+  "::-moz-color-swatch",
+  "::file-selector-button"
 ];
 
 /**
@@ -10833,6 +10982,18 @@ exports.PREFERENCES = [
     "layout.css.grid-template-masonry-value.enabled"
   ],
   [
+    "math-depth",
+    "layout.css.math-depth.enabled"
+  ],
+  [
+    "math-style",
+    "layout.css.math-style.enabled"
+  ],
+  [
+    "-moz-control-character-visibility",
+    "layout.css.moz-control-character-visibility.enabled"
+  ],
+  [
     "-moz-osx-font-smoothing",
     "layout.css.osx-font-smoothing.enabled"
   ],
@@ -10845,24 +11006,12 @@ exports.PREFERENCES = [
     "layout.css.scroll-anchoring.enabled"
   ],
   [
-    "text-decoration-skip-ink",
-    "layout.css.text-decoration-skip-ink.enabled"
-  ],
-  [
-    "text-justify",
-    "layout.css.text-justify.enabled"
-  ],
-  [
-    "text-underline-position",
-    "layout.css.text-underline-position.enabled"
+    "scrollbar-gutter",
+    "layout.css.scrollbar-gutter.enabled"
   ],
   [
     "touch-action",
     "layout.css.touch_action.enabled"
-  ],
-  [
-    "transform-box",
-    "svg.transform-box.enabled"
   ],
   [
     "-webkit-line-clamp",
@@ -10901,12 +11050,28 @@ exports.PREFERENCES = [
     "layout.css.overscroll-behavior.enabled"
   ],
   [
+    "accent-color",
+    "layout.css.accent-color.enabled"
+  ],
+  [
     "align-tracks",
     "layout.css.grid-template-masonry-value.enabled"
   ],
   [
+    "animation-timeline",
+    "layout.css.scroll-linked-animations.enabled"
+  ],
+  [
     "backdrop-filter",
     "layout.css.backdrop-filter.enabled"
+  ],
+  [
+    "color-scheme",
+    "layout.css.color-scheme.enabled"
+  ],
+  [
+    "d",
+    "layout.css.d-property.enabled"
   ],
   [
     "font-variation-settings",
@@ -10915,6 +11080,10 @@ exports.PREFERENCES = [
   [
     "justify-tracks",
     "layout.css.grid-template-masonry-value.enabled"
+  ],
+  [
+    "-moz-context-properties",
+    "svg.context-properties.content.enabled"
   ],
   [
     "offset-anchor",
@@ -10933,8 +11102,8 @@ exports.PREFERENCES = [
     "layout.css.individual-transform.enabled"
   ],
   [
-    "text-decoration-thickness",
-    "layout.css.text-decoration-thickness.enabled"
+    "size",
+    "layout.css.page-size.enabled"
   ],
   [
     "translate",
@@ -10943,10 +11112,6 @@ exports.PREFERENCES = [
   [
     "offset-distance",
     "layout.css.motion-path.enabled"
-  ],
-  [
-    "text-underline-offset",
-    "layout.css.text-underline-offset.enabled"
   ],
   [
     "overflow-clip-box",
@@ -11037,34 +11202,6 @@ exports.PREFERENCES = [
     "layout.css.prefixes.transforms"
   ],
   [
-    "-moz-column-width",
-    "layout.css.prefixes.columns"
-  ],
-  [
-    "-moz-column-count",
-    "layout.css.prefixes.columns"
-  ],
-  [
-    "-moz-column-fill",
-    "layout.css.prefixes.columns"
-  ],
-  [
-    "-moz-column-rule-width",
-    "layout.css.prefixes.columns"
-  ],
-  [
-    "-moz-column-rule-color",
-    "layout.css.prefixes.columns"
-  ],
-  [
-    "-moz-column-span",
-    "layout.css.prefixes.columns"
-  ],
-  [
-    "-moz-column-rule-style",
-    "layout.css.prefixes.columns"
-  ],
-  [
     "-moz-font-feature-settings",
     "layout.css.prefixes.font-features"
   ],
@@ -11073,28 +11210,8 @@ exports.PREFERENCES = [
     "layout.css.prefixes.font-features"
   ],
   [
-    "offset-block-start",
-    "layout.css.offset-logical-properties.enabled"
-  ],
-  [
-    "offset-block-end",
-    "layout.css.offset-logical-properties.enabled"
-  ],
-  [
-    "offset-inline-start",
-    "layout.css.offset-logical-properties.enabled"
-  ],
-  [
-    "offset-inline-end",
-    "layout.css.offset-logical-properties.enabled"
-  ],
-  [
     "-moz-box-sizing",
     "layout.css.prefixes.box-sizing"
-  ],
-  [
-    "-moz-column-gap",
-    "layout.css.prefixes.columns"
   ],
   [
     "-moz-border-image",
@@ -11107,13 +11224,5 @@ exports.PREFERENCES = [
   [
     "-moz-animation",
     "layout.css.prefixes.animations"
-  ],
-  [
-    "-moz-columns",
-    "layout.css.prefixes.columns"
-  ],
-  [
-    "-moz-column-rule",
-    "layout.css.prefixes.columns"
   ]
 ];

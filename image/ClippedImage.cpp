@@ -12,6 +12,7 @@
 
 #include "ImageRegion.h"
 #include "Orientation.h"
+#include "gfxContext.h"
 #include "gfxDrawable.h"
 #include "gfxPlatform.h"
 #include "gfxUtils.h"
@@ -24,7 +25,6 @@ namespace mozilla {
 
 using namespace gfx;
 using layers::ImageContainer;
-using layers::LayerManager;
 using std::make_pair;
 using std::max;
 using std::modf;
@@ -223,8 +223,8 @@ NS_IMETHODIMP_(already_AddRefed<SourceSurface>)
 ClippedImage::GetFrame(uint32_t aWhichFrame, uint32_t aFlags) {
   ImgDrawResult result;
   RefPtr<SourceSurface> surface;
-  Tie(result, surface) =
-      GetFrameInternal(mClip.Size(), Nothing(), aWhichFrame, aFlags, 1.0);
+  Tie(result, surface) = GetFrameInternal(mClip.Size(), Nothing(), Nothing(),
+                                          aWhichFrame, aFlags, 1.0);
   return surface.forget();
 }
 
@@ -238,7 +238,8 @@ ClippedImage::GetFrameAtSize(const IntSize& aSize, uint32_t aWhichFrame,
 
 std::pair<ImgDrawResult, RefPtr<SourceSurface>> ClippedImage::GetFrameInternal(
     const nsIntSize& aSize, const Maybe<SVGImageContext>& aSVGContext,
-    uint32_t aWhichFrame, uint32_t aFlags, float aOpacity) {
+    const Maybe<ImageIntRegion>& aRegion, uint32_t aWhichFrame, uint32_t aFlags,
+    float aOpacity) {
   if (!ShouldClip()) {
     RefPtr<SourceSurface> surface = InnerImage()->GetFrame(aWhichFrame, aFlags);
     return std::make_pair(
@@ -288,46 +289,21 @@ std::pair<ImgDrawResult, RefPtr<SourceSurface>> ClippedImage::GetFrameInternal(
 }
 
 NS_IMETHODIMP_(bool)
-ClippedImage::IsImageContainerAvailable(LayerManager* aManager,
+ClippedImage::IsImageContainerAvailable(WindowRenderer* aRenderer,
                                         uint32_t aFlags) {
   if (!ShouldClip()) {
-    return InnerImage()->IsImageContainerAvailable(aManager, aFlags);
-  }
-  return false;
-}
-
-NS_IMETHODIMP_(already_AddRefed<ImageContainer>)
-ClippedImage::GetImageContainer(LayerManager* aManager, uint32_t aFlags) {
-  // XXX(seth): We currently don't have a way of clipping the result of
-  // GetImageContainer. We work around this by always returning null, but if it
-  // ever turns out that ClippedImage is widely used on codepaths that can
-  // actually benefit from GetImageContainer, it would be a good idea to fix
-  // that method for performance reasons.
-
-  if (!ShouldClip()) {
-    return InnerImage()->GetImageContainer(aManager, aFlags);
-  }
-
-  return nullptr;
-}
-
-NS_IMETHODIMP_(bool)
-ClippedImage::IsImageContainerAvailableAtSize(LayerManager* aManager,
-                                              const IntSize& aSize,
-                                              uint32_t aFlags) {
-  if (!ShouldClip()) {
-    return InnerImage()->IsImageContainerAvailableAtSize(aManager, aSize,
-                                                         aFlags);
+    return InnerImage()->IsImageContainerAvailable(aRenderer, aFlags);
   }
   return false;
 }
 
 NS_IMETHODIMP_(ImgDrawResult)
-ClippedImage::GetImageContainerAtSize(layers::LayerManager* aManager,
-                                      const gfx::IntSize& aSize,
-                                      const Maybe<SVGImageContext>& aSVGContext,
-                                      uint32_t aFlags,
-                                      layers::ImageContainer** aOutContainer) {
+ClippedImage::GetImageProvider(WindowRenderer* aRenderer,
+                               const gfx::IntSize& aSize,
+                               const Maybe<SVGImageContext>& aSVGContext,
+                               const Maybe<ImageIntRegion>& aRegion,
+                               uint32_t aFlags,
+                               WebRenderImageProvider** aProvider) {
   // XXX(seth): We currently don't have a way of clipping the result of
   // GetImageContainer. We work around this by always returning null, but if it
   // ever turns out that ClippedImage is widely used on codepaths that can
@@ -335,8 +311,8 @@ ClippedImage::GetImageContainerAtSize(layers::LayerManager* aManager,
   // that method for performance reasons.
 
   if (!ShouldClip()) {
-    return InnerImage()->GetImageContainerAtSize(aManager, aSize, aSVGContext,
-                                                 aFlags, aOutContainer);
+    return InnerImage()->GetImageProvider(aRenderer, aSize, aSVGContext,
+                                          aRegion, aFlags, aProvider);
   }
 
   return ImgDrawResult::NOT_SUPPORTED;
@@ -371,8 +347,8 @@ ClippedImage::Draw(gfxContext* aContext, const nsIntSize& aSize,
     // GetFrame will call DrawSingleTile internally.
     ImgDrawResult result;
     RefPtr<SourceSurface> surface;
-    Tie(result, surface) =
-        GetFrameInternal(aSize, aSVGContext, aWhichFrame, aFlags, aOpacity);
+    Tie(result, surface) = GetFrameInternal(aSize, aSVGContext, Nothing(),
+                                            aWhichFrame, aFlags, aOpacity);
     if (!surface) {
       MOZ_ASSERT(result != ImgDrawResult::SUCCESS);
       return result;

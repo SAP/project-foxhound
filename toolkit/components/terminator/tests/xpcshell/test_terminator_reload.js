@@ -5,9 +5,9 @@
 
 // Test that the Shutdown Terminator reloads durations correctly
 
-ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-ChromeUtils.import("resource://gre/modules/osfile.jsm", this);
-ChromeUtils.import("resource://gre/modules/Timer.jsm", this);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 var { Path, File, Constants } = OS;
 
@@ -15,11 +15,16 @@ var PATH;
 
 var HISTOGRAMS = {
   "quit-application": "SHUTDOWN_PHASE_DURATION_TICKS_QUIT_APPLICATION",
+  "profile-change-net-teardown":
+    "SHUTDOWN_PHASE_DURATION_TICKS_PROFILE_CHANGE_NET_TEARDOWN",
   "profile-change-teardown":
     "SHUTDOWN_PHASE_DURATION_TICKS_PROFILE_CHANGE_TEARDOWN",
   "profile-before-change":
     "SHUTDOWN_PHASE_DURATION_TICKS_PROFILE_BEFORE_CHANGE",
+  "profile-before-change-qm":
+    "SHUTDOWN_PHASE_DURATION_TICKS_PROFILE_BEFORE_CHANGE_QM",
   "xpcom-will-shutdown": "SHUTDOWN_PHASE_DURATION_TICKS_XPCOM_WILL_SHUTDOWN",
+  "xpcom-shutdown": "SHUTDOWN_PHASE_DURATION_TICKS_XPCOM_SHUTDOWN",
 };
 
 add_task(async function init() {

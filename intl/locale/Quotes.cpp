@@ -4,10 +4,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Quotes.h"
-#include "MozLocale.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPtr.h"
-#include "nsDataHashtable.h"
+#include "mozilla/intl/Locale.h"
+#include "nsTHashMap.h"
 #include "nsPrintfCString.h"
 
 using namespace mozilla;
@@ -21,7 +21,7 @@ struct LangQuotesRec {
 
 #include "cldr-quotes.inc"
 
-static StaticAutoPtr<nsDataHashtable<nsCStringHashKey, Quotes>> sQuotesForLang;
+static StaticAutoPtr<nsTHashMap<nsCStringHashKey, Quotes>> sQuotesForLang;
 }  // anonymous namespace
 
 namespace mozilla {
@@ -32,51 +32,57 @@ const Quotes* QuotesForLang(const nsAtom* aLang) {
 
   // On first use, initialize the hashtable from our CLDR-derived data array.
   if (!sQuotesForLang) {
-    sQuotesForLang = new nsDataHashtable<nsCStringHashKey, Quotes>(32);
+    sQuotesForLang = new nsTHashMap<nsCStringHashKey, Quotes>(32);
     ClearOnShutdown(&sQuotesForLang);
     for (const auto& i : sLangQuotes) {
       const char* s = i.mLangs;
       size_t len;
       while ((len = strlen(s))) {
-        sQuotesForLang->Put(nsDependentCString(s, len), i.mQuotes);
+        sQuotesForLang->InsertOrUpdate(nsDependentCString(s, len), i.mQuotes);
         s += len + 1;
       }
     }
   }
 
   nsAtomCString langStr(aLang);
-  const Quotes* entry = sQuotesForLang->GetValue(langStr);
+  const Quotes* entry = sQuotesForLang->Lookup(langStr).DataPtrOrNull();
   if (entry) {
     // Found an exact match for the requested lang.
     return entry;
   }
 
-  // Try parsing lang as a Locale (which will also canonicalize case of the
-  // subtags), then see if we can match it with region or script subtags,
-  // if present, or just the primary language tag.
-  Locale loc(langStr);
-  if (!loc.IsWellFormed()) {
+  // Try parsing lang as a Locale and canonicalizing the subtags, then see if
+  // we can match it with region or script subtags, if present, or just the
+  // primary language tag.
+  Locale loc;
+  auto result = LocaleParser::TryParse(langStr, loc);
+  if (result.isErr()) {
     return nullptr;
   }
-  if (!loc.GetRegion().IsEmpty()) {
+  if (loc.Canonicalize().isErr()) {
+    return nullptr;
+  }
+  if (loc.Region().Present()) {
     nsAutoCString langAndRegion;
-    langAndRegion.Append(loc.GetLanguage());
+    langAndRegion.Append(loc.Language().Span());
     langAndRegion.Append('-');
-    langAndRegion.Append(loc.GetRegion());
-    if ((entry = sQuotesForLang->GetValue(langAndRegion))) {
+    langAndRegion.Append(loc.Region().Span());
+    if ((entry = sQuotesForLang->Lookup(langAndRegion).DataPtrOrNull())) {
       return entry;
     }
   }
-  if (!loc.GetScript().IsEmpty()) {
+  if (loc.Script().Present()) {
     nsAutoCString langAndScript;
-    langAndScript.Append(loc.GetLanguage());
+    langAndScript.Append(loc.Language().Span());
     langAndScript.Append('-');
-    langAndScript.Append(loc.GetScript());
-    if ((entry = sQuotesForLang->GetValue(langAndScript))) {
+    langAndScript.Append(loc.Script().Span());
+    if ((entry = sQuotesForLang->Lookup(langAndScript).DataPtrOrNull())) {
       return entry;
     }
   }
-  if ((entry = sQuotesForLang->GetValue(loc.GetLanguage()))) {
+  Span<const char> langAsSpan = loc.Language().Span();
+  nsAutoCString lang(langAsSpan.data(), langAsSpan.size());
+  if ((entry = sQuotesForLang->Lookup(lang).DataPtrOrNull())) {
     return entry;
   }
 

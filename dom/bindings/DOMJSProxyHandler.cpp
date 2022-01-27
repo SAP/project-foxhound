@@ -13,11 +13,13 @@
 #include "mozilla/dom/BindingUtils.h"
 
 #include "jsapi.h"
+#include "js/friend/DOMProxy.h"  // JS::DOMProxyShadowsResult, JS::ExpandoAndGeneration, JS::SetDOMProxyInformation
+#include "js/PropertyAndElement.h"  // JS_AlreadyHasOwnPropertyById, JS_DefineProperty, JS_DefinePropertyById, JS_DeleteProperty, JS_DeletePropertyById
+#include "js/Object.h"              // JS::GetCompartment
 
 using namespace JS;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 jsid s_length_id = JSID_VOID;
 
@@ -27,39 +29,43 @@ bool DefineStaticJSVals(JSContext* cx) {
 
 const char DOMProxyHandler::family = 0;
 
-js::DOMProxyShadowsResult DOMProxyShadows(JSContext* cx,
+JS::DOMProxyShadowsResult DOMProxyShadows(JSContext* cx,
                                           JS::Handle<JSObject*> proxy,
                                           JS::Handle<jsid> id) {
+  using DOMProxyShadowsResult = JS::DOMProxyShadowsResult;
+
   JS::Rooted<JSObject*> expando(cx, DOMProxyHandler::GetExpandoObject(proxy));
   JS::Value v = js::GetProxyPrivate(proxy);
   bool isOverrideBuiltins = !v.isObject() && !v.isUndefined();
   if (expando) {
     bool hasOwn;
     if (!JS_AlreadyHasOwnPropertyById(cx, expando, id, &hasOwn))
-      return js::ShadowCheckFailed;
+      return DOMProxyShadowsResult::ShadowCheckFailed;
 
     if (hasOwn) {
-      return isOverrideBuiltins ? js::ShadowsViaIndirectExpando
-                                : js::ShadowsViaDirectExpando;
+      return isOverrideBuiltins
+                 ? DOMProxyShadowsResult::ShadowsViaIndirectExpando
+                 : DOMProxyShadowsResult::ShadowsViaDirectExpando;
     }
   }
 
   if (!isOverrideBuiltins) {
     // Our expando, if any, didn't shadow, so we're not shadowing at all.
-    return js::DoesntShadow;
+    return DOMProxyShadowsResult::DoesntShadow;
   }
 
   bool hasOwn;
   if (!GetProxyHandler(proxy)->hasOwn(cx, proxy, id, &hasOwn))
-    return js::ShadowCheckFailed;
+    return DOMProxyShadowsResult::ShadowCheckFailed;
 
-  return hasOwn ? js::Shadows : js::DoesntShadowUnique;
+  return hasOwn ? DOMProxyShadowsResult::Shadows
+                : DOMProxyShadowsResult::DoesntShadowUnique;
 }
 
 // Store the information for the specialized ICs.
 struct SetDOMProxyInformation {
   SetDOMProxyInformation() {
-    js::SetDOMProxyInformation((const void*)&DOMProxyHandler::family,
+    JS::SetDOMProxyInformation((const void*)&DOMProxyHandler::family,
                                DOMProxyShadows,
                                &RemoteObjectProxyBase::sCrossOriginProxyFamily);
   }
@@ -72,7 +78,7 @@ static inline void CheckExpandoObject(JSObject* proxy,
 #ifdef DEBUG
   JSObject* obj = &expando.toObject();
   MOZ_ASSERT(!js::gc::EdgeNeedsSweepUnbarriered(&obj));
-  MOZ_ASSERT(js::GetObjectCompartment(proxy) == js::GetObjectCompartment(obj));
+  MOZ_ASSERT(JS::GetCompartment(proxy) == JS::GetCompartment(obj));
 
   // When we create an expando object in EnsureExpandoObject below, we preserve
   // the wrapper. The wrapper is released when the object is unlinked, but we
@@ -87,7 +93,7 @@ static inline void CheckExpandoObject(JSObject* proxy,
 }
 
 static inline void CheckExpandoAndGeneration(
-    JSObject* proxy, js::ExpandoAndGeneration* expandoAndGeneration) {
+    JSObject* proxy, JS::ExpandoAndGeneration* expandoAndGeneration) {
 #ifdef DEBUG
   JS::Value value = expandoAndGeneration->expando;
   if (!value.isUndefined()) CheckExpandoObject(proxy, value);
@@ -120,8 +126,8 @@ JSObject* DOMProxyHandler::GetAndClearExpandoObject(JSObject* obj) {
   if (v.isObject()) {
     js::SetProxyPrivate(obj, UndefinedValue());
   } else {
-    js::ExpandoAndGeneration* expandoAndGeneration =
-        static_cast<js::ExpandoAndGeneration*>(v.toPrivate());
+    auto* expandoAndGeneration =
+        static_cast<JS::ExpandoAndGeneration*>(v.toPrivate());
     v = expandoAndGeneration->expando;
     if (v.isUndefined()) {
       return nullptr;
@@ -145,16 +151,14 @@ JSObject* DOMProxyHandler::EnsureExpandoObject(JSContext* cx,
     return &v.toObject();
   }
 
-  js::ExpandoAndGeneration* expandoAndGeneration;
+  JS::ExpandoAndGeneration* expandoAndGeneration = nullptr;
   if (!v.isUndefined()) {
     expandoAndGeneration =
-        static_cast<js::ExpandoAndGeneration*>(v.toPrivate());
+        static_cast<JS::ExpandoAndGeneration*>(v.toPrivate());
     CheckExpandoAndGeneration(obj, expandoAndGeneration);
     if (expandoAndGeneration->expando.isObject()) {
       return &expandoAndGeneration->expando.toObject();
     }
-  } else {
-    expandoAndGeneration = nullptr;
   }
 
   JS::Rooted<JSObject*> expando(
@@ -192,8 +196,8 @@ bool DOMProxyHandler::isExtensible(JSContext* cx, JS::Handle<JSObject*> proxy,
 }
 
 bool BaseDOMProxyHandler::getOwnPropertyDescriptor(
-    JSContext* cx, JS::Handle<JSObject*> proxy, JS::Handle<jsid> id,
-    MutableHandle<PropertyDescriptor> desc) const {
+    JSContext* cx, Handle<JSObject*> proxy, Handle<jsid> id,
+    MutableHandle<Maybe<PropertyDescriptor>> desc) const {
   return getOwnPropDescriptor(cx, proxy, id, /* ignoreNamedProps = */ false,
                               desc);
 }
@@ -219,45 +223,6 @@ bool DOMProxyHandler::defineProperty(JSContext* cx, JS::Handle<JSObject*> proxy,
   return true;
 }
 
-bool DOMProxyHandler::definePrivateField(JSContext* cx, HandleObject proxy,
-                                         HandleId id,
-                                         Handle<PropertyDescriptor> desc,
-                                         ObjectOpResult& result) const {
-  // Delegate to defineProperty, since InitPrivateElemOperation will
-  // do the pre-existence check for us.
-  return this->defineProperty(cx, proxy, id, desc, result);
-}
-
-bool DOMProxyHandler::setPrivate(JSContext* cx, Handle<JSObject*> proxy,
-                                 Handle<jsid> id, Handle<JS::Value> v,
-                                 Handle<JS::Value> receiver,
-                                 ObjectOpResult& result) const {
-  // Delegate to set, since SetPrivateElemOperation will
-  // do the pre-existence check for us.
-  return this->set(cx, proxy, id, v, receiver, result);
-}
-
-bool DOMProxyHandler::getPrivate(JSContext* cx, HandleObject proxy,
-                                 HandleValue receiver, HandleId id,
-                                 MutableHandleValue vp) const {
-  // Delegate to set, since GetPrivateElemOperation will
-  // do the pre-existence check for us.
-  return this->get(cx, proxy, receiver, id, vp);
-}
-
-bool DOMProxyHandler::hasPrivate(JSContext* cx, HandleObject proxy, HandleId id,
-                                 bool* bp) const {
-  JS::Rooted<JSObject*> expando(cx, GetExpandoObject(proxy));
-  // If there is no expando object, then there is no private field.
-  if (!expando) {
-    *bp = false;
-    return true;
-  }
-
-  // Check if the private property is on the expando.
-  return JS_HasOwnPropertyById(cx, expando, id, bp);
-}
-
 bool DOMProxyHandler::set(JSContext* cx, Handle<JSObject*> proxy,
                           Handle<jsid> id, Handle<JS::Value> v,
                           Handle<JS::Value> receiver,
@@ -274,11 +239,12 @@ bool DOMProxyHandler::set(JSContext* cx, Handle<JSObject*> proxy,
 
   // Make sure to ignore our named properties when checking for own
   // property descriptors for a set.
-  JS::Rooted<PropertyDescriptor> ownDesc(cx);
+  Rooted<Maybe<PropertyDescriptor>> ownDesc(cx);
   if (!getOwnPropDescriptor(cx, proxy, id, /* ignoreNamedProps = */ true,
                             &ownDesc)) {
     return false;
   }
+
   return js::SetPropertyIgnoringNamedGetter(cx, proxy, id, v, receiver, ownDesc,
                                             result);
 }
@@ -337,8 +303,8 @@ JSObject* DOMProxyHandler::GetExpandoObject(JSObject* obj) {
     return nullptr;
   }
 
-  js::ExpandoAndGeneration* expandoAndGeneration =
-      static_cast<js::ExpandoAndGeneration*>(v.toPrivate());
+  auto* expandoAndGeneration =
+      static_cast<JS::ExpandoAndGeneration*>(v.toPrivate());
   CheckExpandoAndGeneration(obj, expandoAndGeneration);
 
   v = expandoAndGeneration->expando;
@@ -356,11 +322,10 @@ void ShadowingDOMProxyHandler::trace(JSTracer* trc, JSObject* proxy) const {
   // so it cannot be |undefined|.
   MOZ_ASSERT(!v.isUndefined());
 
-  js::ExpandoAndGeneration* expandoAndGeneration =
-      static_cast<js::ExpandoAndGeneration*>(v.toPrivate());
+  auto* expandoAndGeneration =
+      static_cast<JS::ExpandoAndGeneration*>(v.toPrivate());
   JS::TraceEdge(trc, &expandoAndGeneration->expando,
                 "Shadowing DOM proxy expando");
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

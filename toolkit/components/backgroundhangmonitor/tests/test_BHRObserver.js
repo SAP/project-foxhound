@@ -118,9 +118,12 @@ add_task(async function test_BHRObserver() {
     });
 
     // hang.annotations
-    equal(typeof hang.annotations, "object");
-    Object.keys(hang.annotations).forEach(key => {
-      equal(typeof hang.annotations[key], "string");
+    ok(Array.isArray(hang.annotations));
+    hang.annotations.forEach(annotation => {
+      ok(Array.isArray(annotation));
+      equal(annotation.length, 2);
+      equal(typeof annotation[0], "string");
+      equal(typeof annotation[1], "string");
     });
   });
 
@@ -149,7 +152,7 @@ add_task(async function test_BHRObserver() {
       if (Array.isArray(entry)) {
         equal(entry.length, 2);
         equal(typeof entry[0], "number");
-        ok(entry[0] < telSvc.payload.hangs.length);
+        ok(entry[0] < telSvc.payload.modules.length);
         equal(typeof entry[1], "string");
       } else {
         equal(typeof entry, "string");

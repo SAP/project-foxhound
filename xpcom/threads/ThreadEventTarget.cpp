@@ -8,6 +8,8 @@
 #include "mozilla/ThreadEventQueue.h"
 
 #include "LeakRefPtr.h"
+#include "mozilla/DelayedRunnable.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/TimeStamp.h"
 #include "nsComponentManagerUtils.h"
 #include "nsITimer.h"
@@ -17,12 +19,6 @@
 #include "nsXPCOMPrivate.h"  // for gXPCOMThreadsShutDown
 #include "ThreadDelay.h"
 
-#ifdef MOZ_TASK_TRACER
-#  include "GeckoTaskTracer.h"
-#  include "TracedTaskCommon.h"
-using namespace mozilla::tasktracer;
-#endif
-
 using namespace mozilla;
 
 ThreadEventTarget::ThreadEventTarget(ThreadTargetSink* aSink,
@@ -31,11 +27,18 @@ ThreadEventTarget::ThreadEventTarget(ThreadTargetSink* aSink,
   mThread = PR_GetCurrentThread();
 }
 
-void ThreadEventTarget::SetCurrentThread() { mThread = PR_GetCurrentThread(); }
+ThreadEventTarget::~ThreadEventTarget() {
+  MOZ_ASSERT(mScheduledDelayedRunnables.IsEmpty());
+}
+
+void ThreadEventTarget::SetCurrentThread(PRThread* aThread) {
+  mThread = aThread;
+}
 
 void ThreadEventTarget::ClearCurrentThread() { mThread = nullptr; }
 
-NS_IMPL_ISUPPORTS(ThreadEventTarget, nsIEventTarget, nsISerialEventTarget)
+NS_IMPL_ISUPPORTS(ThreadEventTarget, nsIEventTarget, nsISerialEventTarget,
+                  nsIDelayedRunnableObserver)
 
 NS_IMETHODIMP
 ThreadEventTarget::DispatchFromScript(nsIRunnable* aRunnable, uint32_t aFlags) {
@@ -56,13 +59,6 @@ ThreadEventTarget::Dispatch(already_AddRefed<nsIRunnable> aEvent,
     NS_ASSERTION(false, "Failed Dispatch after xpcom-shutdown-threads");
     return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
   }
-
-#ifdef MOZ_TASK_TRACER
-  nsCOMPtr<nsIRunnable> tracedRunnable = CreateTracedRunnable(event.take());
-  (static_cast<TracedRunnable*>(tracedRunnable.get()))->DispatchTask();
-  // XXX tracedRunnable will always leaked when we fail to disptch.
-  event = tracedRunnable.forget();
-#endif
 
   LogRunnable::LogDispatch(event.get());
 
@@ -90,6 +86,7 @@ ThreadEventTarget::Dispatch(already_AddRefed<nsIRunnable> aEvent,
 
     // Allows waiting; ensure no locks are held that would deadlock us!
     SpinEventLoopUntil(
+        "ThreadEventTarget::Dispatch"_ns,
         [&, wrapper]() -> bool { return !wrapper->IsPending(); });
 
     return NS_OK;
@@ -131,4 +128,24 @@ ThreadEventTarget::IsOnCurrentThreadInfallible() {
   // only happens when the thread has exited the event loop.  Therefore, when
   // we are called, we can never be on this thread.
   return false;
+}
+
+void ThreadEventTarget::OnDelayedRunnableCreated(DelayedRunnable* aRunnable) {}
+
+void ThreadEventTarget::OnDelayedRunnableScheduled(DelayedRunnable* aRunnable) {
+  MOZ_ASSERT(IsOnCurrentThread());
+  mScheduledDelayedRunnables.AppendElement(aRunnable);
+}
+
+void ThreadEventTarget::OnDelayedRunnableRan(DelayedRunnable* aRunnable) {
+  MOZ_ASSERT(IsOnCurrentThread());
+  Unused << mScheduledDelayedRunnables.RemoveElement(aRunnable);
+}
+
+void ThreadEventTarget::NotifyShutdown() {
+  MOZ_ASSERT(IsOnCurrentThread());
+  for (const auto& runnable : mScheduledDelayedRunnables) {
+    runnable->CancelTimer();
+  }
+  mScheduledDelayedRunnables.Clear();
 }

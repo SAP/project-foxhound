@@ -6,40 +6,51 @@
 #include "RDDParent.h"
 
 #if defined(XP_WIN)
-#  include <process.h>
 #  include <dwrite.h>
+#  include <process.h>
+
+#  include "WMF.h"
+#  include "WMFDecoderModule.h"
 #  include "mozilla/WinDllServices.h"
+#  include "mozilla/gfx/DeviceManagerDx.h"
 #else
 #  include <unistd.h>
 #endif
 
+#include "PDMFactory.h"
+#include "chrome/common/ipc_channel.h"
+#include "gfxConfig.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/HangDetails.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/RemoteDecoderManagerChild.h"
 #include "mozilla/RemoteDecoderManagerParent.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/MemoryReportRequest.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/ProcessChild.h"
-#include "mozilla/gfx/gfxVars.h"
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/Sandbox.h"
 #endif
 
-#ifdef MOZ_GECKO_PROFILER
-#  include "ChildProfilerController.h"
-#endif
+#include "ChildProfilerController.h"
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
+#  include "RDDProcessHost.h"
 #  include "mozilla/Sandbox.h"
 #  include "nsMacUtilsImpl.h"
-#  include "RDDProcessHost.h"
 #endif
 
+#include "mozilla/ipc/ProcessUtils.h"
 #include "nsDebugImpl.h"
 #include "nsThreadManager.h"
-#include "ProcessUtils.h"
+
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+#  include "mozilla/SandboxTestingChild.h"
+#endif
 
 namespace mozilla {
 
@@ -53,10 +64,13 @@ RDDParent::RDDParent() : mLaunchTime(TimeStamp::Now()) { sRDDParent = this; }
 RDDParent::~RDDParent() { sRDDParent = nullptr; }
 
 /* static */
-RDDParent* RDDParent::GetSingleton() { return sRDDParent; }
+RDDParent* RDDParent::GetSingleton() {
+  MOZ_DIAGNOSTIC_ASSERT(sRDDParent);
+  return sRDDParent;
+}
 
 bool RDDParent::Init(base::ProcessId aParentPid, const char* aParentBuildID,
-                     MessageLoop* aIOLoop, UniquePtr<IPC::Channel> aChannel) {
+                     mozilla::ipc::ScopedPort aPort) {
   // Initialize the thread manager before starting IPC. Otherwise, messages
   // may be posted to the main thread and we won't be able to process them.
   if (NS_WARN_IF(NS_FAILED(nsThreadManager::get().Init()))) {
@@ -64,7 +78,7 @@ bool RDDParent::Init(base::ProcessId aParentPid, const char* aParentBuildID,
   }
 
   // Now it's safe to start IPC.
-  if (NS_WARN_IF(!Open(std::move(aChannel), aParentPid, aIOLoop))) {
+  if (NS_WARN_IF(!Open(std::move(aPort), aParentPid))) {
     return false;
   }
 
@@ -87,7 +101,12 @@ bool RDDParent::Init(base::ProcessId aParentPid, const char* aParentBuildID,
     return false;
   }
 
+  gfxConfig::Init();
   gfxVars::Initialize();
+#ifdef XP_WIN
+  DeviceManagerDx::Init();
+  wmf::MFStartup();
+#endif
 
   mozilla::ipc::SetThisProcessName("RDD Process");
 
@@ -106,6 +125,9 @@ mozilla::ipc::IPCResult RDDParent::RecvInit(
   for (const auto& var : vars) {
     gfxVars::ApplyUpdate(var);
   }
+
+  auto supported = PDMFactory::Supported();
+  Unused << SendUpdateMediaCodecsSupported(supported);
 
 #if defined(MOZ_SANDBOX)
 #  if defined(XP_MACOSX)
@@ -133,15 +155,25 @@ mozilla::ipc::IPCResult RDDParent::RecvInit(
 }
 
 IPCResult RDDParent::RecvUpdateVar(const GfxVarUpdate& aUpdate) {
+#if defined(XP_WIN)
+  auto scopeExit = MakeScopeExit(
+      [couldUseHWDecoder = gfx::gfxVars::CanUseHardwareVideoDecoding()] {
+        if (couldUseHWDecoder != gfx::gfxVars::CanUseHardwareVideoDecoding()) {
+          // The capabilities of the system may have changed, force a refresh by
+          // re-initializing the WMF PDM.
+          WMFDecoderModule::Init();
+          Unused << RDDParent::GetSingleton()->SendUpdateMediaCodecsSupported(
+              PDMFactory::Supported(true /* force refresh */));
+        }
+      });
+#endif
   gfxVars::ApplyUpdate(aUpdate);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult RDDParent::RecvInitProfiler(
     Endpoint<PProfilerChild>&& aEndpoint) {
-#ifdef MOZ_GECKO_PROFILER
   mProfilerController = ChildProfilerController::Create(std::move(aEndpoint));
-#endif
   return IPC_OK();
 }
 
@@ -154,17 +186,41 @@ mozilla::ipc::IPCResult RDDParent::RecvNewContentRemoteDecoderManager(
 }
 
 mozilla::ipc::IPCResult RDDParent::RecvInitVideoBridge(
-    Endpoint<PVideoBridgeChild>&& aEndpoint) {
+    Endpoint<PVideoBridgeChild>&& aEndpoint, const bool& aCreateHardwareDevice,
+    const ContentDeviceData& aContentDeviceData) {
   if (!RemoteDecoderManagerParent::CreateVideoBridgeToOtherProcess(
           std::move(aEndpoint))) {
     return IPC_FAIL_NO_REASON(this);
   }
+
+  gfxConfig::Inherit(
+      {
+          Feature::HW_COMPOSITING,
+          Feature::D3D11_COMPOSITING,
+          Feature::OPENGL_COMPOSITING,
+          Feature::DIRECT2D,
+          Feature::WEBGPU,
+      },
+      aContentDeviceData.prefs());
+#ifdef XP_WIN
+  if (gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
+    auto* devmgr = DeviceManagerDx::Get();
+    if (devmgr) {
+      devmgr->ImportDeviceInfo(aContentDeviceData.d3d11());
+      if (aCreateHardwareDevice) {
+        devmgr->CreateContentDevices();
+      }
+    }
+  }
+#endif
+
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult RDDParent::RecvRequestMemoryReport(
     const uint32_t& aGeneration, const bool& aAnonymize,
-    const bool& aMinimizeMemoryUsage, const Maybe<FileDescriptor>& aDMDFile) {
+    const bool& aMinimizeMemoryUsage, const Maybe<FileDescriptor>& aDMDFile,
+    const RequestMemoryReportResolver& aResolver) {
   nsPrintfCString processName("RDD (pid %u)", (unsigned)getpid());
 
   mozilla::dom::MemoryReportRequestClient::Start(
@@ -172,15 +228,13 @@ mozilla::ipc::IPCResult RDDParent::RecvRequestMemoryReport(
       [&](const MemoryReport& aReport) {
         Unused << GetSingleton()->SendAddMemoryReport(aReport);
       },
-      [&](const uint32_t& aGeneration) {
-        return GetSingleton()->SendFinishMemoryReport(aGeneration);
-      });
+      aResolver);
   return IPC_OK();
 }
 
+#if defined(XP_WIN)
 mozilla::ipc::IPCResult RDDParent::RecvGetUntrustedModulesData(
     GetUntrustedModulesDataResolver&& aResolver) {
-#if defined(XP_WIN)
   RefPtr<DllServices> dllSvc(DllServices::Get());
   dllSvc->GetUntrustedModulesData()->Then(
       GetMainThreadSerialEventTarget(), __func__,
@@ -189,15 +243,24 @@ mozilla::ipc::IPCResult RDDParent::RecvGetUntrustedModulesData(
       },
       [aResolver](nsresult aReason) { aResolver(Nothing()); });
   return IPC_OK();
-#else
-  return IPC_FAIL(this, "Unsupported on this platform");
-#endif  // defined(XP_WIN)
 }
+#endif  // defined(XP_WIN)
 
 mozilla::ipc::IPCResult RDDParent::RecvPreferenceUpdate(const Pref& aPref) {
   Preferences::SetPreference(aPref);
   return IPC_OK();
 }
+
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+mozilla::ipc::IPCResult RDDParent::RecvInitSandboxTesting(
+    Endpoint<PSandboxTestingChild>&& aEndpoint) {
+  if (!SandboxTestingChild::Initialize(std::move(aEndpoint))) {
+    return IPC_FAIL(
+        this, "InitSandboxTesting failed to initialise the child process.");
+  }
+  return IPC_OK();
+}
+#endif
 
 void RDDParent::ActorDestroy(ActorDestroyReason aWhy) {
   if (AbnormalShutdown == aWhy) {
@@ -206,28 +269,42 @@ void RDDParent::ActorDestroy(ActorDestroyReason aWhy) {
   }
 
 #ifndef NS_FREE_PERMANENT_DATA
+#  ifdef XP_WIN
+  wmf::MFShutdown();
+#  endif
   // No point in going through XPCOM shutdown because we don't keep persistent
   // state.
   ProcessChild::QuickExit();
 #endif
 
-#if defined(XP_WIN)
-  RefPtr<DllServices> dllSvc(DllServices::Get());
-  dllSvc->DisableFull();
-#endif  // defined(XP_WIN)
+  // Wait until all RemoteDecoderManagerParent have closed.
+  mShutdownBlockers.WaitUntilClear(10 * 1000 /* 10s timeout*/)
+      ->Then(GetCurrentSerialEventTarget(), __func__, [&]() {
 
-#ifdef MOZ_GECKO_PROFILER
-  if (mProfilerController) {
-    mProfilerController->Shutdown();
-    mProfilerController = nullptr;
-  }
+#ifdef XP_WIN
+        wmf::MFShutdown();
 #endif
 
-  RemoteDecoderManagerParent::ShutdownVideoBridge();
+#if defined(XP_WIN)
+        RefPtr<DllServices> dllSvc(DllServices::Get());
+        dllSvc->DisableFull();
+#endif  // defined(XP_WIN)
 
-  gfxVars::Shutdown();
-  CrashReporterClient::DestroySingleton();
-  XRE_ShutdownChildProcess();
+        if (mProfilerController) {
+          mProfilerController->Shutdown();
+          mProfilerController = nullptr;
+        }
+
+        RemoteDecoderManagerParent::ShutdownVideoBridge();
+
+#ifdef XP_WIN
+        DeviceManagerDx::Shutdown();
+#endif
+        gfxVars::Shutdown();
+        gfxConfig::Shutdown();
+        CrashReporterClient::DestroySingleton();
+        XRE_ShutdownChildProcess();
+      });
 }
 
 }  // namespace mozilla

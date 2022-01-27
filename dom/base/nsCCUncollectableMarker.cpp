@@ -40,6 +40,7 @@
 #include "nsObserverService.h"
 #include "nsFocusManager.h"
 #include "nsIInterfaceRequestorUtils.h"
+#include "nsIXULRuntime.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -246,11 +247,15 @@ void MarkDocShell(nsIDocShellTreeItem* aNode, bool aCleanupJS) {
 
   nsCOMPtr<nsIWebNavigation> webNav = do_QueryInterface(shell);
   RefPtr<ChildSHistory> history = webNav->GetSessionHistory();
-  if (history) {
+  IgnoredErrorResult ignore;
+  nsISHistory* legacyHistory =
+      history ? history->GetLegacySHistory(ignore) : nullptr;
+  if (legacyHistory) {
+    MOZ_DIAGNOSTIC_ASSERT(!mozilla::SessionHistoryInParent());
     int32_t historyCount = history->Count();
     for (int32_t i = 0; i < historyCount; ++i) {
       nsCOMPtr<nsISHEntry> shEntry;
-      history->LegacySHistory()->GetEntryAtIndex(i, getter_AddRefs(shEntry));
+      legacyHistory->GetEntryAtIndex(i, getter_AddRefs(shEntry));
 
       MarkSHEntry(shEntry, aCleanupJS);
     }
@@ -310,8 +315,9 @@ nsresult nsCCUncollectableMarker::Observe(nsISupports* aSubject,
                    !strcmp(aTopic, "cycle-collector-forget-skippable"),
                "wrong topic");
 
-  // JS cleanup can be slow. Do it only if there has been a GC.
-  const bool cleanupJS = nsJSContext::CleanupsSinceLastGC() == 0 &&
+  // JS cleanup can be slow. Do it only if this is the first forget-skippable
+  // after a GC.
+  const bool cleanupJS = nsJSContext::HasHadCleanupSinceLastGC() &&
                          !strcmp(aTopic, "cycle-collector-forget-skippable");
 
   const bool prepareForCC = !strcmp(aTopic, "cycle-collector-begin");
@@ -423,20 +429,7 @@ nsresult nsCCUncollectableMarker::Observe(nsISupports* aSubject,
   return NS_OK;
 }
 
-void mozilla::dom::TraceBlackJS(JSTracer* aTrc, bool aIsShutdownGC) {
-#ifdef MOZ_XUL
-  // Mark the scripts held in the XULPrototypeCache. This is required to keep
-  // the JS script in the cache live across GC.
-  nsXULPrototypeCache* cache = nsXULPrototypeCache::MaybeGetInstance();
-  if (cache) {
-    if (aIsShutdownGC) {
-      cache->FlushScripts();
-    } else {
-      cache->MarkInGC(aTrc);
-    }
-  }
-#endif
-
+void mozilla::dom::TraceBlackJS(JSTracer* aTrc) {
   if (!nsCCUncollectableMarker::sGeneration) {
     return;
   }
@@ -453,8 +446,7 @@ void mozilla::dom::TraceBlackJS(JSTracer* aTrc, bool aIsShutdownGC) {
   nsGlobalWindowOuter::OuterWindowByIdTable* windowsById =
       nsGlobalWindowOuter::GetWindowsTable();
   if (windowsById) {
-    for (auto iter = windowsById->Iter(); !iter.Done(); iter.Next()) {
-      nsGlobalWindowOuter* window = iter.Data();
+    for (nsGlobalWindowOuter* window : windowsById->Values()) {
       if (!window->IsCleanedUp()) {
         nsGlobalWindowInner* inner = nullptr;
         for (PRCList* win = PR_LIST_HEAD(window); win != window;
@@ -499,13 +491,6 @@ void mozilla::dom::TraceBlackJS(JSTracer* aTrc, bool aIsShutdownGC) {
             }
           }
         }
-
-#ifdef MOZ_XUL
-        Document* doc = window->GetExtantDoc();
-        if (doc) {
-          doc->TraceProtos(aTrc);
-        }
-#endif
       }
     }
   }

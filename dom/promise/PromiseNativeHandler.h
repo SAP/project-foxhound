@@ -9,12 +9,12 @@
 
 #include <functional>
 #include "js/TypeDecls.h"
+#include "js/Value.h"
+#include "mozilla/Maybe.h"
 #include "nsISupports.h"
 
 namespace mozilla {
 namespace dom {
-
-class Promise;
 
 /*
  * PromiseNativeHandler allows C++ to react to a Promise being
@@ -45,18 +45,18 @@ class DomPromiseListener final : public PromiseNativeHandler {
       std::function<void(JSContext*, JS::Handle<JS::Value>)>;
   using CallbackTypeRejected = std::function<void(nsresult)>;
 
-  explicit DomPromiseListener(Promise* aDOMPromise);
-  DomPromiseListener(Promise* aDOMPromise, CallbackTypeResolved&& aResolve,
+  DomPromiseListener(CallbackTypeResolved&& aResolve,
                      CallbackTypeRejected&& aReject);
-  void SetResolvers(CallbackTypeResolved&& aResolve,
-                    CallbackTypeRejected&& aReject);
+
+  void Clear();
+
   void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override;
   void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override;
 
  private:
   ~DomPromiseListener();
-  Maybe<CallbackTypeResolved> mResolve;
-  Maybe<CallbackTypeRejected> mReject;
+  CallbackTypeResolved mResolve;
+  CallbackTypeRejected mReject;
 };
 
 }  // namespace dom

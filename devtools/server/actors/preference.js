@@ -28,7 +28,13 @@ function ensurePrefType(name, expectedType) {
  * individual tab.
  */
 var PreferenceActor = protocol.ActorClassWithSpec(preferenceSpec, {
-  typeName: "preference",
+  getTraits: function() {
+    // The *Pref traits are used to know if remote-debugging bugs related to
+    // specific preferences are fixed on the server or if the client should set
+    // default values for them. See the about:debugging module
+    // runtime-default-preferences.js
+    return {};
+  },
 
   getBoolPref: function(name) {
     ensurePrefType(name, PREF_BOOL);

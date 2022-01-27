@@ -29,6 +29,7 @@
 
 #include "nsIAppStartup.h"
 #include "nsIObserverService.h"
+#include "mozilla/Components.h"
 #include "mozilla/Preferences.h"
 #include "nsIResProtocolHandler.h"
 #include "nsIScriptError.h"
@@ -233,10 +234,10 @@ void nsChromeRegistryChrome::SendRegisteredChrome(
   nsTArray<SubstitutionMapping> resources;
   nsTArray<OverrideMapping> overrides;
 
-  for (auto iter = mPackagesHash.Iter(); !iter.Done(); iter.Next()) {
+  for (const auto& entry : mPackagesHash) {
     ChromePackage chromePackage;
-    ChromePackageFromPackageEntry(iter.Key(), iter.UserData(), &chromePackage,
-                                  SKIN);
+    ChromePackageFromPackageEntry(entry.GetKey(), entry.GetWeak(),
+                                  &chromePackage, SKIN);
     packages.AppendElement(chromePackage);
   }
 
@@ -257,14 +258,14 @@ void nsChromeRegistryChrome::SendRegisteredChrome(
     NS_ENSURE_SUCCESS_VOID(rv);
   }
 
-  for (auto iter = mOverrideTable.Iter(); !iter.Done(); iter.Next()) {
+  for (const auto& entry : mOverrideTable) {
     SerializedURI chromeURI, overrideURI;
 
-    SerializeURI(iter.Key(), chromeURI);
-    SerializeURI(iter.UserData(), overrideURI);
+    SerializeURI(entry.GetKey(), chromeURI);
+    SerializeURI(entry.GetWeak(), overrideURI);
 
-    OverrideMapping override = {chromeURI, overrideURI};
-    overrides.AppendElement(override);
+    overrides.AppendElement(
+        OverrideMapping{std::move(chromeURI), std::move(overrideURI)});
   }
 
   nsAutoCString appLocale;
@@ -476,7 +477,7 @@ void nsChromeRegistryChrome::ManifestContent(ManifestProcessingContext& cx,
   }
 
   nsDependentCString packageName(package);
-  PackageEntry* entry = mPackagesHash.LookupOrAdd(packageName);
+  PackageEntry* entry = mPackagesHash.GetOrInsertNew(packageName);
   entry->baseURI = resolved;
   entry->flags = flags;
 
@@ -513,7 +514,7 @@ void nsChromeRegistryChrome::ManifestLocale(ManifestProcessingContext& cx,
   }
 
   nsDependentCString packageName(package);
-  PackageEntry* entry = mPackagesHash.LookupOrAdd(packageName);
+  PackageEntry* entry = mPackagesHash.GetOrInsertNew(packageName);
   entry->locales.SetBase(nsDependentCString(provider), resolved);
 
   if (mDynamicRegistration) {
@@ -558,7 +559,7 @@ void nsChromeRegistryChrome::ManifestSkin(ManifestProcessingContext& cx,
   }
 
   nsDependentCString packageName(package);
-  PackageEntry* entry = mPackagesHash.LookupOrAdd(packageName);
+  PackageEntry* entry = mPackagesHash.GetOrInsertNew(packageName);
   entry->skins.SetBase(nsDependentCString(provider), resolved);
 
   if (mDynamicRegistration) {
@@ -609,7 +610,7 @@ void nsChromeRegistryChrome::ManifestOverride(ManifestProcessingContext& cx,
         "Cannot register non-local URI '%s' for an override.", resolved);
     return;
   }
-  mOverrideTable.Put(chromeuri, resolveduri);
+  mOverrideTable.InsertOrUpdate(chromeuri, resolveduri);
 
   if (mDynamicRegistration) {
     SerializedURI serializedChrome;
@@ -632,7 +633,7 @@ void nsChromeRegistryChrome::ManifestResource(ManifestProcessingContext& cx,
   EnsureLowerCase(package);
   nsDependentCString host(package);
 
-  nsCOMPtr<nsIIOService> io = mozilla::services::GetIOService();
+  nsCOMPtr<nsIIOService> io = mozilla::components::IO::Service();
   if (!io) {
     NS_WARNING("No IO service trying to process chrome manifests");
     return;

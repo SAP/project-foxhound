@@ -37,7 +37,7 @@ gfxFT2FontBase::gfxFT2FontBase(
       mFTLoadFlags(aLoadFlags | FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH |
                    FT_LOAD_COLOR),
       mEmbolden(aEmbolden),
-      mFTSize(1.0) {}
+      mFTSize(0.0) {}
 
 gfxFT2FontBase::~gfxFT2FontBase() { mFTFace->ForgetLockOwner(this); }
 
@@ -70,6 +70,41 @@ gfxFT2FontEntryBase::CmapCacheSlot* gfxFT2FontEntryBase::GetCmapCacheSlot(
     mCmapCache[0].mCharCode = 1;
   }
   return &mCmapCache[aCharCode % kNumCmapCacheSlots];
+}
+
+static FT_ULong GetTableSizeFromFTFace(SharedFTFace* aFace,
+                                       uint32_t aTableTag) {
+  if (!aFace) {
+    return 0;
+  }
+  FT_ULong len = 0;
+  if (FT_Load_Sfnt_Table(aFace->GetFace(), aTableTag, 0, nullptr, &len) != 0) {
+    return 0;
+  }
+  return len;
+}
+
+bool gfxFT2FontEntryBase::FaceHasTable(SharedFTFace* aFace,
+                                       uint32_t aTableTag) {
+  return GetTableSizeFromFTFace(aFace, aTableTag) > 0;
+}
+
+nsresult gfxFT2FontEntryBase::CopyFaceTable(SharedFTFace* aFace,
+                                            uint32_t aTableTag,
+                                            nsTArray<uint8_t>& aBuffer) {
+  FT_ULong length = GetTableSizeFromFTFace(aFace, aTableTag);
+  if (!length) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  if (!aBuffer.SetLength(length, fallible)) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+  if (FT_Load_Sfnt_Table(aFace->GetFace(), aTableTag, 0, aBuffer.Elements(),
+                         &length) != 0) {
+    aBuffer.Clear();
+    return NS_ERROR_FAILURE;
+  }
+  return NS_OK;
 }
 
 uint32_t gfxFT2FontBase::GetGlyph(uint32_t aCharCode) {
@@ -177,12 +212,62 @@ static double FindClosestSize(FT_Face aFace, double aSize) {
 void gfxFT2FontBase::InitMetrics() {
   mFUnitsConvFactor = 0.0;
 
-  if (MOZ_UNLIKELY(GetStyle()->size <= 0.0) ||
-      MOZ_UNLIKELY(GetStyle()->sizeAdjust == 0.0)) {
+  if (MOZ_UNLIKELY(mStyle.AdjustedSizeMustBeZero())) {
     memset(&mMetrics, 0, sizeof(mMetrics));  // zero initialize
     mSpaceGlyph = GetGlyph(' ');
     return;
   }
+
+  if (FontSizeAdjust::Tag(mStyle.sizeAdjustBasis) !=
+          FontSizeAdjust::Tag::None &&
+      mStyle.sizeAdjust >= 0.0 && GetAdjustedSize() > 0.0 && mFTSize == 0.0) {
+    // If font-size-adjust is in effect, we need to get metrics in order to
+    // determine the aspect ratio, then compute the final adjusted size and
+    // re-initialize metrics.
+    // Setting mFTSize nonzero here ensures we will not recurse again; the
+    // actual value will be overridden by FindClosestSize below.
+    mFTSize = 1.0;
+    InitMetrics();
+    // Now do the font-size-adjust calculation and set the final size.
+    gfxFloat aspect;
+    switch (FontSizeAdjust::Tag(mStyle.sizeAdjustBasis)) {
+      default:
+        MOZ_ASSERT_UNREACHABLE("unhandled sizeAdjustBasis?");
+        aspect = 0.0;
+        break;
+      case FontSizeAdjust::Tag::ExHeight:
+        aspect = mMetrics.xHeight / mAdjustedSize;
+        break;
+      case FontSizeAdjust::Tag::CapHeight:
+        aspect = mMetrics.capHeight / mAdjustedSize;
+        break;
+      case FontSizeAdjust::Tag::ChWidth:
+        aspect =
+            mMetrics.zeroWidth > 0.0 ? mMetrics.zeroWidth / mAdjustedSize : 0.5;
+        break;
+      case FontSizeAdjust::Tag::IcWidth:
+      case FontSizeAdjust::Tag::IcHeight: {
+        bool vertical = FontSizeAdjust::Tag(mStyle.sizeAdjustBasis) ==
+                        FontSizeAdjust::Tag::IcHeight;
+        gfxFloat advance = GetCharAdvance(0x6C34, vertical);
+        aspect = advance > 0.0 ? advance / mAdjustedSize : 1.0;
+        break;
+      }
+    }
+    if (aspect > 0.0) {
+      // If we created a shaper above (to measure glyphs), discard it so we
+      // get a new one for the adjusted scaling.
+      mHarfBuzzShaper = nullptr;
+      mAdjustedSize = mStyle.GetAdjustedSize(aspect);
+      // Ensure the FT_Face will be reconfigured for the new size next time we
+      // need to use it.
+      mFTFace->ForgetLockOwner(this);
+    }
+  }
+
+  // Set mAdjustedSize if it hasn't already been set by a font-size-adjust
+  // computation.
+  mAdjustedSize = GetAdjustedSize();
 
   // Cairo metrics are normalized to em-space, so that whatever fixed size
   // might actually be chosen is factored out. They are then later scaled by
@@ -219,6 +304,7 @@ void gfxFT2FontBase::InitMetrics() {
     mMetrics.strikeoutSize = underlineSize;
 
     SanitizeMetrics(&mMetrics, false);
+    UnlockFTFace();
     return;
   }
 
@@ -383,19 +469,27 @@ void gfxFT2FontBase::InitMetrics() {
     mMetrics.zeroWidth = -1.0;  // indicates not found
   }
 
-  // Prefering a measured x over sxHeight because sxHeight doesn't consider
-  // hinting, but maybe the x extents are not quite right in some fancy
-  // script fonts.  CSS 2.1 suggests possibly using the height of an "o",
-  // which would have a more consistent glyph across fonts.
+  // If we didn't get a usable x-height or cap-height above, try measuring
+  // specific glyphs. This can be affected by hinting, leading to erratic
+  // behavior across font sizes and system configuration, so we prefer to
+  // use the metrics directly from the font if possible.
+  // Using glyph bounds for x-height or cap-height may not really be right,
+  // if fonts have fancy swashes etc. For x-height, CSS 2.1 suggests possibly
+  // using the height of an "o", which may be more consistent across fonts,
+  // but then curve-overshoot should also be accounted for.
   gfxFloat xWidth;
   gfxRect xBounds;
-  if (GetCharExtents('x', &xWidth, &xBounds) && xBounds.y < 0.0) {
-    mMetrics.xHeight = -xBounds.y;
-    mMetrics.aveCharWidth = std::max(mMetrics.aveCharWidth, xWidth);
+  if (mMetrics.xHeight == 0.0) {
+    if (GetCharExtents('x', &xWidth, &xBounds) && xBounds.y < 0.0) {
+      mMetrics.xHeight = -xBounds.y;
+      mMetrics.aveCharWidth = std::max(mMetrics.aveCharWidth, xWidth);
+    }
   }
 
-  if (GetCharExtents('H', nullptr, &xBounds) && xBounds.y < 0.0) {
-    mMetrics.capHeight = -xBounds.y;
+  if (mMetrics.capHeight == 0.0) {
+    if (GetCharExtents('H', nullptr, &xBounds) && xBounds.y < 0.0) {
+      mMetrics.capHeight = -xBounds.y;
+    }
   }
 
   mMetrics.aveCharWidth = std::max(mMetrics.aveCharWidth, mMetrics.zeroWidth);
@@ -542,7 +636,14 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
     return false;
   }
 
+  // Whether to interpret hinting settings (i.e. not printing)
   bool hintMetrics = ShouldHintMetrics();
+  // Whether to disable subpixel positioning
+  bool roundX = ShouldRoundXOffset(nullptr);
+  // No hinting disables X and Y hinting. Light disables only X hinting.
+  bool unhintedY = (mFTLoadFlags & FT_LOAD_NO_HINTING) != 0;
+  bool unhintedX =
+      unhintedY || FT_LOAD_TARGET_MODE(mFTLoadFlags) == FT_RENDER_MODE_LIGHT;
 
   // Normalize out the loaded FT glyph size and then scale to the actually
   // desired size, in case these two sizes differ.
@@ -555,7 +656,7 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
   // applying hinting. Otherwise, prefer hinted width from glyph->advance.x.
   if (aAdvance) {
     FT_Fixed advance;
-    if (!ShouldRoundXOffset(nullptr) || FT_HAS_MULTIPLE_MASTERS(face.get())) {
+    if (!roundX || FT_HAS_MULTIPLE_MASTERS(face.get())) {
       advance = face.get()->glyph->linearHoriAdvance;
     } else {
       advance = face.get()->glyph->advance.x << 10;  // convert 26.6 to 16.16
@@ -567,7 +668,7 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
     // Round the advance here to approximate hinting as Cairo does. This must
     // happen BEFORE we apply the glyph extents scale, just like FT hinting
     // would.
-    if (hintMetrics && (mFTLoadFlags & FT_LOAD_NO_HINTING)) {
+    if (hintMetrics && roundX && unhintedX) {
       advance = (advance + 0x8000) & 0xffff0000u;
     }
     *aAdvance = NS_lround(advance * extentsScale);
@@ -582,11 +683,15 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
     // Synthetic bold moves the glyph top and right boundaries.
     y -= bold.y;
     x2 += bold.x;
-    if (hintMetrics && (mFTLoadFlags & FT_LOAD_NO_HINTING)) {
-      x &= -64;
-      y &= -64;
-      x2 = (x2 + 63) & -64;
-      y2 = (y2 + 63) & -64;
+    if (hintMetrics) {
+      if (roundX && unhintedX) {
+        x &= -64;
+        x2 = (x2 + 63) & -64;
+      }
+      if (unhintedY) {
+        y &= -64;
+        y2 = (y2 + 63) & -64;
+      }
     }
     *aBounds = IntRect(x, y, x2 - x, y2 - y);
   }
@@ -601,23 +706,20 @@ const gfxFT2FontBase::GlyphMetrics& gfxFT2FontBase::GetCachedGlyphMetrics(
     uint16_t aGID, IntRect* aBounds) {
   if (!mGlyphMetrics) {
     mGlyphMetrics =
-        mozilla::MakeUnique<nsDataHashtable<nsUint32HashKey, GlyphMetrics>>(
-            128);
+        mozilla::MakeUnique<nsTHashMap<nsUint32HashKey, GlyphMetrics>>(128);
   }
 
-  if (const GlyphMetrics* metrics = mGlyphMetrics->GetValue(aGID)) {
-    return *metrics;
-  }
-
-  GlyphMetrics& metrics = mGlyphMetrics->GetOrInsert(aGID);
-  IntRect bounds;
-  if (GetFTGlyphExtents(aGID, &metrics.mAdvance, &bounds)) {
-    metrics.SetBounds(bounds);
-    if (aBounds) {
-      *aBounds = bounds;
+  return mGlyphMetrics->LookupOrInsertWith(aGID, [&] {
+    GlyphMetrics metrics;
+    IntRect bounds;
+    if (GetFTGlyphExtents(aGID, &metrics.mAdvance, &bounds)) {
+      metrics.SetBounds(bounds);
+      if (aBounds) {
+        *aBounds = bounds;
+      }
     }
-  }
-  return metrics;
+    return metrics;
+  });
 }
 
 int32_t gfxFT2FontBase::GetGlyphWidth(uint16_t aGID) {

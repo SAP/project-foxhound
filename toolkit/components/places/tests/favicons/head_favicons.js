@@ -17,47 +17,6 @@ var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
 
-// This error icon must stay in sync with FAVICON_ERRORPAGE_URL in
-// nsIFaviconService.idl, aboutCertError.xhtml and netError.xhtml.
-const FAVICON_ERRORPAGE_URI = Services.io.newURI(
-  "chrome://global/skin/icons/warning.svg"
-);
-
-/**
- * Waits for the first OnPageChanged notification for ATTRIBUTE_FAVICON, and
- * verifies that it matches the expected page URI and associated favicon URI.
- *
- * This function also double-checks the GUID parameter of the notification.
- *
- * @param aExpectedPageURI
- *        nsIURI object of the page whose favicon should change.
- * @param aExpectedFaviconURI
- *        nsIURI object of the newly associated favicon.
- * @param aCallback
- *        This function is called after the check finished.
- */
-function waitForFaviconChanged(
-  aExpectedPageURI,
-  aExpectedFaviconURI,
-  aCallback
-) {
-  let historyObserver = {
-    __proto__: NavHistoryObserver.prototype,
-    onPageChanged: function WFFC_onPageChanged(aURI, aWhat, aValue, aGUID) {
-      if (aWhat != Ci.nsINavHistoryObserver.ATTRIBUTE_FAVICON) {
-        return;
-      }
-      PlacesUtils.history.removeObserver(this);
-
-      Assert.ok(aURI.equals(aExpectedPageURI));
-      Assert.equal(aValue, aExpectedFaviconURI.spec);
-      do_check_guid_for_uri(aURI, aGUID);
-      aCallback();
-    },
-  };
-  PlacesUtils.history.addObserver(historyObserver);
-}
-
 /**
  * Checks that the favicon for the given page matches the provided data.
  *
@@ -114,7 +73,17 @@ function promiseFaviconMissingForPage(aPageURI) {
 }
 
 function promiseFaviconChanged(aExpectedPageURI, aExpectedFaviconURI) {
-  return new Promise(resolve =>
-    waitForFaviconChanged(aExpectedPageURI, aExpectedFaviconURI, resolve)
+  return PlacesTestUtils.waitForNotification(
+    "favicon-changed",
+    events =>
+      events.some(e => {
+        if (e.url == aExpectedPageURI.spec) {
+          Assert.equal(e.faviconUrl, aExpectedFaviconURI.spec);
+          do_check_guid_for_uri(aExpectedPageURI, e.pageGuid);
+          return true;
+        }
+        return false;
+      }),
+    "places"
   );
 }

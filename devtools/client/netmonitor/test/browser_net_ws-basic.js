@@ -23,9 +23,11 @@ add_task(async function() {
   store.dispatch(Actions.batchEnable(false));
 
   // Wait for WS connection to be established + send messages
+  const onNetworkEvents = waitForNetworkEvents(monitor, 1);
   await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
     await content.wrappedJSObject.openConnection(1);
   });
+  await onNetworkEvents;
 
   const requests = document.querySelectorAll(".request-list-item");
   is(requests.length, 1, "There should be one request");
@@ -41,10 +43,7 @@ add_task(async function() {
   );
 
   // Click on the "Response" panel
-  EventUtils.sendMouseEvent(
-    { type: "click" },
-    document.querySelector("#response-tab")
-  );
+  clickOnSidebarTab(document, "response");
   await wait;
 
   // Get all messages present in the "Response" panel

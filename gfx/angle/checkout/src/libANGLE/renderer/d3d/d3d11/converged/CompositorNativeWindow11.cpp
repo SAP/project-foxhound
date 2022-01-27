@@ -105,7 +105,7 @@ HRESULT CompositorNativeWindow11::createSwapChain(ID3D11Device *device,
     ComPtr<IDXGIFactory2> factory2;
     factory2.Attach(d3d11::DynamicCastComObject<IDXGIFactory2>(factory));
 
-    DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {0};
+    DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
     swapChainDesc.Width                 = width;
     swapChainDesc.Height                = height;
     swapChainDesc.Format                = format;
@@ -118,7 +118,9 @@ HRESULT CompositorNativeWindow11::createSwapChain(ID3D11Device *device,
     swapChainDesc.Scaling     = DXGI_SCALING_STRETCH;
     swapChainDesc.SwapEffect  = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
     swapChainDesc.AlphaMode   = mHasAlpha ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_IGNORE;
+#ifndef ANGLE_ENABLE_WINDOWS_UWP
     swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG::DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+#endif
     Microsoft::WRL::ComPtr<IDXGISwapChain1> swapChain1;
     hr = factory2->CreateSwapChainForComposition(device, &swapChainDesc, nullptr, &swapChain1);
     if (SUCCEEDED(hr))
@@ -237,10 +239,17 @@ RoHelper::RoHelper()
       mComBaseModule(nullptr),
       mCoreMessagingModule(nullptr)
 {
-    if (!IsWindows10OrGreater())
-    {
-        return;
-    }
+
+#ifdef ANGLE_ENABLE_WINDOWS_UWP
+    mFpWindowsCreateStringReference    = &::WindowsCreateStringReference;
+    mFpRoInitialize                    = &::RoInitialize;
+    mFpRoUninitialize                  = &::RoUninitialize;
+    mFpWindowsDeleteString             = &::WindowsDeleteString;
+    mFpGetActivationFactory            = &::RoGetActivationFactory;
+    mFpWindowsCompareStringOrdinal     = &::WindowsCompareStringOrdinal;
+    mFpCreateDispatcherQueueController = &::CreateDispatcherQueueController;
+    mWinRtAvailable                    = true;
+#else
 
     mComBaseModule = LoadLibraryA("ComBase.dll");
 
@@ -298,10 +307,12 @@ RoHelper::RoHelper()
     {
         mWinRtAvailable = true;
     }
+#endif
 }
 
 RoHelper::~RoHelper()
 {
+#ifndef ANGLE_ENABLE_WINDOWS_UWP
     if (mWinRtAvailable)
     {
         RoUninitialize();
@@ -318,6 +329,7 @@ RoHelper::~RoHelper()
         FreeLibrary(mComBaseModule);
         mComBaseModule = nullptr;
     }
+#endif
 }
 
 bool RoHelper::WinRtAvailable() const
@@ -327,7 +339,7 @@ bool RoHelper::WinRtAvailable() const
 
 bool RoHelper::SupportedWindowsRelease()
 {
-    if (!IsWindows10OrGreater() || !mWinRtAvailable)
+    if (!mWinRtAvailable)
     {
         return false;
     }
@@ -341,7 +353,7 @@ bool RoHelper::SupportedWindowsRelease()
 
     if (FAILED(hr))
     {
-        return isSupported;
+        return !!isSupported;
     }
 
     Microsoft::WRL::ComPtr<ABI::Windows::Foundation::Metadata::IApiInformationStatics> api;
@@ -351,19 +363,19 @@ bool RoHelper::SupportedWindowsRelease()
 
     if (FAILED(hr))
     {
-        return isSupported;
+        return !!isSupported;
     }
 
     hr = GetStringReference(L"Windows.Foundation.UniversalApiContract", &contractName,
                             &contractNameHeader);
     if (FAILED(hr))
     {
-        return isSupported;
+        return !!isSupported;
     }
 
     api->IsApiContractPresentByMajor(contractName, 6, &isSupported);
 
-    return isSupported;
+    return !!isSupported;
 }
 
 HRESULT RoHelper::GetStringReference(PCWSTR source, HSTRING *act, HSTRING_HEADER *header)

@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 gu{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"આબિદ્જાન"}
@@ -1752,7 +1752,7 @@ gu{
             ls{"નીયુ સમય"}
         }
         "meta:Norfolk"{
-            ld{"નોરફૉક આઇલેન્ડ ગ્રીષ્મ સમય"}
+            ld{"નોરફૉક આઇલેન્ડ દિવસ સમય"}
             lg{"નોરફૉક આઇલેન્ડ સમય"}
             ls{"નોરફૉક આઇલેન્ડ માનક સમય"}
         }
@@ -1937,6 +1937,9 @@ gu{
             ld{"યેકાટેરિનબર્ગ ગ્રીષ્મ સમય"}
             lg{"યેકાટેરિનબર્ગ સમય"}
             ls{"યેકાટેરિનબર્ગ માનક સમય"}
+        }
+        "meta:Yukon"{
+            ls{"યુકોન સમય"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

@@ -1,4 +1,3 @@
-// |reftest| skip -- class-methods-private is not supported
 // This file was procedurally generated from the following sources:
 // - src/arguments/args-trailing-comma-single-args.case
 // - src/arguments/default/cls-expr-private-meth.template

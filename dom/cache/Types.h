@@ -9,6 +9,7 @@
 
 #include <functional>
 #include <stdint.h>
+#include "mozilla/dom/quota/CommonMetadata.h"
 #include "nsCOMPtr.h"
 #include "nsIFile.h"
 #include "nsIInputStream.h"
@@ -25,20 +26,33 @@ enum Namespace {
 };
 static const Namespace INVALID_NAMESPACE = NUMBER_OF_NAMESPACES;
 
-typedef int64_t CacheId;
+using CacheId = int64_t;
 static const CacheId INVALID_CACHE_ID = -1;
 
-struct QuotaInfo {
+struct CacheDirectoryMetadata : quota::ClientMetadata {
   nsCOMPtr<nsIFile> mDir;
-  nsCString mSuffix;
-  nsCString mGroup;
-  nsCString mOrigin;
-  int64_t mDirectoryLockId;
+  int64_t mDirectoryLockId = -1;
 
-  QuotaInfo() : mDirectoryLockId(-1) {}
+  explicit CacheDirectoryMetadata(quota::PrincipalMetadata aPrincipalMetadata)
+      : quota::ClientMetadata(
+            quota::OriginMetadata{std::move(aPrincipalMetadata),
+                                  quota::PERSISTENCE_TYPE_DEFAULT},
+            quota::Client::Type::DOMCACHE) {}
+
+  explicit CacheDirectoryMetadata(quota::OriginMetadata aOriginMetadata)
+      : quota::ClientMetadata(std::move(aOriginMetadata),
+                              quota::Client::Type::DOMCACHE) {
+    MOZ_DIAGNOSTIC_ASSERT(aOriginMetadata.mPersistenceType ==
+                          quota::PERSISTENCE_TYPE_DEFAULT);
+  }
 };
 
-typedef std::function<void(nsCOMPtr<nsIInputStream>&&)> InputStreamResolver;
+struct DeletionInfo {
+  nsTArray<nsID> mDeletedBodyIdList;
+  int64_t mDeletedPaddingSize = 0;
+};
+
+using InputStreamResolver = std::function<void(nsCOMPtr<nsIInputStream>&&)>;
 
 enum class OpenMode : uint8_t { Eager, Lazy, NumTypes };
 

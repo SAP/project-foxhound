@@ -13,6 +13,7 @@ use crate::error::{Error, ErrorKind};
 /// metric types (e.g. DatetimeMetric).
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
+#[repr(i32)] // use i32 to be compatible with our JNA definition
 pub enum TimeUnit {
     /// Truncate to nanosecond precision.
     Nanosecond,
@@ -31,8 +32,7 @@ pub enum TimeUnit {
 }
 
 impl TimeUnit {
-    /// How to format the given TimeUnit, truncating
-    /// the time if needed.
+    /// Formats the given time unit, truncating the time if needed.
     pub fn format_pattern(self) -> &'static str {
         use TimeUnit::*;
         match self {
@@ -46,13 +46,13 @@ impl TimeUnit {
         }
     }
 
-    /// Convert a duration to the requested time unit.
+    /// Converts a duration to the requested time unit.
     ///
-    /// ## Arguments
+    /// # Arguments
     ///
     /// * `duration` - the duration to convert.
     ///
-    /// ## Return value
+    /// # Returns
     ///
     /// The integer representation of the converted duration.
     pub fn duration_convert(self, duration: Duration) -> u64 {
@@ -68,13 +68,13 @@ impl TimeUnit {
         }
     }
 
-    /// Convert a duration in the given unit to nanoseconds.
+    /// Converts a duration in the given unit to nanoseconds.
     ///
-    /// ## Arguments
+    /// # Arguments
     ///
     /// * `duration` - the duration to convert.
     ///
-    /// ## Return value
+    /// # Returns
     ///
     /// The integer representation of the nanosecond duration.
     pub fn as_nanos(self, duration: u64) -> u64 {
@@ -93,10 +93,12 @@ impl TimeUnit {
     }
 }
 
-/// Trait implementation for converting an integer value
-/// to a TimeUnit. This is used in the FFI code. Please
-/// note that values should match the ordering of the platform
-/// specific side of things (e.g. Kotlin implementation).
+/// Trait implementation for converting an integer value to a TimeUnit.
+///
+/// This is used in the FFI code.
+///
+/// Please note that values should match the ordering of the
+/// platform specific side of things (e.g. Kotlin implementation).
 impl TryFrom<i32> for TimeUnit {
     type Error = Error;
 

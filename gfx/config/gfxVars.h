@@ -23,17 +23,17 @@ class gfxVarReceiver;
 // Generator for graphics vars.
 #define GFX_VARS_LIST(_)                                           \
   /* C++ Name,                  Data Type,        Default Value */ \
+  _(AllowEglRbab, bool, true)                                      \
+  _(AllowWebgl2, bool, true)                                       \
+  _(AllowWebglAccelAngle, bool, true)                              \
+  _(AllowWebglOop, bool, true)                                     \
   _(BrowserTabsRemoteAutostart, bool, false)                       \
   _(ContentBackend, BackendType, BackendType::NONE)                \
   _(SoftwareBackend, BackendType, BackendType::NONE)               \
-  _(TileSize, IntSize, IntSize(-1, -1))                            \
-  _(UseXRender, bool, false)                                       \
   _(OffscreenFormat, gfxImageFormat,                               \
     mozilla::gfx::SurfaceFormat::X8R8G8B8_UINT32)                  \
   _(RequiresAcceleratedGLContextForCompositorOGL, bool, false)     \
   _(CanUseHardwareVideoDecoding, bool, false)                      \
-  _(PDMWMFDisableD3D11Dlls, nsCString, nsCString())                \
-  _(PDMWMFDisableD3D9Dlls, nsCString, nsCString())                 \
   _(DXInterop2Blocked, bool, false)                                \
   _(DXNV12Blocked, bool, false)                                    \
   _(DXP010Blocked, bool, false)                                    \
@@ -42,22 +42,36 @@ class gfxVarReceiver;
   _(UseWebRenderANGLE, bool, false)                                \
   _(UseWebRenderFlipSequentialWin, bool, false)                    \
   _(UseWebRenderDCompWin, bool, false)                             \
+  _(UseWebRenderDCompVideoOverlayWin, bool, false)                 \
   _(UseWebRenderTripleBufferingWin, bool, false)                   \
   _(UseWebRenderCompositor, bool, false)                           \
   _(UseWebRenderProgramBinaryDisk, bool, false)                    \
   _(UseWebRenderOptimizedShaders, bool, false)                     \
-  _(UseWebRenderMultithreading, bool, false)                       \
   _(UseWebRenderScissoredCacheClears, bool, true)                  \
+  _(WebRenderProfilerUI, nsCString, nsCString())                   \
+  _(WebglAllowCoreProfile, bool, true)                             \
+  _(WebglAllowWindowsNativeGl, bool, false)                        \
   _(WebRenderMaxPartialPresentRects, int32_t, 0)                   \
   _(WebRenderDebugFlags, int32_t, 0)                               \
+  _(WebRenderBoolParameters, int32_t, 0)                           \
   _(WebRenderBatchingLookback, int32_t, 10)                        \
+  _(WebRenderBlobTileSize, int32_t, 256)                           \
+  _(WebRenderBatchedUploadThreshold, int32_t, 512 * 512)           \
   _(UseSoftwareWebRender, bool, false)                             \
+  _(AllowSoftwareWebRenderD3D11, bool, false)                      \
   _(ScreenDepth, int32_t, 0)                                       \
   _(GREDirectory, nsString, nsString())                            \
   _(ProfDirectory, nsString, nsString())                           \
-  _(UseOMTP, bool, false)                                          \
   _(AllowD3D11KeyedMutex, bool, false)                             \
+  _(SwapIntervalGLX, bool, false)                                  \
+  _(SwapIntervalEGL, bool, false)                                  \
   _(SystemTextQuality, int32_t, 5 /* CLEARTYPE_QUALITY */)         \
+  _(SystemTextClearTypeLevel, float, 1.0f)                         \
+  _(SystemTextEnhancedContrast, float, 1.0f)                       \
+  _(SystemTextGamma, float, 2.2f)                                  \
+  _(SystemTextPixelGeometry, int32_t, 1 /* pixel geometry RGB */)  \
+  _(SystemTextRenderingMode, int32_t, 0)                           \
+  _(SystemGDIGamma, float, 1.4f)                                   \
   _(LayersWindowRecordingPath, nsCString, nsCString())             \
   _(RemoteCanvasEnabled, bool, false)                              \
   _(UseDoubleBufferingWithCompositor, bool, false)                 \
@@ -66,7 +80,12 @@ class gfxVarReceiver;
   _(DwmCompositionEnabled, bool, true)                             \
   _(FxREmbedded, bool, false)                                      \
   _(UseAHardwareBufferContent, bool, false)                        \
-  _(UseEGL, bool, false)
+  _(UseAHardwareBufferSharedSurface, bool, false)                  \
+  _(UseEGL, bool, false)                                           \
+  _(DrmRenderDevice, nsCString, nsCString())                       \
+  _(UseDMABuf, bool, false)                                        \
+  _(WebRenderRequiresHardwareDriver, bool, false)                  \
+  _(SupportsThreadsafeGL, bool, false)
 
 /* Add new entries above this line. */
 

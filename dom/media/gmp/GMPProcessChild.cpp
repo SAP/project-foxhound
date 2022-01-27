@@ -12,8 +12,7 @@
 
 using mozilla::ipc::IOThreadChild;
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 GMPProcessChild::GMPProcessChild(ProcessId aParentPid)
     : ProcessChild(aParentPid) {}
@@ -29,7 +28,7 @@ bool GMPProcessChild::Init(int aArgc, char* aArgv[]) {
   // Keep in sync with dom/plugins/PluginModuleParent.
   std::vector<std::string> values = CommandLine::ForCurrentProcess()->argv();
   MOZ_ASSERT(values.size() >= 2, "not enough args");
-  pluginFilename = NS_ConvertUTF8toUTF16(nsDependentCString(values[1].c_str()));
+  CopyUTF8toUTF16(nsDependentCString(values[1].c_str()), pluginFilename);
 #elif defined(OS_WIN)
   std::vector<std::wstring> values =
       CommandLine::ForCurrentProcess()->GetLooseValues();
@@ -42,11 +41,9 @@ bool GMPProcessChild::Init(int aArgc, char* aArgv[]) {
   BackgroundHangMonitor::Startup();
 
   return mPlugin.Init(pluginFilename, ParentPid(),
-                      IOThreadChild::message_loop(),
-                      IOThreadChild::TakeChannel());
+                      IOThreadChild::TakeInitialPort());
 }
 
 void GMPProcessChild::CleanUp() { BackgroundHangMonitor::Shutdown(); }
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp

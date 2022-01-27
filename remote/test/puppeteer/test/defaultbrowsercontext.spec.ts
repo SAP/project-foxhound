@@ -15,11 +15,12 @@
  */
 import expect from 'expect';
 import {
+  expectCookieEquals,
   getTestState,
   setupTestBrowserHooks,
   setupTestPageAndContextHooks,
   itFailsFirefox,
-} from './mocha-utils';
+} from './mocha-utils'; // eslint-disable-line import/extensions
 
 describe('DefaultBrowserContext', function () {
   setupTestBrowserHooks();
@@ -31,17 +32,20 @@ describe('DefaultBrowserContext', function () {
     await page.evaluate(() => {
       document.cookie = 'username=John Doe';
     });
-    expect(await page.cookies()).toEqual([
+    expectCookieEquals(await page.cookies(), [
       {
         name: 'username',
         value: 'John Doe',
         domain: 'localhost',
         path: '/',
+        sameParty: false,
         expires: -1,
         size: 16,
         httpOnly: false,
         secure: false,
         session: true,
+        sourcePort: 8907,
+        sourceScheme: 'NonSecure',
       },
     ]);
   });
@@ -56,17 +60,20 @@ describe('DefaultBrowserContext', function () {
     expect(await page.evaluate(() => document.cookie)).toBe(
       'username=John Doe'
     );
-    expect(await page.cookies()).toEqual([
+    expectCookieEquals(await page.cookies(), [
       {
         name: 'username',
         value: 'John Doe',
         domain: 'localhost',
         path: '/',
+        sameParty: false,
         expires: -1,
         size: 16,
         httpOnly: false,
         secure: false,
         session: true,
+        sourcePort: 80,
+        sourceScheme: 'NonSecure',
       },
     ]);
   });
@@ -87,17 +94,20 @@ describe('DefaultBrowserContext', function () {
     expect(await page.evaluate('document.cookie')).toBe('cookie1=1; cookie2=2');
     await page.deleteCookie({ name: 'cookie2' });
     expect(await page.evaluate('document.cookie')).toBe('cookie1=1');
-    expect(await page.cookies()).toEqual([
+    expectCookieEquals(await page.cookies(), [
       {
         name: 'cookie1',
         value: '1',
         domain: 'localhost',
         path: '/',
+        sameParty: false,
         expires: -1,
         size: 8,
         httpOnly: false,
         secure: false,
         session: true,
+        sourcePort: 80,
+        sourceScheme: 'NonSecure',
       },
     ]);
   });

@@ -61,9 +61,7 @@ Channel::ChannelImpl::ChannelImpl(const ChannelId& channel_id, Mode mode,
                                   Listener* listener)
     : ALLOW_THIS_IN_INITIALIZER_LIST(input_state_(this)),
       ALLOW_THIS_IN_INITIALIZER_LIST(output_state_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(factory_(this)),
-      shared_secret_(0),
-      waiting_for_shared_secret_(false) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(factory_(this)) {
   Init(mode, listener);
 
   if (!CreatePipe(channel_id, mode)) {
@@ -79,9 +77,7 @@ Channel::ChannelImpl::ChannelImpl(const ChannelId& channel_id,
                                   Listener* listener)
     : ALLOW_THIS_IN_INITIALIZER_LIST(input_state_(this)),
       ALLOW_THIS_IN_INITIALIZER_LIST(output_state_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(factory_(this)),
-      shared_secret_(0),
-      waiting_for_shared_secret_(false) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(factory_(this)) {
   Init(mode, listener);
 
   if (mode == MODE_SERVER) {
@@ -111,17 +107,20 @@ void Channel::ChannelImpl::Init(Mode mode, Listener* listener) {
   output_queue_length_ = 0;
   input_buf_offset_ = 0;
   input_buf_ = mozilla::MakeUnique<char[]>(Channel::kReadBufferSize);
+  accept_handles_ = false;
+  privileged_ = false;
+  other_process_ = INVALID_HANDLE_VALUE;
 }
 
 void Channel::ChannelImpl::OutputQueuePush(mozilla::UniquePtr<Message> msg) {
   mozilla::LogIPCMessage::LogDispatchWithPid(msg.get(), other_pid_);
 
-  output_queue_.push(std::move(msg));
+  output_queue_.Push(std::move(msg));
   output_queue_length_++;
 }
 
 void Channel::ChannelImpl::OutputQueuePop() {
-  output_queue_.pop();
+  mozilla::UniquePtr<Message> message = output_queue_.Pop();
   output_queue_length_--;
 }
 
@@ -130,10 +129,8 @@ HANDLE Channel::ChannelImpl::GetServerPipeHandle() const { return pipe_; }
 void Channel::ChannelImpl::Close() {
   ASSERT_OWNINGTHREAD(ChannelImpl);
 
-  bool waited = false;
   if (input_state_.is_pending || output_state_.is_pending) {
     CancelIo(pipe_);
-    waited = true;
   }
 
   // Closing the handle at this point prevents us from issuing more requests
@@ -143,11 +140,17 @@ void Channel::ChannelImpl::Close() {
     pipe_ = INVALID_HANDLE_VALUE;
   }
 
+  // If we have a connection to the other process, close the handle.
+  if (other_process_ != INVALID_HANDLE_VALUE) {
+    CloseHandle(other_process_);
+    other_process_ = INVALID_HANDLE_VALUE;
+  }
+
   while (input_state_.is_pending || output_state_.is_pending) {
     MessageLoopForIO::current()->WaitForIOCompletion(INFINITE, this);
   }
 
-  while (!output_queue_.empty()) {
+  while (!output_queue_.IsEmpty()) {
     OutputQueuePop();
   }
 
@@ -162,8 +165,8 @@ bool Channel::ChannelImpl::Send(mozilla::UniquePtr<Message> message) {
 
 #ifdef IPC_MESSAGE_DEBUG_EXTRA
   DLOG(INFO) << "sending message @" << message.get() << " on channel @" << this
-             << " with type " << message->type() << " (" << output_queue_.size()
-             << " in queue)";
+             << " with type " << message->type() << " ("
+             << output_queue_.Count() << " in queue)";
 #endif
 
 #ifdef FUZZING
@@ -435,7 +438,7 @@ bool Channel::ChannelImpl::ProcessIncomingMessages(
       // has no routing ID), but we only emit a profiler marker for messages
       // with a routing ID, so there's no conflict here.
       AddIPCProfilerMarker(m, other_pid_, MessageDirection::eReceiving,
-                           MessagePhase::TransferStart);
+                           MessagePhase::TransferEnd);
 
 #ifdef IPC_MESSAGE_DEBUG_EXTRA
       DLOG(INFO) << "received message on channel @" << this << " with type "
@@ -455,9 +458,24 @@ bool Channel::ChannelImpl::ProcessIncomingMessages(
           return false;
         }
         waiting_for_shared_secret_ = false;
+
+        // Now that we know the remote pid, open a privileged handle to the
+        // child process if needed to transfer handles to/from it.
+        if (privileged_ && other_process_ == INVALID_HANDLE_VALUE) {
+          other_process_ = OpenProcess(PROCESS_DUP_HANDLE, false, other_pid_);
+          if (!other_process_) {
+            other_process_ = INVALID_HANDLE_VALUE;
+            CHROMIUM_LOG(ERROR) << "Failed to acquire privileged handle to "
+                                << other_pid_ << ", cannot accept handles";
+          }
+        }
+
         listener_->OnChannelConnected(other_pid_);
       } else {
         mozilla::LogIPCMessage::Run run(&m);
+        if (!AcceptHandles(m)) {
+          return false;
+        }
         listener_->OnMessageReceived(std::move(m));
       }
 
@@ -487,8 +505,8 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages(
       return false;
     }
     // Message was sent.
-    DCHECK(!output_queue_.empty());
-    Message* m = output_queue_.front().get();
+    DCHECK(!output_queue_.IsEmpty());
+    Message* m = output_queue_.FirstElement().get();
 
     MOZ_RELEASE_ASSERT(partial_write_iter_.isSome());
     Pickle::BufferList::IterImpl& iter = partial_write_iter_.ref();
@@ -504,22 +522,24 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages(
     }
   }
 
-  if (output_queue_.empty()) return true;
+  if (output_queue_.IsEmpty()) return true;
 
   if (INVALID_HANDLE_VALUE == pipe_) return false;
 
   // Write to pipe...
-  Message* m = output_queue_.front().get();
+  Message* m = output_queue_.FirstElement().get();
 
   if (partial_write_iter_.isNothing()) {
+    AddIPCProfilerMarker(*m, other_pid_, MessageDirection::eSending,
+                         MessagePhase::TransferStart);
+    if (!TransferHandles(*m)) {
+      return false;
+    }
     Pickle::BufferList::IterImpl iter(m->Buffers());
     partial_write_iter_.emplace(iter);
   }
 
   Pickle::BufferList::IterImpl& iter = partial_write_iter_.ref();
-
-  AddIPCProfilerMarker(*m, other_pid_, MessageDirection::eSending,
-                       MessagePhase::TransferStart);
 
   // Don't count this write for the purposes of late write checking. If this
   // message results in a legitimate file write, that will show up when it
@@ -564,7 +584,7 @@ void Channel::ChannelImpl::OnIOCompleted(MessageLoopForIO::IOContext* context,
     if (waiting_connect_) {
       if (!ProcessConnection()) return;
       // We may have some messages queued up to send...
-      if (!output_queue_.empty() && !output_state_.is_pending)
+      if (!output_queue_.IsEmpty() && !output_state_.is_pending)
         ProcessOutgoingMessages(NULL, 0);
       if (input_state_.is_pending) return;
       // else, fall-through and look for incoming messages...
@@ -583,6 +603,151 @@ void Channel::ChannelImpl::OnIOCompleted(MessageLoopForIO::IOContext* context,
     Close();
     listener_->OnChannelError();
   }
+}
+
+void Channel::ChannelImpl::StartAcceptingHandles(Mode mode) {
+  if (accept_handles_) {
+    MOZ_ASSERT(privileged_ == (mode == MODE_SERVER));
+    return;
+  }
+  accept_handles_ = true;
+  privileged_ = mode == MODE_SERVER;
+
+  if (privileged_ && other_pid_ != -1 &&
+      other_process_ == INVALID_HANDLE_VALUE) {
+    other_process_ = OpenProcess(PROCESS_DUP_HANDLE, false, other_pid_);
+    if (!other_process_) {
+      other_process_ = INVALID_HANDLE_VALUE;
+      CHROMIUM_LOG(ERROR) << "Failed to acquire privileged handle to "
+                          << other_pid_ << ", cannot accept handles";
+    }
+  }
+}
+
+static uint32_t HandleToUint32(HANDLE h) {
+  // Cast through uintptr_t and then unsigned int to make the truncation to
+  // 32 bits explicit. Handles are size of-pointer but are always 32-bit values.
+  // https://docs.microsoft.com/en-ca/windows/win32/winprog64/interprocess-communication
+  // says: 64-bit versions of Windows use 32-bit handles for interoperability.
+  return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(h));
+}
+
+static HANDLE Uint32ToHandle(uint32_t h) {
+  return reinterpret_cast<HANDLE>(
+      static_cast<uintptr_t>(static_cast<int32_t>(h)));
+}
+
+bool Channel::ChannelImpl::AcceptHandles(Message& msg) {
+  MOZ_ASSERT(msg.num_handles() == 0);
+
+  uint32_t num_handles = msg.header()->num_handles;
+  if (num_handles == 0) {
+    return true;
+  }
+
+  if (!accept_handles_) {
+    CHROMIUM_LOG(ERROR) << "invalid message: " << msg.name()
+                        << ". channel is not configured to accept handles";
+    return false;
+  }
+
+  // Read in the payload from the footer, truncating the message.
+  nsTArray<uint32_t> payload;
+  payload.AppendElements(num_handles);
+  if (!msg.ReadFooter(payload.Elements(), num_handles * sizeof(uint32_t),
+                      /* truncate */ true)) {
+    CHROMIUM_LOG(ERROR) << "failed to read handle payload from message";
+    return false;
+  }
+  msg.header()->num_handles = 0;
+
+  // Read in the handles themselves, transferring ownership as required.
+  nsTArray<mozilla::UniqueFileHandle> handles(num_handles);
+  for (uint32_t handleValue : payload) {
+    HANDLE handle = Uint32ToHandle(handleValue);
+
+    // If we're the privileged process, the remote process will have leaked
+    // the sent handles in its local address space, and be relying on us to
+    // duplicate them, otherwise the remote privileged side will have
+    // transferred the handles to us already.
+    if (privileged_) {
+      if (other_process_ == INVALID_HANDLE_VALUE) {
+        CHROMIUM_LOG(ERROR) << "other_process_ is invalid in AcceptHandles";
+        return false;
+      }
+      if (!::DuplicateHandle(other_process_, handle, GetCurrentProcess(),
+                             &handle, 0, FALSE,
+                             DUPLICATE_SAME_ACCESS | DUPLICATE_CLOSE_SOURCE)) {
+        CHROMIUM_LOG(ERROR) << "DuplicateHandle failed for handle " << handle
+                            << " in AcceptHandles";
+        return false;
+      }
+    }
+
+    // The handle is directly owned by this process now, and can be added to
+    // our `handles` array.
+    handles.AppendElement(mozilla::UniqueFileHandle(handle));
+  }
+
+  // We're done with the handle footer, truncate the message at that point.
+  msg.SetAttachedFileHandles(std::move(handles));
+  MOZ_ASSERT(msg.num_handles() == num_handles);
+  return true;
+}
+
+bool Channel::ChannelImpl::TransferHandles(Message& msg) {
+  MOZ_ASSERT(msg.header()->num_handles == 0);
+
+  uint32_t num_handles = msg.num_handles();
+  if (num_handles == 0) {
+    return true;
+  }
+
+  if (!accept_handles_) {
+    CHROMIUM_LOG(ERROR) << "cannot send message: " << msg.name()
+                        << ". channel is not configured to accept handles";
+    return false;
+  }
+
+#ifdef DEBUG
+  uint32_t handles_offset = msg.header()->payload_size;
+#endif
+
+  nsTArray<uint32_t> payload(num_handles);
+  for (uint32_t i = 0; i < num_handles; ++i) {
+    // Release ownership of the handle. It'll be cloned when the parent process
+    // transfers it with DuplicateHandle either in this process or the remote
+    // process.
+    HANDLE handle = msg.attached_handles_[i].release();
+
+    // If we're the privileged process, transfer the HANDLE to our remote before
+    // sending the message. Otherwise, the remote privileged process will
+    // transfer the handle for us, so leak it.
+    if (privileged_) {
+      if (other_process_ == INVALID_HANDLE_VALUE) {
+        CHROMIUM_LOG(ERROR) << "other_process_ is invalid in TransferHandles";
+        return false;
+      }
+      if (!::DuplicateHandle(GetCurrentProcess(), handle, other_process_,
+                             &handle, 0, FALSE,
+                             DUPLICATE_SAME_ACCESS | DUPLICATE_CLOSE_SOURCE)) {
+        CHROMIUM_LOG(ERROR) << "DuplicateHandle failed for handle " << handle
+                            << " in TransferHandles";
+        return false;
+      }
+    }
+
+    payload.AppendElement(HandleToUint32(handle));
+  }
+  msg.attached_handles_.Clear();
+
+  msg.WriteFooter(payload.Elements(), payload.Length() * sizeof(uint32_t));
+  msg.header()->num_handles = num_handles;
+
+  MOZ_ASSERT(msg.header()->payload_size ==
+                 handles_offset + (sizeof(uint32_t) * num_handles),
+             "Unexpected number of bytes written for handles footer?");
+  return true;
 }
 
 bool Channel::ChannelImpl::Unsound_IsClosed() const { return closed_; }
@@ -617,6 +782,10 @@ void* Channel::GetServerPipeHandle() const {
   return channel_impl_->GetServerPipeHandle();
 }
 
+void Channel::StartAcceptingHandles(Mode mode) {
+  channel_impl_->StartAcceptingHandles(mode);
+}
+
 Channel::Listener* Channel::set_listener(Listener* listener) {
   return channel_impl_->set_listener(listener);
 }
@@ -624,6 +793,8 @@ Channel::Listener* Channel::set_listener(Listener* listener) {
 bool Channel::Send(mozilla::UniquePtr<Message> message) {
   return channel_impl_->Send(std::move(message));
 }
+
+int32_t Channel::OtherPid() const { return channel_impl_->OtherPid(); }
 
 bool Channel::Unsound_IsClosed() const {
   return channel_impl_->Unsound_IsClosed();

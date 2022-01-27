@@ -10,7 +10,6 @@ const { FormHistory } = ChromeUtils.import(
   "resource://gre/modules/FormHistory.jsm"
 );
 
-const ENGINE_NAME = "engine-tail-suggestions.xml";
 const SUGGEST_PREF = "browser.urlbar.suggest.searches";
 const SUGGEST_ENABLED_PREF = "browser.search.suggest.enabled";
 const PRIVATE_SEARCH_PREF = "browser.search.separatePrivateDefault.ui.enabled";
@@ -47,11 +46,6 @@ async function cleanUpSuggestions() {
 }
 
 add_task(async function setup() {
-  Services.prefs.setCharPref(
-    "browser.urlbar.matchBuckets",
-    "general:5,suggestion:Infinity"
-  );
-
   let engine = await addTestTailSuggestionsEngine(searchStr => {
     return suggestionsFn(searchStr);
   });
@@ -78,6 +72,7 @@ add_task(async function setup() {
     Services.prefs.clearUserPref(PRIVATE_SEARCH_PREF);
     Services.prefs.clearUserPref(TAIL_SUGGESTIONS_PREF);
     Services.prefs.clearUserPref(SUGGEST_ENABLED_PREF);
+    UrlbarPrefs.clear("resultGroups");
   });
   Services.search.setDefault(engine);
   Services.prefs.setBoolPref(PRIVATE_SEARCH_PREF, false);
@@ -100,15 +95,15 @@ add_task(async function normal_suggestions_provider() {
     context,
     matches: [
       makeSearchResult(context, {
-        engineName: "engine-suggestions.xml",
+        engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
       makeSearchResult(context, {
-        engineName: "engine-suggestions.xml",
+        engineName: SUGGESTIONS_ENGINE_NAME,
         suggestion: query + " foo",
       }),
       makeSearchResult(context, {
-        engineName: "engine-suggestions.xml",
+        engineName: SUGGESTIONS_ENGINE_NAME,
         suggestion: query + " bar",
       }),
     ],
@@ -127,14 +122,17 @@ add_task(async function basic_tail() {
   await check_results({
     context,
     matches: [
-      makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
       makeSearchResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
+        heuristic: true,
+      }),
+      makeSearchResult(context, {
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
         suggestion: query + "oronto",
         tail: "toronto",
       }),
       makeSearchResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
         suggestion: query + "unisia",
         tail: "tunisia",
       }),
@@ -175,9 +173,58 @@ add_task(async function mixed_suggestions() {
   await check_results({
     context,
     matches: [
-      makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
       makeSearchResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
+        heuristic: true,
+      }),
+      makeSearchResult(context, {
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
+        suggestion: "what is the time today texas",
+        tail: undefined,
+      }),
+    ],
+  });
+  await cleanUpSuggestions();
+});
+
+/**
+ * Tests a suggestions provider that returns both normal and tail suggestions,
+ * with tail suggestions listed before normal suggestions.  In the real world
+ * we don't expect that to happen, but we should handle it by showing only the
+ * normal suggestions.
+ */
+add_task(async function mixed_suggestions_tail_first() {
+  setSuggestionsFn(searchStr => {
+    let suffixes = ["toronto", "tunisia"];
+    return [
+      "what time is it in t",
+      suffixes
+        .map(s => searchStr + s.slice(1))
+        .concat(["what is the time today texas"]),
+      [],
+      {
+        "google:irrelevantparameter": [],
+        "google:suggestdetail": suffixes
+          .map(s => ({
+            mp: "… ",
+            t: s,
+          }))
+          .concat([{}]),
+      },
+    ];
+  });
+
+  const query = "what time is it in t";
+  let context = createContext(query, { isPrivate: false });
+  await check_results({
+    context,
+    matches: [
+      makeSearchResult(context, {
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
+        heuristic: true,
+      }),
+      makeSearchResult(context, {
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
         suggestion: "what is the time today texas",
         tail: undefined,
       }),
@@ -210,7 +257,10 @@ add_task(async function mixed_results() {
   await check_results({
     context,
     matches: [
-      makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
+      makeSearchResult(context, {
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
+        heuristic: true,
+      }),
       makeBookmarkResult(context, {
         uri: "http://example.com/2",
         title: "what time is",
@@ -229,14 +279,17 @@ add_task(async function mixed_results() {
   await check_results({
     context,
     matches: [
-      makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
       makeSearchResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
+        heuristic: true,
+      }),
+      makeSearchResult(context, {
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
         suggestion: tQuery + "oronto",
         tail: "toronto",
       }),
       makeSearchResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
         suggestion: tQuery + "unisia",
         tail: "tunisia",
       }),
@@ -260,9 +313,12 @@ add_task(async function dedupe_local() {
   await check_results({
     context,
     matches: [
-      makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
+      makeSearchResult(context, {
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
+        heuristic: true,
+      }),
       makeFormHistoryResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
         suggestion: query + "oronto",
       }),
     ],
@@ -284,9 +340,12 @@ add_task(async function limit_results() {
   await check_results({
     context,
     matches: [
-      makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
       makeSearchResult(context, {
-        engineName: ENGINE_NAME,
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
+        heuristic: true,
+      }),
+      makeSearchResult(context, {
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
         suggestion: query + "oronto",
         tail: "toronto",
       }),
@@ -306,7 +365,10 @@ add_task(async function disable_pref() {
   await check_results({
     context,
     matches: [
-      makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
+      makeSearchResult(context, {
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
+        heuristic: true,
+      }),
     ],
   });
 

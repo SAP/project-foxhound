@@ -69,8 +69,8 @@
   transition: all 0.1s ease-out;
 }
 
-.pie-chart-slice:not(:hover):not([focused]),
-.pie-chart-slice:not(:hover):not([focused]) + .pie-chart-label {
+.pie-chart-slice:not(:hover, [focused]),
+.pie-chart-slice:not(:hover, [focused]) + .pie-chart-label {
   transform: none !important;
 }
 
@@ -118,7 +118,7 @@
 }
 
 .table-chart-totals {
-  border-top: 1px solid var(--theme-text-color-alt); /* Grey foreground text */
+  border-top: 1px solid var(--theme-splitter-color);
 }
 
 .table-chart-summary-label {

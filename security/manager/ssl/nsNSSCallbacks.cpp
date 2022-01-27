@@ -18,6 +18,8 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "nsContentUtils.h"
+#include "nsIChannel.h"
+#include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIPrompt.h"
 #include "nsIProtocolProxyService.h"
@@ -43,7 +45,6 @@
 #include "TrustOverrideUtils.h"
 #include "TrustOverride-SymantecData.inc"
 #include "TrustOverride-AppleGoogleDigiCertData.inc"
-#include "TrustOverride-TestImminentDistrustData.inc"
 
 using namespace mozilla;
 using namespace mozilla::pkix;
@@ -260,9 +261,10 @@ OCSPRequest::Run() {
     priorityChannel->AdjustPriority(nsISupportsPriority::PRIORITY_HIGHEST);
   }
 
-  channel->SetLoadFlags(nsIRequest::LOAD_ANONYMOUS |
-                        nsIChannel::LOAD_BYPASS_SERVICE_WORKER |
-                        nsIChannel::LOAD_BYPASS_URL_CLASSIFIER);
+  channel->SetLoadFlags(
+      nsIRequest::LOAD_ANONYMOUS | nsIRequest::LOAD_BYPASS_CACHE |
+      nsIRequest::INHIBIT_CACHING | nsIChannel::LOAD_BYPASS_SERVICE_WORKER |
+      nsIChannel::LOAD_BYPASS_URL_CLASSIFIER);
 
   nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
 
@@ -306,7 +308,7 @@ OCSPRequest::Run() {
   if (NS_FAILED(rv)) {
     return NotifyDone(rv, lock);
   }
-  // Do not use SPDY for internal security operations. It could result
+  // Do not use SPDY or HTTP3 for internal security operations. It could result
   // in the silent upgrade to ssl, which in turn could require an SSL
   // operation to fulfill something like an OCSP fetch, which is an
   // endless loop.
@@ -315,6 +317,14 @@ OCSPRequest::Run() {
     return NotifyDone(rv, lock);
   }
   rv = internalChannel->SetAllowSpdy(false);
+  if (NS_FAILED(rv)) {
+    return NotifyDone(rv, lock);
+  }
+  rv = internalChannel->SetAllowHttp3(false);
+  if (NS_FAILED(rv)) {
+    return NotifyDone(rv, lock);
+  }
+  rv = internalChannel->SetIsOCSP(true);
   if (NS_FAILED(rv)) {
     return NotifyDone(rv, lock);
   }
@@ -581,13 +591,9 @@ void PK11PasswordPromptRunnable::RunOnTargetThread() {
   }
 
   nsString password;
-  // |checkState| is unused because |checkMsg| (the argument just before it) is
-  // null, but XPConnect requires it to point to a valid bool nonetheless.
-  bool checkState = false;
   bool userClickedOK = false;
   rv = prompt->PromptPassword(nullptr, promptString.get(),
-                              getter_Copies(password), nullptr, &checkState,
-                              &userClickedOK);
+                              getter_Copies(password), &userClickedOK);
   if (NS_FAILED(rv) || !userClickedOK) {
     return;
   }
@@ -694,35 +700,24 @@ nsCString getSignatureName(uint32_t aSignatureScheme) {
 // call with shutdown prevention lock held
 static void PreliminaryHandshakeDone(PRFileDesc* fd) {
   nsNSSSocketInfo* infoObject = (nsNSSSocketInfo*)fd->higher->secret;
-  if (!infoObject) return;
-
-  SSLChannelInfo channelInfo;
-  if (SSL_GetChannelInfo(fd, &channelInfo, sizeof(channelInfo)) == SECSuccess) {
-    infoObject->SetSSLVersionUsed(channelInfo.protocolVersion);
-    infoObject->SetEarlyDataAccepted(channelInfo.earlyDataAccepted);
-    infoObject->SetResumed(channelInfo.resumed);
-
-    SSLCipherSuiteInfo cipherInfo;
-    if (SSL_GetCipherSuiteInfo(channelInfo.cipherSuite, &cipherInfo,
-                               sizeof cipherInfo) == SECSuccess) {
-      /* Set the Status information */
-      infoObject->mHaveCipherSuiteAndProtocol = true;
-      infoObject->mCipherSuite = channelInfo.cipherSuite;
-      infoObject->mProtocolVersion = channelInfo.protocolVersion & 0xFF;
-      infoObject->mKeaGroup.Assign(getKeaGroupName(channelInfo.keaGroup));
-      infoObject->mSignatureSchemeName.Assign(
-          getSignatureName(channelInfo.signatureScheme));
-      infoObject->SetKEAUsed(channelInfo.keaType);
-      infoObject->SetKEAKeyBits(channelInfo.keaKeyBits);
-      infoObject->SetMACAlgorithmUsed(cipherInfo.macAlgorithm);
-      infoObject->mIsDelegatedCredential = channelInfo.peerDelegCred;
-
-      if (infoObject->mIsDelegatedCredential) {
-        Telemetry::ScalarAdd(
-            Telemetry::ScalarID::SECURITY_TLS_DELEGATED_CREDENTIALS_TXN, 1);
-      }
-    }
+  if (!infoObject) {
+    return;
   }
+  SSLChannelInfo channelInfo;
+  if (SSL_GetChannelInfo(fd, &channelInfo, sizeof(channelInfo)) != SECSuccess) {
+    return;
+  }
+  SSLCipherSuiteInfo cipherInfo;
+  if (SSL_GetCipherSuiteInfo(channelInfo.cipherSuite, &cipherInfo,
+                             sizeof(cipherInfo)) != SECSuccess) {
+    return;
+  }
+  infoObject->SetPreliminaryHandshakeInfo(channelInfo, cipherInfo);
+  infoObject->SetSSLVersionUsed(channelInfo.protocolVersion);
+  infoObject->SetEarlyDataAccepted(channelInfo.earlyDataAccepted);
+  infoObject->SetKEAUsed(channelInfo.keaType);
+  infoObject->SetKEAKeyBits(channelInfo.keaKeyBits);
+  infoObject->SetMACAlgorithmUsed(cipherInfo.macAlgorithm);
 
   // Don't update NPN details on renegotiation.
   if (infoObject->IsPreliminaryHandshakeDone()) {
@@ -835,48 +830,27 @@ SECStatus CanFalseStartCallback(PRFileDesc* fd, void* client_data,
 
 static void AccumulateNonECCKeySize(Telemetry::HistogramID probe,
                                     uint32_t bits) {
-  unsigned int value =
-      bits < 512
-          ? 1
-          : bits == 512
-                ? 2
-                : bits < 768
-                      ? 3
-                      : bits == 768
-                            ? 4
-                            : bits < 1024
-                                  ? 5
-                                  : bits == 1024
-                                        ? 6
-                                        : bits < 1280
-                                              ? 7
-                                              : bits == 1280
-                                                    ? 8
-                                                    : bits < 1536
-                                                          ? 9
-                                                          : bits == 1536
-                                                                ? 10
-                                                                : bits < 2048
-                                                                      ? 11
-                                                                      : bits == 2048
-                                                                            ? 12
-                                                                            : bits < 3072
-                                                                                  ? 13
-                                                                                  : bits == 3072
-                                                                                        ? 14
-                                                                                        : bits < 4096
-                                                                                              ? 15
-                                                                                              : bits == 4096
-                                                                                                    ? 16
-                                                                                                    : bits < 8192
-                                                                                                          ? 17
-                                                                                                          : bits == 8192
-                                                                                                                ? 18
-                                                                                                                : bits < 16384
-                                                                                                                      ? 19
-                                                                                                                      : bits == 16384
-                                                                                                                            ? 20
-                                                                                                                            : 0;
+  unsigned int value = bits < 512      ? 1
+                       : bits == 512   ? 2
+                       : bits < 768    ? 3
+                       : bits == 768   ? 4
+                       : bits < 1024   ? 5
+                       : bits == 1024  ? 6
+                       : bits < 1280   ? 7
+                       : bits == 1280  ? 8
+                       : bits < 1536   ? 9
+                       : bits == 1536  ? 10
+                       : bits < 2048   ? 11
+                       : bits == 2048  ? 12
+                       : bits < 3072   ? 13
+                       : bits == 3072  ? 14
+                       : bits < 4096   ? 15
+                       : bits == 4096  ? 16
+                       : bits < 8192   ? 17
+                       : bits == 8192  ? 18
+                       : bits < 16384  ? 19
+                       : bits == 16384 ? 20
+                                       : 0;
   Telemetry::Accumulate(probe, value);
 }
 
@@ -887,12 +861,11 @@ static void AccumulateNonECCKeySize(Telemetry::HistogramID probe,
 // named curves for a given size (e.g. secp256k1 vs. secp256r1). We punt on
 // that for now. See also NSS bug 323674.
 static void AccumulateECCCurve(Telemetry::HistogramID probe, uint32_t bits) {
-  unsigned int value =
-      bits == 255 ? 29                                            // Curve25519
-                  : bits == 256 ? 23                              // P-256
-                                : bits == 384 ? 24                // P-384
-                                              : bits == 521 ? 25  // P-521
-                                                            : 0;  // Unknown
+  unsigned int value = bits == 255   ? 29  // Curve25519
+                       : bits == 256 ? 23  // P-256
+                       : bits == 384 ? 24  // P-384
+                       : bits == 521 ? 25  // P-521
+                                     : 0;  // Unknown
   Telemetry::Accumulate(probe, value);
 }
 
@@ -1112,23 +1085,21 @@ static void RebuildVerifiedCertificateInformation(PRFileDesc* fd,
     flags |= CertVerifier::FLAG_TLS_IGNORE_STATUS_REQUEST;
   }
 
-  SECOidTag evOidPolicy;
+  EVStatus evStatus;
   CertificateTransparencyInfo certificateTransparencyInfo;
-  UniqueCERTCertList builtChain;
-  const bool saveIntermediates = false;
+  nsTArray<nsTArray<uint8_t>> builtChainCertBytes;
+  nsTArray<uint8_t> certBytes(cert->derCert.data, cert->derCert.len);
   bool isBuiltCertChainRootBuiltInRoot = false;
   mozilla::pkix::Result rv = certVerifier->VerifySSLServerCert(
-      cert, mozilla::pkix::Now(), infoObject, infoObject->GetHostName(),
-      builtChain, flags, maybePeerCertsBytes, stapledOCSPResponse,
+      certBytes, mozilla::pkix::Now(), infoObject, infoObject->GetHostName(),
+      builtChainCertBytes, flags, maybePeerCertsBytes, stapledOCSPResponse,
       sctsFromTLSExtension, Nothing(), infoObject->GetOriginAttributes(),
-      saveIntermediates, &evOidPolicy,
+      &evStatus,
       nullptr,  // OCSP stapling telemetry
       nullptr,  // key size telemetry
       nullptr,  // SHA-1 telemetry
       nullptr,  // pinning telemetry
-      &certificateTransparencyInfo,
-      nullptr,  // CRLite telemetry,
-      &isBuiltCertChainRootBuiltInRoot);
+      &certificateTransparencyInfo, &isBuiltCertChainRootBuiltInRoot);
 
   if (rv != Success) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
@@ -1136,7 +1107,7 @@ static void RebuildVerifiedCertificateInformation(PRFileDesc* fd,
   }
 
   RefPtr<nsNSSCertificate> nssc(nsNSSCertificate::Create(cert.get()));
-  if (rv == Success && evOidPolicy != SEC_OID_UNKNOWN) {
+  if (rv == Success && evStatus == EVStatus::EV) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
             ("HandshakeCallback using NEW cert %p (is EV)", nssc.get()));
     infoObject->SetServerCert(nssc, EVStatus::EV);
@@ -1151,106 +1122,9 @@ static void RebuildVerifiedCertificateInformation(PRFileDesc* fd,
         TransportSecurityInfo::ConvertCertificateTransparencyInfoToStatus(
             certificateTransparencyInfo);
     infoObject->SetCertificateTransparencyStatus(status);
-    nsTArray<nsTArray<uint8_t>> certBytesArray =
-        TransportSecurityInfo::CreateCertBytesArray(builtChain);
-    infoObject->SetSucceededCertChain(std::move(certBytesArray));
+    infoObject->SetSucceededCertChain(std::move(builtChainCertBytes));
     infoObject->SetIsBuiltCertChainRootBuiltInRoot(
         isBuiltCertChainRootBuiltInRoot);
-  }
-}
-
-nsresult IsCertificateDistrustImminent(
-    const nsTArray<RefPtr<nsIX509Cert>>& aCertArray,
-    /* out */ bool& isDistrusted) {
-  if (aCertArray.IsEmpty()) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  nsCOMPtr<nsIX509Cert> rootCert;
-  nsTArray<RefPtr<nsIX509Cert>> intCerts;
-  nsCOMPtr<nsIX509Cert> eeCert;
-
-  nsresult rv = nsNSSCertificate::SegmentCertificateChain(aCertArray, rootCert,
-                                                          intCerts, eeCert);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  // Check the test certificate condition first; this is a special certificate
-  // that gets the 'imminent distrust' treatment; this is so that the distrust
-  // UX code does not become stale, as it will need regular use. See Bug 1409257
-  // for context. Please do not remove this when adjusting the rest of the
-  // method.
-  UniqueCERTCertificate nssEECert(eeCert->GetCert());
-  if (!nssEECert) {
-    return NS_ERROR_FAILURE;
-  }
-  isDistrusted =
-      CertDNIsInList(nssEECert.get(), TestImminentDistrustEndEntityDNs);
-  if (isDistrusted) {
-    // Exit early
-    return NS_OK;
-  }
-
-  UniqueCERTCertificate nssRootCert(rootCert->GetCert());
-  if (!nssRootCert) {
-    return NS_ERROR_FAILURE;
-  }
-
-  // Proceed with the Symantec imminent distrust algorithm. This algorithm is
-  // to be removed in Firefox 63, when the validity period check will also be
-  // removed from the code in NSSCertDBTrustDomain.
-  if (CertDNIsInList(nssRootCert.get(), RootSymantecDNs)) {
-    static const PRTime NULL_TIME = 0;
-
-    rv = CheckForSymantecDistrust(intCerts, eeCert, NULL_TIME,
-                                  RootAppleAndGoogleSPKIs, isDistrusted);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-  }
-  return NS_OK;
-}
-
-static void RebuildCertificateInfoFromSSLTokenCache(
-    nsNSSSocketInfo* aInfoObject) {
-  MOZ_ASSERT(aInfoObject);
-
-  if (!aInfoObject) {
-    return;
-  }
-
-  nsAutoCString key;
-  aInfoObject->GetPeerId(key);
-  mozilla::net::SessionCacheInfo info;
-  if (!mozilla::net::SSLTokensCache::GetSessionCacheInfo(key, info)) {
-    MOZ_LOG(
-        gPIPNSSLog, LogLevel::Debug,
-        ("RebuildCertificateInfoFromSSLTokenCache cannot find cached info."));
-    return;
-  }
-
-  RefPtr<nsNSSCertificate> nssc = nsNSSCertificate::ConstructFromDER(
-      BitwiseCast<char*, uint8_t*>(info.mServerCertBytes.Elements()),
-      info.mServerCertBytes.Length());
-  if (!nssc) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("RebuildCertificateInfoFromSSLTokenCache failed to construct "
-             "server cert"));
-    return;
-  }
-
-  aInfoObject->SetServerCert(nssc, info.mEVStatus);
-  aInfoObject->SetCertificateTransparencyStatus(
-      info.mCertificateTransparencyStatus);
-  if (info.mSucceededCertChainBytes) {
-    aInfoObject->SetSucceededCertChain(
-        std::move(*info.mSucceededCertChainBytes));
-  }
-
-  if (info.mIsBuiltCertChainRootBuiltInRoot) {
-    aInfoObject->SetIsBuiltCertChainRootBuiltInRoot(
-        *info.mIsBuiltCertChainRootBuiltInRoot);
   }
 }
 
@@ -1392,24 +1266,10 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
             ("HandshakeCallback KEEPING existing cert\n"));
   } else {
     if (StaticPrefs::network_ssl_tokens_cache_enabled()) {
-      RebuildCertificateInfoFromSSLTokenCache(infoObject);
+      infoObject->RebuildCertificateInfoFromSSLTokenCache();
     } else {
       RebuildVerifiedCertificateInformation(fd, infoObject);
     }
-  }
-
-  nsTArray<RefPtr<nsIX509Cert>> succeededCertArray;
-  // The list could be empty. Bug 731478 will reduce the incidence of empty
-  // succeeded cert chains through better caching.
-  nsresult srv = infoObject->GetSucceededCertChain(succeededCertArray);
-
-  bool distrustImminent;
-  if (NS_SUCCEEDED(srv)) {
-    srv = IsCertificateDistrustImminent(succeededCertArray, distrustImminent);
-  }
-
-  if (NS_SUCCEEDED(srv) && distrustImminent) {
-    state |= nsIWebProgressListener::STATE_CERT_DISTRUST_IMMINENT;
   }
 
   bool domainMismatch;

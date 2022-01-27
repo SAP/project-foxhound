@@ -6,78 +6,72 @@
 
 #include "DocAccessibleChild.h"
 
+#include "AccAttributes.h"
 #include "nsAccessibilityService.h"
-#include "Accessible-inl.h"
-#include "ProxyAccessible.h"
+#include "LocalAccessible-inl.h"
+#include "RemoteAccessible.h"
 #include "Relation.h"
 #include "HyperTextAccessible-inl.h"
 #include "TextLeafAccessible.h"
 #include "ImageAccessible.h"
 #include "TableAccessible.h"
 #include "TableCellAccessible.h"
-#include "nsIPersistentProperties2.h"
 #include "nsAccUtils.h"
 #ifdef MOZ_ACCESSIBILITY_ATK
 #  include "AccessibleWrap.h"
 #endif
+#include "AccAttributes.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/a11y/DocAccessiblePlatformExtChild.h"
 
 namespace mozilla {
 namespace a11y {
 
-Accessible* DocAccessibleChild::IdToAccessible(const uint64_t& aID) const {
-  if (!aID) return mDoc;
-
-  if (!mDoc) return nullptr;
-
-  return mDoc->GetAccessibleByUniqueID(reinterpret_cast<void*>(aID));
-}
-
-Accessible* DocAccessibleChild::IdToAccessibleLink(const uint64_t& aID) const {
-  Accessible* acc = IdToAccessible(aID);
+LocalAccessible* DocAccessibleChild::IdToAccessibleLink(
+    const uint64_t& aID) const {
+  LocalAccessible* acc = IdToAccessible(aID);
   return acc && acc->IsLink() ? acc : nullptr;
 }
 
-Accessible* DocAccessibleChild::IdToAccessibleSelect(
+LocalAccessible* DocAccessibleChild::IdToAccessibleSelect(
     const uint64_t& aID) const {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   return acc && acc->IsSelect() ? acc : nullptr;
 }
 
 HyperTextAccessible* DocAccessibleChild::IdToHyperTextAccessible(
     const uint64_t& aID) const {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   return acc && acc->IsHyperText() ? acc->AsHyperText() : nullptr;
 }
 
 TextLeafAccessible* DocAccessibleChild::IdToTextLeafAccessible(
     const uint64_t& aID) const {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   return acc && acc->IsTextLeaf() ? acc->AsTextLeaf() : nullptr;
 }
 
 ImageAccessible* DocAccessibleChild::IdToImageAccessible(
     const uint64_t& aID) const {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   return (acc && acc->IsImage()) ? acc->AsImage() : nullptr;
 }
 
 TableCellAccessible* DocAccessibleChild::IdToTableCellAccessible(
     const uint64_t& aID) const {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   return (acc && acc->IsTableCell()) ? acc->AsTableCell() : nullptr;
 }
 
 TableAccessible* DocAccessibleChild::IdToTableAccessible(
     const uint64_t& aID) const {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   return (acc && acc->IsTable()) ? acc->AsTable() : nullptr;
 }
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvState(const uint64_t& aID,
                                                       uint64_t* aState) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (!acc) {
     *aState = states::DEFUNCT;
     return IPC_OK();
@@ -90,7 +84,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvState(const uint64_t& aID,
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvNativeState(const uint64_t& aID,
                                                             uint64_t* aState) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (!acc) {
     *aState = states::DEFUNCT;
     return IPC_OK();
@@ -104,7 +98,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvNativeState(const uint64_t& aID,
 mozilla::ipc::IPCResult DocAccessibleChild::RecvName(const uint64_t& aID,
                                                      nsString* aName,
                                                      uint32_t* aFlag) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (!acc) return IPC_OK();
 
   *aFlag = acc->Name(*aName);
@@ -113,7 +107,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvName(const uint64_t& aID,
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvValue(const uint64_t& aID,
                                                       nsString* aValue) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (!acc) {
     return IPC_OK();
   }
@@ -124,7 +118,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvValue(const uint64_t& aID,
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvHelp(const uint64_t& aID,
                                                      nsString* aHelp) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (!acc) {
     return IPC_OK();
   }
@@ -135,7 +129,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvHelp(const uint64_t& aID,
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvDescription(const uint64_t& aID,
                                                             nsString* aDesc) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (!acc) return IPC_OK();
 
   acc->Description(*aDesc);
@@ -143,47 +137,46 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvDescription(const uint64_t& aID,
 }
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvAttributes(
-    const uint64_t& aID, nsTArray<Attribute>* aAttributes) {
-  Accessible* acc = IdToAccessible(aID);
+    const uint64_t& aID, RefPtr<AccAttributes>* aAttributes) {
+  LocalAccessible* acc = IdToAccessible(aID);
   if (!acc) return IPC_OK();
 
-  nsCOMPtr<nsIPersistentProperties> props = acc->Attributes();
-  if (!nsAccUtils::PersistentPropertiesToArray(props, aAttributes)) {
-    return IPC_FAIL_NO_REASON(this);
-  }
+  *aAttributes = acc->Attributes();
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvRelationByType(
     const uint64_t& aID, const uint32_t& aType, nsTArray<uint64_t>* aTargets) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (!acc) return IPC_OK();
 
   auto type = static_cast<RelationType>(aType);
   Relation rel = acc->RelationByType(type);
-  while (Accessible* target = rel.Next())
+  while (LocalAccessible* target = rel.Next()) {
     aTargets->AppendElement(reinterpret_cast<uint64_t>(target->UniqueID()));
+  }
 
   return IPC_OK();
 }
 
-static void AddRelation(Accessible* aAcc, RelationType aType,
+static void AddRelation(LocalAccessible* aAcc, RelationType aType,
                         nsTArray<RelationTargets>* aTargets) {
   Relation rel = aAcc->RelationByType(aType);
   nsTArray<uint64_t> targets;
-  while (Accessible* target = rel.Next())
+  while (LocalAccessible* target = rel.Next()) {
     targets.AppendElement(reinterpret_cast<uint64_t>(target->UniqueID()));
+  }
 
   if (!targets.IsEmpty()) {
     RelationTargets* newRelation = aTargets->AppendElement(
         RelationTargets(static_cast<uint32_t>(aType), nsTArray<uint64_t>()));
-    newRelation->Targets().SwapElements(targets);
+    newRelation->Targets() = std::move(targets);
   }
 }
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvRelations(
     const uint64_t& aID, nsTArray<RelationTargets>* aRelations) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (!acc) return IPC_OK();
 
 #define RELATIONTYPE(gecko, s, a, m, i) \
@@ -197,7 +190,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvRelations(
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvIsSearchbox(const uint64_t& aID,
                                                             bool* aRetVal) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (!acc) return IPC_OK();
 
   *aRetVal = acc->IsSearchbox();
@@ -206,7 +199,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvIsSearchbox(const uint64_t& aID,
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvLandmarkRole(
     const uint64_t& aID, nsString* aLandmark) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (!acc) {
     return IPC_OK();
   }
@@ -220,7 +213,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvLandmarkRole(
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvARIARoleAtom(
     const uint64_t& aID, nsString* aRole) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (!acc) {
     return IPC_OK();
   }
@@ -237,7 +230,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvARIARoleAtom(
 mozilla::ipc::IPCResult DocAccessibleChild::RecvGroupPosition(
     const uint64_t& aID, int32_t* aLevel, int32_t* aSimilarItemsInGroup,
     int32_t* aPositionInGroup) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     GroupPos groupPos = acc->GroupPosition();
     *aLevel = groupPos.level;
@@ -250,7 +243,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvGroupPosition(
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvScrollTo(
     const uint64_t& aID, const uint32_t& aScrollType) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     RefPtr<PresShell> presShell = acc->Document()->PresShellPtr();
     nsCOMPtr<nsIContent> content = acc->GetContent();
@@ -263,7 +256,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvScrollTo(
 mozilla::ipc::IPCResult DocAccessibleChild::RecvScrollToPoint(
     const uint64_t& aID, const uint32_t& aScrollType, const int32_t& aX,
     const int32_t& aY) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     acc->ScrollToPoint(aScrollType, aX, aY);
   }
@@ -274,7 +267,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvScrollToPoint(
 mozilla::ipc::IPCResult DocAccessibleChild::RecvAnnounce(
     const uint64_t& aID, const nsString& aAnnouncement,
     const uint16_t& aPriority) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     acc->Announce(aAnnouncement, aPriority);
   }
@@ -322,7 +315,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvSelectionCount(
 mozilla::ipc::IPCResult DocAccessibleChild::RecvTextSubstring(
     const uint64_t& aID, const int32_t& aStartOffset, const int32_t& aEndOffset,
     nsString* aText, bool* aValid) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (!acc) {
     return IPC_OK();
   }
@@ -399,32 +392,28 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvCharAt(const uint64_t& aID,
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvTextAttributes(
     const uint64_t& aID, const bool& aIncludeDefAttrs, const int32_t& aOffset,
-    nsTArray<Attribute>* aAttributes, int32_t* aStartOffset,
+    RefPtr<AccAttributes>* aAttributes, int32_t* aStartOffset,
     int32_t* aEndOffset) {
   HyperTextAccessible* acc = IdToHyperTextAccessible(aID);
   if (!acc || !acc->IsTextRole()) {
     return IPC_OK();
   }
 
-  nsCOMPtr<nsIPersistentProperties> props =
+  *aAttributes =
       acc->TextAttributes(aIncludeDefAttrs, aOffset, aStartOffset, aEndOffset);
-  if (!nsAccUtils::PersistentPropertiesToArray(props, aAttributes)) {
-    return IPC_FAIL_NO_REASON(this);
-  }
+
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvDefaultTextAttributes(
-    const uint64_t& aID, nsTArray<Attribute>* aAttributes) {
+    const uint64_t& aID, RefPtr<AccAttributes>* aAttributes) {
   HyperTextAccessible* acc = IdToHyperTextAccessible(aID);
   if (!acc || !acc->IsTextRole()) {
     return IPC_OK();
   }
 
-  nsCOMPtr<nsIPersistentProperties> props = acc->DefaultTextAttributes();
-  if (!nsAccUtils::PersistentPropertiesToArray(props, aAttributes)) {
-    return IPC_FAIL_NO_REASON(this);
-  }
+  *aAttributes = acc->DefaultTextAttributes();
+
   return IPC_OK();
 }
 
@@ -639,7 +628,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvImageSize(const uint64_t& aID,
 mozilla::ipc::IPCResult DocAccessibleChild::RecvStartOffset(const uint64_t& aID,
                                                             uint32_t* aRetVal,
                                                             bool* aOk) {
-  Accessible* acc = IdToAccessibleLink(aID);
+  LocalAccessible* acc = IdToAccessibleLink(aID);
   if (acc) {
     *aRetVal = acc->StartOffset();
     *aOk = true;
@@ -654,7 +643,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvStartOffset(const uint64_t& aID,
 mozilla::ipc::IPCResult DocAccessibleChild::RecvEndOffset(const uint64_t& aID,
                                                           uint32_t* aRetVal,
                                                           bool* aOk) {
-  Accessible* acc = IdToAccessibleLink(aID);
+  LocalAccessible* acc = IdToAccessibleLink(aID);
   if (acc) {
     *aRetVal = acc->EndOffset();
     *aOk = true;
@@ -668,7 +657,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvEndOffset(const uint64_t& aID,
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvIsLinkValid(const uint64_t& aID,
                                                             bool* aRetVal) {
-  Accessible* acc = IdToAccessibleLink(aID);
+  LocalAccessible* acc = IdToAccessibleLink(aID);
   if (acc) {
     *aRetVal = acc->IsLinkValid();
   } else {
@@ -681,7 +670,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvIsLinkValid(const uint64_t& aID,
 mozilla::ipc::IPCResult DocAccessibleChild::RecvAnchorCount(const uint64_t& aID,
                                                             uint32_t* aRetVal,
                                                             bool* aOk) {
-  Accessible* acc = IdToAccessibleLink(aID);
+  LocalAccessible* acc = IdToAccessibleLink(aID);
   if (acc) {
     *aRetVal = acc->AnchorCount();
     *aOk = true;
@@ -695,7 +684,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvAnchorCount(const uint64_t& aID,
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvAnchorURIAt(
     const uint64_t& aID, const uint32_t& aIndex, nsCString* aURI, bool* aOk) {
-  Accessible* acc = IdToAccessibleLink(aID);
+  LocalAccessible* acc = IdToAccessibleLink(aID);
   *aOk = false;
   if (acc) {
     nsCOMPtr<nsIURI> uri = acc->AnchorURIAt(aIndex);
@@ -714,9 +703,9 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvAnchorAt(const uint64_t& aID,
                                                          bool* aOk) {
   *aIDOfAnchor = 0;
   *aOk = false;
-  Accessible* acc = IdToAccessibleLink(aID);
+  LocalAccessible* acc = IdToAccessibleLink(aID);
   if (acc) {
-    Accessible* anchor = acc->AnchorAt(aIndex);
+    LocalAccessible* anchor = acc->AnchorAt(aIndex);
     if (anchor) {
       *aIDOfAnchor = reinterpret_cast<uint64_t>(anchor->UniqueID());
       *aOk = true;
@@ -741,23 +730,11 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvLinkAt(const uint64_t& aID,
   *aOk = false;
   HyperTextAccessible* acc = IdToHyperTextAccessible(aID);
   if (acc) {
-    Accessible* link = acc->LinkAt(aIndex);
+    LocalAccessible* link = acc->LinkAt(aIndex);
     if (link) {
       *aIDOfLink = reinterpret_cast<uint64_t>(link->UniqueID());
       *aOk = true;
     }
-  }
-
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult DocAccessibleChild::RecvLinkIndexOf(
-    const uint64_t& aID, const uint64_t& aLinkID, int32_t* aIndex) {
-  HyperTextAccessible* acc = IdToHyperTextAccessible(aID);
-  Accessible* link = IdToAccessible(aLinkID);
-  *aIndex = -1;
-  if (acc && link) {
-    *aIndex = acc->LinkIndexOf(link);
   }
 
   return IPC_OK();
@@ -866,7 +843,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvColHeaderCells(
     const uint64_t& aID, nsTArray<uint64_t>* aCells) {
   TableCellAccessible* acc = IdToTableCellAccessible(aID);
   if (acc) {
-    AutoTArray<Accessible*, 10> headerCells;
+    AutoTArray<LocalAccessible*, 10> headerCells;
     acc->ColHeaderCells(&headerCells);
     aCells->SetCapacity(headerCells.Length());
     for (uint32_t i = 0; i < headerCells.Length(); ++i) {
@@ -882,7 +859,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvRowHeaderCells(
     const uint64_t& aID, nsTArray<uint64_t>* aCells) {
   TableCellAccessible* acc = IdToTableCellAccessible(aID);
   if (acc) {
-    AutoTArray<Accessible*, 10> headerCells;
+    AutoTArray<LocalAccessible*, 10> headerCells;
     acc->RowHeaderCells(&headerCells);
     aCells->SetCapacity(headerCells.Length());
     for (uint32_t i = 0; i < headerCells.Length(); ++i) {
@@ -907,7 +884,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvTableCaption(
   *aOk = false;
   TableAccessible* acc = IdToTableAccessible(aID);
   if (acc) {
-    Accessible* caption = acc->Caption();
+    LocalAccessible* caption = acc->Caption();
     if (caption) {
       *aCaptionID = reinterpret_cast<uint64_t>(caption->UniqueID());
       *aOk = true;
@@ -956,7 +933,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvTableCellAt(
   *aOk = false;
   TableAccessible* acc = IdToTableAccessible(aID);
   if (acc) {
-    Accessible* cell = acc->CellAt(aRow, aCol);
+    LocalAccessible* cell = acc->CellAt(aRow, aCol);
     if (cell) {
       *aCellID = reinterpret_cast<uint64_t>(cell->UniqueID());
       *aOk = true;
@@ -1128,7 +1105,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvTableSelectedCells(
     const uint64_t& aID, nsTArray<uint64_t>* aCellIDs) {
   TableAccessible* acc = IdToTableAccessible(aID);
   if (acc) {
-    AutoTArray<Accessible*, 30> cells;
+    AutoTArray<LocalAccessible*, 30> cells;
     acc->SelectedCells(&cells);
     aCellIDs->SetCapacity(cells.Length());
     for (uint32_t i = 0; i < cells.Length(); ++i) {
@@ -1228,7 +1205,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvAtkTableColumnHeader(
 #ifdef MOZ_ACCESSIBILITY_ATK
   TableAccessible* acc = IdToTableAccessible(aID);
   if (acc) {
-    Accessible* header = AccessibleWrap::GetColumnHeader(acc, aCol);
+    LocalAccessible* header = AccessibleWrap::GetColumnHeader(acc, aCol);
     if (header) {
       *aHeader = reinterpret_cast<uint64_t>(header->UniqueID());
       *aOk = true;
@@ -1247,7 +1224,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvAtkTableRowHeader(
 #ifdef MOZ_ACCESSIBILITY_ATK
   TableAccessible* acc = IdToTableAccessible(aID);
   if (acc) {
-    Accessible* header = AccessibleWrap::GetRowHeader(acc, aRow);
+    LocalAccessible* header = AccessibleWrap::GetRowHeader(acc, aRow);
     if (header) {
       *aHeader = reinterpret_cast<uint64_t>(header->UniqueID());
       *aOk = true;
@@ -1260,9 +1237,9 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvAtkTableRowHeader(
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvSelectedItems(
     const uint64_t& aID, nsTArray<uint64_t>* aSelectedItemIDs) {
-  Accessible* acc = IdToAccessibleSelect(aID);
+  LocalAccessible* acc = IdToAccessibleSelect(aID);
   if (acc) {
-    AutoTArray<Accessible*, 10> selectedItems;
+    AutoTArray<LocalAccessible*, 10> selectedItems;
     acc->SelectedItems(&selectedItems);
     aSelectedItemIDs->SetCapacity(selectedItems.Length());
     for (size_t i = 0; i < selectedItems.Length(); ++i) {
@@ -1277,7 +1254,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvSelectedItems(
 mozilla::ipc::IPCResult DocAccessibleChild::RecvSelectedItemCount(
     const uint64_t& aID, uint32_t* aCount) {
   *aCount = 0;
-  Accessible* acc = IdToAccessibleSelect(aID);
+  LocalAccessible* acc = IdToAccessibleSelect(aID);
   if (acc) {
     *aCount = acc->SelectedItemCount();
   }
@@ -1290,9 +1267,9 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvGetSelectedItem(
     bool* aOk) {
   *aSelected = 0;
   *aOk = false;
-  Accessible* acc = IdToAccessibleSelect(aID);
+  LocalAccessible* acc = IdToAccessibleSelect(aID);
   if (acc) {
-    Accessible* item = acc->GetSelectedItem(aIndex);
+    LocalAccessible* item = acc->GetSelectedItem(aIndex);
     if (item) {
       *aSelected = reinterpret_cast<uint64_t>(item->UniqueID());
       *aOk = true;
@@ -1305,7 +1282,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvGetSelectedItem(
 mozilla::ipc::IPCResult DocAccessibleChild::RecvIsItemSelected(
     const uint64_t& aID, const uint32_t& aIndex, bool* aSelected) {
   *aSelected = false;
-  Accessible* acc = IdToAccessibleSelect(aID);
+  LocalAccessible* acc = IdToAccessibleSelect(aID);
   if (acc) {
     *aSelected = acc->IsItemSelected(aIndex);
   }
@@ -1316,7 +1293,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvIsItemSelected(
 mozilla::ipc::IPCResult DocAccessibleChild::RecvAddItemToSelection(
     const uint64_t& aID, const uint32_t& aIndex, bool* aSuccess) {
   *aSuccess = false;
-  Accessible* acc = IdToAccessibleSelect(aID);
+  LocalAccessible* acc = IdToAccessibleSelect(aID);
   if (acc) {
     *aSuccess = acc->AddItemToSelection(aIndex);
   }
@@ -1327,7 +1304,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvAddItemToSelection(
 mozilla::ipc::IPCResult DocAccessibleChild::RecvRemoveItemFromSelection(
     const uint64_t& aID, const uint32_t& aIndex, bool* aSuccess) {
   *aSuccess = false;
-  Accessible* acc = IdToAccessibleSelect(aID);
+  LocalAccessible* acc = IdToAccessibleSelect(aID);
   if (acc) {
     *aSuccess = acc->RemoveItemFromSelection(aIndex);
   }
@@ -1338,7 +1315,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvRemoveItemFromSelection(
 mozilla::ipc::IPCResult DocAccessibleChild::RecvSelectAll(const uint64_t& aID,
                                                           bool* aSuccess) {
   *aSuccess = false;
-  Accessible* acc = IdToAccessibleSelect(aID);
+  LocalAccessible* acc = IdToAccessibleSelect(aID);
   if (acc) {
     *aSuccess = acc->SelectAll();
   }
@@ -1349,7 +1326,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvSelectAll(const uint64_t& aID,
 mozilla::ipc::IPCResult DocAccessibleChild::RecvUnselectAll(const uint64_t& aID,
                                                             bool* aSuccess) {
   *aSuccess = false;
-  Accessible* acc = IdToAccessibleSelect(aID);
+  LocalAccessible* acc = IdToAccessibleSelect(aID);
   if (acc) {
     *aSuccess = acc->UnselectAll();
   }
@@ -1359,7 +1336,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvUnselectAll(const uint64_t& aID,
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvTakeSelection(
     const uint64_t& aID) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     acc->TakeSelection();
   }
@@ -1369,7 +1346,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvTakeSelection(
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvSetSelected(
     const uint64_t& aID, const bool& aSelect) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     acc->SetSelected(aSelect);
   }
@@ -1381,7 +1358,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvDoAction(const uint64_t& aID,
                                                          const uint8_t& aIndex,
                                                          bool* aSuccess) {
   *aSuccess = false;
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     *aSuccess = acc->DoAction(aIndex);
   }
@@ -1392,7 +1369,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvDoAction(const uint64_t& aID,
 mozilla::ipc::IPCResult DocAccessibleChild::RecvActionCount(const uint64_t& aID,
                                                             uint8_t* aCount) {
   *aCount = 0;
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     *aCount = acc->ActionCount();
   }
@@ -1402,7 +1379,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvActionCount(const uint64_t& aID,
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvActionDescriptionAt(
     const uint64_t& aID, const uint8_t& aIndex, nsString* aDescription) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     acc->ActionDescriptionAt(aIndex, *aDescription);
   }
@@ -1412,7 +1389,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvActionDescriptionAt(
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvActionNameAt(
     const uint64_t& aID, const uint8_t& aIndex, nsString* aName) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     acc->ActionNameAt(aIndex, *aName);
   }
@@ -1424,7 +1401,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvAccessKey(
     const uint64_t& aID, uint32_t* aKey, uint32_t* aModifierMask) {
   *aKey = 0;
   *aModifierMask = 0;
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     KeyBinding kb = acc->AccessKey();
     *aKey = kb.Key();
@@ -1438,7 +1415,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvKeyboardShortcut(
     const uint64_t& aID, uint32_t* aKey, uint32_t* aModifierMask) {
   *aKey = 0;
   *aModifierMask = 0;
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     KeyBinding kb = acc->KeyboardShortcut();
     *aKey = kb.Key();
@@ -1451,7 +1428,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvKeyboardShortcut(
 mozilla::ipc::IPCResult DocAccessibleChild::RecvAtkKeyBinding(
     const uint64_t& aID, nsString* aResult) {
 #ifdef MOZ_ACCESSIBILITY_ATK
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     AccessibleWrap::GetKeyBinding(acc, *aResult);
   }
@@ -1462,7 +1439,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvAtkKeyBinding(
 mozilla::ipc::IPCResult DocAccessibleChild::RecvCurValue(const uint64_t& aID,
                                                          double* aValue) {
   *aValue = UnspecifiedNaN<double>();
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     *aValue = acc->CurValue();
   }
@@ -1473,7 +1450,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvCurValue(const uint64_t& aID,
 mozilla::ipc::IPCResult DocAccessibleChild::RecvSetCurValue(
     const uint64_t& aID, const double& aValue, bool* aRetVal) {
   *aRetVal = false;
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     *aRetVal = acc->SetCurValue(aValue);
   }
@@ -1484,7 +1461,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvSetCurValue(
 mozilla::ipc::IPCResult DocAccessibleChild::RecvMinValue(const uint64_t& aID,
                                                          double* aValue) {
   *aValue = UnspecifiedNaN<double>();
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     *aValue = acc->MinValue();
   }
@@ -1495,7 +1472,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvMinValue(const uint64_t& aID,
 mozilla::ipc::IPCResult DocAccessibleChild::RecvMaxValue(const uint64_t& aID,
                                                          double* aValue) {
   *aValue = UnspecifiedNaN<double>();
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     *aValue = acc->MaxValue();
   }
@@ -1506,7 +1483,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvMaxValue(const uint64_t& aID,
 mozilla::ipc::IPCResult DocAccessibleChild::RecvStep(const uint64_t& aID,
                                                      double* aStep) {
   *aStep = UnspecifiedNaN<double>();
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     *aStep = acc->Step();
   }
@@ -1514,25 +1491,45 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvStep(const uint64_t& aID,
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult DocAccessibleChild::RecvTakeFocus(const uint64_t& aID) {
-  Accessible* acc = IdToAccessible(aID);
-  if (acc) {
-    acc->TakeFocus();
+mozilla::ipc::IPCResult DocAccessibleChild::RecvFocusedChild(
+    const uint64_t& aID, PDocAccessibleChild** aResultDoc,
+    uint64_t* aResultID) {
+  *aResultDoc = nullptr;
+  *aResultID = 0;
+  LocalAccessible* acc = IdToAccessible(aID);
+  if (!acc) {
+    return IPC_OK();
   }
 
-  return IPC_OK();
-}
+  LocalAccessible* result = acc->FocusedChild();
+  if (result) {
+    // LocalAccessible::FocusedChild can return a LocalAccessible from any
+    // document, not just a descendant of the caller's document. Check that it
+    // is really a descendant.
+    DocAccessible* doc = result->Document();
+    if (!doc) {
+      MOZ_ASSERT_UNREACHABLE("Focused child is unbound from doc.");
+      return IPC_OK();
+    }
 
-mozilla::ipc::IPCResult DocAccessibleChild::RecvFocusedChild(
-    const uint64_t& aID, uint64_t* aChild, bool* aOk) {
-  *aChild = 0;
-  *aOk = false;
-  Accessible* acc = IdToAccessible(aID);
-  if (acc) {
-    Accessible* child = acc->FocusedChild();
-    if (child) {
-      *aChild = reinterpret_cast<uint64_t>(child->UniqueID());
-      *aOk = true;
+    while (doc != mDoc) {
+      doc = doc->ParentDocument();
+      if (!doc) {
+        // result's document is not a descendant.
+        return IPC_OK();
+      }
+    }
+    DocAccessibleChild* resultDoc = result->Document()->IPCDoc();
+    // We've sent the constructor for this document to the parent process.
+    // However, because the constructor is async, the parent process might
+    // get the result of this (sync) method before it runs the constructor.
+    // If we send this document in this case, the parent process will crash.
+    // Therefore, we only do this if the parent process has explicitly told
+    // us that the document has been constructed there.
+    if (resultDoc && resultDoc->IsConstructedInParentProcess()) {
+      *aResultDoc = resultDoc;
+      *aResultID =
+          result->IsDoc() ? 0 : reinterpret_cast<uint64_t>(result->UniqueID());
     }
   }
   return IPC_OK();
@@ -1540,7 +1537,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvFocusedChild(
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvLanguage(const uint64_t& aID,
                                                          nsString* aLocale) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     acc->Language(*aLocale);
   }
@@ -1550,7 +1547,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvLanguage(const uint64_t& aID,
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvDocType(const uint64_t& aID,
                                                         nsString* aType) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc && acc->IsDoc()) {
     acc->AsDoc()->DocType(*aType);
   }
@@ -1560,7 +1557,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvDocType(const uint64_t& aID,
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvTitle(const uint64_t& aID,
                                                       nsString* aTitle) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc) {
     mozilla::ErrorResult rv;
     acc->GetContent()->GetTextContent(*aTitle, rv);
@@ -1571,7 +1568,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvTitle(const uint64_t& aID,
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvURL(const uint64_t& aID,
                                                     nsString* aURL) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc && acc->IsDoc()) {
     acc->AsDoc()->URL(*aURL);
   }
@@ -1581,7 +1578,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvURL(const uint64_t& aID,
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvMimeType(const uint64_t& aID,
                                                          nsString* aMime) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc && acc->IsDoc()) {
     acc->AsDoc()->MimeType(*aMime);
   }
@@ -1592,7 +1589,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvMimeType(const uint64_t& aID,
 mozilla::ipc::IPCResult DocAccessibleChild::RecvURLDocTypeMimeType(
     const uint64_t& aID, nsString* aURL, nsString* aDocType,
     nsString* aMimeType) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc && acc->IsDoc()) {
     DocAccessible* doc = acc->AsDoc();
     doc->URL(*aURL);
@@ -1609,15 +1606,15 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvChildAtPoint(
     uint64_t* aResultID) {
   *aResultDoc = nullptr;
   *aResultID = 0;
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc && !acc->IsDefunct()) {
     int32_t x = aX;
     int32_t y = aY;
-    Accessible* result = acc->ChildAtPoint(
-        x, y, static_cast<Accessible::EWhichChildAtPoint>(aWhich));
+    LocalAccessible* result = acc->LocalChildAtPoint(
+        x, y, static_cast<LocalAccessible::EWhichChildAtPoint>(aWhich));
     if (result) {
-      // Accessible::ChildAtPoint can return an Accessible from a descendant
-      // document.
+      // LocalAccessible::ChildAtPoint can return a LocalAccessible from a
+      // descendant document.
       DocAccessibleChild* resultDoc = result->Document()->IPCDoc();
       // We've sent the constructor for this document to the parent process.
       // However, because the constructor is async, the parent process might
@@ -1644,7 +1641,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvExtents(
   *aY = 0;
   *aWidth = 0;
   *aHeight = 0;
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc && !acc->IsDefunct()) {
     nsIntRect screenRect = acc->Bounds();
     if (!screenRect.IsEmpty()) {
@@ -1655,11 +1652,13 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvExtents(
         screenRect.y -= winCoords.y;
       }
 
-      *aX = screenRect.x;
-      *aY = screenRect.y;
       *aWidth = screenRect.width;
       *aHeight = screenRect.height;
     }
+    // We should always report the position of our acc, even if
+    // the returned screenRect is empty.
+    *aX = screenRect.x;
+    *aY = screenRect.y;
   }
   return IPC_OK();
 }
@@ -1671,22 +1670,24 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvExtentsInCSSPixels(
   *aY = 0;
   *aWidth = 0;
   *aHeight = 0;
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (acc && !acc->IsDefunct()) {
     nsIntRect screenRect = acc->BoundsInCSSPixels();
     if (!screenRect.IsEmpty()) {
-      *aX = screenRect.x;
-      *aY = screenRect.y;
       *aWidth = screenRect.width;
       *aHeight = screenRect.height;
     }
+    // We should always report the position of our acc, even if
+    // the returned screenRect is empty.
+    *aX = screenRect.x;
+    *aY = screenRect.y;
   }
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvDOMNodeID(
     const uint64_t& aID, nsString* aDOMNodeID) {
-  Accessible* acc = IdToAccessible(aID);
+  LocalAccessible* acc = IdToAccessible(aID);
   if (!acc) {
     return IPC_OK();
   }

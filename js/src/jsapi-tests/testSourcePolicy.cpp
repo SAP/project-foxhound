@@ -5,13 +5,21 @@
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
 #include "js/CompilationAndEvaluation.h"  // JS::CompileFunction, JS::Evaluate
+#include "js/GlobalObject.h"              // JS_NewGlobalObject
 #include "js/MemoryFunctions.h"
 #include "js/SourceText.h"  // JS::Source{Ownership,Text}
 #include "jsapi-tests/tests.h"
 #include "vm/JSScript.h"
 
 BEGIN_TEST(testBug795104) {
-  JS::RealmBehaviorsRef(cx->realm()).setDiscardSource(true);
+  JS::RealmOptions options;
+  options.behaviors().setDiscardSource(true);
+
+  JS::RootedObject g(cx, JS_NewGlobalObject(cx, getGlobalClass(), nullptr,
+                                            JS::FireOnNewGlobalHook, options));
+  CHECK(g);
+
+  JSAutoRealm ar(cx, g);
 
   const size_t strLen = 60002;
   char* s = static_cast<char*>(JS_malloc(cx, strLen));

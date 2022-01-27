@@ -22,23 +22,14 @@ var EXPORTED_SYMBOLS = ["SessionFile"];
  *   e.g. if a request attempts to write sessionstore.js while
  *   another attempts to copy that file.
  *
- * This implementation uses OS.File, which guarantees property 1.
  */
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 const { AsyncShutdown } = ChromeUtils.import(
   "resource://gre/modules/AsyncShutdown.jsm"
-);
-
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "Telemetry",
-  "@mozilla.org/base/telemetry;1",
-  "nsITelemetry"
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
@@ -96,32 +87,35 @@ var SessionFile = {
 
 Object.freeze(SessionFile);
 
-var Path = OS.Path;
-var profileDir = OS.Constants.Path.profileDir;
+var profileDir = Services.dirsvc.get("ProfD", Ci.nsIFile).path;
 
 var SessionFileInternal = {
   Paths: Object.freeze({
     // The path to the latest version of sessionstore written during a clean
     // shutdown. After startup, it is renamed `cleanBackup`.
-    clean: Path.join(profileDir, "sessionstore.jsonlz4"),
+    clean: PathUtils.join(profileDir, "sessionstore.jsonlz4"),
 
     // The path at which we store the previous version of `clean`. Updated
     // whenever we successfully load from `clean`.
-    cleanBackup: Path.join(
+    cleanBackup: PathUtils.join(
       profileDir,
       "sessionstore-backups",
       "previous.jsonlz4"
     ),
 
     // The directory containing all sessionstore backups.
-    backups: Path.join(profileDir, "sessionstore-backups"),
+    backups: PathUtils.join(profileDir, "sessionstore-backups"),
 
     // The path to the latest version of the sessionstore written
     // during runtime. Generally, this file contains more
     // privacy-sensitive information than |clean|, and this file is
     // therefore removed during clean shutdown. This file is designed to protect
     // against crashes / sudden shutdown.
-    recovery: Path.join(profileDir, "sessionstore-backups", "recovery.jsonlz4"),
+    recovery: PathUtils.join(
+      profileDir,
+      "sessionstore-backups",
+      "recovery.jsonlz4"
+    ),
 
     // The path to the previous version of the sessionstore written
     // during runtime (e.g. 15 seconds before recovery). In case of a
@@ -130,7 +124,7 @@ var SessionFileInternal = {
     // this file is therefore removed during clean shutdown.  This
     // file is designed to protect against crashes that are nasty
     // enough to corrupt |recovery|.
-    recoveryBackup: Path.join(
+    recoveryBackup: PathUtils.join(
       profileDir,
       "sessionstore-backups",
       "recovery.baklz4"
@@ -140,7 +134,7 @@ var SessionFileInternal = {
     // Having this backup protects the user essentially from bugs in
     // Firefox or add-ons, especially for users of Nightly. This file
     // does not contain any information more sensitive than |clean|.
-    upgradeBackupPrefix: Path.join(
+    upgradeBackupPrefix: PathUtils.join(
       profileDir,
       "sessionstore-backups",
       "upgrade.jsonlz4-"
@@ -243,17 +237,36 @@ var SessionFileInternal = {
         let path;
         let startMs = Date.now();
 
-        let options = { encoding: "utf-8" };
+        let options = {};
         if (useOldExtension) {
           path = this.Paths[key]
             .replace("jsonlz4", "js")
             .replace("baklz4", "bak");
         } else {
           path = this.Paths[key];
-          options.compression = "lz4";
+          options.decompress = true;
         }
-        let source = await OS.File.read(path, options);
+        let source = await IOUtils.readUTF8(path, options);
         let parsed = JSON.parse(source);
+
+        if (parsed._cachedObjs) {
+          try {
+            let cacheMap = new Map(parsed._cachedObjs);
+            for (let win of parsed.windows.concat(
+              parsed._closedWindows || []
+            )) {
+              for (let tab of win.tabs.concat(win._closedTabs || [])) {
+                tab.image = cacheMap.get(tab.image) || tab.image;
+              }
+            }
+          } catch (e) {
+            // This is temporary code to clean up after the backout of bug
+            // 1546847. Just in case there are problems in the format of
+            // the parsed data, continue on. Favicons might be broken, but
+            // the session will at least be recovered
+            Cu.reportError(e);
+          }
+        }
 
         if (
           !SessionStore.isFormatVersionCompatible(
@@ -279,20 +292,20 @@ var SessionFileInternal = {
           parsed,
           useOldExtension,
         };
-        Telemetry.getHistogramById("FX_SESSION_RESTORE_CORRUPT_FILE").add(
-          false
-        );
-        Telemetry.getHistogramById("FX_SESSION_RESTORE_READ_FILE_MS").add(
-          Date.now() - startMs
-        );
+        Services.telemetry
+          .getHistogramById("FX_SESSION_RESTORE_CORRUPT_FILE")
+          .add(false);
+        Services.telemetry
+          .getHistogramById("FX_SESSION_RESTORE_READ_FILE_MS")
+          .add(Date.now() - startMs);
         break;
       } catch (ex) {
-        if (ex instanceof OS.File.Error && ex.becauseNoSuchFile) {
+        if (ex instanceof DOMException && ex.name == "NotFoundError") {
           exists = false;
-        } else if (ex instanceof OS.File.Error) {
+        } else if (ex instanceof DOMException && ex.name == "NotAllowedError") {
           // The file might be inaccessible due to wrong permissions
           // or similar failures. We'll just count it as "corrupted".
-          console.error("Could not read session file ", ex, ex.stack);
+          console.error("Could not read session file ", ex);
           corrupted = true;
         } else if (ex instanceof SyntaxError) {
           console.error(
@@ -306,9 +319,9 @@ var SessionFileInternal = {
       } finally {
         if (exists) {
           noFilesFound = false;
-          Telemetry.getHistogramById("FX_SESSION_RESTORE_CORRUPT_FILE").add(
-            corrupted
-          );
+          Services.telemetry
+            .getHistogramById("FX_SESSION_RESTORE_CORRUPT_FILE")
+            .add(corrupted);
         }
       }
     }
@@ -328,9 +341,9 @@ var SessionFileInternal = {
 
     // All files are corrupted if files found but none could deliver a result.
     let allCorrupt = !noFilesFound && !result;
-    Telemetry.getHistogramById("FX_SESSION_RESTORE_ALL_FILES_CORRUPT").add(
-      allCorrupt
-    );
+    Services.telemetry
+      .getHistogramById("FX_SESSION_RESTORE_ALL_FILES_CORRUPT")
+      .add(allCorrupt);
 
     if (!result) {
       // If everything fails, start with an empty session.
@@ -523,7 +536,7 @@ var SessionFileInternal = {
       } else {
         samples.push(value);
       }
-      let histogram = Telemetry.getHistogramById(id);
+      let histogram = Services.telemetry.getHistogramById(id);
       for (let sample of samples) {
         histogram.add(sample);
       }

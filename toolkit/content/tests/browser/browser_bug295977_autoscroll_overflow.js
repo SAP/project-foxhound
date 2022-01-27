@@ -29,7 +29,7 @@ add_task(async function() {
       <option>a</option><option>a</option><option>a</option><option>a</option><option>a</option><option>a</option><option>a</option>\
       <option>a</option><option>a</option><option>a</option><option>a</option><option>a</option><option>a</option><option>a</option></select>\
       <div id="g" style="width: 99px; height: 99px; border: 10px solid black; margin: 10px; overflow: auto;"><div style="width: 100px; height: 100px;"></div></div>\
-      <div id="h" style="width: 100px; height: 100px; overflow: -moz-hidden-unscrollable;"><div style="width: 200px; height: 200px;"></div></div>\
+      <div id="h" style="width: 100px; height: 100px; overflow: clip;"><div style="width: 200px; height: 200px;"></div></div>\
       <iframe id="iframe" style="display: none;"></iframe>\
       </body></html>',
     },
@@ -190,6 +190,14 @@ body > div > div {width: 1000px;height: 1000px;}\
       );
       BrowserTestUtils.loadURI(gBrowser, test.dataUri);
       await loadedPromise;
+      await ContentTask.spawn(gBrowser.selectedBrowser, {}, async () => {
+        // Wait for a paint so that hit-testing works correctly.
+        await new Promise(resolve =>
+          content.requestAnimationFrame(() =>
+            content.requestAnimationFrame(resolve)
+          )
+        );
+      });
       continue;
     }
 

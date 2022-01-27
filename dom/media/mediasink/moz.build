@@ -5,19 +5,23 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 UNIFIED_SOURCES += [
-    'AudioSink.cpp',
-    'AudioSinkWrapper.cpp',
-    'DecodedStream.cpp',
-    'VideoSink.cpp',
+    "AudioDecoderInputTrack.cpp",
+    "AudioSink.cpp",
+    "AudioSinkWrapper.cpp",
+    "DecodedStream.cpp",
+    "VideoSink.cpp",
 ]
 
 EXPORTS += [
-    'MediaSink.h'
+    "MediaSink.h",
 ]
 
-include('/ipc/chromium/chromium-config.mozbuild')
+LOCAL_INCLUDES += [
+    "/dom/media",
+]
 
-FINAL_LIBRARY = 'xul'
+DEFINES["TRACING"] = True
 
-if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
-    CXXFLAGS += ['-Wno-error=shadow']
+include("/ipc/chromium/chromium-config.mozbuild")
+
+FINAL_LIBRARY = "xul"

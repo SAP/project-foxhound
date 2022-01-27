@@ -9,28 +9,55 @@
 #ifndef nsHtml5StreamParser_h
 #define nsHtml5StreamParser_h
 
-#include "nsCOMPtr.h"
-#include "nsHtml5MetaScanner.h"
+#include "MainThreadUtils.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/Encoding.h"
-#include "mozilla/EncodingDetector.h"
-#include "mozilla/JapaneseDetector.h"
-#include "mozilla/UniquePtr.h"
-#include "nsHtml5TreeOpExecutor.h"
-#include "nsHtml5OwningUTF16Buffer.h"
-#include "nsIInputStream.h"
-#include "nsITaintawareInputStream.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/NotNull.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Span.h"
 #include "mozilla/UniquePtr.h"
+#include "nsCharsetSource.h"
+#include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsDebug.h"
 #include "nsHtml5AtomTable.h"
-#include "nsHtml5Speculation.h"
+#include "nsIRequestObserver.h"
 #include "nsISerialEventTarget.h"
-#include "nsITimer.h"
-#include "mozilla/dom/DocGroup.h"
-#include "mozilla/Buffer.h"
+#include "nsISupports.h"
+#include "nsITaintawareInputStream.h"
+#include "nsStringFwd.h"
+#include "nsTArray.h"
+#include "nscore.h"
 
 // TaintFox: parser modified to support taint propagation.
-
+ 
+class nsCycleCollectionTraversalCallback;
+class nsHtml5MetaScanner;
+class nsHtml5OwningUTF16Buffer;
 class nsHtml5Parser;
+class nsHtml5Speculation;
+class nsHtml5String;
+class nsHtml5Tokenizer;
+class nsHtml5TreeBuilder;
+class nsHtml5TreeOpExecutor;
+class nsIChannel;
+class nsIInputStream;
+class nsIRequest;
+class nsIRunnable;
+class nsITimer;
+class nsIURI;
+
+namespace mozilla {
+class EncodingDetector;
+template <typename T>
+class Buffer;
+
+namespace dom {
+class DocGroup;
+}
+}  // namespace mozilla
 
 enum eParserMode {
   /**
@@ -68,36 +95,86 @@ enum eBomState {
   /**
    * BOM sniffing hasn't started.
    */
-  BOM_SNIFFING_NOT_STARTED = 0,
+  BOM_SNIFFING_NOT_STARTED,
 
   /**
    * BOM sniffing is ongoing, and the first byte of an UTF-16LE BOM has been
    * seen.
    */
-  SEEN_UTF_16_LE_FIRST_BYTE = 1,
+  SEEN_UTF_16_LE_FIRST_BYTE,
 
   /**
    * BOM sniffing is ongoing, and the first byte of an UTF-16BE BOM has been
    * seen.
    */
-  SEEN_UTF_16_BE_FIRST_BYTE = 2,
+  SEEN_UTF_16_BE_FIRST_BYTE,
 
   /**
    * BOM sniffing is ongoing, and the first byte of an UTF-8 BOM has been
    * seen.
    */
-  SEEN_UTF_8_FIRST_BYTE = 3,
+  SEEN_UTF_8_FIRST_BYTE,
 
   /**
    * BOM sniffing is ongoing, and the first and second bytes of an UTF-8 BOM
    * have been seen.
    */
-  SEEN_UTF_8_SECOND_BYTE = 4,
+  SEEN_UTF_8_SECOND_BYTE,
+
+  /**
+   * Seen \x00 in UTF-16BE bogo-XML declaration.
+   */
+  SEEN_UTF_16_BE_XML_FIRST,
+
+  /**
+   * Seen \x00< in UTF-16BE bogo-XML declaration.
+   */
+  SEEN_UTF_16_BE_XML_SECOND,
+
+  /**
+   * Seen \x00<\x00 in UTF-16BE bogo-XML declaration.
+   */
+  SEEN_UTF_16_BE_XML_THIRD,
+
+  /**
+   * Seen \x00<\x00? in UTF-16BE bogo-XML declaration.
+   */
+  SEEN_UTF_16_BE_XML_FOURTH,
+
+  /**
+   * Seen \x00<\x00?\x00 in UTF-16BE bogo-XML declaration.
+   */
+  SEEN_UTF_16_BE_XML_FIFTH,
+
+  /**
+   * Seen < in UTF-16BE bogo-XML declaration.
+   */
+  SEEN_UTF_16_LE_XML_FIRST,
+
+  /**
+   * Seen <\x00 in UTF-16BE bogo-XML declaration.
+   */
+  SEEN_UTF_16_LE_XML_SECOND,
+
+  /**
+   * Seen <\x00? in UTF-16BE bogo-XML declaration.
+   */
+  SEEN_UTF_16_LE_XML_THIRD,
+
+  /**
+   * Seen <\x00?\x00 in UTF-16BE bogo-XML declaration.
+   */
+  SEEN_UTF_16_LE_XML_FOURTH,
+
+  /**
+   * Seen <\x00?\x00x in UTF-16BE bogo-XML declaration.
+   */
+  SEEN_UTF_16_LE_XML_FIFTH,
 
   /**
    * BOM sniffing was started but is now over for whatever reason.
    */
-  BOM_SNIFFING_OVER = 5
+  BOM_SNIFFING_OVER,
 };
 
 enum eHtml5StreamState {
@@ -120,6 +197,7 @@ class nsHtml5StreamParser final : public nsISupports {
   friend class nsHtml5StreamParserContinuation;
   friend class nsHtml5TimerKungFu;
   friend class nsHtml5StreamParserPtr;
+  friend class nsHtml5StreamListener;
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -127,9 +205,6 @@ class nsHtml5StreamParser final : public nsISupports {
 
   nsHtml5StreamParser(nsHtml5TreeOpExecutor* aExecutor, nsHtml5Parser* aOwner,
                       eParserMode aMode);
-
-  // Methods that nsHtml5StreamListener calls
-  nsresult CheckListenerChain();
 
   nsresult OnStartRequest(nsIRequest* aRequest);
 
@@ -148,11 +223,6 @@ class nsHtml5StreamParser final : public nsISupports {
   // Not from an external interface
 
   /**
-   * Pass a buffer to the JapaneseDetector.
-   */
-  void FeedJapaneseDetector(mozilla::Span<const uint8_t> aBuffer, bool aLast);
-
-  /**
    * Pass a buffer to the Japanese or Cyrillic detector as appropriate.
    */
   void FeedDetector(mozilla::Span<const uint8_t> aBuffer, bool aLast);
@@ -165,17 +235,16 @@ class nsHtml5StreamParser final : public nsISupports {
    *  @param   aCharsetSource the source of the charset
    */
   inline void SetDocumentCharset(NotNull<const Encoding*> aEncoding,
-                                 int32_t aSource) {
+                                 int32_t aSource, bool aForceAutoDetection) {
     MOZ_ASSERT(mStreamState == STREAM_NOT_STARTED,
                "SetDocumentCharset called too late.");
-    NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+    MOZ_ASSERT(NS_IsMainThread(), "Wrong thread!");
+    MOZ_ASSERT(!(aForceAutoDetection && aSource >= kCharsetFromOtherComponent),
+               "Can't force with high-ranking source.");
     mEncoding = aEncoding;
     mCharsetSource = aSource;
-  }
-
-  inline void SetObserver(nsIRequestObserver* aObserver) {
-    NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-    mObserver = aObserver;
+    mForceAutoDetection = aForceAutoDetection;
+    mChannelHadCharset = (aSource == kCharsetFromChannel);
   }
 
   nsresult GetChannel(nsIChannel** aChannel);
@@ -199,13 +268,6 @@ class nsHtml5StreamParser final : public nsISupports {
   }
 
   void DropTimer();
-
-  /**
-   * Sets mEncoding and mCharsetSource appropriately for the XML View Source
-   * case if aEncoding names a supported rough ASCII superset and sets
-   * the mEncoding and mCharsetSource to the UTF-8 default otherwise.
-   */
-  void SetEncodingFromExpat(const char16_t* aEncoding);
 
   /**
    * Sets the URL for View Source title in case this parser ends up being
@@ -297,11 +359,6 @@ class nsHtml5StreamParser final : public nsISupports {
                             const StringTaint& aTaint);
 
   /**
-   * Check whether every other byte in the sniffing buffer is zero.
-   */
-  void SniffBOMlessUTF16BasicLatin(mozilla::Span<const uint8_t> aFromSegment);
-
-  /**
    * Write the start of the stream to detector.
    */
   void FinalizeSniffingWithDetector(mozilla::Span<const uint8_t> aFromSegment,
@@ -338,7 +395,9 @@ class nsHtml5StreamParser final : public nsISupports {
    *                            (UTF-16BE, UTF-16LE or UTF-8; the BOM has
    *                            been swallowed)
    */
-  nsresult SetupDecodingFromBom(NotNull<const Encoding*> aEncoding);
+  void SetupDecodingFromBom(NotNull<const Encoding*> aEncoding);
+
+  void SetupDecodingFromUtf16BogoXml(NotNull<const Encoding*> aEncoding);
 
   /**
    * When speculatively decoding from file: URL as UTF-8, commit
@@ -352,6 +411,11 @@ class nsHtml5StreamParser final : public nsISupports {
    * using fallback and then continue normally with the fallback.
    */
   void ReDecodeLocalFile();
+
+  /**
+   * Change a final autodetection source to the corresponding initial one.
+   */
+  int32_t MaybeRollBackSource(int32_t aSource);
 
   /**
    * Potentially guess the encoding using mozilla::EncodingDetector.
@@ -417,7 +481,6 @@ class nsHtml5StreamParser final : public nsISupports {
   inline void OnContentComplete();
 
   nsCOMPtr<nsIRequest> mRequest;
-  nsCOMPtr<nsIRequestObserver> mObserver;
 
   /**
    * The document title to use if this turns out to be a View Source parser.
@@ -475,6 +538,16 @@ class nsHtml5StreamParser final : public nsISupports {
    */
   bool mReparseForbidden;
 
+  /**
+   * Whether the Repair Text Encoding menu item was invoked
+   */
+  bool mForceAutoDetection;
+
+  /**
+   * Whether there was a valid charset parameter on the HTTP layer.
+   */
+  bool mChannelHadCharset;
+
   // Portable parser objects
   /**
    * The first buffer in the pending UTF-16 buffer queue
@@ -495,9 +568,9 @@ class nsHtml5StreamParser final : public nsISupports {
   nsHtml5TreeOpExecutor* mExecutor;
 
   /**
-   * The same as mExecutor->mDocument->mDocGroup.
+   * Network event target for mExecutor->mDocument
    */
-  RefPtr<mozilla::dom::DocGroup> mDocGroup;
+  nsCOMPtr<nsISerialEventTarget> mNetworkEventTarget;
 
   /**
    * The HTML5 tree builder
@@ -584,11 +657,6 @@ class nsHtml5StreamParser final : public nsISupports {
   nsCOMPtr<nsIRunnable> mLoadFlusher;
 
   /**
-   * The Japanese detector.
-   */
-  mozilla::UniquePtr<mozilla::JapaneseDetector> mJapaneseDetector;
-
-  /**
    * The generict detector.
    */
   mozilla::UniquePtr<mozilla::EncodingDetector> mDetector;
@@ -604,6 +672,10 @@ class nsHtml5StreamParser final : public nsISupports {
   bool mInitialEncodingWasFromParentFrame;
 
   bool mHasHadErrors;
+
+  bool mDetectorHasSeenNonAscii;
+
+  bool mDetectorHadOnlySeenAsciiWhenFirstGuessing;
 
   /**
    * If true, we are decoding a local file that lacks an encoding

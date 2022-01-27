@@ -16,13 +16,18 @@ function unregisterTarget(targetFront) {
  * @param {String} targetActorID: The actorID of the target we want to select.
  */
 function selectTarget(targetActorID) {
-  return function(dispatch) {
+  return function({ dispatch, getState }) {
     dispatch({ type: "SELECT_TARGET", targetActorID });
   };
+}
+
+function refreshTargets() {
+  return { type: "REFRESH_TARGETS" };
 }
 
 module.exports = {
   registerTarget,
   unregisterTarget,
   selectTarget,
+  refreshTargets,
 };

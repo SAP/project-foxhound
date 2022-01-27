@@ -73,7 +73,7 @@ window.inlineSelectionCss = `
     margin-inline-end: 10px;
     transition: background-color 150ms cubic-bezier(0.07, 0.95, 0, 1); }
   .button.download, .download.highlight-button-cancel, .download.highlight-button-download, .download.highlight-button-copy {
-    background-image: url("../img/icon-download.svg"); }
+    background-image: url("chrome://browser/content/screenshots/download.svg"); }
     .button.download:hover, .download.highlight-button-cancel:hover, .download.highlight-button-download:hover, .download.highlight-button-copy:hover {
       background-color: #ededf0; }
     .button.download:active, .download.highlight-button-cancel:active, .download.highlight-button-download:active, .download.highlight-button-copy:active {
@@ -253,14 +253,16 @@ window.inlineSelectionCss = `
     position: absolute;
     inset-inline-end: 0;
     top: 0; }
-  body.hcm .hover-highlight {
-    background-color: white;
-    opacity: 0.2; }
+    /* When prefers contrast is fully supported, we should change these quereies to cover both high and low prefers contrast cases */
+    @media (forced-colors: active) {
+      .hover-highlight {
+        background-color: white;
+        opacity: 0.2; } }
 
 .mover-target.direction-topLeft {
   cursor: nwse-resize;
   height: 60px;
-  inset-inline-start: -30px;
+  left: -30px;
   top: -30px;
   width: 60px; }
 
@@ -275,14 +277,14 @@ window.inlineSelectionCss = `
 .mover-target.direction-topRight {
   cursor: nesw-resize;
   height: 60px;
-  inset-inline-end: -30px;
+  right: -30px;
   top: -30px;
   width: 60px; }
 
 .mover-target.direction-left {
   cursor: ew-resize;
   height: 100%;
-  inset-inline-start: -30px;
+  left: -30px;
   top: 0;
   width: 60px;
   z-index: 4; }
@@ -290,7 +292,7 @@ window.inlineSelectionCss = `
 .mover-target.direction-right {
   cursor: ew-resize;
   height: 100%;
-  inset-inline-end: -30px;
+  right: -30px;
   top: 0;
   width: 60px;
   z-index: 4; }
@@ -299,7 +301,7 @@ window.inlineSelectionCss = `
   bottom: -30px;
   cursor: nesw-resize;
   height: 60px;
-  inset-inline-start: -30px;
+  left: -30px;
   width: 60px; }
 
 .mover-target.direction-bottom {
@@ -314,7 +316,7 @@ window.inlineSelectionCss = `
   bottom: -30px;
   cursor: nwse-resize;
   height: 60px;
-  inset-inline-end: -30px;
+  right: -30px;
   width: 60px; }
 
 .mover-target:hover .mover {
@@ -336,7 +338,7 @@ window.inlineSelectionCss = `
 .direction-topLeft .mover,
 .direction-left .mover,
 .direction-bottomLeft .mover {
-  inset-inline-start: -1px; }
+  left: -1px; }
 
 .direction-topLeft .mover,
 .direction-top .mover,
@@ -346,7 +348,7 @@ window.inlineSelectionCss = `
 .direction-topRight .mover,
 .direction-right .mover,
 .direction-bottomRight .mover {
-  inset-inline-end: -1px; }
+  right: -1px; }
 
 .direction-bottomRight .mover,
 .direction-bottom .mover,
@@ -357,9 +359,11 @@ window.inlineSelectionCss = `
   background-color: rgba(0, 0, 0, 0.7);
   position: absolute;
   z-index: 9999999999; }
-  body.hcm .bghighlight {
-    background-color: black;
-    opacity: 0.7; }
+  /* When prefers contrast is fully supported, we should change these quereies to cover both high and low prefers contrast cases */
+  @media (forced-colors: active) {
+    .bghighlight {
+      background-color: black;
+      opacity: 0.7; } }
 
 .preview-overlay {
   align-items: center;
@@ -374,9 +378,11 @@ window.inlineSelectionCss = `
   top: 0;
   width: 100%;
   z-index: 9999999999; }
-  body.hcm .preview-overlay {
-    background-color: black;
-    opacity: 0.7; }
+  /* When prefers contrast is fully supported, we should change these quereies to cover both high and low prefers contrast cases */
+  @media (forced-colors: active) {
+    .preview-overlay {
+      background-color: black;
+      opacity: 0.7; } }
 
 .precision-cursor {
   cursor: crosshair; }
@@ -388,9 +394,11 @@ window.inlineSelectionCss = `
   cursor: move;
   position: absolute;
   z-index: 9999999999; }
-  body.hcm .highlight {
-    border: 2px dashed white;
-    opacity: 1.0; }
+  /* When prefers contrast is fully supported, we should change these quereies to cover both high and low prefers contrast cases */
+  @media (forced-colors: active) {
+    .highlight {
+      border: 2px dashed white;
+      opacity: 1.0; } }
 
 .highlight-buttons {
   display: flex;
@@ -536,7 +544,7 @@ window.inlineSelectionCss = `
   width: 62.4px;
   height: 62.4px;
   display: block;
-  background-image: url("MOZ_EXTENSION/icons/icon-welcome-face-without-eyes.svg"); }
+  background-image: url("chrome://browser/content/screenshots/icon-welcome-face-without-eyes.svg"); }
 
 .eye {
   background-color: #fff;
@@ -592,7 +600,7 @@ window.inlineSelectionCss = `
   padding: 10px 25px;
   pointer-events: all; }
 
-.myshots-all-buttons-container {
+.all-buttons-container {
   display: flex;
   flex-direction: row-reverse;
   background: #f5f5f5;
@@ -604,14 +612,14 @@ window.inlineSelectionCss = `
   inset-inline-end: 8px;
   top: 8px;
   box-shadow: 0 0 0 1px rgba(12, 12, 13, 0.1), 0 2px 8px rgba(12, 12, 13, 0.1); }
-  .myshots-all-buttons-container .spacer {
+  .all-buttons-container .spacer {
     background-color: #c9c9c9;
     flex: 0 0 1px;
     height: 80px;
     margin: 0 10px;
     position: relative;
     top: -8px; }
-  .myshots-all-buttons-container button {
+  .all-buttons-container button {
     display: flex;
     align-items: center;
     flex-direction: column;
@@ -629,23 +637,16 @@ window.inlineSelectionCss = `
     pointer-events: all;
     transition: border 150ms cubic-bezier(0.07, 0.95, 0, 1), background-color 150ms cubic-bezier(0.07, 0.95, 0, 1);
     white-space: nowrap; }
-    .myshots-all-buttons-container button:hover {
+    .all-buttons-container button:hover {
       background-color: #ebebeb;
       border: 1px solid #c7c7c7; }
-    .myshots-all-buttons-container button:active {
+    .all-buttons-container button:active {
       background-color: #dedede;
       border: 1px solid #989898; }
-  .myshots-all-buttons-container .myshots-button {
-    background-image: url("MOZ_EXTENSION/icons/menu-myshot.svg"); }
-  .myshots-all-buttons-container .full-page {
-    background-image: url("MOZ_EXTENSION/icons/menu-fullpage.svg"); }
-  .myshots-all-buttons-container .visible {
-    background-image: url("MOZ_EXTENSION/icons/menu-visible.svg"); }
-
-.myshots-button-container {
-  display: flex;
-  align-items: center;
-  justify-content: center; }
+  .all-buttons-container .full-page {
+    background-image: url("chrome://browser/content/screenshots/menu-fullpage.svg"); }
+  .all-buttons-container .visible {
+    background-image: url("chrome://browser/content/screenshots/menu-visible.svg"); }
 
 @keyframes pulse {
   0% {
@@ -663,4 +664,3 @@ window.inlineSelectionCss = `
 
 `;
 null;
-

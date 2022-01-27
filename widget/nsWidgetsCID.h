@@ -66,14 +66,6 @@
 // Menus
 //-----------------------------------------------------------
 
-// {0B3FE5AA-BC72-4303-85AE-76365DF1251D}
-#define NS_NATIVEMENUSERVICE_CID                     \
-  {                                                  \
-    0x0B3FE5AA, 0xBC72, 0x4303, {                    \
-      0x85, 0xAE, 0x76, 0x36, 0x5D, 0xF1, 0x25, 0x1D \
-    }                                                \
-  }
-
 // {F6CD4F21-53AF-11d2-8DC4-00609703C14E}
 #define NS_POPUPMENU_CID                           \
   {                                                \
@@ -114,8 +106,16 @@
     }                                                \
   }
 
+// {29046c8f-cba6-4ffa-9141-1685e96c4ea0}
+#define NS_MACUSERACTIVITYUPDATER_CID                \
+  {                                                  \
+    0x29046c8f, 0xcba6, 0x4ffa, {                    \
+      0x91, 0x41, 0x16, 0x85, 0xe9, 0x6c, 0x4e, 0xa0 \
+    }                                                \
+  }
+
 // {b6e1a890-b2b8-4883-a65f-9476f6185313}
-#define NS_MACSYSTEMSTATUSBAR_CID                    \
+#define NS_SYSTEMSTATUSBAR_CID                       \
   {                                                  \
     0xb6e1a890, 0xb2b8, 0x4883, {                    \
       0xa6, 0x5f, 0x94, 0x76, 0xf6, 0x18, 0x53, 0x13 \

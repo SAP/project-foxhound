@@ -11,8 +11,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Unused.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 ClientSource* ClientSourceOpChild::GetSource() const {
   auto actor = static_cast<ClientSourceChild*>(Manager());
@@ -90,7 +89,7 @@ void ClientSourceOpChild::Init(const ClientOpConstructorArgs& aArgs) {
       break;
     }
     case ClientOpConstructorArgs::TClientClaimArgs: {
-      DoSourceOp(&ClientSource::Claim, aArgs.get_ClientClaimArgs());
+      MOZ_ASSERT_UNREACHABLE("shouldn't happen with parent intercept");
       break;
     }
     case ClientOpConstructorArgs::TClientGetInfoAndStateArgs: {
@@ -130,5 +129,4 @@ void ClientSourceOpChild::Cleanup() {
   mPromiseRequestHolder.DisconnectIfExists();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

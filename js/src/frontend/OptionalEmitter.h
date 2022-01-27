@@ -8,7 +8,9 @@
 #define frontend_OptionalEmitter_h
 
 #include "mozilla/Attributes.h"
-#include "frontend/IfEmitter.h"  // IfEmitter, InternalIfEmitter, CondEmitter
+
+#include "frontend/JumpList.h"
+#include "frontend/TDZCheckCache.h"
 
 namespace js {
 namespace frontend {
@@ -77,7 +79,7 @@ struct BytecodeEmitter;
 //     oe.emitShortCircuitForCall();
 //     cone.prepareForNonSpreadArguments();
 //     emit(arg);
-//     cone.emitEnd(1, Some(offset_of_callee));
+//     cone.emitEnd(1, offset_of_callee);
 //     oe.emitOptionalJumpTarget(JSOp::Undefined);
 //
 //   `callee.prop?.(arg1, arg2);`
@@ -92,7 +94,7 @@ struct BytecodeEmitter;
 //     cone.prepareForNonSpreadArguments();
 //     emit(arg1);
 //     emit(arg2);
-//     cone.emitEnd(2, Some(offset_of_callee));
+//     cone.emitEnd(2, offset_of_callee);
 //     oe.emitOptionalJumpTarget(JSOp::Undefined);
 //
 //   `callee[key]?.(arg);`
@@ -106,7 +108,7 @@ struct BytecodeEmitter;
 //     oe.emitShortCircuitForCall();
 //     cone.prepareForNonSpreadArguments();
 //     emit(arg);
-//     cone.emitEnd(1, Some(offset_of_callee));
+//     cone.emitEnd(1, offset_of_callee);
 //     oe.emitOptionalJumpTarget(JSOp::Undefined);
 //
 //   `(function() { ... })?.(arg);`
@@ -120,7 +122,7 @@ struct BytecodeEmitter;
 //     oe.emitShortCircuitForCall();
 //     cone.prepareForNonSpreadArguments();
 //     emit(arg);
-//     cone.emitEnd(1, Some(offset_of_callee));
+//     cone.emitEnd(1, offset_of_callee);
 //     oe.emitOptionalJumpTarget(JSOp::Undefined);
 //
 //   `(a?b)();`
@@ -136,7 +138,7 @@ struct BytecodeEmitter;
 //     oe.emitShortCircuitForCall();
 //     cone.prepareForNonSpreadArguments();
 //     emit(arg);
-//     cone.emitEnd(1, Some(offset_of_callee));
+//     cone.emitEnd(1, offset_of_callee);
 //     oe.emitOptionalJumpTarget(JSOp::Undefined);
 //
 class MOZ_RAII OptionalEmitter {
@@ -145,6 +147,8 @@ class MOZ_RAII OptionalEmitter {
 
  private:
   BytecodeEmitter* bce_;
+
+  TDZCheckCache tdzCache_;
 
   // jumptarget for ShortCircuiting code, which has null or undefined values
   JumpList jumpShortCircuit_;
@@ -201,13 +205,13 @@ class MOZ_RAII OptionalEmitter {
     Other
   };
 
-  MOZ_MUST_USE bool emitJumpShortCircuit();
-  MOZ_MUST_USE bool emitJumpShortCircuitForCall();
+  [[nodiscard]] bool emitJumpShortCircuit();
+  [[nodiscard]] bool emitJumpShortCircuitForCall();
 
   // JSOp is the op code to be emitted, Kind is if we are dealing with a
   // reference (in which case we need two elements on the stack) or other value
   // (which needs one element on the stack)
-  MOZ_MUST_USE bool emitOptionalJumpTarget(JSOp op, Kind kind = Kind::Other);
+  [[nodiscard]] bool emitOptionalJumpTarget(JSOp op, Kind kind = Kind::Other);
 };
 
 } /* namespace frontend */

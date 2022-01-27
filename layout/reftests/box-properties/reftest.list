@@ -1,4 +1,3 @@
-== outline-radius-percent-1.html outline-radius-percent-1-ref.html
 == min-width-1.html min-width-1-ref.html
 == min-height-1.html min-height-1-ref.html
 == max-width-1.html max-width-1-ref.html
@@ -30,3 +29,4 @@
 == width-rounding.html width-rounding-ref.html
 pref(layout.css.overflow-clip-box.enabled,true) == overflow-clip-box-1.html overflow-clip-box-1-ref.html
 pref(layout.css.overflow-clip-box.enabled,true) == overflow-clip-box-2.html overflow-clip-box-2-ref.html
+pref(layout.css.overflow-clip-box.enabled,true) == overflow-clip-box-3.html overflow-clip-box-3-ref.html

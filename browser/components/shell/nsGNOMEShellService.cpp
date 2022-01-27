@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/Preferences.h"
 
 #include "nsCOMPtr.h"
 #include "nsGNOMEShellService.h"
@@ -22,9 +23,10 @@
 #include "imgIRequest.h"
 #include "imgIContainer.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/WidgetUtils.h"
 #include "mozilla/dom/Element.h"
 #if defined(MOZ_WIDGET_GTK)
-#  include "nsIImageToPixbuf.h"
+#  include "nsImageToPixbuf.h"
 #endif
 #include "nsXULAppAPI.h"
 #include "gfxPlatform.h"
@@ -53,7 +55,6 @@ static const ProtocolAssociation appProtocols[] = {
     // clang-format off
   { "http",   true     },
   { "https",  true     },
-  { "ftp",    false },
   { "chrome", false }
     // clang-format on
 };
@@ -72,17 +73,15 @@ static const MimeTypeAssociation appTypes[] = {
 #define kDesktopColorGSKey "primary-color"
 
 static bool IsRunningAsASnap() {
-  // SNAP holds the path to the snap, use SNAP_NAME
-  // which is easier to parse.
-  const char* snap_name = PR_GetEnv("SNAP_NAME");
+  const char* snapName = mozilla::widget::WidgetUtils::GetSnapInstanceName();
 
   // return early if not set.
-  if (snap_name == nullptr) {
+  if (snapName == nullptr) {
     return false;
   }
 
-  // snap_name as defined on https://snapcraft.io/firefox
-  return (strcmp(snap_name, "firefox") == 0);
+  // snapName as defined on https://snapcraft.io/firefox
+  return (strcmp(snapName, "firefox") == 0);
 }
 
 nsresult nsGNOMEShellService::Init() {
@@ -230,23 +229,46 @@ nsGNOMEShellService::IsDefaultBrowser(bool aForAllTypes,
   for (unsigned int i = 0; i < ArrayLength(appProtocols); ++i) {
     if (!appProtocols[i].essential) continue;
 
-    if (giovfs) {
-      handler.Truncate();
-      nsCOMPtr<nsIHandlerApp> handlerApp;
-      giovfs->GetAppForURIScheme(nsDependentCString(appProtocols[i].name),
-                                 getter_AddRefs(handlerApp));
-      gioApp = do_QueryInterface(handlerApp);
-      if (!gioApp) return NS_OK;
-
-      gioApp->GetCommand(handler);
-
-      if (!CheckHandlerMatchesAppName(handler))
-        return NS_OK;  // the handler is set to another app
+    if (!IsDefaultForSchemeHelper(nsDependentCString(appProtocols[i].name),
+                                  giovfs)) {
+      return NS_OK;
     }
   }
 
   *aIsDefaultBrowser = true;
 
+  return NS_OK;
+}
+
+bool nsGNOMEShellService::IsDefaultForSchemeHelper(
+    const nsACString& aScheme, nsIGIOService* giovfs) const {
+  nsCOMPtr<nsIGIOService> gioService;
+  if (!giovfs) {
+    gioService = do_GetService(NS_GIOSERVICE_CONTRACTID);
+    giovfs = gioService.get();
+  }
+
+  if (!giovfs) {
+    return false;
+  }
+
+  nsCOMPtr<nsIGIOMimeApp> gioApp;
+  nsCOMPtr<nsIHandlerApp> handlerApp;
+  giovfs->GetAppForURIScheme(aScheme, getter_AddRefs(handlerApp));
+  gioApp = do_QueryInterface(handlerApp);
+  if (!gioApp) {
+    return false;
+  }
+
+  nsAutoCString handler;
+  gioApp->GetCommand(handler);
+  return CheckHandlerMatchesAppName(handler);
+}
+
+NS_IMETHODIMP
+nsGNOMEShellService::IsDefaultForScheme(const nsACString& aScheme,
+                                        bool* aIsDefaultBrowser) {
+  *aIsDefaultBrowser = IsDefaultForSchemeHelper(aScheme, nullptr);
   return NS_OK;
 }
 
@@ -351,12 +373,10 @@ static nsresult WriteImage(const nsCString& aPath, imgIContainer* aImage) {
 #if !defined(MOZ_WIDGET_GTK)
   return NS_ERROR_NOT_AVAILABLE;
 #else
-  nsCOMPtr<nsIImageToPixbuf> imgToPixbuf =
-      do_GetService("@mozilla.org/widget/image-to-gdk-pixbuf;1");
-  if (!imgToPixbuf) return NS_ERROR_NOT_AVAILABLE;
-
-  GdkPixbuf* pixbuf = imgToPixbuf->ConvertImageToPixbuf(aImage);
-  if (!pixbuf) return NS_ERROR_NOT_AVAILABLE;
+  GdkPixbuf* pixbuf = nsImageToPixbuf::ImageToPixbuf(aImage);
+  if (!pixbuf) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 
   gboolean res = gdk_pixbuf_save(pixbuf, aPath.get(), "png", nullptr, nullptr);
 

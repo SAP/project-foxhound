@@ -7,24 +7,30 @@
 #ifndef mozilla_dom_JSWindowActorChild_h
 #define mozilla_dom_JSWindowActorChild_h
 
-#include "js/TypeDecls.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/ErrorResult.h"
+#include "js/RootingAPI.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/JSActor.h"
+#include "mozilla/dom/WindowGlobalChild.h"
+#include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
-#include "nsIDOMProcessChild.h"
+#include "nsIGlobalObject.h"
+#include "nsISupports.h"
+#include "nsStringFwd.h"
+
+class nsIDocShell;
 
 namespace mozilla {
+class ErrorResult;
+
 namespace dom {
 
 template <typename>
 struct Nullable;
 
+class BrowsingContext;
 class Document;
-class WindowGlobalChild;
 class WindowProxyHolder;
 
 }  // namespace dom
@@ -51,6 +57,7 @@ class JSWindowActorChild final : public JSActor {
   }
 
   WindowGlobalChild* GetManager() const;
+  WindowContext* GetWindowContext() const;
   void Init(const nsACString& aName, WindowGlobalChild* aManager);
   void ClearManager() override;
   Document* GetDocument(ErrorResult& aRv);
@@ -60,8 +67,8 @@ class JSWindowActorChild final : public JSActor {
 
  protected:
   void SendRawMessage(const JSActorMessageMeta& aMeta,
-                      ipc::StructuredCloneData&& aData,
-                      ipc::StructuredCloneData&& aStack,
+                      Maybe<ipc::StructuredCloneData>&& aData,
+                      Maybe<ipc::StructuredCloneData>&& aStack,
                       ErrorResult& aRv) override;
 
  private:

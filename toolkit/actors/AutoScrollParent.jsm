@@ -4,6 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
 var EXPORTED_SYMBOLS = ["AutoScrollParent"];
 
 class AutoScrollParent extends JSWindowActorParent {
@@ -13,11 +15,29 @@ class AutoScrollParent extends JSWindowActorParent {
       return null;
     }
 
+    // If another tab is activated, we shouldn't start autoscroll requested
+    // for the previous active window if and only if the browser is a remote
+    // browser.  This is required for web apps which don't prevent default of
+    // middle click after opening a new window.  If the active tab is our
+    // documents like about:*, we don't need this check since our documents
+    // should do it correctly.
+    const requestedInForegroundTab = browser.isRemoteBrowser
+      ? Services.focus.focusedElement == browser
+      : true;
+
     let data = msg.data;
     switch (msg.name) {
       case "Autoscroll:Start":
+        // Don't start autoscroll if the tab has already been a background tab.
+        if (!requestedInForegroundTab) {
+          return Promise.resolve({ autoscrollEnabled: false, usingAPZ: false });
+        }
         return Promise.resolve(browser.startScroll(data));
       case "Autoscroll:MaybeStartInParent":
+        // Don't start autoscroll if the tab has already been a background tab.
+        if (!requestedInForegroundTab) {
+          return Promise.resolve({ autoscrollEnabled: false, usingAPZ: false });
+        }
         let parent = this.browsingContext.parent;
         if (parent) {
           let actor = parent.currentWindowGlobal.getActor("AutoScroll");

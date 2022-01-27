@@ -5,7 +5,9 @@
 
 "use strict";
 
-ChromeUtils.import("resource:///modules/SitePermissions.jsm", this);
+const { SitePermissions } = ChromeUtils.import(
+  "resource:///modules/SitePermissions.jsm"
+);
 
 const EXPIRE_TIME_MS = 100;
 const TIMEOUT_MS = 500;
@@ -21,9 +23,7 @@ add_task(async function testTemporaryPermissionExpiry() {
   );
   let id = "camera";
 
-  await BrowserTestUtils.withNewTab(principal.URI.spec, async function(
-    browser
-  ) {
+  await BrowserTestUtils.withNewTab(principal.spec, async function(browser) {
     SitePermissions.setForPrincipal(
       principal,
       id,

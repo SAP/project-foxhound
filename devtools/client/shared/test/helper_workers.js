@@ -4,6 +4,7 @@
 
 "use strict";
 
+/* import-globals-from ../../shared/test/shared-head.js */
 /* import-globals-from ../../debugger/test/mochitest/helpers.js */
 /* import-globals-from ../../debugger/test/mochitest/helpers/context.js */
 Services.scriptloader.loadSubScript(
@@ -14,73 +15,65 @@ Services.scriptloader.loadSubScript(
 var { DevToolsServer } = require("devtools/server/devtools-server");
 var { DevToolsClient } = require("devtools/client/devtools-client");
 var { Toolbox } = require("devtools/client/framework/toolbox");
-loader.lazyRequireGetter(this, "defer", "devtools/shared/defer");
-
-const FRAME_SCRIPT_URL = getRootDirectory(gTestPath) + "code_frame-script.js";
-
-var nextId = 0;
-
-function jsonrpc(tab, method, params) {
-  return new Promise(function(resolve, reject) {
-    const currentId = nextId++;
-    const messageManager = tab.linkedBrowser.messageManager;
-    messageManager.sendAsyncMessage("jsonrpc", {
-      method: method,
-      params: params,
-      id: currentId,
-    });
-    messageManager.addMessageListener("jsonrpc", function listener(res) {
-      const {
-        data: { result, error, id },
-      } = res;
-      if (id !== currentId) {
-        return;
-      }
-
-      messageManager.removeMessageListener("jsonrpc", listener);
-      if (error != null) {
-        reject(error);
-      }
-
-      resolve(result);
-    });
-  });
-}
 
 function createWorkerInTab(tab, url) {
   info("Creating worker with url '" + url + "' in tab.");
 
-  return jsonrpc(tab, "createWorker", [url]);
+  return SpecialPowers.spawn(tab.linkedBrowser, [url], urlChild => {
+    return new Promise(resolve => {
+      const worker = new content.Worker(urlChild);
+      worker.addEventListener(
+        "message",
+        function() {
+          if (!content.workers) {
+            content.workers = [];
+          }
+          content.workers[urlChild] = worker;
+          resolve();
+        },
+        { once: true }
+      );
+    });
+  });
 }
 
 function terminateWorkerInTab(tab, url) {
   info("Terminating worker with url '" + url + "' in tab.");
 
-  return jsonrpc(tab, "terminateWorker", [url]);
+  return SpecialPowers.spawn(tab.linkedBrowser, [url], urlChild => {
+    content.workers[urlChild].terminate();
+    delete content.workers[urlChild];
+  });
 }
 
 function postMessageToWorkerInTab(tab, url, message) {
   info("Posting message to worker with url '" + url + "' in tab.");
 
-  return jsonrpc(tab, "postMessageToWorker", [url, message]);
-}
-
-function generateMouseClickInTab(tab, path) {
-  info("Generating mouse click in tab.");
-
-  return jsonrpc(tab, "generateMouseClick", [path]);
+  return SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [url, message],
+    (urlChild, messageChild) => {
+      return new Promise(function(resolve) {
+        const worker = content.workers[urlChild];
+        worker.postMessage(messageChild);
+        worker.addEventListener(
+          "message",
+          function() {
+            resolve();
+          },
+          { once: true }
+        );
+      });
+    }
+  );
 }
 
 function evalInTab(tab, string) {
   info("Evalling string in tab.");
 
-  return jsonrpc(tab, "_eval", [string]);
-}
-
-function callInTab(tab, name) {
-  info("Calling function with name '" + name + "' in tab.");
-
-  return jsonrpc(tab, "call", [name, Array.prototype.slice.call(arguments, 2)]);
+  return SpecialPowers.spawn(tab.linkedBrowser, [string], stringChild => {
+    return content.eval(stringChild);
+  });
 }
 
 function connect(client) {
@@ -128,14 +121,9 @@ function waitForWorkerListChanged(targetFront) {
   return targetFront.once("workerListChanged");
 }
 
-function attachThread(workerTargetFront, options) {
-  info("Attaching to thread.");
-  return workerTargetFront.attachThread(options);
-}
-
-async function waitForWorkerClose(workerTargetFront) {
+async function waitForWorkerClose(workerDescriptorFront) {
   info("Waiting for worker to close.");
-  await workerTargetFront.once("close");
+  await workerDescriptorFront.once("descriptor-destroyed");
   info("Worker did close.");
 }
 
@@ -182,20 +170,18 @@ function executeAndWaitForMessage(
 
 async function initWorkerDebugger(TAB_URL, WORKER_URL) {
   const tab = await addTab(TAB_URL);
-  const target = await TargetFactory.forTab(tab);
-  await target.attach();
+  const target = await createAndAttachTargetForTab(tab);
   const { client } = target;
 
   await createWorkerInTab(tab, WORKER_URL);
 
   const { workers } = await listWorkers(target);
-  const workerTargetFront = findWorker(workers, WORKER_URL);
+  const workerDescriptorFront = findWorker(workers, WORKER_URL);
 
-  const toolbox = await gDevTools.showToolbox(
-    workerTargetFront,
-    "jsdebugger",
-    Toolbox.HostType.WINDOW
-  );
+  const toolbox = await gDevTools.showToolbox(workerDescriptorFront, {
+    toolId: "jsdebugger",
+    hostType: Toolbox.HostType.WINDOW,
+  });
 
   const debuggerPanel = toolbox.getCurrentPanel();
 
@@ -208,7 +194,7 @@ async function initWorkerDebugger(TAB_URL, WORKER_URL) {
     client,
     tab,
     target,
-    workerTargetFront,
+    workerDescriptorFront,
     toolbox,
     gDebugger,
   };
@@ -218,66 +204,52 @@ async function initWorkerDebugger(TAB_URL, WORKER_URL) {
 // an extra window parameter and add a frame script
 this.addTab = function addTab(url, win) {
   info("Adding tab: " + url);
+  return new Promise(resolve => {
+    const targetWindow = win || window;
+    const targetBrowser = targetWindow.gBrowser;
 
-  const deferred = defer();
-  const targetWindow = win || window;
-  const targetBrowser = targetWindow.gBrowser;
+    targetWindow.focus();
+    const tab = (targetBrowser.selectedTab = BrowserTestUtils.addTab(
+      targetBrowser,
+      url
+    ));
+    const linkedBrowser = tab.linkedBrowser;
 
-  targetWindow.focus();
-  const tab = (targetBrowser.selectedTab = BrowserTestUtils.addTab(
-    targetBrowser,
-    url
-  ));
-  const linkedBrowser = tab.linkedBrowser;
-
-  info("Loading frame script with url " + FRAME_SCRIPT_URL + ".");
-  linkedBrowser.messageManager.loadFrameScript(FRAME_SCRIPT_URL, false);
-
-  BrowserTestUtils.browserLoaded(linkedBrowser).then(function() {
-    info("Tab added and finished loading: " + url);
-    deferred.resolve(tab);
+    BrowserTestUtils.browserLoaded(linkedBrowser).then(function() {
+      info("Tab added and finished loading: " + url);
+      resolve(tab);
+    });
   });
-
-  return deferred.promise;
 };
 
 this.removeTab = function removeTab(tab, win) {
   info("Removing tab.");
+  return new Promise(resolve => {
+    const targetWindow = win || window;
+    const targetBrowser = targetWindow.gBrowser;
+    const tabContainer = targetBrowser.tabContainer;
 
-  const deferred = defer();
-  const targetWindow = win || window;
-  const targetBrowser = targetWindow.gBrowser;
-  const tabContainer = targetBrowser.tabContainer;
+    tabContainer.addEventListener(
+      "TabClose",
+      function() {
+        info("Tab removed and finished closing.");
+        resolve();
+      },
+      { once: true }
+    );
 
-  tabContainer.addEventListener(
-    "TabClose",
-    function() {
-      info("Tab removed and finished closing.");
-      deferred.resolve();
-    },
-    { once: true }
-  );
-
-  targetBrowser.removeTab(tab);
-  return deferred.promise;
+    targetBrowser.removeTab(tab);
+  });
 };
 
-async function attachThreadActorForTab(tab) {
-  const target = await TargetFactory.forTab(tab);
-  await target.attach();
-  const threadFront = await target.attachThread();
-  await threadFront.resume();
-  return { client: target.client, threadFront };
-}
-
 function pushPrefs(...aPrefs) {
-  const deferred = defer();
-  SpecialPowers.pushPrefEnv({ set: aPrefs }, deferred.resolve);
-  return deferred.promise;
+  return new Promise(resolve => {
+    SpecialPowers.pushPrefEnv({ set: aPrefs }, resolve);
+  });
 }
 
 function popPrefs() {
-  const deferred = defer();
-  SpecialPowers.popPrefEnv(deferred.resolve);
-  return deferred.promise;
+  return new Promise(resolve => {
+    SpecialPowers.popPrefEnv(resolve);
+  });
 }

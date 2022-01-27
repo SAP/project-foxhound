@@ -429,9 +429,25 @@ interface nsIAccessibleEvent : nsISupports
   const unsigned long EVENT_ANNOUNCEMENT = 0x0059;
 
   /**
+   * A live region has been introduced. Mac only.
+   */
+  const unsigned long EVENT_LIVE_REGION_ADDED = 0x005A;
+
+  /**
+   * A live region has been removed (aria-live attribute changed). Mac Only.
+   */
+  const unsigned long EVENT_LIVE_REGION_REMOVED = 0x005B;
+
+  /**
+   * A style change has occured on a table that may cause it to
+   * change from data to layout table, or the reverse.
+   */
+  const unsigned long EVENT_TABLE_STYLING_CHANGED = 0x005C;
+
+  /**
    * Help make sure event map does not get out-of-line.
    */
-  const unsigned long EVENT_LAST_ENTRY = 0x005A;
+  const unsigned long EVENT_LAST_ENTRY = 0x005D;
 
   /**
    * The type of event, based on the enumerated event values

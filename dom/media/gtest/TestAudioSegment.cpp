@@ -240,36 +240,35 @@ TEST(AudioSegment, Test)
   TestDownmixStereo<int16_t>();
 }
 
-template <class T>
-void fillChunkWithStereo(AudioChunk* c, int duration) {
-  c->mDuration = duration;
+template <class T, uint32_t Channels>
+void fillChunk(AudioChunk* aChunk, int aDuration) {
+  static_assert(Channels != 0, "Filling 0 channels is a no-op");
 
-  AutoTArray<nsTArray<T>, 2> stereo;
-  stereo.SetLength(2);
-  T* ch1 = stereo[0].AppendElements(duration);
-  T* ch2 = stereo[1].AppendElements(duration);
+  aChunk->mDuration = aDuration;
 
-  for (int i = 0; i < duration; ++i) {
-    ch1[i] = GetHighValue<T>();
-    ch2[i] = GetHighValue<T>();
+  AutoTArray<nsTArray<T>, Channels> buffer;
+  buffer.SetLength(Channels);
+  aChunk->mChannelData.ClearAndRetainStorage();
+  aChunk->mChannelData.SetCapacity(Channels);
+  for (nsTArray<T>& channel : buffer) {
+    T* ch = channel.AppendElements(aDuration);
+    for (int i = 0; i < aDuration; ++i) {
+      ch[i] = GetHighValue<T>();
+    }
+    aChunk->mChannelData.AppendElement(ch);
   }
 
-  c->mBuffer = new mozilla::SharedChannelArrayBuffer<T>(&stereo);
-
-  c->mChannelData.SetLength(2);
-  c->mChannelData[0] = ch1;
-  c->mChannelData[1] = ch2;
-
-  c->mBufferFormat = AUDIO_FORMAT_FLOAT32;
+  aChunk->mBuffer = new mozilla::SharedChannelArrayBuffer<T>(std::move(buffer));
+  aChunk->mBufferFormat = AudioSampleTypeToFormat<T>::Format;
 }
 
 TEST(AudioSegment, FlushAfter_ZeroDuration)
 {
   AudioChunk c;
-  fillChunkWithStereo<float>(&c, 10);
+  fillChunk<float, 2>(&c, 10);
 
   AudioSegment s;
-  s.AppendAndConsumeChunk(&c);
+  s.AppendAndConsumeChunk(std::move(c));
   s.FlushAfter(0);
   EXPECT_EQ(s.GetDuration(), 0);
 }
@@ -284,11 +283,11 @@ TEST(AudioSegment, FlushAfter_SmallerDuration)
   AudioChunk c1;
   c1.SetNull(duration);
   AudioChunk c2;
-  fillChunkWithStereo<float>(&c2, duration);
+  fillChunk<float, 2>(&c2, duration);
 
   AudioSegment s;
-  s.AppendAndConsumeChunk(&c1);
-  s.AppendAndConsumeChunk(&c2);
+  s.AppendAndConsumeChunk(std::move(c1));
+  s.AppendAndConsumeChunk(std::move(c2));
   s.FlushAfter(smaller_duration);
   EXPECT_EQ(s.GetDuration(), smaller_duration) << "Check new duration";
 
@@ -298,6 +297,42 @@ TEST(AudioSegment, FlushAfter_SmallerDuration)
   }
   EXPECT_EQ(s.GetDuration(), chunkByChunkDuration)
       << "Confirm duration chunk by chunk";
+}
+
+TEST(AudioSegment, MemoizedOutputChannelCount)
+{
+  AudioSegment s;
+  EXPECT_EQ(s.MaxChannelCount(), 0U) << "0 channels on init";
+
+  s.AppendNullData(1);
+  EXPECT_EQ(s.MaxChannelCount(), 0U) << "Null data has 0 channels";
+
+  s.Clear();
+  EXPECT_EQ(s.MaxChannelCount(), 0U) << "Still 0 after clearing";
+
+  AudioChunk c1;
+  fillChunk<float, 1>(&c1, 1);
+  s.AppendAndConsumeChunk(std::move(c1));
+  EXPECT_EQ(s.MaxChannelCount(), 1U) << "A single chunk's channel count";
+
+  AudioChunk c2;
+  fillChunk<float, 2>(&c2, 1);
+  s.AppendAndConsumeChunk(std::move(c2));
+  EXPECT_EQ(s.MaxChannelCount(), 2U) << "The max of two chunks' channel count";
+
+  s.ForgetUpTo(2);
+  EXPECT_EQ(s.MaxChannelCount(), 2U) << "Memoized value with null chunks";
+
+  s.Clear();
+  EXPECT_EQ(s.MaxChannelCount(), 2U) << "Still memoized after clearing";
+
+  AudioChunk c3;
+  fillChunk<float, 1>(&c3, 1);
+  s.AppendAndConsumeChunk(std::move(c3));
+  EXPECT_EQ(s.MaxChannelCount(), 1U) << "Real chunk trumps memoized value";
+
+  s.Clear();
+  EXPECT_EQ(s.MaxChannelCount(), 1U) << "Memoized value was updated";
 }
 
 }  // namespace audio_segment

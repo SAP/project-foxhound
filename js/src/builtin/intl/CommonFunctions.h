@@ -19,7 +19,9 @@
 #include "unicode/utypes.h"
 #include "vm/StringType.h"
 
-struct UFormattedValue;
+namespace mozilla::intl {
+enum class ICUError : uint8_t;
+}
 
 namespace js {
 
@@ -58,6 +60,9 @@ extern JSObject* GetInternalsObject(JSContext* cx, JS::Handle<JSObject*> obj);
 
 /** Report an Intl internal error not directly tied to a spec step. */
 extern void ReportInternalError(JSContext* cx);
+
+/** Report an Intl internal error not directly tied to a spec step. */
+extern void ReportInternalError(JSContext* cx, mozilla::intl::ICUError error);
 
 static inline bool StringsAreEqual(const char* s1, const char* s2) {
   return !strcmp(s1, s2);
@@ -158,10 +163,6 @@ static JSString* CallICU(JSContext* cx, const ICUStringFunction& strFn) {
 void AddICUCellMemory(JSObject* obj, size_t nbytes);
 
 void RemoveICUCellMemory(JSFreeOp* fop, JSObject* obj, size_t nbytes);
-
-JSString* FormattedValueToString(JSContext* cx,
-                                 const UFormattedValue* formattedValue);
-
 }  // namespace intl
 
 }  // namespace js

@@ -6,13 +6,10 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
+/* globals Services, XPCOMUtils */
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  Services: "resource://gre/modules/Services.jsm",
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.jsm",
   setTimeout: "resource://gre/modules/Timer.jsm",
   StartupPerformance: "resource:///modules/sessionstore/StartupPerformance.jsm",
@@ -51,6 +48,23 @@ this.sessionrestore = class extends ExtensionAPI {
 
   async finishProfiling(msg) {
     await this.ensureTalosParentProfiler();
+
+    // In rare circumstances, it's possible for the session file to be read
+    // into memory and for SessionStore to report itself as initialized before
+    // the initial window has had a chance to finish setting itself up. To
+    // account for this, we ensure that BrowserWindowTracker.windowCount is
+    // not zero - and if it is, we wait for the first window to finish opening
+    // before proceeding.
+    if (!BrowserWindowTracker.windowCount) {
+      const BROWSER_WINDOW_READY_TOPIC = "browser-delayed-startup-finished";
+      await new Promise(resolve => {
+        let observe = async () => {
+          Services.obs.removeObserver(observe, BROWSER_WINDOW_READY_TOPIC);
+          resolve();
+        };
+        Services.obs.addObserver(observe, BROWSER_WINDOW_READY_TOPIC);
+      });
+    }
 
     let win = BrowserWindowTracker.getTopWindow();
     let args = win.arguments[0];

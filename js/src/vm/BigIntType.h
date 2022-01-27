@@ -22,20 +22,12 @@
 #include "js/TraceKind.h"
 #include "js/TypeDecls.h"
 #include "vm/StringType.h"
-#include "vm/Xdr.h"
 
 namespace JS {
 
 class JS_PUBLIC_API BigInt;
 
 }  // namespace JS
-
-namespace js {
-
-template <XDRMode mode>
-XDRResult XDRBigInt(XDRState<mode>* xdr, MutableHandle<JS::BigInt*> bi);
-
-}  // namespace js
 
 namespace JS {
 
@@ -102,37 +94,9 @@ class BigInt final : public js::gc::CellWithLengthAndFlags {
 
   void traceChildren(JSTracer* trc);
 
-  static MOZ_ALWAYS_INLINE void readBarrier(BigInt* thing) {
-    if (js::gc::IsInsideNursery(thing)) {
-      return;
-    }
-    js::gc::TenuredCell::readBarrier(&thing->asTenured());
-  }
-
-  static MOZ_ALWAYS_INLINE void writeBarrierPre(BigInt* thing) {
-    if (!thing || js::gc::IsInsideNursery(thing)) {
-      return;
-    }
-
-    js::gc::TenuredCell::writeBarrierPre(&thing->asTenured());
-  }
-
-  static void writeBarrierPost(void* cellp, BigInt* prev, BigInt* next) {
-    // See JSObject::writeBarrierPost for a description of the logic here.
-    MOZ_ASSERT(cellp);
-
-    js::gc::StoreBuffer* buffer;
-    if (next && (buffer = next->storeBuffer())) {
-      if (prev && prev->storeBuffer()) {
-        return;
-      }
-      buffer->putCell(static_cast<BigInt**>(cellp));
-      return;
-    }
-
-    if (prev && (buffer = prev->storeBuffer())) {
-      buffer->unputCell(static_cast<BigInt**>(cellp));
-    }
+  static MOZ_ALWAYS_INLINE void postWriteBarrier(void* cellp, BigInt* prev,
+                                                 BigInt* next) {
+    js::gc::PostWriteBarrierImpl<BigInt>(cellp, prev, next);
   }
 
   void finalize(JSFreeOp* fop);
@@ -173,13 +137,23 @@ class BigInt final : public js::gc::CellWithLengthAndFlags {
   static BigInt* bitOr(JSContext* cx, Handle<BigInt*> x, Handle<BigInt*> y);
   static BigInt* bitNot(JSContext* cx, Handle<BigInt*> x);
 
-  static int64_t toInt64(BigInt* x);
-  static uint64_t toUint64(BigInt* x);
+  static int64_t toInt64(const BigInt* x);
+  static uint64_t toUint64(const BigInt* x);
 
   // Return true if the BigInt is without loss of precision representable as an
   // int64 and store the int64 value in the output. Otherwise return false and
   // leave the value of the output parameter unspecified.
   static bool isInt64(BigInt* x, int64_t* result);
+
+  // Return true if the BigInt is without loss of precision representable as an
+  // uint64 and store the uint64 value in the output. Otherwise return false and
+  // leave the value of the output parameter unspecified.
+  static bool isUint64(BigInt* x, uint64_t* result);
+
+  // Return true if the BigInt is without loss of precision representable as a
+  // JS Number (double) and store the double value in the output. Otherwise
+  // return false and leave the value of the output parameter unspecified.
+  static bool isNumber(BigInt* x, double* result);
 
   static BigInt* asIntN(JSContext* cx, Handle<BigInt*> x, uint64_t bits);
   static BigInt* asUintN(JSContext* cx, Handle<BigInt*> x, uint64_t bits);
@@ -227,7 +201,8 @@ class BigInt final : public js::gc::CellWithLengthAndFlags {
   template <typename CharT>
   static BigInt* parseLiteral(JSContext* cx,
                               const mozilla::Range<const CharT> chars,
-                              bool* haveParseError);
+                              bool* haveParseError,
+                              js::gc::InitialHeap heap = js::gc::DefaultHeap);
   template <typename CharT>
   static BigInt* parseLiteralDigits(
       JSContext* cx, const mozilla::Range<const CharT> chars, unsigned radix,
@@ -267,8 +242,10 @@ class BigInt final : public js::gc::CellWithLengthAndFlags {
   void dump(js::GenericPrinter& out) const;
 #endif
 
- private:
+ public:
   static constexpr size_t DigitBits = sizeof(Digit) * CHAR_BIT;
+
+ private:
   static constexpr size_t HalfDigitBits = DigitBits / 2;
   static constexpr Digit HalfDigitMask = (1ull << HalfDigitBits) - 1;
 
@@ -294,10 +271,10 @@ class BigInt final : public js::gc::CellWithLengthAndFlags {
 
   static size_t calculateMaximumCharactersRequired(HandleBigInt x,
                                                    unsigned radix);
-  static MOZ_MUST_USE bool calculateMaximumDigitsRequired(JSContext* cx,
-                                                          uint8_t radix,
-                                                          size_t charCount,
-                                                          size_t* result);
+  [[nodiscard]] static bool calculateMaximumDigitsRequired(JSContext* cx,
+                                                           uint8_t radix,
+                                                           size_t charCount,
+                                                           size_t* result);
 
   static bool absoluteDivWithDigitDivisor(
       JSContext* cx, Handle<BigInt*> x, Digit divisor,
@@ -431,21 +408,21 @@ class BigInt final : public js::gc::CellWithLengthAndFlags {
 
   friend struct ::JSStructuredCloneReader;
   friend struct ::JSStructuredCloneWriter;
-  template <js::XDRMode mode>
-  friend js::XDRResult js::XDRBigInt(js::XDRState<mode>* xdr,
-                                     MutableHandle<BigInt*> bi);
 
   BigInt() = delete;
   BigInt(const BigInt& other) = delete;
   void operator=(const BigInt& other) = delete;
 
+ public:
+  static constexpr size_t offsetOfFlags() { return offsetOfHeaderFlags(); }
+  static constexpr size_t offsetOfLength() { return offsetOfHeaderLength(); }
+
+  static constexpr size_t signBitMask() { return SignBit; }
+
  private:
   // To help avoid writing Spectre-unsafe code, we only allow MacroAssembler to
   // call the methods below.
   friend class js::jit::MacroAssembler;
-
-  static constexpr size_t offsetOfFlags() { return offsetOfHeaderFlags(); }
-  static constexpr size_t offsetOfLength() { return offsetOfHeaderLength(); }
 
   static size_t offsetOfInlineDigits() {
     return offsetof(BigInt, inlineDigits_);
@@ -454,8 +431,6 @@ class BigInt final : public js::gc::CellWithLengthAndFlags {
   static size_t offsetOfHeapDigits() { return offsetof(BigInt, heapDigits_); }
 
   static constexpr size_t inlineDigitsLength() { return InlineDigitsLength; }
-
-  static constexpr size_t signBitMask() { return SignBit; }
 
  private:
   friend class js::TenuringTracer;
@@ -480,7 +455,7 @@ extern JS::BigInt* NumberToBigInt(JSContext* cx, double d);
 
 // Parse a BigInt from a string, using the method specified for StringToBigInt.
 // Used by the BigInt constructor among other places.
-extern JS::Result<JS::BigInt*, JS::OOM&> StringToBigInt(
+extern JS::Result<JS::BigInt*, JS::OOM> StringToBigInt(
     JSContext* cx, JS::Handle<JSString*> str);
 
 // Parse a BigInt from an already-validated numeric literal.  Used by the

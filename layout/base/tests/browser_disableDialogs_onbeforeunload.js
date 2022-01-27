@@ -1,3 +1,7 @@
+const { PromptTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PromptTestUtils.jsm"
+);
+
 function pageScript() {
   window.addEventListener(
     "beforeunload",
@@ -20,17 +24,17 @@ const PAGE_URL =
 
 add_task(async function enableDialogs() {
   // The onbeforeunload dialog should appear.
-  let dialogShown = false;
-  function onDialogShown(node) {
-    dialogShown = true;
-    let dismissButton = node.querySelector(".tabmodalprompt-button0");
-    dismissButton.click();
-  }
-  let obsName = "tabmodal-dialog-loaded";
-  Services.obs.addObserver(onDialogShown, obsName);
-  await openPage(true);
-  Services.obs.removeObserver(onDialogShown, obsName);
-  Assert.ok(dialogShown);
+  let dialogPromise = PromptTestUtils.waitForPrompt(null, {
+    modalType: Services.prompt.MODAL_TYPE_CONTENT,
+    promptType: "confirmEx",
+  });
+
+  let openPagePromise = openPage(true);
+  let dialog = await dialogPromise;
+  Assert.ok(true, "Showed the beforeunload dialog.");
+
+  await PromptTestUtils.handlePrompt(dialog, { buttonNumClick: 0 });
+  await openPagePromise;
 });
 
 add_task(async function disableDialogs() {
@@ -44,23 +48,16 @@ async function openPage(enableDialogs) {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: "about:blank" },
     async function(browser) {
+      // Load the page.
+      BrowserTestUtils.loadURI(browser, PAGE_URL);
+      await BrowserTestUtils.browserLoaded(browser);
       // Load the content script in the frame.
       let methodName = enableDialogs ? "enableDialogs" : "disableDialogs";
       await SpecialPowers.spawn(browser, [methodName], async function(name) {
-        const { Services } = ChromeUtils.import(
-          "resource://gre/modules/Services.jsm"
-        );
-        Services.obs.addObserver(doc => {
-          if (content && doc == content.document) {
-            content.windowUtils[name]();
-          }
-        }, "document-element-inserted");
+        content.windowUtils[name]();
       });
-      // Load the page.
-      await BrowserTestUtils.loadURI(browser, PAGE_URL);
-      await BrowserTestUtils.browserLoaded(browser);
       // And then navigate away.
-      await BrowserTestUtils.loadURI(browser, "http://example.com/");
+      BrowserTestUtils.loadURI(browser, "http://example.com/");
       await BrowserTestUtils.browserLoaded(browser);
     }
   );

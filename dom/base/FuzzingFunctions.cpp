@@ -10,6 +10,7 @@
 #include "js/GCAPI.h"
 #include "mozilla/dom/KeyboardEvent.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/Sprintf.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TextInputProcessor.h"
 #include "nsFocusManager.h"
@@ -28,8 +29,33 @@ void FuzzingFunctions::GarbageCollect(const GlobalObject&) {
 }
 
 /* static */
+void FuzzingFunctions::GarbageCollectCompacting(const GlobalObject&) {
+  nsJSContext::GarbageCollectNow(JS::GCReason::COMPONENT_UTILS,
+                                 nsJSContext::NonIncrementalGC,
+                                 nsJSContext::ShrinkingGC);
+}
+
+/* static */
+void FuzzingFunctions::Crash(const GlobalObject& aGlobalObject,
+                             const nsAString& aKeyValue) {
+  char msgbuf[250];
+
+  SprintfLiteral(msgbuf, "%s", NS_ConvertUTF16toUTF8(aKeyValue).get());
+  if (aKeyValue.Length() >= sizeof(msgbuf)) {
+    // Update the end of a truncated message to '...'.
+    strcpy(&msgbuf[sizeof(msgbuf) - 4], "...");
+  }
+  MOZ_CRASH_UNSAFE_PRINTF("%s", msgbuf);
+}
+
+/* static */
 void FuzzingFunctions::CycleCollect(const GlobalObject&) {
-  nsJSContext::CycleCollectNow();
+  nsJSContext::CycleCollectNow(CCReason::API);
+}
+
+void FuzzingFunctions::MemoryPressure(const GlobalObject&) {
+  nsCOMPtr<nsIObserverService> os = services::GetObserverService();
+  os->NotifyObservers(nullptr, "memory-pressure", u"heap-minimize");
 }
 
 /* static */
@@ -164,10 +190,9 @@ Modifiers FuzzingFunctions::InactivateModifiers(
 }
 
 /* static */
-void FuzzingFunctions::SynthesizeKeyboardEvents(const GlobalObject&,
-                                                const nsAString& aKeyValue,
-                                                const KeyboardEventInit& aDict,
-                                                ErrorResult& aRv) {
+void FuzzingFunctions::SynthesizeKeyboardEvents(
+    const GlobalObject& aGlobalObject, const nsAString& aKeyValue,
+    const KeyboardEventInit& aDict, ErrorResult& aRv) {
   // Prepare keyboard event to synthesize first.
   uint32_t flags = 0;
   // Don't modify the given dictionary since caller may want to modify
@@ -256,20 +281,28 @@ void FuzzingFunctions::SynthesizeKeyboardEvents(const GlobalObject&,
             event.mKeyNameIndex, maybeNonStandardLocation);
   }
 
-  // Synthesize keyboard events on focused widget.
-  nsFocusManager* focusManager = nsFocusManager::GetFocusManager();
-  if (NS_WARN_IF(!focusManager)) {
+  // Synthesize keyboard events in a DOM window which is in-process top one.
+  // For emulating user input, this is better than dispatching the events in
+  // the caller's DOM window because this approach can test the path redirecting
+  // the events to focused subdocument too.  However, for now, we cannot
+  // dispatch it via another process without big changes.  Therefore, we should
+  // use in-process top window instead.  If you need to test the path in the
+  // parent process to, please file a feature request bug.
+  nsCOMPtr<nsPIDOMWindowInner> windowInner =
+      do_QueryInterface(aGlobalObject.GetAsSupports());
+  if (!windowInner) {
     aRv.Throw(NS_ERROR_NOT_AVAILABLE);
     return;
   }
 
-  nsPIDOMWindowOuter* activeWindow = focusManager->GetActiveWindow();
-  if (NS_WARN_IF(!activeWindow)) {
-    aRv.Throw(NS_ERROR_NOT_AVAILABLE);
+  nsPIDOMWindowOuter* inProcessTopWindowOuter =
+      windowInner->GetInProcessScriptableTop();
+  if (NS_WARN_IF(!inProcessTopWindowOuter)) {
+    aRv.Throw(NS_ERROR_FAILURE);
     return;
   }
 
-  nsIDocShell* docShell = activeWindow->GetDocShell();
+  nsIDocShell* docShell = inProcessTopWindowOuter->GetDocShell();
   if (NS_WARN_IF(!docShell)) {
     aRv.Throw(NS_ERROR_FAILURE);
     return;
@@ -287,9 +320,9 @@ void FuzzingFunctions::SynthesizeKeyboardEvents(const GlobalObject&,
     return;
   }
 
-  nsCOMPtr<nsPIDOMWindowInner> activeWindowInner =
-      activeWindow->EnsureInnerWindow();
-  if (NS_WARN_IF(!activeWindowInner)) {
+  nsCOMPtr<nsPIDOMWindowInner> inProcessTopWindowInner =
+      inProcessTopWindowOuter->EnsureInnerWindow();
+  if (NS_WARN_IF(!inProcessTopWindowInner)) {
     aRv.Throw(NS_ERROR_FAILURE);
     return;
   }
@@ -297,7 +330,7 @@ void FuzzingFunctions::SynthesizeKeyboardEvents(const GlobalObject&,
   RefPtr<TextInputProcessor> textInputProcessor = new TextInputProcessor();
   bool beganInputTransaction = false;
   aRv = textInputProcessor->BeginInputTransactionForFuzzing(
-      activeWindowInner, nullptr, &beganInputTransaction);
+      inProcessTopWindowInner, nullptr, &beganInputTransaction);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
@@ -310,8 +343,10 @@ void FuzzingFunctions::SynthesizeKeyboardEvents(const GlobalObject&,
   }
 
   // First, activate necessary modifiers.
+  // MOZ_KnownLive(event.mWidget) is safe because `event` is an instance in
+  // the stack, and `mWidget` is `nsCOMPtr<nsIWidget>`.
   Modifiers activatedModifiers = ActivateModifiers(
-      textInputProcessor, event.mModifiers, event.mWidget, aRv);
+      textInputProcessor, event.mModifiers, MOZ_KnownLive(event.mWidget), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
@@ -329,8 +364,10 @@ void FuzzingFunctions::SynthesizeKeyboardEvents(const GlobalObject&,
   }
 
   // Finally, inactivate some modifiers which are activated by this call.
-  InactivateModifiers(textInputProcessor, activatedModifiers, event.mWidget,
-                      aRv);
+  // MOZ_KnownLive(event.mWidget) is safe because `event` is an instance in
+  // the stack, and `mWidget` is `nsCOMPtr<nsIWidget>`.
+  InactivateModifiers(textInputProcessor, activatedModifiers,
+                      MOZ_KnownLive(event.mWidget), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }

@@ -12,16 +12,22 @@
 
 "use strict";
 
-const { PureComponent } = require("devtools/client/shared/vendor/react");
+const {
+  PureComponent,
+  createFactory,
+} = require("devtools/client/shared/vendor/react");
 const {
   div,
-  input,
+  button,
   select,
   option,
 } = require("devtools/client/shared/vendor/react-dom-factories");
 const {
   withCommonPathPrefixRemoved,
 } = require("devtools/client/performance-new/utils");
+const Localized = createFactory(
+  require("devtools/client/shared/vendor/fluent-react").Localized
+);
 
 /**
  * A list of directories with add and remove buttons.
@@ -43,27 +49,24 @@ class DirectoryPicker extends PureComponent {
   constructor(props) {
     super(props);
     this._listBox = null;
-    this._takeListBoxRef = this._takeListBoxRef.bind(this);
-    this._handleAddButtonClick = this._handleAddButtonClick.bind(this);
-    this._handleRemoveButtonClick = this._handleRemoveButtonClick.bind(this);
   }
 
   /**
    * @param {HTMLSelectElement} element
    */
-  _takeListBoxRef(element) {
+  _takeListBoxRef = element => {
     this._listBox = element;
-  }
+  };
 
-  _handleAddButtonClick() {
+  _handleAddButtonClick = () => {
     this.props.onAdd();
-  }
+  };
 
-  _handleRemoveButtonClick() {
+  _handleRemoveButtonClick = () => {
     if (this._listBox && this._listBox.selectedIndex !== -1) {
       this.props.onRemove(this._listBox.selectedIndex);
     }
-  }
+  };
 
   render() {
     const { dirs } = this.props;
@@ -92,20 +95,22 @@ class DirectoryPicker extends PureComponent {
           className: "perf-settings-dir-list-button-group",
           key: "directory-picker-div",
         },
-        input({
-          type: "button",
-          className: `perf-photon-button perf-photon-button-default perf-button`,
-          value: "+",
-          title: "Add a directory",
-          onClick: this._handleAddButtonClick,
-        }),
-        input({
-          type: "button",
-          className: `perf-photon-button perf-photon-button-default perf-button`,
-          value: "-",
-          title: "Remove the selected directory from the list",
-          onClick: this._handleRemoveButtonClick,
-        })
+        button(
+          {
+            type: "button",
+            className: `perf-photon-button perf-photon-button-default perf-button`,
+            onClick: this._handleAddButtonClick,
+          },
+          Localized({ id: "perftools-button-add-directory" })
+        ),
+        button(
+          {
+            type: "button",
+            className: `perf-photon-button perf-photon-button-default perf-button`,
+            onClick: this._handleRemoveButtonClick,
+          },
+          Localized({ id: "perftools-button-remove-directory" })
+        )
       ),
     ];
   }

@@ -39,7 +39,7 @@ class CacheWorkerRef;
 class CacheStorage final : public nsISupports,
                            public nsWrapperCache,
                            public TypeUtils {
-  typedef mozilla::ipc::PBackgroundChild PBackgroundChild;
+  using PBackgroundChild = mozilla::ipc::PBackgroundChild;
 
  public:
   static already_AddRefed<CacheStorage> CreateOnMainThread(
@@ -55,7 +55,7 @@ class CacheStorage final : public nsISupports,
   // webidl interface methods
   already_AddRefed<Promise> Match(JSContext* aCx,
                                   const RequestOrUSVString& aRequest,
-                                  const CacheQueryOptions& aOptions,
+                                  const MultiCacheQueryOptions& aOptions,
                                   ErrorResult& aRv);
   already_AddRefed<Promise> Has(const nsAString& aKey, ErrorResult& aRv);
   already_AddRefed<Promise> Open(const nsAString& aKey, ErrorResult& aRv);
@@ -99,7 +99,7 @@ class CacheStorage final : public nsISupports,
 
   const Namespace mNamespace;
   nsCOMPtr<nsIGlobalObject> mGlobal;
-  UniquePtr<mozilla::ipc::PrincipalInfo> mPrincipalInfo;
+  const UniquePtr<mozilla::ipc::PrincipalInfo> mPrincipalInfo;
 
   // weak ref cleared in DestroyInternal
   CacheStorageChild* mActor;

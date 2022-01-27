@@ -31,8 +31,7 @@
         clippy::float_arithmetic,
         clippy::mut_mut,
         clippy::nonminimal_bool,
-        clippy::option_map_unwrap_or,
-        clippy::option_map_unwrap_or_else,
+        clippy::map_unwrap_or,
         clippy::unicode_not_nfc,
         clippy::use_self
     )
@@ -71,6 +70,7 @@ pub use cranelift_entity as entity;
 pub mod binemit;
 pub mod cfg_printer;
 pub mod cursor;
+pub mod data_value;
 pub mod dbg;
 pub mod dominator_tree;
 pub mod flowgraph;
@@ -97,6 +97,7 @@ mod inst_predicates;
 mod iterators;
 mod legalizer;
 mod licm;
+mod log;
 mod nan_canonicalization;
 mod partition_slice;
 mod postopt;
@@ -116,7 +117,9 @@ mod value_label;
 #[cfg(feature = "enable-peepmatic")]
 mod peepmatic;
 
+#[cfg(feature = "souper-harvest")]
+mod souper_harvest;
+
 pub use crate::result::{CodegenError, CodegenResult};
 
-/// Version number of this crate.
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+include!(concat!(env!("OUT_DIR"), "/version.rs"));

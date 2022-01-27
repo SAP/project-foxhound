@@ -6,18 +6,20 @@
 
 #include "LSObserver.h"
 
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/ipc/PBackgroundChild.h"
-#include "nsContentUtils.h"
-#include "nsIScriptObjectPrincipal.h"
+// Local includes
+#include "ActorsChild.h"
 
-namespace mozilla {
-namespace dom {
+// Global includes
+#include <utility>
+#include "mozilla/StaticPtr.h"
+#include "nsTHashMap.h"
+#include "nsHashKeys.h"
+
+namespace mozilla::dom {
 
 namespace {
 
-typedef nsDataHashtable<nsCStringHashKey, LSObserver*> LSObserverHashtable;
+using LSObserverHashtable = nsTHashMap<nsCStringHashKey, LSObserver*>;
 
 StaticAutoPtr<LSObserverHashtable> gLSObservers;
 
@@ -31,8 +33,8 @@ LSObserver::LSObserver(const nsACString& aOrigin)
     gLSObservers = new LSObserverHashtable();
   }
 
-  MOZ_ASSERT(!gLSObservers->Get(mOrigin));
-  gLSObservers->Put(mOrigin, this);
+  MOZ_ASSERT(!gLSObservers->Contains(mOrigin));
+  gLSObservers->InsertOrUpdate(mOrigin, this);
 }
 
 LSObserver::~LSObserver() {
@@ -65,5 +67,4 @@ void LSObserver::SetActor(LSObserverChild* aActor) {
   mActor = aActor;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

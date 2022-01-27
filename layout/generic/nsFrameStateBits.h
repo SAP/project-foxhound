@@ -318,7 +318,6 @@ FRAME_STATE_BIT(Generic, 59, NS_FRAME_IS_IN_SINGLE_CHAR_MI)
 FRAME_STATE_GROUP(Box, nsBoxFrame)
 
 FRAME_STATE_BIT(Box, 20, NS_STATE_BOX_CHILD_RESERVED)
-FRAME_STATE_BIT(Box, 21, NS_STATE_STACK_NOT_POSITIONED)
 FRAME_STATE_BIT(Box, 22, NS_STATE_IS_HORIZONTAL)
 FRAME_STATE_BIT(Box, 23, NS_STATE_AUTO_STRETCH)
 FRAME_STATE_BIT(Box, 24, NS_STATE_IS_ROOT)
@@ -607,13 +606,6 @@ FRAME_STATE_BIT(Block, 62, NS_BLOCK_FRAME_INTRINSICS_INFLATED)
 // bit is not set. This bit is set on the first continuation only.
 FRAME_STATE_BIT(Block, 63, NS_BLOCK_HAS_FIRST_LETTER_CHILD)
 
-// == Frame state bits that apply to bullet frames ============================
-
-FRAME_STATE_GROUP(Bullet, nsBulletFrame)
-
-FRAME_STATE_BIT(Bullet, 62, BULLET_FRAME_HAS_FONT_INFLATION)
-FRAME_STATE_BIT(Bullet, 63, BULLET_FRAME_IMAGE_LOADING)
-
 // == Frame state bits that apply to image frames =============================
 
 FRAME_STATE_GROUP(Image, nsImageFrame)
@@ -640,7 +632,7 @@ FRAME_STATE_BIT(Inline, 23, NS_INLINE_FRAME_BIDI_VISUAL_IS_LAST)
 FRAME_STATE_GROUP(RubyText, nsRubyTextFrame)
 
 // inherits from nsInlineFrame
-FRAME_STATE_BIT(RubyText, 24, NS_RUBY_TEXT_FRAME_AUTOHIDE)
+FRAME_STATE_BIT(RubyText, 24, NS_RUBY_TEXT_FRAME_COLLAPSED)
 
 // == Frame state bits that apply to ruby text container frames ===============
 
@@ -722,6 +714,13 @@ FRAME_STATE_BIT(TableRowGroup, 31, NS_ROWGROUP_REPEATABLE)
 FRAME_STATE_GROUP(Table, nsTableFrame)
 
 FRAME_STATE_BIT(Table, 28, NS_TABLE_PART_HAS_FIXED_BACKGROUND)
+
+// == Frame state bits that apply to page frames ==============================
+FRAME_STATE_GROUP(Page, nsPageFrame)
+
+// If set, this bit indicates that the given nsPageFrame has been skipped
+// via the user's custom-page-range choice, and should not be rendered.
+FRAME_STATE_BIT(Page, 20, NS_PAGE_SKIPPED_BY_CUSTOM_RANGE)
 
 #undef FRAME_STATE_GROUP
 

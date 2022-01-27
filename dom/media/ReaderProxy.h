@@ -9,7 +9,6 @@
 
 #include "mozilla/AbstractThread.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Variant.h"
 #include "nsISupportsImpl.h"
 
 #include "MediaEventSource.h"
@@ -41,7 +40,7 @@ class ReaderProxy {
   RefPtr<AudioDataPromise> RequestAudioData();
 
   RefPtr<VideoDataPromise> RequestVideoData(
-      const media::TimeUnit& aTimeThreshold);
+      const media::TimeUnit& aTimeThreshold, bool aRequestNextVideoKeyFrame);
 
   RefPtr<WaitForDataPromise> WaitForData(MediaData::Type aType);
 

@@ -7,11 +7,11 @@
 #ifndef jit_BaselineDebugModeOSR_h
 #define jit_BaselineDebugModeOSR_h
 
+#include "jstypes.h"
+
 #include "debugger/DebugAPI.h"
-#include "jit/BaselineFrame.h"
-#include "jit/BaselineIC.h"
-#include "jit/BaselineJIT.h"
-#include "jit/JSJitFrameIter.h"
+
+struct JS_PUBLIC_API JSContext;
 
 namespace js {
 namespace jit {
@@ -20,7 +20,7 @@ namespace jit {
 // on-stack recompilation. This is to be distinguished from ordinary
 // Baseline->Ion OSR, which is used to jump into compiled loops.
 
-MOZ_MUST_USE bool RecompileOnStackBaselineScriptsForDebugMode(
+[[nodiscard]] bool RecompileOnStackBaselineScriptsForDebugMode(
     JSContext* cx, const DebugAPI::ExecutionObservableSet& obs,
     DebugAPI::IsObserving observing);
 

@@ -14,10 +14,10 @@
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/UniquePtr.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsHashKeys.h"
 #include "nsString.h"
-#include "nsTHashtable.h"
+#include "nsTHashSet.h"
 
 class nsIEventTarget;
 class nsIGlobalObject;
@@ -48,9 +48,9 @@ class PBackgroundIDBDatabaseFileChild;
 }  // namespace indexedDB
 
 class IDBDatabase final : public DOMEventTargetHelper {
-  typedef mozilla::dom::indexedDB::DatabaseSpec DatabaseSpec;
-  typedef mozilla::dom::StorageType StorageType;
-  typedef mozilla::dom::quota::PersistenceType PersistenceType;
+  using DatabaseSpec = mozilla::dom::indexedDB::DatabaseSpec;
+  using StorageType = mozilla::dom::StorageType;
+  using PersistenceType = mozilla::dom::quota::PersistenceType;
 
   class Observer;
   friend class Observer;
@@ -70,16 +70,15 @@ class IDBDatabase final : public DOMEventTargetHelper {
 
   indexedDB::BackgroundDatabaseChild* mBackgroundActor;
 
-  nsTHashtable<nsPtrHashKey<IDBTransaction>> mTransactions;
+  nsTHashSet<IDBTransaction*> mTransactions;
 
-  nsDataHashtable<nsISupportsHashKey,
-                  indexedDB::PBackgroundIDBDatabaseFileChild*>
+  nsTHashMap<nsISupportsHashKey, indexedDB::PBackgroundIDBDatabaseFileChild*>
       mFileActors;
 
   RefPtr<Observer> mObserver;
 
   // Weak refs, IDBMutableFile strongly owns this IDBDatabase object.
-  nsTArray<IDBMutableFile*> mLiveMutableFiles;
+  nsTArray<NotNull<IDBMutableFile*>> mLiveMutableFiles;
 
   const bool mFileHandleDisabled;
   bool mClosed;
@@ -169,9 +168,9 @@ class IDBDatabase final : public DOMEventTargetHelper {
 
   bool IsFileHandleDisabled() const { return mFileHandleDisabled; }
 
-  void NoteLiveMutableFile(IDBMutableFile* aMutableFile);
+  void NoteLiveMutableFile(IDBMutableFile& aMutableFile);
 
-  void NoteFinishedMutableFile(IDBMutableFile* aMutableFile);
+  void NoteFinishedMutableFile(IDBMutableFile& aMutableFile);
 
   [[nodiscard]] RefPtr<DOMStringList> ObjectStoreNames() const;
 

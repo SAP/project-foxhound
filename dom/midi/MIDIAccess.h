@@ -9,7 +9,6 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/Observer.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
@@ -17,6 +16,8 @@
 struct JSContext;
 
 namespace mozilla {
+class ErrorResult;
+
 // Predeclare void_t here, as including IPCMessageUtils brings in windows.h and
 // causes binding compilation problems.
 struct void_t;
@@ -34,7 +35,7 @@ class MIDIPortInfo;
 class MIDIPortList;
 class Promise;
 
-typedef Observer<void_t> MIDIAccessDestructionObserver;
+using MIDIAccessDestructionObserver = Observer<void_t>;
 
 /**
  * MIDIAccess is the DOM object that is handed to the user upon MIDI permissions
@@ -75,7 +76,7 @@ class MIDIAccess final : public DOMEventTargetHelper,
   // created them, as the port object receives disconnection events which then
   // must be passed up to the MIDIAccess object. If the Port object dies before
   // the MIDIAccess object, it needs to be removed from the observer list.
-  void RemovePortListener(MIDIAccessDestructionObserver* aPort);
+  void RemovePortListener(MIDIAccessDestructionObserver* aObs);
 
   // Fires DOM event on port connection/disconnection
   void FireConnectionEvent(MIDIPort* aPort);

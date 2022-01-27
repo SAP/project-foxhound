@@ -6,23 +6,31 @@
 
 #include "WorkerRunnable.h"
 
-#include "nsGlobalWindow.h"
+#include "WorkerPrivate.h"
+#include "WorkerScope.h"
+#include "js/RootingAPI.h"
+#include "jsapi.h"
+#include "jsfriendapi.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/DebugOnly.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/Telemetry.h"
+#include "mozilla/TelemetryHistogramEnums.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/Unused.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/Worker.h"
+#include "mozilla/dom/WorkerCommon.h"
+#include "nsDebug.h"
+#include "nsGlobalWindowInner.h"
+#include "nsID.h"
 #include "nsIEventTarget.h"
 #include "nsIGlobalObject.h"
 #include "nsIRunnable.h"
 #include "nsThreadUtils.h"
-
-#include "mozilla/DebugOnly.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/dom/JSExecutionManager.h"
-#include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/Telemetry.h"
-
-#include "js/RootingAPI.h"
-#include "js/Value.h"
-
-#include "WorkerPrivate.h"
-#include "WorkerScope.h"
+#include "nsWrapperCacheInlines.h"
 
 namespace mozilla {
 namespace dom {
@@ -533,6 +541,8 @@ WorkerMainThreadRunnable::WorkerMainThreadRunnable(
   mWorkerPrivate->AssertIsOnWorkerThread();
 }
 
+WorkerMainThreadRunnable::~WorkerMainThreadRunnable() = default;
+
 void WorkerMainThreadRunnable::Dispatch(WorkerStatus aFailStatus,
                                         mozilla::ErrorResult& aRv) {
   mWorkerPrivate->AssertIsOnWorkerThread();
@@ -699,9 +709,6 @@ bool WorkerDebuggeeRunnable::PreDispatch(WorkerPrivate* aWorkerPrivate) {
     }
 
     mSender = new ThreadSafeWorkerRef(strongRef);
-    if (!mSender) {
-      return false;
-    }
   }
 
   return WorkerRunnable::PreDispatch(aWorkerPrivate);

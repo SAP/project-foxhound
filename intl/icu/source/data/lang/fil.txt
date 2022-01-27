@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 fil{
     Keys{
         calendar{"Kalendaryo"}
@@ -95,6 +96,7 @@ fil{
         de_CH{"Swiss High German"}
         dgr{"Dogrib"}
         dje{"Zarma"}
+        doi{"Dogri"}
         dsb{"Lower Sorbian"}
         dua{"Duala"}
         dv{"Divehi"}
@@ -107,7 +109,7 @@ fil{
         eka{"Ekajuk"}
         el{"Greek"}
         en{"Ingles"}
-        en_AU{"Ingles ng Australya"}
+        en_AU{"Ingles ng Australia"}
         en_CA{"Ingles sa Canada"}
         en_GB{"Ingles na British"}
         en_US{"Ingles na American"}
@@ -251,7 +253,7 @@ fil{
         mgh{"Makhuwa-Meetto"}
         mgo{"Meta’"}
         mh{"Marshallese"}
-        mi{"Maori"}
+        mi{"Māori"}
         mic{"Micmac"}
         min{"Minangkabau"}
         mk{"Macedonian"}
@@ -316,12 +318,12 @@ fil{
         quc{"Kʼicheʼ"}
         rap{"Rapanui"}
         rar{"Rarotongan"}
+        rhg{"Rohingya"}
         rm{"Romansh"}
         rn{"Rundi"}
         ro{"Romanian"}
         ro_MD{"Moldavian"}
         rof{"Rombo"}
-        root{"Root"}
         ru{"Russian"}
         rup{"Aromanian"}
         rw{"Kinyarwanda"}
@@ -435,6 +437,7 @@ fil{
         zh_Hant{"Tradisyonal na Mandarin Chinese"}
     }
     Languages%menu{
+        ckb{"Kurdish, Central"}
         yue{"Chinese, Cantonese"}
         zh{"Chinese, Mandarin"}
     }
@@ -444,6 +447,7 @@ fil{
         en_US{"Ingles sa US"}
     }
     Languages%variant{
+        ckb{"Kurdish, Sorani"}
         ps{"Pushto"}
         ug{"Uighur"}
     }
@@ -674,7 +678,6 @@ fil{
         PINYIN{"Pinyin Romanization"}
         WADEGILE{"Wade-Giles Romanization"}
     }
-    Version{"37"}
     characterLabelPattern{
         all{"{0} — lahat"}
         category-list{"{0}: {1}"}

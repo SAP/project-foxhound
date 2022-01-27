@@ -6,10 +6,12 @@
 
 #include "mozilla/layers/WebRenderScrollData.h"
 
+#include <ostream>
+
 #include "Layers.h"
-#include "LayersLogging.h"
 #include "mozilla/layers/LayersMessageUtils.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
+#include "mozilla/ToString.h"
 #include "mozilla/Unused.h"
 #include "nsDisplayList.h"
 #include "nsTArray.h"
@@ -21,6 +23,7 @@ namespace layers {
 WebRenderLayerScrollData::WebRenderLayerScrollData()
     : mDescendantCount(-1),
       mTransformIsPerspective(false),
+      mResolution(1.f),
       mEventRegionsOverride(EventRegionsOverride::NoOverride),
       mFixedPositionSides(mozilla::SideBits::eNone),
       mFixedPosScrollContainerId(ScrollableLayerGuid::NULL_SCROLL_ID),
@@ -32,10 +35,15 @@ void WebRenderLayerScrollData::InitializeRoot(int32_t aDescendantCount) {
   mDescendantCount = aDescendantCount;
 }
 
+void WebRenderLayerScrollData::InitializeForTest(int32_t aDescendantCount) {
+  mDescendantCount = aDescendantCount;
+}
+
 void WebRenderLayerScrollData::Initialize(
     WebRenderScrollData& aOwner, nsDisplayItem* aItem, int32_t aDescendantCount,
     const ActiveScrolledRoot* aStopAtAsr,
-    const Maybe<gfx::Matrix4x4>& aAncestorTransform) {
+    const Maybe<gfx::Matrix4x4>& aAncestorTransform,
+    const ViewID& aAncestorTransformId) {
   MOZ_ASSERT(aDescendantCount >= 0);  // Ensure value is valid
   MOZ_ASSERT(mDescendantCount ==
              -1);  // Don't allow re-setting an already set value
@@ -60,8 +68,8 @@ void WebRenderLayerScrollData::Initialize(
     } else {
       Maybe<ScrollMetadata> metadata =
           asr->mScrollableFrame->ComputeScrollMetadata(
-              aOwner.GetManager(), aItem->ReferenceFrame(), Nothing(), nullptr);
-      asr->mScrollableFrame->NotifyApzTransaction();
+              aOwner.GetManager(), aItem->Frame(), aItem->ToReferenceFrame());
+      aOwner.GetBuilder()->AddScrollFrameToNotify(asr->mScrollableFrame);
       if (metadata) {
         MOZ_ASSERT(metadata->GetMetrics().GetScrollId() == scrollId);
         mScrollIds.AppendElement(aOwner.AddMetadata(metadata.ref()));
@@ -71,6 +79,28 @@ void WebRenderLayerScrollData::Initialize(
     }
     asr = asr->mParent;
   }
+
+#ifdef DEBUG
+  // Sanity check: if we have an ancestor transform, its scroll id should
+  // match one of the scroll metadatas on this node (WebRenderScrollDataWrapper
+  // will then use the ancestor transform at the level of that scroll metadata).
+  // One exception to this is if we have no scroll metadatas, which can happen
+  // if the scroll id of the transform is on an enclosing node.
+  if (aAncestorTransformId != ScrollableLayerGuid::NULL_SCROLL_ID &&
+      !mScrollIds.IsEmpty()) {
+    bool seenAncestorTransformId = false;
+    for (size_t scrollIdIndex : mScrollIds) {
+      if (aAncestorTransformId ==
+          aOwner.GetScrollMetadata(scrollIdIndex).GetMetrics().GetScrollId()) {
+        seenAncestorTransformId = true;
+      }
+    }
+    MOZ_ASSERT(
+        seenAncestorTransformId,
+        "The ancestor transform's view ID should match one of the metrics "
+        "on this node");
+  }
+#endif
 
   // See the comments on StackingContextHelper::mDeferredTransformItem for an
   // overview of what deferred transforms are.
@@ -89,6 +119,7 @@ void WebRenderLayerScrollData::Initialize(
   if (aAncestorTransform &&
       mScrollbarData.mScrollbarLayerType != ScrollbarLayerType::Thumb) {
     mAncestorTransform = *aAncestorTransform;
+    mAncestorTransformId = aAncestorTransformId;
   }
 }
 
@@ -112,48 +143,78 @@ const ScrollMetadata& WebRenderLayerScrollData::GetScrollMetadata(
   return aOwner.GetScrollMetadata(mScrollIds[aIndex]);
 }
 
+ScrollMetadata& WebRenderLayerScrollData::GetScrollMetadataMut(
+    WebRenderScrollData& aOwner, size_t aIndex) {
+  MOZ_ASSERT(aIndex < mScrollIds.Length());
+  return aOwner.GetScrollMetadataMut(mScrollIds[aIndex]);
+}
+
 CSSTransformMatrix WebRenderLayerScrollData::GetTransformTyped() const {
   return ViewAs<CSSTransformMatrix>(GetTransform());
 }
 
-void WebRenderLayerScrollData::Dump(const WebRenderScrollData& aOwner) const {
-  printf_stderr("LayerScrollData(%p) descendants %d\n", this, mDescendantCount);
-  for (size_t i : mScrollIds) {
-    printf_stderr("  metadata: %s\n",
-                  Stringify(aOwner.GetScrollMetadata(i)).c_str());
+void WebRenderLayerScrollData::Dump(std::ostream& aOut,
+                                    const WebRenderScrollData& aOwner) const {
+  aOut << "WebRenderLayerScrollData(" << this
+       << "), descendantCount=" << mDescendantCount;
+  for (size_t i = 0; i < mScrollIds.Length(); i++) {
+    aOut << ", metadata" << i << "=" << aOwner.GetScrollMetadata(mScrollIds[i]);
   }
-  printf_stderr("  ancestor transform: %s\n",
-                Stringify(mAncestorTransform).c_str());
-  printf_stderr("  transform: %s perspective: %d visible: %s\n",
-                Stringify(mTransform).c_str(), mTransformIsPerspective,
-                Stringify(mVisibleRegion).c_str());
-  printf_stderr("  event regions override: 0x%x\n", mEventRegionsOverride);
+  if (!mAncestorTransform.IsIdentity()) {
+    aOut << ", ancestorTransform=" << mAncestorTransform
+         << " (asr=" << mAncestorTransformId << ")";
+  }
+  if (!mTransform.IsIdentity()) {
+    aOut << ", transform=" << mTransform;
+    if (mTransformIsPerspective) {
+      aOut << ", transformIsPerspective";
+    }
+  }
+  if (mResolution != 1.f) {
+    aOut << ", resolution=" << mResolution;
+  }
+  aOut << ", visible=" << mVisibleRegion;
   if (mReferentId) {
-    printf_stderr("  ref layers id: 0x%" PRIx64 "\n", uint64_t(*mReferentId));
+    aOut << ", refLayersId=" << *mReferentId;
   }
-  printf_stderr("  scrollbar type: %d animation: %" PRIx64 "\n",
-                (int)mScrollbarData.mScrollbarLayerType,
-                mScrollbarAnimationId.valueOr(0));
-  printf_stderr("  fixed container: %" PRIu64 " animation %" PRIx64 "\n",
-                mFixedPosScrollContainerId,
-                mFixedPositionAnimationId.valueOr(0));
-  printf_stderr("  sticky container: %" PRIu64 " animation %" PRIx64
-                " inner: %s outer: %s\n",
-                mStickyPosScrollContainerId,
-                mStickyPositionAnimationId.valueOr(0),
-                Stringify(mStickyScrollRangeInner).c_str(),
-                Stringify(mStickyScrollRangeOuter).c_str());
-  printf_stderr("  fixed/sticky side bits: 0x%x\n", (int)mFixedPositionSides);
+  if (mEventRegionsOverride) {
+    aOut << std::hex << ", eventRegionsOverride=0x"
+         << (int)mEventRegionsOverride << std::dec;
+  }
+  if (mScrollbarData.mScrollbarLayerType != ScrollbarLayerType::None) {
+    aOut << ", scrollbarType=" << (int)mScrollbarData.mScrollbarLayerType
+         << std::hex << ", scrollbarAnimationId=0x"
+         << mScrollbarAnimationId.valueOr(0) << std::dec;
+  }
+  if (mFixedPosScrollContainerId != ScrollableLayerGuid::NULL_SCROLL_ID) {
+    aOut << ", fixedContainer=" << mFixedPosScrollContainerId << std::hex
+         << ", fixedAnimation=0x" << mFixedPositionAnimationId.valueOr(0)
+         << ", sideBits=0x" << (int)mFixedPositionSides << std::dec;
+  }
+  if (mStickyPosScrollContainerId != ScrollableLayerGuid::NULL_SCROLL_ID) {
+    aOut << ", stickyContainer=" << mStickyPosScrollContainerId << std::hex
+         << ", stickyAnimation=" << mStickyPositionAnimationId.valueOr(0)
+         << std::dec << ", stickyInner=" << mStickyScrollRangeInner
+         << ", stickyOuter=" << mStickyScrollRangeOuter;
+  }
 }
 
 WebRenderScrollData::WebRenderScrollData()
     : mManager(nullptr), mIsFirstPaint(false), mPaintSequenceNumber(0) {}
 
-WebRenderScrollData::WebRenderScrollData(WebRenderLayerManager* aManager)
-    : mManager(aManager), mIsFirstPaint(false), mPaintSequenceNumber(0) {}
+WebRenderScrollData::WebRenderScrollData(WebRenderLayerManager* aManager,
+                                         nsDisplayListBuilder* aBuilder)
+    : mManager(aManager),
+      mBuilder(aBuilder),
+      mIsFirstPaint(false),
+      mPaintSequenceNumber(0) {}
 
 WebRenderLayerManager* WebRenderScrollData::GetManager() const {
   return mManager;
+}
+
+nsDisplayListBuilder* WebRenderScrollData::GetBuilder() const {
+  return mBuilder;
 }
 
 size_t WebRenderScrollData::AddMetadata(const ScrollMetadata& aMetadata) {
@@ -168,9 +229,8 @@ size_t WebRenderScrollData::AddMetadata(const ScrollMetadata& aMetadata) {
   return p->value();
 }
 
-size_t WebRenderScrollData::AddLayerData(
-    const WebRenderLayerScrollData& aData) {
-  mLayerScrollData.AppendElement(aData);
+size_t WebRenderScrollData::AddLayerData(WebRenderLayerScrollData&& aData) {
+  mLayerScrollData.AppendElement(std::move(aData));
   return mLayerScrollData.Length() - 1;
 }
 
@@ -186,8 +246,20 @@ const WebRenderLayerScrollData* WebRenderScrollData::GetLayerData(
   return &(mLayerScrollData.ElementAt(aIndex));
 }
 
+WebRenderLayerScrollData* WebRenderScrollData::GetLayerData(size_t aIndex) {
+  if (aIndex >= mLayerScrollData.Length()) {
+    return nullptr;
+  }
+  return &(mLayerScrollData.ElementAt(aIndex));
+}
+
 const ScrollMetadata& WebRenderScrollData::GetScrollMetadata(
     size_t aIndex) const {
+  MOZ_ASSERT(aIndex < mScrollMetadatas.Length());
+  return mScrollMetadatas[aIndex];
+}
+
+ScrollMetadata& WebRenderScrollData::GetScrollMetadataMut(size_t aIndex) {
   MOZ_ASSERT(aIndex < mScrollMetadatas.Length());
   return mScrollMetadatas[aIndex];
 }
@@ -211,22 +283,58 @@ uint32_t WebRenderScrollData::GetPaintSequenceNumber() const {
   return mPaintSequenceNumber;
 }
 
-void WebRenderScrollData::ApplyUpdates(ScrollUpdatesMap& aUpdates,
+void WebRenderScrollData::ApplyUpdates(ScrollUpdatesMap&& aUpdates,
                                        uint32_t aPaintSequenceNumber) {
   for (auto it = aUpdates.Iter(); !it.Done(); it.Next()) {
     if (Maybe<size_t> index = HasMetadataFor(it.Key())) {
-      mScrollMetadatas[*index].GetMetrics().UpdatePendingScrollInfo(it.Data());
+      mScrollMetadatas[*index].UpdatePendingScrollInfo(std::move(it.Data()));
     }
   }
   mPaintSequenceNumber = aPaintSequenceNumber;
 }
 
-void WebRenderScrollData::Dump() const {
-  printf_stderr("WebRenderScrollData with %zu layers firstpaint: %d\n",
-                mLayerScrollData.Length(), mIsFirstPaint);
-  for (size_t i = 0; i < mLayerScrollData.Length(); i++) {
-    mLayerScrollData.ElementAt(i).Dump(*this);
+void WebRenderScrollData::DumpSubtree(std::ostream& aOut, size_t aIndex,
+                                      const std::string& aIndent) const {
+  aOut << aIndent;
+  mLayerScrollData.ElementAt(aIndex).Dump(aOut, *this);
+  aOut << std::endl;
+
+  int32_t descendants = mLayerScrollData.ElementAt(aIndex).GetDescendantCount();
+  if (descendants == 0) {
+    return;
   }
+
+  // Build a stack of indices at which this aIndex's children live. We do
+  // this because we want to dump them first-to-last but they are stored
+  // last-to-first.
+  std::stack<size_t> childIndices;
+  size_t childIndex = aIndex + 1;
+  while (descendants > 0) {
+    childIndices.push(childIndex);
+    // "1" for the child itelf, plus whatever descendants it has
+    int32_t subtreeSize =
+        1 + mLayerScrollData.ElementAt(childIndex).GetDescendantCount();
+    childIndex += subtreeSize;
+    descendants -= subtreeSize;
+    MOZ_ASSERT(descendants >= 0);
+  }
+
+  std::string indent = aIndent + "    ";
+  while (!childIndices.empty()) {
+    size_t child = childIndices.top();
+    childIndices.pop();
+    DumpSubtree(aOut, child, indent);
+  }
+}
+
+std::ostream& operator<<(std::ostream& aOut, const WebRenderScrollData& aData) {
+  aOut << "--- WebRenderScrollData (firstPaint=" << aData.mIsFirstPaint
+       << ") ---" << std::endl;
+
+  if (aData.mLayerScrollData.Length() > 0) {
+    aData.DumpSubtree(aOut, 0, std::string());
+  }
+  return aOut;
 }
 
 bool WebRenderScrollData::RepopulateMap() {
@@ -250,8 +358,10 @@ void ParamTraits<mozilla::layers::WebRenderLayerScrollData>::Write(
   WriteParam(aMsg, aParam.mDescendantCount);
   WriteParam(aMsg, aParam.mScrollIds);
   WriteParam(aMsg, aParam.mAncestorTransform);
+  WriteParam(aMsg, aParam.mAncestorTransformId);
   WriteParam(aMsg, aParam.mTransform);
   WriteParam(aMsg, aParam.mTransformIsPerspective);
+  WriteParam(aMsg, aParam.mResolution);
   WriteParam(aMsg, aParam.mVisibleRegion);
   WriteParam(aMsg, aParam.mRemoteDocumentSize);
   WriteParam(aMsg, aParam.mReferentId);
@@ -274,8 +384,10 @@ bool ParamTraits<mozilla::layers::WebRenderLayerScrollData>::Read(
   return ReadParam(aMsg, aIter, &aResult->mDescendantCount) &&
          ReadParam(aMsg, aIter, &aResult->mScrollIds) &&
          ReadParam(aMsg, aIter, &aResult->mAncestorTransform) &&
+         ReadParam(aMsg, aIter, &aResult->mAncestorTransformId) &&
          ReadParam(aMsg, aIter, &aResult->mTransform) &&
          ReadParam(aMsg, aIter, &aResult->mTransformIsPerspective) &&
+         ReadParam(aMsg, aIter, &aResult->mResolution) &&
          ReadParam(aMsg, aIter, &aResult->mVisibleRegion) &&
          ReadParam(aMsg, aIter, &aResult->mRemoteDocumentSize) &&
          ReadParam(aMsg, aIter, &aResult->mReferentId) &&

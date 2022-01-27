@@ -12,14 +12,14 @@ const SOURCE_MAP_PREF = "devtools.source-map.client-service.enabled";
  * (which is used as a cookie by the devtools-source-map service) and
  * the source map URL.
  *
- * @param {object} toolbox
- *        The toolbox.
+ * @param {object} commands
+ *        The commands object with all interfaces defined from devtools/shared/commands/
  * @param {SourceMapService} sourceMapService
  *        The devtools-source-map functions
  */
 class SourceMapURLService {
-  constructor(toolbox, sourceMapService) {
-    this._toolbox = toolbox;
+  constructor(commands, sourceMapService) {
+    this._commands = commands;
     this._sourceMapService = sourceMapService;
 
     this._prefValue = Services.prefs.getBoolPref(SOURCE_MAP_PREF);
@@ -28,27 +28,36 @@ class SourceMapURLService {
     this._urlToIDMap = new Map();
     this._mapsById = new Map();
     this._sourcesLoading = null;
+    this._onResourceAvailable = this._onResourceAvailable.bind(this);
     this._runningCallback = false;
 
     this._syncPrevValue = this._syncPrevValue.bind(this);
-    this._onSourceUpdatedEvent = this._onSourceUpdatedEvent.bind(this);
     this._clearAllState = this._clearAllState.bind(this);
-    this._onNewStyleSheet = this._onNewStyleSheet.bind(this);
 
-    this._target.on("will-navigate", this._clearAllState);
-    this._target.on("source-updated", this._onSourceUpdatedEvent);
     Services.prefs.addObserver(SOURCE_MAP_PREF, this._syncPrevValue);
   }
 
-  get _target() {
-    return this._toolbox.target;
-  }
-
   destroy() {
-    this._clearAllState();
-    this._target.off("will-navigate", this._clearAllState);
-    this._target.off("source-updated", this._onSourceUpdatedEvent);
     Services.prefs.removeObserver(SOURCE_MAP_PREF, this._syncPrevValue);
+
+    this._clearAllState();
+
+    const { resourceCommand } = this._commands;
+    try {
+      resourceCommand.unwatchResources(
+        [
+          resourceCommand.TYPES.STYLESHEET,
+          resourceCommand.TYPES.SOURCE,
+          resourceCommand.TYPES.DOCUMENT_EVENT,
+        ],
+        { onAvailable: this._onResourceAvailable }
+      );
+    } catch (e) {
+      // If unwatchResources is called before finishing process of watchResources,
+      // it throws an error during stopping listener.
+    }
+
+    this._sourcesLoading = null;
   }
 
   /**
@@ -203,22 +212,6 @@ class SourceMapURLService {
     this._pendingIDSubscriptions.clear();
     this._pendingURLSubscriptions.clear();
     this._urlToIDMap.clear();
-
-    try {
-      this._toolbox.resourceWatcher.unwatchResources(
-        [this._toolbox.resourceWatcher.TYPES.STYLESHEET],
-        { onAvailable: this._onResourceAvailable }
-      );
-    } catch (e) {
-      // If unwatchResources is called before finishing process of watchResources,
-      // it throws an error during stopping listener.
-    }
-
-    this._sourcesLoading = null;
-  }
-
-  _onSourceUpdatedEvent(sourceEvent) {
-    this._onNewJavascript(sourceEvent.source);
   }
 
   _onNewJavascript(source) {
@@ -233,7 +226,7 @@ class SourceMapURLService {
       nodeHref,
       sourceMapBaseURL,
       sourceMapURL,
-      actorID: id,
+      resourceId: id,
     } = sheet;
     const url = href || nodeHref;
 
@@ -421,52 +414,50 @@ class SourceMapURLService {
     if (!this._prefValue) {
       return null;
     }
+    if (this._commands.descriptorFront.isWorkerDescriptor) {
+      return;
+    }
 
     if (!this._sourcesLoading) {
-      const sourcesLoading = (async () => {
-        if (this._target.isWorkerTarget) {
-          return;
+      const { resourceCommand } = this._commands;
+      const { STYLESHEET, SOURCE, DOCUMENT_EVENT } = resourceCommand.TYPES;
+
+      const onResources = resourceCommand.watchResources(
+        [STYLESHEET, SOURCE, DOCUMENT_EVENT],
+        {
+          onAvailable: this._onResourceAvailable,
         }
-
-        this._onResourceAvailable = async ({ resource }) => {
-          if (this._sourcesLoading === sourcesLoading) {
-            this._onNewStyleSheet(resource.styleSheet);
-          }
-        };
-
-        await Promise.all([
-          this._toolbox.resourceWatcher.watchResources(
-            [this._toolbox.resourceWatcher.TYPES.STYLESHEET],
-            { onAvailable: this._onResourceAvailable }
-          ),
-          (async () => {
-            const { threadFront } = this._toolbox;
-            if (!threadFront) {
-              console.warn(
-                "sourcemap url service cannot query for sources, no threadFront found"
-              );
-              return;
-            }
-
-            try {
-              const { sources } = await threadFront.getSources();
-              if (this._sourcesLoading === sourcesLoading) {
-                // If we've cleared the state since starting this request,
-                // we don't want to populate these.
-                for (const source of sources) {
-                  this._onNewJavascript(source);
-                }
-              }
-            } catch (err) {
-              // Also ignore any protocol-based errors.
-            }
-          })(),
-        ]);
-      })();
-      this._sourcesLoading = sourcesLoading;
+      );
+      this._sourcesLoading = onResources;
     }
 
     return this._sourcesLoading;
+  }
+
+  waitForSourcesLoading() {
+    if (this._sourcesLoading) {
+      return this._sourcesLoading;
+    }
+    return Promise.resolve();
+  }
+
+  _onResourceAvailable(resources) {
+    const { resourceCommand } = this._commands;
+    const { STYLESHEET, SOURCE, DOCUMENT_EVENT } = resourceCommand.TYPES;
+    for (const resource of resources) {
+      // Only consider top level document, and ignore remote iframes top document
+      if (
+        resource.resourceType == DOCUMENT_EVENT &&
+        resource.name == "will-navigate" &&
+        resource.isTopLevel
+      ) {
+        this._clearAllState();
+      } else if (resource.resourceType == STYLESHEET) {
+        this._onNewStyleSheet(resource);
+      } else if (resource.resourceType == SOURCE) {
+        this._onNewJavascript(resource);
+      }
+    }
   }
 
   _convertPendingURLSubscriptionsToID(url, id) {

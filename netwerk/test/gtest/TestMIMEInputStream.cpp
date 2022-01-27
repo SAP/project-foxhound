@@ -1,12 +1,14 @@
 #include "gtest/gtest.h"
 
 #include "Helpers.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
 #include "nsStreamUtils.h"
 #include "nsString.h"
 #include "nsStringStream.h"
 #include "nsIMIMEInputStream.h"
+#include "nsISeekableStream.h"
 
 using mozilla::GetCurrentSerialEventTarget;
 using mozilla::SpinEventLoopUntil;
@@ -183,7 +185,9 @@ TEST(TestNsMIMEInputStream, AsyncInputStreamLength)
   nsresult rv = qi->AsyncLengthWait(callback, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback->Called(); }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "TEST(TestNsMIMEInputStream, AsyncInputStreamLength)"_ns,
+      [&]() { return callback->Called(); }));
   ASSERT_EQ(buf.Length(), callback->Size());
 }
 
@@ -217,7 +221,9 @@ TEST(TestNsMIMEInputStream, NegativeAsyncInputStreamLength)
   nsresult rv = qi->AsyncLengthWait(callback, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback->Called(); }));
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
+      "TEST(TestNsMIMEInputStream, NegativeAsyncInputStreamLength)"_ns,
+      [&]() { return callback->Called(); }));
   ASSERT_EQ(-1, callback->Size());
 }
 
@@ -254,7 +260,9 @@ TEST(TestNsMIMEInputStream, AbortLengthCallback)
   rv = qi->AsyncLengthWait(callback2, GetCurrentSerialEventTarget());
   ASSERT_EQ(NS_OK, rv);
 
-  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return callback2->Called(); }));
+  MOZ_ALWAYS_TRUE(
+      SpinEventLoopUntil("TEST(TestNsMIMEInputStream, AbortLengthCallback)"_ns,
+                         [&]() { return callback2->Called(); }));
   ASSERT_TRUE(!callback1->Called());
   ASSERT_EQ(-1, callback2->Size());
 }

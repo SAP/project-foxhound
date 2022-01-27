@@ -61,8 +61,15 @@ NOTHROW_MALLOC_DECL(valloc, void*, size_t)
 NOTHROW_MALLOC_DECL(malloc_usable_size, size_t, usable_ptr_t)
 MALLOC_DECL(malloc_good_size, size_t, size_t)
 #  endif
+
 #  if MALLOC_FUNCS & MALLOC_FUNCS_JEMALLOC
-MALLOC_DECL(jemalloc_stats, void, jemalloc_stats_t*)
+// The 2nd argument points to an optional array exactly
+// jemalloc_stats_num_bins() long to be filled in (if non-null).
+MALLOC_DECL(jemalloc_stats_internal, void, jemalloc_stats_t*,
+            jemalloc_bin_stats_t*)
+
+// Return the size of the jemalloc_bin_stats_t array.
+MALLOC_DECL(jemalloc_stats_num_bins, size_t)
 
 // On some operating systems (Mac), we use madvise(MADV_FREE) to hand pages
 // back to the operating system.  On Mac, the operating system doesn't take

@@ -8,6 +8,11 @@
  */
 
 add_task(async function() {
+  // Using https-first for this test is blocked on Bug 1733420.
+  // We cannot assert status text "OK" with HTTPS requests to httpd.js, instead
+  // we get "Connected"
+  await pushPref("dom.security.https_first", false);
+
   const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
 
   const { tab, monitor } = await initNetMonitor(JSONP_URL, { requestCount: 1 });
@@ -65,7 +70,7 @@ add_task(async function() {
   );
 
   info("Testing first request");
-  let wait = waitForDOM(document, "#response-panel .accordion-item", 2);
+  let wait = waitForDOM(document, "#response-panel .data-header");
   let waitForPropsView = waitForDOM(
     document,
     "#response-panel .properties-view",
@@ -73,26 +78,23 @@ add_task(async function() {
   );
 
   store.dispatch(Actions.toggleNetworkDetails());
-  EventUtils.sendMouseEvent(
-    { type: "click" },
-    document.querySelector("#response-tab")
-  );
+  clickOnSidebarTab(document, "response");
   await Promise.all([wait, waitForPropsView]);
 
   testJsonSectionInResponseTab(`"Hello JSONP!"`);
 
   wait = waitForDOM(document, "#response-panel .CodeMirror-code");
-  let payloadHeader = document.querySelector(
-    "#response-panel .accordion-item:last-child .accordion-header"
+  let rawResponseToggle = document.querySelector(
+    "#response-panel .raw-data-toggle-input .devtools-checkbox-toggle"
   );
-  clickElement(payloadHeader, monitor);
+  clickElement(rawResponseToggle, monitor);
   await wait;
 
   testResponseTab("$_0123Fun");
 
   info("Testing second request");
 
-  wait = waitForDOM(document, "#response-panel .accordion-item", 2);
+  wait = waitForDOM(document, "#response-panel .data-header");
   EventUtils.sendMouseEvent(
     { type: "mousedown" },
     document.querySelectorAll(".request-list-item")[1]
@@ -105,20 +107,20 @@ add_task(async function() {
     "#response-panel .properties-view",
     1
   );
-  payloadHeader = document.querySelector(
-    "#response-panel .accordion-item:first-child .accordion-header"
+  rawResponseToggle = document.querySelector(
+    "#response-panel .raw-data-toggle-input .devtools-checkbox-toggle"
   );
-  clickElement(payloadHeader, monitor);
+  clickElement(rawResponseToggle, monitor);
 
   await waitForPropsView;
 
   testJsonSectionInResponseTab(`"Hello weird JSONP!"`);
 
   wait = waitForDOM(document, "#response-panel .CodeMirror-code");
-  payloadHeader = document.querySelector(
-    "#response-panel .accordion-item:last-child .accordion-header"
+  rawResponseToggle = document.querySelector(
+    "#response-panel .raw-data-toggle-input .devtools-checkbox-toggle"
   );
-  clickElement(payloadHeader, monitor);
+  clickElement(rawResponseToggle, monitor);
   await wait;
 
   testResponseTab("$_4567Sad");
@@ -157,8 +159,7 @@ add_task(async function() {
       "The response error header doesn't have the intended visibility."
     );
     is(
-      tabpanel.querySelector(".accordion-item .accordion-header-label")
-        .textContent,
+      tabpanel.querySelector(".data-label").textContent,
       L10N.getFormatStr("jsonpScopeName", func),
       "The response json view has the intened visibility and correct title."
     );
@@ -171,12 +172,6 @@ add_task(async function() {
       tabpanel.querySelector(".responseImageBox") === null,
       true,
       "The response image box doesn't have the intended visibility."
-    );
-
-    is(
-      tabpanel.querySelectorAll(".accordion-item").length,
-      2,
-      "There should be 2 accordion items displayed in this tabpanel."
     );
     is(
       tabpanel.querySelectorAll(".empty-notice").length,

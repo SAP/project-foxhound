@@ -115,9 +115,11 @@ const Curl = {
       addPostData(text);
       ignoredHeaders.add("content-length");
     } else if (
-      utils.isUrlEncodedRequest(data) ||
-      ["PUT", "POST", "PATCH"].includes(data.method)
+      data.postDataText &&
+      (utils.isUrlEncodedRequest(data) ||
+        ["PUT", "POST", "PATCH"].includes(data.method))
     ) {
+      // When no postData exists, --data-raw should not be set
       postDataText = data.postDataText;
       addPostData("--data-raw");
       addPostData(utils.writePostDataTextParams(postDataText));
@@ -129,12 +131,12 @@ const Curl = {
     // Add -I (HEAD)
     // For servers that supports HEAD.
     // This will fetch the header of a document only.
-    if (data.method == "HEAD") {
+    if (data.method === "HEAD") {
       addParam("-I");
-    } else if (!(data.method == "GET" || data.method == "POST")) {
+    } else if (data.method !== "GET") {
       // Add method.
-      // For HEAD, GET and POST requests this is not necessary. GET is the
-      // default, if --data or --binary is added POST is used, -I implies HEAD.
+      // For HEAD and GET requests this is not necessary. GET is the
+      // default, -I implies HEAD.
       addParam("-X");
       addParam(data.method);
     }
@@ -147,10 +149,6 @@ const Curl = {
     }
     for (let i = 0; i < headers.length; i++) {
       const header = headers[i];
-      if (header.name.toLowerCase() === "accept-encoding") {
-        addParam("--compressed");
-        continue;
-      }
       if (ignoredHeaders.has(header.name.toLowerCase())) {
         continue;
       }
@@ -426,9 +424,16 @@ const CurlUtils = {
    */
   escapeStringWin: function(str) {
     /*
-       Replace dollar sign because of commands (e.g $(cmd.exe)) in
-       powershell when using double quotes.
-       Useful details http://www.rlmueller.net/PowerShellEscape.htm
+       Replace the backtick character ` with `` in order to escape it.
+       The backtick character is an escape character in PowerShell and
+       can, among other things, be used to disable the effect of some
+       of the other escapes created below.
+       Also see http://www.rlmueller.net/PowerShellEscape.htm for
+       useful details.
+
+       Replace dollar sign because of commands in powershell when using
+       double quotes. e.g $(calc.exe) Also see
+       http://www.rlmueller.net/PowerShellEscape.htm for details.
 
        Replace quote by double quote (but not by \") because it is
        recognized by both cmd.exe and MS Crt arguments parser.
@@ -452,9 +457,10 @@ const CurlUtils = {
     return (
       '"' +
       str
-        .replace(/\$/g, "`$")
-        .replace(/"/g, '""')
-        .replace(/%/g, '"%"')
+        .replaceAll("`", "``")
+        .replaceAll("$", "`$")
+        .replaceAll('"', '""')
+        .replaceAll("%", '"%"')
         .replace(/\\/g, "\\\\")
         .replace(/[\r\n]{1,2}/g, '"^$&$&"') +
       '"'

@@ -27,27 +27,6 @@
   height: 32px;
 }
 
-.downloadBlockedBadge {
-  margin: 0 5px;
-  background: url("chrome://browser/skin/downloads/download-blocked.svg") top right / 16px no-repeat;
-}
-
-.downloadBlockedBadge:-moz-locale-dir(rtl) {
-  background-position-x: left;
-}
-
-@item@[verdict="PotentiallyUnwanted"] .downloadBlockedBadge {
-  background-image: url("chrome://browser/skin/warning.svg");
-}
-
-@item@[verdict="Uncommon"] .downloadBlockedBadge {
-  background-image: url("chrome://browser/skin/info.svg");
-}
-
-@item@ > toolbarseparator {
-  display: none;
-}
-
 .downloadTarget {
   margin: 0;
 }
@@ -74,12 +53,12 @@
   margin: 0;
   border: none;
   color: inherit;
-  padding: 0 18px;
+  padding: 0 12px;
 }
 
 .downloadButton > .button-box {
-  appearance: none;
-  padding: 2px !important;
+  padding: 8px;
+  border-radius: 4px;
 }
 
 .downloadButton > .button-box > .button-icon {
@@ -95,42 +74,33 @@
 }
 
 .downloadButton:hover > .button-box {
-  background-color: graytext;
-  color: -moz-field;
-  border-radius: 50%;
+  background-color: color-mix(in srgb, currentColor 15%, transparent);
 }
 
 .downloadButton:hover:active > .button-box {
-  background-color: -moz-fieldtext;
-}
-
-@itemFocused@ > .downloadButton:hover > .button-box {
-  background-color: HighlightText;
-  color: Highlight;
-}
-
-@itemFocused@ > .downloadButton:hover:active > .button-box {
-  background-color: -moz-field;
-  color: -moz-fieldtext;
+  background-color: color-mix(in srgb, currentColor 30%, transparent);
 }
 
 /*** Button icons ***/
 
 .downloadIconCancel > .button-box > .button-icon {
-  list-style-image: url("chrome://browser/skin/panel-icon-cancel.svg");
+  list-style-image: url("chrome://global/skin/icons/close.svg");
 }
 
 .downloadIconShow > .button-box > .button-icon {
 %ifdef XP_MACOSX
-  list-style-image: url("chrome://browser/skin/panel-icon-magnifier.svg");
+  list-style-image: url("chrome://global/skin/icons/search-glass.svg");
 %else
-  list-style-image: url("chrome://browser/skin/panel-icon-folder.svg");
+  list-style-image: url("chrome://global/skin/icons/folder.svg");
 %endif
 }
 
 .downloadIconRetry > .button-box > .button-icon {
-  list-style-image: url("chrome://browser/skin/panel-icon-retry.svg");
+  list-style-image: url("chrome://global/skin/icons/reload.svg");
 }
 
 /*** Progressmeter ***/
 %include progressmeter.inc.css
+
+/*** Blocked iconography ***/
+%include download-blockedStates.inc.css

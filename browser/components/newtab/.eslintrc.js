@@ -32,29 +32,31 @@ module.exports = {
     "plugin:mozilla/mochitest-test",
     "plugin:mozilla/xpcshell-test",
     "plugin:prettier/recommended", // require("eslint-plugin-prettier")
-    "prettier/react", // require("eslint-config-prettier")
+    "prettier", // require("eslint-config-prettier")
   ],
   overrides: [
     {
       // These files use fluent-dom to insert content
       files: [
-        "content-src/aboutwelcome/components/HeroText.jsx",
         "content-src/aboutwelcome/components/Zap.jsx",
         "content-src/aboutwelcome/components/MultiStageAboutWelcome.jsx",
+        "content-src/aboutwelcome/components/MultiStageScreen.jsx",
+        "content-src/aboutwelcome/components/MultiStageProtonScreen.jsx",
+        "content-src/aboutwelcome/components/ReturnToAMO.jsx",
         "content-src/asrouter/templates/OnboardingMessage/**",
         "content-src/asrouter/templates/FirstRun/**",
-        "content-src/asrouter/templates/Trailhead/**",
-        "content-src/asrouter/templates/FullPageInterrupt/FullPageInterrupt.jsx",
-        "content-src/asrouter/components/FxASignupForm/FxASignupForm.jsx",
         "content-src/components/TopSites/**",
         "content-src/components/MoreRecommendations/MoreRecommendations.jsx",
         "content-src/components/CollapsibleSection/CollapsibleSection.jsx",
         "content-src/components/DiscoveryStreamComponents/DSEmptyState/DSEmptyState.jsx",
         "content-src/components/DiscoveryStreamComponents/DSPrivacyModal/DSPrivacyModal.jsx",
+        "content-src/components/CustomizeMenu/**",
       ],
       rules: {
         "jsx-a11y/anchor-has-content": 0,
         "jsx-a11y/heading-has-content": 0,
+        "jsx-a11y/label-has-associated-control": 0,
+        "jsx-a11y/no-onchange": 0,
       },
     },
     {

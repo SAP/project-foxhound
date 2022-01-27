@@ -30,6 +30,7 @@ PerformanceResourceTiming::PerformanceResourceTiming(
     : PerformanceEntry(aPerformance->GetParentObject(), aName, u"resource"_ns),
       mTimingData(std::move(aPerformanceTiming)),
       mPerformance(aPerformance) {
+  MOZ_RELEASE_ASSERT(mTimingData);
   MOZ_ASSERT(aPerformance, "Parent performance object should be provided");
   if (NS_IsMainThread()) {
     // Used to check if an addon content script has access to this timing.
@@ -48,16 +49,19 @@ DOMHighResTimeStamp PerformanceResourceTiming::StartTime() const {
   // Ignore zero values.  The RedirectStart and WorkerStart values
   // can come from earlier redirected channels prior to the AsyncOpen
   // time being recorded.
-  DOMHighResTimeStamp redirect =
-      mTimingData->RedirectStartHighRes(mPerformance);
-  redirect = redirect ? redirect : DBL_MAX;
+  if (mCachedStartTime.isNothing()) {
+    DOMHighResTimeStamp redirect =
+        mTimingData->RedirectStartHighRes(mPerformance);
+    redirect = redirect ? redirect : DBL_MAX;
 
-  DOMHighResTimeStamp worker = mTimingData->WorkerStartHighRes(mPerformance);
-  worker = worker ? worker : DBL_MAX;
+    DOMHighResTimeStamp worker = mTimingData->WorkerStartHighRes(mPerformance);
+    worker = worker ? worker : DBL_MAX;
 
-  DOMHighResTimeStamp asyncOpen = mTimingData->AsyncOpenHighRes(mPerformance);
+    DOMHighResTimeStamp asyncOpen = mTimingData->AsyncOpenHighRes(mPerformance);
 
-  return std::min(asyncOpen, std::min(redirect, worker));
+    mCachedStartTime.emplace(std::min(asyncOpen, std::min(redirect, worker)));
+  }
+  return mCachedStartTime.value();
 }
 
 JSObject* PerformanceResourceTiming::WrapObject(
@@ -74,10 +78,8 @@ size_t PerformanceResourceTiming::SizeOfExcludingThis(
     mozilla::MallocSizeOf aMallocSizeOf) const {
   return PerformanceEntry::SizeOfExcludingThis(aMallocSizeOf) +
          mInitiatorType.SizeOfExcludingThisIfUnshared(aMallocSizeOf) +
-         (mTimingData
-              ? mTimingData->NextHopProtocol().SizeOfExcludingThisIfUnshared(
-                    aMallocSizeOf)
-              : 0);
+         mTimingData->NextHopProtocol().SizeOfExcludingThisIfUnshared(
+             aMallocSizeOf);
 }
 
 void PerformanceResourceTiming::GetServerTiming(
@@ -102,10 +104,6 @@ void PerformanceResourceTiming::GetServerTiming(
 
 bool PerformanceResourceTiming::TimingAllowedForCaller(
     Maybe<nsIPrincipal*>& aCaller) const {
-  if (!mTimingData) {
-    return false;
-  }
-
   if (mTimingData->TimingAllowed()) {
     return true;
   }
@@ -116,12 +114,9 @@ bool PerformanceResourceTiming::TimingAllowedForCaller(
 }
 
 bool PerformanceResourceTiming::ReportRedirectForCaller(
-    Maybe<nsIPrincipal*>& aCaller) const {
-  if (!mTimingData) {
-    return false;
-  }
-
-  if (mTimingData->ShouldReportCrossOriginRedirect()) {
+    Maybe<nsIPrincipal*>& aCaller, bool aEnsureSameOriginAndIgnoreTAO) const {
+  if (mTimingData->ShouldReportCrossOriginRedirect(
+          aEnsureSameOriginAndIgnoreTAO)) {
     return true;
   }
 

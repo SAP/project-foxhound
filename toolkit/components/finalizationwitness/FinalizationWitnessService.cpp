@@ -7,8 +7,11 @@
 #include "nsString.h"
 #include "jsapi.h"
 #include "js/CallNonGenericMethod.h"
+#include "js/Object.h"              // JS::GetClass, JS::GetReservedSlot
+#include "js/PropertyAndElement.h"  // JS_DefineFunctions
 #include "js/PropertySpec.h"
 #include "mozJSComponentLoader.h"
+#include "nsIThread.h"
 #include "nsZipArchive.h"
 
 #include "mozilla/Scoped.h"
@@ -73,7 +76,7 @@ enum { WITNESS_SLOT_EVENT, WITNESS_INSTANCES_SLOTS };
  */
 already_AddRefed<FinalizationEvent> ExtractFinalizationEvent(
     JSObject* objSelf) {
-  JS::Value slotEvent = JS_GetReservedSlot(objSelf, WITNESS_SLOT_EVENT);
+  JS::Value slotEvent = JS::GetReservedSlot(objSelf, WITNESS_SLOT_EVENT);
   if (slotEvent.isUndefined()) {
     // Forget() has been called
     return nullptr;
@@ -124,7 +127,7 @@ static const JSClass sWitnessClass = {
     &sWitnessClassOps};
 
 bool IsWitness(JS::Handle<JS::Value> v) {
-  return v.isObject() && JS_GetClass(&v.toObject()) == &sWitnessClass;
+  return v.isObject() && JS::GetClass(&v.toObject()) == &sWitnessClass;
 }
 
 /**

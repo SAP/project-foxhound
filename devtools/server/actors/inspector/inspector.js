@@ -53,7 +53,6 @@
 const Services = require("Services");
 const protocol = require("devtools/shared/protocol");
 const { LongStringActor } = require("devtools/server/actors/string");
-const defer = require("devtools/shared/defer");
 
 const { inspectorSpec } = require("devtools/shared/specs/inspector");
 
@@ -77,37 +76,19 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(
   this,
   "PageStyleActor",
-  "devtools/server/actors/styles",
+  "devtools/server/actors/page-style",
   true
 );
 loader.lazyRequireGetter(
   this,
-  "HighlighterActor",
-  "devtools/server/actors/highlighters",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "CustomHighlighterActor",
-  "devtools/server/actors/highlighters",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "isTypeRegistered",
-  "devtools/server/actors/highlighters",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "HighlighterEnvironment",
+  ["CustomHighlighterActor", "isTypeRegistered", "HighlighterEnvironment"],
   "devtools/server/actors/highlighters",
   true
 );
 loader.lazyRequireGetter(
   this,
   "CompatibilityActor",
-  "devtools/server/actors/compatibility",
+  "devtools/server/actors/compatibility/compatibility",
   true
 );
 
@@ -133,7 +114,6 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
     this.destroyEyeDropper();
 
     this._compatibility = null;
-    this._highlighterPromise = null;
     this._pageStylePromise = null;
     this._walkerPromise = null;
     this.walker = null;
@@ -149,28 +129,27 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
       return this._walkerPromise;
     }
 
-    const deferred = defer();
-    this._walkerPromise = deferred.promise;
+    this._walkerPromise = new Promise(resolve => {
+      const domReady = () => {
+        const targetActor = this.targetActor;
+        this.walker = WalkerActor(this.conn, targetActor, options);
+        this.manage(this.walker);
+        this.walker.once("destroyed", () => {
+          this._walkerPromise = null;
+          this._pageStylePromise = null;
+        });
+        resolve(this.walker);
+      };
 
-    const domReady = () => {
-      const targetActor = this.targetActor;
-      this.walker = WalkerActor(this.conn, targetActor, options);
-      this.manage(this.walker);
-      this.walker.once("destroyed", () => {
-        this._walkerPromise = null;
-        this._pageStylePromise = null;
-      });
-      deferred.resolve(this.walker);
-    };
-
-    if (this.window.document.readyState === "loading") {
-      this.window.addEventListener("DOMContentLoaded", domReady, {
-        capture: true,
-        once: true,
-      });
-    } else {
-      domReady();
-    }
+      if (this.window.document.readyState === "loading") {
+        this.window.addEventListener("DOMContentLoaded", domReady, {
+          capture: true,
+          once: true,
+        });
+      } else {
+        domReady();
+      }
+    });
 
     return this._walkerPromise;
   },
@@ -199,32 +178,6 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
   },
 
   /**
-   * The most used highlighter actor is the HighlighterActor which can be
-   * conveniently retrieved by this method.
-   * The same instance will always be returned by this method when called
-   * several times.
-   * The highlighter actor returned here is used to highlighter elements's
-   * box-models from the markup-view, box model, console, debugger, ... as
-   * well as select elements with the pointer (pick).
-   *
-   * @param {Boolean} autohide Optionally autohide the highlighter after an
-   * element has been picked
-   * @return {HighlighterActor}
-   */
-  getHighlighter: function(autohide) {
-    if (this._highlighterPromise) {
-      return this._highlighterPromise;
-    }
-
-    this._highlighterPromise = this.getWalker().then(walker => {
-      const highlighter = HighlighterActor(this, autohide);
-      this.manage(highlighter);
-      return highlighter;
-    });
-    return this._highlighterPromise;
-  },
-
-  /**
    * If consumers need to display several highlighters at the same time or
    * different types of highlighters, then this method should be used, passing
    * the type name of the highlighter needed as argument.
@@ -235,9 +188,14 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
    * @return {Highlighter} The highlighter actor instance or null if the
    * typeName passed doesn't match any available highlighter
    */
-  getHighlighterByType: function(typeName) {
+  getHighlighterByType: async function(typeName) {
     if (isTypeRegistered(typeName)) {
-      return CustomHighlighterActor(this, typeName);
+      const highlighterActor = CustomHighlighterActor(this, typeName);
+      if (highlighterActor.instance.isReady) {
+        await highlighterActor.instance.isReady;
+      }
+
+      return highlighterActor;
     }
     return null;
   },
@@ -296,6 +254,7 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
     this._highlighterEnv = new HighlighterEnvironment();
     this._highlighterEnv.initFromTargetActor(this.targetActor);
     this._eyeDropper = new EyeDropper(this._highlighterEnv);
+    return this._eyeDropper.isReady;
   },
 
   /**
@@ -317,8 +276,8 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
    * cancels the picker.
    * @param {Object} options
    */
-  pickColorFromPage: function(options) {
-    this.createEyeDropper();
+  pickColorFromPage: async function(options) {
+    await this.createEyeDropper();
     this._eyeDropper.show(this.window.document.documentElement, options);
     this._eyeDropper.once("selected", this._onColorPicked);
     this._eyeDropper.once("canceled", this._onColorPickCanceled);
@@ -341,7 +300,7 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
 
   /**
    * Check if the current document supports highlighters using a canvasFrame anonymous
-   * content container (ie all highlighters except the SimpleOutlineHighlighter).
+   * content container.
    * It is impossible to detect the feature programmatically as some document types simply
    * don't render the canvasFrame without throwing any error.
    */

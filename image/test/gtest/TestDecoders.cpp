@@ -14,6 +14,7 @@
 #include "ImageOps.h"
 #include "imgIContainer.h"
 #include "ImageFactory.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/gfx/2D.h"
 #include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
@@ -57,7 +58,7 @@ static already_AddRefed<SourceSurface> CheckDecoderState(
             bool(progress & FLAG_IS_ANIMATED));
 
   // The decoder should get the correct size.
-  IntSize size = aDecoder->Size();
+  OrientedIntSize size = aDecoder->Size();
   EXPECT_EQ(aTestCase.mSize.width, size.width);
   EXPECT_EQ(aTestCase.mSize.height, size.height);
 
@@ -315,7 +316,7 @@ static void CheckAnimationDecoderResults(const ImageTestCase& aTestCase,
   }
 
   // The decoder should get the correct size.
-  IntSize size = aDecoder->Size();
+  OrientedIntSize size = aDecoder->Size();
   EXPECT_EQ(aTestCase.mSize.width, size.width);
   EXPECT_EQ(aTestCase.mSize.height, size.height);
 
@@ -437,12 +438,12 @@ static void CheckDecoderFrameFirst(const ImageTestCase& aTestCase) {
   ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   // Write the data into the image.
-  rv = image->OnImageDataAvailable(nullptr, nullptr, inputStream, 0,
+  rv = image->OnImageDataAvailable(nullptr, inputStream, 0,
                                    static_cast<uint32_t>(length));
   ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   // Let the image know we've sent all the data.
-  rv = image->OnImageDataComplete(nullptr, nullptr, NS_OK, true);
+  rv = image->OnImageDataComplete(nullptr, NS_OK, true);
   ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   RefPtr<ProgressTracker> tracker = image->GetProgressTracker();
@@ -547,12 +548,12 @@ static void CheckDecoderFrameCurrent(const ImageTestCase& aTestCase) {
   ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   // Write the data into the image.
-  rv = image->OnImageDataAvailable(nullptr, nullptr, inputStream, 0,
+  rv = image->OnImageDataAvailable(nullptr, inputStream, 0,
                                    static_cast<uint32_t>(length));
   ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   // Let the image know we've sent all the data.
-  rv = image->OnImageDataComplete(nullptr, nullptr, NS_OK, true);
+  rv = image->OnImageDataComplete(nullptr, NS_OK, true);
   ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   RefPtr<ProgressTracker> tracker = image->GetProgressTracker();
@@ -679,6 +680,9 @@ IMAGE_GTEST_DECODER_BASE_F(BMP)
 IMAGE_GTEST_DECODER_BASE_F(ICO)
 IMAGE_GTEST_DECODER_BASE_F(Icon)
 IMAGE_GTEST_DECODER_BASE_F(WebP)
+#ifdef MOZ_JXL
+IMAGE_GTEST_DECODER_BASE_F(JXL)
+#endif
 
 TEST_F(ImageDecoders, ICOWithANDMaskDownscaleDuringDecode) {
   CheckDownscaleDuringDecode(DownscaledTransparentICOWithANDMaskTestCase());
@@ -704,6 +708,150 @@ TEST_F(ImageDecoders, AVIFSingleChunk) {
   CheckDecoderSingleChunk(GreenAVIFTestCase());
 }
 
+TEST_F(ImageDecoders, AVIFSingleChunkNonzeroReserved) {
+  CheckDecoderSingleChunk(NonzeroReservedAVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkMultipleColr) {
+  CheckDecoderSingleChunk(MultipleColrAVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkTransparent10bit420) {
+  CheckDecoderSingleChunk(Transparent10bit420AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkTransparent10bit422) {
+  CheckDecoderSingleChunk(Transparent10bit422AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkTransparent10bit444) {
+  CheckDecoderSingleChunk(Transparent10bit444AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkTransparent12bit420) {
+  CheckDecoderSingleChunk(Transparent12bit420AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkTransparent12bit422) {
+  CheckDecoderSingleChunk(Transparent12bit422AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkTransparent12bit444) {
+  CheckDecoderSingleChunk(Transparent12bit444AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkTransparent8bit420) {
+  CheckDecoderSingleChunk(Transparent8bit420AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkTransparent8bit422) {
+  CheckDecoderSingleChunk(Transparent8bit422AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkTransparent8bit444) {
+  CheckDecoderSingleChunk(Transparent8bit444AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray8bitLimitedRangeBT601) {
+  CheckDecoderSingleChunk(Gray8bitLimitedRangeBT601AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray8bitLimitedRangeBT709) {
+  CheckDecoderSingleChunk(Gray8bitLimitedRangeBT709AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray8bitLimitedRangeBT2020) {
+  CheckDecoderSingleChunk(Gray8bitLimitedRangeBT2020AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray8bitFullRangeBT601) {
+  CheckDecoderSingleChunk(Gray8bitFullRangeBT601AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray8bitFullRangeBT709) {
+  CheckDecoderSingleChunk(Gray8bitFullRangeBT709AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray8bitFullRangeBT2020) {
+  CheckDecoderSingleChunk(Gray8bitFullRangeBT2020AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray10bitLimitedRangeBT601) {
+  CheckDecoderSingleChunk(Gray10bitLimitedRangeBT601AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray10bitLimitedRangeBT709) {
+  CheckDecoderSingleChunk(Gray10bitLimitedRangeBT709AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray10bitLimitedRangeBT2020) {
+  CheckDecoderSingleChunk(Gray10bitLimitedRangeBT2020AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray10bitFullRangeBT601) {
+  CheckDecoderSingleChunk(Gray10bitFullRangeBT601AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray10bitFullRangeBT709) {
+  CheckDecoderSingleChunk(Gray10bitFullRangeBT709AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray10bitFullRangeBT2020) {
+  CheckDecoderSingleChunk(Gray10bitFullRangeBT2020AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray12bitLimitedRangeBT601) {
+  CheckDecoderSingleChunk(Gray12bitLimitedRangeBT601AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray12bitLimitedRangeBT709) {
+  CheckDecoderSingleChunk(Gray12bitLimitedRangeBT709AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray12bitLimitedRangeBT2020) {
+  CheckDecoderSingleChunk(Gray12bitLimitedRangeBT2020AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray12bitFullRangeBT601) {
+  CheckDecoderSingleChunk(Gray12bitFullRangeBT601AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray12bitFullRangeBT709) {
+  CheckDecoderSingleChunk(Gray12bitFullRangeBT709AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray12bitFullRangeBT2020) {
+  CheckDecoderSingleChunk(Gray12bitFullRangeBT2020AVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray8bitLimitedRangeGrayscale) {
+  CheckDecoderSingleChunk(Gray8bitLimitedRangeGrayscaleAVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray8bitFullRangeGrayscale) {
+  CheckDecoderSingleChunk(Gray8bitFullRangeGrayscaleAVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray10bitLimitedRangeGrayscale) {
+  CheckDecoderSingleChunk(Gray10bitLimitedRangeGrayscaleAVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray10bitFullRangeGrayscale) {
+  CheckDecoderSingleChunk(Gray10bitFullRangeGrayscaleAVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray12bitLimitedRangeGrayscale) {
+  CheckDecoderSingleChunk(Gray12bitLimitedRangeGrayscaleAVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFSingleChunkGray12bitFullRangeGrayscale) {
+  CheckDecoderSingleChunk(Gray12bitFullRangeGrayscaleAVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AVIFMultiLayerSingleChunk) {
+  CheckDecoderSingleChunk(MultiLayerAVIFTestCase());
+}
+
 // This test must use the decode pool in order to check for regressions
 // of crashing the dav1d decoder when the ImgDecoder threads have a standard-
 // sized stack.
@@ -726,6 +874,12 @@ TEST_F(ImageDecoders, AVIFLargeMultiChunk) {
 TEST_F(ImageDecoders, AVIFDownscaleDuringDecode) {
   CheckDownscaleDuringDecode(DownscaledAVIFTestCase());
 }
+
+#ifdef MOZ_JXL
+TEST_F(ImageDecoders, JXLLargeMultiChunk) {
+  CheckDecoderMultiChunk(LargeJXLTestCase(), /* aChunkSize */ 64);
+}
+#endif
 
 TEST_F(ImageDecoders, AnimatedGIFSingleChunk) {
   CheckDecoderSingleChunk(GreenFirstFrameAnimatedGIFTestCase());
@@ -799,6 +953,16 @@ TEST_F(ImageDecoders, CorruptICOWithBadBppSingleChunk) {
   CheckDecoderSingleChunk(CorruptICOWithBadBppTestCase());
 }
 
+// Running this test under emulation for Android 7 on x86_64 seems to result
+// in the large allocation succeeding, but leaving so little memory left the
+// system falls over and it kills the test run, so we skip it instead.
+// See bug 1655846 for more details.
+#ifndef ANDROID
+TEST_F(ImageDecoders, CorruptAVIFSingleChunk) {
+  CheckDecoderSingleChunk(CorruptAVIFTestCase());
+}
+#endif
+
 TEST_F(ImageDecoders, AnimatedGIFWithFRAME_FIRST) {
   CheckDecoderFrameFirst(GreenFirstFrameAnimatedGIFTestCase());
 }
@@ -815,37 +979,11 @@ TEST_F(ImageDecoders, AnimatedGIFWithExtraImageSubBlocks) {
   // extra data shouldn't confuse the decoder or cause the decode to fail.
 
   // Create an image.
-  RefPtr<Image> image = ImageFactory::CreateAnonymousImage(
-      nsDependentCString(testCase.mMimeType));
-  ASSERT_TRUE(!image->HasError());
-
-  nsCOMPtr<nsIInputStream> inputStream = LoadFile(testCase.mPath);
-  ASSERT_TRUE(inputStream);
-
-  // Figure out how much data we have.
-  uint64_t length;
-  nsresult rv = inputStream->Available(&length);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
-
-  // Write the data into the image.
-  rv = image->OnImageDataAvailable(nullptr, nullptr, inputStream, 0,
-                                   static_cast<uint32_t>(length));
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
-
-  // Let the image know we've sent all the data.
-  rv = image->OnImageDataComplete(nullptr, nullptr, NS_OK, true);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
-
-  RefPtr<ProgressTracker> tracker = image->GetProgressTracker();
-  tracker->SyncNotifyProgress(FLAG_LOAD_COMPLETE);
-
-  // Use GetFrame() to force a sync decode of the image.
-  RefPtr<SourceSurface> surface = image->GetFrame(
-      imgIContainer::FRAME_CURRENT, imgIContainer::FLAG_SYNC_DECODE);
+  RefPtr<Image> image = TestCaseToDecodedImage(testCase);
 
   // Ensure that the image's metadata meets our expectations.
   IntSize imageSize(0, 0);
-  rv = image->GetWidth(&imageSize.width);
+  nsresult rv = image->GetWidth(&imageSize.width);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
   rv = image->GetHeight(&imageSize.height);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
@@ -853,6 +991,7 @@ TEST_F(ImageDecoders, AnimatedGIFWithExtraImageSubBlocks) {
   EXPECT_EQ(testCase.mSize.width, imageSize.width);
   EXPECT_EQ(testCase.mSize.height, imageSize.height);
 
+  RefPtr<ProgressTracker> tracker = image->GetProgressTracker();
   Progress imageProgress = tracker->GetProgress();
 
   EXPECT_TRUE(bool(imageProgress & FLAG_HAS_TRANSPARENCY) == false);
@@ -918,12 +1057,12 @@ TEST_F(ImageDecoders, MultipleSizesICOSingleChunk) {
   ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   // Write the data into the image.
-  rv = image->OnImageDataAvailable(nullptr, nullptr, inputStream, 0,
+  rv = image->OnImageDataAvailable(nullptr, inputStream, 0,
                                    static_cast<uint32_t>(length));
   ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   // Let the image know we've sent all the data.
-  rv = image->OnImageDataComplete(nullptr, nullptr, NS_OK, true);
+  rv = image->OnImageDataComplete(nullptr, NS_OK, true);
   ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   RefPtr<ProgressTracker> tracker = image->GetProgressTracker();
@@ -976,4 +1115,9 @@ TEST_F(ImageDecoders, MultipleSizesICOSingleChunk) {
   for (int i = 0; i < 6; ++i) {
     EXPECT_EQ(expectedSizes[i], nativeSizes[i]);
   }
+}
+
+TEST_F(ImageDecoders, ExifResolutionEven) {
+  RefPtr<Image> image = TestCaseToDecodedImage(ExifResolutionTestCase());
+  EXPECT_EQ(image->GetResolution(), Resolution(2.0, 2.0));
 }

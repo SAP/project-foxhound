@@ -48,6 +48,7 @@ add_task(async function test_browser_settings() {
     "browser.tabs.insertRelatedAfterCurrent": true,
     "browser.tabs.insertAfterCurrent": false,
     "browser.display.document_color_use": 1,
+    "layout.css.prefers-color-scheme.content-override": 3,
     "browser.display.use_document_fonts": 1,
     "browser.zoom.full": true,
     "browser.zoom.siteSpecific": true,
@@ -56,7 +57,18 @@ add_task(async function test_browser_settings() {
   async function background() {
     let listeners = new Set([]);
     browser.test.onMessage.addListener(async (msg, apiName, value) => {
-      let apiObj = browser.browserSettings[apiName];
+      let apiObj = browser.browserSettings;
+      let apiNameSplit = apiName.split(".");
+      for (let apiPart of apiNameSplit) {
+        apiObj = apiObj[apiPart];
+      }
+      if (msg == "get") {
+        browser.test.sendMessage("settingData", await apiObj.get({}));
+        return;
+      }
+
+      // set and setNoOp
+
       // Don't add more than one listner per apiName.  We leave the
       // listener to ensure we do not get more calls than we expect.
       if (!listeners.has(apiName)) {
@@ -207,12 +219,14 @@ add_task(async function test_browser_settings() {
     });
   }
 
-  await testSetting("ftpProtocolEnabled", false, {
-    "network.ftp.enabled": false,
-  });
-  await testSetting("ftpProtocolEnabled", true, {
-    "network.ftp.enabled": true,
-  });
+  extension.sendMessage("get", "ftpProtocolEnabled");
+  let data = await extension.awaitMessage("settingData");
+  equal(data.value, false);
+  equal(
+    data.levelOfControl,
+    "not_controllable",
+    `ftpProtocolEnabled is not controllable.`
+  );
 
   await testSetting("newTabPosition", "afterCurrent", {
     "browser.tabs.insertRelatedAfterCurrent": false,
@@ -258,6 +272,19 @@ add_task(async function test_browser_settings() {
     "browser.display.document_color_use": 2,
   });
 
+  await testSetting("overrideContentColorScheme", "dark", {
+    "layout.css.prefers-color-scheme.content-override": 0,
+  });
+  await testSetting("overrideContentColorScheme", "light", {
+    "layout.css.prefers-color-scheme.content-override": 1,
+  });
+  await testSetting("overrideContentColorScheme", "system", {
+    "layout.css.prefers-color-scheme.content-override": 2,
+  });
+  await testSetting("overrideContentColorScheme", "browser", {
+    "layout.css.prefers-color-scheme.content-override": 3,
+  });
+
   await testSetting("useDocumentFonts", false, {
     "browser.display.use_document_fonts": 0,
   });
@@ -277,6 +304,30 @@ add_task(async function test_browser_settings() {
   });
   await testSetting("zoomSiteSpecific", false, {
     "browser.zoom.siteSpecific": false,
+  });
+
+  await testSetting("colorManagement.mode", "off", {
+    "gfx.color_management.mode": 0,
+  });
+  await testSetting("colorManagement.mode", "full", {
+    "gfx.color_management.mode": 1,
+  });
+  await testSetting("colorManagement.mode", "tagged_only", {
+    "gfx.color_management.mode": 2,
+  });
+
+  await testSetting("colorManagement.useNativeSRGB", false, {
+    "gfx.color_management.native_srgb": false,
+  });
+  await testSetting("colorManagement.useNativeSRGB", true, {
+    "gfx.color_management.native_srgb": true,
+  });
+
+  await testSetting("colorManagement.useWebRenderCompositor", false, {
+    "gfx.webrender.compositor": false,
+  });
+  await testSetting("colorManagement.useWebRenderCompositor", true, {
+    "gfx.webrender.compositor": true,
   });
 
   await extension.unload();
@@ -301,6 +352,42 @@ add_task(async function test_bad_value() {
       browser.browserSettings.overrideDocumentColors.set({ value: "bad" }),
       /bad is not a valid value for overrideDocumentColors/,
       "overrideDocumentColors.set rejects with an invalid value."
+    );
+
+    await browser.test.assertRejects(
+      browser.browserSettings.overrideContentColorScheme.set({ value: 0 }),
+      /0 is not a valid value for overrideContentColorScheme/,
+      "overrideContentColorScheme.set rejects with an invalid value."
+    );
+
+    await browser.test.assertRejects(
+      browser.browserSettings.overrideContentColorScheme.set({ value: "bad" }),
+      /bad is not a valid value for overrideContentColorScheme/,
+      "overrideContentColorScheme.set rejects with an invalid value."
+    );
+
+    await browser.test.assertRejects(
+      browser.browserSettings.zoomFullPage.set({ value: 0 }),
+      /0 is not a valid value for zoomFullPage/,
+      "zoomFullPage.set rejects with an invalid value."
+    );
+
+    await browser.test.assertRejects(
+      browser.browserSettings.zoomFullPage.set({ value: "bad" }),
+      /bad is not a valid value for zoomFullPage/,
+      "zoomFullPage.set rejects with an invalid value."
+    );
+
+    await browser.test.assertRejects(
+      browser.browserSettings.zoomSiteSpecific.set({ value: 0 }),
+      /0 is not a valid value for zoomSiteSpecific/,
+      "zoomSiteSpecific.set rejects with an invalid value."
+    );
+
+    await browser.test.assertRejects(
+      browser.browserSettings.zoomSiteSpecific.set({ value: "bad" }),
+      /bad is not a valid value for zoomSiteSpecific/,
+      "zoomSiteSpecific.set rejects with an invalid value."
     );
 
     browser.test.sendMessage("done");

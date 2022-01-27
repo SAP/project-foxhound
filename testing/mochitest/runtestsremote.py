@@ -2,22 +2,23 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+import datetime
 import os
 import posixpath
+import shutil
 import sys
+import tempfile
 import traceback
 import uuid
 
-sys.path.insert(
-    0, os.path.abspath(
-        os.path.realpath(
-            os.path.dirname(__file__))))
+sys.path.insert(0, os.path.abspath(os.path.realpath(os.path.dirname(__file__))))
 
-from remoteautomation import RemoteAutomation, fennecLogcatFilters
 from runtests import MochitestDesktop, MessageLogger
 from mochitest_options import MochitestArgumentParser, build_obj
-from mozdevice import ADBDeviceFactory, ADBTimeoutError
+from mozdevice import ADBDeviceFactory, ADBTimeoutError, RemoteProcessMonitor
 from mozscreenshot import dump_screen, dump_device_screen
+import mozcrash
 import mozinfo
 
 SCRIPT_DIR = os.path.abspath(os.path.realpath(os.path.dirname(__file__)))
@@ -31,26 +32,34 @@ class MochiRemote(MochitestDesktop):
         MochitestDesktop.__init__(self, options.flavor, vars(options))
 
         verbose = False
-        if options.log_mach_verbose or options.log_tbpl_level == 'debug' or \
-           options.log_mach_level == 'debug' or options.log_raw_level == 'debug':
+        if (
+            options.log_mach_verbose
+            or options.log_tbpl_level == "debug"
+            or options.log_mach_level == "debug"
+            or options.log_raw_level == "debug"
+        ):
             verbose = True
-        if hasattr(options, 'log'):
-            delattr(options, 'log')
+        if hasattr(options, "log"):
+            delattr(options, "log")
 
         self.certdbNew = True
         self.chromePushed = False
 
-        expected = options.app.split('/')[-1]
-        self.device = ADBDeviceFactory(adb=options.adbPath or 'adb',
-                                       device=options.deviceSerial,
-                                       test_root=options.remoteTestRoot,
-                                       verbose=verbose,
-                                       run_as_package=expected)
+        expected = options.app.split("/")[-1]
+        self.device = ADBDeviceFactory(
+            adb=options.adbPath or "adb",
+            device=options.deviceSerial,
+            test_root=options.remoteTestRoot,
+            verbose=verbose,
+            run_as_package=expected,
+        )
 
         if options.remoteTestRoot is None:
             options.remoteTestRoot = self.device.test_root
         options.dumpOutputDirectory = options.remoteTestRoot
-        self.remoteLogFile = posixpath.join(options.remoteTestRoot, "logs", "mochitest.log")
+        self.remoteLogFile = posixpath.join(
+            options.remoteTestRoot, "logs", "mochitest.log"
+        )
         logParent = posixpath.dirname(self.remoteLogFile)
         self.device.rm(logParent, force=True, recursive=True)
         self.device.mkdir(logParent, parents=True)
@@ -58,16 +67,11 @@ class MochiRemote(MochitestDesktop):
         self.remoteProfile = posixpath.join(options.remoteTestRoot, "profile")
         self.device.rm(self.remoteProfile, force=True, recursive=True)
 
-        self.counts = dict()
         self.message_logger = MessageLogger(logger=None)
         self.message_logger.logger = self.log
-        process_args = {'messageLogger': self.message_logger, 'counts': self.counts}
-        self.automation = RemoteAutomation(self.device, options.remoteappname, self.remoteProfile,
-                                           self.remoteLogFile, processArgs=process_args)
-        self.environment = self.automation.environment
 
         # Check that Firefox is installed
-        expected = options.app.split('/')[-1]
+        expected = options.app.split("/")[-1]
         if not self.device.is_app_installed(expected):
             raise Exception("%s is not installed on this device" % expected)
 
@@ -79,37 +83,38 @@ class MochiRemote(MochitestDesktop):
         self.device.rm(self.remoteCache, force=True, recursive=True)
 
         # move necko cache to a location that can be cleaned up
-        options.extraPrefs += ["browser.cache.disk.parent_directory=%s" % self.remoteCache]
+        options.extraPrefs += [
+            "browser.cache.disk.parent_directory=%s" % self.remoteCache
+        ]
 
         self.remoteMozLog = posixpath.join(options.remoteTestRoot, "mozlog")
         self.device.rm(self.remoteMozLog, force=True, recursive=True)
         self.device.mkdir(self.remoteMozLog, parents=True)
 
-        self.remoteChromeTestDir = posixpath.join(
-            options.remoteTestRoot,
-            "chrome")
+        self.remoteChromeTestDir = posixpath.join(options.remoteTestRoot, "chrome")
         self.device.rm(self.remoteChromeTestDir, force=True, recursive=True)
         self.device.mkdir(self.remoteChromeTestDir, parents=True)
 
-        procName = options.app.split('/')[-1]
-        self.device.stop_application(procName)
-        if self.device.process_exist(procName):
-            self.log.warning("unable to kill %s before running tests!" % procName)
+        self.appName = options.remoteappname
+        self.device.stop_application(self.appName)
+        if self.device.process_exist(self.appName):
+            self.log.warning("unable to kill %s before running tests!" % self.appName)
 
         # Add Android version (SDK level) to mozinfo so that manifest entries
         # can be conditional on android_version.
         self.log.info(
-            "Android sdk version '%s'; will use this to filter manifests" %
-            str(self.device.version))
-        mozinfo.info['android_version'] = str(self.device.version)
-        mozinfo.info['is_fennec'] = not ('geckoview' in options.app)
-        mozinfo.info['is_emulator'] = self.device._device_serial.startswith('emulator-')
+            "Android sdk version '%s'; will use this to filter manifests"
+            % str(self.device.version)
+        )
+        mozinfo.info["android_version"] = str(self.device.version)
+        mozinfo.info["is_fennec"] = not ("geckoview" in options.app)
+        mozinfo.info["is_emulator"] = self.device._device_serial.startswith("emulator-")
 
     def cleanup(self, options, final=False):
         if final:
             self.device.rm(self.remoteChromeTestDir, force=True, recursive=True)
             self.chromePushed = False
-            uploadDir = os.environ.get('MOZ_UPLOAD_DIR', None)
+            uploadDir = os.environ.get("MOZ_UPLOAD_DIR", None)
             if uploadDir and self.device.is_dir(self.remoteMozLog):
                 self.device.pull(self.remoteMozLog, uploadDir)
         self.device.rm(self.remoteLogFile, force=True)
@@ -121,10 +126,11 @@ class MochiRemote(MochitestDesktop):
     def dumpScreen(self, utilityPath):
         if self.haveDumpedScreen:
             self.log.info(
-                "Not taking screenshot here: see the one that was previously logged")
+                "Not taking screenshot here: see the one that was previously logged"
+            )
             return
         self.haveDumpedScreen = True
-        if self.device._device_serial.startswith('emulator-'):
+        if self.device._device_serial.startswith("emulator-"):
             dump_screen(utilityPath, self.log)
         else:
             dump_device_screen(self.device, self.log)
@@ -144,7 +150,7 @@ class MochiRemote(MochitestDesktop):
     # ones that the base class understands.  This is necessary for the web
     # server, SSL tunnel and profile building functions.
     def switchToLocalPaths(self, options):
-        """ Set local paths in the options, return a function that will restore remote values """
+        """Set local paths in the options, return a function that will restore remote values"""
         remoteXrePath = options.xrePath
         remoteProfilePath = options.profilePath
         remoteUtilityPath = options.utilityPath
@@ -157,12 +163,13 @@ class MochiRemote(MochitestDesktop):
         options.xrePath = self.findPath(paths)
         if options.xrePath is None:
             self.log.error(
-                "unable to find xulrunner path for %s, please specify with --xre-path" %
-                os.name)
+                "unable to find xulrunner path for %s, please specify with --xre-path"
+                % os.name
+            )
             sys.exit(1)
 
         xpcshell = "xpcshell"
-        if (os.name == "nt"):
+        if os.name == "nt":
             xpcshell += ".exe"
 
         if options.utilityPath:
@@ -173,15 +180,18 @@ class MochiRemote(MochitestDesktop):
 
         if options.utilityPath is None:
             self.log.error(
-                "unable to find utility path for %s, please specify with --utility-path" %
-                os.name)
+                "unable to find utility path for %s, please specify with --utility-path"
+                % os.name
+            )
             sys.exit(1)
 
         xpcshell_path = os.path.join(options.utilityPath, xpcshell)
-        if RemoteAutomation.elf_arm(xpcshell_path):
-            self.log.error('xpcshell at %s is an ARM binary; please use '
-                           'the --utility-path argument to specify the path '
-                           'to a desktop version.' % xpcshell_path)
+        if RemoteProcessMonitor.elf_arm(xpcshell_path):
+            self.log.error(
+                "xpcshell at %s is an ARM binary; please use "
+                "the --utility-path argument to specify the path "
+                "to a desktop version." % xpcshell_path
+            )
             sys.exit(1)
 
         if self.localProfile:
@@ -197,13 +207,9 @@ class MochiRemote(MochitestDesktop):
         return fixup
 
     def startServers(self, options, debuggerInfo, public=None):
-        """ Create the servers on the host and start them up """
+        """Create the servers on the host and start them up"""
         restoreRemotePaths = self.switchToLocalPaths(options)
-        MochitestDesktop.startServers(
-            self,
-            options,
-            debuggerInfo,
-            public=True)
+        MochitestDesktop.startServers(self, options, debuggerInfo, public=True)
         restoreRemotePaths()
 
     def buildProfile(self, options):
@@ -214,7 +220,8 @@ class MochiRemote(MochitestDesktop):
                 self.device.chmod(self.remoteModulesDir, recursive=True)
             except Exception:
                 self.log.error(
-                    "Automation Error: Unable to copy test modules to device.")
+                    "Automation Error: Unable to copy test modules to device."
+                )
                 raise
             savedTestingModulesDir = options.testingModulesDir
             options.testingModulesDir = self.remoteModulesDir
@@ -251,7 +258,7 @@ class MochiRemote(MochitestDesktop):
     def getChromeTestDir(self, options):
         local = super(MochiRemote, self).getChromeTestDir(options)
         remote = self.remoteChromeTestDir
-        if options.flavor == 'chrome' and not self.chromePushed:
+        if options.flavor == "chrome" and not self.chromePushed:
             self.log.info("pushing %s to %s on device..." % (local, remote))
             local = os.path.join(local, "chrome")
             self.device.push(local, remote)
@@ -261,48 +268,53 @@ class MochiRemote(MochitestDesktop):
     def getLogFilePath(self, logFile):
         return logFile
 
-    def printDeviceInfo(self, printLogcat=False):
-        try:
-            if printLogcat:
-                logcat = self.device.get_logcat(
-                    filter_out_regexps=fennecLogcatFilters)
-                for l in logcat:
-                    ul = l.decode('utf-8', errors='replace')
-                    sl = ul.encode('iso8859-1', errors='replace')
-                    self.log.info(sl)
-            self.log.info("Device info:")
-            devinfo = self.device.get_info()
-            for category in devinfo:
-                if type(devinfo[category]) is list:
-                    self.log.info("  %s:" % category)
-                    for item in devinfo[category]:
-                        self.log.info("     %s" % item)
-                else:
-                    self.log.info("  %s: %s" % (category, devinfo[category]))
-            self.log.info("Test root: %s" % self.device.test_root)
-        except ADBTimeoutError:
-            raise
-        except Exception as e:
-            self.log.warning("Error getting device information: %s" % str(e))
-
     def getGMPPluginPath(self, options):
         # TODO: bug 1149374
         return None
 
+    def environment(self, env=None, crashreporter=True, **kwargs):
+        # Since running remote, do not mimic the local env: do not copy os.environ
+        if env is None:
+            env = {}
+
+        if crashreporter:
+            env["MOZ_CRASHREPORTER_NO_REPORT"] = "1"
+            env["MOZ_CRASHREPORTER"] = "1"
+            env["MOZ_CRASHREPORTER_SHUTDOWN"] = "1"
+        else:
+            env["MOZ_CRASHREPORTER_DISABLE"] = "1"
+
+        # Crash on non-local network connections by default.
+        # MOZ_DISABLE_NONLOCAL_CONNECTIONS can be set to "0" to temporarily
+        # enable non-local connections for the purposes of local testing.
+        # Don't override the user's choice here.  See bug 1049688.
+        env.setdefault("MOZ_DISABLE_NONLOCAL_CONNECTIONS", "1")
+
+        # Send an env var noting that we are in automation. Passing any
+        # value except the empty string will declare the value to exist.
+        #
+        # This may be used to disabled network connections during testing, e.g.
+        # Switchboard & telemetry uploads.
+        env.setdefault("MOZ_IN_AUTOMATION", "1")
+
+        # Set WebRTC logging in case it is not set yet.
+        env.setdefault("R_LOG_LEVEL", "6")
+        env.setdefault("R_LOG_DESTINATION", "stderr")
+        env.setdefault("R_LOG_VERBOSE", "1")
+
+        return env
+
     def buildBrowserEnv(self, options, debugger=False):
-        browserEnv = MochitestDesktop.buildBrowserEnv(
-            self,
-            options,
-            debugger=debugger)
+        browserEnv = MochitestDesktop.buildBrowserEnv(self, options, debugger=debugger)
         # remove desktop environment not used on device
         if "XPCOM_MEM_BLOAT_LOG" in browserEnv:
             del browserEnv["XPCOM_MEM_BLOAT_LOG"]
         if self.mozLogs:
             browserEnv["MOZ_LOG_FILE"] = os.path.join(
-                self.remoteMozLog,
-                "moz-pid=%PID-uid={}.log".format(str(uuid.uuid4())))
+                self.remoteMozLog, "moz-pid=%PID-uid={}.log".format(str(uuid.uuid4()))
+            )
         if options.dmd:
-            browserEnv['DMD'] = '1'
+            browserEnv["DMD"] = "1"
         # Contents of remoteMozLog will be pulled from device and copied to the
         # host MOZ_UPLOAD_DIR, to be made available as test artifacts. Make
         # MOZ_UPLOAD_DIR available to the browser environment so that tests
@@ -310,44 +322,115 @@ class MochiRemote(MochitestDesktop):
         browserEnv["MOZ_UPLOAD_DIR"] = self.remoteMozLog
         return browserEnv
 
-    def runApp(self, *args, **kwargs):
-        """front-end automation's `runApp` functionality until FennecRunner is written"""
+    def runApp(
+        self,
+        testUrl,
+        env,
+        app,
+        profile,
+        extraArgs,
+        utilityPath,
+        debuggerInfo=None,
+        valgrindPath=None,
+        valgrindArgs=None,
+        valgrindSuppFiles=None,
+        symbolsPath=None,
+        timeout=-1,
+        detectShutdownLeaks=False,
+        screenshotOnFail=False,
+        bisectChunk=None,
+        marionette_args=None,
+        e10s=True,
+        runFailures=False,
+        crashAsPass=False,
+    ):
+        """
+        Run the app, log the duration it took to execute, return the status code.
+        Kill the app if it outputs nothing for |timeout| seconds.
+        """
 
-        # remoteautomation `runApp` takes the profile path,
-        # whereas runtest.py's `runApp` takes a mozprofile object.
-        if 'profileDir' not in kwargs and 'profile' in kwargs:
-            kwargs['profileDir'] = kwargs.pop('profile').profile
+        if timeout == -1:
+            timeout = self.DEFAULT_TIMEOUT
 
-        # remove args not supported by automation
-        kwargs.pop('marionette_args', None)
+        rpm = RemoteProcessMonitor(
+            self.appName,
+            self.device,
+            self.log,
+            self.message_logger,
+            self.remoteLogFile,
+            self.remoteProfile,
+        )
+        startTime = datetime.datetime.now()
+        status = 0
+        profileDirectory = self.remoteProfile + "/"
+        args = []
+        args.extend(extraArgs)
+        args.extend(("-no-remote", "-profile", profileDirectory))
 
-        ret, _ = self.automation.runApp(*args, **kwargs)
-        self.countpass += self.counts['pass']
-        self.countfail += self.counts['fail']
-        self.counttodo += self.counts['todo']
+        pid = rpm.launch(
+            app,
+            debuggerInfo,
+            testUrl,
+            args,
+            env=self.environment(env=env, crashreporter=not debuggerInfo),
+            e10s=e10s,
+        )
 
-        return ret, None
+        # TODO: not using runFailures or crashAsPass, if we choose to use them
+        # we need to adjust status and check_for_crashes
+        self.log.info("runtestsremote.py | Application pid: %d" % pid)
+        if not rpm.wait(timeout):
+            status = 1
+        self.log.info(
+            "runtestsremote.py | Application ran for: %s"
+            % str(datetime.datetime.now() - startTime)
+        )
+        crashed = self.check_for_crashes(symbolsPath, rpm.last_test_seen)
+        if crashed:
+            status = 1
+
+        self.countpass += rpm.counts["pass"]
+        self.countfail += rpm.counts["fail"]
+        self.counttodo += rpm.counts["todo"]
+
+        return status, rpm.last_test_seen
+
+    def check_for_crashes(self, symbols_path, last_test_seen):
+        """
+        Pull any minidumps from remote profile and log any associated crashes.
+        """
+        try:
+            dump_dir = tempfile.mkdtemp()
+            remote_crash_dir = posixpath.join(self.remoteProfile, "minidumps")
+            if not self.device.is_dir(remote_crash_dir):
+                return False
+            self.device.pull(remote_crash_dir, dump_dir)
+            crashed = mozcrash.log_crashes(
+                self.log, dump_dir, symbols_path, test=last_test_seen
+            )
+        finally:
+            try:
+                shutil.rmtree(dump_dir)
+            except Exception as e:
+                self.log.warning(
+                    "unable to remove directory %s: %s" % (dump_dir, str(e))
+                )
+        return crashed
 
 
 def run_test_harness(parser, options):
     parser.validate(options)
 
     if options is None:
-        raise ValueError("Invalid options specified, use --help for a list of valid options")
+        raise ValueError(
+            "Invalid options specified, use --help for a list of valid options"
+        )
 
     options.runByManifest = True
-    # roboextender is used by mochitest-chrome tests like test_java_addons.html,
-    # but not by any plain mochitests
-    if options.flavor != 'chrome':
-        options.extensionsToExclude.append('roboextender@mozilla.org')
 
     mochitest = MochiRemote(options)
 
-    if options.log_mach is None and not options.verify:
-        mochitest.printDeviceInfo()
-
     try:
-        device_exception = False
         if options.verify:
             retVal = mochitest.verifyTests(options)
         else:
@@ -357,7 +440,6 @@ def run_test_harness(parser, options):
         traceback.print_exc()
         if isinstance(e, ADBTimeoutError):
             mochitest.log.info("Device disconnected. Will not run mochitest.cleanup().")
-            device_exception = True
         else:
             try:
                 mochitest.cleanup(options)
@@ -366,9 +448,6 @@ def run_test_harness(parser, options):
                 traceback.print_exc()
         retVal = 1
 
-    if not device_exception and options.log_mach is None and not options.verify:
-        mochitest.printDeviceInfo(printLogcat=(retVal != 0))
-
     mochitest.archiveMozLogs()
     mochitest.message_logger.finish()
 
@@ -376,7 +455,7 @@ def run_test_harness(parser, options):
 
 
 def main(args=sys.argv[1:]):
-    parser = MochitestArgumentParser(app='android')
+    parser = MochitestArgumentParser(app="android")
     options = parser.parse_args(args)
 
     return run_test_harness(parser, options)

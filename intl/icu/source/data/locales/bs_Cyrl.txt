@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 bs_Cyrl{
     %%Parent{"root"}
     AuxExemplarCharacters{"[]"}
@@ -233,7 +234,6 @@ bs_Cyrl{
             }
         }
     }
-    Version{"37"}
     calendar{
         buddhist{
             eras{
@@ -299,6 +299,16 @@ bs_Cyrl{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "GyMMMMEEEEdd",
+                "GyMMMMdd",
+                "GyMMdd",
+                "GGGGGyMd",
             }
             availableFormats{
                 Ed{"E, d."}
@@ -448,6 +458,16 @@ bs_Cyrl{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "yMMMMEEEEdd",
+                "yMMMMdd",
+                "yMMdd",
+                "yyMd",
             }
             availableFormats{
                 Ed{"E, d."}
@@ -867,6 +887,16 @@ bs_Cyrl{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "GyMMMMEEEEdd",
+                "GyMMMMdd",
+                "GyMMdd",
+                "GyMMdd",
+            }
             availableFormats{
                 Ed{"E, dd."}
                 Hm{"HH:mm"}
@@ -930,6 +960,16 @@ bs_Cyrl{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "HHmmssz",
+                "HHmmss",
+                "HHmm",
+                "GyMMMMEEEEd",
+                "GyMMMMd",
+                "GyMMMd",
+                "GyyMd",
             }
             eras{
                 abbreviated{

@@ -18,11 +18,6 @@ job-defaults:
             - type: file
               name: public/code-review/mozlint.json
               path: /builds/worker/mozlint.json
-        env:
-            RUSTFMT: /build/rust/bin/rustfmt
-            RUSTUP_HOME: /build/rust
-            CARGO_HOME: /build/rust
-            CLANG_FORMAT: /builds/worker/fetches/clang-tidy/bin/clang-format
     run:
         using: mach
     when:
@@ -110,7 +105,7 @@ eslint:
             cp -r /build/node_modules_eslint node_modules &&
             ln -s ../tools/lint/eslint/eslint-plugin-mozilla node_modules &&
             ln -s ../tools/lint/eslint/eslint-plugin-spidermonkey-js node_modules &&
-            ./mach lint -v -l eslint -f treeherder --quiet -f json:/builds/worker/mozlint.json *
+            ./mach lint -v -l eslint -f treeherder -f json:/builds/worker/mozlint.json
     when:
         files-changed:
             # Files that are likely audited.
@@ -139,6 +134,9 @@ license:
             - '**/*.c'
             - '**/*.cc'
             - '**/*.cpp'
+            - '**/*.css'
+            - '**/*.dtd'
+            - '**/*.ftl'
             - '**/*.h'
             - '**/*.html'
             - '**/*.js'
@@ -146,8 +144,10 @@ license:
             - '**/*.jsx'
             - '**/*.m'
             - '**/*.mm'
+            - '**/*.properties'
             - '**/*.py'
             - '**/*.rs'
+            - '**/*.svg'
             - '**/*.xhtml'
             - '**/*.xml'
             - '**/*.xul'
@@ -190,18 +190,19 @@ mingw-cap:
             - '**/*.h'
             - 'tools/lint/mingw-capitalization.yml'
 
-py-compat:
-    description: lint for python 2/3 compatibility issues
+mscom-init:
+    description: Lint for Microsoft COM initialization
     treeherder:
-        symbol: py(py-compat)
+        symbol: misc(mscom)
     run:
-        mach: lint -v -l py2 -l py3 -f treeherder -f json:/builds/worker/mozlint.json *
+        mach: lint -v -l mscom-init -f treeherder -f json:/builds/worker/mozlint.json *
     when:
         files-changed:
-            - '**/*.py'
-            - '**/.flake8'
-            - 'tools/lint/py2.yml'
-            - 'tools/lint/py3.yml'
+            - '**/*.cpp'
+            - '**/*.cc'
+            - '**/*.c'
+            - '**/*.h'
+            - 'tools/lint/mscom-init.yml'
 
 py-flake8:
     description: flake8 run over the gecko codebase
@@ -225,11 +226,13 @@ py-black:
         mach: lint -v -l black -f treeherder -f json:/builds/worker/mozlint.json *
     when:
         files-changed:
+            # The list of extensions should match tools/lint/black.yml
             - '**/*.py'
+            - '**/moz.build'
+            - '**/*.configure'
+            - '**/*.mozbuild'
             - 'pyproject.toml'
             - 'tools/lint/flake8.yml'
-            # moz.configure files are also Python files.
-            # However, we don't currently check them with black
 
 py-pylint:
     description: pylint run over the gecko codebase
@@ -249,7 +252,7 @@ test-manifest:
     treeherder:
         symbol: misc(tm)
     run:
-        mach: lint -v -l test-disable -f treeherder -f json:/builds/worker/mozlint.json *
+        mach: lint -v -l test-manifest-disable -l test-manifest-skip-if -f treeherder -f json:/builds/worker/mozlint.json *
     when:
         files-changed:
             - '**/*.ini'
@@ -307,7 +310,7 @@ shellcheck:
 localization:
     description: l10n tests for strings with errors
     treeherder:
-        symbol: text(l1nt)
+        symbol: l10n(l1nt)
     run:
         mach: lint -v -l l10n -f treeherder *
     attributes:
@@ -324,7 +327,7 @@ localization:
 l10n-conflicts:
     description: l10n tests for strings with errors and conflicts with cross-channel
     treeherder:
-        symbol: text(l1nt-conflicts)
+        symbol: l10n(l1nt-conflicts)
     always-target: false
     run-on-projects: []
     run:
@@ -353,9 +356,12 @@ clang-format:
             - '**/*.m'
             - '**/*.mm'
             - 'tools/lint/clang-format.yml'
+    dependencies:
+        linux64-clang-tidy: toolchain-linux64-clang-tidy
     fetches:
-        toolchain:
-            - linux64-clang-tidy
+        linux64-clang-tidy:
+            - artifact: clang-tidy.tar.zst
+              dest: clang-tools
 
 
 rustfmt:
@@ -368,6 +374,9 @@ rustfmt:
         files-changed:
             - '**/*.rs'
             - 'tools/lint/rustfmt.yml'
+    fetches:
+        toolchain:
+            - linux64-rust
 
 
 clippy:
@@ -375,12 +384,15 @@ clippy:
     treeherder:
         symbol: rust(clippy)
     run:
-        mach: lint -v -l clippy -f treeherder -f json:/builds/worker/mozlint.json *
+        mach: lint -v -l clippy -f treeherder -f json:/builds/worker/mozlint.json -j 1 *
     when:
         files-changed:
             - '**/*.rs'
             - '**/Cargo.toml'
             - 'tools/lint/clippy.yml'
+    fetches:
+        toolchain:
+            - linux64-rust
 
 
 file-whitespace:
@@ -448,9 +460,44 @@ perfdocs-verify:
     worker:
         env:
             WORKSPACE: /builds/worker/checkouts/gecko/
+            DECISION_TASK_ID: {task-reference: <decision>}
     when:
         files-changed:
+            - 'taskcluster/**'
+            - '**/perftest.ini'
+            - 'python/mozperftest/**'
             - 'testing/**/*.ini'
             - 'testing/**/*.yml'
             - 'testing/**/*.rst'
             - 'tools/lint/perfdocs.yml'
+
+
+fluent-lint:
+    description: Check for problems with Fluent files.
+    platform: lint/opt
+    treeherder:
+        symbol: l10n(fluent)
+    run:
+        mach: lint --linter fluent-lint -f treeherder -f json:/builds/worker/mozlint.json
+    when:
+        files-changed:
+            - '**/*.ftl'
+            - 'tools/lint/fluent-lint.yml'
+            - 'tools/lint/fluent-lint/exclusions.yml'
+
+trojan-source:
+    description: Trojan Source attack - CVE-2021-42572
+    platform: lint/opt
+    treeherder:
+        symbol: misc(trojan-source)
+    run:
+        mach: lint -v -l trojan-source --include-third-party -f treeherder -f json:/builds/worker/mozlint.json *
+    when:
+        files-changed:
+            - '**/*.c'
+            - '**/*.cc'
+            - '**/*.cpp'
+            - '**/*.h'
+            - '**/*.py'
+            - '**/*.rs'
+            - 'tools/lint/trojan-source.yml'

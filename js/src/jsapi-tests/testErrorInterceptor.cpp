@@ -1,7 +1,7 @@
-#include "jsapi.h"
+#include <iterator>
 
+#include "js/ErrorInterceptor.h"
 #include "jsapi-tests/tests.h"
-
 #include "util/StringBuffer.h"
 
 // Tests for JS_GetErrorInterceptorCallback and JS_SetErrorInterceptorCallback.
@@ -53,7 +53,7 @@ BEGIN_TEST(testErrorInterceptor) {
       "ReferenceError: foo is not defined\0",
       "SyntaxError: expected expression, got end of script\0",
   };
-  MOZ_ASSERT(mozilla::ArrayLength(SAMPLES) == mozilla::ArrayLength(TO_STRING));
+  static_assert(std::size(SAMPLES) == std::size(TO_STRING));
 
   // Save original callback.
   JSErrorInterceptor* original = JS_GetErrorInterceptorCallback(cx->runtime());
@@ -85,7 +85,7 @@ BEGIN_TEST(testErrorInterceptor) {
   CHECK(gLatestMessage == nullptr);
 
   // Test error throwing with a callback that succeeds.
-  for (size_t i = 0; i < mozilla::ArrayLength(SAMPLES); ++i) {
+  for (size_t i = 0; i < std::size(SAMPLES); ++i) {
     // This should cause the appropriate error.
     if (execDontReport(SAMPLES[i], __FILE__, __LINE__)) {
       MOZ_CRASH("This sample should have failed");
@@ -112,7 +112,7 @@ BEGIN_TEST(testErrorInterceptor) {
 
   // Test again without callback.
   JS_SetErrorInterceptorCallback(cx->runtime(), nullptr);
-  for (size_t i = 0; i < mozilla::ArrayLength(SAMPLES); ++i) {
+  for (size_t i = 0; i < std::size(SAMPLES); ++i) {
     if (execDontReport(SAMPLES[i], __FILE__, __LINE__)) {
       MOZ_CRASH("This sample should have failed");
     }

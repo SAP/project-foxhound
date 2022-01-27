@@ -8,6 +8,9 @@
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "js/CompileOptions.h"
+#include "js/Transcoding.h"
+#include "js/experimental/JSStencil.h"
 
 #include "mozilla/BasePrincipal.h"
 
@@ -15,52 +18,45 @@ using namespace JS;
 using namespace mozilla::scache;
 using mozilla::UniquePtr;
 
-// We only serialize scripts with system principals. So we don't serialize the
-// principals when writing a script. Instead, when reading it back, we set the
-// principals to the system principals.
-nsresult ReadCachedScript(StartupCache* cache, nsACString& uri, JSContext* cx,
-                          MutableHandleScript scriptp) {
+static nsresult HandleTranscodeResult(JSContext* cx,
+                                      JS::TranscodeResult result) {
+  if (result == JS::TranscodeResult::Ok) {
+    return NS_OK;
+  }
+
+  if (result == JS::TranscodeResult::Throw) {
+    JS_ClearPendingException(cx);
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+
+  MOZ_ASSERT(IsTranscodeFailureResult(result));
+  return NS_ERROR_FAILURE;
+}
+
+nsresult ReadCachedStencil(StartupCache* cache, nsACString& uri, JSContext* cx,
+                           const JS::DecodeOptions& options,
+                           JS::Stencil** stencilOut) {
+  MOZ_ASSERT(options.borrowBuffer);
+  MOZ_ASSERT(!options.usePinnedBytecode);
+
   const char* buf;
   uint32_t len;
   nsresult rv = cache->GetBuffer(PromiseFlatCString(uri).get(), &buf, &len);
   if (NS_FAILED(rv)) {
     return rv;  // don't warn since NOT_AVAILABLE is an ok error
   }
-  void* copy = malloc(len);
-  if (!copy) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  memcpy(copy, buf, len);
-  JS::TranscodeBuffer buffer;
-  buffer.replaceRawBuffer(reinterpret_cast<uint8_t*>(copy), len);
-  JS::TranscodeResult code = JS::DecodeScript(cx, buffer, scriptp);
-  if (code == JS::TranscodeResult_Ok) {
-    return NS_OK;
-  }
 
-  if ((code & JS::TranscodeResult_Failure) != 0) {
-    return NS_ERROR_FAILURE;
-  }
-
-  MOZ_ASSERT((code & JS::TranscodeResult_Throw) != 0);
-  JS_ClearPendingException(cx);
-  return NS_ERROR_OUT_OF_MEMORY;
+  JS::TranscodeRange range(AsBytes(Span(buf, len)));
+  JS::TranscodeResult code = JS::DecodeStencil(cx, options, range, stencilOut);
+  return HandleTranscodeResult(cx, code);
 }
 
-nsresult WriteCachedScript(StartupCache* cache, nsACString& uri, JSContext* cx,
-                           HandleScript script) {
-  MOZ_ASSERT(
-      nsJSPrincipals::get(JS_GetScriptPrincipals(script))->IsSystemPrincipal());
-
+nsresult WriteCachedStencil(StartupCache* cache, nsACString& uri, JSContext* cx,
+                            JS::Stencil* stencil) {
   JS::TranscodeBuffer buffer;
-  JS::TranscodeResult code = JS::EncodeScript(cx, buffer, script);
-  if (code != JS::TranscodeResult_Ok) {
-    if ((code & JS::TranscodeResult_Failure) != 0) {
-      return NS_ERROR_FAILURE;
-    }
-    MOZ_ASSERT((code & JS::TranscodeResult_Throw) != 0);
-    JS_ClearPendingException(cx);
-    return NS_ERROR_OUT_OF_MEMORY;
+  JS::TranscodeResult code = JS::EncodeStencil(cx, stencil, buffer);
+  if (code != JS::TranscodeResult::Ok) {
+    return HandleTranscodeResult(cx, code);
   }
 
   size_t size = buffer.length();

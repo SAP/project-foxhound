@@ -21,15 +21,19 @@
 #include "IndexedDatabase.h"
 #include "IndexedDatabaseInlines.h"
 #include "IndexedDatabaseManager.h"
+#include "IndexedDBCommon.h"
 #include "KeyPath.h"
 #include "ProfilerHelpers.h"
 #include "ReportInternalError.h"
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
 #include "js/Class.h"
 #include "js/Date.h"
+#include "js/Object.h"  // JS::GetClass
+#include "js/PropertyAndElement.h"  // JS_GetProperty, JS_GetPropertyById, JS_HasOwnProperty, JS_HasOwnPropertyById
 #include "js/StructuredClone.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/ResultExtensions.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/BlobBinding.h"
 #include "mozilla/dom/File.h"
@@ -49,8 +53,7 @@
 // Include this last to avoid path problems on Windows.
 #include "ActorsChild.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace mozilla::dom::indexedDB;
 using namespace mozilla::dom::quota;
@@ -58,19 +61,14 @@ using namespace mozilla::ipc;
 
 namespace {
 
-IndexUpdateInfo MakeIndexUpdateInfo(const int64_t aIndexID, const Key& aKey,
-                                    const nsCString& aLocale,
-                                    ErrorResult* const aRv) {
+Result<IndexUpdateInfo, nsresult> MakeIndexUpdateInfo(
+    const int64_t aIndexID, const Key& aKey, const nsCString& aLocale) {
   IndexUpdateInfo indexUpdateInfo;
   indexUpdateInfo.indexId() = aIndexID;
   indexUpdateInfo.value() = aKey;
   if (!aLocale.IsEmpty()) {
-    auto result = aKey.ToLocaleAwareKey(aLocale);
-    if (!result.Is(Ok)) {
-      *aRv = result.ExtractErrorResult(
-          InvalidMapsTo<NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR>);
-    }
-    indexUpdateInfo.localizedValue() = result.Unwrap();
+    QM_TRY_UNWRAP(indexUpdateInfo.localizedValue(),
+                  aKey.ToLocaleAwareKey(aLocale));
   }
   return indexUpdateInfo;
 }
@@ -95,13 +93,13 @@ struct IDBObjectStore::StructuredCloneWriteInfo {
 
   StructuredCloneWriteInfo(StructuredCloneWriteInfo&& aCloneWriteInfo) noexcept
       : mCloneBuffer(std::move(aCloneWriteInfo.mCloneBuffer)),
+        mFiles(std::move(aCloneWriteInfo.mFiles)),
         mDatabase(aCloneWriteInfo.mDatabase),
         mOffsetToKeyProp(aCloneWriteInfo.mOffsetToKeyProp) {
     MOZ_ASSERT(mDatabase);
 
     MOZ_COUNT_CTOR(StructuredCloneWriteInfo);
 
-    mFiles.SwapElements(aCloneWriteInfo.mFiles);
     aCloneWriteInfo.mOffsetToKeyProp = 0;
   }
 
@@ -158,7 +156,7 @@ bool StructuredCloneWriteCallback(JSContext* aCx,
   auto* const cloneWriteInfo =
       static_cast<IDBObjectStore::StructuredCloneWriteInfo*>(aClosure);
 
-  if (JS_GetClass(aObj) == IDBObjectStore::DummyPropClass()) {
+  if (JS::GetClass(aObj) == IDBObjectStore::DummyPropClass()) {
     MOZ_ASSERT(!cloneWriteInfo->mOffsetToKeyProp);
     cloneWriteInfo->mOffsetToKeyProp = js::GetSCOffset(aWriter);
 
@@ -482,7 +480,6 @@ IDBObjectStore::~IDBObjectStore() {
   AssertIsOnOwningThread();
 
   if (mRooted) {
-    mCachedKeyPath.setUndefined();
     mozilla::DropJSObjects(this);
   }
 }
@@ -518,8 +515,11 @@ void IDBObjectStore::AppendIndexUpdateInfo(
       return;
     }
 
-    *aUpdateInfoArray->AppendElement() =
-        MakeIndexUpdateInfo(aIndexID, key, aLocale, aRv);
+    QM_TRY_UNWRAP(auto item, MakeIndexUpdateInfo(aIndexID, key, aLocale),
+                  QM_VOID,
+                  [aRv](const nsresult tryResult) { aRv->Throw(tryResult); });
+
+    aUpdateInfoArray->AppendElement(std::move(item));
     return;
   }
 
@@ -572,33 +572,37 @@ void IDBObjectStore::AppendIndexUpdateInfo(
 
       Key value;
       auto result = value.SetFromJSVal(aCx, arrayItem);
-      if (!result.Is(Ok) || value.IsUnset()) {
+      if (result.isErr() || value.IsUnset()) {
         // Not a value we can do anything with, ignore it.
-        if (result.Is(SpecialValues::Exception)) {
-          result.AsException().SuppressException();
+        if (result.isErr() &&
+            result.inspectErr().Is(SpecialValues::Exception)) {
+          result.unwrapErr().AsException().SuppressException();
         }
         continue;
       }
 
-      *aUpdateInfoArray->AppendElement() =
-          MakeIndexUpdateInfo(aIndexID, value, aLocale, aRv);
-      if (aRv->Failed()) {
-        return;
-      }
+      QM_TRY_UNWRAP(auto item, MakeIndexUpdateInfo(aIndexID, value, aLocale),
+                    QM_VOID,
+                    [aRv](const nsresult tryResult) { aRv->Throw(tryResult); });
+
+      aUpdateInfoArray->AppendElement(std::move(item));
     }
   } else {
     Key value;
     auto result = value.SetFromJSVal(aCx, val);
-    if (!result.Is(Ok) || value.IsUnset()) {
+    if (result.isErr() || value.IsUnset()) {
       // Not a value we can do anything with, ignore it.
-      if (result.Is(SpecialValues::Exception)) {
-        result.AsException().SuppressException();
+      if (result.isErr() && result.inspectErr().Is(SpecialValues::Exception)) {
+        result.unwrapErr().AsException().SuppressException();
       }
       return;
     }
 
-    *aUpdateInfoArray->AppendElement() =
-        MakeIndexUpdateInfo(aIndexID, value, aLocale, aRv);
+    QM_TRY_UNWRAP(auto item, MakeIndexUpdateInfo(aIndexID, value, aLocale),
+                  QM_VOID,
+                  [aRv](const nsresult tryResult) { aRv->Throw(tryResult); });
+
+    aUpdateInfoArray->AppendElement(std::move(item));
   }
 }
 
@@ -673,8 +677,8 @@ void IDBObjectStore::GetAddInfo(JSContext* aCx, ValueWrapper& aValueWrapper,
   if (!HasValidKeyPath()) {
     // Out-of-line keys must be passed in.
     auto result = aKey.SetFromJSVal(aCx, aKeyVal);
-    if (!result.Is(Ok)) {
-      aRv = result.ExtractErrorResult(
+    if (result.isErr()) {
+      aRv = result.unwrapErr().ExtractErrorResult(
           InvalidMapsTo<NS_ERROR_DOM_INDEXEDDB_DATA_ERR>);
       return;
     }
@@ -823,79 +827,63 @@ RefPtr<IDBRequest> IDBObjectStore::AddOrPut(JSContext* aCx,
   commonParams.indexUpdateInfos() = std::move(updateInfos);
 
   // Convert any blobs or mutable files into FileAddInfo.
-  nsTArray<StructuredCloneFileChild>& files = cloneWriteInfo.mFiles;
+  QM_TRY_UNWRAP(
+      commonParams.fileAddInfos(),
+      TransformIntoNewArrayAbortOnErr(
+          cloneWriteInfo.mFiles,
+          [&database = *mTransaction->Database()](
+              auto& file) -> Result<FileAddInfo, nsresult> {
+            switch (file.Type()) {
+              case StructuredCloneFileBase::eBlob: {
+                MOZ_ASSERT(file.HasBlob());
+                MOZ_ASSERT(!file.HasMutableFile());
 
-  if (!files.IsEmpty()) {
-    const uint32_t count = files.Length();
+                PBackgroundIDBDatabaseFileChild* const fileActor =
+                    database.GetOrCreateFileActorForBlob(file.MutableBlob());
+                if (NS_WARN_IF(!fileActor)) {
+                  IDB_REPORT_INTERNAL_ERR();
+                  return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+                }
 
-    auto& fileAddInfos = commonParams.fileAddInfos();
-    if (NS_WARN_IF(!fileAddInfos.SetCapacity(count, fallible))) {
-      aRv = NS_ERROR_OUT_OF_MEMORY;
-      return nullptr;
-    }
+                return FileAddInfo{fileActor, StructuredCloneFileBase::eBlob};
+              }
 
-    IDBDatabase* const database = mTransaction->Database();
+              case StructuredCloneFileBase::eMutableFile: {
+                MOZ_ASSERT(file.HasMutableFile());
+                MOZ_ASSERT(!file.HasBlob());
 
-    for (auto& file : files) {
-      auto fileAddInfoOrErr = [&file,
-                               database]() -> Result<FileAddInfo, nsresult> {
-        switch (file.Type()) {
-          case StructuredCloneFileBase::eBlob: {
-            MOZ_ASSERT(file.HasBlob());
-            MOZ_ASSERT(!file.HasMutableFile());
+                PBackgroundMutableFileChild* const mutableFileActor =
+                    file.MutableFile().GetBackgroundActor();
+                if (NS_WARN_IF(!mutableFileActor)) {
+                  IDB_REPORT_INTERNAL_ERR();
+                  return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+                }
 
-            PBackgroundIDBDatabaseFileChild* const fileActor =
-                database->GetOrCreateFileActorForBlob(file.MutableBlob());
-            if (NS_WARN_IF(!fileActor)) {
-              IDB_REPORT_INTERNAL_ERR();
-              return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+                return FileAddInfo{mutableFileActor,
+                                   StructuredCloneFileBase::eMutableFile};
+              }
+
+              case StructuredCloneFileBase::eWasmBytecode:
+              case StructuredCloneFileBase::eWasmCompiled: {
+                MOZ_ASSERT(file.HasBlob());
+                MOZ_ASSERT(!file.HasMutableFile());
+
+                PBackgroundIDBDatabaseFileChild* const fileActor =
+                    database.GetOrCreateFileActorForBlob(file.MutableBlob());
+                if (NS_WARN_IF(!fileActor)) {
+                  IDB_REPORT_INTERNAL_ERR();
+                  return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+                }
+
+                return FileAddInfo{fileActor, file.Type()};
+              }
+
+              default:
+                MOZ_CRASH("Should never get here!");
             }
-
-            return FileAddInfo{fileActor, StructuredCloneFileBase::eBlob};
-          }
-
-          case StructuredCloneFileBase::eMutableFile: {
-            MOZ_ASSERT(file.HasMutableFile());
-            MOZ_ASSERT(!file.HasBlob());
-
-            PBackgroundMutableFileChild* const mutableFileActor =
-                file.MutableFile().GetBackgroundActor();
-            if (NS_WARN_IF(!mutableFileActor)) {
-              IDB_REPORT_INTERNAL_ERR();
-              return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
-            }
-
-            return FileAddInfo{mutableFileActor,
-                               StructuredCloneFileBase::eMutableFile};
-          }
-
-          case StructuredCloneFileBase::eWasmBytecode:
-          case StructuredCloneFileBase::eWasmCompiled: {
-            MOZ_ASSERT(file.HasBlob());
-            MOZ_ASSERT(!file.HasMutableFile());
-
-            PBackgroundIDBDatabaseFileChild* const fileActor =
-                database->GetOrCreateFileActorForBlob(file.MutableBlob());
-            if (NS_WARN_IF(!fileActor)) {
-              IDB_REPORT_INTERNAL_ERR();
-              return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
-            }
-
-            return FileAddInfo{fileActor, file.Type()};
-          }
-
-          default:
-            MOZ_CRASH("Should never get here!");
-        }
-      }();
-
-      if (fileAddInfoOrErr.isErr()) {
-        aRv = fileAddInfoOrErr.unwrapErr();
-        return nullptr;
-      }
-      fileAddInfos.AppendElement(fileAddInfoOrErr.unwrap());
-    }
-  }
+          },
+          fallible),
+      nullptr, [&aRv](const nsresult result) { aRv = result; });
 
   const auto& params =
       aOverwrite ? RequestParams{ObjectStorePutParams(std::move(commonParams))}
@@ -1390,22 +1378,36 @@ RefPtr<IDBIndex> IDBObjectStore::CreateIndex(
     return nullptr;
   }
 
-  KeyPath keyPath(0);
-  if (aKeyPath.IsString()) {
-    if (NS_FAILED(KeyPath::Parse(aKeyPath.GetAsString(), &keyPath)) ||
-        !keyPath.IsValid()) {
-      aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
-      return nullptr;
+  const auto checkValid = [](const auto& keyPath) -> Result<KeyPath, nsresult> {
+    if (!keyPath.IsValid()) {
+      return Err(NS_ERROR_DOM_SYNTAX_ERR);
     }
-  } else {
-    MOZ_ASSERT(aKeyPath.IsStringSequence());
-    if (aKeyPath.GetAsStringSequence().IsEmpty() ||
-        NS_FAILED(KeyPath::Parse(aKeyPath.GetAsStringSequence(), &keyPath)) ||
-        !keyPath.IsValid()) {
-      aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
-      return nullptr;
-    }
+
+    return keyPath;
+  };
+
+  QM_INFOONLY_TRY_UNWRAP(
+      const auto maybeKeyPath,
+      ([&aKeyPath, checkValid]() -> Result<KeyPath, nsresult> {
+        if (aKeyPath.IsString()) {
+          QM_TRY_RETURN(
+              KeyPath::Parse(aKeyPath.GetAsString()).andThen(checkValid));
+        }
+
+        MOZ_ASSERT(aKeyPath.IsStringSequence());
+        if (aKeyPath.GetAsStringSequence().IsEmpty()) {
+          return Err(NS_ERROR_DOM_SYNTAX_ERR);
+        }
+
+        QM_TRY_RETURN(
+            KeyPath::Parse(aKeyPath.GetAsStringSequence()).andThen(checkValid));
+      })());
+  if (!maybeKeyPath) {
+    aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
+    return nullptr;
   }
+
+  const auto& keyPath = maybeKeyPath.ref();
 
   if (aOptionalParameters.mMultiEntry && keyPath.IsArray()) {
     aRv.Throw(NS_ERROR_DOM_INVALID_ACCESS_ERR);
@@ -1647,19 +1649,21 @@ RefPtr<IDBRequest> IDBObjectStore::OpenCursorInternal(
         IDB_LOG_STRINGIFY(keyRange), IDB_LOG_STRINGIFY(aDirection));
   }
 
-  BackgroundCursorChildBase* const actor =
-      aKeysOnly ? static_cast<BackgroundCursorChildBase*>(
-                      new BackgroundCursorChild<IDBCursorType::ObjectStoreKey>(
-                          request, this, aDirection))
-                : new BackgroundCursorChild<IDBCursorType::ObjectStore>(
-                      request, this, aDirection);
+  const auto actor =
+      aKeysOnly
+          ? static_cast<SafeRefPtr<BackgroundCursorChildBase>>(
+                MakeSafeRefPtr<
+                    BackgroundCursorChild<IDBCursorType::ObjectStoreKey>>(
+                    request, this, aDirection))
+          : MakeSafeRefPtr<BackgroundCursorChild<IDBCursorType::ObjectStore>>(
+                request, this, aDirection);
 
   // TODO: This is necessary to preserve request ordering only. Proper
   // sequencing of requests should be done in a more sophisticated manner that
   // doesn't require invalidating cursor caches (Bug 1580499).
   mTransaction->InvalidateCursorCaches();
 
-  mTransaction->OpenCursor(actor, params);
+  mTransaction->OpenCursor(*actor, params);
 
   return request;
 }
@@ -1826,5 +1830,4 @@ bool IDBObjectStore::ValueWrapper::Clone(JSContext* aCx) {
   return true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

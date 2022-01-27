@@ -10,6 +10,9 @@
 #include "mozilla/ContentBlocking.h"
 #include "mozilla/ConsoleReportCollector.h"
 #include "mozilla/ContentBlockingNotifier.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozIThirdPartyUtil.h"
@@ -21,6 +24,7 @@
 #include "nsIWebProgressListener.h"
 #include "nsNetUtil.h"
 #include "nsScriptSecurityManager.h"
+#include "ThirdPartyUtil.h"
 
 constexpr auto CONSOLE_SCHEMEFUL_CATEGORY = "cookieSchemeful"_ns;
 
@@ -66,11 +70,7 @@ bool CookieCommons::PathMatches(Cookie* aCookie, const nsACString& aPath) {
   // of the request path that is not included in the cookie path is a %x2F ("/")
   // character, they match.
   uint32_t cookiePathLen = cookiePath.Length();
-  if (isPrefix && aPath[cookiePathLen] == '/') {
-    return true;
-  }
-
-  return false;
+  return isPrefix && aPath[cookiePathLen] == '/';
 }
 
 // Get the base domain for aHostURI; e.g. for "www.bbc.co.uk", this would be
@@ -91,7 +91,7 @@ nsresult CookieCommons::GetBaseDomain(nsIEffectiveTLDService* aTLDService,
     // aHostURI is either an IP address, an alias such as 'localhost', an eTLD
     // such as 'co.uk', or the empty string. use the host as a key in such
     // cases.
-    rv = aHostURI->GetAsciiHost(aBaseDomain);
+    rv = nsContentUtils::GetHostOrIPv6WithBrackets(aHostURI, aBaseDomain);
   }
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -114,10 +114,16 @@ nsresult CookieCommons::GetBaseDomain(nsIPrincipal* aPrincipal,
 
   // for historical reasons we use ascii host for file:// URLs.
   if (aPrincipal->SchemeIs("file")) {
-    return aPrincipal->GetAsciiHost(aBaseDomain);
+    return nsContentUtils::GetHostOrIPv6WithBrackets(aPrincipal, aBaseDomain);
   }
 
-  return aPrincipal->GetBaseDomain(aBaseDomain);
+  nsresult rv = aPrincipal->GetBaseDomain(aBaseDomain);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  nsContentUtils::MaybeFixIPv6Host(aBaseDomain);
+  return NS_OK;
 }
 
 // Get the base domain for aHost; e.g. for "www.bbc.co.uk", this would be
@@ -312,9 +318,17 @@ CookieStatus CookieStatusForWindow(nsPIDOMWindowInner* aWindow,
   MOZ_ASSERT(aWindow);
   MOZ_ASSERT(aDocumentURI);
 
-  if (!nsContentUtils::IsThirdPartyWindowOrChannel(aWindow, nullptr,
-                                                   aDocumentURI)) {
-    return STATUS_ACCEPTED;
+  ThirdPartyUtil* thirdPartyUtil = ThirdPartyUtil::GetInstance();
+  if (thirdPartyUtil) {
+    bool isThirdParty = true;
+
+    nsresult rv = thirdPartyUtil->IsThirdPartyWindow(
+        aWindow->GetOuterWindow(), aDocumentURI, &isThirdParty);
+    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Third-party window check failed.");
+
+    if (NS_SUCCEEDED(rv) && !isThirdParty) {
+      return STATUS_ACCEPTED;
+    }
   }
 
   if (StaticPrefs::network_cookie_thirdparty_sessionOnly()) {
@@ -449,7 +463,7 @@ already_AddRefed<nsICookieJarSettings> CookieCommons::GetCookieJarSettings(
       cookieJarSettings = CookieJarSettings::GetBlockingAll();
     }
   } else {
-    cookieJarSettings = CookieJarSettings::Create();
+    cookieJarSettings = CookieJarSettings::Create(CookieJarSettings::eRegular);
   }
 
   MOZ_ASSERT(cookieJarSettings);
@@ -472,12 +486,39 @@ bool CookieCommons::IsSafeTopLevelNav(nsIChannel* aChannel) {
   }
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   if (loadInfo->GetExternalContentPolicyType() !=
-          nsIContentPolicy::TYPE_DOCUMENT &&
+          ExtContentPolicy::TYPE_DOCUMENT &&
       loadInfo->GetExternalContentPolicyType() !=
-          nsIContentPolicy::TYPE_SAVEAS_DOWNLOAD) {
+          ExtContentPolicy::TYPE_SAVEAS_DOWNLOAD) {
     return false;
   }
   return NS_IsSafeMethodNav(aChannel);
+}
+
+// This function determines if two schemes are equal in the context of
+// "Schemeful SameSite cookies".
+//
+// Two schemes are considered equal:
+//   - if the "network.cookie.sameSite.schemeful" pref is set to false.
+// OR
+//   - if one of the schemes is not http or https.
+// OR
+//   - if both schemes are equal AND both are either http or https.
+bool IsSameSiteSchemeEqual(const nsACString& aFirstScheme,
+                           const nsACString& aSecondScheme) {
+  if (!StaticPrefs::network_cookie_sameSite_schemeful()) {
+    return true;
+  }
+
+  auto isSchemeHttpOrHttps = [](const nsACString& scheme) -> bool {
+    return scheme.EqualsLiteral("http") || scheme.EqualsLiteral("https");
+  };
+
+  if (!isSchemeHttpOrHttps(aFirstScheme) ||
+      !isSchemeHttpOrHttps(aSecondScheme)) {
+    return true;
+  }
+
+  return aFirstScheme.Equals(aSecondScheme);
 }
 
 bool CookieCommons::IsSameSiteForeign(nsIChannel* aChannel, nsIURI* aHostURI) {
@@ -495,16 +536,21 @@ bool CookieCommons::IsSameSiteForeign(nsIChannel* aChannel, nsIURI* aHostURI) {
     return false;
   }
 
+  nsAutoCString hostScheme, otherScheme;
+  aHostURI->GetScheme(hostScheme);
+
   bool isForeign = true;
   nsresult rv;
   if (loadInfo->GetExternalContentPolicyType() ==
-          nsIContentPolicy::TYPE_DOCUMENT ||
+          ExtContentPolicy::TYPE_DOCUMENT ||
       loadInfo->GetExternalContentPolicyType() ==
-          nsIContentPolicy::TYPE_SAVEAS_DOWNLOAD) {
+          ExtContentPolicy::TYPE_SAVEAS_DOWNLOAD) {
     // for loads of TYPE_DOCUMENT we query the hostURI from the
     // triggeringPrincipal which returns the URI of the document that caused the
     // navigation.
     rv = triggeringPrincipal->IsThirdPartyChannel(aChannel, &isForeign);
+
+    triggeringPrincipal->GetScheme(otherScheme);
   } else {
     nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
         do_GetService(THIRDPARTYUTIL_CONTRACTID);
@@ -512,10 +558,18 @@ bool CookieCommons::IsSameSiteForeign(nsIChannel* aChannel, nsIURI* aHostURI) {
       return true;
     }
     rv = thirdPartyUtil->IsThirdPartyChannel(aChannel, aHostURI, &isForeign);
+
+    channelURI->GetScheme(otherScheme);
   }
   // if we are dealing with a cross origin request, we can return here
   // because we already know the request is 'foreign'.
   if (NS_FAILED(rv) || isForeign) {
+    return true;
+  }
+
+  if (!IsSameSiteSchemeEqual(otherScheme, hostScheme)) {
+    // If the two schemes are not of the same http(s) scheme then we
+    // consider the request as foreign.
     return true;
   }
 
@@ -525,7 +579,7 @@ bool CookieCommons::IsSameSiteForeign(nsIChannel* aChannel, nsIURI* aHostURI) {
   // was triggered by a cross-origin triggeringPrincipal, we treat the load as
   // foreign.
   if (loadInfo->GetExternalContentPolicyType() ==
-      nsIContentPolicy::TYPE_SUBDOCUMENT) {
+      ExtContentPolicy::TYPE_SUBDOCUMENT) {
     rv = loadInfo->TriggeringPrincipal()->IsThirdPartyChannel(aChannel,
                                                               &isForeign);
     if (NS_FAILED(rv) || isForeign) {
@@ -544,6 +598,14 @@ bool CookieCommons::IsSameSiteForeign(nsIChannel* aChannel, nsIURI* aHostURI) {
       rv = redirectPrincipal->IsThirdPartyChannel(aChannel, &isForeign);
       // if at any point we encounter a cross-origin redirect we can return.
       if (NS_FAILED(rv) || isForeign) {
+        return true;
+      }
+
+      nsAutoCString redirectScheme;
+      redirectPrincipal->GetScheme(redirectScheme);
+      if (!IsSameSiteSchemeEqual(redirectScheme, hostScheme)) {
+        // If the two schemes are not of the same http(s) scheme then we
+        // consider the request as foreign.
         return true;
       }
     }

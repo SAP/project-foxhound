@@ -11,21 +11,21 @@
 #define mozilla_dom_HTMLObjectElement_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/dom/ConstraintValidation.h"
 #include "nsGenericHTMLElement.h"
 #include "nsObjectLoadingContent.h"
-#include "nsIConstraintValidation.h"
 
 namespace mozilla {
 namespace dom {
 
-class HTMLFormSubmission;
+class FormData;
 template <typename T>
 struct Nullable;
 class WindowProxyHolder;
 
-class HTMLObjectElement final : public nsGenericHTMLFormElement,
+class HTMLObjectElement final : public nsGenericHTMLFormControlElement,
                                 public nsObjectLoadingContent,
-                                public nsIConstraintValidation {
+                                public ConstraintValidation {
  public:
   explicit HTMLObjectElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
@@ -36,18 +36,6 @@ class HTMLObjectElement final : public nsGenericHTMLFormElement,
 
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLObjectElement, object)
   virtual int32_t TabIndexDefault() override;
-
-#ifdef XP_MACOSX
-  // EventTarget
-  NS_IMETHOD PostHandleEvent(EventChainPostVisitor& aVisitor) override;
-  // Helper methods
-  static void OnFocusBlurPlugin(Element* aElement, bool aFocus);
-  static void HandleFocusBlurPlugin(Element* aElement, WidgetEvent* aEvent);
-  static void HandlePluginCrashed(Element* aElement);
-  static void HandlePluginInstantiated(Element* aElement);
-  // Weak pointer. Null if last action was blur.
-  static Element* sLastFocused;
-#endif
 
   // Element
   virtual bool IsInteractiveHTMLContent() const override;
@@ -60,11 +48,11 @@ class HTMLObjectElement final : public nsGenericHTMLFormElement,
 
   virtual bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
                                int32_t* aTabIndex) override;
-  virtual IMEState GetDesiredIMEState() override;
 
   // Overriden nsIFormControl methods
-  NS_IMETHOD Reset() override;
-  NS_IMETHOD SubmitNamesValues(HTMLFormSubmission* aFormSubmission) override;
+  NS_IMETHOD Reset() override { return NS_OK; }
+
+  NS_IMETHOD SubmitNamesValues(FormData* aFormData) override { return NS_OK; }
 
   virtual void DoneAddingChildren(bool aHaveNotified) override;
   virtual bool IsDoneAddingChildren() override;
@@ -89,7 +77,7 @@ class HTMLObjectElement final : public nsGenericHTMLFormElement,
   void StartObjectLoad() { StartObjectLoad(true, false); }
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLObjectElement,
-                                           nsGenericHTMLFormElement)
+                                           nsGenericHTMLFormControlElement)
 
   // Web IDL binding methods
   void GetData(DOMString& aValue) {
@@ -110,7 +98,6 @@ class HTMLObjectElement final : public nsGenericHTMLFormElement,
   void SetUseMap(const nsAString& aValue, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::usemap, aValue, aRv);
   }
-  using nsGenericHTMLFormElement::GetForm;
   void GetWidth(DOMString& aValue) { GetHTMLAttr(nsGkAtoms::width, aValue); }
   void SetWidth(const nsAString& aValue, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::width, aValue, aRv);
@@ -123,8 +110,8 @@ class HTMLObjectElement final : public nsGenericHTMLFormElement,
 
   Nullable<WindowProxyHolder> GetContentWindow(nsIPrincipal& aSubjectPrincipal);
 
-  using nsIConstraintValidation::GetValidationMessage;
-  using nsIConstraintValidation::SetCustomValidity;
+  using ConstraintValidation::GetValidationMessage;
+  using ConstraintValidation::SetCustomValidity;
   void GetAlign(DOMString& aValue) { GetHTMLAttr(nsGkAtoms::align, aValue); }
   void SetAlign(const nsAString& aValue, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::align, aValue, aRv);

@@ -5,11 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/BrowsingContext.h"
 
+#include "mozilla/dom/Document.h"
 #include "mozilla/StaticPrefs_browser.h"
+#include "nsContentUtils.h"
+#include "nsError.h"
+#include "nsPIDOMWindow.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 bool BindContext::AllowsAutoFocus() const {
   if (!StaticPrefs::browser_autofocus()) {
@@ -44,5 +48,4 @@ bool BindContext::IsSameOriginAsTop() const {
   return NS_SUCCEEDED(nsContentUtils::CheckSameOrigin(topLevelDocument, &mDoc));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

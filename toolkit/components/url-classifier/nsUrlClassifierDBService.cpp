@@ -30,6 +30,7 @@
 #include "mozilla/ErrorNames.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
@@ -39,11 +40,13 @@
 #include "Classifier.h"
 #include "ProtocolParser.h"
 #include "mozilla/Attributes.h"
+#include "nsIHttpChannel.h"
 #include "nsIPrincipal.h"
 #include "nsIUrlListManager.h"
 #include "Classifier.h"
 #include "ProtocolParser.h"
 #include "nsContentUtils.h"
+#include "mozilla/Components.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
 #include "mozilla/dom/URLClassifierChild.h"
@@ -743,7 +746,7 @@ nsUrlClassifierDBServiceWorker::FinishUpdate() {
           self->mClassifier->DumpRawTableUpdates(self->mRawTableUpdates);
         }
         // Invalidate the raw table updates.
-        self->mRawTableUpdates = EmptyCString();
+        self->mRawTableUpdates.Truncate();
 #endif
 
         self->NotifyUpdateObserver(aRv);
@@ -784,7 +787,7 @@ nsresult nsUrlClassifierDBServiceWorker::NotifyUpdateObserver(
 
   nsCString provider;
   // Assume that all the tables in update should have the same provider.
-  urlUtil->GetTelemetryProvider(mUpdateTables.SafeElementAt(0, EmptyCString()),
+  urlUtil->GetTelemetryProvider(mUpdateTables.SafeElementAt(0, ""_ns),
                                 provider);
 
   nsresult updateStatus = mUpdateStatus;
@@ -1055,11 +1058,11 @@ nsresult nsUrlClassifierDBServiceWorker::CacheResultToTableUpdate(
 
     if (LOG_ENABLED()) {
       const FullHashExpiryCache& fullHashes = result->response.fullHashes;
-      for (auto iter = fullHashes.ConstIter(); !iter.Done(); iter.Next()) {
+      for (const auto& entry : fullHashes) {
         Completion completion;
-        completion.Assign(iter.Key());
+        completion.Assign(entry.GetKey());
         LOG(("CacheCompletion(v4) hash %X, CacheExpireTime %" PRId64,
-             completion.ToUint32(), iter.Data()));
+             completion.ToUint32(), entry.GetData()));
       }
     }
 
@@ -1342,7 +1345,7 @@ nsUrlClassifierLookupCallback::CompletionV4(const nsACString& aPartialHash,
     uint32_t duration;
     match->GetCacheDuration(&duration);
 
-    result->response.fullHashes.Put(fullHash, nowSec + duration);
+    result->response.fullHashes.InsertOrUpdate(fullHash, nowSec + duration);
   }
 
   return ProcessComplete(result);
@@ -1426,13 +1429,7 @@ nsresult nsUrlClassifierLookupCallback::HandleResults() {
   mDBService->CacheCompletions(mCacheResults);
   mCacheResults.Clear();
 
-  nsAutoCString tableStr;
-  for (uint32_t i = 0; i < tables.Length(); i++) {
-    if (i != 0) tableStr.Append(',');
-    tableStr.Append(tables[i]);
-  }
-
-  return mCallback->HandleEvent(tableStr);
+  return mCallback->HandleEvent(StringJoin(","_ns, tables));
 }
 
 nsresult nsUrlClassifierLookupCallback::CacheMisses() {
@@ -1520,10 +1517,9 @@ nsUrlClassifierClassifyCallback::HandleEvent(const nsACString& tables) {
     }
   }
 
-  nsCString provider =
-      matchedInfo ? matchedInfo->provider.name : EmptyCString();
-  nsCString fullhash = matchedInfo ? matchedInfo->fullhash : EmptyCString();
-  nsCString table = matchedInfo ? matchedInfo->table : EmptyCString();
+  nsCString provider = matchedInfo ? matchedInfo->provider.name : ""_ns;
+  nsCString fullhash = matchedInfo ? matchedInfo->fullhash : ""_ns;
+  nsCString table = matchedInfo ? matchedInfo->table : ""_ns;
 
   mCallback->OnClassifyComplete(response, table, provider, fullhash);
   return NS_OK;
@@ -1554,7 +1550,7 @@ nsUrlClassifierClassifyCallback::HandleResult(const nsACString& aTable,
   nsCString provider;
   nsresult rv = urlUtil->GetProvider(aTable, provider);
 
-  matchedInfo->provider.name = NS_SUCCEEDED(rv) ? provider : EmptyCString();
+  matchedInfo->provider.name = NS_SUCCEEDED(rv) ? provider : ""_ns;
   matchedInfo->provider.priority = 0;
   for (uint8_t i = 0; i < ArrayLength(kBuiltInProviders); i++) {
     if (kBuiltInProviders[i].name.Equals(matchedInfo->provider.name)) {
@@ -1731,7 +1727,7 @@ nsUrlClassifierDBService::Classify(nsIPrincipal* aPrincipal,
   NS_ENSURE_TRUE(gDbBackgroundThread, NS_ERROR_NOT_INITIALIZED);
 
   nsCOMPtr<nsIPermissionManager> permissionManager =
-      services::GetPermissionManager();
+      components::PermissionManager::Service();
   if (NS_WARN_IF(!permissionManager)) {
     return NS_ERROR_FAILURE;
   }
@@ -2100,7 +2096,7 @@ NS_IMETHODIMP
 nsUrlClassifierDBService::SetHashCompleter(
     const nsACString& tableName, nsIUrlClassifierHashCompleter* completer) {
   if (completer) {
-    mCompleters.Put(tableName, completer);
+    mCompleters.InsertOrUpdate(tableName, completer);
   } else {
     mCompleters.Remove(tableName);
   }
@@ -2330,13 +2326,14 @@ nsresult nsUrlClassifierDBService::Shutdown() {
   //    is to avoid racing for Classifier::mUpdateThread
   //    between main thread and the worker thread. (Both threads
   //    would access Classifier::mUpdateThread.)
-  if (mWorker->IsDBOpened()) {
-    using Worker = nsUrlClassifierDBServiceWorker;
-    RefPtr<nsIRunnable> r = NewRunnableMethod(
-        "nsUrlClassifierDBServiceWorker::FlushAndDisableAsyncUpdate", mWorker,
-        &Worker::FlushAndDisableAsyncUpdate);
-    SyncRunnable::DispatchToThread(gDbBackgroundThread, r);
-  }
+  //    This event is dispatched unconditionally to avoid
+  //    accessing mWorker->mClassifier on the main thread, which
+  //    would be a race.
+  using Worker = nsUrlClassifierDBServiceWorker;
+  RefPtr<nsIRunnable> r = NewRunnableMethod(
+      "nsUrlClassifierDBServiceWorker::FlushAndDisableAsyncUpdate", mWorker,
+      &Worker::FlushAndDisableAsyncUpdate);
+  SyncRunnable::DispatchToThread(gDbBackgroundThread, r);
   // At this point the update thread has been shut down and
   // the worker thread should only have at most one event,
   // which is the callback event.

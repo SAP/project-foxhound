@@ -11,12 +11,12 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLProgressElement.h"
 #include "nsIContent.h"
+#include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsGkAtoms.h"
 #include "nsNameSpaceManager.h"
 #include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
-#include "nsCheckboxRadioFrame.h"
 #include "nsFontMetrics.h"
 #include "nsCSSPseudoElements.h"
 #include "nsStyleConsts.h"
@@ -42,7 +42,6 @@ void nsProgressFrame::DestroyFrom(nsIFrame* aDestructRoot,
   NS_ASSERTION(!GetPrevContinuation(),
                "nsProgressFrame should not have continuations; if it does we "
                "need to call RegUnregAccessKey only for the first.");
-  nsCheckboxRadioFrame::RegUnRegAccessKey(static_cast<nsIFrame*>(this), false);
   aPostDestroyData.AddAnonymousContent(mBarDiv.forget());
   nsContainerFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
@@ -98,12 +97,8 @@ void nsProgressFrame::Reflow(nsPresContext* aPresContext,
                "nsProgressFrame should not have continuations; if it does we "
                "need to call RegUnregAccessKey only for the first.");
 
-  if (mState & NS_FRAME_FIRST_REFLOW) {
-    nsCheckboxRadioFrame::RegUnRegAccessKey(this, true);
-  }
-
-  aDesiredSize.SetSize(aReflowInput.GetWritingMode(),
-                       aReflowInput.ComputedSizeWithBorderPadding());
+  const auto wm = aReflowInput.GetWritingMode();
+  aDesiredSize.SetSize(wm, aReflowInput.ComputedSizeWithBorderPadding(wm));
   aDesiredSize.SetOverflowAreasToDesiredBounds();
 
   for (auto childFrame : PrincipalChildList()) {
@@ -204,7 +199,7 @@ nsresult nsProgressFrame::AttributeChanged(int32_t aNameSpaceID,
 LogicalSize nsProgressFrame::ComputeAutoSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
+    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
   const WritingMode wm = GetWritingMode();
   LogicalSize autoSize(wm);
@@ -249,11 +244,8 @@ bool nsProgressFrame::ShouldUseNativeStyle() const {
   //   background.
   return StyleDisplay()->EffectiveAppearance() ==
              StyleAppearance::ProgressBar &&
-         !PresContext()->HasAuthorSpecifiedRules(
-             this, NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND) &&
-         barFrame &&
+         !Style()->HasAuthorSpecifiedBorderOrBackground() && barFrame &&
          barFrame->StyleDisplay()->EffectiveAppearance() ==
              StyleAppearance::Progresschunk &&
-         !PresContext()->HasAuthorSpecifiedRules(
-             barFrame, NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND);
+         !barFrame->Style()->HasAuthorSpecifiedBorderOrBackground();
 }

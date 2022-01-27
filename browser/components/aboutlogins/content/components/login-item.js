@@ -118,6 +118,7 @@ export default class LoginItem extends HTMLElement {
     window.addEventListener("AboutLoginsLoadInitialFavicon", this);
     window.addEventListener("AboutLoginsLoginSelected", this);
     window.addEventListener("AboutLoginsShowBlankLogin", this);
+    window.addEventListener("AboutLoginsRemaskPassword", this);
   }
 
   focus() {
@@ -421,8 +422,12 @@ export default class LoginItem extends HTMLElement {
               detail: propertyToCopy,
             })
           );
-          otherCopyButton.disabled = false;
-          delete otherCopyButton.dataset.copied;
+          // If there is no username, this must be triggered by the password button,
+          // don't enable otherCopyButton (username copy button) in this case.
+          if (this._login.username) {
+            otherCopyButton.disabled = false;
+            delete otherCopyButton.dataset.copied;
+          }
           clearTimeout(this._copyUsernameTimeoutId);
           clearTimeout(this._copyPasswordTimeoutId);
           let timeoutId = setTimeout(() => {
@@ -544,6 +549,15 @@ export default class LoginItem extends HTMLElement {
         if (event.currentTarget == this._originInput && event.button == 1) {
           event.preventDefault();
         }
+        break;
+      }
+      case "AboutLoginsRemaskPassword": {
+        if (this._revealCheckbox.checked && !this.dataset.editing) {
+          this._revealCheckbox.checked = false;
+        }
+        this._updatePasswordRevealState();
+        let method = this._revealCheckbox.checked ? "show" : "hide";
+        this._recordTelemetryEvent({ object: "password", method });
         break;
       }
     }
@@ -863,7 +877,6 @@ export default class LoginItem extends HTMLElement {
       window.AboutLoginsUtils.passwordRevealVisible === false
     ) {
       this._revealCheckbox.hidden = true;
-      return;
     }
 
     let { checked } = this._revealCheckbox;

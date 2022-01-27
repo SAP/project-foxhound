@@ -1,9 +1,6 @@
 # sanity checks:
-# not valid on Android where type=number looks like type=text
-skip-if(Android&&nativeThemePref) != not-other-type-unthemed-1.html not-other-type-unthemed-1a-notref.html
-skip-if(Android&&nativeThemePref) != not-other-type-unthemed-1.html not-other-type-unthemed-1b-notref.html
-# only valid on Android where type=number looks the same as type=text
-skip-if(!(Android&&nativeThemePref)) == number-same-as-text-unthemed.html number-same-as-text-unthemed-ref.html
+!= not-other-type-unthemed-1.html not-other-type-unthemed-1a-notref.html
+!= not-other-type-unthemed-1.html not-other-type-unthemed-1b-notref.html
 
 # should look the same as type=text, except for the spin box
 == number-similar-to-text-unthemed.html number-similar-to-text-unthemed-ref.html
@@ -12,14 +9,15 @@ skip-if(!(Android&&nativeThemePref)) == number-same-as-text-unthemed.html number
 == number-similar-to-text-unthemed-vertical-rl.html number-similar-to-text-unthemed-vertical-rl-ref.html
 
 # dynamic type changes:
-fuzzy-if(cocoaWidget,0-63,0-4) fuzzy-if(skiaContent,0-2,0-5) == to-number-from-other-type-unthemed-1.html to-number-from-other-type-unthemed-1-ref.html
-fuzzy-if(skiaContent,0-2,0-5) == from-number-to-other-type-unthemed-1.html from-number-to-other-type-unthemed-1-ref.html
+fuzzy(0-2,0-5) == to-number-from-other-type-unthemed-1.html to-number-from-other-type-unthemed-1-ref.html
+fuzzy(0-2,0-5) == from-number-to-other-type-unthemed-1.html from-number-to-other-type-unthemed-1-ref.html
 
 # dynamic value changes:
-fuzzy-if(skiaContent,0-2,0-13) == show-value.html show-value-ref.html
+fuzzy(0-2,0-13) == show-value.html show-value-ref.html
 
 # disabled
 == number-disabled.html number-disabled-ref.html
+fails-if(Android&&nativeThemePref) != number-spinbox-disabled.html number-spinbox-disabled-notref.html
 
 # auto width:
 == number-auto-width-1.html number-auto-width-1-ref.html
@@ -35,10 +33,12 @@ skip-if(Android) == number-max-height-2.html number-max-height-2-ref.html
 fuzzy-if(!nativeThemePref,0-1,0-1) == number-significant-fractional-digits.html number-significant-fractional-digits-ref.html
 
 # focus
-fuzzy-if(skiaContent,0-2,0-5) needs-focus == focus-handling.html focus-handling-ref.html
+fuzzy(0-2,0-5) needs-focus == focus-handling.html focus-handling-ref.html # Win: Antialiasing underinvalidation, looks like.
+== spinner-overflow.html spinner-overflow-ref.html
+== spinner-overflow-vertical.html spinner-overflow-vertical-ref.html
 
 # select
-fuzzy-if(skiaContent,0-1,0-1) == number-selected.html number-selected-ref.html
+fuzzy(0-1,0-1) == number-selected.html number-selected-ref.html
 
 # pseudo-elements not usable from content:
 == number-pseudo-elements.html number-pseudo-elements-ref.html
@@ -62,4 +62,8 @@ fuzzy(0-128,0-4) == number-reframe-anon-text-field.html number-reframe-anon-text
 != padding-001.html padding-001-notref.html
 == padding-002.html padding-002-ref.html
 
-== clipped-text.html clipped-text-ref.html
+fuzzy-if(winWidget&&!nativeThemePref,0-35,0-17) fuzzy-if(!nativeThemePref,0-14,0-4) == clipped-text.html clipped-text-ref.html
+
+fails-if(useDrawSnapshot) needs-focus != caret-right.html caret-right-notref.html
+fails-if(useDrawSnapshot) needs-focus != caret-left-rtl.html caret-left-rtl-notref.html
+fails-if(useDrawSnapshot) needs-focus != caret-right-vertical.html caret-right-vertical-notref.html

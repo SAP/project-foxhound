@@ -9,7 +9,7 @@
 #include "MediaData.h"
 #include "MediaResource.h"
 #include "MoofParser.h"
-#include "mozilla/Result.h"
+#include "mozilla/ResultVariant.h"
 #include "MP4Interval.h"
 #include "nsISupportsImpl.h"
 #include "TimeUnits.h"
@@ -45,7 +45,7 @@ class SampleIterator {
   //
   // Returns: Ok(CryptoScheme) if a crypto scheme, including None, can be
   // determined, or Err(nsCString) if there is an issue determining the scheme.
-  Result<CryptoScheme, const nsCString> GetEncryptionScheme();
+  Result<CryptoScheme, nsCString> GetEncryptionScheme();
 
   void Next();
   RefPtr<Index> mIndex;

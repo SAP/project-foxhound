@@ -5,11 +5,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RefMessageBodyService.h"
+
+#include <cstdint>
+#include <cstdlib>
+#include "mozilla/ErrorResult.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/dom/ipc/StructuredCloneData.h"
+#include "nsBaseHashtable.h"
 #include "nsContentUtils.h"
+#include "nsDebug.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
+// Guards sService and its members.
 StaticMutex sRefMessageBodyServiceMutex;
 
 // Raw pointer because the service is kept alive by other objects.
@@ -28,16 +36,18 @@ already_AddRefed<RefMessageBodyService> RefMessageBodyService::GetOrCreate() {
 RefMessageBodyService* RefMessageBodyService::GetOrCreateInternal(
     const StaticMutexAutoLock& aProofOfLock) {
   if (!sService) {
-    sService = new RefMessageBodyService();
+    sService = new RefMessageBodyService(aProofOfLock);
   }
   return sService;
 }
 
-RefMessageBodyService::RefMessageBodyService() {
+RefMessageBodyService::RefMessageBodyService(
+    const StaticMutexAutoLock& aProofOfLock) {
   MOZ_DIAGNOSTIC_ASSERT(sService == nullptr);
 }
 
 RefMessageBodyService::~RefMessageBodyService() {
+  StaticMutexAutoLock lock(sRefMessageBodyServiceMutex);
   MOZ_DIAGNOSTIC_ASSERT(sService == this);
   sService = nullptr;
 }
@@ -54,7 +64,7 @@ const nsID RefMessageBodyService::Register(
   }
 
   StaticMutexAutoLock lock(sRefMessageBodyServiceMutex);
-  GetOrCreateInternal(lock)->mMessages.Put(uuid, std::move(body));
+  GetOrCreateInternal(lock)->mMessages.InsertOrUpdate(uuid, std::move(body));
   return uuid;
 }
 
@@ -119,7 +129,7 @@ void RefMessageBodyService::ForgetPort(const nsID& aPortID) {
     return;
   }
 
-  for (auto iter = sService->mMessages.ConstIter(); !iter.Done(); iter.Next()) {
+  for (auto iter = sService->mMessages.Iter(); !iter.Done(); iter.Next()) {
     if (iter.UserData()->PortID() == aPortID) {
       iter.Remove();
     }
@@ -134,6 +144,8 @@ RefMessageBody::RefMessageBody(const nsID& aPortID,
       mMaxCount(Nothing()),
       mCount(0) {}
 
+RefMessageBody::~RefMessageBody() = default;
+
 void RefMessageBody::Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue,
                           const JS::CloneDataPolicy& aCloneDataPolicy,
                           ErrorResult& aRv) {
@@ -147,5 +159,4 @@ bool RefMessageBody::TakeTransferredPortsAsSequence(
   return mCloneData->TakeTransferredPortsAsSequence(aPorts);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

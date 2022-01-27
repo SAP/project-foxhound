@@ -1,4 +1,4 @@
-// |jit-test| skip-if: !wasmThreadsSupported()
+// |jit-test| skip-if: !wasmThreadsEnabled()
 
 const oob = /index out of bounds/;
 const unaligned = /unaligned memory access/;
@@ -534,3 +534,29 @@ assertErrorMessage(() => wasmEvalText(`(module
     drop
   )
 )`).exports.main(), RuntimeError, unaligned);
+
+// Make sure we can handle wait and notify without memory
+
+var nomem = /(can't touch memory without memory)|(unknown memory)/;
+
+assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(`
+(module
+  (func (result i32)
+    (atomic.notify (i32.const 0) (i32.const 1))))`)),
+                   WebAssembly.CompileError,
+                   nomem);
+
+assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(`
+(module
+  (func (result i32)
+    (i32.atomic.wait (i32.const 0) (i32.const 1) (i64.const -1))))`)),
+                   WebAssembly.CompileError,
+                   nomem);
+
+assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(`
+(module
+  (func (result i32)
+    (i64.atomic.wait (i32.const 0) (i64.const 1) (i64.const -1))))`)),
+                   WebAssembly.CompileError,
+                   nomem);
+

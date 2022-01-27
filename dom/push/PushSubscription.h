@@ -7,22 +7,24 @@
 #ifndef mozilla_dom_PushSubscription_h
 #define mozilla_dom_PushSubscription_h
 
-#include "jsapi.h"
+#include "js/RootingAPI.h"
 #include "nsCOMPtr.h"
 #include "nsWrapperCache.h"
 
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/RefPtr.h"
 
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/PushSubscriptionBinding.h"
 #include "mozilla/dom/PushSubscriptionOptionsBinding.h"
 #include "mozilla/dom/TypedArray.h"
+#include "domstubs.h"
 
 class nsIGlobalObject;
 
 namespace mozilla {
+class ErrorResult;
+
 namespace dom {
 
 class Promise;
@@ -33,7 +35,9 @@ class PushSubscription final : public nsISupports, public nsWrapperCache {
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(PushSubscription)
 
   PushSubscription(nsIGlobalObject* aGlobal, const nsAString& aEndpoint,
-                   const nsAString& aScope, nsTArray<uint8_t>&& aP256dhKey,
+                   const nsAString& aScope,
+                   Nullable<EpochTimeStamp>&& aExpirationTime,
+                   nsTArray<uint8_t>&& aP256dhKey,
                    nsTArray<uint8_t>&& aAuthSecret,
                    nsTArray<uint8_t>&& aAppServerKey);
 
@@ -46,6 +50,8 @@ class PushSubscription final : public nsISupports, public nsWrapperCache {
 
   void GetKey(JSContext* cx, PushEncryptionKeyName aType,
               JS::MutableHandle<JSObject*> aKey, ErrorResult& aRv);
+
+  Nullable<EpochTimeStamp> GetExpirationTime() { return mExpirationTime; };
 
   static already_AddRefed<PushSubscription> Constructor(
       GlobalObject& aGlobal, const PushSubscriptionInit& aInitDict,
@@ -64,6 +70,7 @@ class PushSubscription final : public nsISupports, public nsWrapperCache {
 
   nsString mEndpoint;
   nsString mScope;
+  Nullable<EpochTimeStamp> mExpirationTime;
   nsTArray<uint8_t> mRawP256dhKey;
   nsTArray<uint8_t> mAuthSecret;
   nsCOMPtr<nsIGlobalObject> mGlobal;

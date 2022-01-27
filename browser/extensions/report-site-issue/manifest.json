@@ -3,7 +3,7 @@
   "name": "WebCompat Reporter",
   "description": "Report site compatibility issues on webcompat.com",
   "author": "Thomas Wisniewski <twisniewski@mozilla.com>",
-  "version": "1.3.0",
+  "version": "1.4.2",
   "homepage_url": "https://github.com/mozilla/webcompat-reporter",
   "applications": {
     "gecko": {
@@ -27,20 +27,20 @@
         "paths": [["browserInfo"]]
       }
     },
+    "helpMenu": {
+      "schema": "experimentalAPIs/helpMenu.json",
+      "parent": {
+        "scopes": ["addon_parent"],
+        "script": "experimentalAPIs/helpMenu.js",
+        "paths": [["helpMenu"]]
+      }
+    },
     "l10n": {
       "schema": "experimentalAPIs/l10n.json",
       "parent": {
         "scopes": ["addon_parent"],
         "script": "experimentalAPIs/l10n.js",
         "paths": [["l10n"]]
-      }
-    },
-    "pageActionExtras": {
-      "schema": "experimentalAPIs/pageActionExtras.json",
-      "parent": {
-        "scopes": ["addon_parent"],
-        "script": "experimentalAPIs/pageActionExtras.js",
-        "paths": [["pageActionExtras"]]
       }
     },
     "tabExtras": {
@@ -67,12 +67,5 @@
     "scripts": [
       "background.js"
     ]
-  },
-  "page_action": {
-    "browser_style": true,
-    "default_icon": "icons/lightbulb.svg",
-    "default_title": "Report Site Issue…",
-    "pinned": false,
-    "show_matches": ["http://*/*", "https://*/*"]
   }
 }

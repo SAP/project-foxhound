@@ -6,6 +6,7 @@ root:
       id: 2
       "content-size": [500, 100]
       bounds: [0, 0, 500, 100]
+      clip-to-frame: true
       items:
         -
           type: "stacking-context"
@@ -14,7 +15,7 @@ root:
             -
               type: "stacking-context"
               bounds: [0, 0, 250, 100]
-              transform: rotate-y(-54)
+              transform: rotate-y(54)
               items:
                 -
                   bounds: [0, 0, 128, 128]

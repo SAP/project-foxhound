@@ -12,15 +12,18 @@
 #include "nsDOMDataChannelDeclarations.h"
 #include "nsDOMDataChannel.h"
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/EventListenerManager.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/MessageEvent.h"
 #include "mozilla/dom/MessageEventBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/Blob.h"
 
 #include "nsError.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsIScriptContext.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsProxyRelease.h"
 
@@ -170,7 +173,11 @@ void nsDOMDataChannel::Close() {
 
 // All of the following is copy/pasted from WebSocket.cpp.
 void nsDOMDataChannel::Send(const nsAString& aData, ErrorResult& aRv) {
-  NS_ConvertUTF16toUTF8 msgString(aData);
+  nsAutoCString msgString;
+  if (!AppendUTF16toUTF8(aData, msgString, mozilla::fallible_t())) {
+    aRv.Throw(NS_ERROR_FILE_TOO_BIG);
+    return;
+  }
   Send(nullptr, &msgString, false, aRv);
 }
 
@@ -206,7 +213,12 @@ void nsDOMDataChannel::Send(const ArrayBuffer& aData, ErrorResult& aRv) {
   uint32_t len = aData.Length();
   char* data = reinterpret_cast<char*>(aData.Data());
 
-  nsDependentCSubstring msgString(data, len);
+  nsDependentCSubstring msgString;
+  if (!msgString.Assign(data, len, mozilla::fallible_t())) {
+    aRv.Throw(NS_ERROR_FILE_TOO_BIG);
+    return;
+  }
+
   Send(nullptr, &msgString, true, aRv);
 }
 
@@ -220,7 +232,12 @@ void nsDOMDataChannel::Send(const ArrayBufferView& aData, ErrorResult& aRv) {
   uint32_t len = aData.Length();
   char* data = reinterpret_cast<char*>(aData.Data());
 
-  nsDependentCSubstring msgString(data, len);
+  nsDependentCSubstring msgString;
+  if (!msgString.Assign(data, len, mozilla::fallible_t())) {
+    aRv.Throw(NS_ERROR_FILE_TOO_BIG);
+    return;
+  }
+
   Send(nullptr, &msgString, true, aRv);
 }
 
@@ -284,7 +301,7 @@ nsresult nsDOMDataChannel::DoOnMessageAvailable(const nsACString& aData,
   if (aBinary) {
     if (mBinaryType == DC_BINARY_TYPE_BLOB) {
       RefPtr<Blob> blob =
-          Blob::CreateStringBlob(GetOwnerGlobal(), aData, EmptyString());
+          Blob::CreateStringBlob(GetOwnerGlobal(), aData, u""_ns);
       if (NS_WARN_IF(!blob)) {
         return NS_ERROR_FAILURE;
       }
@@ -313,8 +330,8 @@ nsresult nsDOMDataChannel::DoOnMessageAvailable(const nsACString& aData,
   RefPtr<MessageEvent> event = new MessageEvent(this, nullptr, nullptr);
 
   event->InitMessageEvent(nullptr, u"message"_ns, CanBubble::eNo,
-                          Cancelable::eNo, jsData, mOrigin, EmptyString(),
-                          nullptr, Sequence<OwningNonNull<MessagePort>>());
+                          Cancelable::eNo, jsData, mOrigin, u""_ns, nullptr,
+                          Sequence<OwningNonNull<MessagePort>>());
   event->SetTrusted(true);
 
   DC_DEBUG(

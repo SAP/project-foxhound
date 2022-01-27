@@ -8,7 +8,7 @@
 #define mozilla_a11y_COMPtrTypes_h
 
 #include "mozilla/a11y/AccessibleHandler.h"
-#include "mozilla/a11y/Compatibility.h"
+#include "mozilla/mscom/ActCtxResource.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/mscom/ActivationContext.h"
 #include "mozilla/mscom/COMPtrHolder.h"
@@ -33,7 +33,7 @@ class MOZ_RAII IAccessibleEnvironment : public mscom::ProxyStream::Environment {
  private:
   static const mscom::ActivationContext& GetActCtx() {
     static const mscom::ActivationContext sActCtx(
-        Compatibility::GetActCtxResourceId());
+        mscom::ActCtxResource::GetAccessibilityResource());
     MOZ_DIAGNOSTIC_ASSERT(sActCtx);
     return sActCtx;
   }
@@ -61,9 +61,10 @@ typedef mozilla::mscom::COMPtrHolder<IAccessible, IID_IAccessible>
     IAccessibleHolder;
 typedef mozilla::mscom::COMPtrHolder<IDispatch, IID_IDispatch> IDispatchHolder;
 
-class Accessible;
+class LocalAccessible;
 
-IAccessibleHolder CreateHolderFromAccessible(NotNull<Accessible*> aAccToWrap);
+IAccessibleHolder CreateHolderFromAccessible(
+    NotNull<LocalAccessible*> aAccToWrap);
 
 typedef mozilla::mscom::COMPtrHolder<IHandlerControl, IID_IHandlerControl>
     IHandlerControlHolder;

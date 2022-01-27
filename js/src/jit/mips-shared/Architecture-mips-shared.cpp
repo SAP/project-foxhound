@@ -72,6 +72,11 @@ bool isLoongson = check_loongson();
 bool hasR2 = check_r2();
 }  // namespace mips_private
 
+bool CPUFlagsHaveBeenComputed() {
+  // Flags were computed above.
+  return true;
+}
+
 Registers::Code Registers::FromName(const char* name) {
   for (size_t i = 0; i < Total; i++) {
     if (strcmp(GetName(i), name) == 0) {
@@ -82,7 +87,7 @@ Registers::Code Registers::FromName(const char* name) {
   return Invalid;
 }
 
-void FlushICache(void* code, size_t size) {
+void FlushICache(void* code, size_t size, bool codeIsThreadLocal) {
 #if defined(JS_SIMULATOR)
   js::jit::SimulatorProcess::FlushICache(code, size);
 
@@ -100,7 +105,7 @@ void FlushICache(void* code, size_t size) {
       "jr.hb  $ra \n"
       "move   $ra, %[tmp] \n"
       ".set   pop\n"
-      : [ tmp ] "=&r"(tmp));
+      : [tmp] "=&r"(tmp));
 
 #elif defined(__GNUC__)
   intptr_t end = reinterpret_cast<intptr_t>(code) + size;

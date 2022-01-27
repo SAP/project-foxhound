@@ -9,7 +9,10 @@
 
 #include "moz_external_vr.h"
 #include "base/process.h"  // for base::ProcessHandle
+#include "mozilla/Atomics.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
+#include "nsCOMPtr.h"
 
 class nsIThread;
 namespace mozilla {
@@ -61,7 +64,7 @@ class VRService {
   // Only ever accessed on the service thread.
   UniquePtr<mozilla::BackgroundHangMonitor> mBackgroundHangMonitor;
 
-  bool mShutdownRequested;
+  Atomic<bool> mShutdownRequested;
 
   // Note: mShmem doesn't support RefPtr; thus, do not share this private
   // pointer so that its lifetime can still be controlled by VRService

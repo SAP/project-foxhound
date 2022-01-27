@@ -27,6 +27,13 @@ extern mozilla::LazyLogModule gStorageLog;
 namespace mozilla {
 namespace storage {
 
+bool isErrorCode(int aSQLiteResultCode) {
+  // Drop off the extended result bits of the result code.
+  int rc = aSQLiteResultCode & 0xFF;
+
+  return rc != SQLITE_OK && rc != SQLITE_ROW && rc != SQLITE_DONE;
+}
+
 nsresult convertResultCode(int aSQLiteResultCode) {
   // Drop off the extended result bits of the result code.
   int rc = aSQLiteResultCode & 0xFF;
@@ -218,8 +225,6 @@ Variant_base* convertVariantToStorageVariant(nsIVariant* aVariant) {
       NS_WARNING("Unsupported variant type");
       return nullptr;
   }
-
-  return nullptr;
 }
 
 namespace {

@@ -49,9 +49,11 @@ def run_perfdocs(config, logger=None, paths=None, generate=True):
     if not top_dir:
         floc = os.path.abspath(__file__)
         top_dir = floc.split("tools")[0]
+    top_dir = top_dir.replace("\\", "\\\\")
 
     PerfDocLogger.LOGGER = logger
     PerfDocLogger.TOP_DIR = top_dir
+
     # Convert all the paths to relative ones
     rel_paths = [re.sub(top_dir, "", path) for path in paths]
     PerfDocLogger.PATHS = rel_paths
@@ -61,12 +63,24 @@ def run_perfdocs(config, logger=None, paths=None, generate=True):
         if not os.path.exists(path):
             raise Exception("Cannot locate directory at %s" % path)
 
+    decision_task_id = os.environ.get("DECISION_TASK_ID", None)
+    if decision_task_id:
+        from gecko_taskgraph.util.taskcluster import get_artifact
+
+        task_graph = get_artifact(decision_task_id, "public/full-task-graph.json")
+    else:
+        from tryselect.tasks import generate_tasks
+
+        task_graph = generate_tasks(
+            params=None, full=True, disable_target_task_filter=True
+        ).tasks
+
     # Late import because logger isn't defined until later
     from perfdocs.generator import Generator
     from perfdocs.verifier import Verifier
 
     # Run the verifier first
-    verifier = Verifier(top_dir)
+    verifier = Verifier(top_dir, task_graph)
     verifier.validate_tree()
 
     if not PerfDocLogger.FAILED:

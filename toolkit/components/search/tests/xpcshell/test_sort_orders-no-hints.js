@@ -11,10 +11,10 @@
 add_task(async function setup() {
   await AddonTestUtils.promiseStartupManager();
 
-  await useTestEngines(
+  await SearchTestUtils.useTestEngines(
     "data",
     null,
-    readJSONFile(do_get_file("data/engines-no-order-hint.json")).data
+    (await readJSONFile(do_get_file("data/engines-no-order-hint.json"))).data
   );
 
   Services.prefs.setBoolPref(
@@ -36,15 +36,12 @@ async function checkOrder(type, expectedOrder) {
 }
 
 add_task(async function test_engine_sort_with_non_builtins_sort() {
-  await Services.search.addEngineWithDetails("nonbuiltin1", {
-    method: "get",
-    template: "http://example.com/?search={searchTerms}",
-  });
+  await SearchTestUtils.installSearchExtension({ name: "nonbuiltin1" });
 
   // As we've added an engine, the pref will have been set to true, but
   // we do really want to test the default sort.
-  Services.prefs.setBoolPref(
-    SearchUtils.BROWSER_SEARCH_PREF + "useDBForOrder",
+  Services.search.wrappedJSObject._settings.setAttribute(
+    "useSavedOrder",
     false
   );
 
@@ -61,7 +58,7 @@ add_task(async function test_engine_sort_with_non_builtins_sort() {
   ];
 
   // We should still have the same built-in engines listed.
-  await checkOrder("getDefaultEngines", EXPECTED_ORDER);
+  await checkOrder("getAppProvidedEngines", EXPECTED_ORDER);
 
   const expected = [...EXPECTED_ORDER];
   // This is inserted in alphabetical order for the last three.

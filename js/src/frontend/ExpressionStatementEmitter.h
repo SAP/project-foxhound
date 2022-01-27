@@ -8,7 +8,6 @@
 #define frontend_ExpressionStatementEmitter_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/Maybe.h"
 
 #include <stdint.h>
 
@@ -29,7 +28,7 @@ struct BytecodeEmitter;
 //     ValueUsage valueUsage = ...;
 //
 //     ExpressionStatementEmitter ese(this, valueUsage);
-//     ese.prepareForExpr(Some(offset_of_expr));
+//     ese.prepareForExpr(offset_of_expr);
 //     emit(expr);
 //     ese.emitEnd();
 //
@@ -72,10 +71,8 @@ class MOZ_STACK_CLASS ExpressionStatementEmitter {
   //   ^
   //   |
   //   beginPos
-  //
-  // Can be Nothing() if not available.
-  MOZ_MUST_USE bool prepareForExpr(const mozilla::Maybe<uint32_t>& beginPos);
-  MOZ_MUST_USE bool emitEnd();
+  [[nodiscard]] bool prepareForExpr(uint32_t beginPos);
+  [[nodiscard]] bool emitEnd();
 };
 
 }  // namespace frontend

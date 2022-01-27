@@ -10,6 +10,10 @@
 #include "mozilla/dom/HTMLUnknownElement.h"
 #include "mozilla/StaticPrefs_dom.h"
 
+#include "nsContentUtils.h"
+#include "nsFocusManager.h"
+#include "nsIFrame.h"
+
 // Expand NS_IMPL_NS_NEW_HTML_ELEMENT(Dialog) with pref check
 nsGenericHTMLElement* NS_NewHTMLDialogElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
@@ -23,8 +27,7 @@ nsGenericHTMLElement* NS_NewHTMLDialogElement(
   return new (nim) mozilla::dom::HTMLUnknownElement(nodeInfo.forget());
 }
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 HTMLDialogElement::~HTMLDialogElement() = default;
 
@@ -49,6 +52,18 @@ void HTMLDialogElement::Close(
 
   RemoveFromTopLayerIfNeeded();
 
+  RefPtr<Element> previouslyFocusedElement =
+      do_QueryReferent(mPreviouslyFocusedElement);
+
+  if (previouslyFocusedElement) {
+    mPreviouslyFocusedElement = nullptr;
+
+    FocusOptions options;
+    options.mPreventScroll = true;
+    previouslyFocusedElement->Focus(options, CallerType::NonSystem,
+                                    IgnoredErrorResult());
+  }
+
   RefPtr<AsyncEventDispatcher> eventDispatcher =
       new AsyncEventDispatcher(this, u"close"_ns, CanBubble::eNo);
   eventDispatcher->PostDOMEvent();
@@ -59,11 +74,25 @@ void HTMLDialogElement::Show() {
     return;
   }
   SetOpen(true, IgnoreErrors());
+
+  StorePreviouslyFocusedElement();
+
   FocusDialog();
 }
 
 bool HTMLDialogElement::IsInTopLayer() const {
   return State().HasState(NS_EVENT_STATE_MODAL_DIALOG);
+}
+
+void HTMLDialogElement::AddToTopLayerIfNeeded() {
+  if (IsInTopLayer()) {
+    return;
+  }
+
+  Document* doc = OwnerDoc();
+  doc->TopLayerPush(this);
+  doc->SetBlockedByModalDialog(*this);
+  AddStates(NS_EVENT_STATE_MODAL_DIALOG);
 }
 
 void HTMLDialogElement::RemoveFromTopLayerIfNeeded() {
@@ -72,9 +101,20 @@ void HTMLDialogElement::RemoveFromTopLayerIfNeeded() {
   }
   auto predictFunc = [&](Element* element) { return element == this; };
 
-  DebugOnly<Element*> removedElement = OwnerDoc()->TopLayerPop(predictFunc);
+  Document* doc = OwnerDoc();
+  DebugOnly<Element*> removedElement = doc->TopLayerPop(predictFunc);
   MOZ_ASSERT(removedElement == this);
   RemoveStates(NS_EVENT_STATE_MODAL_DIALOG);
+  doc->UnsetBlockedByModalDialog(*this);
+}
+
+void HTMLDialogElement::StorePreviouslyFocusedElement() {
+  if (Document* doc = GetComposedDoc()) {
+    if (nsIContent* unretargetedFocus = doc->GetUnretargetedFocusedContent()) {
+      mPreviouslyFocusedElement =
+          do_GetWeakReference(unretargetedFocus->AsElement());
+    }
+  }
 }
 
 void HTMLDialogElement::UnbindFromTree(bool aNullParent) {
@@ -94,11 +134,12 @@ void HTMLDialogElement::ShowModal(ErrorResult& aError) {
     return;
   }
 
-  if (!IsInTopLayer() && OwnerDoc()->TopLayerPush(this)) {
-    AddStates(NS_EVENT_STATE_MODAL_DIALOG);
-  }
+  AddToTopLayerIfNeeded();
 
   SetOpen(true, aError);
+
+  StorePreviouslyFocusedElement();
+
   FocusDialog();
 
   aError.SuppressException();
@@ -112,33 +153,35 @@ void HTMLDialogElement::FocusDialog() {
     doc->FlushPendingNotifications(FlushType::Frames);
   }
 
-  Element* control = nullptr;
-  nsIContent* child = GetFirstChild();
-  while (child) {
-    if (child->IsElement()) {
-      nsIFrame* frame = child->GetPrimaryFrame();
-      if (frame && frame->IsFocusable()) {
-        if (child->AsElement()->HasAttr(kNameSpaceID_None,
-                                        nsGkAtoms::autofocus)) {
-          // Find the first descendant of element of subject that this
-          // not inert and has autofucus attribute
-          // inert bug: https://bugzilla.mozilla.org/show_bug.cgi?id=921504
-          control = child->AsElement();
-          break;
-        }
-        // If there isn't one, then let control be the first non-inert
-        // descendant element of subject, in tree order.
-        if (!control) {
-          control = child->AsElement();
-        }
-      }
+  Element* controlCandidate = nullptr;
+  for (auto* child = GetFirstChild(); child; child = child->GetNextNode(this)) {
+    auto* element = Element::FromNode(child);
+    if (!element) {
+      continue;
     }
-    child = child->GetNextNode(this);
+    nsIFrame* frame = element->GetPrimaryFrame();
+    if (!frame || !frame->IsFocusable()) {
+      continue;
+    }
+    if (element->HasAttr(nsGkAtoms::autofocus)) {
+      // Find the first descendant of element of subject that this not inert and
+      // has autofocus attribute.
+      controlCandidate = element;
+      break;
+    }
+    if (!controlCandidate) {
+      // If there isn't one, then let control be the first non-inert descendant
+      // element of subject, in tree order.
+      controlCandidate = element;
+    }
   }
+
   // If there isn't one of those either, then let control be subject.
-  if (!control) {
-    control = this;
+  if (!controlCandidate) {
+    controlCandidate = this;
   }
+
+  RefPtr<Element> control = controlCandidate;
 
   // 3) Run the focusing steps for control.
   ErrorResult rv;
@@ -148,12 +191,9 @@ void HTMLDialogElement::FocusDialog() {
     if (rv.Failed()) {
       return;
     }
-  } else {
-    nsIFocusManager* fm = nsFocusManager::GetFocusManager();
-    if (fm) {
-      // Clear the focus which ends up making the body gets focused
-      fm->ClearFocus(OwnerDoc()->GetWindow());
-    }
+  } else if (nsFocusManager* fm = nsFocusManager::GetFocusManager()) {
+    // Clear the focus which ends up making the body gets focused
+    fm->ClearFocus(OwnerDoc()->GetWindow());
   }
 
   // 4) Let topDocument be the active document of control's node document's
@@ -162,9 +202,8 @@ void HTMLDialogElement::FocusDialog() {
   // topDocument, then return.
   BrowsingContext* bc = control->OwnerDoc()->GetBrowsingContext();
   if (bc && bc->SameOriginWithTop()) {
-    nsCOMPtr<nsIDocShell> docShell = bc->Top()->GetDocShell();
-    if (docShell) {
-      if (Document* topDocument = docShell->GetDocument()) {
+    if (nsCOMPtr<nsIDocShell> docShell = bc->Top()->GetDocShell()) {
+      if (Document* topDocument = docShell->GetExtantDocument()) {
         // 6) Empty topDocument's autofocus candidates.
         // 7) Set topDocument's autofocus processed flag to true.
         topDocument->SetAutoFocusFired();
@@ -203,5 +242,4 @@ JSObject* HTMLDialogElement::WrapNode(JSContext* aCx,
   return HTMLDialogElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

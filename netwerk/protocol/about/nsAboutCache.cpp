@@ -65,7 +65,6 @@ nsresult nsAboutCache::Channel::Init(nsIURI* aURI, nsILoadInfo* aLoadInfo) {
     // ...and visit all we can
     mStorageList.AppendElement("memory"_ns);
     mStorageList.AppendElement("disk"_ns);
-    mStorageList.AppendElement("appcache"_ns);
   } else {
     // ...and visit just the specified storage, entries will output too
     mStorageList.AppendElement(storageName);
@@ -85,9 +84,11 @@ nsresult nsAboutCache::Channel::Init(nsIURI* aURI, nsILoadInfo* aLoadInfo) {
       "<head>\n"
       "  <title>Network Cache Storage Information</title>\n"
       "  <meta charset=\"utf-8\">\n"
+      "  <meta name=\"color-scheme\" content=\"light dark\">\n"
       "  <meta http-equiv=\"Content-Security-Policy\" content=\"default-src "
       "chrome:; object-src 'none'\"/>\n"
-      "  <link rel=\"stylesheet\" href=\"chrome://global/skin/about.css\"/>\n"
+      "  <link rel=\"stylesheet\" "
+      "href=\"chrome://global/skin/in-content/info-pages.css\"/>\n"
       "  <link rel=\"stylesheet\" "
       "href=\"chrome://global/skin/aboutCache.css\"/>\n"
       "</head>\n"
@@ -215,14 +216,10 @@ nsresult nsAboutCache::GetStorage(nsACString const& storageName,
 
   nsCOMPtr<nsICacheStorage> cacheStorage;
   if (storageName == "disk") {
-    rv = cacheService->DiskCacheStorage(loadInfo, false,
-                                        getter_AddRefs(cacheStorage));
+    rv = cacheService->DiskCacheStorage(loadInfo, getter_AddRefs(cacheStorage));
   } else if (storageName == "memory") {
     rv = cacheService->MemoryCacheStorage(loadInfo,
                                           getter_AddRefs(cacheStorage));
-  } else if (storageName == "appcache") {
-    rv = cacheService->AppCacheStorage(loadInfo, nullptr,
-                                       getter_AddRefs(cacheStorage));
   } else {
     rv = NS_ERROR_UNEXPECTED;
   }
@@ -300,10 +297,10 @@ nsAboutCache::Channel::OnCacheStorageInfo(uint32_t aEntryCount,
     if (aEntryCount != 0) {  // Add the "List Cache Entries" link
       mBuffer.AppendLiteral(
           "  <tr>\n"
-          "    <th><a href=\"about:cache?storage=");
+          "    <td colspan=\"2\"><a href=\"about:cache?storage=");
       nsAppendEscapedHTML(mStorageName, mBuffer);
       mBuffer.AppendLiteral(
-          "\">List Cache Entries</a></th>\n"
+          "\">List Cache Entries</a></td>\n"
           "  </tr>\n");
     }
   }
@@ -513,7 +510,8 @@ nsresult nsAboutCache::Channel::FlushBuffer() {
 
 NS_IMETHODIMP
 nsAboutCache::GetURIFlags(nsIURI* aURI, uint32_t* result) {
-  *result = nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT;
+  *result = nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+            nsIAboutModule::IS_SECURE_CHROME_UI;
   return NS_OK;
 }
 
@@ -522,6 +520,11 @@ nsresult nsAboutCache::Create(nsISupports* aOuter, REFNSIID aIID,
                               void** aResult) {
   RefPtr<nsAboutCache> about = new nsAboutCache();
   return about->QueryInterface(aIID, aResult);
+}
+
+NS_IMETHODIMP
+nsAboutCache::GetChromeURI(nsIURI* aURI, nsIURI** chromeURI) {
+  return NS_ERROR_ILLEGAL_VALUE;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

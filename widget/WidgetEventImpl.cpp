@@ -7,14 +7,18 @@
 #include "mozilla/ContentEvents.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/InternalMutationEvent.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_mousewheel.h"
 #include "mozilla/StaticPrefs_ui.h"
+#include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
+#include "mozilla/WritingModes.h"
 #include "mozilla/dom/KeyboardEventBinding.h"
+#include "mozilla/dom/WheelEventBinding.h"
 #include "nsCommandParams.h"
 #include "nsContentUtils.h"
 #include "nsIContent.h"
@@ -23,7 +27,12 @@
 
 #if defined(XP_WIN)
 #  include "npapi.h"
-#endif
+#  include "WinUtils.h"
+#endif  // #if defined (XP_WIN)
+
+#if defined(MOZ_WIDGET_GTK) || defined(XP_MACOSX)
+#  include "NativeKeyBindings.h"
+#endif  // #if defined(MOZ_WIDGET_GTK) || defined(XP_MACOSX)
 
 namespace mozilla {
 
@@ -188,7 +197,7 @@ SelectionType ToSelectionType(TextRangeType aTextRangeType) {
  * non class method implementation
  ******************************************************************************/
 
-static nsDataHashtable<nsDepCharHashKey, Command>* sCommandHashtable = nullptr;
+static nsTHashMap<nsDepCharHashKey, Command>* sCommandHashtable = nullptr;
 
 Command GetInternalCommand(const char* aCommandName,
                            const nsCommandParams* aCommandParams) {
@@ -213,7 +222,7 @@ Command GetInternalCommand(const char* aCommandName,
       if (NS_FAILED(rv)) {
         return Command::FormatJustifyNone;
       }
-      cValue = NS_ConvertUTF16toUTF8(value);
+      CopyUTF16toUTF8(value, cValue);
     }
     if (cValue.LowerCaseEqualsASCII("left")) {
       return Command::FormatJustifyLeft;
@@ -234,9 +243,9 @@ Command GetInternalCommand(const char* aCommandName,
   }
 
   if (!sCommandHashtable) {
-    sCommandHashtable = new nsDataHashtable<nsDepCharHashKey, Command>();
+    sCommandHashtable = new nsTHashMap<nsDepCharHashKey, Command>();
 #define NS_DEFINE_COMMAND(aName, aCommandStr) \
-  sCommandHashtable->Put(#aCommandStr, Command::aName);
+  sCommandHashtable->InsertOrUpdate(#aCommandStr, Command::aName);
 
 #define NS_DEFINE_COMMAND_WITH_PARAM(aName, aCommandStr, aParam)
 
@@ -288,10 +297,6 @@ bool WidgetEvent::IsSelectionEvent() const {
 
 bool WidgetEvent::IsContentCommandEvent() const {
   return mClass == eContentCommandEventClass;
-}
-
-bool WidgetEvent::IsNativeEventDelivererForPlugin() const {
-  return mClass == ePluginEventClass;
 }
 
 /******************************************************************************
@@ -402,14 +407,6 @@ bool WidgetEvent::CanBeSentToRemoteProcess() const {
     case eDragExit:
     case eDrop:
       return true;
-#if defined(XP_WIN)
-    case ePluginInputEvent: {
-      auto evt = static_cast<const NPEvent*>(AsPluginEvent()->mPluginEvent);
-      return evt && evt->event == WM_SETTINGCHANGE &&
-             (evt->wParam == SPI_SETWHEELSCROLLLINES ||
-              evt->wParam == SPI_SETWHEELSCROLLCHARS);
-    }
-#endif
     default:
       return false;
   }
@@ -427,18 +424,8 @@ bool WidgetEvent::WillBeSentToRemoteProcess() const {
     return false;
   }
 
-  nsCOMPtr<nsIContent> originalTarget = do_QueryInterface(mOriginalTarget);
-  return EventStateManager::IsTopLevelRemoteTarget(originalTarget);
-}
-
-bool WidgetEvent::IsRetargetedNativeEventDelivererForPlugin() const {
-  const WidgetPluginEvent* pluginEvent = AsPluginEvent();
-  return pluginEvent && pluginEvent->mRetargetToFocusedDocument;
-}
-
-bool WidgetEvent::IsNonRetargetedNativeEventDelivererForPlugin() const {
-  const WidgetPluginEvent* pluginEvent = AsPluginEvent();
-  return pluginEvent && !pluginEvent->mRetargetToFocusedDocument;
+  return EventStateManager::IsTopLevelRemoteTarget(
+      nsIContent::FromEventTarget(mOriginalTarget));
 }
 
 bool WidgetEvent::IsIMERelatedEvent() const {
@@ -451,8 +438,7 @@ bool WidgetEvent::IsUsingCoordinates() const {
     return !mouseEvent->IsContextMenuKeyEvent();
   }
   return !HasKeyEventMessage() && !IsIMERelatedEvent() &&
-         !HasPluginActivationEventMessage() &&
-         !IsNativeEventDelivererForPlugin() && !IsContentCommandEvent();
+         !HasPluginActivationEventMessage() && !IsContentCommandEvent();
 }
 
 bool WidgetEvent::IsTargetedAtFocusedWindow() const {
@@ -460,8 +446,7 @@ bool WidgetEvent::IsTargetedAtFocusedWindow() const {
   if (mouseEvent) {
     return mouseEvent->IsContextMenuKeyEvent();
   }
-  return HasKeyEventMessage() || IsIMERelatedEvent() ||
-         IsContentCommandEvent() || IsRetargetedNativeEventDelivererForPlugin();
+  return HasKeyEventMessage() || IsIMERelatedEvent() || IsContentCommandEvent();
 }
 
 bool WidgetEvent::IsTargetedAtFocusedContent() const {
@@ -469,8 +454,7 @@ bool WidgetEvent::IsTargetedAtFocusedContent() const {
   if (mouseEvent) {
     return mouseEvent->IsContextMenuKeyEvent();
   }
-  return HasKeyEventMessage() || IsIMERelatedEvent() ||
-         IsRetargetedNativeEventDelivererForPlugin();
+  return HasKeyEventMessage() || IsIMERelatedEvent();
 }
 
 bool WidgetEvent::IsAllowedToDispatchDOMEvent() const {
@@ -607,7 +591,6 @@ bool WidgetEvent::IsUserAction() const {
     case eTouchEventClass:
     case eCommandEventClass:
     case eContentCommandEventClass:
-    case ePluginEventClass:
       return true;
     case eMouseEventClass:
     case eDragEventClass:
@@ -669,6 +652,30 @@ bool WidgetMouseEvent::IsMiddleClickPasteEnabled() {
   return Preferences::GetBool("middlemouse.paste", false);
 }
 
+#ifdef DEBUG
+void WidgetMouseEvent::AssertContextMenuEventButtonConsistency() const {
+  if (mMessage != eContextMenu) {
+    return;
+  }
+
+  if (mContextMenuTrigger == eNormal) {
+    NS_WARNING_ASSERTION(mButton == MouseButton::eSecondary,
+                         "eContextMenu events with eNormal trigger should use "
+                         "secondary mouse button");
+  } else {
+    NS_WARNING_ASSERTION(mButton == MouseButton::ePrimary,
+                         "eContextMenu events with non-eNormal trigger should "
+                         "use primary mouse button");
+  }
+
+  if (mContextMenuTrigger == eControlClick) {
+    NS_WARNING_ASSERTION(IsControl(),
+                         "eContextMenu events with eControlClick trigger "
+                         "should return true from IsControl()");
+  }
+}
+#endif
+
 /******************************************************************************
  * mozilla::WidgetDragEvent (MouseEvents.h)
  ******************************************************************************/
@@ -723,16 +730,13 @@ void WidgetDragEvent::InitDropEffectForTests() {
 /* static */
 double WidgetWheelEvent::ComputeOverriddenDelta(double aDelta,
                                                 bool aIsForVertical) {
-  if (!StaticPrefs::
-          mousewheel_system_scroll_override_on_root_content_enabled()) {
+  if (!StaticPrefs::mousewheel_system_scroll_override_enabled()) {
     return aDelta;
   }
   int32_t intFactor =
       aIsForVertical
-          ? StaticPrefs::
-                mousewheel_system_scroll_override_on_root_content_vertical_factor()
-          : StaticPrefs::
-                mousewheel_system_scroll_override_on_root_content_horizontal_factor();
+          ? StaticPrefs::mousewheel_system_scroll_override_vertical_factor()
+          : StaticPrefs::mousewheel_system_scroll_override_horizontal_factor();
   // Making the scroll speed slower doesn't make sense. So, ignore odd factor
   // which is less than 1.0.
   if (intFactor <= 100) {
@@ -743,14 +747,18 @@ double WidgetWheelEvent::ComputeOverriddenDelta(double aDelta,
 }
 
 double WidgetWheelEvent::OverriddenDeltaX() const {
-  if (!mAllowToOverrideSystemScrollSpeed) {
+  if (!mAllowToOverrideSystemScrollSpeed ||
+      mDeltaMode != dom::WheelEvent_Binding::DOM_DELTA_LINE ||
+      mCustomizedByUserPrefs) {
     return mDeltaX;
   }
   return ComputeOverriddenDelta(mDeltaX, false);
 }
 
 double WidgetWheelEvent::OverriddenDeltaY() const {
-  if (!mAllowToOverrideSystemScrollSpeed) {
+  if (!mAllowToOverrideSystemScrollSpeed ||
+      mDeltaMode != dom::WheelEvent_Binding::DOM_DELTA_LINE ||
+      mCustomizedByUserPrefs) {
     return mDeltaY;
   }
   return ComputeOverriddenDelta(mDeltaY, true);
@@ -778,39 +786,45 @@ WidgetKeyboardEvent::KeyNameIndexHashtable*
 WidgetKeyboardEvent::CodeNameIndexHashtable*
     WidgetKeyboardEvent::sCodeNameIndexHashtable = nullptr;
 
-void WidgetKeyboardEvent::InitAllEditCommands() {
-  // If the event was created without widget, e.g., created event in chrome
-  // script, this shouldn't execute native key bindings.
-  if (NS_WARN_IF(!mWidget)) {
-    return;
+void WidgetKeyboardEvent::InitAllEditCommands(
+    const Maybe<WritingMode>& aWritingMode) {
+  // If this event is synthesized for tests, we don't need to retrieve the
+  // command via the main process.  So, we don't need widget and can trust
+  // the event.
+  if (!mFlags.mIsSynthesizedForTests) {
+    // If the event was created without widget, e.g., created event in chrome
+    // script, this shouldn't execute native key bindings.
+    if (NS_WARN_IF(!mWidget)) {
+      return;
+    }
+
+    // This event should be trusted event here and we shouldn't expose native
+    // key binding information to web contents with untrusted events.
+    if (NS_WARN_IF(!IsTrusted())) {
+      return;
+    }
+
+    MOZ_ASSERT(
+        XRE_IsParentProcess(),
+        "It's too expensive to retrieve all edit commands from remote process");
+    MOZ_ASSERT(!AreAllEditCommandsInitialized(),
+               "Shouldn't be called two or more times");
   }
 
-  // This event should be trusted event here and we shouldn't expose native
-  // key binding information to web contents with untrusted events.
-  if (NS_WARN_IF(!IsTrusted())) {
-    return;
-  }
-
-  MOZ_ASSERT(
-      XRE_IsParentProcess(),
-      "It's too expensive to retrieve all edit commands from remote process");
-  MOZ_ASSERT(!AreAllEditCommandsInitialized(),
-             "Shouldn't be called two or more times");
-
-  DebugOnly<bool> okIgnored =
-      InitEditCommandsFor(nsIWidget::NativeKeyBindingsForSingleLineEditor);
+  DebugOnly<bool> okIgnored = InitEditCommandsFor(
+      nsIWidget::NativeKeyBindingsForSingleLineEditor, aWritingMode);
   NS_WARNING_ASSERTION(
       okIgnored,
       "InitEditCommandsFor(nsIWidget::NativeKeyBindingsForSingleLineEditor) "
       "failed, but ignored");
-  okIgnored =
-      InitEditCommandsFor(nsIWidget::NativeKeyBindingsForMultiLineEditor);
+  okIgnored = InitEditCommandsFor(
+      nsIWidget::NativeKeyBindingsForMultiLineEditor, aWritingMode);
   NS_WARNING_ASSERTION(
       okIgnored,
       "InitEditCommandsFor(nsIWidget::NativeKeyBindingsForMultiLineEditor) "
       "failed, but ignored");
-  okIgnored =
-      InitEditCommandsFor(nsIWidget::NativeKeyBindingsForRichTextEditor);
+  okIgnored = InitEditCommandsFor(nsIWidget::NativeKeyBindingsForRichTextEditor,
+                                  aWritingMode);
   NS_WARNING_ASSERTION(
       okIgnored,
       "InitEditCommandsFor(nsIWidget::NativeKeyBindingsForRichTextEditor) "
@@ -818,17 +832,38 @@ void WidgetKeyboardEvent::InitAllEditCommands() {
 }
 
 bool WidgetKeyboardEvent::InitEditCommandsFor(
-    nsIWidget::NativeKeyBindingsType aType) {
-  if (NS_WARN_IF(!mWidget) || NS_WARN_IF(!IsTrusted())) {
-    return false;
-  }
-
+    nsIWidget::NativeKeyBindingsType aType,
+    const Maybe<WritingMode>& aWritingMode) {
   bool& initialized = IsEditCommandsInitializedRef(aType);
   if (initialized) {
     return true;
   }
   nsTArray<CommandInt>& commands = EditCommandsRef(aType);
-  initialized = mWidget->GetEditCommands(aType, *this, commands);
+
+  // If this event is synthesized for tests, we shouldn't access customized
+  // shortcut settings of the environment.  Therefore, we don't need to check
+  // whether `widget` is set or not.  And we can treat synthesized events are
+  // always trusted.
+  if (mFlags.mIsSynthesizedForTests) {
+    MOZ_DIAGNOSTIC_ASSERT(IsTrusted());
+#if defined(MOZ_WIDGET_GTK) || defined(XP_MACOSX)
+    // TODO: We should implement `NativeKeyBindings` for Windows and Android
+    //       too in bug 1301497 for getting rid of the #if.
+    widget::NativeKeyBindings::GetEditCommandsForTests(aType, *this,
+                                                       aWritingMode, commands);
+#endif
+    initialized = true;
+    return true;
+  }
+
+  if (NS_WARN_IF(!mWidget) || NS_WARN_IF(!IsTrusted())) {
+    return false;
+  }
+  // `nsIWidget::GetEditCommands()` will retrieve `WritingMode` at selection
+  // again, but it should be almost zero-cost since `TextEventDispatcher`
+  // caches the value.
+  nsCOMPtr<nsIWidget> widget = mWidget;
+  initialized = widget->GetEditCommands(aType, *this, commands);
   return initialized;
 }
 
@@ -847,8 +882,15 @@ bool WidgetKeyboardEvent::ExecuteEditCommands(
     return false;
   }
 
-  if (NS_WARN_IF(!InitEditCommandsFor(aType))) {
-    return false;
+  if (!IsEditCommandsInitializedRef(aType)) {
+    Maybe<WritingMode> writingMode;
+    if (RefPtr<widget::TextEventDispatcher> textEventDispatcher =
+            mWidget->GetTextEventDispatcher()) {
+      writingMode = textEventDispatcher->MaybeWritingModeAtSelection();
+    }
+    if (NS_WARN_IF(!InitEditCommandsFor(aType, writingMode))) {
+      return false;
+    }
   }
 
   const nsTArray<CommandInt>& commands = EditCommandsRef(aType);
@@ -1159,13 +1201,12 @@ KeyNameIndex WidgetKeyboardEvent::GetKeyNameIndex(const nsAString& aKeyValue) {
   if (!sKeyNameIndexHashtable) {
     sKeyNameIndexHashtable = new KeyNameIndexHashtable(ArrayLength(kKeyNames));
     for (size_t i = 0; i < ArrayLength(kKeyNames); i++) {
-      sKeyNameIndexHashtable->Put(nsDependentString(kKeyNames[i]),
-                                  static_cast<KeyNameIndex>(i));
+      sKeyNameIndexHashtable->InsertOrUpdate(nsDependentString(kKeyNames[i]),
+                                             static_cast<KeyNameIndex>(i));
     }
   }
-  KeyNameIndex result = KEY_NAME_INDEX_USE_STRING;
-  sKeyNameIndexHashtable->Get(aKeyValue, &result);
-  return result;
+  return sKeyNameIndexHashtable->MaybeGet(aKeyValue).valueOr(
+      KEY_NAME_INDEX_USE_STRING);
 }
 
 /* static */
@@ -1175,13 +1216,12 @@ CodeNameIndex WidgetKeyboardEvent::GetCodeNameIndex(
     sCodeNameIndexHashtable =
         new CodeNameIndexHashtable(ArrayLength(kCodeNames));
     for (size_t i = 0; i < ArrayLength(kCodeNames); i++) {
-      sCodeNameIndexHashtable->Put(nsDependentString(kCodeNames[i]),
-                                   static_cast<CodeNameIndex>(i));
+      sCodeNameIndexHashtable->InsertOrUpdate(nsDependentString(kCodeNames[i]),
+                                              static_cast<CodeNameIndex>(i));
     }
   }
-  CodeNameIndex result = CODE_NAME_INDEX_USE_STRING;
-  sCodeNameIndexHashtable->Get(aCodeValue, &result);
-  return result;
+  return sCodeNameIndexHashtable->MaybeGet(aCodeValue)
+      .valueOr(CODE_NAME_INDEX_USE_STRING);
 }
 
 /* static */
@@ -1222,7 +1262,7 @@ uint32_t WidgetKeyboardEvent::GetFallbackKeyCodeOfPunctuationKey(
 /* static */ const char* WidgetKeyboardEvent::GetCommandStr(Command aCommand) {
 #define NS_DEFINE_COMMAND(aName, aCommandStr) , #aCommandStr
 #define NS_DEFINE_COMMAND_WITH_PARAM(aName, aCommandStr, aParam) , #aCommandStr
-#define NS_DEFINE_COMMAND_NO_EXEC_COMMAND(aName)
+#define NS_DEFINE_COMMAND_NO_EXEC_COMMAND(aName) , ""
   static const char* const kCommands[] = {
       ""  // DoNothing
 #include "mozilla/CommandList.h"
@@ -1875,13 +1915,12 @@ EditorInputType InternalEditorInputEvent::GetEditorInputType(
   if (!sInputTypeHashtable) {
     sInputTypeHashtable = new InputTypeHashtable(ArrayLength(kInputTypeNames));
     for (size_t i = 0; i < ArrayLength(kInputTypeNames); i++) {
-      sInputTypeHashtable->Put(nsDependentString(kInputTypeNames[i]),
-                               static_cast<EditorInputType>(i));
+      sInputTypeHashtable->InsertOrUpdate(nsDependentString(kInputTypeNames[i]),
+                                          static_cast<EditorInputType>(i));
     }
   }
-  EditorInputType result = EditorInputType::eUnknown;
-  sInputTypeHashtable->Get(aInputType, &result);
-  return result;
+  return sInputTypeHashtable->MaybeGet(aInputType)
+      .valueOr(EditorInputType::eUnknown);
 }
 
 }  // namespace mozilla

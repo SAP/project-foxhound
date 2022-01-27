@@ -6,6 +6,7 @@
 
 #include "nsWrapperCacheInlines.h"
 
+#include "jsfriendapi.h"
 #include "js/Class.h"
 #include "js/Proxy.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
@@ -52,6 +53,12 @@ void nsWrapperCache::ReleaseWrapper(void* aScriptObjectHolder) {
 
 #ifdef DEBUG
 
+void nsWrapperCache::AssertUpdatedWrapperZone(const JSObject* aNewObject,
+                                              const JSObject* aOldObject) {
+  MOZ_ASSERT(js::GetObjectZoneFromAnyThread(aNewObject) ==
+             js::GetObjectZoneFromAnyThread(aOldObject));
+}
+
 class DebugWrapperTraversalCallback
     : public nsCycleCollectionTraversalCallback {
  public:
@@ -66,7 +73,7 @@ class DebugWrapperTraversalCallback
   DescribeGCedNode(bool aIsMarked, const char* aObjName,
                    uint64_t aCompartmentAddress) override {}
 
-  NS_IMETHOD_(void) NoteJSChild(const JS::GCCellPtr& aChild) override {
+  NS_IMETHOD_(void) NoteJSChild(JS::GCCellPtr aChild) override {
     if (aChild == mWrapper) {
       mFound = true;
     }

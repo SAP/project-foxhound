@@ -8,6 +8,7 @@
 
 #include <algorithm>  // for std::stable_sort
 #include "mozilla/Assertions.h"
+#include "mozilla/FloatingPoint.h"
 #include "AsyncPanZoomController.h"
 
 namespace mozilla {
@@ -95,6 +96,18 @@ void OverscrollHandoffChain::SnapBackOverscrolledApzc(
   }
 }
 
+void OverscrollHandoffChain::SnapBackOverscrolledApzcForMomentum(
+    const AsyncPanZoomController* aStart,
+    const ParentLayerPoint& aVelocity) const {
+  uint32_t i = IndexOf(aStart);
+  for (; i < Length(); ++i) {
+    AsyncPanZoomController* apzc = mChain[i];
+    if (!apzc->IsDestroyed()) {
+      apzc->SnapBackIfOverscrolledForMomentum(aVelocity);
+    }
+  }
+}
+
 bool OverscrollHandoffChain::CanBePanned(
     const AsyncPanZoomController* aApzc) const {
   // Find |aApzc| in the handoff chain.
@@ -135,6 +148,10 @@ bool OverscrollHandoffChain::HasFastFlungApzc() const {
   return AnyApzc(&AsyncPanZoomController::IsFlingingFast);
 }
 
+bool OverscrollHandoffChain::HasAutoscrollApzc() const {
+  return AnyApzc(&AsyncPanZoomController::IsAutoscroll);
+}
+
 RefPtr<AsyncPanZoomController> OverscrollHandoffChain::FindFirstScrollable(
     const InputData& aInput,
     ScrollDirections* aOutAllowedScrollDirections) const {
@@ -148,12 +165,63 @@ RefPtr<AsyncPanZoomController> OverscrollHandoffChain::FindFirstScrollable(
       return mChain[i];
     }
 
+    // If there is any directions we allow overscroll effects on the root
+    // content APZC (i.e. the overscroll-behavior of the root one is not
+    // `none`), we consider the APZC can be scrollable in terms of pan gestures
+    // because it causes overscrolling even if it's not able to scroll to the
+    // direction.
+    if (StaticPrefs::apz_overscroll_enabled() &&
+        // FIXME: Bug 1707491: Drop this pan gesture input check.
+        aInput.mInputType == PANGESTURE_INPUT && mChain[i]->IsRootContent()) {
+      // Check whether the root content APZC is also overscrollable governed by
+      // overscroll-behavior in the same directions where we allow scrolling
+      // handoff and where we are going to scroll, if it matches we do handoff
+      // to the root content APZC.
+      // In other words, if the root content is not scrollable, we don't
+      // handoff.
+      ScrollDirections allowedOverscrollDirections =
+          mChain[i]->GetOverscrollableDirections();
+      ParentLayerPoint delta = mChain[i]->GetDeltaForEvent(aInput);
+      if (FuzzyEqualsAdditive(delta.x, 0.0f, COORDINATE_EPSILON)) {
+        allowedOverscrollDirections -= ScrollDirection::eHorizontal;
+      }
+      if (FuzzyEqualsAdditive(delta.y, 0.0f, COORDINATE_EPSILON)) {
+        allowedOverscrollDirections -= ScrollDirection::eVertical;
+      }
+
+      allowedOverscrollDirections &= *aOutAllowedScrollDirections;
+      if (!allowedOverscrollDirections.isEmpty()) {
+        *aOutAllowedScrollDirections = allowedOverscrollDirections;
+        return mChain[i];
+      }
+    }
+
     *aOutAllowedScrollDirections &= mChain[i]->GetAllowedHandoffDirections();
     if (aOutAllowedScrollDirections->isEmpty()) {
       return nullptr;
     }
   }
   return nullptr;
+}
+
+std::tuple<bool, const AsyncPanZoomController*>
+OverscrollHandoffChain::ScrollingDownWillMoveDynamicToolbar(
+    const AsyncPanZoomController* aApzc) const {
+  MOZ_ASSERT(aApzc && !aApzc->IsRootContent(),
+             "Should be used for non-root APZC");
+
+  for (uint32_t i = IndexOf(aApzc); i < Length(); i++) {
+    if (mChain[i]->IsRootContent()) {
+      bool scrollable = mChain[i]->CanVerticalScrollWithDynamicToolbar();
+      return {scrollable, scrollable ? mChain[i].get() : nullptr};
+    }
+
+    if (mChain[i]->CanScrollDownwards()) {
+      return {false, nullptr};
+    }
+  }
+
+  return {false, nullptr};
 }
 
 }  // namespace layers

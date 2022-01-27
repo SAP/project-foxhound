@@ -14,6 +14,7 @@
 #include "gfxDrawable.h"
 #include "ImageOps.h"
 #include "ImageRegion.h"
+#include "mozilla/image/WebRenderImageProvider.h"
 #include "mozilla/layers/RenderRootStateManager.h"
 #include "mozilla/layers/StackingContextHelper.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
@@ -22,7 +23,9 @@
 #include "nsCSSRenderingGradients.h"
 #include "nsDeviceContext.h"
 #include "nsIFrame.h"
+#include "nsLayoutUtils.h"
 #include "nsStyleStructInlines.h"
+#include "mozilla/StaticPrefs_image.h"
 #include "mozilla/ISVGDisplayableFrame.h"
 #include "mozilla/SVGIntegrationUtils.h"
 #include "mozilla/SVGPaintServerFrame.h"
@@ -49,8 +52,9 @@ nsSize CSSSizeOrRatio::ComputeConcreteSize() const {
 nsImageRenderer::nsImageRenderer(nsIFrame* aForFrame, const StyleImage* aImage,
                                  uint32_t aFlags)
     : mForFrame(aForFrame),
-      mImage(aImage),
-      mType(aImage->tag),
+      mImage(&aImage->FinalImage()),
+      mImageResolution(aImage->GetResolution()),
+      mType(mImage->tag),
       mImageContainer(nullptr),
       mGradientData(nullptr),
       mPaintServerFrame(nullptr),
@@ -60,77 +64,63 @@ nsImageRenderer::nsImageRenderer(nsIFrame* aForFrame, const StyleImage* aImage,
       mExtendMode(ExtendMode::CLAMP),
       mMaskOp(StyleMaskMode::MatchSource) {}
 
-static bool ShouldTreatAsCompleteDueToSyncDecode(const StyleImage* aImage,
-                                                 uint32_t aFlags) {
-  if (!(aFlags & nsImageRenderer::FLAG_SYNC_DECODE_IMAGES)) {
-    return false;
-  }
-
-  imgRequestProxy* req = aImage->GetImageRequest();
-  if (!req) {
-    return false;
-  }
-
-  uint32_t status = 0;
-  if (NS_FAILED(req->GetImageStatus(&status))) {
-    return false;
-  }
-
-  if (status & imgIRequest::STATUS_ERROR) {
-    // The image is "complete" since it's a corrupt image. If we created an
-    // imgIContainer at all, return true.
-    nsCOMPtr<imgIContainer> image;
-    req->GetImage(getter_AddRefs(image));
-    return bool(image);
-  }
-
-  if (!(status & imgIRequest::STATUS_LOAD_COMPLETE)) {
-    // We must have loaded all of the image's data and the size must be
-    // available, or else sync decoding won't be able to decode the image.
-    return false;
-  }
-
-  return true;
-}
-
 bool nsImageRenderer::PrepareImage() {
-  if (mImage->IsNone() ||
-      (mImage->IsImageRequestType() && !mImage->GetImageRequest())) {
-    // mImage->GetImageRequest() could be null here if the StyleImage refused
-    // to load a same-document URL, or the url was invalid, for example.
+  if (mImage->IsNone()) {
     mPrepareResult = ImgDrawResult::BAD_IMAGE;
     return false;
   }
 
-  if (!mImage->IsComplete()) {
-    // Make sure the image is actually decoding.
-    bool frameComplete = mImage->StartDecoding();
-
-    // Boost the loading priority since we know we want to draw the image.
-    if ((mFlags & nsImageRenderer::FLAG_PAINTING_TO_WINDOW) &&
-        mImage->IsImageRequestType()) {
-      MOZ_ASSERT(mImage->GetImageRequest(),
-                 "must have image data, since we checked above");
-      mImage->GetImageRequest()->BoostPriority(imgIRequest::CATEGORY_DISPLAY);
-    }
-
-    // Check again to see if we finished.
-    // We cannot prepare the image for rendering if it is not fully loaded.
-    // Special case: If we requested a sync decode and the image has loaded,
-    // push on through because the Draw() will do a sync decode then.
-    if (!(frameComplete || mImage->IsComplete()) &&
-        !ShouldTreatAsCompleteDueToSyncDecode(mImage, mFlags)) {
-      mPrepareResult = ImgDrawResult::NOT_READY;
+  const bool isImageRequest = mImage->IsImageRequestType();
+  MOZ_ASSERT_IF(!isImageRequest, !mImage->GetImageRequest());
+  imgRequestProxy* request = nullptr;
+  if (isImageRequest) {
+    request = mImage->GetImageRequest();
+    if (!request) {
+      // request could be null here if the StyleImage refused
+      // to load a same-document URL, or the url was invalid, for example.
+      mPrepareResult = ImgDrawResult::BAD_IMAGE;
       return false;
     }
   }
 
-  if (mImage->IsImageRequestType()) {
-    MOZ_ASSERT(mImage->GetImageRequest(),
-               "must have image data, since we checked above");
+  if (!mImage->IsComplete()) {
+    MOZ_DIAGNOSTIC_ASSERT(isImageRequest);
+
+    // Make sure the image is actually decoding.
+    bool frameComplete =
+        request->StartDecodingWithResult(imgIContainer::FLAG_ASYNC_NOTIFY);
+
+    // Boost the loading priority since we know we want to draw the image.
+    if (mFlags & nsImageRenderer::FLAG_PAINTING_TO_WINDOW) {
+      request->BoostPriority(imgIRequest::CATEGORY_DISPLAY);
+    }
+
+    // Check again to see if we finished.
+    // We cannot prepare the image for rendering if it is not fully loaded.
+    if (!frameComplete && !mImage->IsComplete()) {
+      uint32_t imageStatus = 0;
+      request->GetImageStatus(&imageStatus);
+      if (imageStatus & imgIRequest::STATUS_ERROR) {
+        mPrepareResult = ImgDrawResult::BAD_IMAGE;
+        return false;
+      }
+
+      // Special case: If not errored, and we requested a sync decode, and the
+      // image has loaded, push on through because the Draw() will do a sync
+      // decode then.
+      const bool syncDecodeWillComplete =
+          (mFlags & FLAG_SYNC_DECODE_IMAGES) &&
+          (imageStatus & imgIRequest::STATUS_LOAD_COMPLETE);
+      if (!syncDecodeWillComplete) {
+        mPrepareResult = ImgDrawResult::NOT_READY;
+        return false;
+      }
+    }
+  }
+
+  if (isImageRequest) {
     nsCOMPtr<imgIContainer> srcImage;
-    DebugOnly<nsresult> rv =
-        mImage->GetImageRequest()->GetImage(getter_AddRefs(srcImage));
+    DebugOnly<nsresult> rv = request->GetImage(getter_AddRefs(srcImage));
     MOZ_ASSERT(NS_SUCCEEDED(rv) && srcImage,
                "If GetImage() is failing, mImage->IsComplete() "
                "should have returned false");
@@ -188,6 +178,11 @@ bool nsImageRenderer::PrepareImage() {
     }
 
     mPrepareResult = ImgDrawResult::SUCCESS;
+  } else if (mImage->IsCrossFade()) {
+    // See bug 546052 - cross-fade implementation still being worked
+    // on.
+    mPrepareResult = ImgDrawResult::BAD_IMAGE;
+    return false;
   } else {
     MOZ_ASSERT(mImage->IsNone(), "Unknown image type?");
   }
@@ -206,14 +201,14 @@ CSSSizeOrRatio nsImageRenderer::ComputeIntrinsicSize() {
     case StyleImage::Tag::Url: {
       bool haveWidth, haveHeight;
       CSSIntSize imageIntSize;
-      nsLayoutUtils::ComputeSizeForDrawing(
-          mImageContainer, imageIntSize, result.mRatio, haveWidth, haveHeight);
+      nsLayoutUtils::ComputeSizeForDrawing(mImageContainer, mImageResolution,
+                                           imageIntSize, result.mRatio,
+                                           haveWidth, haveHeight);
       if (haveWidth) {
-        result.SetWidth(nsPresContext::CSSPixelsToAppUnits(imageIntSize.width));
+        result.SetWidth(CSSPixel::ToAppUnits(imageIntSize.width));
       }
       if (haveHeight) {
-        result.SetHeight(
-            nsPresContext::CSSPixelsToAppUnits(imageIntSize.height));
+        result.SetHeight(CSSPixel::ToAppUnits(imageIntSize.height));
       }
 
       // If we know the aspect ratio and one of the dimensions,
@@ -259,6 +254,10 @@ CSSSizeOrRatio nsImageRenderer::ComputeIntrinsicSize() {
       }
       break;
     }
+    case StyleImage::Tag::ImageSet:
+      MOZ_FALLTHROUGH_ASSERT("image-set should be resolved already");
+    // Bug 546052 cross-fade not yet implemented.
+    case StyleImage::Tag::CrossFade:
     // Per <http://dev.w3.org/csswg/css3-images/#gradients>, gradients have no
     // intrinsic dimensions.
     case StyleImage::Tag::Gradient:
@@ -511,6 +510,11 @@ ImgDrawResult nsImageRenderer::Draw(nsPresContext* aPresContext,
           aOpacity);
       break;
     }
+    case StyleImage::Tag::ImageSet:
+      MOZ_FALLTHROUGH_ASSERT("image-set should be resolved already");
+    // See bug 546052 - cross-fade implementation still being worked
+    // on.
+    case StyleImage::Tag::CrossFade:
     case StyleImage::Tag::None:
       break;
   }
@@ -578,6 +582,11 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItems(
     }
     case StyleImage::Tag::Rect:
     case StyleImage::Tag::Url: {
+      ExtendMode extendMode = mExtendMode;
+      if (aDest.Contains(aFill)) {
+        extendMode = ExtendMode::CLAMP;
+      }
+
       uint32_t containerFlags = imgIContainer::FLAG_ASYNC_NOTIFY;
       if (mFlags & (nsImageRenderer::FLAG_PAINTING_TO_WINDOW |
                     nsImageRenderer::FLAG_HIGH_QUALITY_SCALING)) {
@@ -586,6 +595,11 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItems(
       if (mFlags & nsImageRenderer::FLAG_SYNC_DECODE_IMAGES) {
         containerFlags |= imgIContainer::FLAG_SYNC_DECODE;
       }
+      if (extendMode == ExtendMode::CLAMP &&
+          StaticPrefs::image_svg_blob_image() &&
+          mImageContainer->GetType() == imgIContainer::TYPE_VECTOR) {
+        containerFlags |= imgIContainer::FLAG_RECORD_BLOB;
+      }
 
       CSSIntSize destCSSSize{
           nsPresContext::AppUnitsToIntCSSPixels(aDest.width),
@@ -593,47 +607,46 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItems(
 
       Maybe<SVGImageContext> svgContext(
           Some(SVGImageContext(Some(destCSSSize))));
+      Maybe<ImageIntRegion> region;
 
       const int32_t appUnitsPerDevPixel =
           mForFrame->PresContext()->AppUnitsPerDevPixel();
       LayoutDeviceRect destRect =
           LayoutDeviceRect::FromAppUnits(aDest, appUnitsPerDevPixel);
+      LayoutDeviceRect clipRect =
+          LayoutDeviceRect::FromAppUnits(aFill, appUnitsPerDevPixel);
       auto stretchSize = wr::ToLayoutSize(destRect.Size());
 
       gfx::IntSize decodeSize =
           nsLayoutUtils::ComputeImageContainerDrawingParameters(
-              mImageContainer, mForFrame, destRect, aSc, containerFlags,
-              svgContext);
+              mImageContainer, mForFrame, destRect, clipRect, aSc,
+              containerFlags, svgContext, region);
 
-      RefPtr<layers::ImageContainer> container;
-      drawResult = mImageContainer->GetImageContainerAtSize(
-          aManager->LayerManager(), decodeSize, svgContext, containerFlags,
-          getter_AddRefs(container));
-      if (!container) {
-        NS_WARNING("Failed to get image container");
-        break;
-      }
+      RefPtr<image::WebRenderImageProvider> provider;
+      drawResult = mImageContainer->GetImageProvider(
+          aManager->LayerManager(), decodeSize, svgContext, region,
+          containerFlags, getter_AddRefs(provider));
 
-      mozilla::wr::ImageRendering rendering = wr::ToImageRendering(
-          nsLayoutUtils::GetSamplingFilterForFrame(aItem->Frame()));
-      gfx::IntSize size;
-      Maybe<wr::ImageKey> key = aManager->CommandBuilder().CreateImageKey(
-          aItem, container, aBuilder, aResources, rendering, aSc, size,
-          Nothing());
-
+      Maybe<wr::ImageKey> key =
+          aManager->CommandBuilder().CreateImageProviderKey(
+              aItem, provider, drawResult, aResources);
       if (key.isNothing()) {
         break;
       }
 
-      wr::LayoutRect dest = wr::ToLayoutRect(destRect);
+      auto rendering =
+          wr::ToImageRendering(aItem->Frame()->UsedImageRendering());
+      wr::LayoutRect clip = wr::ToLayoutRect(clipRect);
 
-      wr::LayoutRect clip = wr::ToLayoutRect(
-          LayoutDeviceRect::FromAppUnits(aFill, appUnitsPerDevPixel));
+      // If we provided a region to the provider, then it already took the
+      // dest rect into account when it did the recording.
+      wr::LayoutRect dest = region ? clip : wr::ToLayoutRect(destRect);
 
-      if (mExtendMode == ExtendMode::CLAMP) {
+      if (extendMode == ExtendMode::CLAMP) {
         // The image is not repeating. Just push as a regular image.
         aBuilder.PushImage(dest, clip, !aItem->BackfaceIsHidden(), rendering,
-                           key.value());
+                           key.value(), true,
+                           wr::ColorF{1.0f, 1.0f, 1.0f, aOpacity});
       } else {
         nsPoint firstTilePos = nsLayoutUtils::GetBackgroundFirstTilePos(
             aDest.TopLeft(), aFill.TopLeft(), aRepeatSize);
@@ -644,16 +657,16 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItems(
             appUnitsPerDevPixel);
         wr::LayoutRect fill = wr::ToLayoutRect(fillRect);
 
-        switch (mExtendMode) {
+        switch (extendMode) {
           case ExtendMode::REPEAT_Y:
-            fill.origin.x = dest.origin.x;
-            fill.size.width = dest.size.width;
-            stretchSize.width = dest.size.width;
+            fill.min.x = dest.min.x;
+            fill.max.x = dest.max.x;
+            stretchSize.width = dest.width();
             break;
           case ExtendMode::REPEAT_X:
-            fill.origin.y = dest.origin.y;
-            fill.size.height = dest.size.height;
-            stretchSize.height = dest.size.height;
+            fill.min.y = dest.min.y;
+            fill.max.y = dest.max.y;
+            stretchSize.height = dest.height();
             break;
           default:
             break;
@@ -664,7 +677,8 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItems(
 
         aBuilder.PushRepeatingImage(fill, clip, !aItem->BackfaceIsHidden(),
                                     stretchSize, wr::ToLayoutSize(gapSize),
-                                    rendering, key.value());
+                                    rendering, key.value(), true,
+                                    wr::ColorF{1.0f, 1.0f, 1.0f, aOpacity});
       }
       break;
     }
@@ -755,16 +769,15 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItemsForLayer(
     return mPrepareResult;
   }
 
-  if (aDest.IsEmpty() || aFill.IsEmpty() || mSize.width <= 0 ||
-      mSize.height <= 0) {
+  CSSIntRect srcRect(0, 0, nsPresContext::AppUnitsToIntCSSPixels(mSize.width),
+                     nsPresContext::AppUnitsToIntCSSPixels(mSize.height));
+
+  if (aDest.IsEmpty() || aFill.IsEmpty() || srcRect.IsEmpty()) {
     return ImgDrawResult::SUCCESS;
   }
-  return BuildWebRenderDisplayItems(
-      aPresContext, aBuilder, aResources, aSc, aManager, aItem, aDirty, aDest,
-      aFill, aAnchor, aRepeatSize,
-      CSSIntRect(0, 0, nsPresContext::AppUnitsToIntCSSPixels(mSize.width),
-                 nsPresContext::AppUnitsToIntCSSPixels(mSize.height)),
-      aOpacity);
+  return BuildWebRenderDisplayItems(aPresContext, aBuilder, aResources, aSc,
+                                    aManager, aItem, aDirty, aDest, aFill,
+                                    aAnchor, aRepeatSize, srcRect, aOpacity);
 }
 
 /**
@@ -938,8 +951,7 @@ ImgDrawResult nsImageRenderer::DrawBorderImageComponent(
     if (!RequiresScaling(aFill, aHFill, aVFill, aUnitSize)) {
       ImgDrawResult result = nsLayoutUtils::DrawSingleImage(
           aRenderingContext, aPresContext, subImage, samplingFilter, aFill,
-          aDirtyRect,
-          /* no SVGImageContext */ Nothing(), drawFlags);
+          aDirtyRect, /* no SVGImageContext */ Nothing(), drawFlags);
 
       if (!mImage->IsComplete()) {
         result &= ImgDrawResult::SUCCESS_NOT_COMPLETE;
@@ -1008,7 +1020,7 @@ ImgDrawResult nsImageRenderer::DrawShapeImage(nsPresContext* aPresContext,
     // closest pixel in the image.
     return nsLayoutUtils::DrawSingleImage(
         aRenderingContext, aPresContext, mImageContainer, SamplingFilter::POINT,
-        dest, dest, Nothing(), drawFlags, nullptr, nullptr);
+        dest, dest, Nothing(), drawFlags);
   }
 
   if (mImage->IsGradient()) {
@@ -1037,12 +1049,6 @@ bool nsImageRenderer::IsAnimatedImage() {
 
 already_AddRefed<imgIContainer> nsImageRenderer::GetImage() {
   return do_AddRef(mImageContainer);
-}
-
-bool nsImageRenderer::IsImageContainerAvailable(layers::LayerManager* aManager,
-                                                uint32_t aFlags) {
-  return mImageContainer &&
-         mImageContainer->IsImageContainerAvailable(aManager, aFlags);
 }
 
 void nsImageRenderer::PurgeCacheForViewportChange(

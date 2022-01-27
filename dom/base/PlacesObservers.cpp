@@ -10,8 +10,7 @@
 #include "nsIWeakReferenceUtils.h"
 #include "mozilla/ClearOnShutdown.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 template <class T>
 struct Flagged {
@@ -58,10 +57,10 @@ StaticAutoPtr<FlaggedArray<T>> ListenerCollection<T>::gListeners;
 template <class T>
 StaticAutoPtr<FlaggedArray<T>> ListenerCollection<T>::gListenersToRemove;
 
-typedef ListenerCollection<RefPtr<PlacesEventCallback>> JSListeners;
-typedef ListenerCollection<WeakPtr<PlacesWeakCallbackWrapper>> WeakJSListeners;
-typedef ListenerCollection<WeakPtr<places::INativePlacesEventCallback>>
-    WeakNativeListeners;
+using JSListeners = ListenerCollection<RefPtr<PlacesEventCallback>>;
+using WeakJSListeners = ListenerCollection<WeakPtr<PlacesWeakCallbackWrapper>>;
+using WeakNativeListeners =
+    ListenerCollection<WeakPtr<places::INativePlacesEventCallback>>;
 
 static bool gCallingListeners = false;
 
@@ -277,39 +276,44 @@ void PlacesObservers::NotifyListeners(
 
 void PlacesObservers::NotifyListeners(
     const Sequence<OwningNonNull<PlacesEvent>>& aEvents) {
+  MOZ_ASSERT(aEvents.Length() > 0, "Must pass a populated array of events");
   MOZ_RELEASE_ASSERT(!gCallingListeners);
   gCallingListeners = true;
-  uint32_t flags = GetFlagsForEvents(aEvents);
 
-  CallListeners<RefPtr<PlacesEventCallback>, RefPtr<PlacesEventCallback>>(
-      flags, *JSListeners::GetListeners(), aEvents, [](auto& cb) { return cb; },
-      // MOZ_CAN_RUN_SCRIPT_BOUNDARY because on Windows this gets called from
-      // some internals of the std::function implementation that we can't
-      // annotate.  We handle this by annotating CallListeners and making sure
-      // it holds a strong ref to the callback.
-      [&](auto& cb, const auto& events)
-          MOZ_CAN_RUN_SCRIPT_BOUNDARY { MOZ_KnownLive(cb)->Call(aEvents); });
+  if (aEvents.Length() > 0) {
+    uint32_t flags = GetFlagsForEvents(aEvents);
 
-  CallListeners<WeakPtr<places::INativePlacesEventCallback>,
-                RefPtr<places::INativePlacesEventCallback>>(
-      flags, *WeakNativeListeners::GetListeners(), aEvents,
-      [](auto& cb) { return cb.get(); },
-      [&](auto& cb, const Sequence<OwningNonNull<PlacesEvent>>& events) {
-        cb->HandlePlacesEvent(events);
-      });
+    CallListeners<RefPtr<PlacesEventCallback>, RefPtr<PlacesEventCallback>>(
+        flags, *JSListeners::GetListeners(), aEvents,
+        [](auto& cb) { return cb; },
+        // MOZ_CAN_RUN_SCRIPT_BOUNDARY because on Windows this gets called from
+        // some internals of the std::function implementation that we can't
+        // annotate.  We handle this by annotating CallListeners and making sure
+        // it holds a strong ref to the callback.
+        [&](auto& cb, const auto& events)
+            MOZ_CAN_RUN_SCRIPT_BOUNDARY { MOZ_KnownLive(cb)->Call(events); });
 
-  CallListeners<WeakPtr<PlacesWeakCallbackWrapper>,
-                RefPtr<PlacesWeakCallbackWrapper>>(
-      flags, *WeakJSListeners::GetListeners(), aEvents,
-      [](auto& cb) { return cb.get(); },
-      // MOZ_CAN_RUN_SCRIPT_BOUNDARY because on Windows this gets called from
-      // some internals of the std::function implementation that we can't
-      // annotate.  We handle this by annotating CallListeners and making sure
-      // it holds a strong ref to the callback.
-      [&](auto& cb, const auto& events) MOZ_CAN_RUN_SCRIPT_BOUNDARY {
-        RefPtr<PlacesEventCallback> callback(cb->mCallback);
-        callback->Call(aEvents);
-      });
+    CallListeners<WeakPtr<places::INativePlacesEventCallback>,
+                  RefPtr<places::INativePlacesEventCallback>>(
+        flags, *WeakNativeListeners::GetListeners(), aEvents,
+        [](auto& cb) { return cb.get(); },
+        [&](auto& cb, const Sequence<OwningNonNull<PlacesEvent>>& events) {
+          cb->HandlePlacesEvent(events);
+        });
+
+    CallListeners<WeakPtr<PlacesWeakCallbackWrapper>,
+                  RefPtr<PlacesWeakCallbackWrapper>>(
+        flags, *WeakJSListeners::GetListeners(), aEvents,
+        [](auto& cb) { return cb.get(); },
+        // MOZ_CAN_RUN_SCRIPT_BOUNDARY because on Windows this gets called from
+        // some internals of the std::function implementation that we can't
+        // annotate.  We handle this by annotating CallListeners and making sure
+        // it holds a strong ref to the callback.
+        [&](auto& cb, const auto& events) MOZ_CAN_RUN_SCRIPT_BOUNDARY {
+          RefPtr<PlacesEventCallback> callback(cb->mCallback);
+          callback->Call(events);
+        });
+  }
 
   auto& listenersToRemove = *JSListeners::GetListenersToRemove();
   if (listenersToRemove.Length() > 0) {
@@ -338,5 +342,4 @@ void PlacesObservers::NotifyListeners(
   gCallingListeners = false;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

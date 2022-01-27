@@ -1,79 +1,51 @@
-// Documentation of methods used here are at:
-// https://developer.mozilla.org/en-US/Add-ons/Code_snippets/Interaction_between_privileged_and_non-privileged_pages
+/* global RPMRemoveMessageListener:false, RPMAddMessageListener:false, RPMSendAsyncMessage:false */
 
-var pktPanelMessaging = (function() {
-  function panelIdFromURL(url) {
-    var panelId = url.match(/panelId=([\w|\d|\.]*)&?/);
-    if (panelId && panelId.length > 1) {
-      return panelId[1];
-    }
+var pktPanelMessaging = {
+  removeMessageListener(messageId, callback) {
+    RPMRemoveMessageListener(messageId, callback);
+  },
 
-    return 0;
-  }
+  addMessageListener(messageId, callback = () => {}) {
+    RPMAddMessageListener(messageId, callback);
+  },
 
-  function prefixedMessageId(messageId) {
-    return "PKT_" + messageId;
-  }
-
-  function panelPrefixedMessageId(panelId, messageId) {
-    return prefixedMessageId(panelId + "_" + messageId);
-  }
-
-  function addMessageListener(panelId, messageId, callback) {
-    document.addEventListener(
-      panelPrefixedMessageId(panelId, messageId),
-      function(e) {
-        callback(JSON.parse(e.target.getAttribute("payload"))[0]);
-
-        // TODO: Figure out why e.target.parentNode is null
-        // e.target.parentNode.removeChild(e.target);
-      }
-    );
-  }
-
-  function removeMessageListener(panelId, messageId, callback) {
-    document.removeEventListener(
-      panelPrefixedMessageId(panelId, messageId),
-      callback
-    );
-  }
-
-  function sendMessage(panelId, messageId, payload, callback) {
-    // Payload needs to be an object in format:
-    // { panelId: panelId, data: {} }
-    var messagePayload = {
-      panelId,
-      data: payload || {},
-    };
-
-    // Create a callback to listen for a response
+  sendMessage(messageId, payload = {}, callback) {
     if (callback) {
-      var messageResponseId = messageId + "Response";
-      var responseListener = function(responsePayload) {
+      // If we expect something back, we use RPMSendAsyncMessage and not RPMSendQuery.
+      // Even though RPMSendQuery returns something, our frame could be closed at any moment,
+      // and we don't want to close a RPMSendQuery promise loop unexpectedly.
+      // So instead we setup a response event.
+      const responseMessageId = `${messageId}_response`;
+      var responseListener = responsePayload => {
         callback(responsePayload);
-        removeMessageListener(panelId, messageResponseId, responseListener);
+        this.removeMessageListener(responseMessageId, responseListener);
       };
 
-      addMessageListener(panelId, messageResponseId, responseListener);
+      this.addMessageListener(responseMessageId, responseListener);
     }
 
     // Send message
-    var element = document.createElement("PKTMessageFromPanelElement");
-    element.setAttribute("payload", JSON.stringify([messagePayload]));
-    document.documentElement.appendChild(element);
+    RPMSendAsyncMessage(messageId, payload);
+  },
 
-    var evt = document.createEvent("Events");
-    evt.initEvent(prefixedMessageId(messageId), true, false);
-    element.dispatchEvent(evt);
-  }
+  // Click helper to reduce bugs caused by oversight
+  // from different implementations of similar code.
+  clickHelper(element, { source = "", position }) {
+    element?.addEventListener(`click`, event => {
+      event.preventDefault();
 
-  /**
-   * Public functions
-   */
-  return {
-    panelIdFromURL,
-    addMessageListener,
-    removeMessageListener,
-    sendMessage,
-  };
-})();
+      this.sendMessage("PKT_openTabWithUrl", {
+        url: event.currentTarget.getAttribute(`href`),
+        activate: true,
+        source,
+        position,
+      });
+    });
+  },
+
+  log() {
+    RPMSendAsyncMessage("PKT_log", arguments);
+  },
+};
+
+export default pktPanelMessaging;

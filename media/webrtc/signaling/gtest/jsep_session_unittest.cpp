@@ -18,13 +18,13 @@
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"
 
-#include "signaling/src/sdp/SdpMediaSection.h"
-#include "signaling/src/sdp/SipccSdpParser.h"
-#include "signaling/src/jsep/JsepCodecDescription.h"
-#include "signaling/src/jsep/JsepTrack.h"
-#include "signaling/src/jsep/JsepSession.h"
-#include "signaling/src/jsep/JsepSessionImpl.h"
-#include "signaling/src/jsep/JsepTrack.h"
+#include "sdp/SdpMediaSection.h"
+#include "sdp/SipccSdpParser.h"
+#include "jsep/JsepCodecDescription.h"
+#include "jsep/JsepTrack.h"
+#include "jsep/JsepSession.h"
+#include "jsep/JsepSessionImpl.h"
+#include "jsep/JsepTrack.h"
 
 namespace mozilla {
 static std::string kAEqualsCandidate("a=candidate:");
@@ -159,7 +159,7 @@ class JsepSessionTest : public JsepSessionTestBase,
 
     std::cerr << "OFFER: " << offer << std::endl;
 
-    ValidateTransport(*mOffererTransport, offer);
+    ValidateTransport(*mOffererTransport, offer, sdp::kOffer);
 
     if (transceiversBefore.size() != mSessionOff->GetTransceivers().size()) {
       EXPECT_TRUE(false) << "CreateOffer changed number of transceivers!";
@@ -756,7 +756,7 @@ class JsepSessionTest : public JsepSessionTestBase,
 
     std::cerr << "ANSWER: " << answer << std::endl;
 
-    ValidateTransport(*mAnswererTransport, answer);
+    ValidateTransport(*mAnswererTransport, answer, sdp::kAnswer);
     CheckTransceiverInvariants(transceiversBefore,
                                mSessionAns->GetTransceivers());
 
@@ -1206,6 +1206,7 @@ class JsepSessionTest : public JsepSessionTestBase,
       ASSERT_TRUE(transceiver->HasBundleLevel())
       << context;
       ASSERT_EQ(0U, transceiver->BundleLevel()) << context;
+      ASSERT_NE("", transceiver->mTransport.mTransportId);
     }
   }
 
@@ -1407,7 +1408,8 @@ class JsepSessionTest : public JsepSessionTestBase,
   std::vector<std::pair<std::string, uint16_t>> mGatheredCandidates;
 
  private:
-  void ValidateTransport(TransportData& source, const std::string& sdp_str) {
+  void ValidateTransport(TransportData& source, const std::string& sdp_str,
+                         sdp::SdpType type) {
     UniquePtr<Sdp> sdp(Parse(sdp_str));
     ASSERT_TRUE(!!sdp);
     size_t num_m_sections = sdp->GetMediaSectionCount();
@@ -1432,7 +1434,7 @@ class JsepSessionTest : public JsepSessionTestBase,
         ValidateDisabledMSection(&msection);
         continue;
       }
-      if (mSdpHelper.HasOwnTransport(*sdp, i)) {
+      if (mSdpHelper.OwnsTransport(*sdp, i, type)) {
         const SdpAttributeList& attrs = msection.GetAttributeList();
 
         ASSERT_FALSE(attrs.GetIceUfrag().empty());
@@ -2555,21 +2557,40 @@ TEST_P(JsepSessionTest, RenegotiationAnswererDisablesBundleTransport) {
   ASSERT_EQ(0U, ot0->mTransport.mComponents);
   ASSERT_EQ(0U, at0->mTransport.mComponents);
 
+  // With bundle-policy "balanced", this ends up being somewhat complicated.
+  // The first m-section of each type is _not_ marked bundle-only,
+  // but subsequent m-sections of that type are. This means that if there is
+  // more than one type, there is more than one transport, which means there's
+  // a fallback when the bundle-tag is disabled (the first such transport). We
+  // should be using that fallback when it exists.
+  Maybe<size_t> fallbackTransport;
+  for (size_t level = 1; level != types.size(); ++level) {
+    if (types[level] != types[0]) {
+      fallbackTransport = Some(level);
+      break;
+    }
+  }
+
   for (size_t i = 1; i < newOffererTransceivers.size(); ++i) {
     JsepTransceiver* ot = GetTransceiverByLevel(newOffererTransceivers, i);
     JsepTransceiver* at = GetTransceiverByLevel(newAnswererTransceivers, i);
-    JsepTransceiver* ot1 = GetTransceiverByLevel(newOffererTransceivers, 1);
-    JsepTransceiver* at1 = GetTransceiverByLevel(newAnswererTransceivers, 1);
+    // If there is no fallback, the bundle level will be left pointing at the
+    // dead transport at index 0.
+    size_t expectedBundleLevel = fallbackTransport.valueOr(0);
+    JsepTransceiver* otWithTransport =
+        GetTransceiverByLevel(newOffererTransceivers, expectedBundleLevel);
+    JsepTransceiver* atWithTransport =
+        GetTransceiverByLevel(newAnswererTransceivers, expectedBundleLevel);
     ASSERT_TRUE(ot->HasBundleLevel());
     ASSERT_TRUE(at->HasBundleLevel());
-    ASSERT_EQ(1U, ot->BundleLevel());
-    ASSERT_EQ(1U, at->BundleLevel());
+    ASSERT_EQ(expectedBundleLevel, ot->BundleLevel());
+    ASSERT_EQ(expectedBundleLevel, at->BundleLevel());
     // TODO: When creating an answer where we have rejected the bundle
     // transport, we do not do a good job of creating a sensible SDP. Mainly,
     // when we remove the rejected mid from the bundle group, we can leave a
     // bundle-only mid as the first one when others are available.
-    ASSERT_TRUE(Equals(ot1->mTransport, ot->mTransport));
-    ASSERT_TRUE(Equals(at1->mTransport, at->mTransport));
+    ASSERT_TRUE(Equals(otWithTransport->mTransport, ot->mTransport));
+    ASSERT_TRUE(Equals(atWithTransport->mTransport, at->mTransport));
   }
 }
 
@@ -2805,7 +2826,10 @@ TEST_P(JsepSessionTest, RenegotiationWithCandidates) {
       Parse(mSessionOff->GetLocalDescription(kJsepDescriptionPending)));
   for (size_t level = 1; level < types.size(); ++level) {
     std::string id = GetTransportId(*mSessionOff, level);
-    if (!id.empty()) {
+    bool bundleOnly =
+        localOffer->GetMediaSection(level).GetAttributeList().HasAttribute(
+            SdpAttribute::kBundleOnlyAttribute);
+    if (!id.empty() && !bundleOnly) {
       mOffCandidates->Gather(*mSessionOff, id, RTP);
       if (types[level] != SdpMediaSection::kApplication) {
         mOffCandidates->Gather(*mSessionOff, id, RTCP);
@@ -4537,7 +4561,6 @@ TEST_F(JsepSessionTest, TestExtmapZeroId) {
 }
 
 TEST_F(JsepSessionTest, TestExtmapInvalidId) {
-  AddTracks(*mSessionOff, "video");
   AddTracks(*mSessionAns, "video");
 
   std::string sdp =
@@ -4564,7 +4587,6 @@ TEST_F(JsepSessionTest, TestExtmapInvalidId) {
 }
 
 TEST_F(JsepSessionTest, TestExtmapDuplicateId) {
-  AddTracks(*mSessionOff, "video");
   AddTracks(*mSessionAns, "video");
 
   std::string sdp =
@@ -4587,6 +4609,166 @@ TEST_F(JsepSessionTest, TestExtmapDuplicateId) {
   ASSERT_TRUE(result.mError == Some(dom::PCError::OperationError));
   ASSERT_EQ("Description contains duplicate extension id 2 on level 0",
             mSessionAns->GetLastError());
+}
+
+TEST_F(JsepSessionTest, TestNegotiatedExtmapStability) {
+  AddTracks(*mSessionAns, "audio,video");
+
+  std::string sdp =
+      "v=0\r\n"
+      "o=- 6 2 IN IP4 1r\r\n"
+      "t=0 0a\r\n"
+      "a=ice-ufrag:Xp\r\n"
+      "a=ice-pwd:he\r\n"
+      "a=setup:actpass\r\n"
+      "a=fingerprint:sha-256 "
+      "DC:FC:25:56:2B:88:77:2F:E4:FA:97:4E:2E:F1:D6:34:A6:A0:11:E2:E4:38:B3:98:"
+      "08:D2:F7:9D:F5:E2:C1:15\r\n"
+      "m=audio 9 UDP/TLS/RTP/SAVPF 111\r\n"
+      "c=IN IP4 51.81.107.13\r\n"
+      "a=sendrecv\r\n"
+      "a=extmap:11 urn:ietf:params:rtp-hdrext:ssrc-audio-level\r\n"
+      "a=fmtp:111 maxplaybackrate=48000;stereo=1;useinbandfec=1\r\n"
+      "a=mid:audio\r\n"
+      "a=rtcp-mux\r\n"
+      "a=rtpmap:111 opus/48000/2\r\n"
+      "a=setup:active\r\n"
+      "a=ssrc:3463672643 cname:{ec9a356a-8d2c-504e-9977-99070a51f929}\r\n"
+      "m=video 9 UDP/TLS/RTP/SAVPF 100\r\n"
+      "c=IN IP4 0\r\n"
+      "a=sendrecv\r\n"
+      "a=rtpmap:100 VP8/90000\r\n"
+      "a=extmap:12 urn:ietf:params:rtp-hdrext:toffset\r\n"
+      "a=extmap:13 "
+      "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time\r\n";
+  auto result = mSessionAns->SetRemoteDescription(kJsepSdpOffer, sdp);
+  ASSERT_FALSE(result.mError.isSome());
+  auto answer = CreateAnswer();
+  result = mSessionAns->SetLocalDescription(kJsepSdpAnswer, answer);
+  ASSERT_FALSE(result.mError.isSome());
+
+  // Verify that we've negotiated the right extmap based on the unusual values
+  // in the offer.
+  auto transceivers = mSessionAns->GetTransceivers();
+  ASSERT_EQ(2U, transceivers.size());
+  auto* audioSend = transceivers[0]->mSendTrack.GetNegotiatedDetails();
+  auto* audioRecv = transceivers[0]->mRecvTrack.GetNegotiatedDetails();
+  auto* videoSend = transceivers[1]->mSendTrack.GetNegotiatedDetails();
+  auto* videoRecv = transceivers[1]->mRecvTrack.GetNegotiatedDetails();
+  ASSERT_TRUE(audioSend);
+  ASSERT_TRUE(audioRecv);
+  ASSERT_TRUE(videoSend);
+  ASSERT_TRUE(videoRecv);
+  ASSERT_EQ(
+      11U,
+      audioSend->GetExt("urn:ietf:params:rtp-hdrext:ssrc-audio-level")->entry);
+  ASSERT_EQ(
+      11U,
+      audioRecv->GetExt("urn:ietf:params:rtp-hdrext:ssrc-audio-level")->entry);
+  ASSERT_EQ(12U,
+            videoSend->GetExt("urn:ietf:params:rtp-hdrext:toffset")->entry);
+  ASSERT_EQ(12U,
+            videoRecv->GetExt("urn:ietf:params:rtp-hdrext:toffset")->entry);
+  ASSERT_EQ(
+      13U,
+      videoSend
+          ->GetExt("http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time")
+          ->entry);
+  ASSERT_EQ(
+      13U,
+      videoRecv
+          ->GetExt("http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time")
+          ->entry);
+
+  SwapOfferAnswerRoles();
+
+  // Make sure a reoffer uses the negotiated extmap
+  auto reoffer = CreateOffer();
+  ASSERT_NE(std::string::npos, reoffer.find("a=extmap:11"));
+  ASSERT_NE(std::string::npos, reoffer.find("a=extmap:12"));
+  ASSERT_NE(std::string::npos, reoffer.find("a=extmap:13"));
+}
+
+TEST_F(JsepSessionTest, TestNegotiatedExtmapCollision) {
+  AddTracks(*mSessionAns, "audio");
+  // ssrc-audio-level will be extmap 1 for both
+  // csrc-audio-level will be 2 for both
+  // mid will be 3 for both
+  mSessionAns->AddAudioRtpExtension("foo");
+  mSessionAns->AddAudioRtpExtension("bar");
+  mSessionAns->AddAudioRtpExtension("baz");
+
+  // Set up an offer that uses the same extmap entries, but for different
+  // things, causing collisions.
+  std::string sdp =
+      "v=0\r\n"
+      "o=- 6 2 IN IP4 1r\r\n"
+      "t=0 0a\r\n"
+      "a=ice-ufrag:Xp\r\n"
+      "a=ice-pwd:he\r\n"
+      "a=setup:actpass\r\n"
+      "a=fingerprint:sha-256 "
+      "DC:FC:25:56:2B:88:77:2F:E4:FA:97:4E:2E:F1:D6:34:A6:A0:11:E2:E4:38:B3:98:"
+      "08:D2:F7:9D:F5:E2:C1:15\r\n"
+      "m=audio 9 UDP/TLS/RTP/SAVPF 111\r\n"
+      "c=IN IP4 51.81.107.13\r\n"
+      "a=sendrecv\r\n"
+      "a=extmap:1 foo\r\n"
+      "a=extmap:2 bar\r\n"
+      "a=extmap:3 baz\r\n"
+      "a=extmap:11 urn:ietf:params:rtp-hdrext:ssrc-audio-level\r\n"
+      "a=fmtp:111 maxplaybackrate=48000;stereo=1;useinbandfec=1\r\n"
+      "a=mid:audio\r\n"
+      "a=rtcp-mux\r\n"
+      "a=rtpmap:111 opus/48000/2\r\n"
+      "a=setup:active\r\n"
+      "a=ssrc:3463672643 cname:{ec9a356a-8d2c-504e-9977-99070a51f929}\r\n";
+  auto result = mSessionAns->SetRemoteDescription(kJsepSdpOffer, sdp);
+  ASSERT_FALSE(result.mError.isSome());
+  auto answer = CreateAnswer();
+  result = mSessionAns->SetLocalDescription(kJsepSdpAnswer, answer);
+  ASSERT_FALSE(result.mError.isSome());
+
+  // Verify that we've negotiated the right extmap based on the unusual values
+  // in the offer.
+  auto transceivers = mSessionAns->GetTransceivers();
+  ASSERT_EQ(1U, transceivers.size());
+  auto* audioSend = transceivers[0]->mSendTrack.GetNegotiatedDetails();
+  auto* audioRecv = transceivers[0]->mRecvTrack.GetNegotiatedDetails();
+  ASSERT_TRUE(audioSend);
+  ASSERT_TRUE(audioRecv);
+  ASSERT_EQ(1U, audioSend->GetExt("foo")->entry);
+  ASSERT_EQ(1U, audioRecv->GetExt("foo")->entry);
+  ASSERT_EQ(2U, audioSend->GetExt("bar")->entry);
+  ASSERT_EQ(2U, audioRecv->GetExt("bar")->entry);
+  ASSERT_EQ(3U, audioSend->GetExt("baz")->entry);
+  ASSERT_EQ(3U, audioRecv->GetExt("baz")->entry);
+  ASSERT_EQ(
+      11U,
+      audioSend->GetExt("urn:ietf:params:rtp-hdrext:ssrc-audio-level")->entry);
+  ASSERT_EQ(
+      11U,
+      audioRecv->GetExt("urn:ietf:params:rtp-hdrext:ssrc-audio-level")->entry);
+  SwapOfferAnswerRoles();
+
+  // Make sure a reoffer uses the negotiated extmap
+  auto reoffer = CreateOffer();
+  ASSERT_NE(std::string::npos, reoffer.find("a=extmap:1 foo"));
+  ASSERT_NE(std::string::npos, reoffer.find("a=extmap:2 bar"));
+  ASSERT_NE(std::string::npos, reoffer.find("a=extmap:3 baz"));
+  ASSERT_NE(
+      std::string::npos,
+      reoffer.find("a=extmap:11 urn:ietf:params:rtp-hdrext:ssrc-audio-level"));
+
+  // Ensure no duplicates
+  ASSERT_EQ(std::string::npos,
+            reoffer.find("a=extmap:1 ", reoffer.find("a=extmap:1 ") + 1));
+  ASSERT_EQ(std::string::npos,
+            reoffer.find("a=extmap:2 ", reoffer.find("a=extmap:2 ") + 1));
+  ASSERT_EQ(std::string::npos,
+            reoffer.find("a=extmap:3 ", reoffer.find("a=extmap:3 ") + 1));
+  ASSERT_EQ(std::string::npos,
+            reoffer.find("a=extmap:11 ", reoffer.find("a=extmap:11 ") + 1));
 }
 
 TEST_F(JsepSessionTest, TestRtcpFbStar) {
@@ -4844,6 +5026,13 @@ TEST_F(JsepSessionTest, TestAnswerPTAsymmetry) {
   ASSERT_TRUE(codec);
   ASSERT_EQ("opus", codec->mName);
   ASSERT_EQ("105", codec->mDefaultPt);
+
+  // Offerer should use 105 for reoffers
+  offer = CreateOffer();
+  ASSERT_NE(std::string::npos, offer.find("a=rtpmap:105 opus")) << offer;
+  ASSERT_EQ(std::string::npos, offer.find("a=rtpmap:109 opus")) << offer;
+  ASSERT_NE(std::string::npos, offer.find("a=fmtp:105")) << offer;
+  ASSERT_EQ(std::string::npos, offer.find("a=fmtp:109")) << offer;
 }
 
 TEST_F(JsepSessionTest, PayloadTypeClash) {
@@ -5023,10 +5212,9 @@ TEST_P(JsepSessionTest, TestMaxBundle) {
   AddTracks(*mSessionAns);
 
   mSessionOff->SetBundlePolicy(kBundleMaxBundle);
-  OfferAnswer();
-
-  std::string offer = mSessionOff->GetLocalDescription(kJsepDescriptionCurrent);
+  std::string offer = CreateOffer();
   UniquePtr<Sdp> parsedOffer = std::move(SipccSdpParser().Parse(offer)->Sdp());
+
   ASSERT_TRUE(parsedOffer.get());
 
   ASSERT_FALSE(parsedOffer->GetMediaSection(0).GetAttributeList().HasAttribute(
@@ -5037,6 +5225,25 @@ TEST_P(JsepSessionTest, TestMaxBundle) {
         SdpAttribute::kBundleOnlyAttribute));
     ASSERT_EQ(0U, parsedOffer->GetMediaSection(i).GetPort());
   }
+
+  SetLocalOffer(offer);
+  for (const auto& [id, transceiver] : mSessionOff->GetTransceivers()) {
+    (void)id;  // Lame, but no better way to do this right now.
+    if (transceiver->GetLevel() == 0) {
+      // We do not set the bundle-level in have-local-offer unless the
+      // m-section is bundle-only.
+      ASSERT_FALSE(transceiver->HasBundleLevel());
+    } else {
+      ASSERT_TRUE(transceiver->HasBundleLevel());
+      ASSERT_EQ(0U, transceiver->BundleLevel());
+    }
+    ASSERT_NE("", transceiver->mTransport.mTransportId);
+  }
+
+  SetRemoteOffer(offer);
+  std::string answer = CreateAnswer();
+  SetLocalAnswer(answer);
+  SetRemoteAnswer(answer);
 
   CheckTransceiversAreBundled(*mSessionOff, "Offerer transceivers");
   CheckTransceiversAreBundled(*mSessionAns, "Answerer transceivers");
@@ -6919,6 +7126,34 @@ TEST_F(JsepSessionTest, TestOneWayRtx) {
   }
 }
 
+TEST_F(JsepSessionTest, TestRtxNoSsrcGroup) {
+  mSessionOff->AddTransceiver(new JsepTransceiver(
+      SdpMediaSection::kVideo, SdpDirectionAttribute::kRecvonly));
+
+  OfferAnswer(CHECK_SUCCESS);
+
+  std::string offer = mSessionOff->GetLocalDescription(kJsepDescriptionCurrent);
+  ASSERT_EQ(std::string::npos, offer.find("FID")) << offer;
+
+  std::string answer =
+      mSessionOff->GetRemoteDescription(kJsepDescriptionCurrent);
+  ASSERT_EQ(std::string::npos, answer.find("FID")) << answer;
+}
+
+TEST_F(JsepSessionTest, TestRtxSsrcGroupOnlyOffered) {
+  mSessionOff->AddTransceiver(new JsepTransceiver(
+      SdpMediaSection::kVideo, SdpDirectionAttribute::kSendonly));
+
+  OfferAnswer(CHECK_SUCCESS);
+
+  std::string offer = mSessionOff->GetLocalDescription(kJsepDescriptionCurrent);
+  ASSERT_NE(std::string::npos, offer.find("FID")) << offer;
+
+  std::string answer =
+      mSessionOff->GetRemoteDescription(kJsepDescriptionCurrent);
+  ASSERT_EQ(std::string::npos, answer.find("FID")) << answer;
+}
+
 TEST_F(JsepSessionTest, TestOfferRtxNoMsid) {
   for (auto& codec : mSessionOff->Codecs()) {
     if (codec->mName == "VP8") {
@@ -6940,12 +7175,54 @@ TEST_F(JsepSessionTest, TestOfferRtxNoMsid) {
     }
   }
 
-  // If no MSID is present, we should not have a FID ssrc-group
+  // MSID stream absence should not influence FID ssrc-group
   JsepOfferOptions options;
   std::string offer;
   JsepSession::Result result = mSessionOff->CreateOffer(options, &offer);
   ASSERT_FALSE(result.mError.isSome());
-  ASSERT_EQ(std::string::npos, offer.find("FID")) << offer;
+  ASSERT_NE(std::string::npos, offer.find("FID")) << offer;
 }
 
+TEST_F(JsepSessionTest, TestDuplicatePayloadTypes) {
+  for (auto& codec : mSessionOff->Codecs()) {
+    if (codec->mType == SdpMediaSection::kVideo) {
+      JsepVideoCodecDescription* videoCodec =
+          static_cast<JsepVideoCodecDescription*>(codec.get());
+      videoCodec->mRtxPayloadType = "97";
+      videoCodec->EnableFec("97", "97");
+    }
+  }
+
+  types.push_back(SdpMediaSection::kVideo);
+  AddTracks(*mSessionOff, "video");
+  AddTracks(*mSessionAns, "video");
+
+  OfferAnswer();
+
+  std::vector<sdp::Direction> directions = {sdp::kSend, sdp::kRecv};
+  for (auto direction : directions) {
+    UniquePtr<JsepCodecDescription> codec;
+    std::set<std::string> payloadTypes;
+    std::string redPt, ulpfecPt;
+    for (size_t i = 0; i < 4; ++i) {
+      GetCodec(*mSessionOff, 0, direction, 0, i, &codec);
+      ASSERT_TRUE(codec);
+      JsepVideoCodecDescription* videoCodec =
+          static_cast<JsepVideoCodecDescription*>(codec.get());
+      ASSERT_TRUE(payloadTypes.insert(videoCodec->mDefaultPt).second);
+      ASSERT_TRUE(payloadTypes.insert(videoCodec->mRtxPayloadType).second);
+      // ULPFEC and RED payload types are the same for each codec, so we only
+      // check them for the first one.
+      if (i == 0) {
+        ASSERT_TRUE(payloadTypes.insert(videoCodec->mREDPayloadType).second);
+        ASSERT_TRUE(payloadTypes.insert(videoCodec->mULPFECPayloadType).second);
+        redPt = videoCodec->mREDPayloadType;
+        ulpfecPt = videoCodec->mULPFECPayloadType;
+      } else {
+        ASSERT_TRUE(redPt == videoCodec->mREDPayloadType);
+        ASSERT_TRUE(ulpfecPt == videoCodec->mULPFECPayloadType);
+      }
+    }
+  }
+}
 }  // namespace mozilla

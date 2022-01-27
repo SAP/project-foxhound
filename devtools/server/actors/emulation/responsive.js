@@ -4,27 +4,8 @@
 
 "use strict";
 
-const { Ci } = require("chrome");
-const Services = require("Services");
 const protocol = require("devtools/shared/protocol");
 const { responsiveSpec } = require("devtools/shared/specs/responsive");
-
-loader.lazyRequireGetter(
-  this,
-  "ScreenshotActor",
-  "devtools/server/actors/screenshot",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "TouchSimulator",
-  "devtools/server/actors/emulation/touch-simulator",
-  true
-);
-
-const FLOATING_SCROLLBARS_SHEET = Services.io.newURI(
-  "chrome://devtools/skin/floating-scrollbars-responsive-design.css"
-);
 
 /**
  * This actor overrides various browser features to simulate different environments to
@@ -44,31 +25,15 @@ const ResponsiveActor = protocol.ActorClassWithSpec(responsiveSpec, {
     protocol.Actor.prototype.initialize.call(this, conn);
     this.targetActor = targetActor;
     this.docShell = targetActor.docShell;
-
-    this.onWindowReady = this.onWindowReady.bind(this);
-
-    this.targetActor.on("window-ready", this.onWindowReady);
   },
 
   destroy() {
-    this.clearDPPXOverride();
     this.clearNetworkThrottling();
-    this.clearTouchEventsOverride();
-    this.clearMetaViewportOverride();
-    this.clearUserAgentOverride();
-
-    this.targetActor.off("window-ready", this.onWindowReady);
 
     this.targetActor = null;
     this.docShell = null;
-    this._screenshotActor = null;
-    this._touchSimulator = null;
 
     protocol.Actor.prototype.destroy.call(this);
-  },
-
-  async onWindowReady() {
-    await this.setFloatingScrollbars(true);
   },
 
   /**
@@ -77,64 +42,15 @@ const ResponsiveActor = protocol.ActorClassWithSpec(responsiveSpec, {
    * monitor, which for historical reasons is part of the console actor.
    */
   get _consoleActor() {
-    if (this.targetActor.exited || !this.targetActor.actorID) {
+    if (this.targetActor.isDestroyed()) {
       return null;
     }
     const form = this.targetActor.form();
     return this.conn._getOrCreateActor(form.consoleActor);
   },
 
-  get screenshotActor() {
-    if (!this._screenshotActor) {
-      this._screenshotActor = new ScreenshotActor(this.conn, this.targetActor);
-      this.manage(this._screenshotActor);
-    }
-
-    return this._screenshotActor;
-  },
-
-  get touchSimulator() {
-    if (!this._touchSimulator) {
-      this._touchSimulator = new TouchSimulator(
-        this.targetActor.chromeEventHandler
-      );
-    }
-
-    return this._touchSimulator;
-  },
-
   get win() {
     return this.docShell.chromeEventHandler.ownerGlobal;
-  },
-
-  /* DPPX override */
-
-  _previousDPPXOverride: undefined,
-
-  setDPPXOverride(dppx) {
-    if (this.getDPPXOverride() === dppx) {
-      return false;
-    }
-
-    if (this._previousDPPXOverride === undefined) {
-      this._previousDPPXOverride = this.getDPPXOverride();
-    }
-
-    this.docShell.contentViewer.overrideDPPX = dppx;
-
-    return true;
-  },
-
-  getDPPXOverride() {
-    return this.docShell.contentViewer.overrideDPPX;
-  },
-
-  clearDPPXOverride() {
-    if (this._previousDPPXOverride !== undefined) {
-      return this.setDPPXOverride(this._previousDPPXOverride);
-    }
-
-    return false;
   },
 
   /* Network Throttling */
@@ -245,178 +161,16 @@ const ResponsiveActor = protocol.ActorClassWithSpec(responsiveSpec, {
    * @param {String} pickerType
    */
   setElementPickerState(state, pickerType) {
-    this.touchSimulator.setElementPickerState(state, pickerType);
-  },
-
-  setTouchEventsOverride(flag) {
-    if (this.getTouchEventsOverride() == flag) {
-      return false;
-    }
-    if (this._previousTouchEventsOverride === undefined) {
-      this._previousTouchEventsOverride = this.getTouchEventsOverride();
-    }
-
-    // Start or stop the touch simulator depending on the override flag
-    if (flag == Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_ENABLED) {
-      this.touchSimulator.start();
-    } else {
-      this.touchSimulator.stop();
-    }
-
-    this.docShell.touchEventsOverride = flag;
-    return true;
-  },
-
-  getTouchEventsOverride() {
-    return this.docShell.touchEventsOverride;
-  },
-
-  clearTouchEventsOverride() {
-    if (this._previousTouchEventsOverride !== undefined) {
-      return this.setTouchEventsOverride(this._previousTouchEventsOverride);
-    }
-    return false;
-  },
-
-  /* Meta viewport override */
-
-  _previousMetaViewportOverride: undefined,
-
-  setMetaViewportOverride(flag) {
-    if (this.getMetaViewportOverride() == flag) {
-      return false;
-    }
-    if (this._previousMetaViewportOverride === undefined) {
-      this._previousMetaViewportOverride = this.getMetaViewportOverride();
-    }
-
-    this.docShell.metaViewportOverride = flag;
-    return true;
-  },
-
-  getMetaViewportOverride() {
-    return this.docShell.metaViewportOverride;
-  },
-
-  clearMetaViewportOverride() {
-    if (this._previousMetaViewportOverride !== undefined) {
-      return this.setMetaViewportOverride(this._previousMetaViewportOverride);
-    }
-    return false;
-  },
-
-  /* User agent override */
-
-  _previousUserAgentOverride: undefined,
-
-  setUserAgentOverride(userAgent) {
-    if (this.getUserAgentOverride() == userAgent) {
-      return false;
-    }
-    if (this._previousUserAgentOverride === undefined) {
-      this._previousUserAgentOverride = this.getUserAgentOverride();
-    }
-    // Bug 1637494: TODO - customUserAgent should only be set from parent
-    // process.
-    this.docShell.customUserAgent = userAgent;
-    return true;
-  },
-
-  getUserAgentOverride() {
-    return this.docShell.browsingContext.customUserAgent;
-  },
-
-  clearUserAgentOverride() {
-    if (this._previousUserAgentOverride !== undefined) {
-      return this.setUserAgentOverride(this._previousUserAgentOverride);
-    }
-    return false;
-  },
-
-  setScreenOrientation(type, angle) {
-    if (
-      this.win.screen.orientation.angle !== angle ||
-      this.win.screen.orientation.type !== type
-    ) {
-      this.docShell.browsingContext.setRDMPaneOrientation(type, angle);
-    }
+    this.targetActor.touchSimulator.setElementPickerState(state, pickerType);
   },
 
   /**
-   * Simulates the "orientationchange" event when device screen is rotated.
-   *
-   * @param {String} type
-   *        The orientation type of the rotated device.
-   * @param {Number} angle
-   *        The rotated angle of the device.
-   * @param {Boolean} isViewportRotated
-   *        Whether or not screen orientation change is a result of rotating the viewport.
-   *        If true, then dispatch the "orientationchange" event on the content window.
+   * Dispatches an "orientationchange" event.
    */
-  async simulateScreenOrientationChange(
-    type,
-    angle,
-    isViewportRotated = false
-  ) {
-    // Don't dispatch the "orientationchange" event if orientation change is a result
-    // of switching to a new device, location change, or opening RDM.
-    if (!isViewportRotated) {
-      this.setScreenOrientation(type, angle);
-      return;
-    }
-
+  async dispatchOrientationChangeEvent() {
     const { CustomEvent } = this.win;
     const orientationChangeEvent = new CustomEvent("orientationchange");
-
-    this.setScreenOrientation(type, angle);
     this.win.dispatchEvent(orientationChangeEvent);
-  },
-
-  async captureScreenshot() {
-    return this.screenshotActor.capture({});
-  },
-
-  /**
-   * Applies a mobile scrollbar overlay to the content document.
-   *
-   * @param {Boolean} applyFloatingScrollbars
-   */
-  async setFloatingScrollbars(applyFloatingScrollbars) {
-    const docShell = this.docShell;
-    const allDocShells = [docShell];
-
-    for (let i = 0; i < docShell.childCount; i++) {
-      const child = docShell.getChildAt(i).QueryInterface(Ci.nsIDocShell);
-      allDocShells.push(child);
-    }
-
-    for (const d of allDocShells) {
-      const win = d.contentViewer.DOMDocument.defaultView;
-      const winUtils = win.windowUtils;
-      try {
-        if (applyFloatingScrollbars) {
-          winUtils.loadSheet(FLOATING_SCROLLBARS_SHEET, this.win.AGENT_SHEET);
-        } else {
-          winUtils.removeSheet(FLOATING_SCROLLBARS_SHEET, this.win.AGENT_SHEET);
-        }
-      } catch (e) {}
-    }
-
-    this.flushStyle();
-  },
-
-  async setMaxTouchPoints(touchSimulationEnabled) {
-    const maxTouchPoints = touchSimulationEnabled ? 1 : 0;
-    this.docShell.browsingContext.setRDMPaneMaxTouchPoints(maxTouchPoints);
-  },
-
-  flushStyle() {
-    // Force presContext destruction
-    const isSticky = this.docShell.contentViewer.sticky;
-    this.docShell.contentViewer.sticky = false;
-    this.docShell.contentViewer.hide();
-    this.docShell.contentViewer.show();
-    this.docShell.contentViewer.sticky = isSticky;
   },
 });
 

@@ -13,14 +13,6 @@ const SUPPORT_URL = Services.urlFormatter.formatURL(
 );
 const REMOVE_SUMO_URL = SUPPORT_URL + "cant-remove-addon";
 
-const SECTION_INDEXES = {
-  enabled: 0,
-  disabled: 1,
-};
-function getSection(doc, type) {
-  return doc.querySelector(`section[section="${SECTION_INDEXES[type]}"]`);
-}
-
 function getTestCards(root) {
   return root.querySelectorAll('addon-card[addon-id$="@mochi.test"]');
 }
@@ -776,6 +768,16 @@ add_task(async function testSideloadRemoveButton() {
   ok(removeButton.disabled, "Remove is disabled");
   ok(!removeButton.hidden, "Remove is visible");
 
+  // Remove but cancel.
+  let prevented = BrowserTestUtils.waitForEvent(card, "remove-disabled");
+  removeButton.click();
+  await prevented;
+
+  // reopen the panel
+  panelOpened = BrowserTestUtils.waitForEvent(moreOptionsPanel, "shown");
+  EventUtils.synthesizeMouseAtCenter(moreOptionsButton, {}, win);
+  await panelOpened;
+
   let sumoLink = removeButton.querySelector("a");
   ok(sumoLink, "There's a link");
   is(
@@ -824,7 +826,7 @@ add_task(async function testOnlyTypeIsShown() {
 });
 
 add_task(async function testPluginIcons() {
-  const pluginIconUrl = "chrome://global/skin/plugins/pluginGeneric.svg";
+  const pluginIconUrl = "chrome://global/skin/icons/plugin.svg";
 
   let win = await loadInitialView("plugin");
   let doc = win.document;
@@ -987,4 +989,62 @@ add_task(async function testDisabledDimming() {
 
   await closeView(win);
   await extension.unload();
+});
+
+add_task(async function testEmptyMessage() {
+  let tests = [
+    {
+      type: "extension",
+      message: "Get extensions and themes on ",
+    },
+    {
+      type: "theme",
+      message: "Get extensions and themes on ",
+    },
+    {
+      type: "plugin",
+      message: "Get extensions and themes on ",
+    },
+    {
+      type: "locale",
+      message: "Get language packs on ",
+    },
+    {
+      type: "dictionary",
+      message: "Get dictionaries on ",
+    },
+  ];
+
+  for (let test of tests) {
+    let win = await loadInitialView(test.type);
+    let doc = win.document;
+    let enabledSection = getSection(doc, "enabled");
+    let disabledSection = getSection(doc, "disabled");
+    const message = doc.querySelector("#empty-addons-message");
+
+    // Test if the correct locale has been applied.
+    ok(
+      message.textContent.startsWith(test.message),
+      `View ${test.type} has correct empty list message`
+    );
+
+    // With at least one enabled/disabled add-on (see testSectionHeadingKeys),
+    // the message is hidden.
+    is_element_hidden(message, "Empty addons message hidden");
+
+    // The test runner (Mochitest) relies on add-ons that should not be removed.
+    // Simulate the scenario of zero add-ons by clearing all rendered sections.
+    while (enabledSection.firstChild) {
+      enabledSection.firstChild.remove();
+    }
+
+    while (disabledSection.firstChild) {
+      disabledSection.firstChild.remove();
+    }
+
+    // Message should now be displayed
+    is_element_visible(message, "Empty addons message visible");
+
+    await closeView(win);
+  }
 });

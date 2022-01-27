@@ -1,6 +1,6 @@
 use crate::prelude::*;
-use crate::version::{DeviceV1_0, InstanceV1_0};
 use crate::vk;
+use crate::{Device, Instance};
 use std::ffi::CStr;
 use std::mem;
 
@@ -11,7 +11,7 @@ pub struct ExternalMemoryFd {
 }
 
 impl ExternalMemoryFd {
-    pub fn new<I: InstanceV1_0, D: DeviceV1_0>(instance: &I, device: &D) -> Self {
+    pub fn new(instance: &Instance, device: &Device) -> Self {
         let external_memory_fd_fn = vk::KhrExternalMemoryFdFn::load(|name| unsafe {
             mem::transmute(instance.get_device_proc_addr(device.handle(), name.as_ptr()))
         });
@@ -28,13 +28,10 @@ impl ExternalMemoryFd {
     #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/vkGetMemoryFdKHR.html>"]
     pub unsafe fn get_memory_fd(&self, create_info: &vk::MemoryGetFdInfoKHR) -> VkResult<i32> {
         let mut fd = -1;
-        let err_code =
-            self.external_memory_fd_fn
-                .get_memory_fd_khr(self.handle, create_info, &mut fd);
-        match err_code {
-            vk::Result::SUCCESS => Ok(fd),
-            _ => Err(err_code),
-        }
+
+        self.external_memory_fd_fn
+            .get_memory_fd_khr(self.handle, create_info, &mut fd)
+            .result_with_success(fd)
     }
 
     #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/vkGetMemoryFdPropertiesKHR.html>"]
@@ -43,17 +40,10 @@ impl ExternalMemoryFd {
         handle_type: vk::ExternalMemoryHandleTypeFlags,
         fd: i32,
     ) -> VkResult<vk::MemoryFdPropertiesKHR> {
-        let mut memory_fd_properties = mem::zeroed();
-        let err_code = self.external_memory_fd_fn.get_memory_fd_properties_khr(
-            self.handle,
-            handle_type,
-            fd,
-            &mut memory_fd_properties,
-        );
-        match err_code {
-            vk::Result::SUCCESS => Ok(memory_fd_properties),
-            _ => Err(err_code),
-        }
+        let mut memory_fd_properties = Default::default();
+        self.external_memory_fd_fn
+            .get_memory_fd_properties_khr(self.handle, handle_type, fd, &mut memory_fd_properties)
+            .result_with_success(memory_fd_properties)
     }
 
     pub fn fp(&self) -> &vk::KhrExternalMemoryFdFn {

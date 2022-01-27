@@ -21,8 +21,9 @@ print(JSON.stringify(findPath(a, o)));
 function C() {}
 C.prototype.obj = {};
 var c = new C;
-Match.Pattern([{node: {}, edge: "group"},
-               {node: Match.Pattern.ANY, edge: "group_proto"},
+Match.Pattern([{node: {}, edge: "shape"},
+               {node: Match.Pattern.ANY, edge: "base"},
+               {node: Match.Pattern.ANY, edge: "baseshape_proto"},
                {node: { constructor: Match.Pattern.ANY }, edge: "obj"}])
   .assert(findPath(c, c.obj));
 print(JSON.stringify(findPath(c, c.obj)));
@@ -30,13 +31,14 @@ print(JSON.stringify(findPath(c, c.obj)));
 function f(x) { return function g(y) { return x+y; }; }
 var o = {}
 var gc = f(o);
-Match.Pattern([{node: gc, edge: "fun_environment"},
+Match.Pattern([{node: gc, edge: "**UNKNOWN SLOT 1**"},
                {node: Match.Pattern.ANY, edge: "x"}])
   .assert(findPath(gc, o));
 print(JSON.stringify(findPath(gc, o)));
 
-Match.Pattern([{node: {}, edge: "group"},
-               {node: Match.Pattern.ANY, edge: "group_global"},
+Match.Pattern([{node: {}, edge: "shape"},
+               {node: Match.Pattern.ANY, edge: "base"},
+               {node: Match.Pattern.ANY, edge: "baseshape_global"},
                {node: {}, edge: "o"}])
   .assert(findPath(o, o));
 print(findPath(o, o).map((e) => e.edge).toString());

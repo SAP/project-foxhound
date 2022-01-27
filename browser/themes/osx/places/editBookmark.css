@@ -2,10 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#editBookmarkPanelRows > vbox {
-  margin-bottom: .5em;
-}
-
 /**** folder menulist ****/
 #editBMPanel_folderMenuList::part(icon),
 .folder-icon > .menu-iconic-left > .menu-iconic-icon {
@@ -18,28 +14,9 @@
 }
 
 .folder-icon {
-  list-style-image: url("chrome://browser/skin/places/folder.svg") !important;
+  list-style-image: url("chrome://global/skin/icons/folder.svg") !important;
   -moz-context-properties: fill;
   fill: currentColor;
-}
-
-/**** expanders ****/
-
-.expander-up,
-.expander-down {
-  margin-block: 0 1px;
-  margin-inline: 8px 4px;
-  padding: 0;
-}
-
-.expander-up {
-  appearance: auto;
-  -moz-default-appearance: -moz-mac-disclosure-button-open;
-}
-
-.expander-down {
-  appearance: auto;
-  -moz-default-appearance: -moz-mac-disclosure-button-closed;
 }
 
 #editBMPanel_folderTree {
@@ -74,9 +51,4 @@
 #editBMPanel_folderMenuList[selectedGuid="menu________"],
 #editBMPanel_bmRootItem {
   list-style-image: url("chrome://browser/skin/places/bookmarksMenu.svg") !important;
-}
-
-#editBMPanel_folderMenuList[selectedGuid="unfiled_____"],
-#editBMPanel_unfiledRootItem {
-  list-style-image: url("chrome://browser/skin/places/unfiledBookmarks.svg") !important;
 }

@@ -7,6 +7,8 @@
 #include "mozilla/EMEUtils.h"
 
 #include "jsfriendapi.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "mozilla/dom/KeySystemNames.h"
 #include "mozilla/dom/UnionTypes.h"
 
 namespace mozilla {
@@ -52,11 +54,15 @@ void CopyArrayBufferViewOrArrayBufferData(
 }
 
 bool IsClearkeyKeySystem(const nsAString& aKeySystem) {
-  return aKeySystem.EqualsLiteral(EME_KEY_SYSTEM_CLEARKEY);
+  if (StaticPrefs::media_clearkey_test_key_systems_enabled()) {
+    return aKeySystem.EqualsLiteral(kClearKeyKeySystemName) ||
+           aKeySystem.EqualsLiteral(kClearKeyWithProtectionQueryKeySystemName);
+  }
+  return aKeySystem.EqualsLiteral(kClearKeyKeySystemName);
 }
 
 bool IsWidevineKeySystem(const nsAString& aKeySystem) {
-  return aKeySystem.EqualsLiteral(EME_KEY_SYSTEM_WIDEVINE);
+  return aKeySystem.EqualsLiteral(kWidevineKeySystemName);
 }
 
 nsString KeySystemToGMPName(const nsAString& aKeySystem) {
@@ -67,7 +73,7 @@ nsString KeySystemToGMPName(const nsAString& aKeySystem) {
     return u"gmp-widevinecdm"_ns;
   }
   MOZ_ASSERT(false, "We should only call this for known GMPs");
-  return EmptyString();
+  return u""_ns;
 }
 
 }  // namespace mozilla

@@ -21,6 +21,20 @@ var { LoginManagerParent } = ChromeUtils.import(
 const { LoginTestUtils } = ChromeUtils.import(
   "resource://testing-common/LoginTestUtils.jsm"
 );
+if (LoginHelper.relatedRealmsEnabled) {
+  let rsPromise = LoginTestUtils.remoteSettings.setupWebsitesWithSharedCredentials();
+  async () => {
+    await rsPromise;
+  };
+}
+if (LoginHelper.improvedPasswordRulesEnabled) {
+  let rsPromise = LoginTestUtils.remoteSettings.setupImprovedPasswordRules({
+    rules: "",
+  });
+  async () => {
+    await rsPromise;
+  };
+}
 var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
@@ -127,6 +141,7 @@ addMessageListener("cleanup", () => {
   Services.obs.removeObserver(onStorageChanged, "passwordmgr-storage-changed");
   Services.obs.removeObserver(onPrompt, "passwordmgr-prompt-change");
   Services.obs.removeObserver(onPrompt, "passwordmgr-prompt-save");
+  Services.logins.removeAllUserFacingLogins();
 });
 
 // Begin message listeners
@@ -219,10 +234,12 @@ addMessageListener("setMasterPassword", ({ enable }) => {
 });
 
 LoginManagerParent.setListenerForTests((msg, { origin, data }) => {
-  if (msg == "FormSubmit") {
+  if (msg == "ShowDoorhanger") {
     sendAsyncMessage("formSubmissionProcessed", { origin, data });
   } else if (msg == "PasswordEditedOrGenerated") {
     sendAsyncMessage("passwordEditedOrGenerated", { origin, data });
+  } else if (msg == "FormProcessed") {
+    sendAsyncMessage("formProcessed", {});
   }
 });
 

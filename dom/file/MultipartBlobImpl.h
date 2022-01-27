@@ -9,12 +9,14 @@
 
 #include <utility>
 
+#include "Blob.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/dom/BaseBlobImpl.h"
 
 namespace mozilla {
+class ErrorResult;
+
 namespace dom {
 
 // This is just a sentinel value to be sure that we don't call
@@ -39,12 +41,12 @@ class MultipartBlobImpl final : public BaseBlobImpl {
 
   // Create as a file to be later initialized
   explicit MultipartBlobImpl(const nsAString& aName)
-      : BaseBlobImpl(aName, EmptyString(), MULTIPARTBLOBIMPL_UNKNOWN_LENGTH,
+      : BaseBlobImpl(aName, u""_ns, MULTIPARTBLOBIMPL_UNKNOWN_LENGTH,
                      MULTIPARTBLOBIMPL_UNKNOWN_LAST_MODIFIED) {}
 
   // Create as a blob to be later initialized
   MultipartBlobImpl()
-      : BaseBlobImpl(EmptyString(), MULTIPARTBLOBIMPL_UNKNOWN_LENGTH) {}
+      : BaseBlobImpl(u""_ns, MULTIPARTBLOBIMPL_UNKNOWN_LENGTH) {}
 
   void InitializeBlob(bool aCrossOriginIsolated, ErrorResult& aRv);
 

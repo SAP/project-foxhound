@@ -11,12 +11,35 @@
 
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/Range.h"
 
-#include "frontend/TokenStream.h"
-#include "vm/JSContext.h"
+#include <stddef.h>
+#include <stdint.h>
+
+#include "jstypes.h"
+
+#include "gc/Rooting.h"
+#include "irregexp/RegExpTypes.h"
 #include "vm/RegExpShared.h"
 
+struct JS_PUBLIC_API JSContext;
+
+namespace JS {
+class RegExpFlags;
+}
+
+namespace v8::internal {
+class RegExpStack;
+}
+
 namespace js {
+
+class VectorMatchPairs;
+
+namespace frontend {
+class TokenStreamAnyChars;
+}
+
 namespace irregexp {
 
 Isolate* CreateIsolate(JSContext* cx);
@@ -46,6 +69,19 @@ RegExpRunStatus ExecuteForFuzzing(JSContext* cx, HandleAtom pattern,
                                   VectorMatchPairs* matches,
                                   RegExpShared::CodeKind codeKind);
 
+bool GrowBacktrackStack(v8::internal::RegExpStack* regexp_stack);
+
+uint32_t CaseInsensitiveCompareNonUnicode(const char16_t* substring1,
+                                          const char16_t* substring2,
+                                          size_t byteLength);
+uint32_t CaseInsensitiveCompareUnicode(const char16_t* substring1,
+                                       const char16_t* substring2,
+                                       size_t byteLength);
+#ifdef DEBUG
+bool IsolateShouldSimulateInterrupt(Isolate* isolate);
+void IsolateSetShouldSimulateInterrupt(Isolate* isolate);
+void IsolateClearShouldSimulateInterrupt(Isolate* isolate);
+#endif
 }  // namespace irregexp
 }  // namespace js
 

@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 te{
-    Version{"37"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"అబిడ్జాన్"}
@@ -1595,7 +1595,7 @@ te{
             ls{"హోవ్డ్ ప్రామాణిక సమయం"}
         }
         "meta:India"{
-            ls{"భారతదేశ సమయం"}
+            ls{"భారతదేశ ప్రామాణిక సమయం"}
             ss{"IST"}
         }
         "meta:Indian_Ocean"{
@@ -1752,7 +1752,7 @@ te{
             ls{"నియూ సమయం"}
         }
         "meta:Norfolk"{
-            ld{"నార్ఫోక్ దీవి వేసవి సమయం"}
+            ld{"నార్ఫోక్ దీవి పగటి సమయం"}
             lg{"నార్ఫోక్ దీవి సమయం"}
             ls{"నార్ఫోక్ దీవి ప్రామాణిక సమయం"}
         }
@@ -1937,6 +1937,9 @@ te{
             ld{"యెకటెరిన్‌బర్గ్ వేసవి సమయం"}
             lg{"యెకటెరిన్‌బర్గ్ సమయం"}
             ls{"యెకటెరిన్‌బర్గ్ ప్రామాణిక సమయం"}
+        }
+        "meta:Yukon"{
+            ls{"యుకోన్ సమయం"}
         }
         fallbackFormat{"{1} ({0})"}
         gmtFormat{"GMT{0}"}

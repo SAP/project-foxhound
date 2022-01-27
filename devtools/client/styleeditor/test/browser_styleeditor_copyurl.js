@@ -30,17 +30,13 @@ add_task(async function() {
   );
   await onContextMenuShown;
 
-  is(
-    ui._copyUrlItem.getAttribute("hidden"),
-    "false",
-    "Copy URL menu item is showing."
-  );
+  ok(!ui._copyUrlItem.hidden, "Copy URL menu item should be showing.");
 
   info(
     "Click on Copy URL menu item and wait for the URL to be copied to the clipboard."
   );
   await waitForClipboardPromise(
-    () => ui._copyUrlItem.click(),
+    () => ui._contextMenu.activateItem(ui._copyUrlItem),
     ui._contextMenuStyleSheet.href
   );
 });

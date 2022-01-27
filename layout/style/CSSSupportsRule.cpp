@@ -12,8 +12,7 @@
 
 using namespace mozilla::css;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 CSSSupportsRule::CSSSupportsRule(RefPtr<RawServoSupportsRule> aRawRule,
                                  StyleSheet* aSheet, css::Rule* aParentRule,
@@ -41,11 +40,15 @@ void CSSSupportsRule::List(FILE* out, int32_t aIndent) const {
 }
 #endif
 
-void CSSSupportsRule::GetConditionText(nsAString& aConditionText) {
+StyleCssRuleType CSSSupportsRule::Type() const {
+  return StyleCssRuleType::Supports;
+}
+
+void CSSSupportsRule::GetConditionText(nsACString& aConditionText) {
   Servo_SupportsRule_GetConditionText(mRawRule, &aConditionText);
 }
 
-void CSSSupportsRule::SetConditionText(const nsAString& aConditionText,
+void CSSSupportsRule::SetConditionText(const nsACString& aConditionText,
                                        ErrorResult& aRv) {
   if (IsReadOnly()) {
     return;
@@ -55,8 +58,15 @@ void CSSSupportsRule::SetConditionText(const nsAString& aConditionText,
 }
 
 /* virtual */
-void CSSSupportsRule::GetCssText(nsAString& aCssText) const {
+void CSSSupportsRule::GetCssText(nsACString& aCssText) const {
   Servo_SupportsRule_GetCssText(mRawRule, &aCssText);
+}
+
+void CSSSupportsRule::SetRawAfterClone(RefPtr<RawServoSupportsRule> aRaw) {
+  mRawRule = std::move(aRaw);
+
+  css::ConditionRule::SetRawAfterClone(
+      Servo_SupportsRule_GetRules(mRawRule).Consume());
 }
 
 /* virtual */
@@ -71,5 +81,4 @@ JSObject* CSSSupportsRule::WrapObject(JSContext* aCx,
   return CSSSupportsRule_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

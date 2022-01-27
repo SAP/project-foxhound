@@ -9,8 +9,6 @@ server.registerPathHandler("/dummy", (request, response) => {
 });
 
 add_task(async function test_incognito_webrequest_access() {
-  Services.prefs.setBoolPref("extensions.allowPrivateBrowsingByDefault", false);
-
   let pb_extension = ExtensionTestUtils.loadExtension({
     incognitoOverride: "spanning",
     manifest: {
@@ -38,6 +36,12 @@ add_task(async function test_incognito_webrequest_access() {
       );
     },
   });
+
+  // Bug 1715801: Re-enable pbm portion on GeckoView
+  if (AppConstants.platform == "android") {
+    Services.prefs.setBoolPref("dom.security.https_first_pbm", false);
+  }
+
   await pb_extension.startup();
 
   let extension = ExtensionTestUtils.loadExtension({
@@ -77,5 +81,8 @@ add_task(async function test_incognito_webrequest_access() {
   await pb_extension.unload();
   await extension.unload();
 
-  Services.prefs.clearUserPref("extensions.allowPrivateBrowsingByDefault");
+  // Bug 1715801: Re-enable pbm portion on GeckoView
+  if (AppConstants.platform == "android") {
+    Services.prefs.clearUserPref("dom.security.https_first_pbm");
+  }
 });

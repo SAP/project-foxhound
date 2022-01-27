@@ -17,12 +17,14 @@
 #include "CacheFileContextEvictor.h"
 #include "nsITimer.h"
 #include "nsIDirectoryEnumerator.h"
+#include "nsEffectiveTLDService.h"
 #include "nsIObserverService.h"
 #include "nsISizeOf.h"
 #include "mozilla/net/MozURL.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Services.h"
+#include "mozilla/StoragePrincipalHelper.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "private/pprio.h"
@@ -41,8 +43,7 @@
 // XXX add necessary include file for ftruncate (or equivalent)
 #endif
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 #define kOpenHandlesLimit 128
 #define kMetadataWriteDelay 5000
@@ -70,11 +71,7 @@ bool CacheFileHandle::DispatchRelease() {
       NewNonOwningRunnableMethod("net::CacheFileHandle::Release", this,
                                  &CacheFileHandle::Release),
       nsIEventTarget::DISPATCH_NORMAL);
-  if (NS_FAILED(rv)) {
-    return false;
-  }
-
-  return true;
+  return NS_SUCCEEDED(rv);
 }
 
 NS_IMPL_ADDREF(CacheFileHandle)
@@ -269,7 +266,7 @@ void CacheFileHandles::HandleHashKey::AddHandle(CacheFileHandle* aHandle) {
 void CacheFileHandles::HandleHashKey::RemoveHandle(CacheFileHandle* aHandle) {
   MOZ_ASSERT(CacheFileIOManager::IsOnIOThreadOrCeased());
 
-  DebugOnly<bool> found;
+  DebugOnly<bool> found{};
   found = mHandles.RemoveElement(aHandle);
   MOZ_ASSERT(found);
 }
@@ -287,7 +284,7 @@ CacheFileHandles::HandleHashKey::GetNewestHandle() {
 }
 
 void CacheFileHandles::HandleHashKey::GetHandles(
-    nsTArray<RefPtr<CacheFileHandle> >& aResult) {
+    nsTArray<RefPtr<CacheFileHandle>>& aResult) {
   MOZ_ASSERT(CacheFileIOManager::IsOnIOThreadOrCeased());
 
   for (uint32_t i = 0; i < mHandles.Length(); ++i) {
@@ -465,7 +462,7 @@ void CacheFileHandles::RemoveHandle(CacheFileHandle* aHandle) {
 }
 
 void CacheFileHandles::GetAllHandles(
-    nsTArray<RefPtr<CacheFileHandle> >* _retval) {
+    nsTArray<RefPtr<CacheFileHandle>>* _retval) {
   MOZ_ASSERT(CacheFileIOManager::IsOnIOThreadOrCeased());
   for (auto iter = mTable.Iter(); !iter.Done(); iter.Next()) {
     iter.Get()->GetHandles(*_retval);
@@ -473,7 +470,7 @@ void CacheFileHandles::GetAllHandles(
 }
 
 void CacheFileHandles::GetActiveHandles(
-    nsTArray<RefPtr<CacheFileHandle> >* _retval) {
+    nsTArray<RefPtr<CacheFileHandle>>* _retval) {
   MOZ_ASSERT(CacheFileIOManager::IsOnIOThreadOrCeased());
   for (auto iter = mTable.Iter(); !iter.Done(); iter.Next()) {
     RefPtr<CacheFileHandle> handle = iter.Get()->GetNewestHandle();
@@ -496,7 +493,7 @@ uint32_t CacheFileHandles::HandleCount() { return mTable.Count(); }
 void CacheFileHandles::Log(CacheFileHandlesEntry* entry) {
   LOG(("CacheFileHandles::Log() BEGIN [entry=%p]", entry));
 
-  nsTArray<RefPtr<CacheFileHandle> > array;
+  nsTArray<RefPtr<CacheFileHandle>> array;
   aEntry->GetHandles(array);
 
   for (uint32_t i = 0; i < array.Length(); ++i) {
@@ -522,9 +519,7 @@ size_t CacheFileHandles::SizeOfExcludingThis(
 class ShutdownEvent : public Runnable {
  public:
   ShutdownEvent()
-      : Runnable("net::ShutdownEvent"),
-        mMonitor("ShutdownEvent.mMonitor"),
-        mNotified(false) {}
+      : Runnable("net::ShutdownEvent"), mMonitor("ShutdownEvent.mMonitor") {}
 
  protected:
   ~ShutdownEvent() = default;
@@ -544,11 +539,17 @@ class ShutdownEvent : public Runnable {
   void PostAndWait() {
     MonitorAutoLock mon(mMonitor);
 
-    DebugOnly<nsresult> rv;
-    rv = CacheFileIOManager::gInstance->mIOThread->Dispatch(
+    nsresult rv = CacheFileIOManager::gInstance->mIOThread->Dispatch(
         this,
         CacheIOThread::WRITE);  // When writes and closing of handles is done
     MOZ_ASSERT(NS_SUCCEEDED(rv));
+
+    // If we failed to post the even there's no reason to go into the loop
+    // because mNotified will never be set to true.
+    if (NS_FAILED(rv)) {
+      NS_WARNING("Posting ShutdownEvent task failed");
+      return;
+    }
 
     TimeDuration waitTime = TimeDuration::FromSeconds(1);
     while (!mNotified) {
@@ -564,7 +565,7 @@ class ShutdownEvent : public Runnable {
 
  protected:
   mozilla::Monitor mMonitor;
-  bool mNotified;
+  bool mNotified{false};
 };
 
 // Class responsible for reporting IO performance stats
@@ -591,7 +592,7 @@ class IOPerfReportEvent {
     // average value. Do not add the value to the filtered stats when the event
     // had to wait in a long queue.
     uint32_t eventCounter = aIOThread->EventCounter();
-    bool shortOnly = eventCounter - mEventCounter < 5 ? false : true;
+    bool shortOnly = eventCounter - mEventCounter >= 5;
 
     CacheFileUtils::CachePerfStats::AddValue(mType, duration, shortOnly);
   }
@@ -656,7 +657,7 @@ class OpenFileEvent : public Runnable, public IOPerfReportEvent {
   }
 
  protected:
-  SHA1Sum::Hash mHash;
+  SHA1Sum::Hash mHash{};
   uint32_t mFlags;
   nsCOMPtr<CacheFileIOListener> mCallback;
   RefPtr<CacheFileIOManager> mIOMan;
@@ -844,7 +845,7 @@ class DoomFileByKeyEvent : public Runnable {
   }
 
  protected:
-  SHA1Sum::Hash mHash;
+  SHA1Sum::Hash mHash{};
   nsCOMPtr<CacheFileIOListener> mCallback;
   RefPtr<CacheFileIOManager> mIOMan;
 };
@@ -1103,12 +1104,8 @@ StaticRefPtr<CacheFileIOManager> CacheFileIOManager::gInstance;
 NS_IMPL_ISUPPORTS(CacheFileIOManager, nsITimerCallback, nsINamed)
 
 CacheFileIOManager::CacheFileIOManager()
-    : mShuttingDown(false),
-      mTreeCreated(false),
-      mTreeCreationFailed(false),
-      mOverLimitEvicting(false),
-      mCacheSizeOnHardLimit(false),
-      mRemovingTrashDirs(false) {
+
+{
   LOG(("CacheFileIOManager::CacheFileIOManager [this=%p]", this));
   MOZ_ASSERT(!gInstance, "multiple CacheFileIOManager instances!");
 }
@@ -1203,7 +1200,7 @@ void CacheFileIOManager::ShutdownInternal() {
   }
 
   // close all handles and delete all associated files
-  nsTArray<RefPtr<CacheFileHandle> > handles;
+  nsTArray<RefPtr<CacheFileHandle>> handles;
   mHandles.GetAllHandles(&handles);
   handles.AppendElements(mSpecialHandles);
 
@@ -1416,7 +1413,7 @@ nsresult CacheFileIOManager::ScheduleMetadataWriteInternal(CacheFile* aFile) {
   }
 
   if (mScheduledMetadataWrites.IndexOf(aFile) !=
-      mScheduledMetadataWrites.NoIndex) {
+      nsTArray<RefPtr<mozilla::net::CacheFile>>::NoIndex) {
     return NS_OK;
   }
 
@@ -1465,8 +1462,7 @@ nsresult CacheFileIOManager::ShutdownMetadataWriteScheduling() {
 void CacheFileIOManager::ShutdownMetadataWriteSchedulingInternal() {
   MOZ_ASSERT(IsOnIOThreadOrCeased());
 
-  nsTArray<RefPtr<CacheFile> > files;
-  files.SwapElements(mScheduledMetadataWrites);
+  nsTArray<RefPtr<CacheFile>> files = std::move(mScheduledMetadataWrites);
   for (uint32_t i = 0; i < files.Length(); ++i) {
     CacheFile* file = files[i];
     file->WriteMetadataIfNeeded();
@@ -1485,8 +1481,7 @@ CacheFileIOManager::Notify(nsITimer* aTimer) {
 
   mMetadataWritesTimer = nullptr;
 
-  nsTArray<RefPtr<CacheFile> > files;
-  files.SwapElements(mScheduledMetadataWrites);
+  nsTArray<RefPtr<CacheFile>> files = std::move(mScheduledMetadataWrites);
   for (uint32_t i = 0; i < files.Length(); ++i) {
     CacheFile* file = files[i];
     file->WriteMetadataIfNeeded();
@@ -1985,7 +1980,7 @@ nsresult CacheFileIOManager::WriteInternal(CacheFileHandle* aHandle,
       LOG(
           ("CacheFileIOManager::WriteInternal() - failing because cache size "
            "reached hard limit!"));
-      return NS_ERROR_FILE_DISK_FULL;
+      return NS_ERROR_FILE_NO_DEVICE_SPACE;
     }
 
     int64_t freeSpace;
@@ -2004,7 +1999,7 @@ nsresult CacheFileIOManager::WriteInternal(CacheFileHandle* aHandle,
             ("CacheFileIOManager::WriteInternal() - Low free space, refusing "
              "to write! [freeSpace=%" PRId64 "kB, limit=%ukB]",
              freeSpace, limit));
-        return NS_ERROR_FILE_DISK_FULL;
+        return NS_ERROR_FILE_NO_DEVICE_SPACE;
       }
     }
   }
@@ -2291,7 +2286,7 @@ nsresult CacheFileIOManager::MaybeReleaseNSPRHandleInternal(
   MOZ_ASSERT(CacheFileIOManager::IsOnIOThreadOrCeased());
 
   if (aHandle->mFD) {
-    DebugOnly<bool> found;
+    DebugOnly<bool> found{};
     found = mHandlesByLastUsed.RemoveElement(aHandle);
     MOZ_ASSERT(found);
   }
@@ -2514,7 +2509,7 @@ nsresult CacheFileIOManager::TruncateSeekSetEOFInternal(
       LOG(
           ("CacheFileIOManager::TruncateSeekSetEOFInternal() - failing because "
            "cache size reached hard limit!"));
-      return NS_ERROR_FILE_DISK_FULL;
+      return NS_ERROR_FILE_NO_DEVICE_SPACE;
     }
 
     int64_t freeSpace;
@@ -2533,7 +2528,7 @@ nsresult CacheFileIOManager::TruncateSeekSetEOFInternal(
             ("CacheFileIOManager::TruncateSeekSetEOFInternal() - Low free space"
              ", refusing to write! [freeSpace=%" PRId64 "kB, limit=%ukB]",
              freeSpace, limit));
-        return NS_ERROR_FILE_DISK_FULL;
+        return NS_ERROR_FILE_NO_DEVICE_SPACE;
       }
     }
   }
@@ -2961,7 +2956,7 @@ nsresult CacheFileIOManager::EvictAllInternal() {
   }
 
   // Doom all active handles
-  nsTArray<RefPtr<CacheFileHandle> > handles;
+  nsTArray<RefPtr<CacheFileHandle>> handles;
   mHandles.GetActiveHandles(&handles);
 
   for (uint32_t i = 0; i < handles.Length(); ++i) {
@@ -3008,7 +3003,7 @@ nsresult CacheFileIOManager::EvictAllInternal() {
 // static
 nsresult CacheFileIOManager::EvictByContext(
     nsILoadContextInfo* aLoadContextInfo, bool aPinned,
-    const nsAString& aOrigin) {
+    const nsAString& aOrigin, const nsAString& aBaseDomain) {
   LOG(("CacheFileIOManager::EvictByContext() [loadContextInfo=%p]",
        aLoadContextInfo));
 
@@ -3020,10 +3015,11 @@ nsresult CacheFileIOManager::EvictByContext(
   }
 
   nsCOMPtr<nsIRunnable> ev;
-  ev = NewRunnableMethod<nsCOMPtr<nsILoadContextInfo>, bool, nsString>(
-      "net::CacheFileIOManager::EvictByContextInternal", ioMan,
-      &CacheFileIOManager::EvictByContextInternal, aLoadContextInfo, aPinned,
-      aOrigin);
+  ev =
+      NewRunnableMethod<nsCOMPtr<nsILoadContextInfo>, bool, nsString, nsString>(
+          "net::CacheFileIOManager::EvictByContextInternal", ioMan,
+          &CacheFileIOManager::EvictByContextInternal, aLoadContextInfo,
+          aPinned, aOrigin, aBaseDomain);
 
   rv = ioMan->mIOThread->DispatchAfterPendingOpens(ev);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -3035,7 +3031,7 @@ nsresult CacheFileIOManager::EvictByContext(
 
 nsresult CacheFileIOManager::EvictByContextInternal(
     nsILoadContextInfo* aLoadContextInfo, bool aPinned,
-    const nsAString& aOrigin) {
+    const nsAString& aOrigin, const nsAString& aBaseDomain) {
   LOG(
       ("CacheFileIOManager::EvictByContextInternal() [loadContextInfo=%p, "
        "pinned=%d]",
@@ -3081,42 +3077,86 @@ nsresult CacheFileIOManager::EvictByContextInternal(
   }
 
   NS_ConvertUTF16toUTF8 origin(aOrigin);
+  NS_ConvertUTF16toUTF8 baseDomain(aBaseDomain);
 
   // Doom all active handles that matches the load context
-  nsTArray<RefPtr<CacheFileHandle> > handles;
+  nsTArray<RefPtr<CacheFileHandle>> handles;
   mHandles.GetActiveHandles(&handles);
 
   for (uint32_t i = 0; i < handles.Length(); ++i) {
     CacheFileHandle* handle = handles[i];
 
-    nsAutoCString uriSpec;
-    RefPtr<nsILoadContextInfo> info =
-        CacheFileUtils::ParseKey(handle->Key(), nullptr, &uriSpec);
-    if (!info) {
-      LOG(
-          ("CacheFileIOManager::EvictByContextInternal() - Cannot parse key in "
-           "handle! [handle=%p, key=%s]",
-           handle, handle->Key().get()));
-      MOZ_CRASH("Unexpected error!");
-    }
+    const bool shouldRemove = [&] {
+      nsAutoCString uriSpec;
+      RefPtr<nsILoadContextInfo> info =
+          CacheFileUtils::ParseKey(handle->Key(), nullptr, &uriSpec);
+      if (!info) {
+        LOG(
+            ("CacheFileIOManager::EvictByContextInternal() - Cannot parse key "
+             "in "
+             "handle! [handle=%p, key=%s]",
+             handle, handle->Key().get()));
+        MOZ_CRASH("Unexpected error!");
+      }
 
-    if (aLoadContextInfo && !info->Equals(aLoadContextInfo)) {
+      // Filter by base domain.
+      if (!aBaseDomain.IsEmpty()) {
+        if (StoragePrincipalHelper::PartitionKeyHasBaseDomain(
+                info->OriginAttributesPtr()->mPartitionKey, aBaseDomain)) {
+          return true;
+        }
+
+        // If the partitionKey does not match, check the entry URI next.
+
+        // Get host portion of uriSpec.
+        nsCOMPtr<nsIURI> uri;
+        rv = NS_NewURI(getter_AddRefs(uri), uriSpec);
+        if (NS_WARN_IF(NS_FAILED(rv))) {
+          return false;
+        }
+        nsAutoCString host;
+        rv = uri->GetHost(host);
+        // Some entries may not have valid hosts. We can skip them.
+        if (NS_FAILED(rv) || host.IsEmpty()) {
+          return false;
+        }
+
+        // Clear entry if the host belongs to the given base domain.
+        bool hasRootDomain = false;
+        rv = NS_HasRootDomain(host, baseDomain, &hasRootDomain);
+        if (NS_WARN_IF(NS_FAILED(rv))) {
+          return false;
+        }
+
+        return hasRootDomain;
+      }
+
+      // Filter by LoadContextInfo.
+      if (aLoadContextInfo && !info->Equals(aLoadContextInfo)) {
+        return false;
+      }
+
+      // Filter by origin.
+      if (!origin.IsEmpty()) {
+        RefPtr<MozURL> url;
+        rv = MozURL::Init(getter_AddRefs(url), uriSpec);
+        if (NS_FAILED(rv)) {
+          return false;
+        }
+
+        nsAutoCString urlOrigin;
+        url->Origin(urlOrigin);
+
+        if (!urlOrigin.Equals(origin)) {
+          return false;
+        }
+      }
+
+      return true;
+    }();
+
+    if (!shouldRemove) {
       continue;
-    }
-
-    if (!origin.IsEmpty()) {
-      RefPtr<MozURL> url;
-      rv = MozURL::Init(getter_AddRefs(url), uriSpec);
-      if (NS_FAILED(rv)) {
-        continue;
-      }
-
-      nsAutoCString urlOrigin;
-      url->Origin(urlOrigin);
-
-      if (!urlOrigin.Equals(origin)) {
-        continue;
-      }
     }
 
     // handle will be doomed only when pinning status is known and equal or
@@ -3824,44 +3864,6 @@ nsresult CacheFileIOManager::CreateCacheTree() {
 
   StartRemovingTrash();
 
-  if (!CacheObserver::CacheFSReported()) {
-    uint32_t fsType = 4;  // Other OS
-
-#ifdef XP_WIN
-    nsAutoString target;
-    nsresult rv = mCacheDirectory->GetTarget(target);
-    if (NS_FAILED(rv)) {
-      return NS_OK;
-    }
-
-    wchar_t volume_path[MAX_PATH + 1] = {0};
-    if (!::GetVolumePathNameW(target.get(), volume_path,
-                              mozilla::ArrayLength(volume_path))) {
-      return NS_OK;
-    }
-
-    wchar_t fsName[6] = {0};
-    if (!::GetVolumeInformationW(volume_path, nullptr, 0, nullptr, nullptr,
-                                 nullptr, fsName,
-                                 mozilla::ArrayLength(fsName))) {
-      return NS_OK;
-    }
-
-    if (wcscmp(fsName, L"NTFS") == 0) {
-      fsType = 0;
-    } else if (wcscmp(fsName, L"FAT32") == 0) {
-      fsType = 1;
-    } else if (wcscmp(fsName, L"FAT") == 0) {
-      fsType = 2;
-    } else {
-      fsType = 3;
-    }
-#endif
-
-    Telemetry::Accumulate(Telemetry::NETWORK_CACHE_FS_TYPE, fsType);
-    CacheObserver::SetCacheFSReported();
-  }
-
   return NS_OK;
 }
 
@@ -3962,7 +3964,7 @@ void CacheFileIOManager::NSPRHandleUsed(CacheFileHandle* aHandle) {
   MOZ_ASSERT(CacheFileIOManager::IsOnIOThreadOrCeased());
   MOZ_ASSERT(aHandle->mFD);
 
-  DebugOnly<bool> found;
+  DebugOnly<bool> found{};
   found = mHandlesByLastUsed.RemoveElement(aHandle);
   MOZ_ASSERT(found);
 
@@ -4255,5 +4257,4 @@ size_t CacheFileIOManager::SizeOfIncludingThis(
   return mallocSizeOf(gInstance) + SizeOfExcludingThis(mallocSizeOf);
 }
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net

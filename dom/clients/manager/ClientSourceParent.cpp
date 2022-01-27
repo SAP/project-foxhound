@@ -13,12 +13,13 @@
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/PClientManagerParent.h"
+#include "mozilla/dom/ServiceWorkerManager.h"
+#include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/Unused.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using mozilla::ipc::AssertIsOnBackgroundThread;
 using mozilla::ipc::BackgroundParent;
@@ -138,29 +139,24 @@ IPCResult ClientSourceParent::RecvInheritController(
   mController.reset();
   mController.emplace(aArgs.serviceWorker());
 
-  // In parent-side intercept mode we must tell the parent-side SWM about
-  // this controller inheritence.  In legacy client-side mode this is done
-  // from the ClientSource instead.
-  if (ServiceWorkerParentInterceptEnabled()) {
-    nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
-        "ClientSourceParent::RecvInheritController",
-        [clientInfo = mClientInfo, controller = mController.ref()]() {
-          RefPtr<ServiceWorkerManager> swm =
-              ServiceWorkerManager::GetInstance();
-          NS_ENSURE_TRUE_VOID(swm);
+  // We must tell the parent-side SWM about this controller inheritance.
+  nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
+      "ClientSourceParent::RecvInheritController",
+      [clientInfo = mClientInfo, controller = mController.ref()]() {
+        RefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+        NS_ENSURE_TRUE_VOID(swm);
 
-          swm->NoteInheritedController(clientInfo, controller);
-        });
+        swm->NoteInheritedController(clientInfo, controller);
+      });
 
-    MOZ_ALWAYS_SUCCEEDS(
-        SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
-  }
+  MOZ_ALWAYS_SUCCEEDS(
+      SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
 
   return IPC_OK();
 }
 
 IPCResult ClientSourceParent::RecvNoteDOMContentLoaded() {
-  if (mController.isSome() && ServiceWorkerParentInterceptEnabled()) {
+  if (mController.isSome()) {
     nsCOMPtr<nsIRunnable> r =
         NS_NewRunnableFunction("ClientSourceParent::RecvNoteDOMContentLoaded",
                                [clientInfo = mClientInfo]() {
@@ -293,5 +289,4 @@ RefPtr<ClientOpPromise> ClientSourceParent::StartOp(
   return promise;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

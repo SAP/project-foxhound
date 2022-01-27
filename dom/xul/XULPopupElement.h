@@ -8,7 +8,6 @@
 #define XULPopupElement_h__
 
 #include "mozilla/Attributes.h"
-#include "mozilla/ErrorResult.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 #include "nsString.h"
@@ -17,12 +16,15 @@
 struct JSContext;
 
 namespace mozilla {
+class ErrorResult;
+
 namespace dom {
 
 class DOMRect;
 class Element;
 class Event;
 class StringOrOpenPopupOptions;
+struct ActivateMenuItemOptions;
 
 nsXULElement* NS_NewXULPopupElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -68,9 +70,14 @@ class XULPopupElement : public nsXULElement {
 
   void HidePopup(bool aCancel);
 
+  void ActivateItem(Element& aItemElement,
+                    const ActivateMenuItemOptions& aOptions, ErrorResult& aRv);
+
   void GetState(nsString& aState);
 
   nsINode* GetTriggerNode() const;
+
+  bool IsAnchored() const;
 
   Element* GetAnchorNode() const;
 
@@ -82,10 +89,6 @@ class XULPopupElement : public nsXULElement {
                     int32_t aXPos, int32_t aYPos, bool aAttributesOverride);
 
   void SizeTo(int32_t aWidth, int32_t aHeight);
-
-  void GetAlignmentPosition(nsString& positionStr);
-
-  int32_t AlignmentOffset();
 
   void SetConstraintRect(DOMRectReadOnly& aRect);
 

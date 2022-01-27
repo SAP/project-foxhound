@@ -1,8 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://gre/modules/Timer.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+let { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+let { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 Cu.importGlobalProperties(["TextEncoder"]);
 
@@ -18,8 +18,8 @@ function handleRequest(request, response) {
     return String.fromCharCode(...new TextEncoder().encode(str));
   }
 
-  function writeSuggestions(query, completions = []) {
-    let jsonString = JSON.stringify([query, completions]);
+  function writeSuggestions(q, completions = []) {
+    let jsonString = JSON.stringify([q, completions]);
 
     // This script must be evaluated as UTF-8 for this to write out the bytes of
     // the string in UTF-8.  If it's evaluated as Latin-1, the written bytes
@@ -62,6 +62,8 @@ function handleRequest(request, response) {
     writeSuggestions(q, ["Mozilla", "modern", "mom"]);
   } else if (q && q.startsWith("I ❤️")) {
     writeSuggestions(q, ["I ❤️ Mozilla"]);
+  } else if (q && q.startsWith("stü")) {
+    writeSuggestions("st\\u00FC", ["stühle", "stüssy"]);
   } else if (q && q.startsWith("tailjunk ")) {
     writeSuggestionsDirectly([
       q,
@@ -128,7 +130,11 @@ function handleRequest(request, response) {
     ]);
   } else if (q && q.startsWith("letter ")) {
     let letters = [];
-    for (let charCode = "A".charCodeAt(); charCode <= "Z".charCodeAt(); charCode++) {
+    for (
+      let charCode = "A".charCodeAt();
+      charCode <= "Z".charCodeAt();
+      charCode++
+    ) {
       letters.push("letter " + String.fromCharCode(charCode));
     }
     writeSuggestions(q, letters);
@@ -136,11 +142,13 @@ function handleRequest(request, response) {
     response.setStatusLine(request.httpVersion, q.replace("HTTP ", ""), q);
     writeSuggestions(q, [q]);
   } else if (q && q.startsWith("delay")) {
-    // Delay the response by 200 milliseconds (less than the timeout but hopefully enough to abort
-    // before completion).
+    // Delay the response by delayMs milliseconds. 200ms is the default, less
+    // than the timeout but hopefully enough to abort before completion.
+    let match = /^delay([0-9]+)/.exec(q);
+    let delayMs = match ? parseInt(match[1]) : 200;
     response.processAsync();
     writeSuggestions(q, [q]);
-    setTimeout(() => response.finish(), 200);
+    setTimeout(() => response.finish(), delayMs);
   } else if (q && q.startsWith("slow ")) {
     // Delay the response by 10 seconds so the client timeout is reached.
     response.processAsync();
@@ -148,8 +156,10 @@ function handleRequest(request, response) {
     setTimeout(() => response.finish(), 10000);
   } else if (request.method == "POST") {
     // This includes headers, not just the body
-    let requestText = NetUtil.readInputStreamToString(request.bodyInputStream,
-                                                      request.bodyInputStream.available());
+    let requestText = NetUtil.readInputStreamToString(
+      request.bodyInputStream,
+      request.bodyInputStream.available()
+    );
     // Only use the last line which contains the encoded params
     let requestLines = requestText.split("\n");
     let postParams = parseQueryString(requestLines[requestLines.length - 1]);
@@ -161,8 +171,8 @@ function handleRequest(request, response) {
 
 function parseQueryString(queryString) {
   let query = {};
-  queryString.split('&').forEach(function (val) {
-    let [name, value] = val.split('=');
+  queryString.split("&").forEach(function(val) {
+    let [name, value] = val.split("=");
     query[name] = decodeURIComponent(value).replace(/[+]/g, " ");
   });
   return query;

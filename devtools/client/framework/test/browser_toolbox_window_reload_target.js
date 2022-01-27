@@ -32,22 +32,16 @@ var reloadsSent = 0;
 
 add_task(async function() {
   await addTab(TEST_URL);
-  const target = await TargetFactory.forTab(gBrowser.selectedTab);
-
-  info("Getting the entire list of tools supported in this tab");
-  const toolIDs = gDevTools
-    .getToolDefinitionArray()
-    .filter(def => def.isTargetSupported(target))
-    .map(def => def.id);
+  const tab = gBrowser.selectedTab;
+  const toolIDs = await getSupportedToolIds(tab);
 
   info(
     "Display the toolbox, docked at the bottom, with the first tool selected"
   );
-  const toolbox = await gDevTools.showToolbox(
-    target,
-    toolIDs[0],
-    Toolbox.HostType.BOTTOM
-  );
+  const toolbox = await gDevTools.showToolboxForTab(tab, {
+    toolId: toolIDs[0],
+    hostType: Toolbox.HostType.BOTTOM,
+  });
 
   info(
     "Listen to page reloads to check that they are indeed sent by the toolbox"
@@ -105,45 +99,6 @@ async function testOneTool(toolbox, toolID) {
 async function testReload(shortcut, toolbox) {
   info(`Reload with ${shortcut}`);
 
-  const walker = (await toolbox.target.getFront("inspector")).walker;
-
-  const observer = {
-    _isDocumentUnloaded: false,
-    _isNewRooted: false,
-    onRootDestroyed(mutations) {
-      this._isDocumentUnloaded = true;
-    },
-    onNewRootNode() {
-      this._isNewRooted = true;
-    },
-    isReady() {
-      return this._isDocumentUnloaded && this._isNewRooted;
-    },
-  };
-
-  observer.onRootDestroyed = observer.onRootDestroyed.bind(observer);
-  observer.onNewRootNode = observer.onNewRootNode.bind(observer);
-  walker.on("root-destroyed", observer.onRootDestroyed);
-  walker.watchRootNode(observer.onNewRootNode);
-
-  // If we have a jsdebugger panel, wait for it to complete its reload
-  const jsdebugger = toolbox.getPanel("jsdebugger");
-  let onReloaded = Promise.resolve;
-  if (jsdebugger) {
-    onReloaded = jsdebugger.once("reloaded");
-  }
-
-  const loadPromise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-
-  toolbox.win.focus();
-  synthesizeKeyShortcut(L10N.getStr(shortcut), toolbox.win);
+  await sendToolboxReloadShortcut(L10N.getStr(shortcut), toolbox);
   reloadsSent++;
-
-  await loadPromise;
-
-  // Wait for root-destroyed and root-available to be fired.
-  await waitUntil(() => observer.isReady());
-  walker.off("root-destroyed", observer.onRootDestroyed);
-  walker.unwatchRootNode(observer.onNewRootNode);
-  await onReloaded;
 }

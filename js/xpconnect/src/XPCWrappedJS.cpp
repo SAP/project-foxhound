@@ -7,8 +7,11 @@
 /* Class that wraps JS objects to appear as XPCOM objects. */
 
 #include "xpcprivate.h"
+#include "XPCMaps.h"
 #include "mozilla/DeferredFinalize.h"
 #include "mozilla/Sprintf.h"
+#include "js/Object.h"  // JS::GetCompartment
+#include "js/RealmIterators.h"
 #include "nsCCUncollectableMarker.h"
 #include "nsContentUtils.h"
 #include "nsThreadUtils.h"
@@ -280,7 +283,7 @@ MozExternalRefCountType nsXPCWrappedJS::Release(void) {
     }
 
     // If we are not a root wrapper being used from a weak reference,
-    // then the extra ref is not needed and we can let outselves be
+    // then the extra ref is not needed and we can let ourselves be
     // deleted.
     if (!HasWeakReferences()) {
       return Release();
@@ -314,7 +317,7 @@ JSObject* nsXPCWrappedJS::GetJSObject() { return mJSObj; }
 JSObject* nsXPCWrappedJS::GetJSObjectGlobal() {
   JSObject* obj = mJSObj;
   if (js::IsCrossCompartmentWrapper(obj)) {
-    JS::Compartment* comp = js::GetObjectCompartment(obj);
+    JS::Compartment* comp = JS::GetCompartment(obj);
     return js::GetFirstGlobalInCompartment(comp);
   }
   return JS::GetNonCCWObjectGlobal(obj);
@@ -329,7 +332,7 @@ nsresult nsXPCWrappedJS::GetNewOrUsed(JSContext* cx, JS::HandleObject jsObj,
                      "nsXPCWrappedJS::GetNewOrUsed called off main thread");
 
   MOZ_RELEASE_ASSERT(js::GetContextCompartment(cx) ==
-                     js::GetObjectCompartment(jsObj));
+                     JS::GetCompartment(jsObj));
 
   const nsXPTInterfaceInfo* info = GetInterfaceInfo(aIID);
   if (!info) {

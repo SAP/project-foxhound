@@ -45,9 +45,7 @@ function RequestObserver() {
 RequestObserver.prototype = {
   register() {
     info("Registering " + notification);
-    Cc["@mozilla.org/observer-service;1"]
-      .getService(Ci.nsIObserverService)
-      .addObserver(this, notification, true);
+    Services.obs.addObserver(this, notification, true);
   },
 
   QueryInterface: ChromeUtils.generateQI([
@@ -61,7 +59,7 @@ RequestObserver.prototype = {
         do_throw(notification + " observed a non-HTTP channel.");
       }
       try {
-        let authHeader = subject.getRequestHeader("Authorization");
+        subject.getRequestHeader("Authorization");
       } catch (e) {
         // Throw if there is no header to delete. We should get one iff caching
         // the auth credentials is working and the header gets added _before_

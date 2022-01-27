@@ -11,6 +11,7 @@
 #include "mozilla/dom/Element.h"
 
 #include "mozilla/dom/SpeechSynthesisBinding.h"
+#include "mozilla/dom/WindowGlobalChild.h"
 #include "SpeechSynthesis.h"
 #include "nsContentUtils.h"
 #include "nsSynthVoiceRegistry.h"
@@ -25,8 +26,7 @@ mozilla::LogModule* GetSpeechSynthLog() {
 }
 #define LOG(type, msg) MOZ_LOG(GetSpeechSynthLog(), type, msg)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(SpeechSynthesis)
 
@@ -42,8 +42,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(SpeechSynthesis,
                                                   DOMEventTargetHelper)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCurrentTask)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSpeechQueue)
-  for (auto iter = tmp->mVoiceCache.Iter(); !iter.Done(); iter.Next()) {
-    SpeechSynthesisVoice* voice = iter.UserData();
+  for (SpeechSynthesisVoice* voice : tmp->mVoiceCache.Values()) {
     cb.NoteXPCOMChild(voice);
   }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
@@ -120,11 +119,18 @@ void SpeechSynthesis::Speak(SpeechSynthesisUtterance& aUtterance) {
 
   mSpeechQueue.AppendElement(&aUtterance);
 
-  // If we only have one item in the queue, we aren't pre-paused, and
-  // we have voices available, speak it.
-  if (mSpeechQueue.Length() == 1 && !mCurrentTask && !mHoldQueue &&
-      HasVoices()) {
-    AdvanceQueue();
+  if (mSpeechQueue.Length() == 1) {
+    RefPtr<WindowGlobalChild> wgc =
+        WindowGlobalChild::GetByInnerWindowId(mInnerID);
+    if (wgc) {
+      wgc->BlockBFCacheFor(BFCacheStatus::HAS_ACTIVE_SPEECH_SYNTHESIS);
+    }
+
+    // If we only have one item in the queue, we aren't pre-paused, and
+    // we have voices available, speak it.
+    if (!mCurrentTask && !mHoldQueue && HasVoices()) {
+      AdvanceQueue();
+    }
   }
 }
 
@@ -203,6 +209,13 @@ void SpeechSynthesis::OnEnd(const nsSpeechTask* aTask) {
 
   if (!mSpeechQueue.IsEmpty()) {
     mSpeechQueue.RemoveElementAt(0);
+    if (mSpeechQueue.IsEmpty()) {
+      RefPtr<WindowGlobalChild> wgc =
+          WindowGlobalChild::GetByInnerWindowId(mInnerID);
+      if (wgc) {
+        wgc->UnblockBFCacheFor(BFCacheStatus::HAS_ACTIVE_SPEECH_SYNTHESIS);
+      }
+    }
   }
 
   mCurrentTask = nullptr;
@@ -249,7 +262,7 @@ void SpeechSynthesis::GetVoices(
 
   for (uint32_t i = 0; i < aResult.Length(); i++) {
     SpeechSynthesisVoice* voice = aResult[i];
-    mVoiceCache.Put(voice->mUri, RefPtr{voice});
+    mVoiceCache.InsertOrUpdate(voice->mUri, RefPtr{voice});
   }
 }
 
@@ -301,5 +314,4 @@ SpeechSynthesis::Observe(nsISupports* aSubject, const char* aTopic,
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

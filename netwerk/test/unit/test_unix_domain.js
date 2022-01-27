@@ -20,9 +20,6 @@ const ScriptableInputStream = CC(
   "init"
 );
 
-const IOService = Cc["@mozilla.org/network/io-service;1"].getService(
-  Ci.nsIIOService
-);
 const socketTransportService = Cc[
   "@mozilla.org/network/socket-transport-service;1"
 ].getService(Ci.nsISocketTransportService);
@@ -217,7 +214,7 @@ function test_name_too_long() {
 // Try creating a socket in a directory that doesn't exist.
 function test_no_directory() {
   let socketName = do_get_tempdir();
-  socketName.append("directory-that-does-not-exist");
+  socketName.append("missing");
   socketName.append("socket");
 
   do_check_throws_nsIException(
@@ -269,7 +266,7 @@ function test_address_in_use() {
   socketName.append("socket-in-use");
 
   // Create one server socket.
-  let server = new UnixServerSocket(socketName, allPermissions, -1);
+  new UnixServerSocket(socketName, allPermissions, -1);
 
   // Now try to create another with the same name.
   do_check_throws_nsIException(
@@ -609,7 +606,7 @@ function test_keep_when_offline() {
     // This should not shut things down: Unix domain sockets should
     // remain open in offline mode.
     if (count == 5) {
-      IOService.offline = true;
+      Services.io.offline = true;
       log += "o";
     }
 

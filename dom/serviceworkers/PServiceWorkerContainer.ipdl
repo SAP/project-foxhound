@@ -7,10 +7,12 @@ include protocol PBackground;
 include ClientIPCTypes;
 include IPCServiceWorkerRegistrationDescriptor;
 
+include "mozilla/dom/ServiceWorkerIPCUtils.h";
+
 namespace mozilla {
 namespace dom {
 
-protocol PServiceWorkerContainer
+[RefCounted] protocol PServiceWorkerContainer
 {
   manager PBackground;
 

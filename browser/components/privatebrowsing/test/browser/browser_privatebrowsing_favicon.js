@@ -4,8 +4,8 @@
 
 // This test make sure that the favicon of the private browsing is isolated.
 
-const TEST_SITE = "http://mochi.test:8888";
-const TEST_CACHE_SITE = "http://www.example.com";
+const TEST_SITE = "https://example.com";
+const TEST_CACHE_SITE = "https://test1.example.com";
 const TEST_DIRECTORY =
   "/browser/browser/components/privatebrowsing/test/browser/";
 
@@ -15,8 +15,6 @@ const FAVICON_URI = TEST_SITE + TEST_DIRECTORY + "file_favicon.png";
 const FAVICON_CACHE_URI = TEST_CACHE_SITE + TEST_DIRECTORY + "file_favicon.png";
 
 let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
-let makeURI = ChromeUtils.import("resource://gre/modules/BrowserUtils.jsm", {})
-  .BrowserUtils.makeURI;
 
 function clearAllImageCaches() {
   let tools = SpecialPowers.Cc["@mozilla.org/image/tools;1"].getService(
@@ -156,21 +154,11 @@ function waitOnFaviconResponse(aFaviconURL) {
 }
 
 function waitOnFaviconLoaded(aFaviconURL) {
-  return new Promise(resolve => {
-    let observer = {
-      onPageChanged(uri, attr, value, id) {
-        if (
-          attr === Ci.nsINavHistoryObserver.ATTRIBUTE_FAVICON &&
-          value === aFaviconURL
-        ) {
-          resolve();
-          PlacesUtils.history.removeObserver(observer, false);
-        }
-      },
-    };
-
-    PlacesUtils.history.addObserver(observer);
-  });
+  return PlacesTestUtils.waitForNotification(
+    "favicon-changed",
+    events => events.some(e => e.faviconUrl == aFaviconURL),
+    "places"
+  );
 }
 
 async function assignCookies(aBrowser, aURL, aCookieValue) {
@@ -215,7 +203,7 @@ add_task(async function test_favicon_privateBrowsing() {
   let privateWindow = await BrowserTestUtils.openNewBrowserWindow({
     private: true,
   });
-  let pageURI = makeURI(TEST_PAGE);
+  let pageURI = Services.io.newURI(TEST_PAGE);
 
   // Generate two random cookies for non-private window and private window
   // respectively.

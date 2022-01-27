@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 uz{
     Currencies{
         AED{
@@ -334,6 +335,10 @@ uz{
             "LRD",
             "Liberiya dollari",
         }
+        LSL{
+            "LSL",
+            "Lesoto lotisi",
+        }
         LTL{
             "LTL",
             "Litva liti",
@@ -627,7 +632,7 @@ uz{
             "Sharqiy Karib dollari",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "G‘arbiy Afrika CFA franki",
         }
         XPF{
@@ -1084,6 +1089,10 @@ uz{
             one{"Liberiya dollari"}
             other{"Liberiya dollari"}
         }
+        LSL{
+            one{"Lesoto lotisi"}
+            other{"Lesoto lotisi"}
+        }
         LTL{
             one{"Litva liti"}
             other{"Litva liti"}
@@ -1405,5 +1414,4 @@ uz{
         one{"{0} {1}"}
         other{"{0} {1}"}
     }
-    Version{"37"}
 }

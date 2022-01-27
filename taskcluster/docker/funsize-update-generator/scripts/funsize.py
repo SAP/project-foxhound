@@ -33,7 +33,6 @@ QUEUE_PREFIX = f"{ROOT_URL}/api/queue/"
 ALLOWED_URL_PREFIXES = (
     "http://download.cdn.mozilla.net/pub/mozilla.org/firefox/nightly/",
     "http://download.cdn.mozilla.net/pub/firefox/nightly/",
-    "https://mozilla-nightly-updates.s3.amazonaws.com",
     "http://ftp.mozilla.org/",
     "http://download.mozilla.org/",
     "https://archive.mozilla.org/",
@@ -49,6 +48,8 @@ BCJ_OPTIONS = {
     "x86": ["--x86"],
     "x86_64": ["--x86"],
     "aarch64": [],
+    # macOS Universal Builds
+    "macos-x86_64-aarch64": [],
 }
 
 
@@ -166,10 +167,11 @@ async def download(url, dest, mode=None):  # noqa: E999
                         log_interval = chunk_size * 1024
             end = time.time()
             log.info(
-                "Downloaded %s, %s bytes in %s seconds",
+                "Downloaded %s, %s bytes in %s seconds: sha256:%s",
                 url,
                 bytes_downloaded,
                 int(end - start),
+                get_hash(dest, hash_alg="sha256"),
             )
             if mode:
                 log.info("chmod %o %s", mode, dest)

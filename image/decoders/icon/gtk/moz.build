@@ -5,9 +5,15 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 SOURCES += [
-    'nsIconChannel.cpp',
+    "nsIconChannel.cpp",
 ]
 
-FINAL_LIBRARY = 'xul'
+EXPORTS += [
+    "nsIconChannel.h",
+]
 
-CXXFLAGS += CONFIG['TK_CFLAGS']
+FINAL_LIBRARY = "xul"
+
+CXXFLAGS += CONFIG["TK_CFLAGS"]
+
+include("/ipc/chromium/chromium-config.mozbuild")

@@ -116,11 +116,16 @@ static nsresult createAndAddToResult(nsAtom* aName, const nsAString& aValue,
   nsresult rv = text->SetText(aValue, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = elem->AppendChildTo(text, false);
-  NS_ENSURE_SUCCESS(rv, rv);
+  ErrorResult error;
+  elem->AppendChildTo(text, false, error);
+  if (error.Failed()) {
+    return error.StealNSResult();
+  }
 
-  rv = aResultHolder->AppendChildTo(elem, false);
-  NS_ENSURE_SUCCESS(rv, rv);
+  aResultHolder->AppendChildTo(elem, false, error);
+  if (error.Failed()) {
+    return error.StealNSResult();
+  }
 
   UniquePtr<txXPathNode> xpathNode(
       txXPathNativeNode::createXPathNode(elem, true));
@@ -330,15 +335,14 @@ nsresult txEXSLTFunctionCall::evaluate(txIEvalContext* aContext,
       rv = aContext->recycler()->getNodeSet(getter_AddRefs(resultSet));
       NS_ENSURE_SUCCESS(rv, rv);
 
-      nsTHashtable<nsStringHashKey> hash;
+      nsTHashSet<nsString> hash;
 
       int32_t i, len = nodes->size();
       for (i = 0; i < len; ++i) {
         nsAutoString str;
         const txXPathNode& node = nodes->get(i);
         txXPathNodeUtils::appendNodeValue(node, str);
-        if (!hash.GetEntry(str)) {
-          hash.PutEntry(str);
+        if (hash.EnsureInserted(str)) {
           rv = resultSet->append(node);
           NS_ENSURE_SUCCESS(rv, rv);
         }

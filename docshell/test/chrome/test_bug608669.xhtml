@@ -22,7 +22,7 @@ SimpleTest.waitForExplicitFinish();
 
 addLoadEvent(nextTest);
 
-gen = doTest();
+let gen = doTest();
 
 function nextTest() {
   gen.next();
@@ -33,7 +33,7 @@ let chromeWindow = window.browsingContext.topChromeWindow;
 function* doTest() {
   var notificationCount = 0;
   var observer = {
-    observe: function(aSubject, aTopic, aData) {
+    observe(aSubject, aTopic, aData) {
       is(aTopic, "chrome-document-global-created",
          "correct topic");
       is(aData, "null",
@@ -42,8 +42,7 @@ function* doTest() {
     }
   };
 
-  var os = Cc["@mozilla.org/observer-service;1"].
-    getService(Ci.nsIObserverService);
+  var os = SpecialPowers.Services.obs;
   os.addObserver(observer, "chrome-document-global-created");
   os.addObserver(observer, "content-document-global-created");
 

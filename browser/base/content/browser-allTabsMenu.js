@@ -48,16 +48,18 @@ var gTabsPanel = {
       insertBefore: document.getElementById("allTabsMenu-tabsSeparator"),
       filterFn: tab => tab.hidden && tab.soundPlaying,
     });
+    let showPinnedTabs = Services.prefs.getBoolPref(
+      "browser.tabs.tabmanager.enabled"
+    );
     this.allTabsPanel = new TabsPanel({
       view: this.allTabsView,
       containerNode: this.allTabsViewTabs,
-      filterFn: tab => !tab.pinned && !tab.hidden,
+      filterFn: tab =>
+        !tab.hidden && (!tab.pinned || (showPinnedTabs && tab.pinned)),
     });
 
     this.allTabsView.addEventListener("ViewShowing", e => {
       PanelUI._ensureShortcutsShown(this.allTabsView);
-      document.getElementById("allTabsMenu-undoCloseTab").disabled =
-        SessionStore.getClosedTabCount(window) == 0;
 
       let containersEnabled =
         Services.prefs.getBoolPref("privacy.userContext.enabled") &&
@@ -173,6 +175,8 @@ var gTabsPanel = {
   },
 
   searchTabs() {
-    gURLBar.search(UrlbarTokenizer.RESTRICT.OPENPAGE);
+    gURLBar.search(UrlbarTokenizer.RESTRICT.OPENPAGE, {
+      searchModeEntry: "tabmenu",
+    });
   },
 };

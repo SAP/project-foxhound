@@ -22,10 +22,29 @@ namespace mozilla {
                                                uint32_t aCount,
                                                uint32_t aOffset = 0);
 
+// Encode 8-bit data of a given length and append the Base64 encoded data to
+// aBase64.
+[[nodiscard]] nsresult Base64EncodeAppend(const char* aBinary,
+                                          uint32_t aBinaryLen,
+                                          nsAString& aBase64);
+[[nodiscard]] nsresult Base64EncodeAppend(const char* aBinary,
+                                          uint32_t aBinaryLen,
+                                          nsACString& aBase64);
+[[nodiscard]] nsresult Base64EncodeAppend(const nsACString& aBinary,
+                                          nsACString& aBase64);
+[[nodiscard]] nsresult Base64EncodeAppend(const nsACString& aBinary,
+                                          nsAString& aBase64);
+
 [[nodiscard]] nsresult Base64Encode(const char* aBinary, uint32_t aBinaryLen,
                                     char** aBase64);
+[[nodiscard]] nsresult Base64Encode(const char* aBinary, uint32_t aBinaryLen,
+                                    nsACString& aBase64);
+[[nodiscard]] nsresult Base64Encode(const char* aBinary, uint32_t aBinaryLen,
+                                    nsAString& aBase64);
 [[nodiscard]] nsresult Base64Encode(const nsACString& aBinary,
                                     nsACString& aBase64);
+[[nodiscard]] nsresult Base64Encode(const nsACString& aBinary,
+                                    nsAString& aBase64);
 
 // The high bits of any characters in aBinary are dropped.
 [[nodiscard]] nsresult Base64Encode(const nsAString& aBinary,

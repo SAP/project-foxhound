@@ -10,6 +10,7 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/nsCSPUtils.h"
 #include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/LoadContext.h"
@@ -20,6 +21,7 @@
 #include "nsICookieJarSettings.h"
 #include "nsINetworkInterceptController.h"
 #include "nsIProtocolHandler.h"
+#include "nsIReferrerInfo.h"
 #include "nsIBrowserChild.h"
 #include "nsScriptSecurityManager.h"
 #include "nsNetUtil.h"
@@ -37,12 +39,11 @@ class MainThreadReleaseRunnable final : public Runnable {
   nsCOMPtr<nsILoadGroup> mLoadGroupToCancel;
 
  public:
-  MainThreadReleaseRunnable(nsTArray<nsCOMPtr<nsISupports>>& aDoomed,
-                            nsCOMPtr<nsILoadGroup>& aLoadGroupToCancel)
-      : mozilla::Runnable("MainThreadReleaseRunnable") {
-    mDoomed.SwapElements(aDoomed);
-    mLoadGroupToCancel.swap(aLoadGroupToCancel);
-  }
+  MainThreadReleaseRunnable(nsTArray<nsCOMPtr<nsISupports>>&& aDoomed,
+                            nsCOMPtr<nsILoadGroup>&& aLoadGroupToCancel)
+      : mozilla::Runnable("MainThreadReleaseRunnable"),
+        mDoomed(std::move(aDoomed)),
+        mLoadGroupToCancel(std::move(aLoadGroupToCancel)) {}
 
   NS_INLINE_DECL_REFCOUNTING_INHERITED(MainThreadReleaseRunnable, Runnable)
 
@@ -64,7 +65,7 @@ class MainThreadReleaseRunnable final : public Runnable {
 // Specialize this if there's some class that has multiple nsISupports bases.
 template <class T>
 struct ISupportsBaseInfo {
-  typedef T ISupportsBase;
+  using ISupportsBase = T;
 };
 
 template <template <class> class SmartPtr, class T>
@@ -86,6 +87,7 @@ WorkerLoadInfoData::WorkerLoadInfoData()
     : mLoadFlags(nsIRequest::LOAD_NORMAL),
       mWindowID(UINT64_MAX),
       mReferrerInfo(new ReferrerInfo(nullptr)),
+      mPrincipalHashValue(0),
       mFromWindow(false),
       mEvalAllowed(false),
       mReportCSPViolations(false),
@@ -97,6 +99,8 @@ WorkerLoadInfoData::WorkerLoadInfoData()
       mUseRegularPrincipal(false),
       mHasStorageAccessPermissionGranted(false),
       mServiceWorkersTestingInWindow(false),
+      mShouldResistFingerprinting(false),
+      mIsThirdPartyContextToTopWindow(true),
       mSecureContext(eNotSet) {}
 
 nsresult WorkerLoadInfo::SetPrincipalsAndCSPOnMainThread(
@@ -154,6 +158,7 @@ nsresult WorkerLoadInfo::SetPrincipalsAndCSPOnMainThread(
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
+  mPrincipalHashValue = aPrincipal->GetHashValue();
   return NS_OK;
 }
 
@@ -363,11 +368,13 @@ bool WorkerLoadInfo::PrincipalURIMatchesScriptURL() {
 bool WorkerLoadInfo::ProxyReleaseMainThreadObjects(
     WorkerPrivate* aWorkerPrivate) {
   nsCOMPtr<nsILoadGroup> nullLoadGroup;
-  return ProxyReleaseMainThreadObjects(aWorkerPrivate, nullLoadGroup);
+  return ProxyReleaseMainThreadObjects(aWorkerPrivate,
+                                       std::move(nullLoadGroup));
 }
 
 bool WorkerLoadInfo::ProxyReleaseMainThreadObjects(
-    WorkerPrivate* aWorkerPrivate, nsCOMPtr<nsILoadGroup>& aLoadGroupToCancel) {
+    WorkerPrivate* aWorkerPrivate,
+    nsCOMPtr<nsILoadGroup>&& aLoadGroupToCancel) {
   static const uint32_t kDoomedCount = 11;
   nsTArray<nsCOMPtr<nsISupports>> doomed(kDoomedCount);
 
@@ -386,8 +393,8 @@ bool WorkerLoadInfo::ProxyReleaseMainThreadObjects(
 
   MOZ_ASSERT(doomed.Length() == kDoomedCount);
 
-  RefPtr<MainThreadReleaseRunnable> runnable =
-      new MainThreadReleaseRunnable(doomed, aLoadGroupToCancel);
+  RefPtr<MainThreadReleaseRunnable> runnable = new MainThreadReleaseRunnable(
+      std::move(doomed), std::move(aLoadGroupToCancel));
   return NS_SUCCEEDED(aWorkerPrivate->DispatchToMainThread(runnable.forget()));
 }
 

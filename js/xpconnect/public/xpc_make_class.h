@@ -26,7 +26,6 @@ bool XPC_WN_CannotDeletePropertyStub(JSContext* cx, JS::HandleObject obj,
                                      JS::HandleId id,
                                      JS::ObjectOpResult& result);
 
-bool XPC_WN_Helper_Enumerate(JSContext* cx, JS::HandleObject obj);
 bool XPC_WN_Shared_Enumerate(JSContext* cx, JS::HandleObject obj);
 
 bool XPC_WN_NewEnumerate(JSContext* cx, JS::HandleObject obj,
@@ -53,25 +52,21 @@ extern const js::ClassExtension XPC_WN_JSClassExtension;
 #define XPC_MAKE_CLASS_OPS(_flags)                                             \
   {                                                                            \
     /* addProperty */                                                          \
-    ((_flags)&XPC_SCRIPTABLE_USE_JSSTUB_FOR_ADDPROPERTY)                       \
-        ? nullptr                                                              \
-        : ((_flags)&XPC_SCRIPTABLE_ALLOW_PROP_MODS_DURING_RESOLVE)             \
-              ? XPC_WN_MaybeResolvingPropertyStub                              \
-              : XPC_WN_CannotModifyPropertyStub,                               \
+    ((_flags)&XPC_SCRIPTABLE_USE_JSSTUB_FOR_ADDPROPERTY) ? nullptr             \
+    : ((_flags)&XPC_SCRIPTABLE_ALLOW_PROP_MODS_DURING_RESOLVE)                 \
+        ? XPC_WN_MaybeResolvingPropertyStub                                    \
+        : XPC_WN_CannotModifyPropertyStub,                                     \
                                                                                \
         /* delProperty */                                                      \
-        ((_flags)&XPC_SCRIPTABLE_USE_JSSTUB_FOR_DELPROPERTY)                   \
-            ? nullptr                                                          \
-            : ((_flags)&XPC_SCRIPTABLE_ALLOW_PROP_MODS_DURING_RESOLVE)         \
-                  ? XPC_WN_MaybeResolvingDeletePropertyStub                    \
-                  : XPC_WN_CannotDeletePropertyStub,                           \
+        ((_flags)&XPC_SCRIPTABLE_USE_JSSTUB_FOR_DELPROPERTY) ? nullptr         \
+        : ((_flags)&XPC_SCRIPTABLE_ALLOW_PROP_MODS_DURING_RESOLVE)             \
+            ? XPC_WN_MaybeResolvingDeletePropertyStub                          \
+            : XPC_WN_CannotDeletePropertyStub,                                 \
                                                                                \
         /* enumerate */                                                        \
         ((_flags)&XPC_SCRIPTABLE_WANT_NEWENUMERATE)                            \
             ? nullptr /* We will use newEnumerate set below in this case */    \
-            : ((_flags)&XPC_SCRIPTABLE_WANT_ENUMERATE)                         \
-                  ? XPC_WN_Helper_Enumerate                                    \
-                  : XPC_WN_Shared_Enumerate,                                   \
+            : XPC_WN_Shared_Enumerate,                                         \
                                                                                \
         /* newEnumerate */                                                     \
         ((_flags)&XPC_SCRIPTABLE_WANT_NEWENUMERATE) ? XPC_WN_NewEnumerate      \
@@ -104,29 +99,29 @@ extern const js::ClassExtension XPC_WN_JSClassExtension;
                                                    : XPCWrappedNative_Trace,   \
   }
 
-#define XPC_MAKE_CLASS(_name, _flags, _classOps)             \
-  {                                                          \
-    /* name */                                               \
-    _name,                                                   \
-                                                             \
-        /* flags */                                          \
-        XPC_WRAPPER_FLAGS | JSCLASS_PRIVATE_IS_NSISUPPORTS | \
-            JSCLASS_IS_WRAPPED_NATIVE |                      \
-            (((_flags)&XPC_SCRIPTABLE_IS_GLOBAL_OBJECT)      \
-                 ? XPCONNECT_GLOBAL_FLAGS                    \
-                 : 0),                                       \
-                                                             \
-        /* cOps */                                           \
-        _classOps,                                           \
-                                                             \
-        /* spec */                                           \
-        nullptr,                                             \
-                                                             \
-        /* ext */                                            \
-        &XPC_WN_JSClassExtension,                            \
-                                                             \
-        /* oOps */                                           \
-        nullptr,                                             \
+#define XPC_MAKE_CLASS(_name, _flags, _classOps)                   \
+  {                                                                \
+    /* name */                                                     \
+    _name,                                                         \
+                                                                   \
+        /* flags */                                                \
+        JSCLASS_SLOT0_IS_NSISUPPORTS | JSCLASS_IS_WRAPPED_NATIVE | \
+            JSCLASS_FOREGROUND_FINALIZE |                          \
+            (((_flags)&XPC_SCRIPTABLE_IS_GLOBAL_OBJECT)            \
+                 ? XPCONNECT_GLOBAL_FLAGS                          \
+                 : JSCLASS_HAS_RESERVED_SLOTS(1)),                 \
+                                                                   \
+        /* cOps */                                                 \
+        _classOps,                                                 \
+                                                                   \
+        /* spec */                                                 \
+        nullptr,                                                   \
+                                                                   \
+        /* ext */                                                  \
+        &XPC_WN_JSClassExtension,                                  \
+                                                                   \
+        /* oOps */                                                 \
+        nullptr,                                                   \
   }
 
 #endif

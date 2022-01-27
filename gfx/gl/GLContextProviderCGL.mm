@@ -5,6 +5,7 @@
 
 #include "GLContextProvider.h"
 #include "GLContextCGL.h"
+#include "GLLibraryLoader.h"
 #include "nsDebug.h"
 #include "nsIWidget.h"
 #include <OpenGL/gl.h>
@@ -14,7 +15,8 @@
 #include "mozilla/StaticPrefs_gl.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "prenv.h"
-#include "GeckoProfiler.h"
+#include "prlink.h"
+#include "mozilla/ProfilerLabels.h"
 #include "MozFramebuffer.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/widget/CompositorWidget.h"
@@ -166,22 +168,13 @@ static bool IsSameGPU(CGOpenGLDisplayMask mask1, CGOpenGLDisplayMask mask2) {
   return !mask1 && !mask2;
 }
 
-static NSOpenGLPixelFormat* GetPixelFormatForContext(NSOpenGLContext* aContext) {
-  // -[NSOpenGLContext pixelFormat] is macOS 10.10+
-  if ([aContext respondsToSelector:@selector(pixelFormat)]) {
-    return [aContext pixelFormat];
-  }
-  return [[[NSOpenGLPixelFormat alloc]
-      initWithCGLPixelFormatObj:CGLGetPixelFormat([aContext CGLContextObj])] autorelease];
-}
-
 void GLContextCGL::MigrateToActiveGPU() {
   if (!mActiveGPUSwitchMayHaveOccurred.compareExchange(true, false)) {
     return;
   }
 
   CGOpenGLDisplayMask newPreferredDisplayMask = GetFreshContextDisplayMask();
-  NSOpenGLPixelFormat* pixelFormat = GetPixelFormatForContext(mContext);
+  NSOpenGLPixelFormat* pixelFormat = [mContext pixelFormat];
   GLint currentVirtualScreen = [mContext currentVirtualScreen];
   GLint currentDisplayMask = 0;
   [pixelFormat getValues:&currentDisplayMask
@@ -226,17 +219,13 @@ Maybe<SymbolLoader> GLContextCGL::GetSymbolLoader() const {
   return Some(SymbolLoader(*lib));
 }
 
-already_AddRefed<GLContext> GLContextProviderCGL::CreateWrappingExisting(void*, void*) {
-  return nullptr;
-}
-
 already_AddRefed<GLContext> GLContextProviderCGL::CreateForCompositorWidget(
-    CompositorWidget* aCompositorWidget, bool aWebRender, bool aForceAccelerated) {
+    CompositorWidget* aCompositorWidget, bool aHardwareWebRender, bool aForceAccelerated) {
   CreateContextFlags flags = CreateContextFlags::ALLOW_OFFLINE_RENDERER;
   if (aForceAccelerated) {
     flags |= CreateContextFlags::FORCE_ENABLE_HARDWARE;
   }
-  if (!aWebRender) {
+  if (!aHardwareWebRender) {
     flags |= CreateContextFlags::REQUIRE_COMPAT_PROFILE;
   }
   nsCString failureUnused;

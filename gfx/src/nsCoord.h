@@ -7,17 +7,14 @@
 #ifndef NSCOORD_H
 #define NSCOORD_H
 
-#include "mozilla/FloatingPoint.h"
-
-#include "nsAlgorithm.h"
-#include "nscore.h"
-#include "nsMathUtils.h"
-#include <math.h>
-#include <float.h>
-#include <stdlib.h>
-
-#include "nsDebug.h"
 #include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <math.h>
+
+#include "mozilla/Assertions.h"
+#include "mozilla/gfx/Coord.h"
+#include "nsMathUtils.h"
 
 /*
  * Basic type used for the geometry classes.
@@ -47,6 +44,60 @@ inline void VERIFY_COORD(nscoord aCoord) {
   NS_ASSERTION(floorf(aCoord) == aCoord, "Coords cannot have fractions");
 #endif
 }
+
+namespace mozilla {
+struct AppUnit {};
+
+// Declare AppUnit as a coordinate system tag.
+template <>
+struct IsPixel<AppUnit> : std::true_type {};
+
+namespace detail {
+template <typename Rep>
+struct AuCoordImpl : public gfx::IntCoordTyped<AppUnit, Rep> {
+  using Super = gfx::IntCoordTyped<AppUnit, Rep>;
+
+  constexpr AuCoordImpl() : Super() {}
+  constexpr MOZ_IMPLICIT AuCoordImpl(Rep aValue) : Super(aValue) {}
+  constexpr MOZ_IMPLICIT AuCoordImpl(Super aValue) : Super(aValue) {}
+
+  template <typename F>
+  static AuCoordImpl FromRound(F aValue) {
+    // Note: aValue is *not* rounding to nearest integer if it is negative. See
+    // https://bugzilla.mozilla.org/show_bug.cgi?id=410748#c14
+    return AuCoordImpl(std::floor(aValue + 0.5f));
+  }
+
+  template <typename F>
+  static AuCoordImpl FromTruncate(F aValue) {
+    return AuCoordImpl(std::trunc(aValue));
+  }
+
+  template <typename F>
+  static AuCoordImpl FromCeil(F aValue) {
+    return AuCoordImpl(std::ceil(aValue));
+  }
+
+  template <typename F>
+  static AuCoordImpl FromFloor(F aValue) {
+    return AuCoordImpl(std::floor(aValue));
+  }
+
+  // Note: this returns the result of the operation, without modifying the
+  // original value.
+  [[nodiscard]] AuCoordImpl ToMinMaxClamped() const {
+    return std::clamp(this->value, kMin, kMax);
+  }
+
+  static constexpr Rep kMax = nscoord_MAX;
+  static constexpr Rep kMin = nscoord_MIN;
+};
+}  // namespace detail
+
+using AuCoord = detail::AuCoordImpl<int32_t>;
+using AuCoord64 = detail::AuCoordImpl<int64_t>;
+
+}  // namespace mozilla
 
 /**
  * Divide aSpace by aN.  Assign the resulting quotient to aQuotient and
@@ -200,7 +251,6 @@ inline nscoord NSCoordSaturatingSubtract(nscoord a, nscoord b,
       return infMinusInfResult;
     } else {
       // case (b)
-      MOZ_ASSERT_UNREACHABLE("Attempted to subtract [n - nscoord_MAX]");
       return 0;
     }
   } else {

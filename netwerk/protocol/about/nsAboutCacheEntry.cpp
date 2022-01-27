@@ -14,6 +14,7 @@
 #include "nsEscape.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIAsyncOutputStream.h"
+#include "nsIPipe.h"
 #include "nsAboutProtocolUtils.h"
 #include "nsContentUtils.h"
 #include "nsInputStreamPump.h"
@@ -109,6 +110,11 @@ nsAboutCacheEntry::GetURIFlags(nsIURI* aURI, uint32_t* result) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsAboutCacheEntry::GetChromeURI(nsIURI* aURI, nsIURI** chromeURI) {
+  return NS_ERROR_ILLEGAL_VALUE;
+}
+
 //-----------------------------------------------------------------------------
 // nsAboutCacheEntry::Channel
 
@@ -145,7 +151,8 @@ nsresult nsAboutCacheEntry::Channel::GetContentStream(nsIURI* uri,
       "chrome:; object-src 'none'\" />\n"
       "  <title>Cache entry information</title>\n"
       "  <link rel=\"stylesheet\" "
-      "href=\"chrome://global/skin/about.css\" type=\"text/css\"/>\n"
+      "href=\"chrome://global/skin/in-content/info-pages.css\" "
+      "type=\"text/css\"/>\n"
       "  <link rel=\"stylesheet\" "
       "href=\"chrome://global/skin/aboutCacheEntry.css\" type=\"text/css\"/>\n"
       "</head>\n"
@@ -210,15 +217,17 @@ nsresult nsAboutCacheEntry::Channel::ParseURI(nsIURI* uri,
 
   keyBegin = begin;
   keyEnd = end;
-  if (!FindInReadable("?storage="_ns, keyBegin, keyEnd))
+  if (!FindInReadable("?storage="_ns, keyBegin, keyEnd)) {
     return NS_ERROR_FAILURE;
+  }
 
   valBegin = keyEnd;  // the value of the storage key starts after the key
 
   keyBegin = keyEnd;
   keyEnd = end;
-  if (!FindInReadable("&context="_ns, keyBegin, keyEnd))
+  if (!FindInReadable("&context="_ns, keyBegin, keyEnd)) {
     return NS_ERROR_FAILURE;
+  }
 
   storageName.Assign(Substring(valBegin, keyBegin));
   valBegin = keyEnd;  // the value of the context key starts after the key
@@ -256,17 +265,15 @@ nsresult nsAboutCacheEntry::Channel::ParseURI(nsIURI* uri,
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-nsAboutCacheEntry::Channel::OnCacheEntryCheck(
-    nsICacheEntry* aEntry, nsIApplicationCache* aApplicationCache,
-    uint32_t* result) {
+nsAboutCacheEntry::Channel::OnCacheEntryCheck(nsICacheEntry* aEntry,
+                                              uint32_t* result) {
   *result = nsICacheEntryOpenCallback::ENTRY_WANTED;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsAboutCacheEntry::Channel::OnCacheEntryAvailable(
-    nsICacheEntry* entry, bool isNew, nsIApplicationCache* aApplicationCache,
-    nsresult status) {
+nsAboutCacheEntry::Channel::OnCacheEntryAvailable(nsICacheEntry* entry,
+                                                  bool isNew, nsresult status) {
   nsresult rv;
 
   mWaitingForData = false;
@@ -452,7 +459,7 @@ nsresult nsAboutCacheEntry::Channel::WriteCacheEntryDescription(
     return NS_OK;  // just ignore
   }
 
-  rv = pump->AsyncRead(this, nullptr);
+  rv = pump->AsyncRead(this);
   if (NS_FAILED(rv)) {
     return NS_OK;  // just ignore
   }

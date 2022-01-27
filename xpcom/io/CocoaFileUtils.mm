@@ -13,15 +13,10 @@
 #include "nsString.h"
 #include "mozilla/MacStringHelpers.h"
 
-// Need to cope with us using old versions of the SDK and needing this on 10.10+
-#if !defined(MAC_OS_X_VERSION_10_10) || (MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_10)
-const CFStringRef kCFURLQuarantinePropertiesKey = CFSTR("NSURLQuarantinePropertiesKey");
-#endif
-
 namespace CocoaFileUtils {
 
 nsresult RevealFileInFinder(CFURLRef url) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (NS_WARN_IF(!url)) return NS_ERROR_INVALID_ARG;
 
@@ -32,11 +27,11 @@ nsresult RevealFileInFinder(CFURLRef url) {
 
   return (success ? NS_OK : NS_ERROR_FAILURE);
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 nsresult OpenURL(CFURLRef url) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (NS_WARN_IF(!url)) return NS_ERROR_INVALID_ARG;
 
@@ -46,11 +41,11 @@ nsresult OpenURL(CFURLRef url) {
 
   return (success ? NS_OK : NS_ERROR_FAILURE);
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 nsresult GetFileCreatorCode(CFURLRef url, OSType* creatorCode) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (NS_WARN_IF(!url) || NS_WARN_IF(!creatorCode)) return NS_ERROR_INVALID_ARG;
 
@@ -75,11 +70,11 @@ nsresult GetFileCreatorCode(CFURLRef url, OSType* creatorCode) {
   *creatorCode = [creatorNum unsignedLongValue];
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 nsresult SetFileCreatorCode(CFURLRef url, OSType creatorCode) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (NS_WARN_IF(!url)) return NS_ERROR_INVALID_ARG;
 
@@ -93,11 +88,11 @@ nsresult SetFileCreatorCode(CFURLRef url, OSType creatorCode) {
   [ap release];
   return (success ? NS_OK : NS_ERROR_FAILURE);
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 nsresult GetFileTypeCode(CFURLRef url, OSType* typeCode) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (NS_WARN_IF(!url) || NS_WARN_IF(!typeCode)) return NS_ERROR_INVALID_ARG;
 
@@ -122,11 +117,11 @@ nsresult GetFileTypeCode(CFURLRef url, OSType* typeCode) {
   *typeCode = [typeNum unsignedLongValue];
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 nsresult SetFileTypeCode(CFURLRef url, OSType typeCode) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (NS_WARN_IF(!url)) return NS_ERROR_INVALID_ARG;
 
@@ -139,7 +134,7 @@ nsresult SetFileTypeCode(CFURLRef url, OSType typeCode) {
   [ap release];
   return (success ? NS_OK : NS_ERROR_FAILURE);
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 // Can be called off of the main thread.
@@ -192,24 +187,15 @@ void AddOriginMetadataToFile(const CFStringRef filePath, const CFURLRef sourceUR
 }
 
 // Can be called off of the main thread.
-static CFStringRef GetQuarantinePropKey() {
-  if (nsCocoaFeatures::OnYosemiteOrLater()) {
-    return kCFURLQuarantinePropertiesKey;
-  }
-  return kLSItemQuarantineProperties;
-}
-
-// Can be called off of the main thread.
 static CFMutableDictionaryRef CreateQuarantineDictionary(const CFURLRef aFileURL,
                                                          const bool aCreateProps) {
-  // The properties key changed in 10.10:
   CFDictionaryRef quarantineProps = NULL;
   if (aCreateProps) {
     quarantineProps = ::CFDictionaryCreate(NULL, NULL, NULL, 0, &kCFTypeDictionaryKeyCallBacks,
                                            &kCFTypeDictionaryValueCallBacks);
   } else {
-    Boolean success =
-        ::CFURLCopyResourcePropertyForKey(aFileURL, GetQuarantinePropKey(), &quarantineProps, NULL);
+    Boolean success = ::CFURLCopyResourcePropertyForKey(aFileURL, kCFURLQuarantinePropertiesKey,
+                                                        &quarantineProps, NULL);
     // If there aren't any quarantine properties then the user probably
     // set up an exclusion and we don't need to add metadata.
     if (!success || !quarantineProps) {
@@ -260,7 +246,8 @@ void AddQuarantineMetadataToFile(const CFStringRef filePath, const CFURLRef sour
   }
 
   // Set quarantine properties on file.
-  ::CFURLSetResourcePropertyForKey(fileURL, GetQuarantinePropKey(), mutQuarantineProps, NULL);
+  ::CFURLSetResourcePropertyForKey(fileURL, kCFURLQuarantinePropertiesKey, mutQuarantineProps,
+                                   NULL);
 
   ::CFRelease(fileURL);
   ::CFRelease(mutQuarantineProps);

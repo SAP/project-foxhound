@@ -7,6 +7,7 @@
 #include "GPUProcessManager.h"
 
 #include "gfxConfig.h"
+#include "gfxPlatform.h"
 #include "GPUProcessHost.h"
 #include "GPUProcessListener.h"
 #include "mozilla/MemoryReportingProcess.h"
@@ -22,6 +23,8 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/GPUChild.h"
+#include "mozilla/ipc/Endpoint.h"
+#include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/layers/APZCTreeManagerChild.h"
 #include "mozilla/layers/APZInputBridgeChild.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
@@ -36,6 +39,7 @@
 #include "mozilla/layers/RemoteCompositorSession.h"
 #include "mozilla/widget/PlatformWidgetTypes.h"
 #include "nsAppRunner.h"
+#include "mozilla/widget/CompositorWidget.h"
 #ifdef MOZ_WIDGET_SUPPORTS_OOP_COMPOSITING
 #  include "mozilla/widget/CompositorWidgetChild.h"
 #endif
@@ -53,6 +57,10 @@
 #  include "mozilla/widget/AndroidUiThread.h"
 #  include "mozilla/layers/UiCompositorControllerChild.h"
 #endif  // defined(MOZ_WIDGET_ANDROID)
+
+#if defined(XP_WIN)
+#  include "gfxWindowsPlatform.h"
+#endif
 
 namespace mozilla {
 namespace gfx {
@@ -81,10 +89,12 @@ GPUProcessManager::GPUProcessManager()
       mNextNamespace(0),
       mIdNamespace(0),
       mResourceId(0),
-      mNumProcessAttempts(0),
+      mUnstableProcessAttempts(0),
+      mTotalProcessAttempts(0),
       mDeviceResetCount(0),
       mProcess(nullptr),
       mProcessToken(0),
+      mProcessStable(true),
       mGPUChild(nullptr) {
   MOZ_COUNT_CTOR(GPUProcessManager);
 
@@ -169,12 +179,25 @@ void GPUProcessManager::LaunchGPUProcess() {
   // Start the Vsync I/O thread so can use it as soon as the process launches.
   EnsureVsyncIOThread();
 
-  mNumProcessAttempts++;
+  // If the process didn't live long enough, reset the stable flag so that we
+  // don't end up in a restart loop.
+  auto newTime = TimeStamp::Now();
+  if (mTotalProcessAttempts > 0) {
+    auto delta = (int32_t)(newTime - mProcessAttemptLastTime).ToMilliseconds();
+    if (delta < StaticPrefs::layers_gpu_process_stable_min_uptime_ms()) {
+      mProcessStable = false;
+    }
+  }
+  mProcessAttemptLastTime = newTime;
+
+  if (!mProcessStable) {
+    mUnstableProcessAttempts++;
+  }
+  mTotalProcessAttempts++;
+  mProcessStable = false;
 
   std::vector<std::string> extraArgs;
-  nsCString parentBuildID(mozilla::PlatformBuildID());
-  extraArgs.push_back("-parentBuildID");
-  extraArgs.push_back(parentBuildID.get());
+  ipc::ProcessChild::AddPlatformBuildID(extraArgs);
 
   // The subprocess is launched asynchronously, so we wait for a callback to
   // acquire the IPDL actor.
@@ -190,14 +213,34 @@ bool GPUProcessManager::IsGPUProcessLaunching() {
 }
 
 void GPUProcessManager::DisableGPUProcess(const char* aMessage) {
+  MaybeDisableGPUProcess(aMessage, /* aAllowRestart */ false);
+}
+
+bool GPUProcessManager::MaybeDisableGPUProcess(const char* aMessage,
+                                               bool aAllowRestart) {
   if (!gfxConfig::IsEnabled(Feature::GPU_PROCESS)) {
-    return;
+    return true;
   }
 
-  gfxConfig::SetFailed(Feature::GPU_PROCESS, FeatureStatus::Failed, aMessage);
+  if (!aAllowRestart) {
+    gfxConfig::SetFailed(Feature::GPU_PROCESS, FeatureStatus::Failed, aMessage);
+  }
+
+  bool wantRestart = gfxPlatform::FallbackFromAcceleration(
+      FeatureStatus::Unavailable, "GPU Process is disabled",
+      "FEATURE_FAILURE_GPU_PROCESS_DISABLED"_ns);
+  if (aAllowRestart && wantRestart) {
+    // The fallback method can make use of the GPU process.
+    return false;
+  }
+
+  if (aAllowRestart) {
+    gfxConfig::SetFailed(Feature::GPU_PROCESS, FeatureStatus::Failed, aMessage);
+  }
+
   gfxCriticalNote << aMessage;
 
-  gfxPlatform::NotifyGPUProcessDisabled();
+  gfxPlatform::DisableGPUProcess();
 
   Telemetry::Accumulate(Telemetry::GPU_PROCESS_CRASH_FALLBACKS,
                         uint32_t(FallbackType::DISABLED));
@@ -216,12 +259,7 @@ void GPUProcessManager::DisableGPUProcess(const char* aMessage) {
   // crash, then we need to tell the content processes again, because they
   // need to rebind to the UI process.
   HandleProcessLost();
-
-  // On Windows and Linux, always fallback to software.
-  // The assumption is that something in the graphics driver is crashing.
-#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
-  FallbackToSoftware("GPU Process is disabled, fallback to software solution.");
-#endif
+  return true;
 }
 
 bool GPUProcessManager::EnsureGPUReady() {
@@ -350,6 +388,11 @@ GPUProcessManager::CreateUiCompositorController(nsBaseWidget* aWidget,
     mGPUChild->SendInitUiCompositorController(aId, std::move(parentPipe));
     result = UiCompositorControllerChild::CreateForGPUProcess(
         mProcessToken, std::move(childPipe));
+
+    if (result) {
+      result->SetCompositorSurfaceManager(
+          mProcess->GetCompositorSurfaceManager());
+    }
   }
   if (result) {
     result->SetBaseWidget(aWidget);
@@ -395,8 +438,10 @@ void GPUProcessManager::OnProcessLaunchComplete(GPUProcessHost* aHost) {
 
   CrashReporter::AnnotateCrashReport(
       CrashReporter::Annotation::GPUProcessLaunchCount,
-      static_cast<int>(mNumProcessAttempts));
+      static_cast<int>(mTotalProcessAttempts));
 }
+
+void GPUProcessManager::OnProcessDeclaredStable() { mProcessStable = true; }
 
 static bool ShouldLimitDeviceResets(uint32_t count, int32_t deltaMilliseconds) {
   // We decide to limit by comparing the amount of resets that have happened
@@ -437,85 +482,142 @@ void GPUProcessManager::SimulateDeviceReset() {
 
   if (mProcess) {
     GPUDeviceData data;
-    if (mGPUChild->SendSimulateDeviceReset(&data)) {
+    if (mGPUChild && mGPUChild->SendSimulateDeviceReset(&data)) {
       gfxPlatform::GetPlatform()->ImportGPUDeviceData(data);
     }
     OnRemoteProcessDeviceReset(mProcess);
   } else {
-    OnInProcessDeviceReset();
+    OnInProcessDeviceReset(/* aTrackThreshold */ false);
   }
 }
 
-void GPUProcessManager::DisableWebRender(wr::WebRenderError aError) {
+bool GPUProcessManager::DisableWebRenderConfig(wr::WebRenderError aError,
+                                               const nsCString& aMsg) {
   if (!gfx::gfxVars::UseWebRender()) {
-    return;
+    return false;
   }
   // Disable WebRender
+  bool wantRestart;
   if (aError == wr::WebRenderError::INITIALIZE) {
-    gfx::gfxConfig::GetFeature(gfx::Feature::WEBRENDER)
-        .ForceDisable(gfx::FeatureStatus::Unavailable,
-                      "WebRender initialization failed",
-                      "FEATURE_FAILURE_WEBRENDER_INITIALIZE"_ns);
+    wantRestart = gfxPlatform::FallbackFromAcceleration(
+        gfx::FeatureStatus::Unavailable, "WebRender initialization failed",
+        aMsg);
   } else if (aError == wr::WebRenderError::MAKE_CURRENT) {
-    gfx::gfxConfig::GetFeature(gfx::Feature::WEBRENDER)
-        .ForceDisable(gfx::FeatureStatus::Unavailable,
-                      "Failed to make render context current",
-                      "FEATURE_FAILURE_WEBRENDER_MAKE_CURRENT"_ns);
+    wantRestart = gfxPlatform::FallbackFromAcceleration(
+        gfx::FeatureStatus::Unavailable,
+        "Failed to make render context current",
+        "FEATURE_FAILURE_WEBRENDER_MAKE_CURRENT"_ns);
   } else if (aError == wr::WebRenderError::RENDER) {
-    gfx::gfxConfig::GetFeature(gfx::Feature::WEBRENDER)
-        .ForceDisable(gfx::FeatureStatus::Unavailable,
-                      "Failed to render WebRender",
-                      "FEATURE_FAILURE_WEBRENDER_RENDER"_ns);
+    wantRestart = gfxPlatform::FallbackFromAcceleration(
+        gfx::FeatureStatus::Unavailable, "Failed to render WebRender",
+        "FEATURE_FAILURE_WEBRENDER_RENDER"_ns);
   } else if (aError == wr::WebRenderError::NEW_SURFACE) {
-    gfx::gfxConfig::GetFeature(gfx::Feature::WEBRENDER)
-        .ForceDisable(gfx::FeatureStatus::Unavailable,
-                      "Failed to create new surface",
-                      "FEATURE_FAILURE_WEBRENDER_NEW_SURFACE"_ns);
+    wantRestart = gfxPlatform::FallbackFromAcceleration(
+        gfx::FeatureStatus::Unavailable, "Failed to create new surface",
+        "FEATURE_FAILURE_WEBRENDER_NEW_SURFACE"_ns);
+  } else if (aError == wr::WebRenderError::BEGIN_DRAW) {
+    wantRestart = gfxPlatform::FallbackFromAcceleration(
+        gfx::FeatureStatus::Unavailable, "BeginDraw() failed",
+        "FEATURE_FAILURE_WEBRENDER_BEGIN_DRAW"_ns);
+  } else if (aError == wr::WebRenderError::EXCESSIVE_RESETS) {
+    wantRestart = gfxPlatform::FallbackFromAcceleration(
+        gfx::FeatureStatus::Unavailable, "Device resets exceeded threshold",
+        "FEATURE_FAILURE_WEBRENDER_EXCESSIVE_RESETS"_ns);
   } else {
     MOZ_ASSERT_UNREACHABLE("Invalid value");
+    wantRestart = gfxPlatform::FallbackFromAcceleration(
+        gfx::FeatureStatus::Unavailable, "Unhandled failure reason",
+        "FEATURE_FAILURE_WEBRENDER_UNHANDLED"_ns);
   }
-  gfx::gfxVars::SetUseWebRender(false);
+  gfx::gfxVars::SetUseWebRenderDCompVideoOverlayWin(false);
 
-#if defined(MOZ_WIDGET_ANDROID)
-  // If aError is not wr::WebRenderError::INITIALIZE, nsWindow does not
-  // re-create LayerManager. Needs to trigger re-creating LayerManager on
-  // android
-  if (aError != wr::WebRenderError::INITIALIZE) {
-    NotifyDisablingWebRender();
+  // If we still have the GPU process, and we fallback to a new configuration
+  // that prefers to have the GPU process, reset the counter.
+  if (wantRestart && mProcess) {
+    mUnstableProcessAttempts = 1;
   }
-#endif
 
-  if (mProcess) {
-    OnRemoteProcessDeviceReset(mProcess);
-  } else {
-    OnInProcessDeviceReset();
+  return true;
+}
+
+void GPUProcessManager::DisableWebRender(wr::WebRenderError aError,
+                                         const nsCString& aMsg) {
+  if (DisableWebRenderConfig(aError, aMsg)) {
+    if (mProcess) {
+      RebuildRemoteSessions();
+    } else {
+      RebuildInProcessSessions();
+    }
+    NotifyListenersOnCompositeDeviceReset();
   }
 }
 
 void GPUProcessManager::NotifyWebRenderError(wr::WebRenderError aError) {
-  DisableWebRender(aError);
+  if (aError == wr::WebRenderError::VIDEO_OVERLAY) {
+#ifdef XP_WIN
+    gfxVars::SetUseWebRenderDCompVideoOverlayWin(false);
+#else
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+#endif
+    return;
+  }
+  DisableWebRender(aError, nsCString());
 }
 
-void GPUProcessManager::OnInProcessDeviceReset() {
-  RebuildInProcessSessions();
-  NotifyListenersOnCompositeDeviceReset();
+/* static */ void GPUProcessManager::RecordDeviceReset(
+    DeviceResetReason aReason) {
+  if (aReason != DeviceResetReason::FORCED_RESET) {
+    Telemetry::Accumulate(Telemetry::DEVICE_RESET_REASON, uint32_t(aReason));
+  }
+
+  CrashReporter::AnnotateCrashReport(
+      CrashReporter::Annotation::DeviceResetReason, int(aReason));
 }
 
-void GPUProcessManager::OnRemoteProcessDeviceReset(GPUProcessHost* aHost) {
-  // Detect whether the device is resetting too quickly or too much
-  // indicating that we should give up and use software
-  mDeviceResetCount++;
-
+bool GPUProcessManager::OnDeviceReset(bool aTrackThreshold) {
+#ifdef XP_WIN
   // Disable double buffering when device reset happens.
   if (!gfxVars::UseWebRender() && gfxVars::UseDoubleBufferingWithCompositor()) {
     gfxVars::SetUseDoubleBufferingWithCompositor(false);
   }
+#endif
+
+  // Ignore resets for thresholding if requested.
+  if (!aTrackThreshold) {
+    return false;
+  }
+
+  // Detect whether the device is resetting too quickly or too much
+  // indicating that we should give up and use software
+  mDeviceResetCount++;
 
   auto newTime = TimeStamp::Now();
   auto delta = (int32_t)(newTime - mDeviceResetLastTime).ToMilliseconds();
   mDeviceResetLastTime = newTime;
 
-  if (ShouldLimitDeviceResets(mDeviceResetCount, delta)) {
+  // Returns true if we should disable acceleration due to the reset.
+  return ShouldLimitDeviceResets(mDeviceResetCount, delta);
+}
+
+void GPUProcessManager::OnInProcessDeviceReset(bool aTrackThreshold) {
+  if (OnDeviceReset(aTrackThreshold)) {
+    gfxCriticalNoteOnce << "In-process device reset threshold exceeded";
+#ifdef MOZ_WIDGET_GTK
+    // FIXME(aosmond): Should we disable WebRender on other platforms?
+    DisableWebRenderConfig(wr::WebRenderError::EXCESSIVE_RESETS, nsCString());
+#endif
+  }
+#ifdef XP_WIN
+  // Ensure device reset handling before re-creating in process sessions.
+  // Normally nsWindow::OnPaint() already handled it.
+  gfxWindowsPlatform::GetPlatform()->HandleDeviceReset();
+#endif
+  RebuildInProcessSessions();
+  NotifyListenersOnCompositeDeviceReset();
+}
+
+void GPUProcessManager::OnRemoteProcessDeviceReset(GPUProcessHost* aHost) {
+  if (OnDeviceReset(/* aTrackThreshold */ true)) {
     DestroyProcess();
     DisableGPUProcess("GPU processed experienced too many device resets");
     HandleProcessLost();
@@ -524,16 +626,6 @@ void GPUProcessManager::OnRemoteProcessDeviceReset(GPUProcessHost* aHost) {
 
   RebuildRemoteSessions();
   NotifyListenersOnCompositeDeviceReset();
-}
-
-void GPUProcessManager::FallbackToSoftware(const char* aMessage) {
-  gfxConfig::SetFailed(Feature::HW_COMPOSITING, FeatureStatus::Blocked,
-                       aMessage);
-#ifdef XP_WIN
-  gfxConfig::SetFailed(Feature::D3D11_COMPOSITING, FeatureStatus::Blocked,
-                       aMessage);
-  gfxConfig::SetFailed(Feature::DIRECT2D, FeatureStatus::Blocked, aMessage);
-#endif
 }
 
 void GPUProcessManager::NotifyListenersOnCompositeDeviceReset() {
@@ -545,16 +637,24 @@ void GPUProcessManager::NotifyListenersOnCompositeDeviceReset() {
 void GPUProcessManager::OnProcessUnexpectedShutdown(GPUProcessHost* aHost) {
   MOZ_ASSERT(mProcess && mProcess == aHost);
 
+  if (StaticPrefs::layers_gpu_process_crash_also_crashes_browser()) {
+    MOZ_CRASH("GPU process crashed and pref is set to crash the browser.");
+  }
+
   CompositorManagerChild::OnGPUProcessLost(aHost->GetProcessToken());
   DestroyProcess();
 
-  if (mNumProcessAttempts >
+  if (mUnstableProcessAttempts >
       uint32_t(StaticPrefs::layers_gpu_process_max_restarts())) {
     char disableMessage[64];
     SprintfLiteral(disableMessage, "GPU process disabled after %d attempts",
-                   mNumProcessAttempts);
-    DisableGPUProcess(disableMessage);
-  } else if (mNumProcessAttempts >
+                   mTotalProcessAttempts);
+    if (!MaybeDisableGPUProcess(disableMessage, /* aAllowRestart */ true)) {
+      // Fallback wants the GPU process. Reset our counter.
+      mUnstableProcessAttempts = 0;
+      HandleProcessLost();
+    }
+  } else if (mUnstableProcessAttempts >
                  uint32_t(StaticPrefs::
                               layers_gpu_process_max_restarts_with_decoder()) &&
              mDecodeVideoOnGpuProcess) {
@@ -678,18 +778,6 @@ void GPUProcessManager::RebuildInProcessSessions() {
   }
 }
 
-void GPUProcessManager::NotifyDisablingWebRender() {
-#if defined(MOZ_WIDGET_ANDROID)
-  for (const auto& session : mRemoteSessions) {
-    session->NotifyDisablingWebRender();
-  }
-
-  for (const auto& session : mInProcessSessions) {
-    session->NotifyDisablingWebRender();
-  }
-#endif
-}
-
 void GPUProcessManager::NotifyRemoteActorDestroyed(
     const uint64_t& aProcessToken) {
   if (!NS_IsMainThread()) {
@@ -744,7 +832,7 @@ void GPUProcessManager::DestroyProcess() {
 }
 
 already_AddRefed<CompositorSession> GPUProcessManager::CreateTopLevelCompositor(
-    nsBaseWidget* aWidget, LayerManager* aLayerManager,
+    nsBaseWidget* aWidget, WebRenderLayerManager* aLayerManager,
     CSSToLayoutDeviceScale aScale, const CompositorOptions& aOptions,
     bool aUseExternalSurfaceSize, const gfx::IntSize& aSurfaceSize,
     bool* aRetryOut) {
@@ -786,7 +874,7 @@ already_AddRefed<CompositorSession> GPUProcessManager::CreateTopLevelCompositor(
 }
 
 RefPtr<CompositorSession> GPUProcessManager::CreateRemoteSession(
-    nsBaseWidget* aWidget, LayerManager* aLayerManager,
+    nsBaseWidget* aWidget, WebRenderLayerManager* aLayerManager,
     const LayersId& aRootLayerTreeId, CSSToLayoutDeviceScale aScale,
     const CompositorOptions& aOptions, bool aUseExternalSurfaceSize,
     const gfx::IntSize& aSurfaceSize) {
@@ -829,11 +917,23 @@ RefPtr<CompositorSession> GPUProcessManager::CreateRemoteSession(
     }
     apz = static_cast<APZCTreeManagerChild*>(papz);
 
-    RefPtr<APZInputBridgeChild> pinput = new APZInputBridgeChild();
-    if (!mGPUChild->SendPAPZInputBridgeConstructor(pinput, aRootLayerTreeId)) {
+    ipc::Endpoint<PAPZInputBridgeParent> parentPipe;
+    ipc::Endpoint<PAPZInputBridgeChild> childPipe;
+    nsresult rv = PAPZInputBridge::CreateEndpoints(mGPUChild->OtherPid(),
+                                                   base::GetCurrentProcId(),
+                                                   &parentPipe, &childPipe);
+    if (NS_FAILED(rv)) {
       return nullptr;
     }
-    apz->SetInputBridge(pinput);
+    mGPUChild->SendInitAPZInputBridge(aRootLayerTreeId, std::move(parentPipe));
+
+    RefPtr<APZInputBridgeChild> inputBridge =
+        APZInputBridgeChild::Create(mProcessToken, std::move(childPipe));
+    if (!inputBridge) {
+      return nullptr;
+    }
+
+    apz->SetInputBridge(inputBridge);
   }
 
   return new RemoteCompositorSession(aWidget, child, widget, apz,
@@ -1163,6 +1263,12 @@ RefPtr<MemoryReportingProcess> GPUProcessManager::GetProcessMemoryReporter() {
     return nullptr;
   }
   return new GPUMemoryReporter();
+}
+
+void GPUProcessManager::TestTriggerMetrics() {
+  if (!NS_WARN_IF(!mGPUChild)) {
+    mGPUChild->SendTestTriggerMetrics();
+  }
 }
 
 }  // namespace gfx

@@ -30,12 +30,20 @@
 #ifndef jit_x86_shared_AssemblerBuffer_x86_shared_h
 #define jit_x86_shared_AssemblerBuffer_x86_shared_h
 
-#include <stdarg.h>
-#include <string.h>
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/Likely.h"
+#include "mozilla/Vector.h"
 
-#include "jit/ExecutableAllocator.h"
-#include "jit/Ion.h"
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "jit/JitContext.h"
 #include "jit/JitSpewer.h"
+#include "jit/ProcessExecutableMemory.h"
+#include "js/AllocPolicy.h"
+#include "js/Vector.h"
 
 // Spew formatting helpers.
 #define PRETTYHEX(x)      \
@@ -153,7 +161,7 @@ class AssemblerBuffer {
   MOZ_ALWAYS_INLINE void putInt(int value) { sizedAppend<4>(value); }
   MOZ_ALWAYS_INLINE void putInt64(int64_t value) { sizedAppend<8>(value); }
 
-  MOZ_MUST_USE bool append(const unsigned char* values, size_t size) {
+  [[nodiscard]] bool append(const unsigned char* values, size_t size) {
     if (MOZ_UNLIKELY(!m_buffer.append(values, size))) {
       oomDetected();
       return false;

@@ -1,5 +1,10 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 from __future__ import absolute_import
 
+import six
 import argparse
 import sys
 import traceback
@@ -21,9 +26,11 @@ def expected(status):
     def inner(f):
         def test_func():
             f()
+
         test_func.__name__ = f.__name__
         test_func._expected = status
         return test_func
+
     return inner
 
 
@@ -45,13 +52,14 @@ def test_expected_fail():
 
 
 class TestRunner(object):
-
     def __init__(self):
-        self.logger = get_default_logger(component='TestRunner')
+        self.logger = get_default_logger(component="TestRunner")
 
     def gather_tests(self):
-        for item in globals().itervalues():
-            if isinstance(item, types.FunctionType) and item.__name__.startswith("test_"):
+        for item in six.itervalues(globals()):
+            if isinstance(item, types.FunctionType) and item.__name__.startswith(
+                "test_"
+            ):
                 yield item.__name__, item
 
     def run(self):
@@ -72,7 +80,7 @@ class TestRunner(object):
             func()
         except TestAssertion as e:
             status = "FAIL"
-            message = e.message
+            message = str(e)
         except Exception:
             status = "ERROR"
             message = traceback.format_exc()

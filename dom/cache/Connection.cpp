@@ -9,9 +9,7 @@
 #include "mozilla/dom/cache/DBSchema.h"
 #include "mozStorageHelper.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 using mozilla::dom::quota::QuotaObject;
 
@@ -39,7 +37,7 @@ Connection::Close() {
 
   // If we are closing here, then Cache must not have a transaction
   // open anywhere else.  This may fail if storage is corrupted.
-  Unused << NS_WARN_IF(NS_FAILED(db::IncrementalVacuum(this)));
+  Unused << NS_WARN_IF(NS_FAILED(db::IncrementalVacuum(*this)));
 
   return mBase->Close();
 }
@@ -253,6 +251,23 @@ Connection::GetQuotaObjects(QuotaObject** aDatabaseQuotaObject,
   return mBase->GetQuotaObjects(aDatabaseQuotaObject, aJournalQuotaObject);
 }
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+mozilla::storage::SQLiteMutex& Connection::GetSharedDBMutex() {
+  return mBase->GetSharedDBMutex();
+}
+
+uint32_t Connection::GetTransactionNestingLevel(
+    const mozilla::storage::SQLiteMutexAutoLock& aProofOfLock) {
+  return mBase->GetTransactionNestingLevel(aProofOfLock);
+}
+
+uint32_t Connection::IncreaseTransactionNestingLevel(
+    const mozilla::storage::SQLiteMutexAutoLock& aProofOfLock) {
+  return mBase->IncreaseTransactionNestingLevel(aProofOfLock);
+}
+
+uint32_t Connection::DecreaseTransactionNestingLevel(
+    const mozilla::storage::SQLiteMutexAutoLock& aProofOfLock) {
+  return mBase->DecreaseTransactionNestingLevel(aProofOfLock);
+}
+
+}  // namespace mozilla::dom::cache

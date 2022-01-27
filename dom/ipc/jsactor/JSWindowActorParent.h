@@ -9,7 +9,6 @@
 
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/JSActor.h"
@@ -17,6 +16,8 @@
 #include "nsWrapperCache.h"
 
 namespace mozilla {
+class ErrorResult;
+
 namespace dom {
 
 class WindowGlobalParent;
@@ -45,14 +46,15 @@ class JSWindowActorParent final : public JSActor {
   }
 
   WindowGlobalParent* GetManager() const;
+  WindowContext* GetWindowContext() const;
   void Init(const nsACString& aName, WindowGlobalParent* aManager);
   void ClearManager() override;
   CanonicalBrowsingContext* GetBrowsingContext(ErrorResult& aRv);
 
  protected:
   void SendRawMessage(const JSActorMessageMeta& aMeta,
-                      ipc::StructuredCloneData&& aData,
-                      ipc::StructuredCloneData&& aStack,
+                      Maybe<ipc::StructuredCloneData>&& aData,
+                      Maybe<ipc::StructuredCloneData>&& aStack,
                       ErrorResult& aRv) override;
 
  private:

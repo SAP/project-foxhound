@@ -11,8 +11,7 @@
 #include "nsTextNode.h"
 #include "mozAutoDocUpdate.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 already_AddRefed<Text> Text::SplitText(uint32_t aOffset, ErrorResult& aRv) {
   nsAutoString cutText;
@@ -56,7 +55,7 @@ already_AddRefed<Text> Text::SplitText(uint32_t aOffset, ErrorResult& aRv) {
   nsCOMPtr<nsINode> parent = GetParentNode();
   if (parent) {
     nsCOMPtr<nsIContent> beforeNode = GetNextSibling();
-    parent->InsertChildBefore(newContent, beforeNode, true);
+    parent->InsertChildBefore(newContent, beforeNode, true, IgnoreErrors());
   }
 
   return newContent.forget();
@@ -158,5 +157,4 @@ bool Text::HasTextForTranslation() {
   return false;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

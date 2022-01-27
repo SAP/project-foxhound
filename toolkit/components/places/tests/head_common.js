@@ -720,30 +720,9 @@ function do_compare_arrays(a1, a2, sorted) {
 function NavBookmarkObserver() {}
 
 NavBookmarkObserver.prototype = {
-  onBeginUpdateBatch() {},
-  onEndUpdateBatch() {},
   onItemRemoved() {},
   onItemChanged() {},
-  onItemVisited() {},
-  onItemMoved() {},
   QueryInterface: ChromeUtils.generateQI(["nsINavBookmarkObserver"]),
-};
-
-/**
- * Generic nsINavHistoryObserver that doesn't implement anything, but provides
- * dummy methods to prevent errors about an object not having a certain method.
- */
-function NavHistoryObserver() {}
-
-NavHistoryObserver.prototype = {
-  onBeginUpdateBatch() {},
-  onEndUpdateBatch() {},
-  onTitleChanged() {},
-  onDeleteURI() {},
-  onClearHistory() {},
-  onPageChanged() {},
-  onDeleteVisits() {},
-  QueryInterface: ChromeUtils.generateQI(["nsINavHistoryObserver"]),
 };
 
 /**
@@ -950,19 +929,19 @@ const DB_FILENAME = "places.sqlite";
  * @return {Promise} the final path to the database
  */
 async function setupPlacesDatabase(aFileName, aDestFileName = DB_FILENAME) {
-  let currentDir = await OS.File.getCurrentDirectory();
+  let currentDir = do_get_cwd().path;
 
   let src = OS.Path.join(currentDir, aFileName);
-  Assert.ok(await OS.File.exists(src), "Database file found");
+  Assert.ok(await IOUtils.exists(src), "Database file found");
 
   // Ensure that our database doesn't already exist.
   let dest = OS.Path.join(OS.Constants.Path.profileDir, aDestFileName);
   Assert.ok(
-    !(await OS.File.exists(dest)),
+    !(await IOUtils.exists(dest)),
     "Database file should not exist yet"
   );
 
-  await OS.File.copy(src, dest);
+  await IOUtils.copy(src, dest);
   return dest;
 }
 
@@ -986,46 +965,6 @@ function getPagesWithAnnotation(name) {
 
     return rows.map(row => row.getResultByName("url"));
   });
-}
-
-/**
- * Gets the URLs of pages that have a particular annotation.
- *
- * @param {String} name The name of the annotation to search for.
- * @return An array of GUIDs found.
- */
-function getItemsWithAnnotation(name) {
-  return PlacesUtils.promiseDBConnection().then(async db => {
-    let rows = await db.execute(
-      `
-      SELECT b.guid FROM moz_anno_attributes n
-      JOIN moz_items_annos a ON n.id = a.anno_attribute_id
-      JOIN moz_bookmarks b ON b.id = a.item_id
-      WHERE n.name = :name
-    `,
-      { name }
-    );
-
-    return rows.map(row => row.getResultByName("guid"));
-  });
-}
-
-/**
- * Sets an annotation for an item.
- *
- * @param {String} guid The GUID of the item.
- * @param {String} name The name of the annotation.
- * @param {Number|String} value The value of the annotation.
- */
-async function setItemAnnotation(guid, name, value) {
-  let id = await PlacesUtils.promiseItemId(guid);
-  PlacesUtils.annotations.setItemAnnotation(
-    id,
-    name,
-    value,
-    0,
-    PlacesUtils.annotations.EXPIRE_NEVER
-  );
 }
 
 /**

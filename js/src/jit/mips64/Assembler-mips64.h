@@ -7,6 +7,8 @@
 #ifndef jit_mips64_Assembler_mips64_h
 #define jit_mips64_Assembler_mips64_h
 
+#include <iterator>
+
 #include "jit/mips-shared/Assembler-mips-shared.h"
 
 #include "jit/mips64/Architecture-mips64.h"
@@ -18,12 +20,11 @@ static constexpr Register CallTempReg4 = a4;
 static constexpr Register CallTempReg5 = a5;
 
 static constexpr Register CallTempNonArgRegs[] = {t0, t1, t2, t3};
-static const uint32_t NumCallTempNonArgRegs =
-    mozilla::ArrayLength(CallTempNonArgRegs);
+static const uint32_t NumCallTempNonArgRegs = std::size(CallTempNonArgRegs);
 
 class ABIArgGenerator {
-  unsigned usedArgSlots_;
-  bool firstArgFloat;
+  unsigned regIndex_;
+  uint32_t stackOffset_;
   ABIArg current_;
 
  public:
@@ -31,13 +32,8 @@ class ABIArgGenerator {
   ABIArg next(MIRType argType);
   ABIArg& current() { return current_; }
 
-  uint32_t stackBytesConsumedSoFar() const {
-    if (usedArgSlots_ <= 8) {
-      return 0;
-    }
-
-    return (usedArgSlots_ - 8) * sizeof(int64_t);
-  }
+  uint32_t stackBytesConsumedSoFar() const { return stackOffset_; }
+  void increaseStackOffset(uint32_t bytes) { stackOffset_ += bytes; }
 };
 
 // These registers may be volatile or nonvolatile.
@@ -188,8 +184,8 @@ static constexpr uint32_t SimdMemoryAlignment = 16;
 static constexpr uint32_t WasmStackAlignment = SimdMemoryAlignment;
 static const uint32_t WasmTrapInstructionLength = 4;
 
-// The offsets are dynamically asserted during
-// code generation in the prologue/epilogue.
+// See comments in wasm::GenerateFunctionPrologue.  The difference between these
+// is the size of the largest callable prologue on the platform.
 static constexpr uint32_t WasmCheckedCallEntryOffset = 0u;
 static constexpr uint32_t WasmCheckedTailEntryOffset = 16u;
 
@@ -280,11 +276,6 @@ static inline bool GetTempRegForIntArg(uint32_t usedIntArgs,
   }
   *out = CallTempNonArgRegs[usedIntArgs];
   return true;
-}
-
-static inline uint32_t GetArgStackDisp(uint32_t usedArgSlots) {
-  MOZ_ASSERT(usedArgSlots >= NumIntArgRegs);
-  return (usedArgSlots - NumIntArgRegs) * sizeof(int64_t);
 }
 
 }  // namespace jit

@@ -4,6 +4,9 @@
 
 from __future__ import absolute_import
 
+import sys
+from unittest import skipIf
+
 from six.moves.urllib.parse import quote
 
 from marionette_driver import By, errors
@@ -23,7 +26,8 @@ def inline(doc):
 # is hidden by an overlay when scrolled into the top of the viewport.
 # It should be interactable when scrolled in at the bottom of the
 # viewport.
-fixed_overlay = inline("""
+fixed_overlay = inline(
+    """
 <style>
 * { margin: 0; padding: 0; }
 body { height: 300vh }
@@ -49,10 +53,12 @@ window.clicked = false;
 let link = document.querySelector("a");
 link.addEventListener("click", () => window.clicked = true);
 </script>
-""")
+"""
+)
 
 
-obscured_overlay = inline("""
+obscured_overlay = inline(
+    """
 <style>
 * { margin: 0; padding: 0; }
 body { height: 100vh }
@@ -73,29 +79,39 @@ window.clicked = false;
 let link = document.querySelector("#obscured");
 link.addEventListener("click", () => window.clicked = true);
 </script>
-""")
+"""
+)
 
 
-class TestLegacyClick(MarionetteTestCase):
-    """Uses legacy Selenium element displayedness checks."""
-
+class ClickBaseTestCase(WindowManagerMixin, MarionetteTestCase):
     def setUp(self):
-        MarionetteTestCase.setUp(self)
-        self.marionette.delete_session()
-        self.marionette.start_session()
+        super(ClickBaseTestCase, self).setUp()
+
+        # Always use a blank new tab for an empty history
+        self.new_tab = self.open_tab()
+        self.marionette.switch_to_window(self.new_tab)
+
+    def tearDown(self):
+        self.close_all_tabs()
 
     def test_click(self):
-        self.marionette.navigate(inline("""
+        self.marionette.navigate(
+            inline(
+                """
             <button>click me</button>
             <script>
               window.clicks = 0;
               let button = document.querySelector("button");
               button.addEventListener("click", () => window.clicks++);
             </script>
-        """))
+        """
+            )
+        )
         button = self.marionette.find_element(By.TAG_NAME, "button")
         button.click()
-        self.assertEqual(1, self.marionette.execute_script("return window.clicks", sandbox=None))
+        self.assertEqual(
+            1, self.marionette.execute_script("return window.clicks", sandbox=None)
+        )
 
     def test_click_number_link(self):
         test_html = self.marionette.absolute_url("clicks.html")
@@ -105,9 +121,13 @@ class TestLegacyClick(MarionetteTestCase):
         self.assertEqual(self.marionette.title, "Marionette Test")
 
     def test_clicking_an_element_that_is_not_displayed_raises(self):
-        self.marionette.navigate(inline("""
+        self.marionette.navigate(
+            inline(
+                """
             <p hidden>foo</p>
-        """))
+        """
+            )
+        )
 
         with self.assertRaises(errors.ElementNotInteractableException):
             self.marionette.find_element(By.TAG_NAME, "p").click()
@@ -120,31 +140,43 @@ class TestLegacyClick(MarionetteTestCase):
         self.assertEqual(self.marionette.title, "Marionette Test")
 
     def test_click_mathml(self):
-        self.marionette.navigate(inline("""
+        self.marionette.navigate(
+            inline(
+                """
             <math><mtext id="target">click me</mtext></math>
             <script>
               window.clicks = 0;
               let mtext = document.getElementById("target");
               mtext.addEventListener("click", () => window.clicks++);
             </script>
-        """))
+        """
+            )
+        )
         mtext = self.marionette.find_element(By.ID, "target")
         mtext.click()
-        self.assertEqual(1, self.marionette.execute_script("return window.clicks", sandbox=None))
+        self.assertEqual(
+            1, self.marionette.execute_script("return window.clicks", sandbox=None)
+        )
 
     def test_scroll_into_view_near_end(self):
         self.marionette.navigate(fixed_overlay)
         link = self.marionette.find_element(By.TAG_NAME, "a")
         link.click()
-        self.assertTrue(self.marionette.execute_script("return window.clicked", sandbox=None))
+        self.assertTrue(
+            self.marionette.execute_script("return window.clicked", sandbox=None)
+        )
 
     def test_inclusive_descendant(self):
-        self.marionette.navigate(inline("""
+        self.marionette.navigate(
+            inline(
+                """
             <select multiple>
               <option>first
               <option>second
               <option>third
-             </select>"""))
+             </select>"""
+            )
+        )
         select = self.marionette.find_element(By.TAG_NAME, "select")
 
         # This tests that the pointer-interactability test does not
@@ -161,51 +193,80 @@ class TestLegacyClick(MarionetteTestCase):
             self.assertNotEqual(select.get_property("selectedIndex"), -1)
 
     def test_container_is_select(self):
-        self.marionette.navigate(inline("""
+        self.marionette.navigate(
+            inline(
+                """
             <select>
               <option>foo</option>
-            </select>"""))
+            </select>"""
+            )
+        )
         option = self.marionette.find_element(By.TAG_NAME, "option")
         option.click()
         self.assertTrue(option.get_property("selected"))
 
     def test_container_is_button(self):
-        self.marionette.navigate(inline("""
+        self.marionette.navigate(
+            inline(
+                """
           <button onclick="window.clicked = true;">
             <span><em>foo</em></span>
-          </button>"""))
+          </button>"""
+            )
+        )
         span = self.marionette.find_element(By.TAG_NAME, "span")
         span.click()
-        self.assertTrue(self.marionette.execute_script("return window.clicked", sandbox=None))
+        self.assertTrue(
+            self.marionette.execute_script("return window.clicked", sandbox=None)
+        )
 
     def test_container_element_outside_view(self):
-        self.marionette.navigate(inline("""
+        self.marionette.navigate(
+            inline(
+                """
             <select style="margin-top: 100vh">
               <option>foo</option>
-            </select>"""))
+            </select>"""
+            )
+        )
         option = self.marionette.find_element(By.TAG_NAME, "option")
         option.click()
         self.assertTrue(option.get_property("selected"))
 
     def test_table_tr(self):
-        self.marionette.navigate(inline("""
+        self.marionette.navigate(
+            inline(
+                """
           <table>
             <tr><td onclick="window.clicked = true;">
               foo
             </td></tr>
-          </table>"""))
+          </table>"""
+            )
+        )
         tr = self.marionette.find_element(By.TAG_NAME, "tr")
         tr.click()
-        self.assertTrue(self.marionette.execute_script("return window.clicked", sandbox=None))
+        self.assertTrue(
+            self.marionette.execute_script("return window.clicked", sandbox=None)
+        )
 
 
-class TestClick(TestLegacyClick):
-    """Uses WebDriver specification compatible element interactability
-    checks.
-    """
+class TestLegacyClick(ClickBaseTestCase):
+    """Uses legacy Selenium element displayedness checks."""
 
     def setUp(self):
-        TestLegacyClick.setUp(self)
+        super(TestLegacyClick, self).setUp()
+
+        self.marionette.delete_session()
+        self.marionette.start_session({"moz:webdriverClick": False})
+
+
+class TestClick(ClickBaseTestCase):
+    """Uses WebDriver specification compatible element interactability checks."""
+
+    def setUp(self):
+        super(TestClick, self).setUp()
+
         self.marionette.delete_session()
         self.marionette.start_session({"moz:webdriverClick": True})
 
@@ -219,7 +280,9 @@ class TestClick(TestLegacyClick):
             obscured.click()
 
     def test_centre_outside_viewport_vertically(self):
-        self.marionette.navigate(inline("""
+        self.marionette.navigate(
+            inline(
+                """
             <style>
             * { margin: 0; padding: 0; }
             div {
@@ -234,13 +297,19 @@ class TestClick(TestLegacyClick):
             }
             </style>
 
-            <div onclick="window.clicked = true;"></div>"""))
+            <div onclick="window.clicked = true;"></div>"""
+            )
+        )
 
         self.marionette.find_element(By.TAG_NAME, "div").click()
-        self.assertTrue(self.marionette.execute_script("return window.clicked", sandbox=None))
+        self.assertTrue(
+            self.marionette.execute_script("return window.clicked", sandbox=None)
+        )
 
     def test_centre_outside_viewport_horizontally(self):
-        self.marionette.navigate(inline("""
+        self.marionette.navigate(
+            inline(
+                """
             <style>
             * { margin: 0; padding: 0; }
             div {
@@ -255,13 +324,19 @@ class TestClick(TestLegacyClick):
             }
             </style>
 
-            <div onclick="window.clicked = true;"></div>"""))
+            <div onclick="window.clicked = true;"></div>"""
+            )
+        )
 
         self.marionette.find_element(By.TAG_NAME, "div").click()
-        self.assertTrue(self.marionette.execute_script("return window.clicked", sandbox=None))
+        self.assertTrue(
+            self.marionette.execute_script("return window.clicked", sandbox=None)
+        )
 
     def test_centre_outside_viewport(self):
-        self.marionette.navigate(inline("""
+        self.marionette.navigate(
+            inline(
+                """
             <style>
             * { margin: 0; padding: 0; }
             div {
@@ -277,13 +352,19 @@ class TestClick(TestLegacyClick):
             }
             </style>
 
-            <div onclick="window.clicked = true;"></div>"""))
+            <div onclick="window.clicked = true;"></div>"""
+            )
+        )
 
         self.marionette.find_element(By.TAG_NAME, "div").click()
-        self.assertTrue(self.marionette.execute_script("return window.clicked", sandbox=None))
+        self.assertTrue(
+            self.marionette.execute_script("return window.clicked", sandbox=None)
+        )
 
     def test_css_transforms(self):
-        self.marionette.navigate(inline("""
+        self.marionette.navigate(
+            inline(
+                """
             <style>
             * { margin: 0; padding: 0; }
             div {
@@ -296,10 +377,14 @@ class TestClick(TestLegacyClick):
             }
             </style>
 
-            <div onclick="window.clicked = true;"></div>"""))
+            <div onclick="window.clicked = true;"></div>"""
+            )
+        )
 
         self.marionette.find_element(By.TAG_NAME, "div").click()
-        self.assertTrue(self.marionette.execute_script("return window.clicked", sandbox=None))
+        self.assertTrue(
+            self.marionette.execute_script("return window.clicked", sandbox=None)
+        )
 
     def test_input_file(self):
         self.marionette.navigate(inline("<input type=file>"))
@@ -314,75 +399,106 @@ class TestClick(TestLegacyClick):
         overlay.click()
         with self.assertRaises(errors.ElementClickInterceptedException):
             obscured.click()
-        self.assertFalse(self.marionette.execute_script("return window.clicked", sandbox=None))
+        self.assertFalse(
+            self.marionette.execute_script("return window.clicked", sandbox=None)
+        )
 
     def test_pointer_events_none(self):
-        self.marionette.navigate(inline("""
+        self.marionette.navigate(
+            inline(
+                """
             <button style="pointer-events: none">click me</button>
             <script>
               window.clicked = false;
               let button = document.querySelector("button");
               button.addEventListener("click", () => window.clicked = true);
             </script>
-        """))
+        """
+            )
+        )
         button = self.marionette.find_element(By.TAG_NAME, "button")
         self.assertEqual("none", button.value_of_css_property("pointer-events"))
 
-        with self.assertRaisesRegexp(errors.ElementClickInterceptedException,
-                                     "does not have pointer events enabled"):
+        with self.assertRaisesRegexp(
+            errors.ElementClickInterceptedException,
+            "does not have pointer events enabled",
+        ):
             button.click()
-        self.assertFalse(self.marionette.execute_script("return window.clicked", sandbox=None))
+        self.assertFalse(
+            self.marionette.execute_script("return window.clicked", sandbox=None)
+        )
 
-    def test_preventDefault(self):
-        self.marionette.navigate(inline("""
+    def test_prevent_default(self):
+        self.marionette.navigate(
+            inline(
+                """
             <button>click me</button>
             <script>
               let button = document.querySelector("button");
               button.addEventListener("click", event => event.preventDefault());
             </script>
-        """))
+        """
+            )
+        )
         button = self.marionette.find_element(By.TAG_NAME, "button")
         # should not time out
         button.click()
 
-    def test_stopPropagation(self):
-        self.marionette.navigate(inline("""
+    def test_stop_propagation(self):
+        self.marionette.navigate(
+            inline(
+                """
             <button>click me</button>
             <script>
               let button = document.querySelector("button");
               button.addEventListener("click", event => event.stopPropagation());
             </script>
-        """))
+        """
+            )
+        )
         button = self.marionette.find_element(By.TAG_NAME, "button")
         # should not time out
         button.click()
 
-    def test_stopImmediatePropagation(self):
-        self.marionette.navigate(inline("""
+    def test_stop_immediate_propagation(self):
+        self.marionette.navigate(
+            inline(
+                """
             <button>click me</button>
             <script>
               let button = document.querySelector("button");
               button.addEventListener("click", event => event.stopImmediatePropagation());
             </script>
-        """))
+        """
+            )
+        )
         button = self.marionette.find_element(By.TAG_NAME, "button")
         # should not time out
         button.click()
 
 
-class TestClickNavigation(MarionetteTestCase):
-
+class TestClickNavigation(WindowManagerMixin, MarionetteTestCase):
     def setUp(self):
         super(TestClickNavigation, self).setUp()
+
+        # Always use a blank new tab for an empty history
+        self.new_tab = self.open_tab()
+        self.marionette.switch_to_window(self.new_tab)
 
         self.test_page = self.marionette.absolute_url("clicks.html")
         self.marionette.navigate(self.test_page)
 
+    def tearDown(self):
+        self.close_all_tabs()
+
     def close_notification(self):
         try:
             with self.marionette.using_context("chrome"):
-                self.marionette.find_element(By.CSS_SELECTOR,
-                    "#notification-popup popupnotification .popup-notification-closebutton").click()
+                elem = self.marionette.find_element(
+                    By.CSS_SELECTOR,
+                    "#notification-popup popupnotification .popup-notification-closebutton",
+                )
+                elem.click()
         except errors.NoSuchElementException:
             pass
 
@@ -392,7 +508,9 @@ class TestClickNavigation(MarionetteTestCase):
         self.assertEqual(self.marionette.title, "Marionette Test")
 
     def test_click_link_page_load_dismissed_beforeunload_prompt(self):
-        self.marionette.navigate(inline("""
+        self.marionette.navigate(
+            inline(
+                """
           <input type="text"></input>
           <a href="{}">Click</a>
           <script>
@@ -400,7 +518,11 @@ class TestClickNavigation(MarionetteTestCase):
               event.preventDefault();
             }});
           </script>
-        """.format(self.marionette.absolute_url("clicks.html"))))
+        """.format(
+                    self.marionette.absolute_url("clicks.html")
+                )
+            )
+        )
         self.marionette.find_element(By.TAG_NAME, "input").send_keys("foo")
         self.marionette.find_element(By.TAG_NAME, "a").click()
 
@@ -412,6 +534,10 @@ class TestClickNavigation(MarionetteTestCase):
         self.marionette.find_element(By.ID, "anchor").click()
         self.assertEqual(self.marionette.get_url(), "{}#".format(self.test_page))
 
+    @skipIf(
+        sys.platform.startswith("win"),
+        "Bug 1627965 - Skip on Windows for frequent failures",
+    )
     def test_click_link_install_addon(self):
         try:
             self.marionette.find_element(By.ID, "install-addon").click()
@@ -445,7 +571,6 @@ class TestClickNavigation(MarionetteTestCase):
 
 
 class TestClickCloseContext(WindowManagerMixin, MarionetteTestCase):
-
     def setUp(self):
         super(TestClickCloseContext, self).setUp()
 

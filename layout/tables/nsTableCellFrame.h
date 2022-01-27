@@ -228,9 +228,13 @@ class nsTableCellFrame : public nsContainerFrame,
 
   void DecorateForSelection(DrawTarget* aDrawTarget, nsPoint aPt);
 
-  virtual bool ComputeCustomOverflow(nsOverflowAreas& aOverflowAreas) override;
+  bool ComputeCustomOverflow(mozilla::OverflowAreas& aOverflowAreas) override;
 
   virtual bool IsFrameOfType(uint32_t aFlags) const override {
+    if (aFlags & eSupportsAspectRatio) {
+      return false;
+    }
+
     return nsContainerFrame::IsFrameOfType(aFlags & ~(nsIFrame::eTablePart));
   }
 
@@ -252,8 +256,7 @@ class nsTableCellFrame : public nsContainerFrame,
                    ClassID aID);
   ~nsTableCellFrame();
 
-  virtual LogicalSides GetLogicalSkipSides(
-      const ReflowInput* aReflowInput = nullptr) const override;
+  LogicalSides GetLogicalSkipSides() const override;
 
   /**
    * GetBorderOverflow says how far the cell's own borders extend
@@ -285,8 +288,7 @@ inline mozilla::LogicalSize nsTableCellFrame::GetDesiredSize() {
 }
 
 inline void nsTableCellFrame::SetDesiredSize(const ReflowOutput& aDesiredSize) {
-  mozilla::WritingMode wm = aDesiredSize.GetWritingMode();
-  mDesiredSize = aDesiredSize.Size(wm).ConvertTo(GetWritingMode(), wm);
+  mDesiredSize = aDesiredSize.Size(GetWritingMode());
 }
 
 inline bool nsTableCellFrame::GetContentEmpty() const {

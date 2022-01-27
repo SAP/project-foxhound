@@ -6,7 +6,7 @@
 
 "use strict";
 
-const TEST_URI = `data:text/html,<meta charset=utf8>console API calls<script>
+const TEST_URI = `data:text/html,<!DOCTYPE html><meta charset=utf8>console API calls<script>
   console.log({ contentObject: "YAY!", deep: ["yes!"] });
 </script>`;
 
@@ -30,7 +30,7 @@ add_task(async function() {
   await testExpandObject(objectMessage);
 
   info("Restart the Browser Console");
-  await BrowserConsoleManager.toggleBrowserConsole();
+  await safeCloseBrowserConsole();
   hud = await BrowserConsoleManager.toggleBrowserConsole();
 
   info("Wait until the content object is displayed");
@@ -40,9 +40,6 @@ add_task(async function() {
   ok(true, "Content object is displayed in the Browser Console after restart");
 
   await testExpandObject(objectMessage);
-
-  info("Close the browser console");
-  await BrowserConsoleManager.toggleBrowserConsole();
 });
 
 async function testExpandObject(objectMessage) {
@@ -53,7 +50,7 @@ async function testExpandObject(objectMessage) {
 
   oi.querySelector(".arrow").click();
   // The object inspector now looks like:
-  // ▼ {…}
+  // ▼ Object { contentObject: "YAY!", deep: (1) […] }
   // |  contentObject: "YAY!"
   // |  ▶︎ deep: Array [ "yes!" ]
   // |  ▶︎ <prototype>
@@ -62,13 +59,16 @@ async function testExpandObject(objectMessage) {
   const [root, contentObjectProp, deepProp, prototypeProp] = [
     ...oi.querySelectorAll(".node"),
   ];
-  ok(root.textContent.includes(`{…}`));
+
+  ok(
+    root.textContent.includes('Object { contentObject: "YAY!", deep: (1) […] }')
+  );
   ok(contentObjectProp.textContent.includes(`contentObject: "YAY!"`));
   ok(deepProp.textContent.includes(`deep: Array [ "yes!" ]`));
   ok(prototypeProp.textContent.includes(`<prototype>`));
 
   // The object inspector now looks like:
-  // ▼ {…}
+  // ▼ Object { contentObject: "YAY!", deep: (1) […] }
   // |  contentObject: "YAY!"
   // |  ▼︎ deep: (1) […]
   // |  |  0: "yes!"

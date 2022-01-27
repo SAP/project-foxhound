@@ -19,6 +19,7 @@
 #include "nsIProtocolProxyCallback.h"
 #include "nsIChannelEventSink.h"
 #include "nsIHttpChannelInternal.h"
+#include "mozilla/net/WebSocketConnectionListener.h"
 #include "BaseWebSocketChannel.h"
 
 #include "nsCOMPtr.h"
@@ -46,6 +47,7 @@ class CallOnStop;
 class CallOnServerClose;
 class CallAcknowledge;
 class WebSocketEventService;
+class WebSocketConnectionBase;
 
 [[nodiscard]] extern nsresult CalculateWebSocketHashedSecret(
     const nsACString& aKey, nsACString& aHash);
@@ -71,7 +73,8 @@ class WebSocketChannel : public BaseWebSocketChannel,
                          public nsIProtocolProxyCallback,
                          public nsIInterfaceRequestor,
                          public nsIChannelEventSink,
-                         public nsINamed {
+                         public nsINamed,
+                         public WebSocketConnectionListener {
   friend class WebSocketFrame;
 
  public:
@@ -92,8 +95,14 @@ class WebSocketChannel : public BaseWebSocketChannel,
   // nsIWebSocketChannel methods BaseWebSocketChannel didn't implement for us
   //
   NS_IMETHOD AsyncOpen(nsIURI* aURI, const nsACString& aOrigin,
-                       uint64_t aWindowID, nsIWebSocketListener* aListener,
-                       nsISupports* aContext) override;
+                       JS::HandleValue aOriginAttributes, uint64_t aWindowID,
+                       nsIWebSocketListener* aListener, nsISupports* aContext,
+                       JSContext* aCx) override;
+  NS_IMETHOD AsyncOpenNative(nsIURI* aURI, const nsACString& aOrigin,
+                             const OriginAttributes& aOriginAttributes,
+                             uint64_t aWindowID,
+                             nsIWebSocketListener* aListener,
+                             nsISupports* aContext) override;
   NS_IMETHOD Close(uint16_t aCode, const nsACString& aReason) override;
   NS_IMETHOD SendMsg(const nsACString& aMsg) override;
   NS_IMETHOD SendBinaryMsg(const nsACString& aMsg) override;
@@ -108,6 +117,13 @@ class WebSocketChannel : public BaseWebSocketChannel,
   // Off main thread URI access.
   void GetEffectiveURL(nsAString& aEffectiveURL) const override;
   bool IsEncrypted() const override;
+
+  nsresult OnTransportAvailableInternal();
+  nsresult OnWebSocketConnectionAvailable(
+      WebSocketConnectionBase* aConnection) override;
+  void OnError(nsresult aStatus) override;
+  void OnTCPClosed() override;
+  nsresult OnDataReceived(uint8_t* aData, uint32_t aCount) override;
 
   const static uint32_t kControlFrameMask = 0x8;
 
@@ -142,6 +158,7 @@ class WebSocketChannel : public BaseWebSocketChannel,
 
   void EnqueueOutgoingMessage(nsDeque<OutboundMessage>& aQueue,
                               OutboundMessage* aMsg);
+  void DoEnqueueOutgoingMessage();
 
   void PrimeNewOutgoingMessage();
   void DeleteCurrentOutGoingMessage();
@@ -194,7 +211,7 @@ class WebSocketChannel : public BaseWebSocketChannel,
     }
   }
 
-  nsCOMPtr<nsIEventTarget> mSocketThread;
+  nsCOMPtr<nsIEventTarget> mIOThread;
   nsCOMPtr<nsIHttpChannelInternal> mChannel;
   nsCOMPtr<nsIHttpChannel> mHttpChannel;
   nsCOMPtr<nsICancelable> mCancelable;
@@ -207,6 +224,8 @@ class WebSocketChannel : public BaseWebSocketChannel,
   // then to IP address (unless we're leaving DNS resolution to a proxy server)
   nsCString mAddress;
   int32_t mPort;  // WS server port
+  // Secondary key for the connection queue. Used by nsWSAdmissionManager.
+  nsCString mOriginSuffix;
 
   // Used for off main thread access to the URI string.
   nsCString mHost;
@@ -215,6 +234,7 @@ class WebSocketChannel : public BaseWebSocketChannel,
   nsCOMPtr<nsISocketTransport> mTransport;
   nsCOMPtr<nsIAsyncInputStream> mSocketIn;
   nsCOMPtr<nsIAsyncOutputStream> mSocketOut;
+  RefPtr<WebSocketConnectionBase> mConnection;
 
   nsCOMPtr<nsITimer> mCloseTimer;
   uint32_t mCloseTimeout; /* milliseconds */
@@ -290,7 +310,7 @@ class WebSocketChannel : public BaseWebSocketChannel,
   nsDeque<OutboundMessage> mOutgoingPongMessages;
   uint32_t mHdrOutToSend;
   uint8_t* mHdrOut;
-  uint8_t mOutHeader[kCopyBreak + 16];
+  uint8_t mOutHeader[kCopyBreak + 16]{0};
   UniquePtr<PMCECompression> mPMCECompressor;
   uint32_t mDynamicOutputSize;
   uint8_t* mDynamicOutput;

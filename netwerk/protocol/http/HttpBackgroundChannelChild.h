@@ -54,20 +54,25 @@ class HttpBackgroundChannelChild final : public PHttpBackgroundChannelChild {
   IPCResult RecvOnStartRequest(const nsHttpResponseHead& aResponseHead,
                                const bool& aUseResponseHead,
                                const nsHttpHeaderArray& aRequestHeaders,
-                               const HttpChannelOnStartRequestArgs& aArgs);
+                               const HttpChannelOnStartRequestArgs& aArgs,
+                               const HttpChannelAltDataStream& aAltData);
 
   IPCResult RecvOnTransportAndData(const nsresult& aChannelStatus,
                                    const nsresult& aTransportStatus,
                                    const uint64_t& aOffset,
                                    const uint32_t& aCount,
-                                   const nsCString& aData,
+                                   const nsDependentCSubstring& aData,
                                    const bool& aDataFromSocketProcess);
 
   IPCResult RecvOnStopRequest(
       const nsresult& aChannelStatus, const ResourceTimingStructArgs& aTiming,
       const TimeStamp& aLastActiveTabOptHit,
       const nsHttpHeaderArray& aResponseTrailers,
-      const nsTArray<ConsoleReportCollected>& aConsoleReports);
+      nsTArray<ConsoleReportCollected>&& aConsoleReports,
+      const bool& aFromSocketProcess);
+
+  IPCResult RecvOnConsoleReport(
+      nsTArray<ConsoleReportCollected>&& aConsoleReports);
 
   IPCResult RecvOnAfterLastPart(const nsresult& aStatus);
 
@@ -75,10 +80,6 @@ class HttpBackgroundChannelChild final : public PHttpBackgroundChannelChild {
                            const int64_t& aProgressMax);
 
   IPCResult RecvOnStatus(const nsresult& aStatus);
-
-  IPCResult RecvFlushedForDiversion();
-
-  IPCResult RecvDivertMessages();
 
   IPCResult RecvNotifyClassificationFlags(const uint32_t& aClassificationFlags,
                                           const bool& aIsThirdParty);
@@ -127,6 +128,23 @@ class HttpBackgroundChannelChild final : public PHttpBackgroundChannelChild {
   // Should be flushed after OnStartRequest is received and handled.
   // Should only access on STS thread.
   nsTArray<nsCOMPtr<nsIRunnable>> mQueuedRunnables;
+
+  enum ODASource {
+    ODA_PENDING = 0,      // ODA is pending
+    ODA_FROM_PARENT = 1,  // ODA from parent process.
+    ODA_FROM_SOCKET = 2   // response coming from the network
+  };
+  // We need to know the first ODA will be from socket process or parent
+  // process. This information is from OnStartRequest message from parent
+  // process.
+  ODASource mFirstODASource;
+
+  // Indicate whether HttpChannelChild::ProcessOnStopRequest is called.
+  bool mOnStopRequestCalled = false;
+
+  // This is used when we receive the console report from parent process, but
+  // still not get the OnStopRequest from socket process.
+  std::function<void()> mConsoleReportTask;
 };
 
 }  // namespace net

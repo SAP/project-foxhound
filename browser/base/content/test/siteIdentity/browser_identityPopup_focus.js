@@ -6,7 +6,7 @@ async function focusIdentityBox() {
   gURLBar.inputField.focus();
   is(document.activeElement, gURLBar.inputField, "urlbar should be focused");
   const focused = BrowserTestUtils.waitForEvent(
-    gIdentityHandler._identityBox,
+    gIdentityHandler._identityIconBox,
     "focus"
   );
   EventUtils.synthesizeKey("VK_TAB", { shiftKey: true });
@@ -24,11 +24,11 @@ add_task(async function testIdentityPopupFocusClick() {
       true,
       event => event.target == gIdentityHandler._identityPopup
     );
-    EventUtils.synthesizeMouseAtCenter(gIdentityHandler._identityBox, {});
+    EventUtils.synthesizeMouseAtCenter(gIdentityHandler._identityIconBox, {});
     await shown;
     isnot(
       Services.focus.focusedElement,
-      document.getElementById("identity-popup-security-expander")
+      document.getElementById("identity-popup-security-button")
     );
   });
 });
@@ -48,7 +48,7 @@ add_task(async function testIdentityPopupFocusKeyboard() {
     await shown;
     is(
       Services.focus.focusedElement,
-      document.getElementById("identity-popup-security-expander")
+      document.getElementById("identity-popup-security-button")
     );
   });
 });
@@ -70,7 +70,7 @@ add_task(async function testSiteSecurityTabOrder() {
     await shown;
     is(
       Services.focus.focusedElement,
-      document.getElementById("identity-popup-security-expander")
+      document.getElementById("identity-popup-security-button")
     );
 
     // 2. Access the Site Security section.

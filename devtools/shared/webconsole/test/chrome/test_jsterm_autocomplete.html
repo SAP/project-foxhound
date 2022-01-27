@@ -92,7 +92,7 @@
 
       window.varify = true;
     `;
-    await state.webConsoleFront.evaluateJSAsync(script);
+    await evaluateExpression(state.webConsoleFront, script);
 
     const tests = [
       doAutocomplete1,
@@ -133,7 +133,7 @@
     // Null out proxy1 and proxy2: the proxy handlers use scripted functions
     // that can keep the debugger sandbox alive longer than necessary via their
     // environment chain (due to the webconsole helper functions defined there).
-    await state.webConsoleFront.evaluateJSAsync(`this.proxy1 = null; this.proxy2 = null;`);
+    await evaluateExpression(state.webConsoleFront, `this.proxy1 = null; this.proxy2 = null;`);
 
     await closeDebugger(state);
   }
@@ -447,7 +447,7 @@
   async function doAutocompleteCommands(webConsoleFront) {
     info("test autocomplete for 'c'");
     let matches = (await webConsoleFront.autocomplete("c")).matches;
-    ok(matches.includes("cd") && matches.includes("clear"), "commands are returned");
+    ok(matches.includes("clear"), "commands are returned");
 
     info("test autocomplete for 's'");
     matches = (await webConsoleFront.autocomplete("s")).matches;
@@ -459,27 +459,27 @@
 
     info("test autocomplete for 'window.c'");
     matches = (await webConsoleFront.autocomplete("window.c")).matches;
-    ok(!matches.includes("cd") && !matches.includes("clear"), "commands are not returned");
+    ok(!matches.includes("clear"), "commands are not returned");
 
     info("test autocomplete for 'window[c'");
     matches = (await webConsoleFront.autocomplete("window[c")).matches;
-    ok(!matches.includes("cd") && !matches.includes("clear"), "commands are not returned");
+    ok(!matches.includes("clear"), "commands are not returned");
 
     info(`test autocomplete for 'window["c'`);
     matches = (await webConsoleFront.autocomplete(`window["c`)).matches;
-    ok(!matches.includes("cd") && !matches.includes("clear"), "commands are not returned");
+    ok(!matches.includes("clear"), "commands are not returned");
 
     info(`test autocomplete for 'window["c'`);
     matches = (await webConsoleFront.autocomplete(`window["c`)).matches;
-    ok(!matches.includes("cd") && !matches.includes("clear"), "commands are not returned");
+    ok(!matches.includes("clear"), "commands are not returned");
 
     info(`test autocomplete for 'window[";c'`);
     matches = (await webConsoleFront.autocomplete(`window[";c`)).matches;
-    ok(!matches.includes("cd") && !matches.includes("clear"), "commands are not returned");
+    ok(!matches.includes("clear"), "commands are not returned");
 
     info(`test autocomplete for 'window[;c'`);
     matches = (await webConsoleFront.autocomplete(`window[;c`)).matches;
-    ok(!matches.includes("cd") && !matches.includes("clear"), "commands are not returned");
+    ok(!matches.includes("clear"), "commands are not returned");
   }
 
   async function doAutocompleteAfterOperator(webConsoleFront) {
@@ -621,6 +621,13 @@ async function doKeywordsAutocomplete(webConsoleFront) {
     const res = (await webConsoleFront.autocomplete(input));
     return res.matches;
   }
+
+  async function evaluateExpression(consoleFront, expression) {
+    const onEvaluationResult = consoleFront.once("evaluationResult");
+    await consoleFront.evaluateJSAsync({ text: expression });
+    return onEvaluationResult;
+  }
+
 </script>
 </body>
 </html>

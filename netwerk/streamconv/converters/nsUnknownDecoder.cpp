@@ -14,7 +14,6 @@
 
 #include "nsIMIMEService.h"
 
-#include "nsIDivertableChannel.h"
 #include "nsIViewSourceChannel.h"
 #include "nsIHttpChannel.h"
 #include "nsIForcePendingChannel.h"
@@ -23,10 +22,16 @@
 #include "nsStringStream.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
+#include "nsQueryObject.h"
+#include "nsComponentManagerUtils.h"
+#include "nsServiceManagerUtils.h"
+#include "nsIPrefService.h"
 
 #include <algorithm>
 
 #define MAX_BUFFER_SIZE 512u
+
+using namespace mozilla;
 
 NS_IMPL_ISUPPORTS(nsUnknownDecoder::ConvertedStreamListener, nsIStreamListener,
                   nsIRequestObserver)
@@ -76,8 +81,9 @@ nsUnknownDecoder::ConvertedStreamListener::OnStopRequest(nsIRequest* request,
   return NS_OK;
 }
 
-nsUnknownDecoder::nsUnknownDecoder()
-    : mBuffer(nullptr),
+nsUnknownDecoder::nsUnknownDecoder(nsIStreamListener* aListener)
+    : mNextListener(aListener),
+      mBuffer(nullptr),
       mBufferLen(0),
       mRequireHTMLsuffix(false),
       mMutex("nsUnknownDecoder"),
@@ -85,8 +91,9 @@ nsUnknownDecoder::nsUnknownDecoder()
   nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
   if (prefs) {
     bool val;
-    if (NS_SUCCEEDED(prefs->GetBoolPref("security.requireHTMLsuffix", &val)))
+    if (NS_SUCCEEDED(prefs->GetBoolPref("security.requireHTMLsuffix", &val))) {
       mRequireHTMLsuffix = val;
+    }
   }
 }
 
@@ -215,16 +222,6 @@ nsUnknownDecoder::OnDataAvailable(nsIRequest* request, nsIInputStream* aStream,
     }
 #endif
 
-    nsCOMPtr<nsIDivertableChannel> divertable = do_QueryInterface(request);
-    if (divertable) {
-      bool diverting;
-      divertable->GetDivertingToParent(&diverting);
-      if (diverting) {
-        // The channel is diverted to the parent do not send any more data here.
-        return rv;
-      }
-    }
-
     nsCOMPtr<nsIStreamListener> listener;
     {
       MutexAutoLock lock(mMutex);
@@ -258,11 +255,6 @@ nsUnknownDecoder::OnStartRequest(nsIRequest* request) {
     if (!mBuffer) {
       rv = NS_ERROR_OUT_OF_MEMORY;
     }
-  }
-
-  nsCOMPtr<nsIDivertableChannel> divertable = do_QueryInterface(request);
-  if (divertable) {
-    divertable->UnknownDecoderInvolvedKeepData();
   }
 
   // Do not pass the OnStartRequest on to the next listener (yet)...
@@ -577,10 +569,10 @@ bool nsUnknownDecoder::SniffForHTML(nsIRequest* aRequest) {
   uint32_t bufSize = end - str;
   // We use sizeof(_tagstr) below because that's the length of _tagstr
   // with the one char " " or ">" appended.
-#define MATCHES_TAG(_tagstr)                                  \
-  (bufSize >= sizeof(_tagstr) &&                              \
-   (PL_strncasecmp(str, _tagstr " ", sizeof(_tagstr)) == 0 || \
-    PL_strncasecmp(str, _tagstr ">", sizeof(_tagstr)) == 0))
+#define MATCHES_TAG(_tagstr)                                      \
+  (bufSize >= sizeof(_tagstr) &&                                  \
+   (nsCRT::strncasecmp(str, _tagstr " ", sizeof(_tagstr)) == 0 || \
+    nsCRT::strncasecmp(str, _tagstr ">", sizeof(_tagstr)) == 0))
 
   if (MATCHES_TAG("html") || MATCHES_TAG("frameset") || MATCHES_TAG("body") ||
       MATCHES_TAG("head") || MATCHES_TAG("script") || MATCHES_TAG("iframe") ||
@@ -735,29 +727,12 @@ nsresult nsUnknownDecoder::FireListenerNotifications(nsIRequest* request,
       // mNextListener looks at it.
       request->Cancel(rv);
       listener->OnStartRequest(request);
-
-      nsCOMPtr<nsIDivertableChannel> divertable = do_QueryInterface(request);
-      if (divertable) {
-        rv = divertable->UnknownDecoderInvolvedOnStartRequestCalled();
-      }
-
       return rv;
     }
   }
 
   // Fire the OnStartRequest(...)
   rv = listener->OnStartRequest(request);
-
-  nsCOMPtr<nsIDivertableChannel> divertable = do_QueryInterface(request);
-  if (divertable) {
-    rv = divertable->UnknownDecoderInvolvedOnStartRequestCalled();
-    bool diverting;
-    divertable->GetDivertingToParent(&diverting);
-    if (diverting) {
-      // The channel is diverted to the parent do not send any more data here.
-      return rv;
-    }
-  }
 
   if (NS_SUCCEEDED(rv)) {
     // install stream converter if required

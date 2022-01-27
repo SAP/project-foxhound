@@ -9,17 +9,4 @@
 
 #include "mozilla/dom/quota/QuotaCommon.h"
 
-// Cache equivalent of QM_TRY.
-#define CACHE_TRY(...) QM_TRY_META(mozilla::dom::cache, ##__VA_ARGS__)
-
-// Cache equivalent of QM_TRY_VAR.
-#define CACHE_TRY_VAR(...) QM_TRY_VAR_META(mozilla::dom::cache, ##__VA_ARGS__)
-
-namespace mozilla::dom::cache {
-
-void HandleError(const nsLiteralCString& aExpr,
-                 const nsLiteralCString& aSourceFile, int32_t aSourceLine);
-
-}  // namespace mozilla::dom::cache
-
 #endif  // mozilla_dom_cache_CacheCommon_h

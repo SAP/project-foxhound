@@ -419,11 +419,14 @@ function getCurrentPageShortName() {
   var pageName = pages[pageIndex].url.spec;
   let parts = pageName.split("/");
   if (parts.length > 5) {
-    if (parts[5].indexOf("?" != -1)) {
+    // Tear off the first parts and concatenate the rest into a name.
+    let remainingParts = parts.slice(5);
+    let remainingAsString = remainingParts.join("_");
+    if (remainingAsString.includes("?")) {
       // page name is something like 'tpaint.html?auto=1'
-      return parts[5].split("?")[0];
+      remainingAsString = remainingAsString.split("?")[0];
     }
-    return parts[5];
+    return remainingAsString;
   }
   return "page_" + pageIndex;
 }
@@ -724,7 +727,8 @@ function _loadHandlerCapturing() {
 
   if (gTime !== -1) {
     plRecordTime(gTime);
-    TalosParentProfiler.pause("capturing load handler fired");
+    TalosParentProfiler.mark("Talos - capturing load handler fired");
+    TalosParentProfiler.pause();
     gTime = -1;
     recordedName = null;
     setTimeout(plNextPage, delay);

@@ -6,6 +6,7 @@ from __future__ import absolute_import, unicode_literals
 
 import os
 import sys
+import warnings
 
 from recommonmark.transform import AutoStructify
 
@@ -13,7 +14,8 @@ from recommonmark.transform import AutoStructify
 OUR_DIR = os.path.dirname(__file__)
 topsrcdir = os.path.normpath(os.path.join(OUR_DIR, ".."))
 
-copybutton_prompt_text = ">>> |\\\\$ |\\[\\d*\\]: |\\.\\.\\.: "
+# Escapes $, [, ] and 3 dots in copy button
+copybutton_prompt_text = r">>> |\.\.\. |\$ |In \[\d*\]: | {2,5}\.\.\.: | {5,8}: "
 copybutton_prompt_is_regexp = True
 
 EXTRA_PATHS = (
@@ -24,7 +26,6 @@ EXTRA_PATHS = (
     "testing/mozbase/manifestparser",
     "testing/mozbase/mozfile",
     "testing/mozbase/mozprocess",
-    "third_party/python/futures",
     "third_party/python/jsmin",
     "third_party/python/which",
 )
@@ -46,29 +47,35 @@ extensions = [
     "recommonmark",
     "sphinx_copybutton",
     "sphinx_markdown_tables",
+    "sphinx_panels",
 ]
 
 # JSDoc must run successfully for dirs specified, so running
 # tree-wide (the default) will not work currently.
 js_source_path = [
-    "browser/components/extensions",
-    "browser/components/uitour",
-    "testing/marionette",
-    "toolkit/components/extensions",
-    "toolkit/components/extensions/parent",
-    "toolkit/components/featuregates",
-    "toolkit/mozapps/extensions",
-    "toolkit/components/prompts/src",
+    "../browser/components/extensions",
+    "../browser/components/uitour",
+    "../remote/marionette",
+    "../toolkit/components/extensions",
+    "../toolkit/components/extensions/parent",
+    "../toolkit/components/featuregates",
+    "../toolkit/mozapps/extensions",
+    "../toolkit/components/prompts/src",
+    "../toolkit/components/pictureinpicture",
+    "../toolkit/components/pictureinpicture/content",
 ]
-root_for_relative_js_paths = "."
+root_for_relative_js_paths = ".."
 jsdoc_config_path = "jsdoc.json"
 
 templates_path = ["_templates"]
 source_suffix = [".rst", ".md"]
 master_doc = "index"
 project = "Firefox Source Docs"
-html_logo = os.path.join(topsrcdir, "browser/branding/nightly/content/firefox-wordmark.svg")
+html_logo = os.path.join(
+    topsrcdir, "browser/branding/nightly/content/firefox-wordmark.svg"
+)
 html_favicon = os.path.join(topsrcdir, "browser/branding/nightly/firefox.ico")
+html_js_files = ["https://cdnjs.cloudflare.com/ajax/libs/mermaid/8.9.1/mermaid.js"]
 
 exclude_patterns = ["_build", "_staging", "_venv"]
 pygments_style = "sphinx"
@@ -99,6 +106,19 @@ moz_project_name = "main"
 
 html_show_copyright = False
 
+# Only run autosection for the page title.
+# Otherwise, we have a huge number of duplicate links.
+# For example, the page https://firefox-source-docs.mozilla.org/code-quality/lint/
+# is called "Linting"
+# just like https://firefox-source-docs.mozilla.org/remote/CodeStyle.html
+autosectionlabel_maxdepth = 1
+
+
+def install_sphinx_panels(app, pagename, templatename, context, doctree):
+    if "perfdocs" in pagename:
+        app.add_js_file("sphinx_panels.js")
+        app.add_css_file("sphinx_panels.css")
+
 
 def setup(app):
     app.add_config_value(
@@ -111,5 +131,15 @@ def setup(app):
         },
         True,
     )
-    app.add_stylesheet("custom_theme.css")
+
+    # Silent a warning
+    # https://github.com/readthedocs/recommonmark/issues/177
+    warnings.filterwarnings(
+        action="ignore",
+        category=UserWarning,
+        message=r".*Container node skipped.*",
+    )
+
+    app.add_css_file("custom_theme.css")
     app.add_transform(AutoStructify)
+    app.connect("html-page-context", install_sphinx_panels)

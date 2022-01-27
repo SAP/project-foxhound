@@ -36,9 +36,10 @@ abuse-report-goback-button = Go back
 abuse-report-submit-button = Submit
 
 ## Message bars descriptions.
-
+##
 ## Variables:
 ##   $addon-name (string) - Name of the add-on
+
 abuse-report-messagebar-aborted = Report for <span data-l10n-name="addon-name">{ $addon-name }</span> canceled.
 abuse-report-messagebar-submitting = Sending report for <span data-l10n-name="addon-name">{ $addon-name }</span>.
 abuse-report-messagebar-submitted = Thank you for submitting a report. Do you want to remove <span data-l10n-name="addon-name">{ $addon-name }</span>?
@@ -96,4 +97,3 @@ abuse-report-unwanted-reason-v2 = I never wanted it and don’t know how to get 
 abuse-report-unwanted-example = Example: An application installed it without my permission
 
 abuse-report-other-reason = Something else
-

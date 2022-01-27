@@ -1,10 +1,11 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 yo{
     AuxExemplarCharacters{"[c q v x z]"}
     ExemplarCharacters{
-        "[a á à b d e é è ẹ {ẹ\u0301} {ẹ\u0300} f g {gb} h i í ì j k l m n o ó ò ọ {ọ"
-        "\u0301} {ọ\u0300} p r s ṣ t u ú ù w y]"
+        "[a á à b d e é è ẹ {ẹ\u0301} {ẹ\u0300} f g {gb} h i í ì j k l m ḿ {m\u0300} "
+        "n ń ǹ o ó ò ọ {ọ\u0301} {ọ\u0300} p r s ṣ t u ú ù w y]"
     }
     ExemplarCharactersIndex{"[A B D E F G H I J K L M N O P R S T U W Y]"}
     ExemplarCharactersPunctuation{"[\\- ‐ ‑ – — , ; \\: ! ? . … ' ‘ ’ \u0022 “ ” ( ) @ * / \\& # † ‡ ′ ″]"}
@@ -62,6 +63,7 @@ yo{
                 }
             }
             symbols{
+                approximatelySign{"dáàṣì"}
                 decimal{"."}
                 exponential{"E"}
                 group{","}
@@ -84,7 +86,6 @@ yo{
         }
         minimumGroupingDigits{"1"}
     }
-    Version{"37"}
     calendar{
         generic{
             DateTimePatterns{
@@ -102,7 +103,18 @@ yo{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "Hmmssz",
+                "Hms",
+                "Hm",
+                "GyMMEEEEd",
+                "GyMMd",
+                "GyMMd",
+                "GyMMdd",
+            }
             availableFormats{
+                GyMd{"d/M/y GGGGG"}
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
                 M{"L"}
@@ -157,6 +169,16 @@ yo{
                 "{1} {0}",
                 "{1} {0}",
             }
+            DateTimeSkeletons{
+                "HHmmsszzzz",
+                "Hmmssz",
+                "Hms",
+                "Hm",
+                "yMMMEEEEd",
+                "yMMMd",
+                "yMMd",
+                "yMd",
+            }
             appendItems{
                 Timezone{"{0} {1}"}
             }
@@ -171,6 +193,7 @@ yo{
                 GyMMM{"G y MMM"}
                 GyMMMEd{"G y MMM d, E"}
                 GyMMMd{"G y MMM d"}
+                GyMd{"d/M/y GGGGG"}
                 H{"HH"}
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
@@ -222,15 +245,6 @@ yo{
                         "Ẹ",
                         "À",
                     }
-                    short{
-                        "Àìkú",
-                        "Ajé",
-                        "Ìsẹ́gun",
-                        "Ọjọ́rú",
-                        "Ọjọ́bọ",
-                        "Ẹtì",
-                        "Àbámẹ́ta",
-                    }
                     wide{
                         "Ọjọ́ Àìkú",
                         "Ọjọ́ Ajé",
@@ -250,15 +264,6 @@ yo{
                         "Ọ",
                         "Ẹ",
                         "À",
-                    }
-                    short{
-                        "Àìkú",
-                        "Ajé",
-                        "Ìsẹ́gun",
-                        "Ọjọ́rú",
-                        "Ọjọ́bọ",
-                        "Ẹtì",
-                        "Àbámẹ́ta",
                     }
                     wide{
                         "Àìkú",
@@ -301,7 +306,7 @@ yo{
                     "Lehin Kristi",
                 }
                 wide%variant{
-                    "BCE",
+                    "Sáájú ìgbà mímọ̀",
                     "CE",
                 }
             }
@@ -539,11 +544,26 @@ yo{
                 "2"{"òtúùnla"}
             }
         }
+        dayOfYear{
+            dn{"Ọjọ́ inú ọdún"}
+        }
+        dayOfYear-narrow{
+            dn{"Ọjọ́ inú ọd."}
+        }
+        dayOfYear-short{
+            dn{"Ọjọ́ inú ọd."}
+        }
         dayperiod{
             dn{"Àárọ̀/ọ̀sán"}
         }
         era{
-            dn{"Ìgbà"}
+            dn{"sáà"}
+        }
+        era-narrow{
+            dn{"Sáà"}
+        }
+        era-short{
+            dn{"sáà"}
         }
         hour{
             dn{"Wákàtí"}
@@ -598,12 +618,31 @@ yo{
                 "0"{"ọ̀sẹ̀ yìí"}
                 "1"{"ọ́sẹ̀ tó ń bọ̀"}
             }
+            relativePeriod{"ọ̀sẹ̀ ti {0}"}
         }
         week-short{
-            relativePeriod{"ọ̀ṣẹ̀ {0}"}
+            relativePeriod{"ọ̀sẹ̀ ti {0}"}
+        }
+        weekOfMonth{
+            dn{"Ọṣẹ̀ inú Oṣù"}
         }
         weekday{
             dn{"Ọjọ́ tó wà láàárín ọ̀sẹ̀"}
+        }
+        weekday-narrow{
+            dn{"ọjọ́ inú ọṣẹ̀."}
+        }
+        weekday-short{
+            dn{"ọjọ́ inú ọṣẹ̀."}
+        }
+        weekdayOfMonth{
+            dn{"ọjọ́ ọṣẹ̀ inú oṣù"}
+        }
+        weekdayOfMonth-narrow{
+            dn{"ọjọ́ ọṣẹ̀ inú oṣù"}
+        }
+        weekdayOfMonth-short{
+            dn{"ọjọ́ ọṣẹ̀ inú oṣù"}
         }
         year{
             dn{"Ọdún"}
@@ -613,11 +652,21 @@ yo{
                 "1"{"Àmọ́dún"}
             }
         }
+        year-short{
+            relative{
+                "-1"{"Ọdún tó kọjá"}
+                "0"{"Ọdún yìí"}
+                "1"{"Ọdún tó ńbọ̀"}
+            }
+        }
         zone{
             dn{"Agbègbè àkókò"}
         }
     }
     listPattern{
+        or{
+            middle{"{0}, {1}"}
+        }
         standard{
             2{"{0}, {1}"}
             end{"{0}, {1}"}

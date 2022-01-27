@@ -3,7 +3,7 @@
 "use strict";
 
 // The ext-* files are imported into the same scopes.
-/* import-globals-from ext-utils.js */
+/* import-globals-from ext-android.js */
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   GeckoViewWebExtension: "resource://gre/modules/GeckoViewWebExtension.jsm",
@@ -52,12 +52,18 @@ class BrowserAction extends BrowserActionBase {
 
   openPopup() {
     const tab = tabTracker.activeTab;
+    const popupUri = this.triggerClickOrPopup(tab);
     const actionObject = this.getContextData(tab);
     const action = this.helper.extractProperties(actionObject);
     this.helper.sendRequest(tab.id, {
       action,
       type: "GeckoView:BrowserAction:OpenPopup",
+      popupUri,
     });
+  }
+
+  triggerClickOrPopup(tab = tabTracker.activeTab) {
+    return super.triggerClickOrPopup(tab);
   }
 
   getTab(tabId) {
@@ -68,7 +74,7 @@ class BrowserAction extends BrowserActionBase {
     return this.helper.getWindow(windowId);
   }
 
-  click() {
+  dispatchClick() {
     this.clickDelegate.onClick();
   }
 }
@@ -99,14 +105,16 @@ this.browserAction = class extends ExtensionAPI {
     const { extension } = context;
     const { tabManager } = extension;
     const { action } = this;
+    const namespace =
+      extension.manifestVersion < 3 ? "browserAction" : "action";
 
     return {
-      browserAction: {
+      [namespace]: {
         ...action.api(context),
 
         onClicked: new EventManager({
           context,
-          name: "browserAction.onClicked",
+          name: `${namespace}.onClicked`,
           register: fire => {
             const listener = (event, tab) => {
               fire.async(tabManager.convert(tab));

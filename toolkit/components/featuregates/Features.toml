@@ -7,6 +7,18 @@ preference = "layout.css.grid-template-masonry-value.enabled"
 type = "boolean"
 bug-numbers = [1607954]
 is-public = true
+default-value = {default = false, nightly = true}
+
+[css-cascade-layers]
+title = "experimental-features-css-cascade-layers"
+description = "experimental-features-css-cascade-layers-description"
+description-links = {spec = "https://drafts.csswg.org/css-cascade-5/#layering", bugzilla = "https://bugzilla.mozilla.org/show_bug.cgi?id=1699215"}
+restart-required = false
+preference = "layout.css.cascade-layers.enabled"
+type = "boolean"
+bug-numbers = [1699215]
+is-public = true
+default-value = {default = false, nightly = true}
 
 [web-api-webgpu]
 title = "experimental-features-web-gpu2"
@@ -17,56 +29,18 @@ preference = "dom.webgpu.enabled"
 type = "boolean"
 bug-numbers = [1602129]
 is-public = {default = false, nightly = true}
+default-value = false
 
-[media-avif]
-title = "experimental-features-media-avif"
-description = "experimental-features-media-avif-description"
-description-links = {bugzilla = "https://bugzilla.mozilla.org/show_bug.cgi?id=1443863"}
+[media-jxl]
+title = "experimental-features-media-jxl"
+description = "experimental-features-media-jxl-description"
+description-links = {bugzilla = "https://bugzilla.mozilla.org/show_bug.cgi?id=1539075"}
 restart-required = false
-preference = "image.avif.enabled"
+preference = "image.jxl.enabled"
 type = "boolean"
-bug-numbers = [1443863]
+bug-numbers = [1539075]
 is-public = {default = false, nightly = true}
-
-[web-api-inputmode]
-title = "experimental-features-web-api-inputmode"
-description = "experimental-features-web-api-inputmode-description"
-description-links = {mdn-inputmode = "https://developer.mozilla.org/docs/Web/HTML/Global_attributes/inputmode", whatwg = "https://bugzilla.mozilla.org/show_bug.cgi?id=1509527", bugzilla = "https://bugzilla.mozilla.org/show_bug.cgi?id=1205133"}
-restart-required = false
-preference = "dom.forms.inputmode"
-type = "boolean"
-bug-numbers = [1205133]
-is-public = {default = false, nightly = true}
-
-[web-api-link-preload]
-title = "experimental-features-web-api-link-preload"
-description = "experimental-features-web-api-link-preload-description"
-description-links = {link = "https://developer.mozilla.org/docs/Web/HTML/Element/link", rel = "https://developer.mozilla.org/docs/Web/HTML/Element/link#attr-rel", readmore = "https://developer.mozilla.org/docs/Web/HTML/Preloading_content", bugzilla = "https://bugzilla.mozilla.org/show_bug.cgi?id=1583604"}
-restart-required = false
-preference = "network.preload"
-type = "boolean"
-bug-numbers = [1583604]
-is-public = {default = false, nightly = true}
-
-[css-focus-visible]
-title = "experimental-features-css-focus-visible"
-description = "experimental-features-css-focus-visible-description"
-description-links = {bugzilla = "https://bugzilla.mozilla.org/show_bug.cgi?id=1617600"}
-restart-required = false
-preference = "layout.css.focus-visible.enabled"
-type = "boolean"
-bug-numbers = [1617600]
-is-public = {default = false, nightly = true}
-
-[web-api-beforeinput]
-title = "experimental-features-web-api-beforeinput"
-description = "experimental-features-web-api-beforeinput-description"
-description-links = {mdn-beforeinput = "https://developer.mozilla.org/docs/Web/API/HTMLElement/beforeinput_event", mdn-input = "https://developer.mozilla.org/docs/Web/HTML/Element/input", mdn-textarea = "https://developer.mozilla.org/docs/Web/HTML/Element/textarea", mdn-contenteditable = "https://developer.mozilla.org/docs/Web/HTML/Global_attributes#attr-contenteditable"}
-restart-required = false
-preference = "dom.input_events.beforeinput.enabled"
-type = "boolean"
-bug-numbers = [1609291]
-is-public = {default = false, nightly = true}
+default-value = false
 
 [css-constructable-stylesheets]
 title = "experimental-features-css-constructable-stylesheets"
@@ -77,26 +51,7 @@ preference = "layout.css.constructable-stylesheets.enabled"
 type = "boolean"
 bug-numbers = [1520690]
 is-public = {default = false, nightly = true}
-
-[media-session-api]
-title = "experimental-features-media-session-api"
-description = "experimental-features-media-session-api-description"
-description-links = {bugzilla = "https://bugzilla.mozilla.org/show_bug.cgi?id=1112032"}
-restart-required = false
-preference = "dom.media.mediasession.enabled"
-type = "boolean"
-bug-numbers = [1112032]
-is-public = {default = false, nightly = true}
-
-[devtools-color-scheme-simulation]
-title = "experimental-features-devtools-color-scheme-simulation"
-description = "experimental-features-devtools-color-scheme-simulation-description"
-description-links = {mdn-preferscolorscheme = "https://developer.mozilla.org/docs/Web/CSS/@media/prefers-color-scheme", bugzilla1 = "https://bugzilla.mozilla.org/show_bug.cgi?id=1550804", bugzilla2 = "https://bugzilla.mozilla.org/show_bug.cgi?id=1137699"}
-restart-required = false
-preference = "devtools.inspector.color-scheme-simulation.enabled"
-type = "boolean"
-bug-numbers = [1550804, 1137699]
-is-public = {default = false, nightly = true}
+default-value = false
 
 [devtools-execution-context-selector]
 title = "experimental-features-devtools-execution-context-selector"
@@ -107,6 +62,7 @@ preference = "devtools.webconsole.input.context"
 type = "boolean"
 bug-numbers = [1605154, 1605153]
 is-public = {default = false, nightly = true}
+default-value = {default = false, nightly = true}
 
 [devtools-compatibility-panel]
 title = "experimental-features-devtools-compatibility-panel"
@@ -117,6 +73,7 @@ preference = "devtools.inspector.compatibility.enabled"
 type = "boolean"
 bug-numbers = [1605154, 1605153]
 is-public = true
+default-value = {default = false, nightly = true, dev-edition = true}
 
 [cookie-samesite-lax-by-default]
 title = "experimental-features-cookie-samesite-lax-by-default2"
@@ -124,8 +81,8 @@ description = "experimental-features-cookie-samesite-lax-by-default2-description
 restart-required = false
 preference = "network.cookie.sameSite.laxByDefault"
 type = "boolean"
-bug-numbers = [1618610]
-default-value = {default = false, nightly = true}
+bug-numbers = [1618610, 1617609]
+default-value = true
 is-public = true
 
 [cookie-samesite-none-requires-secure]
@@ -134,9 +91,9 @@ description = "experimental-features-cookie-samesite-none-requires-secure2-descr
 restart-required = false
 preference = "network.cookie.sameSite.noneRequiresSecure"
 type = "boolean"
-bug-numbers = [1618610]
+bug-numbers = [1618610, 1617609]
 is-public = true
-default-value = {default = false, nightly = true}
+default-value = true
 
 [abouthome-startup-cache]
 title = "experimental-features-abouthome-startup-cache"
@@ -146,7 +103,7 @@ preference = "browser.startup.homepage.abouthome_cache.enabled"
 type = "boolean"
 bug-numbers = [1614351]
 is-public = true
-default-value = false
+default-value = {default = false, nightly = true}
 
 [cookie-samesite-schemeful]
 title = "experimental-features-cookie-samesite-schemeful"
@@ -154,9 +111,9 @@ description = "experimental-features-cookie-samesite-schemeful-description"
 restart-required = false
 preference = "network.cookie.sameSite.schemeful"
 type = "boolean"
-bug-numbers = [1651119]
+bug-numbers = [1651119, 1617609]
 is-public = true
-default-value = {default = false, nightly = true}
+default-value = false
 
 [devtools-serviceworker-debugger-support]
 title = "experimental-features-devtools-serviceworker-debugger-support"
@@ -168,11 +125,53 @@ bug-numbers = [1651607]
 is-public = true
 default-value = false
 
-[graphics-desktop-zooming]
-title = "experimental-features-graphics-desktop-zooming"
-description = "experimental-features-graphics-desktop-zooming-description"
-restart-required = true
-preference = "apz.allow_zooming"
+[webrtc-global-mute-toggles]
+title = "experimental-features-webrtc-global-mute-toggles"
+description = "experimental-features-webrtc-global-mute-toggles-description"
+restart-required = false
+preference = "privacy.webrtc.globalMuteToggles"
 type = "boolean"
-bug-numbers = [1245183]
+bug-numbers = [1643027]
 is-public = true
+default-value = false
+
+[win32-lockdown]
+title = "experimental-features-win32k-lockdown"
+description = "experimental-features-win32k-lockdown-description"
+restart-required = true
+preference = "security.sandbox.content.win32k-disable"
+type = "boolean"
+bug-numbers = [1697865]
+is-public = true
+default-value = false
+
+[fission]
+title = "experimental-features-fission"
+description = "experimental-features-fission-description"
+description-links = {wiki = "https://wiki.mozilla.org/Project_Fission"}
+restart-required = true
+preference = "fission.autostart"
+type = "boolean"
+bug-numbers = [1652134]
+is-public = true
+default-value = false
+
+[multi-pip]
+title = "experimental-features-multi-pip"
+description = "experimental-features-multi-pip-description"
+restart-required = false
+preference = "media.videocontrols.picture-in-picture.allow-multiple"
+type = "boolean"
+bug-numbers = [1676162]
+is-public = true
+default-value = true
+
+[url-bar-ime-search]
+title = "experimental-features-ime-search"
+description = "experimental-features-ime-search-description"
+restart-required = false
+preference = "browser.urlbar.keepPanelOpenDuringImeComposition"
+type = "boolean"
+bug-numbers = [1673971]
+is-public = true
+default-value = false

@@ -21,7 +21,7 @@ struct IsPixel;
 
 namespace gfx {
 
-template <class units>
+template <class units, class Rep = int32_t>
 struct IntCoordTyped;
 template <class units, class F = Float>
 struct CoordTyped;
@@ -37,14 +37,14 @@ struct CoordTyped;
 template <class coord, class primitive>
 struct CommonType;
 
-template <class units, class primitive>
-struct CommonType<IntCoordTyped<units>, primitive> {
-  typedef decltype(int32_t() + primitive()) type;
+template <class units, class Rep, class primitive>
+struct CommonType<IntCoordTyped<units, Rep>, primitive> {
+  using type = decltype(Rep() + primitive());
 };
 
 template <class units, class F, class primitive>
 struct CommonType<CoordTyped<units, F>, primitive> {
-  typedef decltype(F() + primitive()) type;
+  using type = decltype(F() + primitive());
 };
 
 // This is a base class that provides mixed-type operator overloads between
@@ -67,7 +67,7 @@ struct CoordOperatorsHelper<true, coord, primitive> {
   friend bool operator!=(coord aA, primitive aB) { return aA.value != aB; }
   friend bool operator!=(primitive aA, coord aB) { return aA != aB.value; }
 
-  typedef typename CommonType<coord, primitive>::type result_type;
+  using result_type = typename CommonType<coord, primitive>::type;
 
   friend result_type operator+(coord aA, primitive aB) { return aA.value + aB; }
   friend result_type operator+(primitive aA, coord aB) { return aA + aB.value; }
@@ -85,23 +85,23 @@ struct CoordOperatorsHelper<true, coord, primitive> {
   // 'scale / coord' is intentionally omitted because it doesn't make sense.
 };
 
-template <class units>
+template <class units, class Rep>
 struct IntCoordTyped
-    : public BaseCoord<int32_t, IntCoordTyped<units> >,
+    : public BaseCoord<Rep, IntCoordTyped<units, Rep>>,
       public units,
-      public CoordOperatorsHelper<true, IntCoordTyped<units>, float>,
-      public CoordOperatorsHelper<true, IntCoordTyped<units>, double> {
+      public CoordOperatorsHelper<true, IntCoordTyped<units, Rep>, float>,
+      public CoordOperatorsHelper<true, IntCoordTyped<units, Rep>, double> {
   static_assert(IsPixel<units>::value,
                 "'units' must be a coordinate system tag");
 
-  typedef BaseCoord<int32_t, IntCoordTyped<units> > Super;
+  using Super = BaseCoord<Rep, IntCoordTyped<units, Rep>>;
 
   constexpr IntCoordTyped() : Super() {}
-  constexpr MOZ_IMPLICIT IntCoordTyped(int32_t aValue) : Super(aValue) {}
+  constexpr MOZ_IMPLICIT IntCoordTyped(Rep aValue) : Super(aValue) {}
 };
 
 template <class units, class F>
-struct CoordTyped : public BaseCoord<F, CoordTyped<units, F> >,
+struct CoordTyped : public BaseCoord<F, CoordTyped<units, F>>,
                     public units,
                     public CoordOperatorsHelper<!std::is_same_v<F, int32_t>,
                                                 CoordTyped<units, F>, int32_t>,
@@ -114,7 +114,7 @@ struct CoordTyped : public BaseCoord<F, CoordTyped<units, F> >,
   static_assert(IsPixel<units>::value,
                 "'units' must be a coordinate system tag");
 
-  typedef BaseCoord<F, CoordTyped<units, F> > Super;
+  using Super = BaseCoord<F, CoordTyped<units, F>>;
 
   constexpr CoordTyped() : Super() {}
   constexpr MOZ_IMPLICIT CoordTyped(F aValue) : Super(aValue) {}

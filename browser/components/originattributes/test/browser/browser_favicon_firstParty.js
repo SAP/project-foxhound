@@ -11,6 +11,9 @@ const CC = Components.Constructor;
 const { PlacesUtils } = ChromeUtils.import(
   "resource://gre/modules/PlacesUtils.jsm"
 );
+const { PlacesTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PlacesTestUtils.jsm"
+);
 
 let EventUtils = {};
 Services.scriptloader.loadSubScript(
@@ -39,8 +42,6 @@ const ICON_DATA =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABH0lEQVRYw2P8////f4YBBEwMAwxGHcBCUMX/91DGOSj/BpT/DkpzQChGBSjfBErLQsVZhmoI/L8LpRdD6X1QietQGhYy7FB5aAgwmkLpBKi4BZTPMThDgBGjHIDF+f9mKD0fKvGBRKNdoF7sgPL1saaJwZgGDkJ9vpZMn8PAHqg5G9FyifBgD4H/W9HyOWrU/f+DIzHhkoeZxxgzZEIAVtJ9RxX+Q6DAxCmP3byhXxkxshAs5odqbcioAY3UC1CBLyTGOTqAmsfAOWRCwBvqxV0oIUB2OQAzDy3/D+a6wB7q8mCU2vD/nw94GziYIQOtDRn9oXz+IZMGBKGMbCjNh9Ii+v8HR4uIAUeLiEEbb9twELaIRlqrmHG0bzjiHQAA1LVfww8jwM4AAAAASUVORK5CYII=";
 
 let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
-let makeURI = ChromeUtils.import("resource://gre/modules/BrowserUtils.jsm", {})
-  .BrowserUtils.makeURI;
 
 function clearAllImageCaches() {
   let tools = SpecialPowers.Cc["@mozilla.org/image/tools;1"].getService(
@@ -171,21 +172,11 @@ function waitOnFaviconResponse(aFaviconURL) {
 }
 
 function waitOnFaviconLoaded(aFaviconURL) {
-  return new Promise(resolve => {
-    let observer = {
-      onPageChanged(uri, attr, value, id) {
-        if (
-          attr === Ci.nsINavHistoryObserver.ATTRIBUTE_FAVICON &&
-          value === aFaviconURL
-        ) {
-          resolve();
-          PlacesUtils.history.removeObserver(observer, false);
-        }
-      },
-    };
-
-    PlacesUtils.history.addObserver(observer);
-  });
+  return PlacesTestUtils.waitForNotification(
+    "favicon-changed",
+    events => events.some(e => e.faviconUrl == aFaviconURL),
+    "places"
+  );
 }
 
 async function openTab(aURL) {
@@ -251,8 +242,8 @@ function assertIconIsData(item) {
 }
 
 async function doTest(aTestPage, aExpectedCookies, aFaviconURL) {
-  let firstPageURI = makeURI(TEST_SITE_ONE + aTestPage);
-  let secondPageURI = makeURI(TEST_SITE_TWO + aTestPage);
+  let firstPageURI = Services.io.newURI(TEST_SITE_ONE + aTestPage);
+  let secondPageURI = Services.io.newURI(TEST_SITE_TWO + aTestPage);
 
   // Start to observe the event of that favicon has been fully loaded.
   let promiseFaviconLoaded = waitOnFaviconLoaded(aFaviconURL);
@@ -391,7 +382,12 @@ async function doTestForAllTabsFavicon(
 add_task(async function setup() {
   // Make sure first party isolation is enabled.
   await SpecialPowers.pushPrefEnv({
-    set: [["privacy.firstparty.isolate", true]],
+    set: [
+      ["privacy.firstparty.isolate", true],
+      ["dom.security.https_first", false],
+      // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
+      ["network.cookie.sameSite.laxByDefault", false],
+    ],
   });
 });
 

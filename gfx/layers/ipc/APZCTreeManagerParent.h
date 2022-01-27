@@ -34,18 +34,20 @@ class APZCTreeManagerParent : public PAPZCTreeManagerParent {
   mozilla::ipc::IPCResult RecvSetKeyboardMap(const KeyboardMap& aKeyboardMap);
 
   mozilla::ipc::IPCResult RecvZoomToRect(const ScrollableLayerGuid& aGuid,
-                                         const CSSRect& aRect,
+                                         const ZoomTarget& aZoomTarget,
                                          const uint32_t& aFlags);
 
   mozilla::ipc::IPCResult RecvContentReceivedInputBlock(
       const uint64_t& aInputBlockId, const bool& aPreventDefault);
+
+  mozilla::ipc::IPCResult RecvAddInputBlockCallback(uint64_t aInputBlockId);
 
   mozilla::ipc::IPCResult RecvSetTargetAPZC(
       const uint64_t& aInputBlockId, nsTArray<ScrollableLayerGuid>&& aTargets);
 
   mozilla::ipc::IPCResult RecvUpdateZoomConstraints(
       const ScrollableLayerGuid& aGuid,
-      const MaybeZoomConstraints& aConstraints);
+      const Maybe<ZoomConstraints>& aConstraints);
 
   mozilla::ipc::IPCResult RecvSetDPI(const float& aDpiValue);
 
@@ -66,6 +68,8 @@ class APZCTreeManagerParent : public PAPZCTreeManagerParent {
 
  private:
   bool IsGuidValid(const ScrollableLayerGuid& aGuid);
+  static void CallInputBlockCallback(LayersId aLayersId, uint64_t aInputBlockId,
+                                     const APZHandledResult& aHandledResult);
 
   LayersId mLayersId;
   RefPtr<APZCTreeManager> mTreeManager;

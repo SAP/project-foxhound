@@ -10,8 +10,13 @@
 #include "nsThreadUtils.h"
 #include <algorithm>
 #include <initializer_list>
-#include "mozilla/AbstractEventQueue.h"
+#include "GeckoProfiler.h"
+#include "mozilla/EventQueue.h"
 #include "mozilla/BackgroundHangMonitor.h"
+#include "mozilla/InputTaskManager.h"
+#include "mozilla/VsyncTaskManager.h"
+#include "mozilla/IOInterposer.h"
+#include "mozilla/ProfilerRunnable.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/ScopeExit.h"
@@ -19,18 +24,46 @@
 #include "nsIThreadInternal.h"
 #include "nsQueryObject.h"
 #include "nsThread.h"
+#include "prenv.h"
+#include "prsystem.h"
 
 namespace mozilla {
 
 std::unique_ptr<TaskController> TaskController::sSingleton;
-uint64_t Task::sCurrentTaskSeqNo = 0;
+thread_local size_t mThreadPoolIndex = -1;
+std::atomic<uint64_t> Task::sCurrentTaskSeqNo = 0;
+
+const int32_t kMinimumPoolThreadCount = 2;
+const int32_t kMaximumPoolThreadCount = 8;
+
+/* static */
+int32_t TaskController::GetPoolThreadCount() {
+  if (PR_GetEnv("MOZ_TASKCONTROLLER_THREADCOUNT")) {
+    return strtol(PR_GetEnv("MOZ_TASKCONTROLLER_THREADCOUNT"), nullptr, 0);
+  }
+
+  int32_t numCores = std::max<int32_t>(1, PR_GetNumberOfProcessors());
+
+  return std::clamp<int32_t>(numCores, kMinimumPoolThreadCount,
+                             kMaximumPoolThreadCount);
+}
+
+#if defined(MOZ_COLLECTING_RUNNABLE_TELEMETRY)
+#  define AUTO_PROFILE_FOLLOWING_TASK(task)                                  \
+    nsAutoCString name;                                                      \
+    (task)->GetName(name);                                                   \
+    AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING_NONSENSITIVE("Task", OTHER, name); \
+    AUTO_PROFILE_FOLLOWING_RUNNABLE(name);
+#else
+#  define AUTO_PROFILE_FOLLOWING_TASK(task)
+#endif
 
 bool TaskManager::
     UpdateCachesForCurrentIterationAndReportPriorityModifierChanged(
         const MutexAutoLock& aProofOfLock, IterationType aIterationType) {
   mCurrentSuspended = IsSuspended(aProofOfLock);
 
-  if (aIterationType == IterationType::EVENT_LOOP_TURN) {
+  if (aIterationType == IterationType::EVENT_LOOP_TURN && !mCurrentSuspended) {
     int32_t oldModifier = mCurrentPriorityModifier;
     mCurrentPriorityModifier =
         GetPriorityModifierForEventLoopTurn(aProofOfLock);
@@ -77,7 +110,15 @@ bool TaskController::Initialize() {
   return sSingleton->InitializeInternal();
 }
 
+void ThreadFuncPoolThread(void* aIndex) {
+  mThreadPoolIndex = *reinterpret_cast<int32_t*>(aIndex);
+  delete reinterpret_cast<int32_t*>(aIndex);
+  TaskController::Get()->RunPoolThread();
+}
+
 bool TaskController::InitializeInternal() {
+  InputTaskManager::Init();
+  VsyncTaskManager::Init();
   mMTProcessingRunnable = NS_NewRunnableFunction(
       "TaskController::ExecutePendingMTTasks()",
       []() { TaskController::Get()->ProcessPendingMTTask(); });
@@ -88,6 +129,48 @@ bool TaskController::InitializeInternal() {
   return true;
 }
 
+// We want our default stack size limit to be approximately 2MB, to be safe for
+// JS helper tasks that can use a lot of stack, but expect most threads to use
+// much less. On Linux, however, requesting a stack of 2MB or larger risks the
+// kernel allocating an entire 2MB huge page for it on first access, which we do
+// not want. To avoid this possibility, we subtract 2 standard VM page sizes
+// from our default.
+constexpr PRUint32 sBaseStackSize = 2048 * 1024 - 2 * 4096;
+
+// TSan enforces a minimum stack size that's just slightly larger than our
+// default helper stack size.  It does this to store blobs of TSan-specific data
+// on each thread's stack.  Unfortunately, that means that even though we'll
+// actually receive a larger stack than we requested, the effective usable space
+// of that stack is significantly less than what we expect.  To offset TSan
+// stealing our stack space from underneath us, double the default.
+//
+// Note that we don't need this for ASan/MOZ_ASAN because ASan doesn't require
+// all the thread-specific state that TSan does.
+#if defined(MOZ_TSAN)
+constexpr PRUint32 sStackSize = 2 * sBaseStackSize;
+#else
+constexpr PRUint32 sStackSize = sBaseStackSize;
+#endif
+
+void TaskController::InitializeThreadPool() {
+  mPoolInitializationMutex.AssertCurrentThreadOwns();
+  MOZ_ASSERT(!mThreadPoolInitialized);
+  mThreadPoolInitialized = true;
+
+  int32_t poolSize = GetPoolThreadCount();
+  for (int32_t i = 0; i < poolSize; i++) {
+    int32_t* index = new int32_t(i);
+    mPoolThreads.push_back(
+        {PR_CreateThread(PR_USER_THREAD, ThreadFuncPoolThread, index,
+                         PR_PRIORITY_NORMAL, PR_GLOBAL_THREAD,
+                         PR_JOINABLE_THREAD, sStackSize),
+         nullptr});
+  }
+}
+
+/* static */
+size_t TaskController::GetThreadStackSize() { return sStackSize; }
+
 void TaskController::SetPerformanceCounterState(
     PerformanceCounterState* aPerformanceCounterState) {
   mPerformanceCounterState = aPerformanceCounterState;
@@ -95,18 +178,154 @@ void TaskController::SetPerformanceCounterState(
 
 /* static */
 void TaskController::Shutdown() {
+  InputTaskManager::Cleanup();
+  VsyncTaskManager::Cleanup();
   if (sSingleton) {
+    sSingleton->ShutdownThreadPoolInternal();
     sSingleton->ShutdownInternal();
   }
   MOZ_ASSERT(!sSingleton);
 }
 
+void TaskController::ShutdownThreadPoolInternal() {
+  {
+    // Prevent racecondition on mShuttingDown and wait.
+    MutexAutoLock lock(mGraphMutex);
+
+    mShuttingDown = true;
+    mThreadPoolCV.NotifyAll();
+  }
+  for (PoolThread& thread : mPoolThreads) {
+    PR_JoinThread(thread.mThread);
+  }
+}
+
 void TaskController::ShutdownInternal() { sSingleton = nullptr; }
 
-void TaskController::AddTask(already_AddRefed<Task>&& aTask) {
-  MutexAutoLock lock(mGraphMutex);
+void TaskController::RunPoolThread() {
+  IOInterposer::RegisterCurrentThread();
 
+  // This is used to hold on to a task to make sure it is released outside the
+  // lock. This is required since it's perfectly feasible for task destructors
+  // to post events themselves.
+  RefPtr<Task> lastTask;
+
+  nsAutoCString threadName;
+  threadName.AppendLiteral("TaskController #");
+  threadName.AppendInt(static_cast<int64_t>(mThreadPoolIndex));
+  AUTO_PROFILER_REGISTER_THREAD(threadName.BeginReading());
+
+  MutexAutoLock lock(mGraphMutex);
+  while (true) {
+    bool ranTask = false;
+
+    if (!mThreadableTasks.empty()) {
+      for (auto iter = mThreadableTasks.begin(); iter != mThreadableTasks.end();
+           ++iter) {
+        // Search for the highest priority dependency of the highest priority
+        // task.
+
+        // We work with rawptrs to avoid needless refcounting. All our tasks
+        // are always kept alive by the graph. If one is removed from the graph
+        // it is kept alive by mPoolThreads[mThreadPoolIndex].mCurrentTask.
+        Task* task = iter->get();
+
+        MOZ_ASSERT(!task->mTaskManager);
+
+        mPoolThreads[mThreadPoolIndex].mEffectiveTaskPriority =
+            task->GetPriority();
+
+        Task* nextTask;
+        while ((nextTask = task->GetHighestPriorityDependency())) {
+          task = nextTask;
+        }
+
+        if (task->IsMainThreadOnly() || task->mInProgress) {
+          continue;
+        }
+
+        mPoolThreads[mThreadPoolIndex].mCurrentTask = task;
+        mThreadableTasks.erase(task->mIterator);
+        task->mIterator = mThreadableTasks.end();
+        task->mInProgress = true;
+
+        bool taskCompleted = false;
+        {
+          MutexAutoUnlock unlock(mGraphMutex);
+          lastTask = nullptr;
+          AUTO_PROFILE_FOLLOWING_TASK(task);
+          taskCompleted = task->Run();
+          ranTask = true;
+        }
+
+        task->mInProgress = false;
+
+        if (!taskCompleted) {
+          // Presumably this task was interrupted, leave its dependencies
+          // unresolved and reinsert into the queue.
+          auto insertion = mThreadableTasks.insert(
+              mPoolThreads[mThreadPoolIndex].mCurrentTask);
+          MOZ_ASSERT(insertion.second);
+          task->mIterator = insertion.first;
+        } else {
+          task->mCompleted = true;
+#ifdef DEBUG
+          task->mIsInGraph = false;
+#endif
+          task->mDependencies.clear();
+          // This may have unblocked a main thread task. We could do this only
+          // if there was a main thread task before this one in the dependency
+          // chain.
+          mMayHaveMainThreadTask = true;
+          // Since this could have multiple dependencies thare are restricted
+          // to the main thread. Let's make sure that's awake.
+          EnsureMainThreadTasksScheduled();
+
+          MaybeInterruptTask(GetHighestPriorityMTTask());
+        }
+
+        // Store last task for release next time we release the lock or enter
+        // wait state.
+        lastTask = mPoolThreads[mThreadPoolIndex].mCurrentTask.forget();
+        break;
+      }
+    }
+
+    // Ensure the last task is released before we enter the wait state.
+    if (lastTask) {
+      MutexAutoUnlock unlock(mGraphMutex);
+      lastTask = nullptr;
+
+      // Run another loop iteration, while we were unlocked there was an
+      // opportunity for another task to be posted or shutdown to be initiated.
+      continue;
+    }
+
+    if (!ranTask) {
+      if (mShuttingDown) {
+        IOInterposer::UnregisterCurrentThread();
+        MOZ_ASSERT(mThreadableTasks.empty());
+        return;
+      }
+
+      AUTO_PROFILER_LABEL("TaskController::RunPoolThread", IDLE);
+      mThreadPoolCV.Wait();
+    }
+  }
+}
+
+void TaskController::AddTask(already_AddRefed<Task>&& aTask) {
   RefPtr<Task> task(aTask);
+
+  if (!task->IsMainThreadOnly()) {
+    MutexAutoLock lock(mPoolInitializationMutex);
+    if (!mThreadPoolInitialized) {
+      InitializeThreadPool();
+      mThreadPoolInitialized = true;
+    }
+  }
+
+  MutexAutoLock lock(mGraphMutex);
 
   if (TaskManager* manager = task->GetManager()) {
     if (manager->mTaskCount == 0) {
@@ -119,9 +338,7 @@ void TaskController::AddTask(already_AddRefed<Task>&& aTask) {
     task->mPriorityModifier = manager->mCurrentPriorityModifier;
   }
 
-#ifdef MOZ_GECKO_PROFILER
   task->mInsertionTime = TimeStamp::Now();
-#endif
 
 #ifdef DEBUG
   task->mIsInGraph = true;
@@ -134,9 +351,15 @@ void TaskController::AddTask(already_AddRefed<Task>&& aTask) {
 
   LogTask::LogDispatch(task);
 
-  auto insertion = mMainThreadTasks.insert(std::move(task));
-  MOZ_ASSERT(insertion.second);
+  std::pair<std::set<RefPtr<Task>, Task::PriorityCompare>::iterator, bool>
+      insertion;
+  if (task->IsMainThreadOnly()) {
+    insertion = mMainThreadTasks.insert(std::move(task));
+  } else {
+    insertion = mThreadableTasks.insert(std::move(task));
+  }
   (*insertion.first)->mIterator = insertion.first;
+  MOZ_ASSERT(insertion.second);
 
   MaybeInterruptTask(*insertion.first);
 }
@@ -192,6 +415,9 @@ void TaskController::ProcessPendingMTTask(bool aMayWait) {
 void TaskController::ReprioritizeTask(Task* aTask, uint32_t aPriority) {
   MutexAutoLock lock(mGraphMutex);
   std::set<RefPtr<Task>, Task::PriorityCompare>* queue = &mMainThreadTasks;
+  if (!aTask->IsMainThreadOnly()) {
+    queue = &mThreadableTasks;
+  }
 
   MOZ_ASSERT(aTask->mIterator != queue->end());
   queue->erase(aTask->mIterator);
@@ -253,6 +479,16 @@ class RunnableTask : public Task {
 
   PerformanceCounter* GetPerformanceCounter() const override {
     return nsThread::GetPerformanceCounterBase(mRunnable);
+  }
+
+  virtual bool GetName(nsACString& aName) override {
+#ifdef MOZ_COLLECTING_RUNNABLE_TELEMETRY
+    nsThread::GetLabeledRunnableName(mRunnable, aName,
+                                     EventQueuePriority(GetPriority()));
+    return true;
+#else
+    return false;
+#endif
   }
 
  private:
@@ -338,7 +574,7 @@ bool TaskController::HasMainThreadPendingTasks() {
       }
     }
 
-    // Thi would break down if we have a non-suspended task depending on a
+    // This would break down if we have a non-suspended task depending on a
     // suspended task. This is why for the moment we do not allow tasks
     // to be dependent on tasks managed by another taskmanager.
     if (mMainThreadTasks.size() > totalSuspended) {
@@ -370,6 +606,25 @@ bool TaskController::ExecuteNextTaskOnlyMainThreadInternal(
   do {
     taskRan = DoExecuteNextTaskOnlyMainThreadInternal(aProofOfLock);
     if (taskRan) {
+      if (mIdleTaskManager && mIdleTaskManager->mTaskCount &&
+          mIdleTaskManager->IsSuspended(aProofOfLock)) {
+        uint32_t activeTasks = mMainThreadTasks.size();
+        for (TaskManager* manager : mTaskManagers) {
+          if (manager->IsSuspended(aProofOfLock)) {
+            activeTasks -= manager->mTaskCount;
+          } else {
+            break;
+          }
+        }
+
+        if (!activeTasks) {
+          // We have only idle (and maybe other suspended) tasks left, so need
+          // to update the idle state. We need to temporarily release the lock
+          // while we do that.
+          MutexAutoUnlock unlock(mGraphMutex);
+          mIdleTaskManager->State().RequestIdleDeadlineIfNeeded(unlock);
+        }
+      }
       break;
     }
 
@@ -417,8 +672,11 @@ bool TaskController::DoExecuteNextTaskOnlyMainThreadInternal(
     const MutexAutoLock& aProofOfLock) {
   nsCOMPtr<nsIThread> mainIThread;
   NS_GetMainThread(getter_AddRefs(mainIThread));
+
   nsThread* mainThread = static_cast<nsThread*>(mainIThread.get());
-  mainThread->SetRunningEventDelay(TimeDuration(), TimeStamp());
+  if (mainThread) {
+    mainThread->SetRunningEventDelay(TimeDuration(), TimeStamp());
+  }
 
   uint32_t totalSuspended = 0;
   for (TaskManager* manager : mTaskManagers) {
@@ -494,13 +752,13 @@ bool TaskController::DoExecuteNextTaskOnlyMainThreadInternal(
 
         TimeStamp now = TimeStamp::Now();
 
-#ifdef MOZ_GECKO_PROFILER
-        if (task->GetPriority() < uint32_t(EventQueuePriority::InputHigh)) {
-          mainThread->SetRunningEventDelay(TimeDuration(), now);
-        } else {
-          mainThread->SetRunningEventDelay(now - task->mInsertionTime, now);
+        if (mainThread) {
+          if (task->GetPriority() < uint32_t(EventQueuePriority::InputHigh)) {
+            mainThread->SetRunningEventDelay(TimeDuration(), now);
+          } else {
+            mainThread->SetRunningEventDelay(now - task->mInsertionTime, now);
+          }
         }
-#endif
 
         PerformanceCounterState::Snapshot snapshot =
             mPerformanceCounterState->RunnableWillRun(
@@ -509,6 +767,7 @@ bool TaskController::DoExecuteNextTaskOnlyMainThreadInternal(
 
         {
           LogTask::Run log(task);
+          AUTO_PROFILE_FOLLOWING_TASK(task);
           result = task->Run();
         }
 
@@ -542,6 +801,15 @@ bool TaskController::DoExecuteNextTaskOnlyMainThreadInternal(
 #endif
         // Clear dependencies to release references.
         task->mDependencies.clear();
+
+        if (!mThreadableTasks.empty()) {
+          // Since this could have multiple dependencies thare are not
+          // restricted to the main thread. Let's wake up our thread pool.
+          // There is a cost to this, it's possible we will want to wake up
+          // only as many threads as we have unblocked tasks, but we currently
+          // have no way to determine that easily.
+          mThreadPoolCV.NotifyAll();
+        }
       }
 
       mCurrentTasksMT.pop();
@@ -597,22 +865,53 @@ void TaskController::MaybeInterruptTask(Task* aTask) {
     return;
   }
 
-  EnsureMainThreadTasksScheduled();
+  if (aTask->IsMainThreadOnly()) {
+    mMayHaveMainThreadTask = true;
 
-  mMayHaveMainThreadTask = true;
+    EnsureMainThreadTasksScheduled();
 
-  if (mCurrentTasksMT.empty()) {
-    return;
-  }
+    if (mCurrentTasksMT.empty()) {
+      return;
+    }
 
-  // We could go through the steps above here and interrupt an off main
-  // thread task in case it has a lower priority.
-  if (!finalDependency->IsMainThreadOnly()) {
-    return;
-  }
+    // We could go through the steps above here and interrupt an off main
+    // thread task in case it has a lower priority.
+    if (!finalDependency->IsMainThreadOnly()) {
+      return;
+    }
 
-  if (mCurrentTasksMT.top()->GetPriority() < aTask->GetPriority()) {
-    mCurrentTasksMT.top()->RequestInterrupt(aTask->GetPriority());
+    if (mCurrentTasksMT.top()->GetPriority() < aTask->GetPriority()) {
+      mCurrentTasksMT.top()->RequestInterrupt(aTask->GetPriority());
+    }
+  } else {
+    Task* lowestPriorityTask = nullptr;
+    for (PoolThread& thread : mPoolThreads) {
+      if (!thread.mCurrentTask) {
+        mThreadPoolCV.Notify();
+        // There's a free thread, no need to interrupt anything.
+        return;
+      }
+
+      if (!lowestPriorityTask) {
+        lowestPriorityTask = thread.mCurrentTask.get();
+        continue;
+      }
+
+      // This should possibly select the lowest priority task which was started
+      // the latest. But for now we ignore that optimization.
+      // This also doesn't guarantee a task is interruptable, so that's an
+      // avenue for improvements as well.
+      if (lowestPriorityTask->GetPriority() > thread.mEffectiveTaskPriority) {
+        lowestPriorityTask = thread.mCurrentTask.get();
+      }
+    }
+
+    if (lowestPriorityTask->GetPriority() < aTask->GetPriority()) {
+      lowestPriorityTask->RequestInterrupt(aTask->GetPriority());
+    }
+
+    // We choose not to interrupt main thread tasks for tasks which may be
+    // executed off the main thread.
   }
 }
 

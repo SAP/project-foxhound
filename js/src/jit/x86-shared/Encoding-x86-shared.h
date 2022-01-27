@@ -22,6 +22,7 @@ static const size_t MaxInstructionSize = 16;
 // Operand size/types as listed in the Appendix A.2.  Tables of the instructions
 // and their operands can be found in the Appendix A.3.
 //
+// B = reg (VEX.vvvv of VEX prefix)
 // E = reg/mem
 // G = reg (reg field of ModR/M)
 // U = xmm (R/M field of ModR/M)
@@ -39,6 +40,7 @@ static const size_t MaxInstructionSize = 16;
 // ps = packed float 32 (xmm)
 // sd = scalar double (xmm)
 // pd = packed double (xmm)
+// y = 32/64-bit
 // z = 16/32/64-bit
 // vqp = (*)
 //
@@ -176,10 +178,14 @@ enum TwoByteOpcodeID {
   OP2_MOVDDUP_VqWq = 0x12,
   OP2_MOVHLPS_VqUq = 0x12,
   OP2_MOVSLDUP_VpsWps = 0x12,
+  OP2_MOVLPS_VqEq = 0x12,
+  OP2_MOVLPS_EqVq = 0x13,
   OP2_UNPCKLPS_VsdWsd = 0x14,
   OP2_UNPCKHPS_VsdWsd = 0x15,
   OP2_MOVLHPS_VqUq = 0x16,
   OP2_MOVSHDUP_VpsWps = 0x16,
+  OP2_MOVHPS_VqEq = 0x16,
+  OP2_MOVHPS_EqVq = 0x17,
   OP2_MOVAPD_VsdWsd = 0x28,
   OP2_MOVAPS_VsdWsd = 0x28,
   OP2_MOVAPS_WsdVsd = 0x29,
@@ -200,6 +206,8 @@ enum TwoByteOpcodeID {
   OP2_MULPS_VpsWps = 0x59,
   OP2_CVTSS2SD_VsdEd = 0x5A,
   OP2_CVTSD2SS_VsdEd = 0x5A,
+  OP2_CVTPS2PD_VpdWps = 0x5A,
+  OP2_CVTPD2PS_VpsWpd = 0x5A,
   OP2_CVTTPS2DQ_VdqWps = 0x5B,
   OP2_CVTDQ2PS_VpsWdq = 0x5B,
   OP2_SUBSD_VsdWsd = 0x5C,
@@ -237,6 +245,8 @@ enum TwoByteOpcodeID {
   OP2_PUNPCKHWD_VdqWdq = 0x69,
   OP2_PUNPCKHDQ_VdqWdq = 0x6A,
   OP2_PACKSSDW_VdqWdq = 0x6B,
+  OP2_PUNPCKLQDQ_VdqWdq = 0x6C,
+  OP2_PUNPCKHQDQ_VdqWdq = 0x6D,
   OP2_MOVD_VdEd = 0x6E,
   OP2_MOVDQ_VsdWsd = 0x6F,
   OP2_MOVDQ_VdqWdq = 0x6F,
@@ -269,7 +279,9 @@ enum TwoByteOpcodeID {
   OP2_CMPXCHG_GvEw = 0xB1,
   OP2_POPCNT_GvEv = 0xB8,
   OP2_BSF_GvEv = 0xBC,
+  OP2_TZCNT_GvEv = 0xBC,
   OP2_BSR_GvEv = 0xBD,
+  OP2_LZCNT_GvEv = 0xBD,
   OP2_MOVSX_GvEb = 0xBE,
   OP2_MOVSX_GvEw = 0xBF,
   OP2_MOVZX_GvEb = 0xB6,
@@ -303,6 +315,10 @@ enum TwoByteOpcodeID {
   OP2_PSRAW_VdqWdq = 0xE1,
   OP2_PSRAD_VdqWdq = 0xE2,
   OP2_PAVGW_VdqWdq = 0xE3,
+  OP2_PMULHUW_VdqWdq = 0xE4,
+  OP2_PMULHW_VdqWdq = 0xE5,
+  OP2_CVTDQ2PD_VpdWdq = 0xE6,
+  OP2_CVTTPD2DQ_VdqWpd = 0xE6,
   OP2_PSUBSB_VdqWdq = 0xE8,
   OP2_PSUBSW_VdqWdq = 0xE9,
   OP2_PMINSW_VdqWdq = 0xEA,
@@ -315,6 +331,7 @@ enum TwoByteOpcodeID {
   OP2_PSLLD_VdqWdq = 0xF2,
   OP2_PSLLQ_VdqWdq = 0xF3,
   OP2_PMULUDQ_VdqWdq = 0xF4,
+  OP2_PMADDWD_VdqWdq = 0xF5,
   OP2_PSUBB_VdqWdq = 0xF8,
   OP2_PSUBW_VdqWdq = 0xF9,
   OP2_PSUBD_VdqWdq = 0xFA,
@@ -326,16 +343,23 @@ enum TwoByteOpcodeID {
 
 enum ThreeByteOpcodeID {
   OP3_PSHUFB_VdqWdq = 0x00,
+  OP3_PMADDUBSW_VdqWdq = 0x04,
+  OP3_ROUNDPS_VpsWps = 0x08,
+  OP3_ROUNDPD_VpdWpd = 0x09,
   OP3_ROUNDSS_VsdWsd = 0x0A,
   OP3_ROUNDSD_VsdWsd = 0x0B,
+  OP3_PMULHRSW_VdqWdq = 0x0B,
   OP3_BLENDPS_VpsWpsIb = 0x0C,
   OP3_PBLENDW_VdqWdqIb = 0x0E,
   OP3_PALIGNR_VdqWdqIb = 0x0F,
+  OP3_PBLENDVB_VdqWdq = 0x10,
   OP3_BLENDVPS_VdqWdq = 0x14,
   OP3_PEXTRB_EvVdqIb = 0x14,
+  OP3_PEXTRW_EwVdqIb = 0x15,
   OP3_PEXTRD_EvVdqIb = 0x16,
   OP3_PEXTRQ_EvVdqIb = 0x16,
   OP3_PTEST_VdVd = 0x17,
+  OP3_EXTRACTPS_EdVdqIb = 0x17,
   OP3_PABSB_VdqWdq = 0x1C,
   OP3_PABSW_VdqWdq = 0x1D,
   OP3_PABSD_VdqWdq = 0x1E,
@@ -346,6 +370,8 @@ enum ThreeByteOpcodeID {
   OP3_PINSRQ_VdqEvIb = 0x22,
   OP3_PMOVSXWD_VdqWdq = 0x23,
   OP3_PMOVSXDQ_VdqWdq = 0x25,
+  OP3_PMULDQ_VdqWdq = 0x28,
+  OP3_PCMPEQQ_VdqWdq = 0x29,
   OP3_PACKUSDW_VdqWdq = 0x2B,
   OP3_PMOVZXBW_VdqWdq = 0x30,
   OP3_PMOVZXWD_VdqWdq = 0x33,
@@ -360,7 +386,10 @@ enum ThreeByteOpcodeID {
   OP3_PMAXUW_VdqWdq = 0x3E,
   OP3_PMAXUD_VdqWdq = 0x3F,
   OP3_PMULLD_VdqWdq = 0x40,
-  OP3_VBLENDVPS_VdqWdq = 0x4A
+  OP3_VBLENDVPS_VdqWdq = 0x4A,
+  OP3_SHLX_GyEyBy = 0xF7,
+  OP3_SARX_GyEyBy = 0xF7,
+  OP3_SHRX_GyEyBy = 0xF7,
 };
 
 // Test whether the given opcode should be printed with its operands reversed.

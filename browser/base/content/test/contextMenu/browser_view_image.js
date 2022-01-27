@@ -20,7 +20,7 @@ async function test_view_image_works({ page, selector }) {
   let accel = AppConstants.platform == "macosx" ? "metaKey" : "ctrlKey";
   let tests = {
     tab: {
-      event: { [accel]: true },
+      modifiers: { [accel]: true },
       async loadedPromise() {
         return BrowserTestUtils.waitForNewTab(
           gBrowser,
@@ -33,7 +33,7 @@ async function test_view_image_works({ page, selector }) {
       },
     },
     window: {
-      event: { shiftKey: true },
+      modifiers: { shiftKey: true },
       async loadedPromise() {
         // Unfortunately we can't predict the URL so can't just pass that to waitForNewWindow
         let w = await BrowserTestUtils.waitForNewWindow();
@@ -54,20 +54,41 @@ async function test_view_image_works({ page, selector }) {
         return BrowserTestUtils.closeWindow(browser.ownerGlobal);
       },
     },
-    self: {
-      event: {},
+    tab_default: {
+      modifiers: {},
       async loadedPromise() {
-        await BrowserTestUtils.browserLoaded(
-          gBrowser.selectedBrowser,
-          false,
-          url => url.startsWith("blob:")
-        );
-        return gBrowser.selectedBrowser;
+        return BrowserTestUtils.waitForNewTab(
+          gBrowser,
+          url => url.startsWith("blob"),
+          true
+        ).then(t => {
+          is(t.selected, false, "Tab should not be selected.");
+          return t.linkedBrowser;
+        });
       },
-      async cleanup() {},
+      cleanup(browser) {
+        is(gBrowser.tabs.length, 3, "number of tabs");
+        BrowserTestUtils.removeTab(gBrowser.getTabForBrowser(browser));
+      },
     },
-    // NOTE: If we ever add more tests here, add them above and not below `self`, as it replaces
-    // the test document.
+    tab_default_flip_bg_pref: {
+      prefs: [["browser.tabs.loadInBackground", false]],
+      modifiers: {},
+      async loadedPromise() {
+        return BrowserTestUtils.waitForNewTab(
+          gBrowser,
+          url => url.startsWith("blob"),
+          true
+        ).then(t => {
+          is(t.selected, true, "Tab should be selected with pref flipped.");
+          return t.linkedBrowser;
+        });
+      },
+      cleanup(browser) {
+        is(gBrowser.tabs.length, 3, "number of tabs");
+        BrowserTestUtils.removeTab(gBrowser.getTabForBrowser(browser));
+      },
+    },
   };
   await BrowserTestUtils.withNewTab(mainURL, async browser => {
     await SpecialPowers.spawn(browser, [], () => {
@@ -76,6 +97,9 @@ async function test_view_image_works({ page, selector }) {
       );
     });
     for (let [testLabel, test] of Object.entries(tests)) {
+      if (test.prefs) {
+        await SpecialPowers.pushPrefEnv({ set: test.prefs });
+      }
       let contextMenu = document.getElementById("contentAreaContextMenu");
       is(
         contextMenu.state,
@@ -100,9 +124,9 @@ async function test_view_image_works({ page, selector }) {
         "popuphidden"
       );
       let browserPromise = test.loadedPromise();
-      EventUtils.synthesizeMouseAtCenter(
+      contextMenu.activateItem(
         document.getElementById("context-viewimage"),
-        test.event
+        test.modifiers
       );
       await promisePopupHidden;
 
@@ -122,6 +146,9 @@ async function test_view_image_works({ page, selector }) {
         );
       });
       await test.cleanup(newBrowser);
+      if (test.prefs) {
+        await SpecialPowers.popPrefEnv();
+      }
     }
   });
 }

@@ -15,17 +15,20 @@
  * video_capture_impl.h
  */
 
-#include <string>
 #include <memory>
+#include <set>
+#include <string>
 
 #include "api/video/video_frame.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
+#include "modules/video_capture/video_capture.h"
 #include "modules/video_capture/video_capture_config.h"
+#include "modules/video_coding/event_wrapper.h"
 #include "modules/desktop_capture/shared_memory.h"
-#include "modules/desktop_capture/desktop_device_info.h"
 #include "modules/desktop_capture/desktop_and_cursor_composer.h"
-#include "system_wrappers/include/event_wrapper.h"
-#include <set>
+#include "rtc_base/deprecated/recursive_critical_section.h"
+
+#include "desktop_device_info.h"
 
 using namespace webrtc::videocapturemodule;
 
@@ -153,8 +156,7 @@ class BrowserDeviceInfoImpl : public VideoCaptureModule::DeviceInfo {
 // As with video, DesktopCaptureImpl is a proxy for screen sharing
 // and follows the video pipeline design
 class DesktopCaptureImpl : public DesktopCapturer::Callback,
-                           public VideoCaptureModule,
-                           public VideoCaptureExternal {
+                           public VideoCaptureModule {
  public:
   /* Create a screen capture modules object
    */
@@ -176,11 +178,9 @@ class DesktopCaptureImpl : public DesktopCapturer::Callback,
 
   const char* CurrentDeviceName() const override;
 
-  // Implement VideoCaptureExternal
-  // |capture_time| must be specified in the NTP time format in milliseconds.
   int32_t IncomingFrame(uint8_t* videoFrame, size_t videoFrameLength,
-                        const VideoCaptureCapability& frameInfo,
-                        int64_t captureTime = 0) override;
+                        size_t widthWithPadding,
+                        const VideoCaptureCapability& frameInfo);
 
   // Platform dependent
   int32_t StartCapture(const VideoCaptureCapability& capability) override;
@@ -193,8 +193,7 @@ class DesktopCaptureImpl : public DesktopCapturer::Callback,
   DesktopCaptureImpl(const int32_t id, const char* uniqueId,
                      const CaptureDeviceType type);
   virtual ~DesktopCaptureImpl();
-  int32_t DeliverCapturedFrame(webrtc::VideoFrame& captureFrame,
-                               int64_t capture_time);
+  int32_t DeliverCapturedFrame(webrtc::VideoFrame& captureFrame);
 
   static const uint32_t kMaxDesktopCaptureCpuUsage =
       50;  // maximum CPU usage in %
@@ -202,17 +201,16 @@ class DesktopCaptureImpl : public DesktopCapturer::Callback,
   int32_t _id;                  // Module ID
   std::string _deviceUniqueId;  // current Device unique name;
   CaptureDeviceType _deviceType;
-  rtc::CriticalSection _apiCs;
+
   VideoCaptureCapability
       _requestedCapability;  // Should be set by platform dependent code in
                              // StartCapture.
-
  private:
   int32_t Init();
   void UpdateFrameCount();
   uint32_t CalculateFrameRate(int64_t now_ns);
 
-  rtc::CriticalSection _callBackCs;
+  rtc::RecursiveCriticalSection _apiCs;
 
   std::set<rtc::VideoSinkInterface<VideoFrame>*> _dataCallBacks;
 
@@ -220,21 +218,18 @@ class DesktopCaptureImpl : public DesktopCapturer::Callback,
       [kFrameRateCountHistorySize];  // timestamp for local captured frames
   VideoRotation _rotateFrame;  // Set if the frame should be rotated by the
                                // capture module.
+  std::atomic<uint32_t> _maxFPSNeeded;
 
   // Used to make sure incoming timestamp is increasing for every frame.
-  int64_t last_capture_time_;
-
-  // Delta used for translating between NTP and internal timestamps.
-  const int64_t delta_ntp_internal_ms_;
+  int64_t last_capture_time_ms_;
 
   // DesktopCapturer::Callback interface.
   void OnCaptureResult(DesktopCapturer::Result result,
                        std::unique_ptr<DesktopFrame> frame) override;
 
  public:
-  static bool Run(void* obj) {
+  static void Run(void* obj) {
     static_cast<DesktopCaptureImpl*>(obj)->process();
-    return true;
   };
   void process();
 
@@ -250,7 +245,7 @@ class DesktopCaptureImpl : public DesktopCapturer::Callback,
 #else
   std::unique_ptr<rtc::PlatformThread> capturer_thread_;
 #endif
-  bool started_;
+  std::atomic<bool> started_;
 };
 
 }  // namespace webrtc

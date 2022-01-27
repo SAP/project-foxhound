@@ -45,29 +45,26 @@ add_task(async function test_remove_tags_from_BookmarkStar() {
   });
 
   StarUI._createPanelIfNeeded();
-  let bookmarkPanel = document.getElementById("editBookmarkPanel");
-  let shownPromise = promisePopupShown(bookmarkPanel);
-  let bookmarkStar = BookmarkingUI.star;
-  bookmarkStar.click();
-  await shownPromise;
+  await clickBookmarkStar();
 
   // Check if the "Edit This Bookmark" panel is open.
   let bookmarkPanelTitle = document.getElementById("editBookmarkPanelTitle");
   Assert.equal(
-    bookmarkPanelTitle.value,
-    gNavigatorBundle.getString("editBookmarkPanel.editBookmarkTitle"),
+    document.l10n.getAttributes(bookmarkPanelTitle).id,
+    "bookmarks-edit-bookmark",
     "Bookmark panel title is correct."
   );
 
   let promiseTagsChange = PlacesTestUtils.waitForNotification(
-    "onItemChanged",
-    (id, property) => property === "tags"
+    "bookmark-tags-changed",
+    () => true,
+    "places"
   );
 
   // Update the "tags" field.
   fillBookmarkTextField("editBMPanel_tagsField", "tag1, tag2, tag3", window);
   let tagspicker = document.getElementById("editBMPanel_tagsField");
-  await waitForCondition(
+  await TestUtils.waitForCondition(
     () => tagspicker.value === "tag1, tag2, tag3",
     "Tags are correct after update."
   );
@@ -107,8 +104,10 @@ add_task(async function test_remove_tags_from_Toolbar() {
       });
       await promisePopup;
 
-      let properties = document.getElementById("placesContext_show:info");
-      EventUtils.synthesizeMouseAtCenter(properties, {});
+      let properties = document.getElementById(
+        "placesContext_show_bookmark:info"
+      );
+      placesContext.activateItem(properties, {});
     },
     async function test(dialogWin) {
       let tagspicker = dialogWin.document.getElementById(
@@ -121,8 +120,9 @@ add_task(async function test_remove_tags_from_Toolbar() {
       );
 
       let promiseTagsChange = PlacesTestUtils.waitForNotification(
-        "onItemChanged",
-        (id, property) => property === "tags"
+        "bookmark-tags-changed",
+        () => true,
+        "places"
       );
 
       // Update the "tags" field.
@@ -132,7 +132,7 @@ add_task(async function test_remove_tags_from_Toolbar() {
         dialogWin,
         false
       );
-      await waitForCondition(
+      await TestUtils.waitForCondition(
         () => tagspicker.value === "tag1, tag2",
         "Tags are correct after update."
       );
@@ -176,8 +176,9 @@ add_task(async function test_remove_tags_from_Sidebar() {
         );
 
         let promiseTagsChange = PlacesTestUtils.waitForNotification(
-          "onItemChanged",
-          (id, property) => property === "tags"
+          "bookmark-tags-changed",
+          () => true,
+          "places"
         );
 
         // Update the "tags" field.
@@ -187,7 +188,7 @@ add_task(async function test_remove_tags_from_Sidebar() {
           dialogWin,
           false
         );
-        await waitForCondition(
+        await TestUtils.waitForCondition(
           () => tagspicker.value === "tag1",
           "Tags are correct after update."
         );

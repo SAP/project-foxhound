@@ -13,6 +13,8 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticPrefs_privacy.h"
 
+#include "nsIUrlClassifierFeature.h"
+
 class nsIChannel;
 class nsICookieJarSettings;
 class nsIPermission;
@@ -68,6 +70,11 @@ class ContentBlocking final {
   static bool ShouldAllowAccessFor(nsIPrincipal* aPrincipal,
                                    nsICookieJarSettings* aCookieJarSettings);
 
+  typedef MozPromise<nsresult, uint32_t, true> AsyncShouldAllowAccessForPromise;
+  [[nodiscard]] static RefPtr<AsyncShouldAllowAccessForPromise>
+  AsyncShouldAllowAccessFor(dom::BrowsingContext* aBrowsingContext,
+                            nsIPrincipal* aPrincipal);
+
   enum StorageAccessPromptChoices { eAllow, eAllowAutoGrant };
 
   // Grant the permission for aOrigin to have access to the first party storage.
@@ -90,7 +97,7 @@ class ContentBlocking final {
   typedef std::function<RefPtr<StorageAccessFinalCheckPromise>()>
       PerformFinalChecks;
   typedef MozPromise<int, bool, true> StorageAccessPermissionGrantPromise;
-  static MOZ_MUST_USE RefPtr<StorageAccessPermissionGrantPromise>
+  [[nodiscard]] static RefPtr<StorageAccessPermissionGrantPromise>
   AllowAccessFor(
       nsIPrincipal* aPrincipal, dom::BrowsingContext* aParentContext,
       ContentBlockingNotifier::StorageAccessPermissionGrantedReason aReason,
@@ -122,7 +129,7 @@ class ContentBlocking final {
   friend class dom::ContentParent;
   // This should be running either in the parent process or in the child
   // processes with an in-process browsing context.
-  static MOZ_MUST_USE RefPtr<StorageAccessPermissionGrantPromise>
+  [[nodiscard]] static RefPtr<StorageAccessPermissionGrantPromise>
   CompleteAllowAccessFor(
       dom::BrowsingContext* aParentContext, uint64_t aTopLevelWindowId,
       nsIPrincipal* aTrackingPrincipal, const nsCString& aTrackingOrigin,
@@ -135,6 +142,32 @@ class ContentBlocking final {
 
   static void UpdateAllowAccessOnParentProcess(
       dom::BrowsingContext* aParentContext, const nsACString& aTrackingOrigin);
+
+  typedef MozPromise<uint32_t, nsresult, true> CheckTrackerForPrincipalPromise;
+  class TrackerClassifierFeatureCallback final
+      : public nsIUrlClassifierFeatureCallback {
+   public:
+    NS_DECL_ISUPPORTS
+    NS_DECL_NSIURLCLASSIFIERFEATURECALLBACK
+
+    RefPtr<CheckTrackerForPrincipalPromise> Promise() {
+      return mHolder.Ensure(__func__);
+    }
+
+    void Reject(nsresult rv) { mHolder.Reject(rv, __func__); }
+
+    TrackerClassifierFeatureCallback() = default;
+
+   private:
+    ~TrackerClassifierFeatureCallback() = default;
+
+    MozPromiseHolder<CheckTrackerForPrincipalPromise> mHolder;
+  };
+
+  // This method checks if the given princpal belongs to a tracker or a social
+  // tracker.
+  [[nodiscard]] static RefPtr<CheckTrackerForPrincipalPromise>
+  CheckTrackerForPrincipal(nsIPrincipal* aPrincipal);
 };
 
 }  // namespace mozilla

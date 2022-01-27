@@ -159,7 +159,7 @@ void doMemoryReport(const uint8_t aRecvSig) {
   bool minimize = aRecvSig == sDumpAboutMemoryAfterMMUSignum;
   LOG("SignalWatcher(sig %d) dispatching memory report runnable.", aRecvSig);
   RefPtr<DumpMemoryInfoToTempDirRunnable> runnable =
-      new DumpMemoryInfoToTempDirRunnable(/* identifier = */ EmptyString(),
+      new DumpMemoryInfoToTempDirRunnable(/* identifier = */ u""_ns,
                                           /* anonymize = */ false, minimize);
   NS_DispatchToMainThread(runnable);
 }
@@ -168,7 +168,7 @@ void doGCCCDump(const uint8_t aRecvSig) {
   LOG("SignalWatcher(sig %d) dispatching GC/CC log runnable.", aRecvSig);
   // Dump GC and CC logs (from the main thread).
   RefPtr<GCAndCCLogDumpRunnable> runnable =
-      new GCAndCCLogDumpRunnable(/* identifier = */ EmptyString(),
+      new GCAndCCLogDumpRunnable(/* identifier = */ u""_ns,
                                  /* allTraces = */ true,
                                  /* dumpChildProcesses = */ true);
   NS_DispatchToMainThread(runnable);
@@ -185,7 +185,7 @@ void doMemoryReport(const nsCString& aInputStr) {
   LOG("FifoWatcher(command:%s) dispatching memory report runnable.",
       aInputStr.get());
   RefPtr<DumpMemoryInfoToTempDirRunnable> runnable =
-      new DumpMemoryInfoToTempDirRunnable(/* identifier = */ EmptyString(),
+      new DumpMemoryInfoToTempDirRunnable(/* identifier = */ u""_ns,
                                           /* anonymize = */ false, minimize);
   NS_DispatchToMainThread(runnable);
 }
@@ -195,7 +195,7 @@ void doGCCCDump(const nsCString& aInputStr) {
   LOG("FifoWatcher(command:%s) dispatching GC/CC log runnable.",
       aInputStr.get());
   RefPtr<GCAndCCLogDumpRunnable> runnable = new GCAndCCLogDumpRunnable(
-      /* identifier = */ EmptyString(), doAllTracesGCCCDump,
+      /* identifier = */ u""_ns, doAllTracesGCCCDump,
       /* dumpChildProcesses = */ true);
   NS_DispatchToMainThread(runnable);
 }
@@ -346,7 +346,7 @@ nsMemoryInfoDumper::DumpGCAndCCLogsToFile(
 
   logSink->SetFilenameIdentifier(identifier);
 
-  nsJSContext::CycleCollectNow(logger);
+  nsJSContext::CycleCollectNow(CCReason::DUMP_HEAP, logger);
 
   nsCOMPtr<nsIFile> gcLog, ccLog;
   logSink->GetGcLog(getter_AddRefs(gcLog));
@@ -369,7 +369,7 @@ nsMemoryInfoDumper::DumpGCAndCCLogsToSink(bool aDumpAllTraces,
 
   logger->SetLogSink(aSink);
 
-  nsJSContext::CycleCollectNow(logger);
+  nsJSContext::CycleCollectNow(CCReason::DUMP_HEAP, logger);
 
   return NS_OK;
 }
@@ -389,16 +389,10 @@ class GZWriterWrapper : public JSONWriteFunc {
  public:
   explicit GZWriterWrapper(nsGZFileWriter* aGZWriter) : mGZWriter(aGZWriter) {}
 
-  void Write(const char* aStr) override {
+  void Write(const Span<const char>& aStr) override {
     // Ignore any failure because JSONWriteFunc doesn't have a mechanism for
     // handling errors.
-    Unused << mGZWriter->Write(aStr);
-  }
-
-  void Write(const char* aStr, size_t aLen) override {
-    // Ignore any failure because JSONWriteFunc doesn't have a mechanism for
-    // handling errors.
-    Unused << mGZWriter->Write(aStr, aLen);
+    Unused << mGZWriter->Write(aStr.data(), aStr.size());
   }
 
   nsresult Finish() { return mGZWriter->Finish(); }
@@ -455,13 +449,12 @@ class HandleReportAndFinishReportingCallbacks final
 
     mWriter->StartObjectElement();
     {
-      mWriter->StringProperty("process", process.get());
-      mWriter->StringProperty("path", PromiseFlatCString(aPath).get());
+      mWriter->StringProperty("process", process);
+      mWriter->StringProperty("path", PromiseFlatCString(aPath));
       mWriter->IntProperty("kind", aKind);
       mWriter->IntProperty("units", aUnits);
       mWriter->IntProperty("amount", aAmount);
-      mWriter->StringProperty("description",
-                              PromiseFlatCString(aDescription).get());
+      mWriter->StringProperty("description", PromiseFlatCString(aDescription));
     }
     mWriter->EndObject();
 
@@ -615,7 +608,8 @@ static nsresult DumpMemoryInfoToFile(nsIFile* aReportsFile,
 NS_IMETHODIMP
 nsMemoryInfoDumper::DumpMemoryReportsToNamedFile(
     const nsAString& aFilename, nsIFinishDumpingCallback* aFinishDumping,
-    nsISupports* aFinishDumpingData, bool aAnonymize) {
+    nsISupports* aFinishDumpingData, bool aAnonymize,
+    bool aMinimizeMemoryUsage) {
   MOZ_ASSERT(!aFilename.IsEmpty());
 
   // Create the file.
@@ -644,10 +638,9 @@ nsMemoryInfoDumper::DumpMemoryReportsToNamedFile(
     }
   }
 
-  nsString dmdIdent = EmptyString();
+  nsString dmdIdent;
   return DumpMemoryInfoToFile(reportsFile, aFinishDumping, aFinishDumpingData,
-                              aAnonymize, /* minimizeMemoryUsage = */ false,
-                              dmdIdent);
+                              aAnonymize, aMinimizeMemoryUsage, dmdIdent);
 }
 
 NS_IMETHODIMP

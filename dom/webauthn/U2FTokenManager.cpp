@@ -13,8 +13,14 @@
 #include "mozilla/dom/WebAuthnUtil.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/Services.h"
 #include "mozilla/Unused.h"
+#include "nsIObserver.h"
+#include "nsIObserverService.h"
+#include "nsIThread.h"
 #include "nsTextFormatter.h"
+#include "mozilla/Telemetry.h"
 
 #ifdef MOZ_WIDGET_ANDROID
 #  include "mozilla/dom/AndroidWebAuthnTokenManager.h"
@@ -50,11 +56,15 @@ static nsIThread* gBackgroundThread;
 
 // Data for WebAuthn UI prompt notifications.
 static const char16_t kRegisterPromptNotifcation[] =
-    u"{\"action\":\"register\",\"tid\":%llu,\"origin\":\"%s\"}";
+    u"{\"action\":\"register\",\"tid\":%llu,\"origin\":\"%s\","
+    u"\"browsingContextId\":%llu}";
 static const char16_t kRegisterDirectPromptNotifcation[] =
-    u"{\"action\":\"register-direct\",\"tid\":%llu,\"origin\":\"%s\"}";
+    u"{\"action\":\"register-direct\",\"tid\":%llu,\"origin\":\"%s\","
+    u"\"browsingContextId\":%llu}";
 static const char16_t kSignPromptNotifcation[] =
-    u"{\"action\":\"sign\",\"tid\":%llu,\"origin\":\"%s\"}";
+    u"{\"action\":\"sign\",\"tid\":%llu,\"origin\":\"%s\","
+    u"\"browsingContextId\":%"
+    u"llu}";
 static const char16_t kCancelPromptNotifcation[] =
     u"{\"action\":\"cancel\",\"tid\":%llu}";
 
@@ -79,7 +89,7 @@ class U2FPrefManager final : public nsIObserver {
                                      PREF_WEBAUTHN_ANDROID_FIDO2_ENABLED);
       Preferences::AddStrongObserver(gPrefManager,
                                      PREF_WEBAUTHN_ALLOW_DIRECT_ATTESTATION);
-      ClearOnShutdown(&gPrefManager, ShutdownPhase::ShutdownThreads);
+      ClearOnShutdown(&gPrefManager, ShutdownPhase::XPCOMShutdownThreads);
     }
     return gPrefManager;
   }
@@ -340,7 +350,7 @@ void U2FTokenManager::Register(
   // store the transaction info until the user proceeds or cancels.
   NS_ConvertUTF16toUTF8 origin(aTransactionInfo.Origin());
   SendPromptNotification(kRegisterDirectPromptNotifcation, aTransactionId,
-                         origin.get());
+                         origin.get(), aTransactionInfo.BrowsingContextId());
 
   MOZ_ASSERT(mPendingRegisterInfo.isNothing());
   mPendingRegisterInfo = Some(aTransactionInfo);
@@ -354,7 +364,7 @@ void U2FTokenManager::DoRegister(const WebAuthnMakeCredentialInfo& aInfo,
   // Show a prompt that lets the user cancel the ongoing transaction.
   NS_ConvertUTF16toUTF8 origin(aInfo.Origin());
   SendPromptNotification(kRegisterPromptNotifcation, mLastTransactionId,
-                         origin.get());
+                         origin.get(), aInfo.BrowsingContextId());
 
   uint64_t tid = mLastTransactionId;
   mozilla::TimeStamp startTime = mozilla::TimeStamp::Now();
@@ -413,7 +423,8 @@ void U2FTokenManager::Sign(PWebAuthnTransactionParent* aTransactionParent,
 
   // Show a prompt that lets the user cancel the ongoing transaction.
   NS_ConvertUTF16toUTF8 origin(aTransactionInfo.Origin());
-  SendPromptNotification(kSignPromptNotifcation, aTransactionId, origin.get());
+  SendPromptNotification(kSignPromptNotifcation, aTransactionId, origin.get(),
+                         aTransactionInfo.BrowsingContextId());
 
   uint64_t tid = mLastTransactionId = aTransactionId;
   mozilla::TimeStamp startTime = mozilla::TimeStamp::Now();
@@ -456,8 +467,12 @@ void U2FTokenManager::MaybeAbortSign(const uint64_t& aTransactionId,
 }
 
 void U2FTokenManager::Cancel(PWebAuthnTransactionParent* aParent,
-                             const uint64_t& aTransactionId) {
-  if (mTransactionParent != aParent || mLastTransactionId != aTransactionId) {
+                             const Tainted<uint64_t>& aTransactionId) {
+  // The last transaction ID also suffers from the issue described in Bug
+  // 1696159. A content process could cancel another content processes
+  // transaction by guessing the last transaction ID.
+  if (mTransactionParent != aParent ||
+      !MOZ_IS_VALID(aTransactionId, mLastTransactionId == aTransactionId)) {
     return;
   }
 

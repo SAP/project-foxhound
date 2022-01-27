@@ -8,9 +8,21 @@
 
 "use strict";
 
+let engine1;
+let engine2;
+
 add_task(async function setup() {
   useHttpServer();
   await AddonTestUtils.promiseStartupManager();
+
+  await Services.search.init();
+
+  engine1 = await SearchTestUtils.promiseNewSearchEngine(
+    `${gDataUrl}engine.xml`
+  );
+  engine2 = await SearchTestUtils.promiseNewSearchEngine(
+    `${gDataUrl}engine2.xml`
+  );
 });
 
 function promiseDefaultNotification() {
@@ -21,46 +33,31 @@ function promiseDefaultNotification() {
 }
 
 add_task(async function test_defaultEngine() {
-  let search = Services.search;
-  await search.init();
+  let promise = promiseDefaultNotification();
+  Services.search.defaultEngine = engine1;
+  Assert.equal((await promise).wrappedJSObject, engine1);
+  Assert.equal(Services.search.defaultEngine.wrappedJSObject, engine1);
 
-  let originalDefault = search.defaultEngine;
+  promise = promiseDefaultNotification();
+  Services.search.defaultEngine = engine2;
+  Assert.equal((await promise).wrappedJSObject, engine2);
+  Assert.equal(Services.search.defaultEngine.wrappedJSObject, engine2);
 
-  let [engine1, engine2] = await addTestEngines([
-    { name: "Test search engine", xmlFileName: "engine.xml" },
-    { name: "A second test engine", xmlFileName: "engine2.xml" },
-  ]);
+  promise = promiseDefaultNotification();
+  Services.search.defaultEngine = engine1;
+  Assert.equal((await promise).wrappedJSObject, engine1);
+  Assert.equal(Services.search.defaultEngine.wrappedJSObject, engine1);
+});
+
+add_task(async function test_switch_with_invalid_overriddenBy() {
+  engine1.wrappedJSObject.setAttr("overriddenBy", "random@id");
+
+  consoleAllowList.push(
+    "Test search engine had overriddenBy set, but no _overriddenData"
+  );
 
   let promise = promiseDefaultNotification();
-  search.defaultEngine = engine1;
-  Assert.equal(await promise, engine1);
-  Assert.equal(search.defaultEngine, engine1);
-
-  promise = promiseDefaultNotification();
-  search.defaultEngine = engine2;
-  Assert.equal(await promise, engine2);
-  Assert.equal(search.defaultEngine, engine2);
-
-  promise = promiseDefaultNotification();
-  search.defaultEngine = engine1;
-  Assert.equal(await promise, engine1);
-  Assert.equal(search.defaultEngine, engine1);
-
-  // Test that hiding the currently-default engine affects the defaultEngine getter
-  // We fallback first to the original default...
-  engine1.hidden = true;
-  Assert.equal(search.defaultEngine, originalDefault);
-
-  // ... and then to the first visible engine in the list, so move our second
-  // engine to that position.
-  await search.moveEngine(engine2, 0);
-  originalDefault.hidden = true;
-  Assert.equal(search.defaultEngine, engine2);
-
-  // Test that setting defaultEngine to an already-hidden engine works, but
-  // doesn't change the return value of the getter
-  promise = promiseDefaultNotification();
-  search.defaultEngine = engine1;
-  Assert.equal(await promise, engine1);
-  Assert.equal(search.defaultEngine, engine2);
+  Services.search.defaultEngine = engine2;
+  Assert.equal((await promise).wrappedJSObject, engine2);
+  Assert.equal(Services.search.defaultEngine.wrappedJSObject, engine2);
 });

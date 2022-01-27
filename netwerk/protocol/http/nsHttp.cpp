@@ -10,29 +10,34 @@
 #include "nsHttp.h"
 #include "CacheControlParser.h"
 #include "PLDHashTable.h"
-#include "mozilla/Mutex.h"
+#include "mozilla/DataMutex.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "nsCRT.h"
+#include "nsContentUtils.h"
 #include "nsHttpRequestHead.h"
 #include "nsHttpResponseHead.h"
 #include "nsHttpHandler.h"
 #include "nsICacheEntry.h"
 #include "nsIRequest.h"
 #include "nsJSUtils.h"
+#include "sslerr.h"
 #include <errno.h>
 #include <functional>
+#include "nsLiteralString.h"
+#include <string.h>
 
 namespace mozilla {
 namespace net {
 
-const uint32_t kHttp3VersionCount = 3;
-const nsCString kHttp3Versions[] = {"h3-27"_ns, "h3-28"_ns, "h3-29"_ns};
+const uint32_t kHttp3VersionCount = 5;
+const nsCString kHttp3Versions[] = {"h3-29"_ns, "h3-30"_ns, "h3-31"_ns,
+                                    "h3-32"_ns, "h3"_ns};
 
 // define storage for all atoms
 namespace nsHttp {
-#define HTTP_ATOM(_name, _value) nsHttpAtom _name(_value);
+#define HTTP_ATOM(_name, _value) nsHttpAtom _name(nsLiteralCString{_value});
 #include "nsHttpAtomList.h"
 #undef HTTP_ATOM
 }  // namespace nsHttp
@@ -45,124 +50,86 @@ enum {
 };
 #undef HTTP_ATOM
 
-// we keep a linked list of atoms allocated on the heap for easy clean up when
-// the atom table is destroyed.  The structure and value string are allocated
-// as one contiguous block.
+static StaticDataMutex<nsTHashtable<nsCStringASCIICaseInsensitiveHashKey>>
+    sAtomTable("nsHttp::sAtomTable");
 
-struct HttpHeapAtom {
-  struct HttpHeapAtom* next;
-  char value[1];
-};
-
-static PLDHashTable* sAtomTable;
-static struct HttpHeapAtom* sHeapAtoms = nullptr;
-static Mutex* sLock = nullptr;
-
-HttpHeapAtom* NewHeapAtom(const char* value) {
-  int len = strlen(value);
-
-  HttpHeapAtom* a = reinterpret_cast<HttpHeapAtom*>(malloc(sizeof(*a) + len));
-  if (!a) return nullptr;
-  memcpy(a->value, value, len + 1);
-
-  // add this heap atom to the list of all heap atoms
-  a->next = sHeapAtoms;
-  sHeapAtoms = a;
-
-  return a;
-}
-
-// Hash string ignore case, based on PL_HashString
-static PLDHashNumber StringHash(const void* key) {
-  PLDHashNumber h = 0;
-  for (const char* s = reinterpret_cast<const char*>(key); *s; ++s)
-    h = AddToHash(h, nsCRT::ToLower(*s));
-  return h;
-}
-
-static bool StringCompare(const PLDHashEntryHdr* entry, const void* testKey) {
-  const void* entryKey = reinterpret_cast<const PLDHashEntryStub*>(entry)->key;
-
-  return PL_strcasecmp(reinterpret_cast<const char*>(entryKey),
-                       reinterpret_cast<const char*>(testKey)) == 0;
-}
-
-static const PLDHashTableOps ops = {StringHash, StringCompare,
-                                    PLDHashTable::MoveEntryStub,
-                                    PLDHashTable::ClearEntryStub, nullptr};
+// This is set to true in DestroyAtomTable so we don't try to repopulate the
+// table if ResolveAtom gets called during shutdown for some reason.
+static Atomic<bool> sTableDestroyed{false};
 
 // We put the atoms in a hash table for speedy lookup.. see ResolveAtom.
 namespace nsHttp {
-nsresult CreateAtomTable() {
-  MOZ_ASSERT(!sAtomTable, "atom table already initialized");
 
-  if (!sLock) {
-    sLock = new Mutex("nsHttp.sLock");
+nsresult CreateAtomTable(
+    nsTHashtable<nsCStringASCIICaseInsensitiveHashKey>& base) {
+  if (sTableDestroyed) {
+    return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
   }
-
-  // The initial length for this table is a value greater than the number of
-  // known atoms (NUM_HTTP_ATOMS) because we expect to encounter a few random
-  // headers right off the bat.
-  sAtomTable =
-      new PLDHashTable(&ops, sizeof(PLDHashEntryStub), NUM_HTTP_ATOMS + 10);
-
   // fill the table with our known atoms
-  const char* const atoms[] = {
-#define HTTP_ATOM(_name, _value) _name._val,
+  const nsHttpAtom* atoms[] = {
+#define HTTP_ATOM(_name, _value) &(_name),
 #include "nsHttpAtomList.h"
 #undef HTTP_ATOM
-      nullptr};
+  };
 
-  for (int i = 0; atoms[i]; ++i) {
-    auto stub =
-        static_cast<PLDHashEntryStub*>(sAtomTable->Add(atoms[i], fallible));
-    if (!stub) return NS_ERROR_OUT_OF_MEMORY;
-
-    MOZ_ASSERT(!stub->key, "duplicate static atom");
-    stub->key = atoms[i];
+  if (!base.IsEmpty()) {
+    return NS_OK;
+  }
+  for (const auto* atom : atoms) {
+    Unused << base.PutEntry(atom->val(), fallible);
   }
 
+  LOG(("Added static atoms to atomTable"));
   return NS_OK;
 }
 
-void DestroyAtomTable() {
-  delete sAtomTable;
-  sAtomTable = nullptr;
-
-  while (sHeapAtoms) {
-    HttpHeapAtom* next = sHeapAtoms->next;
-    free(sHeapAtoms);
-    sHeapAtoms = next;
-  }
-
-  delete sLock;
-  sLock = nullptr;
+nsresult CreateAtomTable() {
+  LOG(("CreateAtomTable"));
+  auto atomTable = sAtomTable.Lock();
+  return CreateAtomTable(atomTable.ref());
 }
 
-Mutex* GetLock() { return sLock; }
+void DestroyAtomTable() {
+  LOG(("DestroyAtomTable"));
+  sTableDestroyed = true;
+  auto atomTable = sAtomTable.Lock();
+  atomTable.ref().Clear();
+}
 
 // this function may be called from multiple threads
-nsHttpAtom ResolveAtom(const char* str) {
+nsHttpAtom ResolveAtom(const nsACString& str) {
   nsHttpAtom atom;
-
-  if (!str || !sAtomTable) return atom;
-
-  MutexAutoLock lock(*sLock);
-
-  auto stub = static_cast<PLDHashEntryStub*>(sAtomTable->Add(str, fallible));
-  if (!stub) return atom;  // out of memory
-
-  if (stub->key) {
-    atom._val = reinterpret_cast<const char*>(stub->key);
+  if (str.IsEmpty()) {
     return atom;
   }
 
-  // if the atom could not be found in the atom table, then we'll go
-  // and allocate a new atom on the heap.
-  HttpHeapAtom* heapAtom = NewHeapAtom(str);
-  if (!heapAtom) return atom;  // out of memory
+  auto atomTable = sAtomTable.Lock();
 
-  stub->key = atom._val = heapAtom->value;
+  if (atomTable.ref().IsEmpty()) {
+    if (sTableDestroyed) {
+      NS_WARNING("ResolveAtom called during shutdown");
+      return atom;
+    }
+
+    NS_WARNING("ResolveAtom called before CreateAtomTable");
+    if (NS_FAILED(CreateAtomTable(atomTable.ref()))) {
+      return atom;
+    }
+  }
+
+  // Check if we already have an entry in the table
+  auto* entry = atomTable.ref().GetEntry(str);
+  if (entry) {
+    atom._val = entry->GetKey();
+    return atom;
+  }
+
+  LOG(("Putting %s header into atom table", nsPromiseFlatCString(str).get()));
+  // Put the string in the table. If it works create the atom.
+  entry = atomTable.ref().PutEntry(str, fallible);
+  if (entry) {
+    atom._val = entry->GetKey();
+  }
   return atom;
 }
 
@@ -268,7 +235,7 @@ const char* FindToken(const char* input, const char* token, const char* seps) {
   const char* inputTop = input;
   const char* inputEnd = input + inputLen - tokenLen;
   for (; input <= inputEnd; ++input) {
-    if (PL_strncasecmp(input, token, tokenLen) == 0) {
+    if (nsCRT::strncasecmp(input, token, tokenLen) == 0) {
       if (input > inputTop && !strchr(seps, *(input - 1))) continue;
       if (input < inputEnd && !strchr(seps, *(input + tokenLen))) continue;
       return input;
@@ -308,7 +275,8 @@ bool IsPermanentRedirect(uint32_t httpStatus) {
 bool ValidationRequired(bool isForcedValid,
                         nsHttpResponseHead* cachedResponseHead,
                         uint32_t loadFlags, bool allowStaleCacheContent,
-                        bool isImmutable, bool customConditionalRequest,
+                        bool forceValidateCacheContent, bool isImmutable,
+                        bool customConditionalRequest,
                         nsHttpRequestHead& requestHead, nsICacheEntry* entry,
                         CacheControlParser& cacheControlRequest,
                         bool fromPreviousSession,
@@ -335,7 +303,9 @@ bool ValidationRequired(bool isForcedValid,
 
   // If the VALIDATE_ALWAYS flag is set, any cached data won't be used until
   // it's revalidated with the server.
-  if ((loadFlags & nsIRequest::VALIDATE_ALWAYS) && !isImmutable) {
+  if (((loadFlags & nsIRequest::VALIDATE_ALWAYS) ||
+       forceValidateCacheContent) &&
+      !isImmutable) {
     LOG(("Validating based on VALIDATE_ALWAYS load flag\n"));
     return true;
   }
@@ -437,10 +407,11 @@ bool ValidationRequired(bool isForcedValid,
     // or not this is the first access this session.  This behavior
     // is consistent with existing browsers and is generally expected
     // by web authors.
-    if (freshness == 0)
+    if (freshness == 0) {
       doValidation = true;
-    else
+    } else {
       doValidation = fromPreviousSession;
+    }
   } else {
     doValidation = true;
   }
@@ -566,7 +537,7 @@ void NotifyActiveTabLoadOptimization() {
   }
 }
 
-TimeStamp const GetLastActiveTabLoadOptimizationHit() {
+TimeStamp GetLastActiveTabLoadOptimizationHit() {
   return gHttpHandler ? gHttpHandler->GetLastActiveTabLoadOptimizationHit()
                       : TimeStamp();
 }
@@ -609,13 +580,10 @@ void EnsureBuffer(UniquePtr<uint8_t[]>& buf, uint32_t newSize,
 }
 
 static bool IsTokenSymbol(signed char chr) {
-  if (chr < 33 || chr == 127 || chr == '(' || chr == ')' || chr == '<' ||
-      chr == '>' || chr == '@' || chr == ',' || chr == ';' || chr == ':' ||
-      chr == '"' || chr == '/' || chr == '[' || chr == ']' || chr == '?' ||
-      chr == '=' || chr == '{' || chr == '}' || chr == '\\') {
-    return false;
-  }
-  return true;
+  return !(chr < 33 || chr == 127 || chr == '(' || chr == ')' || chr == '<' ||
+           chr == '>' || chr == '@' || chr == ',' || chr == ';' || chr == ':' ||
+           chr == '"' || chr == '/' || chr == '[' || chr == ']' || chr == '?' ||
+           chr == '=' || chr == '{' || chr == '}' || chr == '\\');
 }
 
 ParsedHeaderPair::ParsedHeaderPair(const char* name, int32_t nameLen,
@@ -727,8 +695,9 @@ void ParsedHeaderValueList::ParseNameAndValue(const char* input,
 
   for (; *input && *input != ';' && *input != ',' &&
          !nsCRT::IsAsciiSpace(*input) && *input != '=';
-       input++)
+       input++) {
     ;
+  }
 
   nameEnd = input;
 
@@ -767,8 +736,9 @@ void ParsedHeaderValueList::ParseNameAndValue(const char* input,
     valueStart = input;
     for (valueEnd = input; *valueEnd && !nsCRT::IsAsciiSpace(*valueEnd) &&
                            *valueEnd != ';' && *valueEnd != ',';
-         valueEnd++)
+         valueEnd++) {
       ;
+    }
     if (!allowInvalidValue) {
       for (const char* c = valueStart; c < valueEnd; c++) {
         if (!IsTokenSymbol(*c)) {
@@ -846,13 +816,13 @@ void LogCallingScriptLocation(void* instance) {
 
 void LogHeaders(const char* lineStart) {
   nsAutoCString buf;
-  char* endOfLine;
-  while ((endOfLine = PL_strstr(lineStart, "\r\n"))) {
+  const char* endOfLine;
+  while ((endOfLine = strstr(lineStart, "\r\n"))) {
     buf.Assign(lineStart, endOfLine - lineStart);
     if (StaticPrefs::network_http_sanitize_headers_in_logs() &&
-        (PL_strcasestr(buf.get(), "authorization: ") ||
-         PL_strcasestr(buf.get(), "proxy-authorization: "))) {
-      char* p = PL_strchr(buf.get(), ' ');
+        (nsCRT::strcasestr(buf.get(), "authorization: ") ||
+         nsCRT::strcasestr(buf.get(), "proxy-authorization: "))) {
+      char* p = strchr(buf.BeginWriting(), ' ');
       while (p && *++p) {
         *p = '*';
       }
@@ -998,6 +968,34 @@ nsresult HttpProxyResponseToErrorCode(uint32_t aStatusCode) {
   }
 
   return rv;
+}
+
+SupportedAlpnType IsAlpnSupported(const nsACString& aAlpn) {
+  if (gHttpHandler->IsHttp3Enabled() &&
+      gHttpHandler->IsHttp3VersionSupported(aAlpn)) {
+    return SupportedAlpnType::HTTP_3;
+  }
+
+  if (gHttpHandler->IsSpdyEnabled()) {
+    uint32_t spdyIndex;
+    SpdyInformation* spdyInfo = gHttpHandler->SpdyInfo();
+    if (NS_SUCCEEDED(spdyInfo->GetNPNIndex(aAlpn, &spdyIndex)) &&
+        spdyInfo->ProtocolEnabled(spdyIndex)) {
+      return SupportedAlpnType::HTTP_2;
+    }
+  }
+
+  if (aAlpn.LowerCaseEqualsASCII("http/1.1")) {
+    return SupportedAlpnType::HTTP_1_1;
+  }
+
+  return SupportedAlpnType::NOT_SUPPORTED;
+}
+
+bool SecurityErrorToBeHandledByTransaction(nsresult aReason) {
+  return (aReason ==
+          psm::GetXPCOMFromNSSError(SSL_ERROR_PROTOCOL_VERSION_ALERT)) ||
+         (aReason == psm::GetXPCOMFromNSSError(SSL_ERROR_BAD_MAC_ALERT));
 }
 
 }  // namespace net

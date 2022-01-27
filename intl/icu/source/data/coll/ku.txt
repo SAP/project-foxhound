@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 ku{
-    Version{"37"}
     collations{
         standard{
             Sequence{
@@ -14,8 +14,9 @@ ku{
                 "&ê<<é<<<É"
                 "&î<<í<<<Í"
                 "&û<<ú<<<Ú"
+                "&ú<<ù<<<Ù"
             }
-            Version{"37"}
+            Version{"40"}
         }
     }
 }

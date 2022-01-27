@@ -19,6 +19,11 @@
           src="../states.js"></script>
 
   <script type="application/javascript">
+    let PromEvents = {};
+    Services.scriptloader.loadSubScript(
+      "chrome://mochitests/content/a11y/accessible/tests/mochitest/promisified-events.js",
+      PromEvents);
+
     // //////////////////////////////////////////////////////////////////////////
     // Invokers
 
@@ -57,23 +62,32 @@
     // gA11yEventDumpToConsole = true; // debuggin
 
     var gQueue = null;
-    function doTests() {
+    async function doTests() {
       gQueue = new eventQueue();
+      // Later tests use await.
+      let queueFinished = new Promise(resolve => {
+        gQueue.onFinish = function() {
+          resolve();
+          return DO_NOT_FINISH_TEST;
+        };
+      });
 
       gQueue.push(new setAttr("tst1", "aria-label", "hi",
                               new invokerChecker(EVENT_NAME_CHANGE, "tst1")));
-      gQueue.push(new setAttr("tst1", "aria-labelledby", "display",
-                              new unexpectedInvokerChecker(EVENT_NAME_CHANGE, "tst1")));
       gQueue.push(new setAttr("tst1", "alt", "alt",
                               new unexpectedInvokerChecker(EVENT_NAME_CHANGE, "tst1")));
       gQueue.push(new setAttr("tst1", "title", "title",
                               new unexpectedInvokerChecker(EVENT_NAME_CHANGE, "tst1")));
+      gQueue.push(new setAttr("tst1", "aria-labelledby", "display",
+                              new invokerChecker(EVENT_NAME_CHANGE, "tst1")));
 
       gQueue.push(new setAttr("tst2", "aria-labelledby", "display",
                               new invokerChecker(EVENT_NAME_CHANGE, "tst2")));
       gQueue.push(new setAttr("tst2", "alt", "alt",
                               new unexpectedInvokerChecker(EVENT_NAME_CHANGE, "tst2")));
       gQueue.push(new setAttr("tst2", "title", "title",
+                              new unexpectedInvokerChecker(EVENT_NAME_CHANGE, "tst2")));
+      gQueue.push(new setAttr("tst2", "aria-label", "hi",
                               new unexpectedInvokerChecker(EVENT_NAME_CHANGE, "tst2")));
 
       // When `alt` attribute is added or removed from a broken img,
@@ -88,7 +102,41 @@
       gQueue.push(new setAttr("tst4", "title", "title",
                               new invokerChecker(EVENT_NAME_CHANGE, "tst4")));
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      gQueue.invoke();
+      await queueFinished;
+      // Tests beyond this point use await rather than eventQueue.
+
+      const labelledBy = getNode("labelledBy");
+      const label = getNode("label");
+      let nameChanged = PromEvents.waitForEvent(EVENT_NAME_CHANGE, labelledBy);
+      info("Changing text of aria-labelledby target");
+      label.textContent = "l2";
+      await nameChanged;
+      nameChanged = PromEvents.waitForEvent(EVENT_NAME_CHANGE, labelledBy);
+      info("Adding node to aria-labelledby target");
+      label.innerHTML = '<p id="labelChild">l3</p>';
+      await nameChanged;
+      nameChanged = PromEvents.waitForEvent(EVENT_NAME_CHANGE, labelledBy);
+      info("Changing text of aria-labelledby target's child");
+      getNode("labelChild").textContent = "l4";
+      await nameChanged;
+
+      const lateLabelledBy = getNode("lateLabelledBy");
+      nameChanged = PromEvents.waitForEvent(EVENT_NAME_CHANGE, lateLabelledBy);
+      info("Setting aria-labelledby");
+      lateLabelledBy.setAttribute("aria-labelledby", "lateLabel");
+      await nameChanged;
+      nameChanged = PromEvents.waitForEvent(EVENT_NAME_CHANGE, lateLabelledBy);
+      info("Changing text of late aria-labelledby target's child");
+      getNode("lateLabelChild").textContent = "l2";
+      await nameChanged;
+
+      nameChanged = PromEvents.waitForEvent(EVENT_NAME_CHANGE, "listitem");
+      info("Changing text of listitem child");
+      getNode("listitem").textContent = "world";
+      await nameChanged;
+
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();
@@ -113,6 +161,14 @@
   <img id="tst2" src="../moz.png">
   <img id="tst3">
   <img id="tst4" src="../moz.png">
+
+  <div id="labelledBy" aria-labelledby="label"></div>
+  <div id="label">l1</div>
+
+  <div id="lateLabelledBy"></div>
+  <div id="lateLabel"><p id="lateLabelChild">l1</p></div>
+
+  <ul><li id="listitem">hello</li></ul>
 
   <div id="eventdump"></div>
 </body>

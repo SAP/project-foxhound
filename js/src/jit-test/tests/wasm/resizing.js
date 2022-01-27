@@ -52,7 +52,7 @@ for (var i = 0; i < 10; i++)
 
 // Grow during call_indirect:
 var mem = new Memory({initial:1});
-var tbl = new Table({initial:1, element:"funcref"});
+var tbl = new Table({initial:1, element:"anyfunc"});
 var exports1 = wasmEvalText(`(module
     (import "" "mem" (memory 1))
     (func $grow
@@ -125,6 +125,10 @@ assertEq(mem.buffer.byteLength, 2 * 64*1024);
 assertErrorMessage(() => mem.grow(1), RangeError, /failed to grow memory/);
 assertEq(mem.buffer.byteLength, 2 * 64*1024);
 
+// Do not misinterpret the maximum @ max for the current size.
+
+(new WebAssembly.Memory({initial: 1, maximum: 65536})).grow(1)
+
 // ======
 // TABLE
 // ======
@@ -192,7 +196,7 @@ var src = wasmEvalText(`(module
     (func $three (result i32) (i32.const 3))
     (export "three" (func $three))
 )`).exports;
-var tbl = new Table({element:"funcref", initial:1});
+var tbl = new Table({element:"anyfunc", initial:1});
 tbl.set(0, src.one);
 
 var mod = new Module(wasmTextToBinary(`(module
@@ -223,7 +227,7 @@ assertErrorMessage(() => exp2.call_indirect(3), Error, /indirect call to null/);
 
 // Fail at maximum
 
-var tbl = new Table({initial:1, maximum:2, element:"funcref"});
+var tbl = new Table({initial:1, maximum:2, element:"anyfunc"});
 assertEq(tbl.length, 1);
 assertEq(tbl.grow(1), 1);
 assertEq(tbl.length, 2);

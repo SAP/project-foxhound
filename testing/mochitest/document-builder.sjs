@@ -6,7 +6,6 @@
 
 // eslint-disable-next-line mozilla/use-chromeutils-import
 Cu.import("resource://gre/modules/NetUtil.jsm");
-// eslint-disable-next-line mozilla/reject-importGlobalProperties
 Cu.importGlobalProperties(["URLSearchParams"]);
 
 function loadHTMLFromFile(path) {
@@ -35,26 +34,65 @@ function loadHTMLFromFile(path) {
   return testHTML;
 }
 
-// eslint-disable-next-line no-unused-vars
-function handleRequest(request, response) {
+/**
+ * document-builder.sjs can be used to dynamically build documents that will be used in
+ * mochitests. It does handle the following GET parameters:
+ * - file: The path to an (X)HTML file whose content will be used as a response.
+ *        Example: document-builder.sjs?file=/tests/dom/security/test/csp/file_web_manifest_mixed_content.html
+ * - html: A string representation of the HTML document you want to get.
+ *        Example: document-builder.sjs?html=<h1>Hello</h1>
+ * - headers: A <key:value> string representation of headers that will be set on the response
+ *            This is only applied when the html GET parameter is passed as well
+ *        Example: document-builder.sjs?headers=Cross-Origin-Opener-Policy:same-origin&html=<h1>Hello</h1>
+ *                 document-builder.sjs?headers=X-Header1:a&headers=X-Header2:b&html=<h1>Multiple headers</h1>
+ * - delay: Delay the response by X millisecond.
+ */
+async function handleRequest(request, response) {
+  response.processAsync();
+
   const queryString = new URLSearchParams(request.queryString);
   const html = queryString.get("html");
+  const delay = queryString.get("delay");
+
+  if (delay) {
+    await new Promise(resolve => {
+      let timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+      timer.initWithCallback(
+        () => {
+          // to avoid garbage collection
+          timer = null;
+          resolve();
+        },
+        delay,
+        Ci.nsITimer.TYPE_ONE_SHOT
+      );
+    });
+  }
 
   response.setHeader("Cache-Control", "no-cache", false);
   if (html) {
     response.setHeader("Content-Type", "text/html", false);
+
+    if (queryString.has("headers")) {
+      for (const header of queryString.getAll("headers")) {
+        const [key, value] = header.split(":");
+        response.setHeader(key, value, false);
+      }
+    }
+
     response.write(html);
-    return;
+  } else {
+    const path = queryString.get("file");
+    const doc = loadHTMLFromFile(path);
+    response.setHeader(
+      "Content-Type",
+      path.endsWith(".xhtml") ? "application/xhtml+xml" : "text/html",
+      false
+    );
+    // This is a hack to set the correct id for the content document that is to be
+    // loaded in the iframe.
+    response.write(doc.replace(`id="body"`, `id="default-iframe-body-id"`));
   }
 
-  const path = queryString.get("file");
-  const doc = loadHTMLFromFile(path);
-  response.setHeader(
-    "Content-Type",
-    path.endsWith(".xhtml") ? "application/xhtml+xml" : "text/html",
-    false
-  );
-  // This is a hack to set the correct id for the content document that is to be
-  // loaded in the iframe.
-  response.write(doc.replace(`id="body"`, `id="default-iframe-body-id"`));
+  response.finish();
 }

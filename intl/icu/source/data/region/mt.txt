@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 mt{
     Countries{
         001{"Dinja"}
@@ -107,7 +108,7 @@ mt{
         FI{"il-Finlandja"}
         FJ{"Fiġi"}
         FK{"il-Gżejjer Falkland"}
-        FM{"Mikroneżja"}
+        FM{"il-Mikroneżja"}
         FO{"il-Gżejjer Faeroe"}
         FR{"Franza"}
         GA{"il-Gabon"}
@@ -147,7 +148,7 @@ mt{
         IO{"Territorju Brittaniku tal-Oċean Indjan"}
         IQ{"l-Iraq"}
         IR{"l-Iran"}
-        IS{"l-iżlanda"}
+        IS{"l-Iżlanda"}
         IT{"l-Italja"}
         JE{"Jersey"}
         JM{"il-Ġamajka"}
@@ -234,7 +235,7 @@ mt{
         RS{"is-Serbja"}
         RU{"ir-Russja"}
         RW{"ir-Rwanda"}
-        SA{"l-Arabia Sawdija"}
+        SA{"l-Arabja Sawdija"}
         SB{"il-Gżejjer Solomon"}
         SC{"is-Seychelles"}
         SD{"is-Sudan"}
@@ -254,7 +255,7 @@ mt{
         SV{"El Salvador"}
         SX{"Sint Maarten"}
         SY{"is-Sirja"}
-        SZ{"is-Swaziland"}
+        SZ{"l-Eswatini"}
         TA{"Tristan da Cunha"}
         TC{"il-Gżejjer Turks u Caicos"}
         TD{"iċ-Chad"}
@@ -309,5 +310,4 @@ mt{
         FK{"Il-Gżejjer Falkland (il-Gżejjer Malvinas)"}
         TL{"Timor tal-Lvant"}
     }
-    Version{"37"}
 }

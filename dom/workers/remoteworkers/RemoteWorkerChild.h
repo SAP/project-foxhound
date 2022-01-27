@@ -34,6 +34,13 @@ class WeakWorkerRef;
 class WorkerErrorReport;
 class WorkerPrivate;
 
+/**
+ * Background-managed "Worker Launcher"-thread-resident created via the
+ * RemoteWorkerManager to actually spawn the worker. Currently, the worker will
+ * be spawned from the main thread due to nsIPrincipal not being able to be
+ * created on background threads and other ownership invariants, most of which
+ * can be relaxed in the future.
+ */
 class RemoteWorkerChild final
     : public SupportsThreadSafeWeakPtr<RemoteWorkerChild>,
       public PRemoteWorkerChild {
@@ -57,6 +64,8 @@ class RemoteWorkerChild final
   void ErrorPropagationOnMainThread(const WorkerErrorReport* aReport,
                                     bool aIsErrorEvent);
 
+  void NotifyLock(bool aCreated);
+
   void FlushReportsOnMainThread(nsIConsoleReportCollector* aReporter);
 
   void AddPortIdentifier(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
@@ -65,6 +74,8 @@ class RemoteWorkerChild final
   RefPtr<GenericNonExclusivePromise> GetTerminationPromise();
 
   RefPtr<GenericPromise> MaybeSendSetServiceWorkerSkipWaitingFlag();
+
+  const nsTArray<uint64_t>& WindowIDs() const { return mWindowIDs; }
 
  private:
   class InitializeWorkerRunnable;
@@ -112,14 +123,12 @@ class RemoteWorkerChild final
   mozilla::ipc::IPCResult RecvExecServiceWorkerOp(
       ServiceWorkerOpArgs&& aArgs, ExecServiceWorkerOpResolver&& aResolve);
 
-  PFetchEventOpProxyChild* AllocPFetchEventOpProxyChild(
-      const ServiceWorkerFetchEventOpArgs& aArgs);
+  already_AddRefed<PFetchEventOpProxyChild> AllocPFetchEventOpProxyChild(
+      const ParentToChildServiceWorkerFetchEventOpArgs& aArgs);
 
   mozilla::ipc::IPCResult RecvPFetchEventOpProxyConstructor(
       PFetchEventOpProxyChild* aActor,
-      const ServiceWorkerFetchEventOpArgs& aArgs) override;
-
-  bool DeallocPFetchEventOpProxyChild(PFetchEventOpProxyChild* aActor);
+      const ParentToChildServiceWorkerFetchEventOpArgs& aArgs) override;
 
   nsresult ExecWorkerOnMainThread(RemoteWorkerData&& aData);
 

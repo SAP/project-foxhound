@@ -34,8 +34,8 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsCommandManager)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_REFERENCE
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsCommandManager)
-  for (auto iter = tmp->mObserversTable.Iter(); !iter.Done(); iter.Next()) {
-    nsCommandManager::ObserverList* observers = iter.UserData();
+  for (const auto& entry : tmp->mObserversTable) {
+    nsCommandManager::ObserverList* observers = entry.GetWeak();
     int32_t numItems = observers->Length();
     for (int32_t i = 0; i < numItems; ++i) {
       cb.NoteXPCOMChild(observers->ElementAt(i));
@@ -80,10 +80,8 @@ nsCommandManager::AddCommandObserver(nsIObserver* aCommandObserver,
   // XXX todo: handle special cases of aCommandToObserve being null, or empty
 
   // for each command in the table, we make a list of observers for that command
-  const auto& commandObservers =
-      mObserversTable.LookupForAdd(aCommandToObserve).OrInsert([]() {
-        return new ObserverList;
-      });
+  auto* const commandObservers =
+      mObserversTable.GetOrInsertNew(aCommandToObserve);
 
   // need to check that this command observer hasn't already been registered
   int32_t existingIndex = commandObservers->IndexOf(aCommandObserver);

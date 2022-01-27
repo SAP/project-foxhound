@@ -17,7 +17,8 @@ class JSLinearString;
 namespace js {
 class BaseScript;
 class BaseShape;
-class ObjectGroup;
+class GetterSetter;
+class PropMap;
 class RegExpShared;
 class Shape;
 class Scope;
@@ -49,32 +50,25 @@ enum class TraceKind {
   // Shape details are exposed through JS_TraceShapeCycleCollectorChildren.
   Shape = 0x04,
 
-  // ObjectGroup details are exposed through
-  // JS_TraceObjectGroupCycleCollectorChildren.
-  ObjectGroup = 0x05,
+  BaseShape = 0x05,
 
   // The kind associated with a nullptr.
   Null = 0x06,
 
   // The following kinds do not have an exposed C++ idiom.
-  BaseShape = 0x0F,
-  JitCode = 0x1F,
-  Script = 0x2F,
-  Scope = 0x3F,
-  RegExpShared = 0x4F
+  JitCode,
+  Script,
+  Scope,
+  RegExpShared,
+  GetterSetter,
+  PropMap,
 };
-const static uintptr_t OutOfLineTraceKindMask = 0x07;
 
-#define ASSERT_TRACE_KIND(tk)                                             \
-  static_assert(                                                          \
-      (uintptr_t(tk) & OutOfLineTraceKindMask) == OutOfLineTraceKindMask, \
-      "mask bits are set")
-ASSERT_TRACE_KIND(JS::TraceKind::BaseShape);
-ASSERT_TRACE_KIND(JS::TraceKind::JitCode);
-ASSERT_TRACE_KIND(JS::TraceKind::Script);
-ASSERT_TRACE_KIND(JS::TraceKind::Scope);
-ASSERT_TRACE_KIND(JS::TraceKind::RegExpShared);
-#undef ASSERT_TRACE_KIND
+// GCCellPtr packs the trace kind into the low bits of the pointer for common
+// kinds.
+const static uintptr_t OutOfLineTraceKindMask = 0x07;
+static_assert(uintptr_t(JS::TraceKind::Null) < OutOfLineTraceKindMask,
+              "GCCellPtr requires an inline representation for nullptr");
 
 // When this header is imported inside SpiderMonkey, the class definitions are
 // available and we can query those definitions to find the correct kind
@@ -99,13 +93,14 @@ struct MapTypeToTraceKind {
   D(JitCode,      js::jit::JitCode, true,           false)       \
   D(Scope,        js::Scope,        true,           true)        \
   D(Object,       JSObject,         true,           true)        \
-  D(ObjectGroup,  js::ObjectGroup,  true,           false)       \
   D(Script,       js::BaseScript,   true,           true)        \
   D(Shape,        js::Shape,        true,           false)       \
   D(String,       JSString,         false,          false)       \
   D(Symbol,       JS::Symbol,       false,          false)       \
   D(BigInt,       JS::BigInt,       false,          false)       \
-  D(RegExpShared, js::RegExpShared, true,           true)
+  D(RegExpShared, js::RegExpShared, true,           true)        \
+  D(GetterSetter, js::GetterSetter, true,           true)        \
+  D(PropMap,      js::PropMap,      false,          false)
 // clang-format on
 
 // Returns true if the JS::TraceKind is represented as a node in cycle collector

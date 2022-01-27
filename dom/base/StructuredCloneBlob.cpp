@@ -6,17 +6,25 @@
 
 #include "mozilla/dom/StructuredCloneBlob.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <new>
+#include <utility>
 #include "js/StructuredClone.h"
-#include "js/Utility.h"
+#include "js/Value.h"
 #include "js/Wrapper.h"
-#include "mozilla/dom/BlobImpl.h"
-#include "mozilla/dom/StructuredCloneTags.h"
+#include "jsapi.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/BlobImpl.h"
+#include "mozilla/dom/StructuredCloneHolderBinding.h"
+#include "mozilla/dom/StructuredCloneTags.h"
 #include "xpcpublic.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 StructuredCloneBlob::StructuredCloneBlob() {
   mHolder.emplace(Holder::CloningSupported, Holder::TransferringNotSupported,
@@ -136,6 +144,9 @@ bool StructuredCloneBlob::Holder::ReadStructuredCloneInternal(
   if (!JS_ReadUint32Pair(aReader, &length, &version)) {
     return false;
   }
+  if (length % 8 != 0) {
+    return false;
+  }
 
   uint32_t blobOffset;
   uint32_t blobCount;
@@ -218,5 +229,4 @@ StructuredCloneBlob::CollectReports(nsIHandleReportCallback* aHandleReport,
 
 NS_IMPL_ISUPPORTS(StructuredCloneBlob, nsIMemoryReporter)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

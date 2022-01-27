@@ -4,13 +4,15 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["TelemetryEnvironment"];
+var EXPORTED_SYMBOLS = ["TelemetryEnvironment", "Policy"];
 
 const myScope = this;
 
 const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm", this);
+const { TelemetryUtils } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryUtils.jsm"
+);
 const { ObjectUtils } = ChromeUtils.import(
   "resource://gre/modules/ObjectUtils.jsm"
 );
@@ -233,6 +235,9 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["app.support.baseURL", { what: RECORD_PREF_VALUE }],
   ["accessibility.browsewithcaret", { what: RECORD_PREF_VALUE }],
   ["accessibility.force_disabled", { what: RECORD_PREF_VALUE }],
+  ["app.normandy.test-prefs.bool", { what: RECORD_PREF_VALUE }],
+  ["app.normandy.test-prefs.integer", { what: RECORD_PREF_VALUE }],
+  ["app.normandy.test-prefs.string", { what: RECORD_PREF_VALUE }],
   ["app.shield.optoutstudies.enabled", { what: RECORD_PREF_VALUE }],
   ["app.update.interval", { what: RECORD_PREF_VALUE }],
   ["app.update.service.enabled", { what: RECORD_PREF_VALUE }],
@@ -250,10 +255,28 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["browser.search.widget.inNavBar", { what: RECORD_DEFAULTPREF_VALUE }],
   ["browser.startup.homepage", { what: RECORD_PREF_STATE }],
   ["browser.startup.page", { what: RECORD_PREF_VALUE }],
+  [
+    "browser.urlbar.quicksuggest.onboardingDialogChoice",
+    { what: RECORD_DEFAULTPREF_VALUE },
+  ],
+  [
+    "browser.urlbar.quicksuggest.dataCollection.enabled",
+    { what: RECORD_DEFAULTPREF_VALUE },
+  ],
+  ["browser.urlbar.showSearchSuggestionsFirst", { what: RECORD_PREF_VALUE }],
+  [
+    "browser.urlbar.suggest.quicksuggest.nonsponsored",
+    { what: RECORD_DEFAULTPREF_VALUE },
+  ],
+  [
+    "browser.urlbar.suggest.quicksuggest.sponsored",
+    { what: RECORD_DEFAULTPREF_VALUE },
+  ],
   ["browser.urlbar.suggest.searches", { what: RECORD_PREF_VALUE }],
   ["devtools.chrome.enabled", { what: RECORD_PREF_VALUE }],
   ["devtools.debugger.enabled", { what: RECORD_PREF_VALUE }],
   ["devtools.debugger.remote-enabled", { what: RECORD_PREF_VALUE }],
+  ["doh-rollout.doorhanger-decision", { what: RECORD_PREF_VALUE }],
   ["dom.ipc.plugins.enabled", { what: RECORD_PREF_VALUE }],
   ["dom.ipc.plugins.sandbox-level.flash", { what: RECORD_PREF_VALUE }],
   ["dom.ipc.processCount", { what: RECORD_PREF_VALUE }],
@@ -262,26 +285,32 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["extensions.enabledScopes", { what: RECORD_PREF_VALUE }],
   ["extensions.blocklist.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.formautofill.addresses.enabled", { what: RECORD_PREF_VALUE }],
+  [
+    "extensions.formautofill.addresses.capture.enabled",
+    { what: RECORD_PREF_VALUE },
+  ],
   ["extensions.formautofill.creditCards.enabled", { what: RECORD_PREF_VALUE }],
+  [
+    "extensions.formautofill.creditCards.available",
+    { what: RECORD_PREF_VALUE },
+  ],
+  ["extensions.formautofill.creditCards.used", { what: RECORD_PREF_VALUE }],
   ["extensions.strictCompatibility", { what: RECORD_PREF_VALUE }],
   ["extensions.update.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.update.url", { what: RECORD_PREF_VALUE }],
   ["extensions.update.background.url", { what: RECORD_PREF_VALUE }],
   ["extensions.screenshots.disabled", { what: RECORD_PREF_VALUE }],
-  ["fission.autostart", { what: RECORD_DEFAULTPREF_VALUE }],
   ["general.config.filename", { what: RECORD_DEFAULTPREF_STATE }],
   ["general.smoothScroll", { what: RECORD_PREF_VALUE }],
   ["gfx.direct2d.disabled", { what: RECORD_PREF_VALUE }],
   ["gfx.direct2d.force-enabled", { what: RECORD_PREF_VALUE }],
   ["gfx.webrender.all", { what: RECORD_PREF_VALUE }],
   ["gfx.webrender.all.qualified", { what: RECORD_PREF_VALUE }],
-  ["gfx.webrender.force-disabled", { what: RECORD_PREF_VALUE }],
   ["layers.acceleration.disabled", { what: RECORD_PREF_VALUE }],
   ["layers.acceleration.force-enabled", { what: RECORD_PREF_VALUE }],
   ["layers.async-pan-zoom.enabled", { what: RECORD_PREF_VALUE }],
   ["layers.async-video-oop.enabled", { what: RECORD_PREF_VALUE }],
   ["layers.async-video.enabled", { what: RECORD_PREF_VALUE }],
-  ["layers.componentalpha.enabled", { what: RECORD_PREF_VALUE }],
   ["layers.d3d11.disable-warp", { what: RECORD_PREF_VALUE }],
   ["layers.d3d11.force-warp", { what: RECORD_PREF_VALUE }],
   [
@@ -291,15 +320,17 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["layers.prefer-d3d9", { what: RECORD_PREF_VALUE }],
   ["layers.prefer-opengl", { what: RECORD_PREF_VALUE }],
   ["layout.css.devPixelsPerPx", { what: RECORD_PREF_VALUE }],
-  ["marionette.enabled", { what: RECORD_PREF_VALUE }],
+  ["network.http.windows-sso.enabled", { what: RECORD_PREF_VALUE }],
   ["network.proxy.autoconfig_url", { what: RECORD_PREF_STATE }],
   ["network.proxy.http", { what: RECORD_PREF_STATE }],
   ["network.proxy.ssl", { what: RECORD_PREF_STATE }],
   ["network.trr.mode", { what: RECORD_PREF_VALUE }],
+  ["network.trr.strict_native_fallback", { what: RECORD_PREF_VALUE }],
   ["pdfjs.disabled", { what: RECORD_PREF_VALUE }],
   ["places.history.enabled", { what: RECORD_PREF_VALUE }],
   ["plugins.show_infobar", { what: RECORD_PREF_VALUE }],
-  ["privacy.fuzzyfox.enabled", { what: RECORD_PREF_VALUE }],
+  ["privacy.firstparty.isolate", { what: RECORD_PREF_VALUE }],
+  ["privacy.resistFingerprinting", { what: RECORD_PREF_VALUE }],
   ["privacy.trackingprotection.enabled", { what: RECORD_PREF_VALUE }],
   ["privacy.donottrackheader.enabled", { what: RECORD_PREF_VALUE }],
   ["security.enterprise_roots.auto-enabled", { what: RECORD_PREF_VALUE }],
@@ -313,7 +344,14 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["signon.generation.enabled", { what: RECORD_PREF_VALUE }],
   ["signon.rememberSignons", { what: RECORD_PREF_VALUE }],
   ["toolkit.telemetry.pioneerId", { what: RECORD_PREF_STATE }],
+  ["widget.content.allow-gtk-dark-theme", { what: RECORD_DEFAULTPREF_VALUE }],
+  ["widget.content.gtk-theme-override", { what: RECORD_PREF_STATE }],
+  [
+    "widget.content.gtk-high-contrast.enabled",
+    { what: RECORD_DEFAULTPREF_VALUE },
+  ],
   ["xpinstall.signatures.required", { what: RECORD_PREF_VALUE }],
+  ["nimbus.debug", { what: RECORD_PREF_VALUE }],
 ]);
 
 const LOGGER_NAME = "Toolkit.Telemetry";
@@ -325,7 +363,6 @@ const PREF_DISTRIBUTOR = "app.distributor";
 const PREF_DISTRIBUTOR_CHANNEL = "app.distributor.channel";
 const PREF_APP_PARTNER_BRANCH = "app.partner.";
 const PREF_PARTNER_ID = "mozilla.partner.id";
-const PREF_SEARCH_COHORT = "browser.search.cohort";
 
 const COMPOSITOR_CREATED_TOPIC = "compositor:created";
 const COMPOSITOR_PROCESS_ABORTED_TOPIC = "compositor:process-aborted";
@@ -337,8 +374,13 @@ const SEARCH_SERVICE_TOPIC = "browser-search-service";
 const SESSIONSTORE_WINDOWS_RESTORED_TOPIC = "sessionstore-windows-restored";
 const PREF_CHANGED_TOPIC = "nsPref:changed";
 const BLOCKLIST_LOADED_TOPIC = "plugin-blocklist-loaded";
-const AUTO_UPDATE_PREF_CHANGE_TOPIC = "auto-update-config-change";
+const AUTO_UPDATE_PREF_CHANGE_TOPIC =
+  UpdateUtils.PER_INSTALLATION_PREFS["app.update.auto"].observerTopic;
+const BACKGROUND_UPDATE_PREF_CHANGE_TOPIC =
+  UpdateUtils.PER_INSTALLATION_PREFS["app.update.background.enabled"]
+    .observerTopic;
 const SERVICES_INFO_CHANGE_TOPIC = "sync-ui-state:update";
+const FIREFOX_SUGGEST_UPDATE_TOPIC = "firefox-suggest-update";
 
 /**
  * Enforces the parameter to a boolean value.
@@ -613,12 +655,10 @@ EnvironmentAddonBuilder.prototype = {
     if (aTopic == BLOCKLIST_LOADED_TOPIC) {
       Services.obs.removeObserver(this, BLOCKLIST_LOADED_TOPIC);
       this._blocklistObserverAdded = false;
-      let plugins = this._getActivePlugins();
       let gmpPluginsPromise = this._getActiveGMPlugins();
       gmpPluginsPromise.then(
         gmpPlugins => {
           let { addons } = this._environment._currentEnvironment;
-          addons.activePlugins = plugins;
           addons.activeGMPlugins = gmpPlugins;
         },
         err => {
@@ -699,7 +739,6 @@ EnvironmentAddonBuilder.prototype = {
     let addons = {
       activeAddons: await this._getActiveAddons(),
       theme: await this._getActiveTheme(),
-      activePlugins: this._getActivePlugins(atStartup),
       activeGMPlugins: await this._getActiveGMPlugins(atStartup),
     };
 
@@ -830,76 +869,6 @@ EnvironmentAddonBuilder.prototype = {
   },
 
   /**
-   * Get the plugins data in object form.
-   *
-   * @param {boolean} [atStartup]
-   *        True if this is the first check we're performing at startup. In that
-   *        situation, we defer some more expensive initialization.
-   *
-   * @return Object containing the plugins data.
-   */
-  _getActivePlugins(atStartup) {
-    // If we haven't yet loaded the blocklist, pass back dummy data for now,
-    // and add an observer to update this data as soon as we get it.
-    if (atStartup || !Services.blocklist.isLoaded) {
-      if (!this._blocklistObserverAdded) {
-        Services.obs.addObserver(this, BLOCKLIST_LOADED_TOPIC);
-        this._blocklistObserverAdded = true;
-      }
-      return [
-        {
-          name: "dummy",
-          version: "0.1",
-          description: "Blocklist unavailable",
-          blocklisted: false,
-          disabled: true,
-          clicktoplay: false,
-          mimeTypes: ["text/there.is.only.blocklist"],
-          updateDay: Utils.millisecondsToDays(Date.now()),
-        },
-      ];
-    }
-    let pluginTags = Cc["@mozilla.org/plugin/host;1"]
-      .getService(Ci.nsIPluginHost)
-      .getPluginTags();
-
-    let activePlugins = [];
-    for (let tag of pluginTags) {
-      // Skip plugins which are not active.
-      if (tag.disabled) {
-        continue;
-      }
-
-      try {
-        // Make sure to have a valid date.
-        let updateDate = new Date(Math.max(0, tag.lastModifiedTime));
-
-        activePlugins.push({
-          name: limitStringToLength(tag.name, MAX_ADDON_STRING_LENGTH),
-          version: limitStringToLength(tag.version, MAX_ADDON_STRING_LENGTH),
-          description: limitStringToLength(
-            tag.description,
-            MAX_ADDON_STRING_LENGTH
-          ),
-          blocklisted: tag.blocklisted,
-          disabled: tag.disabled,
-          clicktoplay: tag.clicktoplay,
-          mimeTypes: tag.getMimeTypes(),
-          updateDay: Utils.millisecondsToDays(updateDate.getTime()),
-        });
-      } catch (ex) {
-        this._environment._log.error(
-          "_getActivePlugins - A plugin was discarded due to an error",
-          ex
-        );
-        continue;
-      }
-    }
-
-    return activePlugins;
-  },
-
-  /**
    * Get the GMPlugins data in object form.
    *
    * @param {boolean} [atStartup]
@@ -998,7 +967,7 @@ function EnvironmentCache() {
   if (AppConstants.MOZ_BUILD_APP == "browser") {
     p.push(this._loadAttributionAsync());
   }
-  p.push(this._loadAutoUpdateAsync());
+  p.push(this._loadAsyncUpdateSettings());
   p.push(this._loadIntlData());
 
   for (const [
@@ -1337,7 +1306,9 @@ EnvironmentCache.prototype = {
     Services.obs.addObserver(this, SEARCH_ENGINE_MODIFIED_TOPIC);
     Services.obs.addObserver(this, SEARCH_SERVICE_TOPIC);
     Services.obs.addObserver(this, AUTO_UPDATE_PREF_CHANGE_TOPIC);
+    Services.obs.addObserver(this, BACKGROUND_UPDATE_PREF_CHANGE_TOPIC);
     Services.obs.addObserver(this, SERVICES_INFO_CHANGE_TOPIC);
+    Services.obs.addObserver(this, FIREFOX_SUGGEST_UPDATE_TOPIC);
   },
 
   _removeObservers() {
@@ -1354,14 +1325,27 @@ EnvironmentCache.prototype = {
     Services.obs.removeObserver(this, SEARCH_ENGINE_MODIFIED_TOPIC);
     Services.obs.removeObserver(this, SEARCH_SERVICE_TOPIC);
     Services.obs.removeObserver(this, AUTO_UPDATE_PREF_CHANGE_TOPIC);
+    Services.obs.removeObserver(this, BACKGROUND_UPDATE_PREF_CHANGE_TOPIC);
     Services.obs.removeObserver(this, SERVICES_INFO_CHANGE_TOPIC);
+    Services.obs.removeObserver(this, FIREFOX_SUGGEST_UPDATE_TOPIC);
   },
 
   observe(aSubject, aTopic, aData) {
     this._log.trace("observe - aTopic: " + aTopic + ", aData: " + aData);
     switch (aTopic) {
       case SEARCH_ENGINE_MODIFIED_TOPIC:
-        if (aData != "engine-default" && aData != "engine-default-private") {
+        if (
+          aData != "engine-default" &&
+          aData != "engine-default-private" &&
+          aData != "engine-changed"
+        ) {
+          return;
+        }
+        if (
+          aData == "engine-changed" &&
+          aSubject.QueryInterface(Ci.nsISearchEngine) &&
+          Services.search.defaultEngine != aSubject
+        ) {
           return;
         }
         // Record the new default search choice and send the change notification.
@@ -1411,8 +1395,14 @@ EnvironmentCache.prototype = {
       case AUTO_UPDATE_PREF_CHANGE_TOPIC:
         this._currentEnvironment.settings.update.autoDownload = aData == "true";
         break;
+      case BACKGROUND_UPDATE_PREF_CHANGE_TOPIC:
+        this._currentEnvironment.settings.update.background = aData == "true";
+        break;
       case SERVICES_INFO_CHANGE_TOPIC:
         this._updateServicesInfo();
+        break;
+      case FIREFOX_SUGGEST_UPDATE_TOPIC:
+        this._updateFirefoxSuggest();
         break;
     }
   },
@@ -1451,13 +1441,6 @@ EnvironmentCache.prototype = {
       this._currentEnvironment.settings.defaultPrivateSearchEngineData = {
         ...defaultEngineInfo.defaultPrivateSearchEngineData,
       };
-    }
-
-    // Record the cohort identifier used for search defaults A/B testing.
-    if (Services.prefs.prefHasUserValue(PREF_SEARCH_COHORT)) {
-      const searchCohort = Services.prefs.getCharPref(PREF_SEARCH_COHORT);
-      this._currentEnvironment.settings.searchCohort = searchCohort;
-      TelemetryEnvironment.setExperimentActive("searchCohort", searchCohort);
     }
   },
 
@@ -1602,6 +1585,7 @@ EnvironmentCache.prototype = {
       ),
       e10sEnabled: Services.appinfo.browserTabsRemoteAutostart,
       e10sMultiProcesses: Services.appinfo.maxWebProcessCount,
+      fissionEnabled: Services.appinfo.fissionAutostart,
       telemetryEnabled: Utils.isTelemetryEnabled,
       locale: getBrowserLocale(),
       // We need to wait for browser-delayed-startup-finished to ensure that the locales
@@ -1625,23 +1609,37 @@ EnvironmentCache.prototype = {
     this._currentEnvironment.settings.addonCompatibilityCheckEnabled =
       AddonManager.checkCompatibility;
 
-    this._updateAttribution();
+    if (AppConstants.MOZ_BUILD_APP == "browser") {
+      this._updateAttribution();
+    }
     this._updateDefaultBrowser();
     await this._updateSearchEngine();
-    this._updateAutoDownload();
+    this._loadAsyncUpdateSettingsFromCache();
   },
 
   _getSandboxData() {
     let effectiveContentProcessLevel = null;
+    let contentWin32kLockdownState = null;
     try {
       let sandboxSettings = Cc[
         "@mozilla.org/sandbox/sandbox-settings;1"
       ].getService(Ci.mozISandboxSettings);
       effectiveContentProcessLevel =
         sandboxSettings.effectiveContentSandboxLevel;
+
+      // See `ContentWin32kLockdownState` in
+      // <security/sandbox/common/SandboxSettings.h>
+      //
+      // Values:
+      // 1 = LockdownEnabled
+      // 2 = MissingWebRender
+      // 3 = OperatingSystemNotSupported
+      // 4 = PrefNotSet
+      contentWin32kLockdownState = sandboxSettings.contentWin32kLockdownState;
     } catch (e) {}
     return {
       effectiveContentProcessLevel,
+      contentWin32kLockdownState,
     };
   },
 
@@ -1713,26 +1711,33 @@ EnvironmentCache.prototype = {
   },
 
   /**
-   * Load the auto update pref and adds it to the environment
+   * Load the per-installation update settings, cache them, and add them to the
+   * environment.
    */
-  async _loadAutoUpdateAsync() {
+  async _loadAsyncUpdateSettings() {
     if (AppConstants.MOZ_UPDATER) {
       this._updateAutoDownloadCache = await UpdateUtils.getAppUpdateAutoEnabled();
+      this._updateBackgroundCache = await UpdateUtils.readUpdateConfigSetting(
+        "app.update.background.enabled"
+      );
     } else {
       this._updateAutoDownloadCache = false;
+      this._updateBackgroundCache = false;
     }
-    this._updateAutoDownload();
+    this._loadAsyncUpdateSettingsFromCache();
   },
 
   /**
-   * Update the environment with the cached value for whether updates can auto-
-   * download.
+   * Update the environment with the cached values for per-installation update
+   * settings.
    */
-  _updateAutoDownload() {
-    if (this._updateAutoDownloadCache === undefined) {
-      return;
+  _loadAsyncUpdateSettingsFromCache() {
+    if (this._updateAutoDownloadCache !== undefined) {
+      this._currentEnvironment.settings.update.autoDownload = this._updateAutoDownloadCache;
     }
-    this._currentEnvironment.settings.update.autoDownload = this._updateAutoDownloadCache;
+    if (this._updateBackgroundCache !== undefined) {
+      this._currentEnvironment.settings.update.background = this._updateBackgroundCache;
+    }
   },
 
   /**
@@ -1780,6 +1785,21 @@ EnvironmentCache.prototype = {
       accountEnabled,
       syncEnabled,
     };
+  },
+
+  /**
+   * Updates environment data related to Firefox Suggest.
+   */
+  _updateFirefoxSuggest() {
+    let prefs = [
+      "browser.urlbar.suggest.quicksuggest.nonsponsored",
+      "browser.urlbar.suggest.quicksuggest.sponsored",
+    ];
+    for (let p of prefs) {
+      this._currentEnvironment.settings.userPrefs[
+        p
+      ] = Services.prefs.getBoolPref(p);
+    }
   },
 
   /**
@@ -1836,6 +1856,7 @@ EnvironmentCache.prototype = {
       "hasARMv6",
       "hasARMv7",
       "hasNEON",
+      "hasUserCET",
     ];
 
     // Enumerate the available CPU extensions.
@@ -2050,9 +2071,18 @@ EnvironmentCache.prototype = {
       hdd: this._getHDDData(),
       gfx: this._getGFXData(),
       appleModelId: getSysinfoProperty("appleModelId", null),
+      hasWinPackageId: getSysinfoProperty("hasWinPackageId", null),
     };
 
     if (AppConstants.platform === "win") {
+      // This is only sent for Mozilla produced MSIX packages
+      let winPackageFamilyName = getSysinfoProperty("winPackageFamilyName", "");
+      if (
+        winPackageFamilyName.startsWith("Mozilla.") ||
+        winPackageFamilyName.startsWith("MozillaCorporation.")
+      ) {
+        data = { winPackageFamilyName };
+      }
       data = { ...this._getProcessData(), ...data };
     } else if (AppConstants.platform == "android") {
       data.device = this._getDeviceData();
@@ -2072,6 +2102,11 @@ EnvironmentCache.prototype = {
     // We are already skipping change events in _checkChanges if there is a pending change task running.
     if (this._shutdown) {
       this._log.trace("_onEnvironmentChange - Already shut down.");
+      return;
+    }
+
+    if (ObjectUtils.deepEqual(this._currentEnvironment, oldEnvironment)) {
+      this._log.trace("_onEnvironmentChange - Environment didn't change");
       return;
     }
 

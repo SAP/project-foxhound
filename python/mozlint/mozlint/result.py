@@ -12,6 +12,7 @@ import attr
 
 class ResultSummary(object):
     """Represents overall result state from an entire lint run."""
+
     root = None
 
     def __init__(self, root):
@@ -27,6 +28,7 @@ class ResultSummary(object):
         self.failed_run = set()
         self.failed_setup = set()
         self.suppressed_warnings = defaultdict(int)
+        self.fixed = 0
 
     @property
     def returncode(self):
@@ -46,6 +48,10 @@ class ResultSummary(object):
     def total_suppressed_warnings(self):
         return sum(self.suppressed_warnings.values())
 
+    @property
+    def total_fixed(self):
+        return self.fixed
+
     def update(self, other):
         """Merge results from another ResultSummary into this one."""
         for path, obj in other.issues.items():
@@ -53,6 +59,7 @@ class ResultSummary(object):
 
         self.failed_run |= other.failed_run
         self.failed_setup |= other.failed_setup
+        self.fixed += other.fixed
         for k, v in other.suppressed_warnings.items():
             self.suppressed_warnings[k] += v
 
@@ -94,13 +101,10 @@ class Issue(object):
 
     def __attrs_post_init__(self):
         root = ResultSummary.root
-        assert root is not None, 'Missing ResultSummary.root'
+        assert root is not None, "Missing ResultSummary.root"
         if os.path.isabs(self.path):
             self.path = mozpath.normpath(self.path)
-            if self.path.startswith(root):
-                self.relpath = mozpath.relpath(self.path, root)
-            else:
-                self.relpath = self.path
+            self.relpath = mozpath.relpath(self.path, root)
         else:
             self.relpath = mozpath.normpath(self.path)
             self.path = mozpath.join(root, self.path)

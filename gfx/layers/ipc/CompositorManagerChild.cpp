@@ -14,6 +14,7 @@
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/dom/ContentChild.h"  // for ContentChild
 #include "mozilla/dom/BrowserChild.h"  // for BrowserChild
+#include "mozilla/ipc/Endpoint.h"
 #include "VsyncSource.h"
 
 namespace mozilla {
@@ -22,6 +23,7 @@ namespace layers {
 using gfx::GPUProcessManager;
 
 StaticRefPtr<CompositorManagerChild> CompositorManagerChild::sInstance;
+Atomic<base::ProcessId> CompositorManagerChild::sOtherPid(0);
 
 /* static */
 bool CompositorManagerChild::IsInitialized(uint64_t aProcessToken) {
@@ -50,6 +52,7 @@ void CompositorManagerChild::InitSameProcess(uint32_t aNamespace,
 
   parent->BindComplete(/* aIsRoot */ true);
   sInstance = std::move(child);
+  sOtherPid = sInstance->OtherPid();
 }
 
 /* static */
@@ -63,6 +66,7 @@ bool CompositorManagerChild::Init(Endpoint<PCompositorManagerChild>&& aEndpoint,
 
   sInstance = new CompositorManagerChild(std::move(aEndpoint), aProcessToken,
                                          aNamespace);
+  sOtherPid = sInstance->OtherPid();
   return sInstance->CanSend();
 }
 
@@ -77,6 +81,7 @@ void CompositorManagerChild::Shutdown() {
 
   sInstance->Close();
   sInstance = nullptr;
+  sOtherPid = 0;
 }
 
 /* static */
@@ -88,6 +93,7 @@ void CompositorManagerChild::OnGPUProcessLost(uint64_t aProcessToken) {
   // yet to be. As such, we want to pre-emptively set mCanSend to false.
   if (sInstance && sInstance->mProcessToken == aProcessToken) {
     sInstance->mCanSend = false;
+    sOtherPid = 0;
   }
 }
 
@@ -114,9 +120,10 @@ bool CompositorManagerChild::CreateContentCompositorBridge(
 /* static */
 already_AddRefed<CompositorBridgeChild>
 CompositorManagerChild::CreateWidgetCompositorBridge(
-    uint64_t aProcessToken, LayerManager* aLayerManager, uint32_t aNamespace,
-    CSSToLayoutDeviceScale aScale, const CompositorOptions& aOptions,
-    bool aUseExternalSurfaceSize, const gfx::IntSize& aSurfaceSize) {
+    uint64_t aProcessToken, WebRenderLayerManager* aLayerManager,
+    uint32_t aNamespace, CSSToLayoutDeviceScale aScale,
+    const CompositorOptions& aOptions, bool aUseExternalSurfaceSize,
+    const gfx::IntSize& aSurfaceSize) {
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(NS_IsMainThread());
   if (NS_WARN_IF(!sInstance || !sInstance->CanSend())) {
@@ -144,7 +151,7 @@ CompositorManagerChild::CreateWidgetCompositorBridge(
 /* static */
 already_AddRefed<CompositorBridgeChild>
 CompositorManagerChild::CreateSameProcessWidgetCompositorBridge(
-    LayerManager* aLayerManager, uint32_t aNamespace) {
+    WebRenderLayerManager* aLayerManager, uint32_t aNamespace) {
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(NS_IsMainThread());
   if (NS_WARN_IF(!sInstance || !sInstance->CanSend())) {
@@ -169,7 +176,8 @@ CompositorManagerChild::CompositorManagerChild(CompositorManagerParent* aParent,
     : mProcessToken(aProcessToken),
       mNamespace(aNamespace),
       mResourceId(0),
-      mCanSend(false) {
+      mCanSend(false),
+      mSameProcess(true) {
   MOZ_ASSERT(aParent);
 
   SetOtherProcessId(base::GetCurrentProcId());
@@ -189,7 +197,8 @@ CompositorManagerChild::CompositorManagerChild(
     : mProcessToken(aProcessToken),
       mNamespace(aNamespace),
       mResourceId(0),
-      mCanSend(false) {
+      mCanSend(false),
+      mSameProcess(false) {
   if (NS_WARN_IF(!aEndpoint.Bind(this))) {
     return;
   }

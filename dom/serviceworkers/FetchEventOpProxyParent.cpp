@@ -8,6 +8,8 @@
 
 #include <utility>
 
+#include "mozilla/dom/FetchTypes.h"
+#include "mozilla/dom/ServiceWorkerOpArgs.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsIInputStream.h"
@@ -18,6 +20,9 @@
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
+#include "mozilla/dom/InternalResponse.h"
+#include "mozilla/dom/PRemoteWorkerParent.h"
+#include "mozilla/dom/PRemoteWorkerControllerParent.h"
 #include "mozilla/dom/FetchEventOpParent.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
@@ -33,17 +38,17 @@ namespace dom {
 namespace {
 
 nsresult MaybeDeserializeAndWrapForMainThread(
-    const Maybe<BodyStreamVariant>& aSource, int64_t aBodyStreamSize,
-    Maybe<BodyStreamVariant>& aSink, PBackgroundParent* aManager) {
+    const Maybe<ChildToParentStream>& aSource, int64_t aBodyStreamSize,
+    Maybe<ParentToParentStream>& aSink, PBackgroundParent* aManager) {
   if (aSource.isNothing()) {
     return NS_OK;
   }
 
   nsCOMPtr<nsIInputStream> deserialized =
-      DeserializeIPCStream(aSource->get_ChildToParentStream().stream());
+      DeserializeIPCStream(aSource->stream());
 
   aSink = Some(ParentToParentStream());
-  auto& uuid = aSink->get_ParentToParentStream().uuid();
+  auto& uuid = aSink->uuid();
 
   MOZ_TRY(nsContentUtils::GenerateUUIDInPlace(uuid));
 
@@ -58,41 +63,89 @@ nsresult MaybeDeserializeAndWrapForMainThread(
   return NS_OK;
 }
 
+ParentToParentInternalResponse ToParentToParent(
+    const ChildToParentInternalResponse& aResponse,
+    NotNull<PBackgroundParent*> aBackgroundParent) {
+  ParentToParentInternalResponse parentToParentResponse(
+      aResponse.metadata(), Nothing(), aResponse.bodySize(), Nothing());
+
+  MOZ_ALWAYS_SUCCEEDS(MaybeDeserializeAndWrapForMainThread(
+      aResponse.body(), aResponse.bodySize(), parentToParentResponse.body(),
+      aBackgroundParent));
+  MOZ_ALWAYS_SUCCEEDS(MaybeDeserializeAndWrapForMainThread(
+      aResponse.alternativeBody(), InternalResponse::UNKNOWN_BODY_SIZE,
+      parentToParentResponse.alternativeBody(), aBackgroundParent));
+
+  return parentToParentResponse;
+}
+
+ParentToParentSynthesizeResponseArgs ToParentToParent(
+    const ChildToParentSynthesizeResponseArgs& aArgs,
+    NotNull<PBackgroundParent*> aBackgroundParent) {
+  return ParentToParentSynthesizeResponseArgs(
+      ToParentToParent(aArgs.internalResponse(), aBackgroundParent),
+      aArgs.closure(), aArgs.timeStamps());
+}
+
+ParentToParentFetchEventRespondWithResult ToParentToParent(
+    const ChildToParentFetchEventRespondWithResult& aResult,
+    NotNull<PBackgroundParent*> aBackgroundParent) {
+  switch (aResult.type()) {
+    case ChildToParentFetchEventRespondWithResult::
+        TChildToParentSynthesizeResponseArgs:
+      return ToParentToParent(aResult.get_ChildToParentSynthesizeResponseArgs(),
+                              aBackgroundParent);
+
+    case ChildToParentFetchEventRespondWithResult::TResetInterceptionArgs:
+      return aResult.get_ResetInterceptionArgs();
+
+    case ChildToParentFetchEventRespondWithResult::TCancelInterceptionArgs:
+      return aResult.get_CancelInterceptionArgs();
+
+    default:
+      MOZ_CRASH("Invalid ParentToParentFetchEventRespondWithResult");
+  }
+}
+
 }  // anonymous namespace
 
 /* static */ void FetchEventOpProxyParent::Create(
-    PRemoteWorkerParent* aManager, const ServiceWorkerFetchEventOpArgs& aArgs,
-    RefPtr<FetchEventOpParent> aReal) {
+    PRemoteWorkerParent* aManager,
+    RefPtr<ServiceWorkerFetchEventOpPromise::Private>&& aPromise,
+    const ParentToParentServiceWorkerFetchEventOpArgs& aArgs,
+    RefPtr<FetchEventOpParent> aReal, nsCOMPtr<nsIInputStream> aBodyStream) {
   AssertIsInMainProcess();
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aManager);
   MOZ_ASSERT(aReal);
 
-  FetchEventOpProxyParent* actor =
-      new FetchEventOpProxyParent(std::move(aReal));
-
-  if (aArgs.internalRequest().body().isNothing()) {
-    Unused << aManager->SendPFetchEventOpProxyConstructor(actor, aArgs);
-    return;
+  ParentToChildServiceWorkerFetchEventOpArgs copyArgs(aArgs.common(),
+                                                      Nothing());
+  if (aArgs.preloadResponse().isSome()) {
+    // Convert the preload response to ParentToChildInternalResponse.
+    copyArgs.preloadResponse() = Some(ToParentToChild(
+        aArgs.preloadResponse().ref(), WrapNotNull(aManager->Manager())));
   }
 
-  ServiceWorkerFetchEventOpArgs copyArgs = aArgs;
-  IPCInternalRequest& copyRequest = copyArgs.internalRequest();
+  FetchEventOpProxyParent* actor =
+      new FetchEventOpProxyParent(std::move(aReal), std::move(aPromise));
 
-  if (copyRequest.body().ref().type() ==
-      BodyStreamVariant::TParentToParentStream) {
-    nsCOMPtr<nsIInputStream> stream;
-    auto streamLength = copyRequest.bodySize();
-    const auto& uuid =
-        copyRequest.body().ref().get_ParentToParentStream().uuid();
+  // As long as the fetch event was pending, the FetchEventOpParent was
+  // responsible for keeping the preload response, if it already arrived. Once
+  // the fetch event starts it gives up the preload response (if any) and we
+  // need to add it to the arguments. Note that we have to make sure that the
+  // arguments don't contain the preload response already, otherwise we'll end
+  // up overwriting it with a Nothing.
+  Maybe<ParentToParentInternalResponse> preloadResponse =
+      actor->mReal->OnStart(WrapNotNull(actor));
+  if (copyArgs.preloadResponse().isNothing() && preloadResponse.isSome()) {
+    copyArgs.preloadResponse() = Some(ToParentToChild(
+        preloadResponse.ref(), WrapNotNull(aManager->Manager())));
+  }
 
-    auto storage = RemoteLazyInputStreamStorage::Get().unwrapOr(nullptr);
-    MOZ_DIAGNOSTIC_ASSERT(storage);
-    storage->GetStream(uuid, 0, streamLength, getter_AddRefs(stream));
-    storage->ForgetStream(uuid);
+  IPCInternalRequest& copyRequest = copyArgs.common().internalRequest();
 
-    MOZ_DIAGNOSTIC_ASSERT(stream);
-
+  if (aBodyStream) {
     PBackgroundParent* bgParent = aManager->Manager();
     MOZ_ASSERT(bgParent);
 
@@ -100,7 +153,7 @@ nsresult MaybeDeserializeAndWrapForMainThread(
 
     RemoteLazyStream ipdlStream;
     MOZ_ALWAYS_SUCCEEDS(RemoteLazyInputStreamUtils::SerializeInputStream(
-        stream, streamLength, ipdlStream, bgParent));
+        aBodyStream, copyRequest.bodySize(), ipdlStream, bgParent));
 
     copyRequest.body().ref().get_ParentToChildStream().actorParent() =
         ipdlStream;
@@ -114,8 +167,9 @@ FetchEventOpProxyParent::~FetchEventOpProxyParent() {
 }
 
 FetchEventOpProxyParent::FetchEventOpProxyParent(
-    RefPtr<FetchEventOpParent>&& aReal)
-    : mReal(std::move(aReal)) {}
+    RefPtr<FetchEventOpParent>&& aReal,
+    RefPtr<ServiceWorkerFetchEventOpPromise::Private>&& aPromise)
+    : mReal(std::move(aReal)), mLifetimePromise(std::move(aPromise)) {}
 
 mozilla::ipc::IPCResult FetchEventOpProxyParent::RecvAsyncLog(
     const nsCString& aScriptSpec, const uint32_t& aLineNumber,
@@ -131,62 +185,39 @@ mozilla::ipc::IPCResult FetchEventOpProxyParent::RecvAsyncLog(
 }
 
 mozilla::ipc::IPCResult FetchEventOpProxyParent::RecvRespondWith(
-    const IPCFetchEventRespondWithResult& aResult) {
+    const ChildToParentFetchEventRespondWithResult& aResult) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(mReal);
 
-  // IPCSynthesizeResponseArgs possibly contains an IPCStream. If so,
-  // deserialize it and reserialize it before forwarding it to the main thread.
-  if (aResult.type() ==
-      IPCFetchEventRespondWithResult::TIPCSynthesizeResponseArgs) {
-    const IPCSynthesizeResponseArgs& originalArgs =
-        aResult.get_IPCSynthesizeResponseArgs();
-    const IPCInternalResponse& originalResponse =
-        originalArgs.internalResponse();
-
-    // Do nothing if neither the body nor the alt. body can be deserialized.
-    if (!originalResponse.body() && !originalResponse.alternativeBody()) {
-      Unused << mReal->SendRespondWith(aResult);
-      return IPC_OK();
-    }
-
-    IPCSynthesizeResponseArgs copyArgs = originalArgs;
-    IPCInternalResponse& copyResponse = copyArgs.internalResponse();
-
-    PRemoteWorkerControllerParent* manager = mReal->Manager();
-    MOZ_ASSERT(manager);
-
-    PBackgroundParent* bgParent = manager->Manager();
-    MOZ_ASSERT(bgParent);
-
-    MOZ_ALWAYS_SUCCEEDS(MaybeDeserializeAndWrapForMainThread(
-        originalResponse.body(), copyResponse.bodySize(), copyResponse.body(),
-        bgParent));
-    MOZ_ALWAYS_SUCCEEDS(MaybeDeserializeAndWrapForMainThread(
-        originalResponse.alternativeBody(), InternalResponse::UNKNOWN_BODY_SIZE,
-        copyResponse.alternativeBody(), bgParent));
-
-    Unused << mReal->SendRespondWith(copyArgs);
-  } else {
-    Unused << mReal->SendRespondWith(aResult);
-  }
-
+  auto manager = WrapNotNull(mReal->Manager());
+  auto backgroundParent = WrapNotNull(manager->Manager());
+  Unused << mReal->SendRespondWith(ToParentToParent(aResult, backgroundParent));
+  mReal->OnFinish();
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult FetchEventOpProxyParent::Recv__delete__(
     const ServiceWorkerFetchEventOpResult& aResult) {
   AssertIsOnBackgroundThread();
+  MOZ_ASSERT(mLifetimePromise);
   MOZ_ASSERT(mReal);
 
-  Unused << mReal->Send__delete__(mReal, aResult);
-  mReal = nullptr;
+  if (mLifetimePromise) {
+    mLifetimePromise->Resolve(aResult, __func__);
+    mLifetimePromise = nullptr;
+    mReal = nullptr;
+  }
 
   return IPC_OK();
 }
 
 void FetchEventOpProxyParent::ActorDestroy(ActorDestroyReason) {
   AssertIsOnBackgroundThread();
+  if (mLifetimePromise) {
+    mLifetimePromise->Reject(NS_ERROR_DOM_ABORT_ERR, __func__);
+    mLifetimePromise = nullptr;
+    mReal = nullptr;
+  }
 }
 
 }  // namespace dom

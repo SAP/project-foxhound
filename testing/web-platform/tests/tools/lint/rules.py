@@ -1,11 +1,7 @@
-from __future__ import unicode_literals
-
 import abc
 import inspect
 import os
 import re
-
-import six
 
 MYPY = False
 if MYPY:
@@ -19,7 +15,7 @@ def collapse(text):
     return inspect.cleandoc(str(text)).replace("\n", " ")
 
 
-class Rule(six.with_metaclass(abc.ABCMeta)):
+class Rule(metaclass=abc.ABCMeta):
     @abc.abstractproperty
     def name(self):
         # type: () -> Text
@@ -79,6 +75,18 @@ class WorkerCollision(Rule):
 class GitIgnoreFile(Rule):
     name = "GITIGNORE"
     description = ".gitignore found outside the root"
+
+
+class MojomJSFile(Rule):
+    name = "MOJOM-JS"
+    description = "Don't check *.mojom.js files into WPT"
+    to_fix = """
+        Check if the file is already included in mojojs.zip:
+        https://source.chromium.org/chromium/chromium/src/+/master:chrome/tools/build/linux/FILES.cfg
+        If yes, use `loadMojoResources` from `resources/test-only-api.js` to load
+        it; if not, contact ecosystem-infra@chromium.org for adding new files
+        to mojojs.zip.
+    """
 
 
 class AhemCopy(Rule):
@@ -182,6 +190,14 @@ class MultipleTestharness(Rule):
     to_fix = """
         ensure each test has only one `<script
         src='/resources/testharnessreport.js'>` instance
+    """
+
+
+class MissingReftestWait(Rule):
+    name = "MISSING-REFTESTWAIT"
+    description = "Missing `class=reftest-wait`"
+    to_fix = """
+        ensure tests that include reftest-wait.js also use class=reftest-wait on the root element.
     """
 
 
@@ -341,7 +357,21 @@ class DuplicateBasenamePath(Rule):
     to_fix = "rename files so they have unique basename paths"
 
 
-class Regexp(six.with_metaclass(abc.ABCMeta)):
+class DuplicatePathCaseInsensitive(Rule):
+    name = "DUPLICATE-CASE-INSENSITIVE-PATH"
+    description = collapse("""
+            Path differs from path %s only in case
+    """)
+    to_fix = "rename files so they are unique irrespective of case"
+
+
+class TentativeDirectoryName(Rule):
+    name = "TENTATIVE-DIRECTORY-NAME"
+    description = "Directories for tentative tests must be named exactly 'tentative'"
+    to_fix = "rename directory to be called 'tentative'"
+
+
+class Regexp(metaclass=abc.ABCMeta):
     @abc.abstractproperty
     def pattern(self):
         # type: () -> bytes
@@ -414,6 +444,11 @@ class WebPlatformTestRegexp(Regexp):
     pattern = br"web\-platform\.test"
     name = "WEB-PLATFORM.TEST"
     description = "Internal web-platform.test domain used"
+    to_fix = """
+        use [server-side substitution](https://web-platform-tests.org/writing-tests/server-pipes.html#sub),
+        along with the [`.sub` filename-flag](https://web-platform-tests.org/writing-tests/file-names.html#test-features),
+        to replace web-platform.test with `{{domains[]}}`
+    """
 
 
 class Webidl2Regexp(Regexp):

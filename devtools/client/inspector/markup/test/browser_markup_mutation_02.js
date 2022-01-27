@@ -28,39 +28,43 @@ const TEST_URL = URL_ROOT + "doc_markup_flashing.html";
 const TEST_DATA = [
   {
     desc: "Adding a new node should flash the new node",
-    mutate: async function(testActor) {
-      await testActor.eval(`
-      let newLi = document.createElement("LI");
-      newLi.textContent = "new list item";
-      document.querySelector(".list").appendChild(newLi);
-    `);
+    mutate: async function() {
+      await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+        const newLi = content.document.createElement("LI");
+        newLi.textContent = "new list item";
+        content.document.querySelector(".list").appendChild(newLi);
+      });
     },
     flashedNode: ".list li:nth-child(3)",
   },
   {
     desc: "Removing a node should flash its parent",
-    mutate: async function(testActor) {
-      await testActor.eval(`
-      let root = document.querySelector(".list");
-      root.removeChild(root.lastElementChild);
-    `);
+    mutate: async function() {
+      await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+        const root = content.document.querySelector(".list");
+        root.removeChild(root.lastElementChild);
+      });
     },
   },
   {
     desc: "Re-appending an existing node should only flash this node",
-    mutate: async function(testActor) {
-      await testActor.eval(`
-      let root = document.querySelector(".list");
-      root.appendChild(root.firstElementChild);
-    `);
+    mutate: async function() {
+      await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+        const root = content.document.querySelector(".list");
+        root.appendChild(root.firstElementChild);
+      });
     },
     flashedNode: ".list .item:last-child",
   },
   {
     desc: "Adding an attribute should flash the attribute",
     attribute: "test-name",
-    mutate: async function(testActor) {
-      await testActor.setAttribute(".list", "test-name", "value-" + Date.now());
+    mutate: async function() {
+      await setContentPageElementAttribute(
+        ".list",
+        "test-name",
+        "value-" + Date.now()
+      );
     },
   },
   {
@@ -68,15 +72,19 @@ const TEST_DATA = [
       "Adding an attribute with css reserved characters should flash the " +
       "attribute",
     attribute: "one:two",
-    mutate: async function(testActor) {
-      await testActor.setAttribute(".list", "one:two", "value-" + Date.now());
+    mutate: async function() {
+      await setContentPageElementAttribute(
+        ".list",
+        "one:two",
+        "value-" + Date.now()
+      );
     },
   },
   {
     desc: "Editing an attribute should flash the attribute",
     attribute: "class",
-    mutate: async function(testActor) {
-      await testActor.setAttribute(
+    mutate: async function() {
+      await setContentPageElementAttribute(
         ".list",
         "class",
         "list value-" + Date.now()
@@ -86,25 +94,25 @@ const TEST_DATA = [
   {
     desc: "Multiple changes to an attribute should flash the attribute",
     attribute: "class",
-    mutate: async function(testActor) {
-      await testActor.eval(`
-      let root = document.querySelector(".list");
-      root.removeAttribute("class");
-      root.setAttribute("class", "list value-" + Date.now());
-      root.setAttribute("class", "list value-" + Date.now());
-      root.removeAttribute("class");
-      root.setAttribute("class", "list value-" + Date.now());
-      root.setAttribute("class", "list value-" + Date.now());
-    `);
+    mutate: async function() {
+      await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+        const root = content.document.querySelector(".list");
+        root.removeAttribute("class");
+        root.setAttribute("class", "list value-" + Date.now());
+        root.setAttribute("class", "list value-" + Date.now());
+        root.removeAttribute("class");
+        root.setAttribute("class", "list value-" + Date.now());
+        root.setAttribute("class", "list value-" + Date.now());
+      });
     },
   },
   {
     desc: "Removing an attribute should flash the node",
-    mutate: async function(testActor) {
-      await testActor.eval(`
-      let root = document.querySelector(".list");
-      root.removeAttribute("class");
-    `);
+    mutate: async function() {
+      await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+        const root = content.document.querySelector(".list");
+        root.removeAttribute("class");
+      });
     },
   },
 ];
@@ -117,7 +125,7 @@ add_task(async function() {
     Preferences.set("privacy.reduceTimerPrecision", timerPrecision);
   });
 
-  const { inspector, testActor } = await openInspectorForURL(TEST_URL);
+  const { inspector } = await openInspectorForURL(TEST_URL);
 
   // Make sure mutated nodes flash for a very long time so we can more easily
   // assert they do
@@ -134,7 +142,7 @@ add_task(async function() {
 
     info("Mutating the DOM and listening for markupmutation event");
     const onMutation = inspector.once("markupmutation");
-    await mutate(testActor);
+    await mutate();
     const mutations = await onMutation;
 
     info("Wait for the breadcrumbs widget to update if it needs to");

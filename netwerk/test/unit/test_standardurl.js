@@ -1,12 +1,7 @@
 "use strict";
 
 var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
-const gPrefs = Cc["@mozilla.org/preferences-service;1"].getService(
-  Ci.nsIPrefBranch
-);
+const gPrefs = Services.prefs;
 
 function symmetricEquality(expect, a, b) {
   /* Use if/else instead of |do_check_eq(expect, a.spec == b.spec)| so
@@ -124,8 +119,7 @@ add_test(function test_setQuery() {
     .QueryInterface(Ci.nsIURL);
   symmetricEquality(false, provided, target);
 
-  var newProvided = Cc["@mozilla.org/network/io-service;1"]
-    .getService(Ci.nsIIOService)
+  var newProvided = Services.io
     .newURI("#bar", null, provided)
     .QueryInterface(Ci.nsIURL);
 
@@ -572,9 +566,7 @@ add_test(
 );
 
 add_test(function test_hugeStringThrows() {
-  let prefs = Cc["@mozilla.org/preferences-service;1"].getService(
-    Ci.nsIPrefService
-  );
+  let prefs = Services.prefs;
   let maxLen = prefs.getIntPref("network.standard-url.max-length");
   let url = stringToURL("http://test:test@example.com");
 
@@ -630,26 +622,20 @@ add_test(function test_filterWhitespace() {
   Assert.equal(url.spec, "http://test.com/pa%0D%0A%09th?query#hash");
   url = url
     .mutate()
-    .setQuery("qu\r\n\tery")
+    .setQuery("que\r\n\try")
     .finalize();
-  Assert.equal(url.spec, "http://test.com/pa%0D%0A%09th?qu%0D%0A%09ery#hash");
+  Assert.equal(url.spec, "http://test.com/pa%0D%0A%09th?query#hash");
   url = url
     .mutate()
     .setRef("ha\r\n\tsh")
     .finalize();
-  Assert.equal(
-    url.spec,
-    "http://test.com/pa%0D%0A%09th?qu%0D%0A%09ery#ha%0D%0A%09sh"
-  );
+  Assert.equal(url.spec, "http://test.com/pa%0D%0A%09th?query#hash");
   url = url
     .mutate()
     .QueryInterface(Ci.nsIURLMutator)
     .setFileName("fi\r\n\tle.name")
     .finalize();
-  Assert.equal(
-    url.spec,
-    "http://test.com/fi%0D%0A%09le.name?qu%0D%0A%09ery#ha%0D%0A%09sh"
-  );
+  Assert.equal(url.spec, "http://test.com/fi%0D%0A%09le.name?query#hash");
 
   run_next_test();
 });
@@ -1171,15 +1157,15 @@ add_test(
   function test_bug1517025() {
     Assert.throws(
       () => {
-        let other = stringToURL("https://b%9a/");
+        stringToURL("https://b%9a/");
       },
-      /NS_ERROR_UNEXPECTED/,
+      /NS_ERROR_MALFORMED_URI/,
       "bad URI"
     );
 
     Assert.throws(
       () => {
-        let other = stringToURL("https://b%9ª/");
+        stringToURL("https://b%9ª/");
       },
       /NS_ERROR_MALFORMED_URI/,
       "bad URI"
@@ -1190,7 +1176,7 @@ add_test(
     );
     Assert.throws(
       () => {
-        let uri = Services.io.newURI("/\\b%9ª", "windows-1252", base);
+        Services.io.newURI("/\\b%9ª", "windows-1252", base);
       },
       /NS_ERROR_MALFORMED_URI/,
       "bad URI"
@@ -1276,4 +1262,52 @@ add_task(async function test_emptyHostWithURLType() {
     /NS_ERROR_UNEXPECTED/,
     "A pseudo-empty host is not allowed for URLTYPE_AUTHORITY"
   );
+});
+
+add_task(async function test_fuzz() {
+  let makeURL = str => {
+    return (
+      Cc["@mozilla.org/network/standard-url-mutator;1"]
+        .createInstance(Ci.nsIStandardURLMutator)
+        .QueryInterface(Ci.nsIURIMutator)
+        // .init(type, 80, str, "UTF-8", null)
+        .setSpec(str)
+        .finalize()
+        .QueryInterface(Ci.nsIURL)
+    );
+  };
+
+  Assert.throws(() => {
+    let url = makeURL("/");
+    url
+      .mutate()
+      .setHost("(")
+      .finalize();
+  }, /NS_ERROR_MALFORMED_URI/);
+});
+
+add_task(async function test_bug1648493() {
+  let url = stringToURL("https://example.com/");
+  url = url
+    .mutate()
+    .setScheme("file")
+    .finalize();
+  url = url
+    .mutate()
+    .setScheme("resource")
+    .finalize();
+  url = url
+    .mutate()
+    .setPassword("Ãª")
+    .finalize();
+  url = url
+    .mutate()
+    .setUsername("Ã§")
+    .finalize();
+  url = url
+    .mutate()
+    .setScheme("t")
+    .finalize();
+  equal(url.spec, "t://%C3%83%C2%A7:%C3%83%C2%AA@example.com/");
+  equal(url.username, "%C3%83%C2%A7");
 });

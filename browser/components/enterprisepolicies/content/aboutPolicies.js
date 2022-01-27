@@ -291,6 +291,8 @@ function generateDocumentation() {
     Certificates: "CertificatesDescription",
     SanitizeOnShutdown: "SanitizeOnShutdown2",
     Permissions: "Permissions2",
+    BackgroundAppUpdate: "BackgroundAppUpdate2",
+    WindowsSSO: "Windows10SSO",
   };
 
   for (let policyName in schema.properties) {
@@ -365,6 +367,11 @@ window.onload = function() {
   let menu = document.getElementById("categories");
   for (let category of menu.children) {
     category.addEventListener("click", () => show(category));
+    category.addEventListener("keypress", function(event) {
+      if (event.keyCode == KeyEvent.DOM_VK_RETURN) {
+        show(category);
+      }
+    });
   }
 
   if (location.hash) {

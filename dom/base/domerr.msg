@@ -30,7 +30,6 @@ DOM4_MSG_DEF(QuotaExceededError, "The quota has been exceeded.", NS_ERROR_DOM_QU
 DOM4_MSG_DEF(TimeoutError, "The operation timed out.", NS_ERROR_DOM_TIMEOUT_ERR)
 DOM4_MSG_DEF(InvalidNodeTypeError, "The supplied node is incorrect or has an incorrect ancestor for this operation.", NS_ERROR_DOM_INVALID_NODE_TYPE_ERR)
 DOM4_MSG_DEF(DataCloneError, "The object could not be cloned.", NS_ERROR_DOM_DATA_CLONE_ERR)
-DOM4_MSG_DEF(InvalidPointerId, "Invalid pointer id.", NS_ERROR_DOM_INVALID_POINTER_ERR)
 DOM4_MSG_DEF(NotAllowedError, "The request is not allowed by the user agent or the platform in the current context, possibly because the user denied permission.", NS_ERROR_DOM_NOT_ALLOWED_ERR)
 
 /* StringEncoding API errors from http://wiki.whatwg.org/wiki/StringEncoding */
@@ -40,15 +39,6 @@ DOM4_MSG_DEF(EncodingError, "The given encoding is not supported.", NS_ERROR_DOM
 DOM4_MSG_DEF(UnknownError, "The operation failed for an unknown transient reason", NS_ERROR_DOM_UNKNOWN_ERR)
 DOM4_MSG_DEF(DataError, "Data provided to an operation does not meet requirements", NS_ERROR_DOM_DATA_ERR)
 DOM4_MSG_DEF(OperationError, "The operation failed for an operation-specific reason", NS_ERROR_DOM_OPERATION_ERR)
-
-/* SVG DOM errors from http://www.w3.org/TR/SVG11/svgdom.html */
-
-DOM4_MSG_DEF(TypeError, "Unknown or invalid type", NS_ERROR_DOM_SVG_WRONG_TYPE_ERR)
-DOM4_MSG_DEF(InvalidStateError, "The matrix could not be computed", NS_ERROR_DOM_SVG_MATRIX_NOT_INVERTABLE)
-
-/* XPath errors from http://www.w3.org/TR/DOM-Level-3-XPath/ */
-
-DOM4_MSG_DEF(SyntaxError, "The expression is not a legal expression.", NS_ERROR_DOM_INVALID_EXPRESSION_ERR)
 
 /* IndexedDB errors http://dvcs.w3.org/hg/IndexedDB/raw-file/tip/Overview.html#exceptions */
 
@@ -97,10 +87,6 @@ DOM_MSG_DEF(NS_ERROR_DOM_RETVAL_UNDEFINED, "Return value is undefined")
 
 DOM4_MSG_DEF(NotFoundError, "File was not found", NS_ERROR_DOM_FILE_NOT_FOUND_ERR)
 DOM4_MSG_DEF(NotReadableError, "File could not be read", NS_ERROR_DOM_FILE_NOT_READABLE_ERR)
-
-/* Web Animations errors */
-
-DOM4_MSG_DEF(NotSupportedError, "Animation to or from an underlying value is not yet supported.", NS_ERROR_DOM_ANIM_MISSING_PROPS_ERR)
 
 /* common global codes (from nsError.h) */
 
@@ -152,23 +138,8 @@ DOM4_MSG_DEF(SyntaxError, "Invalid header name.", NS_ERROR_DOM_INVALID_HEADER_NA
 
 /* XMLHttpRequest errors. */
 DOM4_MSG_DEF(InvalidStateError, "XMLHttpRequest has an invalid context.", NS_ERROR_DOM_INVALID_STATE_XHR_HAS_INVALID_CONTEXT)
-DOM4_MSG_DEF(InvalidStateError, "XMLHttpRequest state must be OPENED.", NS_ERROR_DOM_INVALID_STATE_XHR_MUST_BE_OPENED)
-DOM4_MSG_DEF(InvalidStateError, "XMLHttpRequest must not be sending.", NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_SENDING)
-DOM4_MSG_DEF(InvalidStateError, "Cannot set 'responseType' property on XMLHttpRequest after 'send()' (when its state is LOADING or DONE).", NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_LOADING_OR_DONE_RESPONSE_TYPE)
-DOM4_MSG_DEF(InvalidStateError, "Cannot call 'overrideMimeType()' on XMLHttpRequest after 'send()' (when its state is LOADING or DONE).", NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_LOADING_OR_DONE_OVERRIDE_MIME_TYPE)
-DOM4_MSG_DEF(InvalidStateError, "responseXML is only available if responseType is '' or 'document'.", NS_ERROR_DOM_INVALID_STATE_XHR_HAS_WRONG_RESPONSETYPE_FOR_RESPONSEXML)
-DOM4_MSG_DEF(InvalidStateError, "responseText is only available if responseType is '' or 'text'.", NS_ERROR_DOM_INVALID_STATE_XHR_HAS_WRONG_RESPONSETYPE_FOR_RESPONSETEXT)
-DOM4_MSG_DEF(InvalidAccessError, "synchronous XMLHttpRequests do not support timeout and responseType.", NS_ERROR_DOM_INVALID_ACCESS_XHR_TIMEOUT_AND_RESPONSETYPE_UNSUPPORTED_FOR_SYNC)
 
 /* Image decode errors. */
 DOM4_MSG_DEF(EncodingError, "Node bound to inactive document.", NS_ERROR_DOM_IMAGE_INACTIVE_DOCUMENT)
 DOM4_MSG_DEF(EncodingError, "Invalid image request.", NS_ERROR_DOM_IMAGE_INVALID_REQUEST)
 DOM4_MSG_DEF(EncodingError, "Invalid encoded image data.", NS_ERROR_DOM_IMAGE_BROKEN)
-
-/* Editing command errors. */
-DOM4_MSG_DEF(InvalidStateError, "execCommand is only supported on HTML documents.", NS_ERROR_DOM_INVALID_STATE_DOCUMENT_EXEC_COMMAND)
-DOM4_MSG_DEF(InvalidStateError, "queryCommandEnabled is only supported on HTML documents.", NS_ERROR_DOM_INVALID_STATE_DOCUMENT_QUERY_COMMAND_ENABLED)
-DOM4_MSG_DEF(InvalidStateError, "queryCommandIndeterm is only supported on HTML documents.", NS_ERROR_DOM_INVALID_STATE_DOCUMENT_QUERY_COMMAND_INDETERM)
-DOM4_MSG_DEF(InvalidStateError, "queryCommandState is only supported on HTML documents.", NS_ERROR_DOM_INVALID_STATE_DOCUMENT_QUERY_COMMAND_STATE)
-DOM4_MSG_DEF(InvalidStateError, "queryCommandSupported is only supported on HTML documents.", NS_ERROR_DOM_INVALID_STATE_DOCUMENT_QUERY_COMMAND_SUPPORTED)
-DOM4_MSG_DEF(InvalidStateError, "queryCommandValue is only supported on HTML documents.", NS_ERROR_DOM_INVALID_STATE_DOCUMENT_QUERY_COMMAND_VALUE)

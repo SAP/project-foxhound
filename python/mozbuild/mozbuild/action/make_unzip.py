@@ -6,21 +6,21 @@ from __future__ import absolute_import, print_function
 
 import sys
 import subprocess
+import buildconfig
 
 
 def make_unzip(package):
-    subprocess.check_call(['unzip', package])
+    subprocess.check_call([buildconfig.substs["UNZIP"], package])
 
 
 def main(args):
     if len(args) != 1:
-        print('Usage: make_unzip.py <package>',
-              file=sys.stderr)
+        print("Usage: make_unzip.py <package>", file=sys.stderr)
         return 1
     else:
         make_unzip(args[0])
         return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

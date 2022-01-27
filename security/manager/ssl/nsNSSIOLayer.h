@@ -12,9 +12,10 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsIProxyInfo.h"
 #include "nsISSLSocketControl.h"
+#include "nsITlsHandshakeListener.h"
 #include "nsNSSCertificate.h"
 #include "nsTHashtable.h"
 #include "sslt.h"
@@ -68,7 +69,13 @@ class nsNSSSocketInfo final : public CommonSocketControl {
   NS_IMETHOD SetClientCert(nsIX509Cert* aClientCert) override;
   NS_IMETHOD GetEsniTxt(nsACString& aEsniTxt) override;
   NS_IMETHOD SetEsniTxt(const nsACString& aEsniTxt) override;
+  NS_IMETHOD GetEchConfig(nsACString& aEchConfig) override;
+  NS_IMETHOD SetEchConfig(const nsACString& aEchConfig) override;
   NS_IMETHOD GetPeerId(nsACString& aResult) override;
+  NS_IMETHOD GetRetryEchConfig(nsACString& aEchConfig) override;
+  NS_IMETHOD DisableEarlyData(void) override;
+  NS_IMETHOD SetHandshakeCallbackListener(
+      nsITlsHandshakeCallbackListener* callback) override;
 
   PRStatus CloseSocketAndDestroy();
 
@@ -181,7 +188,7 @@ class nsNSSSocketInfo final : public CommonSocketControl {
   nsresult ActivateSSL();
 
   nsCString mEsniTxt;
-  nsCString mPeerId;
+  nsCString mEchConfig;
   bool mEarlyDataAccepted;
   bool mDenyClientCert;
   bool mFalseStartCallbackCalled;
@@ -236,6 +243,8 @@ class nsNSSSocketInfo final : public CommonSocketControl {
   // rest of the session. This is normally used when you have per
   // socket tls flags overriding session wide defaults.
   RefPtr<mozilla::psm::SharedSSLState> mOwningSharedRef;
+
+  nsCOMPtr<nsITlsHandshakeCallbackListener> mTlsHandshakeCallback;
 };
 
 // This class is used to store the needed information for invoking the client
@@ -297,7 +306,7 @@ class nsSSLIOLayerHelpers {
       MOZ_ASSERT(intolerant == 0 || tolerant < intolerant);
     }
   };
-  nsDataHashtable<nsCStringHashKey, IntoleranceEntry> mTLSIntoleranceInfo;
+  nsTHashMap<nsCStringHashKey, IntoleranceEntry> mTLSIntoleranceInfo;
   // Sites that require insecure fallback to TLS 1.0, set by the pref
   // security.tls.insecure_fallback_hosts, which is a comma-delimited
   // list of domain names.

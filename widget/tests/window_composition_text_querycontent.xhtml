@@ -28,8 +28,14 @@
         src="data:text/html,&lt;body onload='document.designMode=%22on%22'&gt;body content&lt;/body&gt;"></iframe><br/>
 <iframe id="iframe4" width="300" height="150"
         src="data:text/html,&lt;div contenteditable id='contenteditable'&gt;&lt;/div&gt;"></iframe><br/>
-<iframe id="iframe5" width="200" height="50" src="data:text/html,&lt;input id='input'&gt;"></iframe>
-<iframe id="iframe6" width="200" height="50" src="data:text/html,&lt;input id='password' type='password'&gt;"></iframe><br/>
+<!--
+  NOTE: the width for the next two iframes is chosen to be small enough to make
+  the Show Password button (for type=password) be outside the viewport so that
+  it doesn't affect the rendering compared to the type=text control.
+  But still large enough to comfortably fit the input values we test.
+-->
+<iframe id="iframe5" style="width:10ch" height="50" src="data:text/html,&lt;input id='input'&gt;"></iframe>
+<iframe id="iframe6" style="width:10ch" height="50" src="data:text/html,&lt;input id='password' type='password'&gt;"></iframe><br/>
 <iframe id="iframe7" width="300" height="150"
         src="data:text/html,&lt;span contenteditable id='contenteditable'&gt;&lt;/span&gt;"></iframe><br/>
 <input id="input" type="text"/><br/>
@@ -315,6 +321,7 @@ function checkRectContainsRect(aRect, aContainer, aMessage)
   return ret;
 }
 
+// eslint-disable-next-line complexity
 function runUndoRedoTest()
 {
   textarea.value = "";
@@ -653,6 +660,7 @@ function runUndoRedoTest()
   if (!checkContent("\u732B\u5A18 means \"cat-girl\".",
                     "runUndoRedoTest", "#" + ++i) ||
       !checkSelection(20, "", "runUndoRedoTest", "#" + i)) {
+    // eslint-disable-next-line no-useless-return
     return;
   }
 }
@@ -1210,6 +1218,7 @@ function runCompositionCommitTest()
   textarea.removeEventListener("text", handler, true);
 }
 
+// eslint-disable-next-line complexity
 function runCompositionTest()
 {
   textarea.value = "";
@@ -1219,7 +1228,7 @@ function runCompositionTest()
   let caretRect = synthesizeQueryCaretRect(0);
   if (!checkQueryContentResult(caretRect,
         "runCompositionTest: synthesizeQueryCaretRect #0")) {
-    return false;
+    return;
   }
   caretRects[0] = caretRect;
 
@@ -1244,7 +1253,7 @@ function runCompositionTest()
   caretRect = synthesizeQueryCaretRect(1);
   if (!checkQueryContentResult(caretRect,
         "runCompositionTest: synthesizeQueryCaretRect #1-1")) {
-    return false;
+    return;
   }
   caretRects[1] = caretRect;
 
@@ -1269,7 +1278,7 @@ function runCompositionTest()
   caretRect = synthesizeQueryCaretRect(2);
   if (!checkQueryContentResult(caretRect,
         "runCompositionTest: synthesizeQueryCaretRect #1-2")) {
-    return false;
+    return;
   }
   caretRects[2] = caretRect;
 
@@ -1303,7 +1312,7 @@ function runCompositionTest()
   caretRect = synthesizeQueryCaretRect(3);
   if (!checkQueryContentResult(caretRect,
         "runCompositionTest: synthesizeQueryCaretRect #1-3")) {
-    return false;
+    return;
   }
   caretRects[3] = caretRect;
 
@@ -1338,7 +1347,7 @@ function runCompositionTest()
   caretRect = synthesizeQueryCaretRect(2);
   if (!checkQueryContentResult(caretRect,
         "runCompositionTest: synthesizeQueryCaretRect #1-3-1")) {
-    return false;
+    return;
   }
 
   is(caretRect.left, caretRects[2].left,
@@ -1373,7 +1382,7 @@ function runCompositionTest()
   caretRect = synthesizeQueryCaretRect(1);
   if (!checkQueryContentResult(caretRect,
         "runCompositionTest: synthesizeQueryCaretRect #1-3-2")) {
-    return false;
+    return;
   }
 
   is(caretRect.left, caretRects[1].left,
@@ -1582,7 +1591,7 @@ function runCompositionTest()
         "runCompositionTest: synthesizeQueryTextRect #1-12-1") ||
       !checkQueryContentResult(textRect2,
         "runCompositionTest: synthesizeQueryTextRect #1-12-2")) {
-    return false;
+    return;
   }
 
   // commit the composition string
@@ -1601,7 +1610,7 @@ function runCompositionTest()
         "runCompositionTest: synthesizeQueryTextRect #1-13-1") ||
       !checkQueryContentResult(textRect4,
         "runCompositionTest: synthesizeQueryTextRect #1-13-2")) {
-    return false;
+    return;
   }
 
   checkRect(textRect3, textRect1, "runCompositionTest: textRect #1-13-1");
@@ -1625,6 +1634,11 @@ function runCompositionTest()
       !checkSelection(8 + 1, "", "runCompositionTest", "#2-1")) {
     return;
   }
+
+  let textRect3QueriedWithRelativeOffset = synthesizeQueryTextRect(-8, 1, true);
+  let textRect4QueriedWithRelativeOffset = synthesizeQueryTextRect(-8 + 1, 1, true);
+  checkRect(textRect3QueriedWithRelativeOffset, textRect3, "runCompositionTest: textRect #2-1-2");
+  checkRect(textRect4QueriedWithRelativeOffset, textRect4, "runCompositionTest: textRect #2-1-3");
 
   synthesizeCompositionChange(
     { "composition":
@@ -1938,7 +1952,7 @@ function runCompositionTest()
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u6700",
                     "runCompositionTest", "#6-3") ||
-      !checkSelection(4, "\u6700", "runCompositionTest", "#6-3")) {
+      !checkSelection(4, "", "runCompositionTest", "#6-3")) {
     return;
   }
 
@@ -1956,6 +1970,7 @@ function runCompositionTest()
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3",
                     "runCompositionTest", "#6-5") ||
       !checkSelection(4, "", "runCompositionTest", "#6-5")) {
+    // eslint-disable-next-line no-useless-return
     return;
   }
 }
@@ -2058,44 +2073,44 @@ function runCompositionEventTest()
       "key": { key: "o" },
     });
 
-  is(windowEventCounts["compositionstart"], 1,
+  is(windowEventCounts.compositionstart, 1,
      kDescription + "compositionstart hasn't been handled by window #1");
-  is(windowEventData["compositionstart"], "",
+  is(windowEventData.compositionstart, "",
      kDescription + "data of compositionstart isn't empty (window) #1");
-  is(windowEventLocale["compositionstart"], "",
+  is(windowEventLocale.compositionstart, "",
      kDescription + "locale of compositionstart isn't empty (window) #1");
-  is(inputEventCounts["compositionstart"], 1,
+  is(inputEventCounts.compositionstart, 1,
      kDescription + "compositionstart hasn't been handled by input #1");
-  is(inputEventData["compositionstart"], "",
+  is(inputEventData.compositionstart, "",
      kDescription + "data of compositionstart isn't empty (input) #1");
-  is(inputEventLocale["compositionstart"], "",
+  is(inputEventLocale.compositionstart, "",
      kDescription + "locale of compositionstart isn't empty (input) #1");
 
-  is(windowEventCounts["compositionupdate"], 1,
+  is(windowEventCounts.compositionupdate, 1,
      kDescription + "compositionupdate hasn't been handled by window #1");
-  is(windowEventData["compositionupdate"], "\u3089",
+  is(windowEventData.compositionupdate, "\u3089",
      kDescription + "data of compositionupdate doesn't match (window) #1");
-  is(windowEventLocale["compositionupdate"], "",
+  is(windowEventLocale.compositionupdate, "",
      kDescription + "locale of compositionupdate isn't empty (window) #1");
-  is(inputEventCounts["compositionupdate"], 1,
+  is(inputEventCounts.compositionupdate, 1,
      kDescription + "compositionupdate hasn't been handled by input #1");
-  is(inputEventData["compositionupdate"], "\u3089",
+  is(inputEventData.compositionupdate, "\u3089",
      kDescription + "data of compositionupdate doesn't match (input) #1");
-  is(inputEventLocale["compositionupdate"], "",
+  is(inputEventLocale.compositionupdate, "",
      kDescription + "locale of compositionupdate isn't empty (input) #1");
 
-  is(windowEventCounts["compositionend"], 0,
+  is(windowEventCounts.compositionend, 0,
      kDescription + "compositionend has been handled by window #1");
-  is(inputEventCounts["compositionend"], 0,
+  is(inputEventCounts.compositionend, 0,
      kDescription + "compositionend has been handled by input #1");
 
-  is(windowEventCounts["input"], 1,
+  is(windowEventCounts.input, 1,
      kDescription + "input hasn't been handled by window #1");
-  is(windowEventData["input"], "\u3089",
+  is(windowEventData.input, "\u3089",
      kDescription + "value of input element wasn't modified (window) #1");
-  is(inputEventCounts["input"], 1,
+  is(inputEventCounts.input, 1,
      kDescription + "input hasn't been handled by input #1");
-  is(inputEventData["input"], "\u3089",
+  is(inputEventData.input, "\u3089",
      kDescription + "value of input element wasn't modified (input) #1");
 
   synthesizeCompositionChange(
@@ -2110,71 +2125,71 @@ function runCompositionEventTest()
       "key": { key: "\\", code: "IntlYen", keyCode: KeyboardEvent.DOM_VK_BACKSLASH },
     });
 
-  is(windowEventCounts["compositionstart"], 1,
+  is(windowEventCounts.compositionstart, 1,
      kDescription + "compositionstart has been handled more than once by window #2");
-  is(inputEventCounts["compositionstart"], 1,
+  is(inputEventCounts.compositionstart, 1,
      kDescription + "compositionstart has been handled more than once by input #2");
 
-  is(windowEventCounts["compositionupdate"], 2,
+  is(windowEventCounts.compositionupdate, 2,
      kDescription + "compositionupdate hasn't been handled by window #2");
-  is(windowEventData["compositionupdate"], "\u3089\u30FC",
+  is(windowEventData.compositionupdate, "\u3089\u30FC",
      kDescription + "data of compositionupdate doesn't match (window) #2");
-  is(windowEventLocale["compositionupdate"], "",
+  is(windowEventLocale.compositionupdate, "",
      kDescription + "locale of compositionupdate isn't empty (window) #2");
-  is(inputEventCounts["compositionupdate"], 2,
+  is(inputEventCounts.compositionupdate, 2,
      kDescription + "compositionupdate hasn't been handled by input #2");
-  is(inputEventData["compositionupdate"], "\u3089\u30FC",
+  is(inputEventData.compositionupdate, "\u3089\u30FC",
      kDescription + "data of compositionupdate doesn't match (input) #2");
-  is(inputEventLocale["compositionupdate"], "",
+  is(inputEventLocale.compositionupdate, "",
      kDescription + "locale of compositionupdate isn't empty (input) #2");
 
-  is(windowEventCounts["compositionend"], 0,
+  is(windowEventCounts.compositionend, 0,
      kDescription + "compositionend has been handled during composition by window #2");
-  is(inputEventCounts["compositionend"], 0,
+  is(inputEventCounts.compositionend, 0,
      kDescription + "compositionend has been handled during composition by input #2");
 
-  is(windowEventCounts["input"], 2,
+  is(windowEventCounts.input, 2,
      kDescription + "input hasn't been handled by window #2");
-  is(windowEventData["input"], "\u3089\u30FC",
+  is(windowEventData.input, "\u3089\u30FC",
      kDescription + "value of input element wasn't modified (window) #2");
-  is(inputEventCounts["input"], 2,
+  is(inputEventCounts.input, 2,
      kDescription + "input hasn't been handled by input #2");
-  is(inputEventData["input"], "\u3089\u30FC",
+  is(inputEventData.input, "\u3089\u30FC",
      kDescription + "value of input element wasn't modified (input) #2");
 
   // text event shouldn't cause composition update, e.g., at committing.
   synthesizeComposition({ type: "compositioncommitasis", key: { key: "KEY_Enter" } });
 
-  is(windowEventCounts["compositionstart"], 1,
+  is(windowEventCounts.compositionstart, 1,
      kDescription + "compositionstart has been handled more than once by window #3");
-  is(inputEventCounts["compositionstart"], 1,
+  is(inputEventCounts.compositionstart, 1,
      kDescription + "compositionstart has been handled more than once by input #3");
 
-  is(windowEventCounts["compositionupdate"], 2,
+  is(windowEventCounts.compositionupdate, 2,
      kDescription + "compositionupdate has been fired unexpectedly on window #3");
-  is(inputEventCounts["compositionupdate"], 2,
+  is(inputEventCounts.compositionupdate, 2,
      kDescription + "compositionupdate has been fired unexpectedly on input #3");
 
-  is(windowEventCounts["compositionend"], 1,
+  is(windowEventCounts.compositionend, 1,
      kDescription + "compositionend hasn't been handled by window #3");
-  is(windowEventData["compositionend"], "\u3089\u30FC",
+  is(windowEventData.compositionend, "\u3089\u30FC",
      kDescription + "data of compositionend doesn't match (window) #3");
-  is(windowEventLocale["compositionend"], "",
+  is(windowEventLocale.compositionend, "",
      kDescription + "locale of compositionend isn't empty (window) #3");
-  is(inputEventCounts["compositionend"], 1,
+  is(inputEventCounts.compositionend, 1,
      kDescription + "compositionend hasn't been handled by input #3");
-  is(inputEventData["compositionend"], "\u3089\u30FC",
+  is(inputEventData.compositionend, "\u3089\u30FC",
      kDescription + "data of compositionend doesn't match (input) #3");
-  is(inputEventLocale["compositionend"], "",
+  is(inputEventLocale.compositionend, "",
      kDescription + "locale of compositionend isn't empty (input) #3");
 
-  is(windowEventCounts["input"], 3,
+  is(windowEventCounts.input, 3,
      kDescription + "input hasn't been handled by window #3");
-  is(windowEventData["input"], "\u3089\u30FC",
+  is(windowEventData.input, "\u3089\u30FC",
      kDescription + "value of input element wasn't modified (window) #3");
-  is(inputEventCounts["input"], 3,
+  is(inputEventCounts.input, 3,
      kDescription + "input hasn't been handled by input #3");
-  is(inputEventData["input"], "\u3089\u30FC",
+  is(inputEventData.input, "\u3089\u30FC",
      kDescription + "value of input element wasn't modified (input) #3");
 
   // select the second character, then, data of composition start should be
@@ -2196,52 +2211,52 @@ function runCompositionEventTest()
 
   synthesizeComposition({ type: "compositioncommitasis", key: { key: "KEY_Enter" } });
 
-  is(windowEventCounts["compositionstart"], 1,
+  is(windowEventCounts.compositionstart, 1,
      kDescription + "compositionstart hasn't been handled by window #4");
-  is(windowEventData["compositionstart"], "\u30FC",
+  is(windowEventData.compositionstart, "\u30FC",
      kDescription + "data of compositionstart is empty (window) #4");
-  is(windowEventLocale["compositionstart"], "",
+  is(windowEventLocale.compositionstart, "",
      kDescription + "locale of compositionstart isn't empty (window) #4");
-  is(inputEventCounts["compositionstart"], 1,
+  is(inputEventCounts.compositionstart, 1,
      kDescription + "compositionstart hasn't been handled by input #4");
-  is(inputEventData["compositionstart"], "\u30FC",
+  is(inputEventData.compositionstart, "\u30FC",
      kDescription + "data of compositionstart is empty (input) #4");
-  is(inputEventLocale["compositionstart"], "",
+  is(inputEventLocale.compositionstart, "",
      kDescription + "locale of compositionstart isn't empty (input) #4");
 
-  is(windowEventCounts["compositionupdate"], 1,
+  is(windowEventCounts.compositionupdate, 1,
      kDescription + "compositionupdate hasn't been handled by window #4");
-  is(windowEventData["compositionupdate"], "\u3089",
+  is(windowEventData.compositionupdate, "\u3089",
      kDescription + "data of compositionupdate doesn't match (window) #4");
-  is(windowEventLocale["compositionupdate"], "",
+  is(windowEventLocale.compositionupdate, "",
      kDescription + "locale of compositionupdate isn't empty (window) #4");
-  is(inputEventCounts["compositionupdate"], 1,
+  is(inputEventCounts.compositionupdate, 1,
      kDescription + "compositionupdate hasn't been handled by input #4");
-  is(inputEventData["compositionupdate"], "\u3089",
+  is(inputEventData.compositionupdate, "\u3089",
      kDescription + "data of compositionupdate doesn't match (input) #4");
-  is(inputEventLocale["compositionupdate"], "",
+  is(inputEventLocale.compositionupdate, "",
      kDescription + "locale of compositionupdate isn't empty (input) #4");
 
-  is(windowEventCounts["compositionend"], 1,
+  is(windowEventCounts.compositionend, 1,
      kDescription + "compositionend hasn't been handled by window #4");
-  is(windowEventData["compositionend"], "\u3089",
+  is(windowEventData.compositionend, "\u3089",
      kDescription + "data of compositionend doesn't match (window) #4");
-  is(windowEventLocale["compositionend"], "",
+  is(windowEventLocale.compositionend, "",
      kDescription + "locale of compositionend isn't empty (window) #4");
-  is(inputEventCounts["compositionend"], 1,
+  is(inputEventCounts.compositionend, 1,
      kDescription + "compositionend hasn't been handled by input #4");
-  is(inputEventData["compositionend"], "\u3089",
+  is(inputEventData.compositionend, "\u3089",
      kDescription + "data of compositionend doesn't match (input) #4");
-  is(inputEventLocale["compositionend"], "",
+  is(inputEventLocale.compositionend, "",
      kDescription + "locale of compositionend isn't empty (input) #4");
 
-  is(windowEventCounts["input"], 2,
+  is(windowEventCounts.input, 2,
      kDescription + "input hasn't been handled by window #4");
-  is(windowEventData["input"], "\u3089\u3089",
+  is(windowEventData.input, "\u3089\u3089",
      kDescription + "value of input element wasn't modified (window) #4");
-  is(inputEventCounts["input"], 2,
+  is(inputEventCounts.input, 2,
      kDescription + "input hasn't been handled by input #4");
-  is(inputEventData["input"], "\u3089\u3089",
+  is(inputEventData.input, "\u3089\u3089",
      kDescription + "value of input element wasn't modified (input) #4");
 
   // preventDefault() should effect nothing.
@@ -2264,55 +2279,55 @@ function runCompositionEventTest()
 
   synthesizeComposition({ type: "compositioncommitasis" });
 
-  is(windowEventCounts["compositionstart"], 1,
+  is(windowEventCounts.compositionstart, 1,
      kDescription + "compositionstart hasn't been handled by window #5");
-  is(windowEventData["compositionstart"], "\u3089\u3089",
+  is(windowEventData.compositionstart, "\u3089\u3089",
      kDescription + "data of compositionstart is empty (window) #5");
-  is(windowEventLocale["compositionstart"], "",
+  is(windowEventLocale.compositionstart, "",
      kDescription + "locale of compositionstart isn't empty (window) #5");
-  is(inputEventCounts["compositionstart"], 1,
+  is(inputEventCounts.compositionstart, 1,
      kDescription + "compositionstart hasn't been handled by input #5");
-  is(inputEventData["compositionstart"], "\u3089\u3089",
+  is(inputEventData.compositionstart, "\u3089\u3089",
      kDescription + "data of compositionstart is empty (input) #5");
-  is(inputEventLocale["compositionstart"], "",
+  is(inputEventLocale.compositionstart, "",
      kDescription + "locale of compositionstart isn't empty (input) #5");
 
-  is(windowEventCounts["compositionupdate"], 1,
+  is(windowEventCounts.compositionupdate, 1,
      kDescription + "compositionupdate hasn't been handled by window #5");
-  is(windowEventData["compositionupdate"], "\u306D",
+  is(windowEventData.compositionupdate, "\u306D",
      kDescription + "data of compositionupdate doesn't match (window) #5");
-  is(windowEventLocale["compositionupdate"], "",
+  is(windowEventLocale.compositionupdate, "",
      kDescription + "locale of compositionupdate isn't empty (window) #5");
-  is(inputEventCounts["compositionupdate"], 1,
+  is(inputEventCounts.compositionupdate, 1,
      kDescription + "compositionupdate hasn't been handled by input #5");
-  is(inputEventData["compositionupdate"], "\u306D",
+  is(inputEventData.compositionupdate, "\u306D",
      kDescription + "data of compositionupdate doesn't match (input) #5");
-  is(inputEventLocale["compositionupdate"], "",
+  is(inputEventLocale.compositionupdate, "",
      kDescription + "locale of compositionupdate isn't empty (input) #5");
 
-  is(windowEventCounts["compositionend"], 1,
+  is(windowEventCounts.compositionend, 1,
      kDescription + "compositionend hasn't been handled by window #5");
-  is(windowEventData["compositionend"], "\u306D",
+  is(windowEventData.compositionend, "\u306D",
      kDescription + "data of compositionend doesn't match (window) #5");
-  is(windowEventLocale["compositionend"], "",
+  is(windowEventLocale.compositionend, "",
      kDescription + "locale of compositionend isn't empty (window) #5");
-  is(inputEventCounts["compositionend"], 1,
+  is(inputEventCounts.compositionend, 1,
      kDescription + "compositionend hasn't been handled by input #5");
-  is(inputEventData["compositionend"], "\u306D",
+  is(inputEventData.compositionend, "\u306D",
      kDescription + "data of compositionend doesn't match (input) #5");
-  is(inputEventLocale["compositionend"], "",
+  is(inputEventLocale.compositionend, "",
      kDescription + "locale of compositionend isn't empty (input) #5");
 
-  is(windowEventCounts["input"], 2,
+  is(windowEventCounts.input, 2,
      kDescription + "input hasn't been handled by window #5");
-  is(windowEventData["input"], "\u306D",
+  is(windowEventData.input, "\u306D",
      kDescription + "value of input element wasn't modified (window) #5");
-  is(inputEventCounts["input"], 2,
+  is(inputEventCounts.input, 2,
      kDescription + "input hasn't been handled by input #5");
-  is(inputEventData["input"], "\u306D",
+  is(inputEventData.input, "\u306D",
      kDescription + "value of input element wasn't modified (input) #5");
 
-  prevnetDefault = false;
+  preventDefault = false;
 
   // stopPropagation() should effect nothing (except event count)
   stopPropagation = true;
@@ -2334,40 +2349,40 @@ function runCompositionEventTest()
 
   synthesizeComposition({ type: "compositioncommitasis", key: { key: "KEY_Enter" } });
 
-  is(windowEventCounts["compositionstart"], 1,
+  is(windowEventCounts.compositionstart, 1,
      kDescription + "compositionstart hasn't been handled by window #6");
-  is(windowEventData["compositionstart"], "\u306D",
+  is(windowEventData.compositionstart, "\u306D",
      kDescription + "data of compositionstart is empty #6");
-  is(windowEventLocale["compositionstart"], "",
+  is(windowEventLocale.compositionstart, "",
      kDescription + "locale of compositionstart isn't empty #6");
-  is(inputEventCounts["compositionstart"], 0,
+  is(inputEventCounts.compositionstart, 0,
      kDescription + "compositionstart has been handled by input #6");
 
-  is(windowEventCounts["compositionupdate"], 1,
+  is(windowEventCounts.compositionupdate, 1,
      kDescription + "compositionupdate hasn't been handled by window #6");
-  is(windowEventData["compositionupdate"], "\u306E",
+  is(windowEventData.compositionupdate, "\u306E",
      kDescription + "data of compositionupdate doesn't match #6");
-  is(windowEventLocale["compositionupdate"], "",
+  is(windowEventLocale.compositionupdate, "",
      kDescription + "locale of compositionupdate isn't empty #6");
-  is(inputEventCounts["compositionupdate"], 0,
+  is(inputEventCounts.compositionupdate, 0,
      kDescription + "compositionupdate has been handled by input #6");
 
-  is(windowEventCounts["compositionend"], 1,
+  is(windowEventCounts.compositionend, 1,
      kDescription + "compositionend hasn't been handled by window #6");
-  is(windowEventData["compositionend"], "\u306E",
+  is(windowEventData.compositionend, "\u306E",
      kDescription + "data of compositionend doesn't match #6");
-  is(windowEventLocale["compositionend"], "",
+  is(windowEventLocale.compositionend, "",
      kDescription + "locale of compositionend isn't empty #6");
-  is(inputEventCounts["compositionend"], 0,
+  is(inputEventCounts.compositionend, 0,
      kDescription + "compositionend has been handled by input #6");
 
-  is(windowEventCounts["input"], 2,
+  is(windowEventCounts.input, 2,
      kDescription + "input hasn't been handled by window #6");
-  is(windowEventData["input"], "\u306E",
+  is(windowEventData.input, "\u306E",
      kDescription + "value of input element wasn't modified (window) #6");
-  is(inputEventCounts["input"], 2,
+  is(inputEventCounts.input, 2,
      kDescription + "input hasn't been handled by input #6");
-  is(inputEventData["input"], "\u306E",
+  is(inputEventData.input, "\u306E",
      kDescription + "value of input element wasn't modified (input) #6");
 
   stopPropagation = false;
@@ -2393,17 +2408,17 @@ function runCompositionEventTest()
 
   input.dispatchEvent(compositionstart);
 
-  is(windowEventCounts["compositionstart"], 1,
+  is(windowEventCounts.compositionstart, 1,
      kDescription + "compositionstart hasn't been handled by window #7");
-  is(windowEventData["compositionstart"], "start data",
+  is(windowEventData.compositionstart, "start data",
      kDescription + "data of compositionstart was changed (window) #7");
-  is(windowEventLocale["compositionstart"], "start locale",
+  is(windowEventLocale.compositionstart, "start locale",
      kDescription + "locale of compositionstart was changed (window) #7");
-  is(inputEventCounts["compositionstart"], 1,
+  is(inputEventCounts.compositionstart, 1,
      kDescription + "compositionstart hasn't been handled by input #7");
-  is(inputEventData["compositionstart"], "start data",
+  is(inputEventData.compositionstart, "start data",
      kDescription + "data of compositionstart was changed (input) #7");
-  is(inputEventLocale["compositionstart"], "start locale",
+  is(inputEventLocale.compositionstart, "start locale",
      kDescription + "locale of compositionstart was changed (input) #7");
 
   is(input.value, "value of input",
@@ -2424,17 +2439,17 @@ function runCompositionEventTest()
 
   input.dispatchEvent(compositionupdate1);
 
-  is(windowEventCounts["compositionupdate"], 1,
+  is(windowEventCounts.compositionupdate, 1,
      kDescription + "compositionupdate hasn't been handled by window #8");
-  is(windowEventData["compositionupdate"], "composing string",
+  is(windowEventData.compositionupdate, "composing string",
      kDescription + "data of compositionupdate was changed (window) #8");
-  is(windowEventLocale["compositionupdate"], "composing locale",
+  is(windowEventLocale.compositionupdate, "composing locale",
      kDescription + "locale of compositionupdate was changed (window) #8");
-  is(inputEventCounts["compositionupdate"], 1,
+  is(inputEventCounts.compositionupdate, 1,
      kDescription + "compositionupdate hasn't been handled by input #8");
-  is(inputEventData["compositionupdate"], "composing string",
+  is(inputEventData.compositionupdate, "composing string",
      kDescription + "data of compositionupdate was changed (input) #8");
-  is(inputEventLocale["compositionupdate"], "composing locale",
+  is(inputEventLocale.compositionupdate, "composing locale",
      kDescription + "locale of compositionupdate was changed (input) #8");
 
   is(input.value, "value of input",
@@ -2455,17 +2470,17 @@ function runCompositionEventTest()
 
   input.dispatchEvent(compositionupdate2);
 
-  is(windowEventCounts["compositionupdate"], 2,
+  is(windowEventCounts.compositionupdate, 2,
      kDescription + "compositionupdate hasn't been handled by window #9");
-  is(windowEventData["compositionupdate"], "commit string",
+  is(windowEventData.compositionupdate, "commit string",
      kDescription + "data of compositionupdate was changed (window) #9");
-  is(windowEventLocale["compositionupdate"], "commit locale",
+  is(windowEventLocale.compositionupdate, "commit locale",
      kDescription + "locale of compositionupdate was changed (window) #9");
-  is(inputEventCounts["compositionupdate"], 2,
+  is(inputEventCounts.compositionupdate, 2,
      kDescription + "compositionupdate hasn't been handled by input #9");
-  is(inputEventData["compositionupdate"], "commit string",
+  is(inputEventData.compositionupdate, "commit string",
      kDescription + "data of compositionupdate was changed (input) #9");
-  is(inputEventLocale["compositionupdate"], "commit locale",
+  is(inputEventLocale.compositionupdate, "commit locale",
      kDescription + "locale of compositionupdate was changed (input) #9");
 
   is(input.value, "value of input",
@@ -2486,17 +2501,17 @@ function runCompositionEventTest()
 
   input.dispatchEvent(compositionend);
 
-  is(windowEventCounts["compositionend"], 1,
+  is(windowEventCounts.compositionend, 1,
      kDescription + "compositionend hasn't been handled by window #10");
-  is(windowEventData["compositionend"], "end data",
+  is(windowEventData.compositionend, "end data",
      kDescription + "data of compositionend was changed (window) #10");
-  is(windowEventLocale["compositionend"], "end locale",
+  is(windowEventLocale.compositionend, "end locale",
      kDescription + "locale of compositionend was changed (window) #10");
-  is(inputEventCounts["compositionend"], 1,
+  is(inputEventCounts.compositionend, 1,
      kDescription + "compositionend hasn't been handled by input #10");
-  is(inputEventData["compositionend"], "end data",
+  is(inputEventData.compositionend, "end data",
      kDescription + "data of compositionend was changed (input) #10");
-  is(inputEventLocale["compositionend"], "end locale",
+  is(inputEventLocale.compositionend, "end locale",
      kDescription + "locale of compositionend was changed (input) #10");
 
   is(input.value, "value of input",
@@ -2521,6 +2536,7 @@ function runCompositionEventTest()
                             formEventHandlerForInput, true);
 }
 
+// eslint-disable-next-line complexity
 function runQueryTextRectInContentEditableTest()
 {
   contenteditable.focus();
@@ -2834,7 +2850,7 @@ function runQueryTextRectInContentEditableTest()
 
   if (kLFLen > 1) {
     // \n of \r\n
-    p3_2 = synthesizeQueryTextRect(kLFLen * 2 + 7, 1);
+    let p3_2 = synthesizeQueryTextRect(kLFLen * 2 + 7, 1);
     if (!checkQueryContentResult(p3_2, description + "rect for \\n of \\r\\n caused by 3rd <p>")) {
       return;
     }
@@ -2845,7 +2861,7 @@ function runQueryTextRectInContentEditableTest()
     is(p3_2.width, p3.width, description + "'\\r' and '\\n' should be same width");
 
     // \n of \r\n as array
-    p3_2AsArray = synthesizeQueryTextRectArray(kLFLen * 2 + 7, 1);
+    let p3_2AsArray = synthesizeQueryTextRectArray(kLFLen * 2 + 7, 1);
     if (!checkQueryContentResult(p3_2AsArray, description + "rect array for \\n of \\r\\n caused by 3rd <p>") ||
         !checkRectArray(p3_2AsArray, [p3_2], description + "query text rect array result of \\n of \\r\\n caused by 3rd <p> should match with each query text rect result")) {
       return;
@@ -3160,7 +3176,7 @@ function runQueryTextRectInContentEditableTest()
 
   if (kLFLen > 1) {
     // \n of \r\n
-    br2_2 = synthesizeQueryTextRect(kLFLen + 7, 1);
+    let br2_2 = synthesizeQueryTextRect(kLFLen + 7, 1);
     if (!checkQueryContentResult(br2_2, description + "rect for \\n of \\r\\n caused by 2nd <br>")) {
       return;
     }
@@ -3208,9 +3224,9 @@ function runQueryTextRectInContentEditableTest()
     is(br3_2.width, br3.width, description + "'\\r' and '\\n' should be same width");
 
     // \n of \r\n as array
-    let br2_2AsArray = synthesizeQueryTextRectArray(kLFLen * 2 + 7, 1);
-    if (!checkQueryContentResult(br2_2AsArray, description + "rect array for \\n of \\r\\n caused by 3rd <br>") ||
-        !checkRectArray(br2_2AsArray, [br2_2], description + "query text rect array result of \\n of \\r\\n caused by 3rd <br> should match with each query text rect result")) {
+    let br3_2AsArray = synthesizeQueryTextRectArray(kLFLen * 2 + 7, 1);
+    if (!checkQueryContentResult(br3_2AsArray, description + "rect array for \\n of \\r\\n caused by 3rd <br>") ||
+        !checkRectArray(br3_2AsArray, [br3_2], description + "query text rect array result of \\n of \\r\\n caused by 3rd <br> should match with each query text rect result")) {
       return;
     }
   }
@@ -3246,9 +3262,8 @@ function runQueryTextRectInContentEditableTest()
 
   // too big offset for the editors as array
   tooBigOffsetAsArray = synthesizeQueryTextRectArray(kLFLen * 2 + 7, 1);
-  if (!checkQueryContentResult(tooBigOffsetAsArray, description + "rect array for too big offset") ||
-      !checkRectArray(tooBigOffsetAsArray, [tooBigOffset], description + "query text rect array result with too big offset should match with each query text rect result")) {
-    return;
+  if (checkQueryContentResult(tooBigOffsetAsArray, description + "rect array for too big offset")) {
+    checkRectArray(tooBigOffsetAsArray, [tooBigOffset], description + "query text rect array result with too big offset should match with each query text rect result");
   }
 }
 
@@ -5086,8 +5101,8 @@ function runQueryContentEventRelativeToInsertionPoint()
   textarea.focus();
   textarea.value = "0123456789";
 
-  let startoffset = textarea.selectionStart = textarea.selectionEnd = 0;
-
+  // "[]0123456789"
+  let startOffset = textarea.selectionStart = textarea.selectionEnd = 0;
   if (!checkContentRelativeToSelection(0, 1, 0, "0", "runQueryContentEventRelativeToInsertionPoint[0-0]", "#1") ||
       !checkContentRelativeToSelection(-1, 1, 0, "0", "runQueryContentEventRelativeToInsertionPoint[0-0]", "#2") ||
       !checkContentRelativeToSelection(1, 1, 1, "1", "runQueryContentEventRelativeToInsertionPoint[0-0]", "#3") ||
@@ -5096,18 +5111,18 @@ function runQueryContentEventRelativeToInsertionPoint()
     return;
   }
 
+  // "[01234]56789"
   textarea.selectionEnd = 5;
-
   if (!checkContentRelativeToSelection(0, 1, 0, "0", "runQueryContentEventRelativeToInsertionPoint[0-5]", "#1") ||
       !checkContentRelativeToSelection(-1, 1, 0, "0", "runQueryContentEventRelativeToInsertionPoint[0-5]", "#2") ||
       !checkContentRelativeToSelection(1, 1, 1, "1", "runQueryContentEventRelativeToInsertionPoint[0-5]", "#3") ||
       !checkContentRelativeToSelection(5, 10, 5, "56789", "runQueryContentEventRelativeToInsertionPoint[0-5]", "#4") ||
-      !checkContentRelativeToSelection(10, 1, 10, "", "runQueryContentEventRelativeToInsertionPoint[0-5]"), "#5") {
+      !checkContentRelativeToSelection(10, 1, 10, "", "runQueryContentEventRelativeToInsertionPoint[0-5]", "#5")) {
     return;
   }
 
-  startoffset = textarea.selectionStart = textarea.selectionEnd = 4;
-
+  // "0123[]456789"
+  startOffset = textarea.selectionStart = textarea.selectionEnd = 4;
   if (!checkContentRelativeToSelection(0, 1, startOffset + 0, "4", "runQueryContentEventRelativeToInsertionPoint[4-4]", "#1") ||
       !checkContentRelativeToSelection(-1, 1, startOffset - 1, "3", "runQueryContentEventRelativeToInsertionPoint[4-4]", "#2") ||
       !checkContentRelativeToSelection(1, 1, startOffset + 1, "5", "runQueryContentEventRelativeToInsertionPoint[4-4]", "#3") ||
@@ -5126,7 +5141,7 @@ function runQueryContentEventRelativeToInsertionPoint()
       },
       "caret": { "start": 1, "length": 0 }
     });
-
+  // "0123[a]456789"
   if (!checkContentRelativeToSelection(0, 1, startOffset + 0, "a", "runQueryContentEventRelativeToInsertionPoint[composition at 4]", "#1") ||
       !checkContentRelativeToSelection(-1, 1, startOffset - 1, "3", "runQueryContentEventRelativeToInsertionPoint[composition at 4]", "#2") ||
       !checkContentRelativeToSelection(1, 1, startOffset + 1, "4", "runQueryContentEventRelativeToInsertionPoint[composition at 4]", "#3") ||
@@ -5141,14 +5156,14 @@ function runQueryContentEventRelativeToInsertionPoint()
   // Move start of composition at first compositionupdate event.
   function onCompositionUpdate(aEvent)
   {
-    startoffset = textarea.selectionStart = textarea.selectionEnd = textarea.selectionStart - 1;
+    startOffset = textarea.selectionStart = textarea.selectionEnd = textarea.selectionStart - 1;
     textarea.removeEventListener("compositionupdate", onCompositionUpdate);
   }
   textarea.addEventListener("compositionupdate", onCompositionUpdate);
 
   synthesizeCompositionChange(
     { "composition":
-      { "string": "a",
+      { "string": "b",
         "clauses":
         [
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
@@ -5156,7 +5171,7 @@ function runQueryContentEventRelativeToInsertionPoint()
       },
       "caret": { "start": 1, "length": 0 }
     });
-
+  // "0123[b]a456789"
   if (!checkContentRelativeToSelection(0, 1, startOffset + 0, "b", "runQueryContentEventRelativeToInsertionPoint[composition at 3]", "#1") ||
       !checkContentRelativeToSelection(-1, 1, startOffset - 1, "3", "runQueryContentEventRelativeToInsertionPoint[composition at 3]", "#2") ||
       !checkContentRelativeToSelection(1, 1, startOffset + 1, "a", "runQueryContentEventRelativeToInsertionPoint[composition at 3]", "#3") ||
@@ -5213,7 +5228,7 @@ function runBug1375825Test()
   is(ret.text, "h", "runBug1375825Test #1 (7, 1), \"" + contenteditable.innerHTML + "\": should have queried a rect for 'h'");
 
   // #2
-  contenteditable.innerHTML = "abc<span style=\"-moz-user-select: all;\">defgh</span>";
+  contenteditable.innerHTML = "abc<span style=\"user-select: all;\">defgh</span>";
 
   ret = synthesizeQueryTextRect(2, 1);
   if (!checkQueryContentResult(ret, "runBug1375825Test #2 (2, 1), \"" + contenteditable.innerHTML + "\"")) {
@@ -5357,7 +5372,44 @@ async function runBug1584901Test()
      "runBug1584901Test: space must not be removed by composition change");
 }
 
-function runBug1636747Test()
+function runBug1675313Test()
+{
+  input.value = "";
+  input.focus();
+  let count = 0;
+
+  function handler() {
+    input.focus();
+    count++;
+  }
+
+  input.addEventListener("keydown", handler);
+  input.addEventListener("keyup", handler);
+
+  synthesizeCompositionChange({
+    composition: {
+      string: "a",
+      clauses: [{length: 1, attr: COMPOSITION_ATTR_RAW_CLAUSE}],
+      key: { key: "a", type: "keyup" },
+    },
+  });
+  synthesizeCompositionChange({
+    composition: {
+      string: "b",
+      clauses: [{length: 1, attr: COMPOSITION_ATTR_RAW_CLAUSE}],
+      key: { key: "b", type: "keyup" },
+    },
+  });
+  synthesizeComposition({type: "compositioncommitasis"});
+
+  is(count, 6, "runBug1675313Test: keydown event and keyup event are fired correctly");
+  is(input.value, "b",
+     "runBug1675313Test: re-focus element doesn't commit composition if re-focus isn't click by user");
+
+  input.removeEventListener("keyup", handler);
+}
+
+function runCommitCompositionWithSpaceKey()
 {
   contenteditable.focus();
   contenteditable.innerHTML = "";
@@ -5372,8 +5424,8 @@ function runBug1636747Test()
   synthesizeComposition({type: "compositioncommit", data: "a"});
   synthesizeKey(" ");
 
-  is(contenteditable.textContent, "a ",
-     "runBug1636747Test: last single space should be kept");
+  is(contenteditable.innerHTML, "a <br>",
+     "runCommitCompositionWithSpaceKey: last single space should be kept");
 
   synthesizeCompositionChange({
     composition: {string: "b", clauses: [{length: 1, attr: COMPOSITION_ATTR_RAW_CLAUSE}]},
@@ -5381,8 +5433,8 @@ function runBug1636747Test()
   synthesizeComposition({type: "compositioncommit", data: "b"});
   synthesizeKey(" ");
 
-  is(contenteditable.textContent, "a b ",
-     "runBug1636747Test: inserting composition shouldn't remove last single space.");
+  is(contenteditable.innerHTML, "a b <br>",
+     "runCommitCompositionWithSpaceKey: inserting composition shouldn't remove last single space.");
 
   synthesizeCompositionChange({
     composition: {string: "c", clauses: [{length: 1, attr: COMPOSITION_ATTR_RAW_CLAUSE}]},
@@ -5390,8 +5442,21 @@ function runBug1636747Test()
   synthesizeComposition({type: "compositioncommit", data: "c"});
   synthesizeKey(" ");
 
-  is(contenteditable.textContent, "a b c ",
-     "runBug1636747Test: inserting composition shouldn't remove last single space.");
+  is(contenteditable.innerHTML, "a b c <br>",
+     "runCommitCompositionWithSpaceKey: inserting composition shouldn't remove last single space.");
+
+  contenteditable.innerHTML = "a";
+  windowOfContenteditable.getSelection().collapse(contenteditable.firstChild, contenteditable.firstChild.length);
+  is(contenteditable.innerHTML, "a",
+     "runCommitCompositionWithSpaceKey: contenteditable should be initialized with text ending with a space and without following <br> element");
+
+  synthesizeCompositionChange({
+    composition: {string: "b", clauses: [{length: 1, attr: COMPOSITION_ATTR_RAW_CLAUSE}]},
+  });
+  synthesizeComposition({type: "compositioncommit", data: "b ", key: { key: " ", code: "Space" }});
+
+  is(contenteditable.innerHTML, "ab <br>",
+     "runCommitCompositionWithSpaceKey: contenteditable should end with a padding <br> element after inserting commit string ending with a space");
 }
 
 function runCSSTransformTest()
@@ -5647,6 +5712,115 @@ function runBug722639Test()
     }
     previousTop = currentLine.top;
   }
+}
+
+function runCompositionWithSelectionChange() {
+  function doTest(aEditor, aDescription) {
+    aEditor.focus();
+    const isHTMLEditor =
+      aEditor.nodeName.toLowerCase() != "input" && aEditor.nodeName.toLowerCase() != "textarea";
+    const win = isHTMLEditor ? windowOfContenteditable : window;
+    function getValue() {
+      return isHTMLEditor ? aEditor.innerHTML : aEditor.value;
+    }
+    function setSelection(aStart, aLength) {
+      if (isHTMLEditor) {
+        win.getSelection().setBaseAndExtent(aEditor.firstChild, aStart, aEditor.firstChild, aStart + aLength);
+      } else {
+        aEditor.setSelectionRange(aStart, aStart + aLength);
+      }
+    }
+
+    if (isHTMLEditor) {
+      aEditor.innerHTML = "abcxyz";
+    } else {
+      aEditor.value = "abcxyz";
+    }
+    setSelection("abc".length, 0);
+
+    synthesizeCompositionChange({
+      composition: {
+        string: "1",
+        clauses: [{ length: 1, attr: COMPOSITION_ATTR_RAW_CLAUSE}],
+        caret: { start: 1, length: 0 },
+      }
+    });
+
+    is(getValue(), "abc1xyz",
+      `${aDescription}: First composing character should be inserted middle of the text`);
+
+    aEditor.addEventListener("compositionupdate", () => {
+      setSelection("abc".length, "1".length);
+    }, {once: true});
+
+    synthesizeCompositionChange({
+      composition: {
+        string: "12",
+        clauses: [{ length: 2, attr: COMPOSITION_ATTR_RAW_CLAUSE}],
+        caret: { start: 2, length: 0 },
+      }
+    });
+
+    is(getValue(), "abc12xyz",
+      `${aDescription}: Only composition string should be updated even if selection range is updated by "compositionupdate" event listener`);
+
+    aEditor.addEventListener("compositionupdate", () => {
+      setSelection("abc1".length, "2d".length);
+    }, {once: true});
+
+    synthesizeCompositionChange({
+      composition: {
+        string: "123",
+        clauses: [{ length: 3, attr: COMPOSITION_ATTR_RAW_CLAUSE}],
+        caret: { start: 3, length: 0 },
+      }
+    });
+
+    is(getValue(), "abc123xyz",
+      `${aDescription}: Only composition string should be updated even if selection range wider than composition string is updated by "compositionupdate" event listener`);
+
+    aEditor.addEventListener("compositionupdate", () => {
+      setSelection("ab".length, "c123d".length);
+    }, {once: true});
+
+    synthesizeCompositionChange({
+      composition: {
+        string: "456",
+        clauses: [{ length: 3, attr: COMPOSITION_ATTR_RAW_CLAUSE}],
+        caret: { start: 3, length: 0 },
+      }
+    });
+
+    is(getValue(), "abc456xyz",
+      `${aDescription}: Only composition string should be updated even if selection range which covers all over the composition string is updated by "compositionupdate" event listener`);
+
+    aEditor.addEventListener("beforeinput", () => {
+      setSelection("abc456d".length, 0);
+    }, {once: true});
+
+    synthesizeComposition({ type: "compositioncommitasis" });
+
+    is(getValue(), "abc456xyz",
+      `${aDescription}: Only composition string should be updated when committing composition but selection is updated by "beforeinput" event listener`);
+    if (isHTMLEditor) {
+      is(win.getSelection().focusNode, aEditor.firstChild,
+        `${aDescription}: The focus node after composition should be the text node`);
+      is(win.getSelection().focusOffset, "abc456".length,
+        `${aDescription}: The focus offset after composition should be end of the composition string`);
+      is(win.getSelection().anchorNode, aEditor.firstChild,
+        `${aDescription}: The anchor node after composition should be the text node`);
+      is(win.getSelection().anchorOffset, "abc456".length,
+        `${aDescription}: The anchor offset after composition should be end of the composition string`);
+    } else {
+      is(aEditor.selectionStart, "abc456".length,
+        `${aDescription}: The selectionStart after composition should be end of the composition string`);
+      is(aEditor.selectionEnd, "abc456".length,
+        `${aDescription}: The selectionEnd after composition should be end of the composition string`);
+    }
+  }
+  doTest(textarea, "runCompositionWithSelectionChange(textarea)");
+  doTest(input, "runCompositionWithSelectionChange(input)");
+  doTest(contenteditable, "runCompositionWithSelectionChange(contenteditable)");
 }
 
 function runForceCommitTest()
@@ -6152,7 +6326,7 @@ function runForceCommitTest()
   iframe2.contentDocument.body.innerHTML = "Text in the Body";
   iframe2BodyInnerHTML = iframe2.contentDocument.body.innerHTML;
   iframe3.contentDocument.body.innerHTML = "Text in the Body";
-  iframe3BodyInnerHTML = iframe2.contentDocument.body.innerHTML;
+  let iframe3BodyInnerHTML = iframe2.contentDocument.body.innerHTML;
 
   synthesizeCompositionChange(
     { "composition":
@@ -6755,7 +6929,7 @@ function runBug811755Test()
   // Query everything
   let textContent = synthesizeQueryTextContent(0, 10);
   if (!checkQueryContentResult(textContent, "runBug811755Test: synthesizeQueryTextContent #1")) {
-    return false;
+    return;
   }
   // Query everything but specify exact end offset, which should be immediately after the <br> node
   // If PreContentIterator is used, the next node after <br> is the node after </div>.
@@ -6763,16 +6937,14 @@ function runBug811755Test()
   // node ends up being before the start node, and an empty string is returned.
   let queryContent = synthesizeQueryTextContent(0, textContent.text.length);
   if (!checkQueryContentResult(queryContent, "runBug811755Test: synthesizeQueryTextContent #2")) {
-    return false;
+    return;
   }
   is(queryContent.text, textContent.text, "runBug811755Test: two queried texts don't match");
-  return queryContent.text == textContent.text;
 }
 
 function runIsComposingTest()
 {
   let expectedIsComposing = false;
-  let descriptionBase = "runIsComposingTest: ";
   let description = "";
 
   function eventHandler(aEvent)
@@ -6812,7 +6984,6 @@ function runIsComposingTest()
 
   // XXX These cases shouldn't occur in actual native key events because we
   //     don't dispatch key events while composition (bug 354358).
-  Services.prefs.setBoolPref("dom.keyboardevent.dispatch_during_composition", true);
   description = "events before dispatching compositionstart";
   synthesizeKey("KEY_ArrowLeft");
 
@@ -6841,8 +7012,6 @@ function runIsComposingTest()
   // Then, its isComposing should be false.
   description = "events after dispatching compositioncommitasis";
   synthesizeKey("KEY_Enter", {type: "keyup"});
-
-  Services.prefs.clearUserPref("dom.keyboardevent.dispatch_during_composition");
 
   textarea.removeEventListener("keydown", eventHandler, true);
   textarea.removeEventListener("keypress", eventHandler, true);
@@ -7350,7 +7519,7 @@ function runControlCharTest()
   is(result.compositionupdate, removedData, "runControlCharTest: control characters in event.data should be removed in compositionupdate event #1");
   is(textarea.value, removedData, "runControlCharTest: control characters should not appear in textarea #1");
 
-  synthesizeComposition({ type: "compositioncommit", data: data });
+  synthesizeComposition({ type: "compositioncommit", data });
 
   is(result.compositionend, removedData, "runControlCharTest: control characters in event.data should be removed in compositionend event #2");
   is(textarea.value, removedData, "runControlCharTest: control characters should not appear in textarea #2");
@@ -7382,7 +7551,7 @@ function runControlCharTest()
   is(result.compositionupdate, data.replace(/\r/g, "\n"), "runControlCharTest: control characters in event.data should not be removed in compositionupdate event #3");
   is(textarea.value, data.replace(/\r/g, "\n"), "runControlCharTest: control characters should appear in textarea #3");
 
-  synthesizeComposition({ type: "compositioncommit", data: data });
+  synthesizeComposition({ type: "compositioncommit", data });
 
   is(result.compositionend, data.replace(/\r/g, "\n"), "runControlCharTest: control characters in event.data should not be removed in compositionend event #4");
   is(textarea.value, data.replace(/\r/g, "\n"), "runControlCharTest: control characters should appear in textarea #4");
@@ -7644,6 +7813,7 @@ async function runPanelTest()
   await waitForTick();
 }
 
+// eslint-disable-next-line complexity
 function runMaxLengthTest()
 {
   input.maxLength = 1;
@@ -7954,9 +8124,8 @@ function runMaxLengthTest()
   // commit the composition string
   synthesizeComposition({ type: "compositioncommitasis" });
 
-  if (!checkContent("X", kDesc, "#5-2") ||
-      !checkSelection(0, "", kDesc, "#5-2")) {
-    return;
+  if (checkContent("X", kDesc, "#5-2")) {
+     checkSelection(0, "", kDesc, "#5-2");
   }
 }
 
@@ -7973,7 +8142,7 @@ async function runEditorReframeTests()
     let description = "runEditorReframeTest(" + aEditor.id + ", \"" + aEventType + "\"): ";
 
     let tests = [
-      { test: function () {
+      { test () {
           synthesizeCompositionChange(
             { "composition":
               { "string": "a",
@@ -7985,11 +8154,11 @@ async function runEditorReframeTests()
               "caret": { "start": 1, "length": 0 }
             });
         },
-        check: function () {
+        check () {
           is(getValue(aEditor), "a", description + "Typing 'a'");
         },
       },
-      { test: function () {
+      { test () {
           synthesizeCompositionChange(
             { "composition":
               { "string": "ab",
@@ -8001,11 +8170,11 @@ async function runEditorReframeTests()
               "caret": { "start": 2, "length": 0 }
             });
         },
-        check: function () {
+        check () {
           is(getValue(aEditor), "ab", description + "Typing 'b' next to 'a'");
         },
       },
-      { test: function () {
+      { test () {
           synthesizeCompositionChange(
             { "composition":
               { "string": "abc",
@@ -8017,11 +8186,11 @@ async function runEditorReframeTests()
               "caret": { "start": 3, "length": 0 }
             });
         },
-        check: function () {
+        check () {
           is(getValue(aEditor), "abc", description + "Typing 'c' next to 'ab'");
         },
       },
-      { test: function () {
+      { test () {
         synthesizeCompositionChange(
           { "composition":
             { "string": "abc",
@@ -8034,11 +8203,11 @@ async function runEditorReframeTests()
             "caret": { "start": 2, "length": 0 }
           });
         },
-        check: function () {
+        check () {
           is(getValue(aEditor), "abc", description + "Starting to convert 'ab][c'");
         },
       },
-      { test: function () {
+      { test () {
           synthesizeCompositionChange(
             { "composition":
               { "string": "ABc",
@@ -8051,11 +8220,11 @@ async function runEditorReframeTests()
               "caret": { "start": 2, "length": 0 }
             });
         },
-        check: function () {
+        check () {
           is(getValue(aEditor), "ABc", description + "Starting to convert 'AB][c'");
         },
       },
-      { test: function () {
+      { test () {
           synthesizeCompositionChange(
             { "composition":
               { "string": "ABC",
@@ -8068,19 +8237,19 @@ async function runEditorReframeTests()
               "caret": { "start": 3, "length": 0 }
             });
           },
-        check: function () {
+        check () {
           is(getValue(aEditor), "ABC", description + "Starting to convert 'AB][C'");
         },
       },
-      { test: function () {
+      { test () {
           // Commit composition
           synthesizeComposition({ type: "compositioncommitasis" });
         },
-        check: function () {
+        check () {
           is(getValue(aEditor), "ABC", description + "Committed as 'ABC'");
         },
       },
-      { test: function () {
+      { test () {
           synthesizeCompositionChange(
             { "composition":
               { "string": "d",
@@ -8092,11 +8261,11 @@ async function runEditorReframeTests()
               "caret": { "start": 1, "length": 0 }
             });
         },
-        check: function () {
+        check () {
           is(getValue(aEditor), "ABCd", description + "Typing 'd' next to ABC");
         },
       },
-      { test: function () {
+      { test () {
           synthesizeCompositionChange(
             { "composition":
               { "string": "de",
@@ -8108,11 +8277,11 @@ async function runEditorReframeTests()
               "caret": { "start": 2, "length": 0 }
             });
         },
-        check: function () {
+        check () {
           is(getValue(aEditor), "ABCde", description + "Typing 'e' next to ABCd");
         },
       },
-      { test: function () {
+      { test () {
           synthesizeCompositionChange(
             { "composition":
               { "string": "def",
@@ -8124,19 +8293,19 @@ async function runEditorReframeTests()
               "caret": { "start": 3, "length": 0 }
             });
         },
-        check: function () {
+        check () {
           is(getValue(aEditor), "ABCdef", description + "Typing 'f' next to ABCde");
         },
       },
-      { test: function () {
+      { test () {
           // Commit composition
           synthesizeComposition({ type: "compositioncommitasis" });
         },
-        check: function () {
+        check () {
           is(getValue(aEditor), "ABCdef", description + "Commit 'def' without convert");
         },
       },
-      { test: function () {
+      { test () {
           // Select "Cd"
           synthesizeKey("KEY_ArrowLeft");
           synthesizeKey("KEY_ArrowLeft");
@@ -8145,10 +8314,10 @@ async function runEditorReframeTests()
           synthesizeKey("KEY_ArrowLeft", {shiftKey: true});
           synthesizeKey("KEY_Shift", {type: "keyup"});
         },
-        check: function () {
+        check () {
         },
       },
-      { test: function () {
+      { test () {
           synthesizeCompositionChange(
             { "composition":
               { "string": "g",
@@ -8160,11 +8329,11 @@ async function runEditorReframeTests()
               "caret": { "start": 1, "length": 0 }
             });
         },
-        check: function () {
+        check () {
           is(getValue(aEditor), "ABgef", description + "Typing 'g' next to AB");
         },
       },
-      { test: function () {
+      { test () {
           synthesizeCompositionChange(
             { "composition":
               { "string": "gh",
@@ -8176,11 +8345,11 @@ async function runEditorReframeTests()
               "caret": { "start": 2, "length": 0 }
             });
         },
-        check: function () {
+        check () {
           is(getValue(aEditor), "ABghef", description + "Typing 'h' next to ABg");
         },
       },
-      { test: function () {
+      { test () {
           synthesizeCompositionChange(
             { "composition":
               { "string": "ghi",
@@ -8192,11 +8361,11 @@ async function runEditorReframeTests()
               "caret": { "start": 3, "length": 0 }
             });
         },
-        check: function () {
+        check () {
           is(getValue(aEditor), "ABghief", description + "Typing 'i' next to ABgh");
         },
       },
-      { test: function () {
+      { test () {
           synthesizeCompositionChange(
             { "composition":
               { "string": "GHI",
@@ -8208,15 +8377,15 @@ async function runEditorReframeTests()
               "caret": { "start": 3, "length": 0 }
             });
         },
-        check: function () {
+        check () {
           is(getValue(aEditor), "ABGHIef", description + "Convert 'ghi' to 'GHI'");
         },
       },
-      { test: function () {
+      { test () {
           // Commit composition
           synthesizeComposition({ type: "compositioncommitasis" });
         },
-        check: function () {
+        check () {
           is(getValue(aEditor), "ABGHIef", description + "Commit 'GHI'");
         },
       },
@@ -8374,8 +8543,8 @@ async function runIMEContentObserverTest()
        aDescription + " should cause selection change notification whose offset is " + aExpected.offset);
     is(aNotification.text, aExpected.text,
        aDescription + " should cause selection change notification whose text is '" + aExpected.text + "'");
-    is(aNotification.collapsed, aExpected.text.length == 0,
-       aDescription + " should cause selection change notification whose collapsed is " + (aExpected.text.length == 0));
+    is(aNotification.collapsed, !aExpected.text.length,
+       aDescription + " should cause selection change notification whose collapsed is " + (!aExpected.text.length));
     is(aNotification.length, aExpected.text.length,
        aDescription + " should cause selection change notification whose length is " + aExpected.text.length);
     is(aNotification.reversed, aExpected.reversed || false,
@@ -8397,14 +8566,6 @@ async function runIMEContentObserverTest()
        aDescription + " should cause text change notification whose removedLength is " + aExpected.removedLength);
     is(aNotification.addedLength, aExpected.addedLength,
        aDescription + " should cause text change notification whose addedLength is " + aExpected.addedLength);
-  }
-
-  function getAsInnerHTML(aElement)
-  {
-    if (aElement.tagName.toLowerCase() == "input" || aElement.tagName.toLowerCase() == "textarea") {
-      return aElement.value;
-    }
-    return aElement.innerHTML;
   }
 
   async function testWithPlaintextEditor(aDescription, aElement, aTestLineBreaker)
@@ -8723,6 +8884,7 @@ async function runIMEContentObserverTest()
         break;
       case "p":
       case "div":
+        // eslint-disable-next-line no-unsanitized/property
         aElement.innerHTML = "<" + aDefaultParagraphSeparator + "></" + aDefaultParagraphSeparator + ">";
         sel.collapse(aElement.firstChild, 0);
         offsetAtContainer = offsetAtStart + kLFLen;
@@ -9516,12 +9678,47 @@ async function runPasswordMaskDelayTest() {
                  "runPasswordMaskDelayTest(): committed string should be masked after a while");
 }
 
-async function runTest()
+async function runInputModeTest()
 {
-  await SpecialPowers.pushPrefEnv({
-    set: [["dom.input_events.beforeinput.enabled", true]],
+  await SpecialPowers.setBoolPref("dom.forms.inputmode", true);
+
+  let result = [];
+
+  function handler(aEvent)
+  {
+    result.push(aEvent);
+  }
+
+  textarea.inputMode = "text";
+  textarea.value = "";
+  textarea.focus();
+
+  textarea.addEventListener("compositionupdate", handler, true);
+  textarea.addEventListener("compositionend", handler, true);
+
+  synthesizeCompositionChange({
+    composition: {string: "a ", clauses: [{length: 2, attr: COMPOSITION_ATTR_RAW_CLAUSE}]},
   });
 
+  is(result[0].type, "compositionupdate", "Set initial composition for inputmode test");
+  result = [];
+
+  textarea.inputMode = "tel";
+  is(result.length, 0, "No compositonend event even if inputmode is updated");
+
+  // Clean up
+  synthesizeComposition({ type: "compositioncommitasis" });
+  textarea.inputMode = "";
+  textarea.value = "";
+  textarea.removeEventListener("compositionupdate", handler, true);
+  textarea.removeEventListener("compositionend", handler, true);
+
+  await SpecialPowers.clearUserPref("dom.forms.inputmode");
+}
+
+
+async function runTest()
+{
   window.addEventListener("unload", window.arguments[0].SimpleTest.finish, {once: true, capture: true});
 
   contenteditable = document.getElementById("iframe4").contentDocument.getElementById("contenteditable");
@@ -9538,11 +9735,12 @@ async function runTest()
   await runPanelTest();
   await runPasswordMaskDelayTest();
   await runBug1584901Test();
+  await runInputModeTest();
 
   runUndoRedoTest();
+  runCompositionTest();
   runCompositionCommitAsIsTest();
   runCompositionCommitTest();
-  runCompositionTest();
   runCompositionEventTest();
   runQueryTextRectInContentEditableTest();
   runCharAtPointTest(textarea, "textarea in the document");
@@ -9558,7 +9756,9 @@ async function runTest()
   runBug1375825Test();
   runBug1530649Test();
   runBug1571375Test();
-  runBug1636747Test();
+  runBug1675313Test();
+  runCommitCompositionWithSpaceKey();
+  runCompositionWithSelectionChange();
   runForceCommitTest();
   runNestedSettingValue();
   runBug811755Test();

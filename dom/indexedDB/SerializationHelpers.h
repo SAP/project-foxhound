@@ -7,7 +7,8 @@
 #ifndef mozilla_dom_indexeddb_serializationhelpers_h__
 #define mozilla_dom_indexeddb_serializationhelpers_h__
 
-#include "ipc/IPCMessageUtils.h"
+#include "ipc/EnumSerializer.h"
+#include "ipc/IPCMessageUtilsSpecializations.h"
 
 #include "mozilla/dom/indexedDB/Key.h"
 #include "mozilla/dom/indexedDB/KeyPath.h"
@@ -45,8 +46,8 @@ template <>
 struct ParamTraits<mozilla::dom::indexedDB::KeyPath::KeyPathType>
     : public ContiguousEnumSerializer<
           mozilla::dom::indexedDB::KeyPath::KeyPathType,
-          mozilla::dom::indexedDB::KeyPath::NONEXISTENT,
-          mozilla::dom::indexedDB::KeyPath::ENDGUARD> {};
+          mozilla::dom::indexedDB::KeyPath::KeyPathType::NonExistent,
+          mozilla::dom::indexedDB::KeyPath::KeyPathType::EndGuard> {};
 
 template <>
 struct ParamTraits<mozilla::dom::indexedDB::KeyPath> {

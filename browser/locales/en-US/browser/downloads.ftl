@@ -2,7 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-
 ## The title and aria-label attributes are used by screen readers to describe
 ## the Downloads Panel.
 
@@ -16,8 +15,8 @@ downloads-panel =
 # The style attribute has the width of the Downloads Panel expressed using
 # a CSS unit. The longest labels that should fit are usually those of
 # in-progress and blocked downloads.
-downloads-panel-list =
-  .style = width: 70ch
+downloads-panel-items =
+  .style = width: 35em
 
 downloads-cmd-pause =
     .label = Pause
@@ -30,43 +29,48 @@ downloads-cmd-cancel =
 downloads-cmd-cancel-panel =
     .aria-label = Cancel
 
-# This message is only displayed on Windows and Linux devices
-downloads-cmd-show-menuitem =
-  .label = Open Containing Folder
-  .accesskey = F
-
-# This message is only displayed on macOS devices
-downloads-cmd-show-menuitem-mac =
-  .label = Show In Finder
+downloads-cmd-show-menuitem-2 =
+  .label = { PLATFORM() ->
+      [macos] Show in Finder
+     *[other] Show in Folder
+  }
   .accesskey = F
 
 downloads-cmd-use-system-default =
   .label = Open In System Viewer
   .accesskey = V
 
+# We can use the same accesskey as downloads-cmd-always-open-similar-files.
+# Both should not be visible in the downloads context menu at the same time.
 downloads-cmd-always-use-system-default =
   .label = Always Open In System Viewer
   .accesskey = w
 
-downloads-cmd-show-button =
+# We can use the same accesskey as downloads-cmd-always-use-system-default.
+# Both should not be visible in the downloads context menu at the same time.
+downloads-cmd-always-open-similar-files =
+  .label = Always Open Similar Files
+  .accesskey = w
+
+downloads-cmd-show-button-2 =
   .tooltiptext = { PLATFORM() ->
-      [macos] Show In Finder
-     *[other] Open Containing Folder
+      [macos] Show in Finder
+     *[other] Show in Folder
   }
 
-downloads-cmd-show-panel =
+downloads-cmd-show-panel-2 =
   .aria-label = { PLATFORM() ->
-      [macos] Show In Finder
-     *[other] Open Containing Folder
+      [macos] Show in Finder
+     *[other] Show in Folder
   }
-downloads-cmd-show-description =
+downloads-cmd-show-description-2 =
   .value = { PLATFORM() ->
-      [macos] Show In Finder
-     *[other] Open Containing Folder
+      [macos] Show in Finder
+     *[other] Show in Folder
   }
 
 downloads-cmd-show-downloads =
-    .label = Show Downloads Folder
+    .label = Show downloads folder
 downloads-cmd-retry =
     .tooltiptext = Retry
 downloads-cmd-retry-panel =
@@ -127,6 +131,22 @@ downloads-show-more-information =
 downloads-open-file =
     .value = Open File
 
+## Displayed when the user clicked on a download in process. Indicates that the
+## downloading file will be opened after certain amount of time using an app
+## available in the system.
+## Variables:
+##   $hours (number) - Amount of hours left till the file opens.
+##   $seconds (number) - Amount of seconds left till the file opens.
+##   $minutes (number) - Amount of minutes till the file opens.
+
+downloading-file-opens-in-hours-and-minutes = Opening in { $hours }h { $minutes }m…
+downloading-file-opens-in-minutes = Opening in { $minutes }m…
+downloading-file-opens-in-minutes-and-seconds = Opening in { $minutes }m { $seconds }s…
+downloading-file-opens-in-seconds = Opening in { $seconds }s…
+downloading-file-opens-in-some-time = Opening when completed…
+
+##
+
 # Displayed when hovering a download which is able to be retried by users,
 # indicates that it's possible to download this file again.
 downloads-retry-download =
@@ -141,13 +161,27 @@ downloads-cancel-download =
 # downloads fit in the available space, or when there are no downloads in
 # the panel at all.
 downloads-history =
-    .label = Show All Downloads
+    .label = Show all downloads
     .accesskey = S
 
 # This string is shown at the top of the Download Details Panel, to indicate
 # that we are showing the details of a single download.
 downloads-details =
     .title = Download Details
+
+## Displayed when a site attempts to automatically download many files.
+## Variables:
+##   $num (number) - Number of blocked downloads.
+##   $url (string) - The url of the suspicious site, stripped of http, https and www prefix.
+
+downloads-files-not-downloaded = { $num ->
+    [one] File not downloaded.
+   *[other] {$num} files not downloaded.
+}
+downloads-blocked-from-url = Downloads blocked from { $url }.
+downloads-blocked-download-detailed-info = { $url } attempted to automatically download multiple files. The site could be broken or trying to store spam files on your device.
+
+##
 
 downloads-clear-downloads-button =
     .label = Clear Downloads
@@ -161,3 +195,13 @@ downloads-list-empty =
 # This string is shown when there are no items in the Downloads Panel.
 downloads-panel-empty =
     .value = No downloads for this session.
+
+# This is displayed in an item at the bottom of the Downloads Panel when there
+# are more downloads than can fit in the list in the panel.
+#   $count (number) - number of files being downloaded that are not shown in the
+#                     panel list.
+downloads-more-downloading =
+    { $count ->
+        [one] { $count } more file downloading
+       *[other] { $count } more files downloading
+    }

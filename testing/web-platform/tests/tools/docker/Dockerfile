@@ -1,4 +1,4 @@
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
 # No interactive frontend during docker build
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -10,12 +10,14 @@ RUN apt-get -qqy update \
     bridge-utils \
     bzip2 \
     ca-certificates \
+    curl \
     dbus-x11 \
     earlyoom \
     fluxbox \
     gdebi \
     git \
     gstreamer1.0-plugins-bad \
+    gstreamer1.0-gl \
     libosmesa6-dev \
     libvirt-daemon-system \
     libvirt-clients \
@@ -24,16 +26,23 @@ RUN apt-get -qqy update \
     locales \
     openjdk-8-jre-headless \
     pulseaudio \
-    python \
-    python-pip \
     python3 \
+    python3-dev \
     python3-pip \
+    software-properties-common \
     qemu-kvm \
     tzdata \
     sudo \
     unzip \
     wget \
     xvfb
+
+# python3.6 is not available by default in new versions of Ubuntu.
+RUN apt-add-repository -y ppa:deadsnakes/ppa
+
+# Ensure a `python` binary exists
+RUN apt-get -qqy update \
+    && apt-get install -qqy python-is-python3
 
 # Installing just the deps of firefox and chrome is moderately tricky, so
 # just install the default versions of them, and some extra deps we happen
@@ -52,11 +61,8 @@ RUN apt-get -qqy install \
 
 RUN apt-get -y autoremove
 
-RUN pip2 install --upgrade pip
-RUN pip2 install virtualenv
-
-RUN pip3 install --upgrade pip
-RUN pip3 install virtualenv
+RUN pip install --upgrade pip
+RUN pip install virtualenv
 
 ENV TZ "UTC"
 RUN echo "${TZ}" > /etc/timezone \

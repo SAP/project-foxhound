@@ -24,18 +24,15 @@
 using namespace mozilla;
 
 // s. a. the code gtk_should_use_portal() uses to detect if in flatpak env
-// https://github.com/GNOME/gtk/blob/e0ce028c88858b96aeda9e41734a39a3a04f705d/gtk/gtkprivate.c#L272
+// https://gitlab.gnome.org/GNOME/gtk/-/blob/4300a5c609306ce77cbc8a3580c19201dccd8d13/gdk/gdk.c#L472
 static bool GetFlatpakPortalEnv() {
   bool shouldUsePortal;
-  char* path;
-  path = g_build_filename(g_get_user_runtime_dir(), "flatpak-info", nullptr);
-  if (g_file_test(path, G_FILE_TEST_EXISTS)) {
+  if (g_file_test("/.flatpak-info", G_FILE_TEST_EXISTS)) {
     shouldUsePortal = true;
   } else {
     const char* portalEnvString = g_getenv("GTK_USE_PORTAL");
     shouldUsePortal = portalEnvString != nullptr && atoi(portalEnvString) != 0;
   }
-  g_free(path);
   return shouldUsePortal;
 }
 
@@ -292,7 +289,6 @@ nsGIOMimeApp::GetSupportedURISchemes(nsIUTF8StringEnumerator** aSchemes) {
   *aSchemes = nullptr;
 
   RefPtr<GIOUTF8StringEnumerator> array = new GIOUTF8StringEnumerator();
-  NS_ENSURE_TRUE(array, NS_ERROR_OUT_OF_MEMORY);
 
   GVfs* gvfs = g_vfs_get_default();
 
@@ -516,7 +512,6 @@ nsGIOService::GetAppForMimeType(const nsACString& aMimeType,
 #endif
   if (app_info) {
     nsGIOMimeApp* mozApp = new nsGIOMimeApp(app_info);
-    NS_ENSURE_TRUE(mozApp, NS_ERROR_OUT_OF_MEMORY);
     NS_ADDREF(*aApp = mozApp);
   } else {
     g_free(content_type);
@@ -674,7 +669,6 @@ nsGIOService::FindAppFromCommand(nsACString const& aCmd,
   g_list_free(apps);
   if (app_info) {
     nsGIOMimeApp* app = new nsGIOMimeApp(app_info);
-    NS_ENSURE_TRUE(app, NS_ERROR_OUT_OF_MEMORY);
     NS_ADDREF(*aAppInfo = app);
     return NS_OK;
   }
@@ -725,7 +719,6 @@ nsGIOService::CreateAppFromCommand(nsACString const& cmd,
   g_free(executableWithFullPath);
 
   nsGIOMimeApp* mozApp = new nsGIOMimeApp(app_info);
-  NS_ENSURE_TRUE(mozApp, NS_ERROR_OUT_OF_MEMORY);
   NS_ADDREF(*appInfo = mozApp);
   return NS_OK;
 }

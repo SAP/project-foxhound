@@ -11,16 +11,22 @@
 /* :::::::::: button :::::::::: */
 
 button {
-  appearance: button;
   margin: 1px 5px 2px;
   min-width: 6.3em;
   color: ButtonText;
+  background-color: ButtonFace;
   text-shadow: none;
+  border: 1px solid ThreeDLightShadow;
+  padding: 2px 3px;
+  /* TODO: In Windows 11 perhaps we want some border-radius */
 }
 
-.button-box {
-  padding-block: 2px 3px;
-  padding-inline: 4px 5px;
+button:where(:hover) {
+  background-color: -moz-ButtonHoverFace;
+}
+
+button:where(:hover:active) {
+  background-color: -moz-ButtonActiveFace;
 }
 
 .button-text {
@@ -30,35 +36,41 @@ button {
 
 /* .......... focused state .......... */
 
-button:-moz-focusring {
+button:focus-visible {
   outline: 1px dotted;
   outline-offset: -3px;
 }
 
+@media (prefers-color-scheme: dark) {
+  button:focus-visible {
+    outline: 1px auto;
+    outline-offset: initial;
+  }
+}
+
 /* .......... default/hover/focused state .......... */
 
-@media (-moz-windows-default-theme: 0) {
-  @media (-moz-windows-compositor) {
-    /* This is for high-contrast black and white themes on Windows 8 and later,
-       where the native appearance renders a different background (which
-       appears to be equivalent to the Highlight color) if the button is in the
-       default, hovered or focused state. However, if these states overlap with
-       the active, disabled, open or checked state, the appearance reverts back
-       to the default background. */
-    button:-moz-any([default="true"],:hover,:focus):not(:-moz-any(:active,[disabled="true"],[open="true"],[checked="true"])) {
-      color: HighlightText;
-    }
+@media (prefers-contrast) and (-moz-windows-compositor) {
+  /* This is for high-contrast black and white themes on Windows 8 and later,
+     where the native appearance renders a different background (which
+     appears to be equivalent to the Highlight color) if the button is in the
+     default, hovered or focused state. However, if these states overlap with
+     the active, disabled, open or checked state, the appearance reverts back
+     to the default background. */
+  button:where([default="true"],:hover,:focus):where(:not(:active,[disabled="true"],[open="true"],[checked="true"])) {
+    color: HighlightText;
   }
 }
 
 /* .......... disabled state .......... */
 
-button[disabled="true"] {
+button:where([disabled="true"]) {
   color: GrayText;
+  background-color: ButtonFace;
 }
 
 @media (-moz-windows-classic) {
-  button[disabled="true"] {
+  button:where([disabled="true"]) {
     color: ThreeDShadow;
     text-shadow: 1px 1px ThreeDHighlight;
   }
@@ -68,7 +80,7 @@ button[disabled="true"] {
 
 .button-menu-dropmarker {
   appearance: none;
-  list-style-image: url("chrome://global/skin/icons/arrow-dropdown-12.svg");
+  list-style-image: url("chrome://global/skin/icons/arrow-down-12.svg");
   -moz-context-properties: fill;
   fill: currentColor;
   width: 12px;
@@ -85,12 +97,12 @@ button.plain {
 button[type="disclosure"] {
   margin: 0;
   appearance: none;
-  list-style-image: url("chrome://global/skin/icons/twisty-collapsed.svg");
+  list-style-image: url("chrome://global/skin/icons/arrow-right-12.svg");
   -moz-context-properties: fill;
   fill: currentColor;
   min-width: 0;
 }
 
 button[type="disclosure"][open="true"] {
-  list-style-image: url("chrome://global/skin/icons/twisty-expanded.svg");
+  list-style-image: url("chrome://global/skin/icons/arrow-down-12.svg");
 }

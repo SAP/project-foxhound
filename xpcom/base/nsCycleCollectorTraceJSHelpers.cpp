@@ -6,7 +6,7 @@
 
 #include "nsCycleCollectionParticipant.h"
 #include "nsString.h"
-#include "nsWrapperCache.h"
+#include "nsWrapperCacheInlines.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
 
@@ -34,7 +34,7 @@ void nsCycleCollectionParticipant::NoteJSChild(JS::GCCellPtr aGCThing,
 void TraceCallbackFunc::Trace(JS::Heap<JS::Value>* aPtr, const char* aName,
                               void* aClosure) const {
   if (aPtr->unbarrieredGet().isGCThing()) {
-    mCallback(JS::GCCellPtr(aPtr->unbarrieredGet()), aName, aClosure);
+    mCallback(aPtr->unbarrieredGet().toGCCellPtr(), aName, aClosure);
   }
 }
 

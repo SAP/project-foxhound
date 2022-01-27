@@ -8,8 +8,8 @@ richlistbox {
   appearance: auto;
   -moz-default-appearance: listbox;
   margin: 2px 4px;
-  background-color: -moz-Field;
-  color: -moz-FieldText;
+  background-color: Field;
+  color: FieldText;
   overflow: auto;
 }
 
@@ -22,9 +22,9 @@ richlistitem[selected="true"] {
   color: -moz-DialogText;
 }
 
-richlistbox:focus > richlistitem[selected="true"] {
-  background-color: Highlight;
-  color: HighlightText;
+richlistbox:where(:focus) > richlistitem[selected="true"] {
+  background-color: SelectedItem;
+  color: SelectedItemText;
 }
 
 richlistbox.theme-listbox > richlistitem {

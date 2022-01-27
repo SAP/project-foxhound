@@ -9,8 +9,11 @@
 #include "ClientManager.h"
 #include "ClientSource.h"
 #include "MainThreadUtils.h"
+#include "mozilla/dom/ClientsBinding.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
 #include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/StoragePrincipalHelper.h"
 #include "nsContentUtils.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIChannel.h"
@@ -19,8 +22,7 @@
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using mozilla::ipc::PrincipalInfoToPrincipal;
 
@@ -98,7 +100,28 @@ class ClientChannelHelper : public nsIInterfaceRequestor,
                               initialClientInfo.isNothing());
 
         if (reservedClientInfo.isSome()) {
-          newLoadInfo->SetReservedClientInfo(reservedClientInfo.ref());
+          // Create a new client for the case the controller is cleared for the
+          // new loadInfo. ServiceWorkerManager::DispatchFetchEvent() called
+          // ServiceWorkerManager::StartControllingClient() making the old
+          // client to be controlled eventually. However, the controller setting
+          // propagation to the child process could happen later than
+          // nsGlobalWindowInner::EnsureClientSource(), such that
+          // nsGlobalWindowInner will be controlled as unexpected.
+          if (oldLoadInfo->GetController().isSome() &&
+              newLoadInfo->GetController().isNothing()) {
+            nsCOMPtr<nsIPrincipal> foreignPartitionedPrincipal;
+            rv = StoragePrincipalHelper::GetPrincipal(
+                aNewChannel,
+                StaticPrefs::privacy_partition_serviceWorkers()
+                    ? StoragePrincipalHelper::eForeignPartitionedPrincipal
+                    : StoragePrincipalHelper::eRegularPrincipal,
+                getter_AddRefs(foreignPartitionedPrincipal));
+            NS_ENSURE_SUCCESS(rv, rv);
+            reservedClient.reset();
+            CreateClient(newLoadInfo, foreignPartitionedPrincipal);
+          } else {
+            newLoadInfo->SetReservedClientInfo(reservedClientInfo.ref());
+          }
         }
 
         if (initialClientInfo.isSome()) {
@@ -110,17 +133,17 @@ class ClientChannelHelper : public nsIInterfaceRequestor,
     // If it's a cross-origin redirect then we discard the old reserved client
     // and create a new one.
     else {
-      // If CheckSameOrigin() worked, then the security manager must exist.
-      nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
-      MOZ_DIAGNOSTIC_ASSERT(ssm);
-
-      nsCOMPtr<nsIPrincipal> principal;
-      rv = ssm->GetChannelResultPrincipal(aNewChannel,
-                                          getter_AddRefs(principal));
+      nsCOMPtr<nsIPrincipal> foreignPartitionedPrincipal;
+      rv = StoragePrincipalHelper::GetPrincipal(
+          aNewChannel,
+          StaticPrefs::privacy_partition_serviceWorkers()
+              ? StoragePrincipalHelper::eForeignPartitionedPrincipal
+              : StoragePrincipalHelper::eRegularPrincipal,
+          getter_AddRefs(foreignPartitionedPrincipal));
       NS_ENSURE_SUCCESS(rv, rv);
 
       reservedClient.reset();
-      CreateClient(newLoadInfo, principal);
+      CreateClient(newLoadInfo, foreignPartitionedPrincipal);
     }
 
     uint32_t redirectMode = nsIHttpChannelInternal::REDIRECT_MODE_MANUAL;
@@ -163,9 +186,9 @@ class ClientChannelHelper : public nsIInterfaceRequestor,
 
   NS_DECL_ISUPPORTS
 
-  static void CreateClientForPrincipal(nsILoadInfo* aLoadInfo,
-                                       nsIPrincipal* aPrincipal,
-                                       nsISerialEventTarget* aEventTarget) {
+  virtual void CreateClientForPrincipal(nsILoadInfo* aLoadInfo,
+                                        nsIPrincipal* aPrincipal,
+                                        nsISerialEventTarget* aEventTarget) {
     // Create the new ClientSource.  This should only happen for window
     // Clients since support cross-origin redirects are blocked by the
     // same-origin security policy.
@@ -181,16 +204,41 @@ NS_IMPL_ISUPPORTS(ClientChannelHelper, nsIInterfaceRequestor,
                   nsIChannelEventSink);
 
 class ClientChannelHelperParent final : public ClientChannelHelper {
-  ~ClientChannelHelperParent() = default;
+  ~ClientChannelHelperParent() {
+    // This requires that if a load completes, the associated ClientSource is
+    // created and registers itself before this ClientChannelHelperParent is
+    // destroyed. Otherwise, we may incorrectly "forget" a future ClientSource
+    // which will actually be created.
+    SetFutureSourceInfo(Nothing());
+  }
 
   void CreateClient(nsILoadInfo* aLoadInfo, nsIPrincipal* aPrincipal) override {
     CreateClientForPrincipal(aLoadInfo, aPrincipal, mEventTarget);
   }
 
+  void SetFutureSourceInfo(Maybe<ClientInfo>&& aClientInfo) {
+    if (mRecentFutureSourceInfo) {
+      // No-op if the corresponding ClientSource has alrady been created, but
+      // it's not known if that's the case here.
+      ClientManager::ForgetFutureSource(*mRecentFutureSourceInfo);
+    }
+
+    if (aClientInfo) {
+      Unused << NS_WARN_IF(!ClientManager::ExpectFutureSource(*aClientInfo));
+    }
+
+    mRecentFutureSourceInfo = std::move(aClientInfo);
+  }
+
+  // Keep track of the most recent ClientInfo created which isn't backed by a
+  // ClientSource, which is used to notify ClientManagerService that the
+  // ClientSource won't ever actually be constructed.
+  Maybe<ClientInfo> mRecentFutureSourceInfo;
+
  public:
-  static void CreateClientForPrincipal(nsILoadInfo* aLoadInfo,
-                                       nsIPrincipal* aPrincipal,
-                                       nsISerialEventTarget* aEventTarget) {
+  void CreateClientForPrincipal(nsILoadInfo* aLoadInfo,
+                                nsIPrincipal* aPrincipal,
+                                nsISerialEventTarget* aEventTarget) override {
     // If we're managing redirects in the parent, then we don't want
     // to create a new ClientSource (since those need to live with
     // the global), so just allocate a new ClientInfo/id and we can
@@ -200,6 +248,7 @@ class ClientChannelHelperParent final : public ClientChannelHelper {
         ClientManager::CreateInfo(ClientType::Window, aPrincipal);
     if (reservedInfo) {
       aLoadInfo->SetReservedClientInfo(*reservedInfo);
+      SetFutureSourceInfo(std::move(reservedInfo));
     }
   }
   ClientChannelHelperParent(nsIInterfaceRequestor* aOuter,
@@ -253,12 +302,13 @@ nsresult AddClientChannelHelperInternal(nsIChannel* aChannel,
 
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
 
-  nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
-  NS_ENSURE_TRUE(ssm, NS_ERROR_FAILURE);
-
-  nsCOMPtr<nsIPrincipal> channelPrincipal;
-  nsresult rv = ssm->GetChannelResultPrincipal(
-      aChannel, getter_AddRefs(channelPrincipal));
+  nsCOMPtr<nsIPrincipal> channelForeignPartitionedPrincipal;
+  nsresult rv = StoragePrincipalHelper::GetPrincipal(
+      aChannel,
+      StaticPrefs::privacy_partition_serviceWorkers()
+          ? StoragePrincipalHelper::eForeignPartitionedPrincipal
+          : StoragePrincipalHelper::eRegularPrincipal,
+      getter_AddRefs(channelForeignPartitionedPrincipal));
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Only allow the initial ClientInfo to be set if the current channel
@@ -268,9 +318,10 @@ nsresult AddClientChannelHelperInternal(nsIChannel* aChannel,
         PrincipalInfoToPrincipal(initialClientInfo.ref().PrincipalInfo());
 
     bool equals = false;
-    rv = initialPrincipalOrErr.isErr() ? initialPrincipalOrErr.unwrapErr()
-                                       : initialPrincipalOrErr.unwrap()->Equals(
-                                             channelPrincipal, &equals);
+    rv = initialPrincipalOrErr.isErr()
+             ? initialPrincipalOrErr.unwrapErr()
+             : initialPrincipalOrErr.unwrap()->Equals(
+                   channelForeignPartitionedPrincipal, &equals);
     if (NS_FAILED(rv) || !equals) {
       initialClientInfo.reset();
     }
@@ -285,8 +336,8 @@ nsresult AddClientChannelHelperInternal(nsIChannel* aChannel,
     bool equals = false;
     rv = reservedPrincipalOrErr.isErr()
              ? reservedPrincipalOrErr.unwrapErr()
-             : reservedPrincipalOrErr.unwrap()->Equals(channelPrincipal,
-                                                       &equals);
+             : reservedPrincipalOrErr.unwrap()->Equals(
+                   channelForeignPartitionedPrincipal, &equals);
     if (NS_FAILED(rv) || !equals) {
       reservedClientInfo.reset();
     }
@@ -296,11 +347,12 @@ nsresult AddClientChannelHelperInternal(nsIChannel* aChannel,
   rv = aChannel->GetNotificationCallbacks(getter_AddRefs(outerCallbacks));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (initialClientInfo.isNothing() && reservedClientInfo.isNothing()) {
-    T::CreateClientForPrincipal(loadInfo, channelPrincipal, aEventTarget);
-  }
-
   RefPtr<ClientChannelHelper> helper = new T(outerCallbacks, aEventTarget);
+
+  if (initialClientInfo.isNothing() && reservedClientInfo.isNothing()) {
+    helper->CreateClientForPrincipal(
+        loadInfo, channelForeignPartitionedPrincipal, aEventTarget);
+  }
 
   // Only set the callbacks helper if we are able to reserve the client
   // successfully.
@@ -368,5 +420,4 @@ void CreateReservedSourceIfNeeded(nsIChannel* aChannel,
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

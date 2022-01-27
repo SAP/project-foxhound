@@ -6,14 +6,19 @@
 <script>
 const NON_CONTENT_ACCESSIBLE_VALUES = {
   "color": [
-    "-moz-gtk-buttonactivetext",
+    "-moz-buttonactivetext",
+    "-moz-buttonactiveface",
+    "-moz-buttondisabledface",
+    "-moz-disabledfield",
     "-moz-colheaderhovertext",
     "-moz-colheadertext",
+    "-moz-nativevisitedhyperlinktext",
+    "text-select-disabled-background",
+    "text-select-attention-background",
+    "text-select-attention-foreground",
+    "-moz-autofill-background",
   ],
   "display": [
-    "-moz-grid",
-    "-moz-grid-group",
-    "-moz-grid-line",
     "-moz-deck",
     "-moz-popup",
   ],
@@ -87,7 +92,6 @@ const NON_CONTENT_ACCESSIBLE_VALUES = {
     "-moz-win-glass",
     "-moz-win-borderless-glass",
     "-moz-win-exclude-glass",
-    "-moz-mac-fullscreen-button",
     "-moz-mac-help-button",
     "-moz-window-button-box",
     "-moz-window-button-box-maximized",
@@ -100,14 +104,11 @@ const NON_CONTENT_ACCESSIBLE_VALUES = {
     "-moz-window-frame-right",
     "-moz-window-titlebar",
     "-moz-window-titlebar-maximized",
-    "-moz-gtk-info-bar",
     "-moz-mac-active-source-list-selection",
     "-moz-mac-disclosure-button-closed",
     "-moz-mac-disclosure-button-open",
     "-moz-mac-source-list",
     "-moz-mac-source-list-selection",
-    "-moz-mac-vibrancy-dark",
-    "-moz-mac-vibrancy-light",
     "-moz-mac-vibrant-titlebar-dark",
     "-moz-mac-vibrant-titlebar-light",
 
@@ -117,7 +118,7 @@ const NON_CONTENT_ACCESSIBLE_VALUES = {
     "menulist-textfield",
     "menulist-text",
   ],
-  "-moz-user-select": [
+  "user-select": [
     "-moz-text",
   ],
   "line-height": [

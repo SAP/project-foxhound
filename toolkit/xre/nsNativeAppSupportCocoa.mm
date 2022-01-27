@@ -64,14 +64,14 @@ NS_IMETHODIMP nsNativeAppSupportCocoa::Start(bool* _retval) {
   int major, minor, bugfix;
   nsCocoaFeatures::GetSystemVersion(major, minor, bugfix);
 
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   // Check that the OS version is supported, if not return false,
   // which will make the browser quit.  In principle we could display an
   // alert here.  But the alert's message and buttons would require custom
   // localization.  So (for now at least) we just log an English message
   // to the console before quitting.
-  if (major < 10 || minor < 6) {
+  if (major < 10 || (major == 10 && minor < 12)) {
     NSLog(@"Minimum OS version requirement not met!");
     return NS_OK;
   }
@@ -80,12 +80,12 @@ NS_IMETHODIMP nsNativeAppSupportCocoa::Start(bool* _retval) {
 
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 NS_IMETHODIMP
 nsNativeAppSupportCocoa::ReOpen() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (!mCanShowUI) return NS_ERROR_FAILURE;
 
@@ -114,7 +114,7 @@ nsNativeAppSupportCocoa::ReOpen() {
 
       nsCOMPtr<nsIWidget> widget = nullptr;
       baseWindow->GetMainWidget(getter_AddRefs(widget));
-      if (!widget) {
+      if (!widget || !widget->IsVisible()) {
         windowList->HasMoreElements(&more);
         continue;
       }
@@ -127,9 +127,14 @@ nsNativeAppSupportCocoa::ReOpen() {
     }  // end while
 
     if (!haveNonMiniaturized) {
-      // Deminiaturize the most recenty used window
+      // Prioritize browser windows for deminiaturization
       nsCOMPtr<mozIDOMWindowProxy> mru;
-      wm->GetMostRecentWindow(nullptr, getter_AddRefs(mru));
+      wm->GetMostRecentBrowserWindow(getter_AddRefs(mru));
+
+      // Failing that, deminiaturize the most recently used window
+      if (!mru) {
+        wm->GetMostRecentWindow(nullptr, getter_AddRefs(mru));
+      }
 
       if (mru) {
         NSWindow* cocoaMru = nil;
@@ -157,7 +162,7 @@ nsNativeAppSupportCocoa::ReOpen() {
   }  // got window mediator
   return NS_OK;
 
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 #pragma mark -

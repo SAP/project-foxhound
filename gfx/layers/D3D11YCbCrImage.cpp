@@ -6,10 +6,10 @@
 
 #include "D3D11YCbCrImage.h"
 
-#include "gfx2DGlue.h"
 #include "YCbCrUtils.h"
-#include "mozilla/gfx/gfxVars.h"
+#include "gfx2DGlue.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/CompositableClient.h"
 #include "mozilla/layers/CompositableForwarder.h"
 #include "mozilla/layers/TextureD3D11.h"
@@ -172,6 +172,10 @@ already_AddRefed<SourceSurface> D3D11YCbCrImage::GetAsSourceSurface() {
   desc.Usage = D3D11_USAGE_STAGING;
 
   dev->CreateTexture2D(&desc, nullptr, getter_AddRefs(softTexY));
+  if (!softTexY) {
+    gfxCriticalNote << "Failed to allocate softTexY";
+    return nullptr;
+  }
 
   texCb->GetDesc(&desc);
   desc.BindFlags = 0;
@@ -180,6 +184,10 @@ already_AddRefed<SourceSurface> D3D11YCbCrImage::GetAsSourceSurface() {
   desc.Usage = D3D11_USAGE_STAGING;
 
   dev->CreateTexture2D(&desc, nullptr, getter_AddRefs(softTexCb));
+  if (!softTexCb) {
+    gfxCriticalNote << "Failed to allocate softTexCb";
+    return nullptr;
+  }
 
   texCr->GetDesc(&desc);
   desc.BindFlags = 0;
@@ -188,6 +196,10 @@ already_AddRefed<SourceSurface> D3D11YCbCrImage::GetAsSourceSurface() {
   desc.Usage = D3D11_USAGE_STAGING;
 
   dev->CreateTexture2D(&desc, nullptr, getter_AddRefs(softTexCr));
+  if (!softTexCr) {
+    gfxCriticalNote << "Failed to allocate softTexCr";
+    return nullptr;
+  }
 
   RefPtr<ID3D11DeviceContext> ctx;
   dev->GetImmediateContext(getter_AddRefs(ctx));
@@ -287,13 +299,20 @@ class AutoCheckLockD3D11Texture final {
 
     // Test to see if the keyed mutex has been released
     HRESULT hr = mMutex->AcquireSync(0, 0);
-    if (SUCCEEDED(hr)) {
+    if (hr == S_OK || hr == WAIT_ABANDONED) {
       mIsLocked = true;
+      // According to Microsoft documentation:
+      // WAIT_ABANDONED - The shared surface and keyed mutex are no longer in a
+      // consistent state. If AcquireSync returns this value, you should release
+      // and recreate both the keyed mutex and the shared surface
+      // So even if we do get WAIT_ABANDONED, the keyed mutex will have to be
+      // released.
+      mSyncAcquired = true;
     }
   }
 
   ~AutoCheckLockD3D11Texture() {
-    if (!mMutex) {
+    if (!mSyncAcquired) {
       return;
     }
     HRESULT hr = mMutex->ReleaseSync(0);
@@ -306,13 +325,14 @@ class AutoCheckLockD3D11Texture final {
 
  private:
   bool mIsLocked;
+  bool mSyncAcquired = false;
   RefPtr<IDXGIKeyedMutex> mMutex;
 };
 
 DXGIYCbCrTextureAllocationHelper::DXGIYCbCrTextureAllocationHelper(
     const PlanarYCbCrData& aData, TextureFlags aTextureFlags,
     ID3D11Device* aDevice)
-    : ITextureClientAllocationHelper(gfx::SurfaceFormat::YUV, aData.mYSize,
+    : ITextureClientAllocationHelper(gfx::SurfaceFormat::YUV, aData.mPicSize,
                                      BackendSelector::Content, aTextureFlags,
                                      ALLOC_DEFAULT),
       mData(aData),
@@ -324,7 +344,7 @@ bool DXGIYCbCrTextureAllocationHelper::IsCompatible(
 
   DXGIYCbCrTextureData* dxgiData =
       aTextureClient->GetInternalData()->AsDXGIYCbCrTextureData();
-  if (!dxgiData || aTextureClient->GetSize() != mData.mYSize ||
+  if (!dxgiData || aTextureClient->GetSize() != mData.mPicSize ||
       dxgiData->GetYSize() != mData.mYSize ||
       dxgiData->GetCbCrSize() != mData.mCbCrSize ||
       dxgiData->GetColorDepth() != mData.mColorDepth ||
@@ -404,10 +424,10 @@ already_AddRefed<TextureClient> DXGIYCbCrTextureAllocationHelper::Allocate(
       aAllocator ? aAllocator->GetTextureForwarder() : nullptr;
 
   return TextureClient::CreateWithData(
-      DXGIYCbCrTextureData::Create(textureY, textureCb, textureCr, mData.mYSize,
-                                   mData.mYSize, mData.mCbCrSize,
-                                   mData.mColorDepth, mData.mYUVColorSpace,
-                                   mData.mColorRange),
+      DXGIYCbCrTextureData::Create(textureY, textureCb, textureCr,
+                                   mData.mPicSize, mData.mYSize,
+                                   mData.mCbCrSize, mData.mColorDepth,
+                                   mData.mYUVColorSpace, mData.mColorRange),
       mTextureFlags, forwarder);
 }
 

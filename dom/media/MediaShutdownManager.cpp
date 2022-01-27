@@ -4,12 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Logging.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/Services.h"
+#include "MediaShutdownManager.h"
 
 #include "MediaDecoder.h"
-#include "MediaShutdownManager.h"
+#include "mozilla/Logging.h"
+#include "mozilla/media/MediaUtils.h"
+#include "mozilla/Services.h"
+#include "mozilla/StaticPtr.h"
+#include "nsComponentManagerUtils.h"
+#include "nsIWritablePropertyBag2.h"
 
 namespace mozilla {
 
@@ -46,22 +49,6 @@ MediaShutdownManager& MediaShutdownManager::Instance() {
   return *sInstance;
 }
 
-static nsCOMPtr<nsIAsyncShutdownClient> GetShutdownBarrier() {
-  nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdownService();
-  MOZ_RELEASE_ASSERT(svc);
-
-  nsCOMPtr<nsIAsyncShutdownClient> barrier;
-  nsresult rv = svc->GetProfileBeforeChange(getter_AddRefs(barrier));
-  if (!barrier) {
-    // We are probably in a content process. We need to do cleanup at
-    // XPCOM shutdown in leakchecking builds.
-    rv = svc->GetXpcomWillShutdown(getter_AddRefs(barrier));
-  }
-  MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
-  MOZ_RELEASE_ASSERT(barrier);
-  return barrier;
-}
-
 void MediaShutdownManager::InitStatics() {
   MOZ_ASSERT(NS_IsMainThread());
   if (sInitPhase != NotInited) {
@@ -71,9 +58,17 @@ void MediaShutdownManager::InitStatics() {
   sInstance = new MediaShutdownManager();
   MOZ_DIAGNOSTIC_ASSERT(sInstance);
 
-  nsresult rv = GetShutdownBarrier()->AddBlocker(
-      sInstance, NS_LITERAL_STRING_FROM_CSTRING(__FILE__), __LINE__,
-      u"MediaShutdownManager shutdown"_ns);
+  nsCOMPtr<nsIAsyncShutdownClient> barrier = media::GetShutdownBarrier();
+
+  if (!barrier) {
+    LOGW("Failed to get barrier, cannot add shutdown blocker!");
+    sInitPhase = InitFailed;
+    return;
+  }
+
+  nsresult rv =
+      barrier->AddBlocker(sInstance, NS_LITERAL_STRING_FROM_CSTRING(__FILE__),
+                          __LINE__, u"MediaShutdownManager shutdown"_ns);
   if (NS_FAILED(rv)) {
     LOGW("Failed to add shutdown blocker! rv=%x", uint32_t(rv));
     sInitPhase = InitFailed;
@@ -86,7 +81,14 @@ void MediaShutdownManager::RemoveBlocker() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_DIAGNOSTIC_ASSERT(sInitPhase == XPCOMShutdownStarted);
   MOZ_ASSERT(mDecoders.Count() == 0);
-  GetShutdownBarrier()->RemoveBlocker(this);
+  nsCOMPtr<nsIAsyncShutdownClient> barrier = media::GetShutdownBarrier();
+  // xpcom should still be available because we blocked shutdown by having a
+  // blocker. Until it completely shuts down we should still be able to get
+  // the barrier.
+  MOZ_RELEASE_ASSERT(
+      barrier,
+      "Failed to get shutdown barrier, cannot remove shutdown blocker!");
+  barrier->RemoveBlocker(this);
   // Clear our singleton reference. This will probably delete
   // this instance, so don't deref |this| clearing sInstance.
   sInitPhase = XPCOMShutdownEnded;
@@ -105,7 +107,7 @@ nsresult MediaShutdownManager::Register(MediaDecoder* aDecoder) {
   // Don't call Register() after you've Unregistered() all the decoders,
   // that's not going to work.
   MOZ_ASSERT(!mDecoders.Contains(aDecoder));
-  mDecoders.PutEntry(aDecoder);
+  mDecoders.Insert(aDecoder);
   MOZ_ASSERT(mDecoders.Contains(aDecoder));
   MOZ_ASSERT(mDecoders.Count() > 0);
   return NS_OK;
@@ -113,10 +115,9 @@ nsresult MediaShutdownManager::Register(MediaDecoder* aDecoder) {
 
 void MediaShutdownManager::Unregister(MediaDecoder* aDecoder) {
   MOZ_ASSERT(NS_IsMainThread());
-  if (!mDecoders.Contains(aDecoder)) {
+  if (!mDecoders.EnsureRemoved(aDecoder)) {
     return;
   }
-  mDecoders.RemoveEntry(aDecoder);
   if (sInitPhase == XPCOMShutdownStarted && mDecoders.Count() == 0) {
     RemoveBlocker();
   }
@@ -129,7 +130,42 @@ MediaShutdownManager::GetName(nsAString& aName) {
 }
 
 NS_IMETHODIMP
-MediaShutdownManager::GetState(nsIPropertyBag**) { return NS_OK; }
+MediaShutdownManager::GetState(nsIPropertyBag** aBagOut) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(aBagOut);
+
+  nsCOMPtr<nsIWritablePropertyBag2> propertyBag =
+      do_CreateInstance("@mozilla.org/hash-property-bag;1");
+
+  if (NS_WARN_IF(!propertyBag)) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+
+  nsresult rv = propertyBag->SetPropertyAsInt32(
+      u"sInitPhase"_ns, static_cast<int32_t>(sInitPhase));
+
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  nsAutoCString decoderInfo;
+  for (const auto& key : mDecoders) {
+    // Grab the full extended type for the decoder. This can be used to help
+    // indicate problems with specific decoders by associating type -> decoder.
+    decoderInfo.Append(key->ContainerType().ExtendedType().OriginalString());
+    decoderInfo.Append(", ");
+  }
+
+  rv = propertyBag->SetPropertyAsACString(u"decoderInfo"_ns, decoderInfo);
+
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  propertyBag.forget(aBagOut);
+
+  return NS_OK;
+}
 
 NS_IMETHODIMP
 MediaShutdownManager::BlockShutdown(nsIAsyncShutdownClient*) {
@@ -150,8 +186,8 @@ MediaShutdownManager::BlockShutdown(nsIAsyncShutdownClient*) {
   }
 
   // Iterate over the decoders and shut them down.
-  for (auto iter = mDecoders.Iter(); !iter.Done(); iter.Next()) {
-    iter.Get()->GetKey()->NotifyXPCOMShutdown();
+  for (const auto& key : mDecoders) {
+    key->NotifyXPCOMShutdown();
     // Check MediaDecoder::Shutdown doesn't call Unregister() synchronously in
     // order not to corrupt our hashtable traversal.
     MOZ_ASSERT(mDecoders.Count() == oldCount);

@@ -12,9 +12,12 @@
 // found in the LICENSE file.
 
 #include "mozilla/dom/GamepadRemapping.h"
+#include "mozilla/dom/GamepadPlatformService.h"
 
-namespace mozilla {
-namespace dom {
+#include <vector>
+#include <unordered_map>
+
+namespace mozilla::dom {
 
 // Follow the canonical ordering recommendation for the "Standard Gamepad"
 // from https://www.w3.org/TR/gamepad/#remapping.
@@ -68,7 +71,7 @@ double AxisToButtonValue(double aValue) {
   return (aValue + 1.0f) * 0.5f;
 }
 
-void FetchDpadFromAxis(uint32_t aIndex, double dir) {
+void FetchDpadFromAxis(GamepadHandle aHandle, double dir) {
   bool up = false;
   bool right = false;
   bool down = false;
@@ -91,10 +94,10 @@ void FetchDpadFromAxis(uint32_t aIndex, double dir) {
     return;
   }
 
-  service->NewButtonEvent(aIndex, BUTTON_INDEX_DPAD_UP, up);
-  service->NewButtonEvent(aIndex, BUTTON_INDEX_DPAD_RIGHT, right);
-  service->NewButtonEvent(aIndex, BUTTON_INDEX_DPAD_DOWN, down);
-  service->NewButtonEvent(aIndex, BUTTON_INDEX_DPAD_LEFT, left);
+  service->NewButtonEvent(aHandle, BUTTON_INDEX_DPAD_UP, up);
+  service->NewButtonEvent(aHandle, BUTTON_INDEX_DPAD_RIGHT, right);
+  service->NewButtonEvent(aHandle, BUTTON_INDEX_DPAD_DOWN, down);
+  service->NewButtonEvent(aHandle, BUTTON_INDEX_DPAD_LEFT, left);
 }
 
 class DefaultRemapper final : public GamepadRemapper {
@@ -115,7 +118,7 @@ class DefaultRemapper final : public GamepadRemapper {
     return GamepadMappingType::_empty;
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     if (GetAxisCount() <= aAxis) {
       NS_WARNING(
@@ -129,10 +132,10 @@ class DefaultRemapper final : public GamepadRemapper {
     if (!service) {
       return;
     }
-    service->NewAxisMoveEvent(aIndex, aAxis, aValue);
+    service->NewAxisMoveEvent(aHandle, aAxis, aValue);
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     if (GetButtonCount() <= aButton) {
       NS_WARNING(
@@ -146,7 +149,7 @@ class DefaultRemapper final : public GamepadRemapper {
     if (!service) {
       return;
     }
-    service->NewButtonEvent(aIndex, aButton, aPressed);
+    service->NewButtonEvent(aHandle, aButton, aPressed);
   }
 
  private:
@@ -162,7 +165,7 @@ class ADT1Remapper final : public GamepadRemapper {
     return BUTTON_INDEX_COUNT;
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -172,31 +175,31 @@ class ADT1Remapper final : public GamepadRemapper {
 
     switch (aAxis) {
       case 0:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
         break;
       case 1:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
         break;
       case 2:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
         break;
       case 3: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_RIGHT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_RIGHT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 4: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_LEFT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_LEFT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 5:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
         break;
       case 9:
-        FetchDpadFromAxis(aIndex, aValue);
+        FetchDpadFromAxis(aHandle, aValue);
         break;
       default:
         NS_WARNING(
@@ -207,7 +210,7 @@ class ADT1Remapper final : public GamepadRemapper {
     }
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -223,7 +226,7 @@ class ADT1Remapper final : public GamepadRemapper {
       return;
     }
 
-    const std::map<uint32_t, uint32_t> buttonMapping = {
+    const std::unordered_map<uint32_t, uint32_t> buttonMapping = {
         {3, BUTTON_INDEX_TERTIARY},
         {4, BUTTON_INDEX_QUATERNARY},
         {6, BUTTON_INDEX_LEFT_SHOULDER},
@@ -234,9 +237,9 @@ class ADT1Remapper final : public GamepadRemapper {
 
     auto find = buttonMapping.find(aButton);
     if (find != buttonMapping.end()) {
-      service->NewButtonEvent(aIndex, find->second, aPressed);
+      service->NewButtonEvent(aHandle, find->second, aPressed);
     } else {
-      service->NewButtonEvent(aIndex, aButton, aPressed);
+      service->NewButtonEvent(aHandle, aButton, aPressed);
     }
   }
 };
@@ -249,7 +252,7 @@ class TwoAxesEightKeysRemapper final : public GamepadRemapper {
     return BUTTON_INDEX_COUNT - 1;
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -259,15 +262,15 @@ class TwoAxesEightKeysRemapper final : public GamepadRemapper {
 
     switch (aAxis) {
       case 0:
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_DPAD_LEFT,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_DPAD_LEFT,
                                 AxisNegativeAsButton(aValue));
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_DPAD_RIGHT,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_DPAD_RIGHT,
                                 AxisPositiveAsButton(aValue));
         break;
       case 1:
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_DPAD_UP,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_DPAD_UP,
                                 AxisNegativeAsButton(aValue));
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_DPAD_DOWN,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_DPAD_DOWN,
                                 AxisPositiveAsButton(aValue));
         break;
       default:
@@ -280,7 +283,7 @@ class TwoAxesEightKeysRemapper final : public GamepadRemapper {
     }
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -297,16 +300,16 @@ class TwoAxesEightKeysRemapper final : public GamepadRemapper {
       return;
     }
 
-    const std::map<uint32_t, uint32_t> buttonMapping = {
+    const std::unordered_map<uint32_t, uint32_t> buttonMapping = {
         {0, BUTTON_INDEX_QUATERNARY},
         {2, BUTTON_INDEX_PRIMARY},
         {3, BUTTON_INDEX_TERTIARY}};
 
     auto find = buttonMapping.find(aButton);
     if (find != buttonMapping.end()) {
-      service->NewButtonEvent(aIndex, find->second, aPressed);
+      service->NewButtonEvent(aHandle, find->second, aPressed);
     } else {
-      service->NewButtonEvent(aIndex, aButton, aPressed);
+      service->NewButtonEvent(aHandle, aButton, aPressed);
     }
   }
 };
@@ -319,7 +322,7 @@ class StadiaControllerRemapper final : public GamepadRemapper {
     return STADIA_BUTTON_COUNT;
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -329,25 +332,27 @@ class StadiaControllerRemapper final : public GamepadRemapper {
 
     switch (aAxis) {
       case 0:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
         break;
       case 1:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
         break;
       case 2:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
         break;
       case 3:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
         break;
       case 4: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_LEFT_TRIGGER, value > BUTTON_THRESHOLD_VALUE, value);
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_LEFT_TRIGGER,
+                                value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 5: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_RIGHT_TRIGGER, value > BUTTON_THRESHOLD_VALUE, value);
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_RIGHT_TRIGGER,
+                                value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       default:
@@ -360,7 +365,7 @@ class StadiaControllerRemapper final : public GamepadRemapper {
     }
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -377,7 +382,7 @@ class StadiaControllerRemapper final : public GamepadRemapper {
       return;
     }
 
-    service->NewButtonEvent(aIndex, aButton, aPressed);
+    service->NewButtonEvent(aHandle, aButton, aPressed);
   }
 
  private:
@@ -396,7 +401,7 @@ class Playstation3Remapper final : public GamepadRemapper {
 
   uint32_t GetButtonCount() const override { return BUTTON_INDEX_COUNT; }
 
-  void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                           double aValue) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -406,27 +411,28 @@ class Playstation3Remapper final : public GamepadRemapper {
 
     switch (aAxis) {
       case 0:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
         break;
       case 1:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
         break;
       case 2:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
         break;
       case 5:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
         break;
       default:
         NS_WARNING(
             nsPrintfCString(
-                "Axis idx '%d' doesn't support in Playstation3Remapper().", aAxis)
+                "Axis idx '%d' doesn't support in Playstation3Remapper().",
+                aAxis)
                 .get());
         break;
     }
   }
 
-  void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                         bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -460,7 +466,7 @@ class Playstation3Remapper final : public GamepadRemapper {
               .get());
       return;
     }
-    service->NewButtonEvent(aIndex, buttonMapping[aButton], aPressed);
+    service->NewButtonEvent(aHandle, buttonMapping[aButton], aPressed);
   }
 };
 
@@ -512,7 +518,7 @@ class Dualshock4Remapper final : public GamepadRemapper {
     return MAX_INPUT_LEN;
   }
 
-  virtual void ProcessTouchData(uint32_t aIndex, void* aInput) override {
+  virtual void ProcessTouchData(GamepadHandle aHandle, void* aInput) override {
     nsTArray<GamepadTouchState> touches(TOUCH_EVENT_COUNT);
     touches.SetLength(TOUCH_EVENT_COUNT);
     uint8_t* rawData = (uint8_t*)aInput;
@@ -563,16 +569,16 @@ class Dualshock4Remapper final : public GamepadRemapper {
 
     // Avoid to send duplicate untouched events to the gamepad service.
     if ((mLastTouches[0] != touch0Pressed) || touch0Pressed) {
-      service->NewMultiTouchEvent(aIndex, 0, touches[0]);
+      service->NewMultiTouchEvent(aHandle, 0, touches[0]);
     }
     if ((mLastTouches[1] != touch1Pressed) || touch1Pressed) {
-      service->NewMultiTouchEvent(aIndex, 1, touches[1]);
+      service->NewMultiTouchEvent(aHandle, 1, touches[1]);
     }
     mLastTouches[0] = touch0Pressed;
     mLastTouches[1] = touch1Pressed;
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -582,31 +588,31 @@ class Dualshock4Remapper final : public GamepadRemapper {
 
     switch (aAxis) {
       case 0:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
         break;
       case 1:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
         break;
       case 2:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
         break;
       case 3: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_LEFT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_LEFT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
-         break;
+        break;
       }
       case 4: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_RIGHT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_RIGHT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
-         break;
+        break;
       }
       case 5:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
         break;
       case 9:
-        FetchDpadFromAxis(aIndex, aValue);
+        FetchDpadFromAxis(aHandle, aValue);
         break;
       default:
         NS_WARNING(
@@ -617,7 +623,7 @@ class Dualshock4Remapper final : public GamepadRemapper {
     }
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -648,7 +654,7 @@ class Dualshock4Remapper final : public GamepadRemapper {
       return;
     }
 
-    service->NewButtonEvent(aIndex, buttonMapping[aButton], aPressed);
+    service->NewButtonEvent(aHandle, buttonMapping[aButton], aPressed);
   }
 
  private:
@@ -666,6 +672,364 @@ class Dualshock4Remapper final : public GamepadRemapper {
   unsigned long mTouchIdBase = 0;
 };
 
+class Xbox360Remapper final : public GamepadRemapper {
+ public:
+  virtual uint32_t GetAxisCount() const override { return AXIS_INDEX_COUNT; }
+
+  virtual uint32_t GetButtonCount() const override {
+    return BUTTON_INDEX_COUNT;
+  }
+
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
+                                  double aValue) const override {
+    RefPtr<GamepadPlatformService> service =
+        GamepadPlatformService::GetParentService();
+    if (!service) {
+      return;
+    }
+
+    switch (aAxis) {
+      case 0:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
+        break;
+      case 1:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        break;
+      case 2: {
+        const double value = AxisToButtonValue(aValue);
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_LEFT_TRIGGER,
+                                value > BUTTON_THRESHOLD_VALUE, value);
+        break;
+      }
+      case 3:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        break;
+      case 4:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        break;
+      case 5: {
+        const double value = AxisToButtonValue(aValue);
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_RIGHT_TRIGGER,
+                                value > BUTTON_THRESHOLD_VALUE, value);
+        break;
+      }
+      default:
+        NS_WARNING(
+            nsPrintfCString(
+                "Axis idx '%d' doesn't support in Xbox360Remapper().", aAxis)
+                .get());
+        break;
+    }
+  }
+
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
+                                bool aPressed) const override {
+    RefPtr<GamepadPlatformService> service =
+        GamepadPlatformService::GetParentService();
+    if (!service) {
+      return;
+    }
+
+    if (GetButtonCount() <= aButton) {
+      NS_WARNING(
+          nsPrintfCString(
+              "Button idx '%d' doesn't support in Xbox360Remapper().", aButton)
+              .get());
+      return;
+    }
+
+    const std::unordered_map<uint32_t, uint32_t> buttonMapping = {
+        {6, BUTTON_INDEX_LEFT_THUMBSTICK}, {7, BUTTON_INDEX_RIGHT_THUMBSTICK},
+        {8, BUTTON_INDEX_START},           {9, BUTTON_INDEX_BACK_SELECT},
+        {10, BUTTON_INDEX_META},           {11, BUTTON_INDEX_DPAD_UP},
+        {12, BUTTON_INDEX_DPAD_DOWN},      {13, BUTTON_INDEX_DPAD_LEFT},
+        {14, BUTTON_INDEX_DPAD_RIGHT}};
+
+    auto find = buttonMapping.find(aButton);
+    if (find != buttonMapping.end()) {
+      service->NewButtonEvent(aHandle, find->second, aPressed);
+    } else {
+      service->NewButtonEvent(aHandle, aButton, aPressed);
+    }
+  }
+};
+
+class XboxOneSRemapper final : public GamepadRemapper {
+ public:
+  virtual uint32_t GetAxisCount() const override { return AXIS_INDEX_COUNT; }
+
+  virtual uint32_t GetButtonCount() const override {
+    return BUTTON_INDEX_COUNT;
+  }
+
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
+                                  double aValue) const override {
+    RefPtr<GamepadPlatformService> service =
+        GamepadPlatformService::GetParentService();
+    if (!service) {
+      return;
+    }
+
+    switch (aAxis) {
+      case 0:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
+        break;
+      case 1:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        break;
+      case 2: {
+        const double value = AxisToButtonValue(aValue);
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_LEFT_TRIGGER,
+                                value > BUTTON_THRESHOLD_VALUE, value);
+        break;
+      }
+      case 3:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        break;
+      case 4:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        break;
+      case 5: {
+        const double value = AxisToButtonValue(aValue);
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_RIGHT_TRIGGER,
+                                value > BUTTON_THRESHOLD_VALUE, value);
+        break;
+      }
+      case 9:
+        FetchDpadFromAxis(aHandle, aValue);
+        break;
+      default:
+        NS_WARNING(
+            nsPrintfCString(
+                "Axis idx '%d' doesn't support in XboxOneSRemapper().", aAxis)
+                .get());
+        break;
+    }
+  }
+
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
+                                bool aPressed) const override {
+    RefPtr<GamepadPlatformService> service =
+        GamepadPlatformService::GetParentService();
+    if (!service) {
+      return;
+    }
+
+    if (GetButtonCount() <= aButton) {
+      NS_WARNING(
+          nsPrintfCString(
+              "Button idx '%d' doesn't support in XboxOneSRemapper().", aButton)
+              .get());
+      return;
+    }
+
+    const std::unordered_map<uint32_t, uint32_t> buttonMapping = {
+        {6, BUTTON_INDEX_BACK_SELECT},
+        {7, BUTTON_INDEX_START},
+        {8, BUTTON_INDEX_LEFT_THUMBSTICK},
+        {9, BUTTON_INDEX_RIGHT_THUMBSTICK},
+        {10, BUTTON_INDEX_META}};
+
+    auto find = buttonMapping.find(aButton);
+    if (find != buttonMapping.end()) {
+      service->NewButtonEvent(aHandle, find->second, aPressed);
+    } else {
+      service->NewButtonEvent(aHandle, aButton, aPressed);
+    }
+  }
+};
+
+class XboxOneS2016FirmwareRemapper final : public GamepadRemapper {
+ public:
+  virtual uint32_t GetAxisCount() const override { return AXIS_INDEX_COUNT; }
+
+  virtual uint32_t GetButtonCount() const override {
+    return BUTTON_INDEX_COUNT;
+  }
+
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
+                                  double aValue) const override {
+    RefPtr<GamepadPlatformService> service =
+        GamepadPlatformService::GetParentService();
+    if (!service) {
+      return;
+    }
+
+    switch (aAxis) {
+      case 0:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
+        break;
+      case 1:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        break;
+      case 2:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        break;
+      case 3: {
+        const double value = AxisToButtonValue(aValue);
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_LEFT_TRIGGER,
+                                value > BUTTON_THRESHOLD_VALUE, value);
+        break;
+      }
+      case 4: {
+        const double value = AxisToButtonValue(aValue);
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_RIGHT_TRIGGER,
+                                value > BUTTON_THRESHOLD_VALUE, value);
+        break;
+      }
+      case 5:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        break;
+      case 9:
+        FetchDpadFromAxis(aHandle, aValue);
+        break;
+      default:
+        NS_WARNING(nsPrintfCString("Axis idx '%d' doesn't support in "
+                                   "XboxOneS2016FirmwareRemapper().",
+                                   aAxis)
+                       .get());
+        break;
+    }
+  }
+
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
+                                bool aPressed) const override {
+    RefPtr<GamepadPlatformService> service =
+        GamepadPlatformService::GetParentService();
+    if (!service) {
+      return;
+    }
+
+    if (GetButtonCount() <= aButton) {
+      NS_WARNING(nsPrintfCString("Button idx '%d' doesn't support in "
+                                 "XboxOneS2016FirmwareRemapper().",
+                                 aButton)
+                     .get());
+      return;
+    }
+
+    // kMicrosoftProductXboxOneSWireless2016 controller received a firmware
+    // update in 2019 that changed which field is populated with the meta button
+    // state. In order to cover the old and new cases, we have to check both
+    // fields of {12, 15} buttons.
+    const std::unordered_map<uint32_t, uint32_t> buttonMapping = {
+        {0, BUTTON_INDEX_PRIMARY},
+        {1, BUTTON_INDEX_SECONDARY},
+        {3, BUTTON_INDEX_TERTIARY},
+        {4, BUTTON_INDEX_QUATERNARY},
+        {6, BUTTON_INDEX_LEFT_SHOULDER},
+        {7, BUTTON_INDEX_RIGHT_SHOULDER},
+        {11, BUTTON_INDEX_START},
+        {12, BUTTON_INDEX_META},
+        {13, BUTTON_INDEX_LEFT_THUMBSTICK},
+        {14, BUTTON_INDEX_RIGHT_THUMBSTICK},
+        {15, BUTTON_INDEX_META},
+        {16, BUTTON_INDEX_BACK_SELECT}};
+
+    auto find = buttonMapping.find(aButton);
+    if (find != buttonMapping.end()) {
+      service->NewButtonEvent(aHandle, find->second, aPressed);
+    } else {
+      service->NewButtonEvent(aHandle, aButton, aPressed);
+    }
+  }
+};
+
+class XboxOneRemapper final : public GamepadRemapper {
+ public:
+  virtual uint32_t GetAxisCount() const override { return AXIS_INDEX_COUNT; }
+
+  virtual uint32_t GetButtonCount() const override {
+    return BUTTON_INDEX_COUNT;
+  }
+
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
+                                  double aValue) const override {
+    RefPtr<GamepadPlatformService> service =
+        GamepadPlatformService::GetParentService();
+    if (!service) {
+      return;
+    }
+
+    switch (aAxis) {
+      case 0:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
+        break;
+      case 1:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        break;
+      case 2:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        break;
+      case 3:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        break;
+      case 9:
+        FetchDpadFromAxis(aHandle, aValue);
+        break;
+      case 10: {
+        const double value = AxisToButtonValue(aValue);
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_LEFT_TRIGGER,
+                                value > BUTTON_THRESHOLD_VALUE, value);
+        break;
+      }
+      case 11: {
+        const double value = AxisToButtonValue(aValue);
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_RIGHT_TRIGGER,
+                                value > BUTTON_THRESHOLD_VALUE, value);
+        break;
+      }
+      default:
+        NS_WARNING(
+            nsPrintfCString(
+                "Axis idx '%d' doesn't support in XboxOneRemapper().", aAxis)
+                .get());
+        break;
+    }
+  }
+
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
+                                bool aPressed) const override {
+    RefPtr<GamepadPlatformService> service =
+        GamepadPlatformService::GetParentService();
+    if (!service) {
+      return;
+    }
+
+    if (GetButtonCount() <= aButton) {
+      NS_WARNING(
+          nsPrintfCString(
+              "Button idx '%d' doesn't support in XboxOneRemapper().", aButton)
+              .get());
+      return;
+    }
+
+    // Accessing {30, 31} buttons looks strange to me
+    // and without an avilable device to help verify it.
+    // It is according to `MapperXboxOneBluetooth()` in
+    // https://cs.chromium.org/chromium/src/device/gamepad/gamepad_standard_mappings_mac.mm
+    const std::unordered_map<uint32_t, uint32_t> buttonMapping = {
+        {0, BUTTON_INDEX_PRIMARY},
+        {1, BUTTON_INDEX_SECONDARY},
+        {3, BUTTON_INDEX_TERTIARY},
+        {4, BUTTON_INDEX_QUATERNARY},
+        {6, BUTTON_INDEX_LEFT_SHOULDER},
+        {7, BUTTON_INDEX_RIGHT_SHOULDER},
+        {11, BUTTON_INDEX_START},
+        {13, BUTTON_INDEX_LEFT_THUMBSTICK},
+        {14, BUTTON_INDEX_RIGHT_THUMBSTICK},
+        {30, BUTTON_INDEX_META},
+        {31, BUTTON_INDEX_BACK_SELECT}};
+
+    auto find = buttonMapping.find(aButton);
+    if (find != buttonMapping.end()) {
+      service->NewButtonEvent(aHandle, find->second, aPressed);
+    } else {
+      service->NewButtonEvent(aHandle, aButton, aPressed);
+    }
+  }
+};
+
 class LogitechDInputRemapper final : public GamepadRemapper {
  public:
   virtual uint32_t GetAxisCount() const override { return AXIS_INDEX_COUNT; }
@@ -676,7 +1040,7 @@ class LogitechDInputRemapper final : public GamepadRemapper {
     return BUTTON_INDEX_COUNT - 1;
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -686,19 +1050,19 @@ class LogitechDInputRemapper final : public GamepadRemapper {
 
     switch (aAxis) {
       case 0:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
         break;
       case 1:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
         break;
       case 2:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
         break;
       case 5:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
         break;
       case 9:
-        FetchDpadFromAxis(aIndex, aValue);
+        FetchDpadFromAxis(aHandle, aValue);
         break;
       default:
         NS_WARNING(
@@ -710,7 +1074,7 @@ class LogitechDInputRemapper final : public GamepadRemapper {
     }
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -727,16 +1091,16 @@ class LogitechDInputRemapper final : public GamepadRemapper {
       return;
     }
 
-    const std::map<uint32_t, uint32_t> buttonMapping = {
+    const std::unordered_map<uint32_t, uint32_t> buttonMapping = {
         {0, BUTTON_INDEX_TERTIARY},
         {1, BUTTON_INDEX_PRIMARY},
         {2, BUTTON_INDEX_SECONDARY}};
 
     auto find = buttonMapping.find(aButton);
     if (find != buttonMapping.end()) {
-      service->NewButtonEvent(aIndex, find->second, aPressed);
+      service->NewButtonEvent(aHandle, find->second, aPressed);
     } else {
-      service->NewButtonEvent(aIndex, aButton, aPressed);
+      service->NewButtonEvent(aHandle, aButton, aPressed);
     }
   }
 };
@@ -749,7 +1113,7 @@ class SwitchJoyConRemapper final : public GamepadRemapper {
     return BUTTON_INDEX_COUNT;
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     if (GetAxisCount() <= aAxis) {
       NS_WARNING(
@@ -764,10 +1128,10 @@ class SwitchJoyConRemapper final : public GamepadRemapper {
       return;
     }
 
-    service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
+    service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -775,7 +1139,7 @@ class SwitchJoyConRemapper final : public GamepadRemapper {
       return;
     }
 
-    service->NewButtonEvent(aIndex, aButton, aPressed);
+    service->NewButtonEvent(aHandle, aButton, aPressed);
   }
 };
 
@@ -789,7 +1153,7 @@ class SwitchProRemapper final : public GamepadRemapper {
     return SWITCHPRO_BUTTON_COUNT;
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     if (GetAxisCount() <= aAxis) {
       NS_WARNING(
@@ -804,10 +1168,10 @@ class SwitchProRemapper final : public GamepadRemapper {
       return;
     }
 
-    service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
+    service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -815,7 +1179,7 @@ class SwitchProRemapper final : public GamepadRemapper {
       return;
     }
 
-    service->NewButtonEvent(aIndex, aButton, aPressed);
+    service->NewButtonEvent(aHandle, aButton, aPressed);
   }
 
  private:
@@ -833,7 +1197,7 @@ class NvShieldRemapper final : public GamepadRemapper {
     return SHIELD_BUTTON_COUNT;
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -843,31 +1207,31 @@ class NvShieldRemapper final : public GamepadRemapper {
 
     switch (aAxis) {
       case 0:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
         break;
       case 1:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
         break;
       case 2:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
         break;
       case 3: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_RIGHT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_RIGHT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 4: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_LEFT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_LEFT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 5:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
         break;
       case 9:
-        FetchDpadFromAxis(aIndex, aValue);
+        FetchDpadFromAxis(aHandle, aValue);
         break;
       default:
         NS_WARNING(
@@ -878,7 +1242,7 @@ class NvShieldRemapper final : public GamepadRemapper {
     }
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -894,7 +1258,7 @@ class NvShieldRemapper final : public GamepadRemapper {
       return;
     }
 
-    const std::map<uint32_t, uint32_t> buttonMapping = {
+    const std::unordered_map<uint32_t, uint32_t> buttonMapping = {
         {2, BUTTON_INDEX_META},
         {3, BUTTON_INDEX_TERTIARY},
         {4, BUTTON_INDEX_QUATERNARY},
@@ -908,9 +1272,9 @@ class NvShieldRemapper final : public GamepadRemapper {
 
     auto find = buttonMapping.find(aButton);
     if (find != buttonMapping.end()) {
-      service->NewButtonEvent(aIndex, find->second, aPressed);
+      service->NewButtonEvent(aHandle, find->second, aPressed);
     } else {
-      service->NewButtonEvent(aIndex, aButton, aPressed);
+      service->NewButtonEvent(aHandle, aButton, aPressed);
     }
   }
 
@@ -929,7 +1293,7 @@ class NvShield2017Remapper final : public GamepadRemapper {
     return SHIELD2017_BUTTON_COUNT;
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -939,31 +1303,31 @@ class NvShield2017Remapper final : public GamepadRemapper {
 
     switch (aAxis) {
       case 0:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
         break;
       case 1:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
         break;
       case 2:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
         break;
       case 3: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_RIGHT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_RIGHT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 4: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_LEFT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_LEFT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 5:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
         break;
       case 9:
-        FetchDpadFromAxis(aIndex, aValue);
+        FetchDpadFromAxis(aHandle, aValue);
         break;
       default:
         NS_WARNING(
@@ -975,7 +1339,7 @@ class NvShield2017Remapper final : public GamepadRemapper {
     }
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -992,7 +1356,7 @@ class NvShield2017Remapper final : public GamepadRemapper {
       return;
     }
 
-    const std::map<uint32_t, uint32_t> buttonMapping = {
+    const std::unordered_map<uint32_t, uint32_t> buttonMapping = {
         {2, BUTTON_INDEX_META},
         {3, BUTTON_INDEX_TERTIARY},
         {4, BUTTON_INDEX_QUATERNARY},
@@ -1006,9 +1370,9 @@ class NvShield2017Remapper final : public GamepadRemapper {
 
     auto find = buttonMapping.find(aButton);
     if (find != buttonMapping.end()) {
-      service->NewButtonEvent(aIndex, find->second, aPressed);
+      service->NewButtonEvent(aHandle, find->second, aPressed);
     } else {
-      service->NewButtonEvent(aIndex, aButton, aPressed);
+      service->NewButtonEvent(aHandle, aButton, aPressed);
     }
   }
 
@@ -1027,7 +1391,7 @@ class IBuffaloRemapper final : public GamepadRemapper {
     return BUTTON_INDEX_COUNT - 1; /* no meta */
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -1037,17 +1401,17 @@ class IBuffaloRemapper final : public GamepadRemapper {
 
     switch (aAxis) {
       case 0:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_DPAD_LEFT,
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_DPAD_LEFT,
                                 AxisNegativeAsButton(aValue));
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_DPAD_RIGHT,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_DPAD_RIGHT,
                                 AxisPositiveAsButton(aValue));
         break;
       case 1:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_Y, aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_DPAD_UP,
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_DPAD_UP,
                                 AxisNegativeAsButton(aValue));
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_DPAD_DOWN,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_DPAD_DOWN,
                                 AxisPositiveAsButton(aValue));
         break;
       default:
@@ -1059,7 +1423,7 @@ class IBuffaloRemapper final : public GamepadRemapper {
     }
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -1075,7 +1439,7 @@ class IBuffaloRemapper final : public GamepadRemapper {
       return;
     }
 
-    const std::map<uint32_t, uint32_t> buttonMapping = {
+    const std::unordered_map<uint32_t, uint32_t> buttonMapping = {
         {0, BUTTON_INDEX_SECONDARY},     {1, BUTTON_INDEX_PRIMARY},
         {2, BUTTON_INDEX_QUATERNARY},    {3, BUTTON_INDEX_TERTIARY},
         {5, BUTTON_INDEX_RIGHT_TRIGGER}, {6, BUTTON_INDEX_BACK_SELECT},
@@ -1083,9 +1447,9 @@ class IBuffaloRemapper final : public GamepadRemapper {
 
     auto find = buttonMapping.find(aButton);
     if (find != buttonMapping.end()) {
-      service->NewButtonEvent(aIndex, find->second, aPressed);
+      service->NewButtonEvent(aHandle, find->second, aPressed);
     } else {
-      service->NewButtonEvent(aIndex, aButton, aPressed);
+      service->NewButtonEvent(aHandle, aButton, aPressed);
     }
   }
 };
@@ -1098,7 +1462,7 @@ class XSkillsRemapper final : public GamepadRemapper {
     return GAMECUBE_BUTTON_COUNT;
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -1108,28 +1472,28 @@ class XSkillsRemapper final : public GamepadRemapper {
 
     switch (aAxis) {
       case 0:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
         break;
       case 1:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
         break;
       case 2:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
         break;
       case 3: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_RIGHT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_RIGHT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 4: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_LEFT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_LEFT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 5:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
         break;
       default:
         NS_WARNING(
@@ -1140,7 +1504,7 @@ class XSkillsRemapper final : public GamepadRemapper {
     }
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -1148,7 +1512,7 @@ class XSkillsRemapper final : public GamepadRemapper {
       return;
     }
 
-    if (GetButtonCount() <= aIndex) {
+    if (GetButtonCount() <= aButton) {
       NS_WARNING(
           nsPrintfCString(
               "Button idx '%d' doesn't support in XSkillsRemapper().", aButton)
@@ -1156,7 +1520,7 @@ class XSkillsRemapper final : public GamepadRemapper {
       return;
     }
 
-    const std::map<uint32_t, uint32_t> buttonMapping = {
+    const std::unordered_map<uint32_t, uint32_t> buttonMapping = {
         {0, BUTTON_INDEX_PRIMARY},     // A
         {1, BUTTON_INDEX_TERTIARY},    // B
         {2, BUTTON_INDEX_SECONDARY},   // X
@@ -1172,9 +1536,9 @@ class XSkillsRemapper final : public GamepadRemapper {
 
     auto find = buttonMapping.find(aButton);
     if (find != buttonMapping.end()) {
-      service->NewButtonEvent(aIndex, find->second, aPressed);
+      service->NewButtonEvent(aHandle, find->second, aPressed);
     } else {
-      service->NewButtonEvent(aIndex, aButton, aPressed);
+      service->NewButtonEvent(aHandle, aButton, aPressed);
     }
   }
 
@@ -1194,7 +1558,7 @@ class BoomN64PsxRemapper final : public GamepadRemapper {
     return BUTTON_INDEX_COUNT - 1;  // no meta
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -1204,16 +1568,16 @@ class BoomN64PsxRemapper final : public GamepadRemapper {
 
     switch (aAxis) {
       case 0:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
         break;
       case 1:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
         break;
       case 2:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
         break;
       case 5:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
         break;
       default:
         NS_WARNING(
@@ -1224,7 +1588,7 @@ class BoomN64PsxRemapper final : public GamepadRemapper {
     }
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -1250,7 +1614,7 @@ class BoomN64PsxRemapper final : public GamepadRemapper {
       return;
     }
 
-    service->NewButtonEvent(aIndex, buttonMapping[aButton], aPressed);
+    service->NewButtonEvent(aHandle, buttonMapping[aButton], aPressed);
   }
 
  private:
@@ -1269,7 +1633,7 @@ class StadiaControllerOldFirmwareRemapper final : public GamepadRemapper {
     return ANALOG_GAMEPAD_BUTTON_COUNT;
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -1279,31 +1643,31 @@ class StadiaControllerOldFirmwareRemapper final : public GamepadRemapper {
 
     switch (aAxis) {
       case 0:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
         break;
       case 1:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
         break;
       case 2:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
         break;
       case 3: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_RIGHT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_RIGHT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 4: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_LEFT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_LEFT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 5:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
         break;
       case 9:
-        FetchDpadFromAxis(aIndex, aValue);
+        FetchDpadFromAxis(aHandle, aValue);
         break;
       default:
         NS_WARNING(
@@ -1315,7 +1679,7 @@ class StadiaControllerOldFirmwareRemapper final : public GamepadRemapper {
     }
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -1332,7 +1696,7 @@ class StadiaControllerOldFirmwareRemapper final : public GamepadRemapper {
       return;
     }
 
-    const std::map<uint32_t, uint32_t> buttonMapping = {
+    const std::unordered_map<uint32_t, uint32_t> buttonMapping = {
         {3, BUTTON_INDEX_TERTIARY},
         {4, BUTTON_INDEX_QUATERNARY},
         {6, BUTTON_INDEX_LEFT_SHOULDER},
@@ -1347,9 +1711,9 @@ class StadiaControllerOldFirmwareRemapper final : public GamepadRemapper {
 
     auto find = buttonMapping.find(aButton);
     if (find != buttonMapping.end()) {
-      service->NewButtonEvent(aIndex, find->second, aPressed);
+      service->NewButtonEvent(aHandle, find->second, aPressed);
     } else {
-      service->NewButtonEvent(aIndex, aButton, aPressed);
+      service->NewButtonEvent(aHandle, aButton, aPressed);
     }
   }
 
@@ -1369,7 +1733,7 @@ class RazerServalRemapper final : public GamepadRemapper {
     return BUTTON_INDEX_COUNT - 1; /* no meta */
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -1379,31 +1743,31 @@ class RazerServalRemapper final : public GamepadRemapper {
 
     switch (aAxis) {
       case 0:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
         break;
       case 1:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
         break;
       case 2:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
         break;
       case 3: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_RIGHT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_RIGHT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 4: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_LEFT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_LEFT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 5:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
         break;
       case 9:
-        FetchDpadFromAxis(aIndex, aValue);
+        FetchDpadFromAxis(aHandle, aValue);
         break;
       default:
         NS_WARNING(
@@ -1415,7 +1779,7 @@ class RazerServalRemapper final : public GamepadRemapper {
     }
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -1432,7 +1796,7 @@ class RazerServalRemapper final : public GamepadRemapper {
       return;
     }
 
-    const std::map<uint32_t, uint32_t> buttonMapping = {
+    const std::unordered_map<uint32_t, uint32_t> buttonMapping = {
         {3, BUTTON_INDEX_TERTIARY},         {4, BUTTON_INDEX_QUATERNARY},
         {6, BUTTON_INDEX_LEFT_SHOULDER},    {7, BUTTON_INDEX_RIGHT_SHOULDER},
         {10, BUTTON_INDEX_BACK_SELECT},     {11, BUTTON_INDEX_START},
@@ -1441,9 +1805,9 @@ class RazerServalRemapper final : public GamepadRemapper {
 
     auto find = buttonMapping.find(aButton);
     if (find != buttonMapping.end()) {
-      service->NewButtonEvent(aIndex, find->second, aPressed);
+      service->NewButtonEvent(aHandle, find->second, aPressed);
     } else {
-      service->NewButtonEvent(aIndex, aButton, aPressed);
+      service->NewButtonEvent(aHandle, aButton, aPressed);
     }
   }
 };
@@ -1456,7 +1820,7 @@ class MogaProRemapper final : public GamepadRemapper {
     return BUTTON_INDEX_COUNT - 1; /* no meta */
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -1466,31 +1830,31 @@ class MogaProRemapper final : public GamepadRemapper {
 
     switch (aAxis) {
       case 0:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
         break;
       case 1:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
         break;
       case 2:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
         break;
       case 3: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_RIGHT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_RIGHT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 4: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_LEFT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_LEFT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 5:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
         break;
       case 9:
-        FetchDpadFromAxis(aIndex, aValue);
+        FetchDpadFromAxis(aHandle, aValue);
         break;
       default:
         NS_WARNING(
@@ -1501,7 +1865,7 @@ class MogaProRemapper final : public GamepadRemapper {
     }
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -1517,7 +1881,7 @@ class MogaProRemapper final : public GamepadRemapper {
       return;
     }
 
-    const std::map<uint32_t, uint32_t> buttonMapping = {
+    const std::unordered_map<uint32_t, uint32_t> buttonMapping = {
         {3, BUTTON_INDEX_TERTIARY},         {4, BUTTON_INDEX_QUATERNARY},
         {6, BUTTON_INDEX_LEFT_SHOULDER},    {7, BUTTON_INDEX_RIGHT_SHOULDER},
         {11, BUTTON_INDEX_START},           {13, BUTTON_INDEX_LEFT_THUMBSTICK},
@@ -1525,9 +1889,9 @@ class MogaProRemapper final : public GamepadRemapper {
 
     auto find = buttonMapping.find(aButton);
     if (find != buttonMapping.end()) {
-      service->NewButtonEvent(aIndex, find->second, aPressed);
+      service->NewButtonEvent(aHandle, find->second, aPressed);
     } else {
-      service->NewButtonEvent(aIndex, aButton, aPressed);
+      service->NewButtonEvent(aHandle, aButton, aPressed);
     }
   }
 };
@@ -1540,7 +1904,7 @@ class OnLiveWirelessRemapper final : public GamepadRemapper {
     return BUTTON_INDEX_COUNT;
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -1550,31 +1914,31 @@ class OnLiveWirelessRemapper final : public GamepadRemapper {
 
     switch (aAxis) {
       case 0:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
         break;
       case 1:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
         break;
       case 2: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_LEFT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_LEFT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 3:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
         break;
       case 4:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
         break;
       case 5: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_RIGHT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_RIGHT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 9:
-        FetchDpadFromAxis(aIndex, aValue);
+        FetchDpadFromAxis(aHandle, aValue);
         break;
       default:
         NS_WARNING(
@@ -1586,7 +1950,7 @@ class OnLiveWirelessRemapper final : public GamepadRemapper {
     }
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -1603,7 +1967,7 @@ class OnLiveWirelessRemapper final : public GamepadRemapper {
       return;
     }
 
-    const std::map<uint32_t, uint32_t> buttonMapping = {
+    const std::unordered_map<uint32_t, uint32_t> buttonMapping = {
         {3, BUTTON_INDEX_TERTIARY},
         {4, BUTTON_INDEX_QUATERNARY},
         {6, BUTTON_INDEX_LEFT_SHOULDER},
@@ -1614,9 +1978,9 @@ class OnLiveWirelessRemapper final : public GamepadRemapper {
 
     auto find = buttonMapping.find(aButton);
     if (find != buttonMapping.end()) {
-      service->NewButtonEvent(aIndex, find->second, aPressed);
+      service->NewButtonEvent(aHandle, find->second, aPressed);
     } else {
-      service->NewButtonEvent(aIndex, aButton, aPressed);
+      service->NewButtonEvent(aHandle, aButton, aPressed);
     }
   }
 };
@@ -1629,7 +1993,7 @@ class OUYARemapper final : public GamepadRemapper {
     return BUTTON_INDEX_COUNT;
   }
 
-  virtual void RemapAxisMoveEvent(uint32_t aIndex, uint32_t aAxis,
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -1639,26 +2003,26 @@ class OUYARemapper final : public GamepadRemapper {
 
     switch (aAxis) {
       case 0:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
         break;
       case 1:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
         break;
       case 2: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_LEFT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_LEFT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
       case 3:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
         break;
       case 4:
-        service->NewAxisMoveEvent(aIndex, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
         break;
       case 5: {
         const double value = AxisToButtonValue(aValue);
-        service->NewButtonEvent(aIndex, BUTTON_INDEX_RIGHT_TRIGGER,
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_RIGHT_TRIGGER,
                                 value > BUTTON_THRESHOLD_VALUE, value);
         break;
       }
@@ -1671,7 +2035,7 @@ class OUYARemapper final : public GamepadRemapper {
     }
   }
 
-  virtual void RemapButtonEvent(uint32_t aIndex, uint32_t aButton,
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
                                 bool aPressed) const override {
     RefPtr<GamepadPlatformService> service =
         GamepadPlatformService::GetParentService();
@@ -1687,7 +2051,7 @@ class OUYARemapper final : public GamepadRemapper {
       return;
     }
 
-    const std::map<uint32_t, uint32_t> buttonMapping = {
+    const std::unordered_map<uint32_t, uint32_t> buttonMapping = {
         {1, BUTTON_INDEX_TERTIARY},         {2, BUTTON_INDEX_QUATERNARY},
         {3, BUTTON_INDEX_SECONDARY},        {6, BUTTON_INDEX_LEFT_THUMBSTICK},
         {7, BUTTON_INDEX_RIGHT_THUMBSTICK}, {8, BUTTON_INDEX_DPAD_UP},
@@ -1696,9 +2060,9 @@ class OUYARemapper final : public GamepadRemapper {
 
     auto find = buttonMapping.find(aButton);
     if (find != buttonMapping.end()) {
-      service->NewButtonEvent(aIndex, find->second, aPressed);
+      service->NewButtonEvent(aHandle, find->second, aPressed);
     } else {
-      service->NewButtonEvent(aIndex, aButton, aPressed);
+      service->NewButtonEvent(aHandle, aButton, aPressed);
     }
   }
 };
@@ -1714,6 +2078,14 @@ already_AddRefed<GamepadRemapper> GetGamepadRemapper(const uint16_t aVendorId,
       {GamepadId::kLogitechProductc216, new LogitechDInputRemapper()},
       {GamepadId::kLogitechProductc218, new LogitechDInputRemapper()},
       {GamepadId::kLogitechProductc219, new LogitechDInputRemapper()},
+      {GamepadId::kMicrosoftProductXbox360Wireless, new Xbox360Remapper()},
+      {GamepadId::kMicrosoftProductXbox360Wireless2, new Xbox360Remapper()},
+      {GamepadId::kMicrosoftProductXboxOneElite2Wireless,
+       new XboxOneRemapper()},
+      {GamepadId::kMicrosoftProductXboxOneSWireless, new XboxOneSRemapper()},
+      {GamepadId::kMicrosoftProductXboxOneSWireless2016,
+       new XboxOneS2016FirmwareRemapper()},
+      {GamepadId::kMicrosoftProductXboxAdaptiveWireless, new XboxOneRemapper()},
       {GamepadId::kNintendoProduct2006, new SwitchJoyConRemapper()},
       {GamepadId::kNintendoProduct2007, new SwitchJoyConRemapper()},
       {GamepadId::kNintendoProduct2009, new SwitchProRemapper()},
@@ -1723,7 +2095,8 @@ already_AddRefed<GamepadRemapper> GetGamepadRemapper(const uint16_t aVendorId,
       {GamepadId::kPadixProduct2060, new IBuffaloRemapper()},
       {GamepadId::kPlayComProduct0005, new XSkillsRemapper()},
       {GamepadId::kPrototypeVendorProduct0667, new BoomN64PsxRemapper()},
-      {GamepadId::kPrototypeVendorProduct9401, new StadiaControllerOldFirmwareRemapper()},
+      {GamepadId::kPrototypeVendorProduct9401,
+       new StadiaControllerOldFirmwareRemapper()},
       {GamepadId::kRazer1532Product0900, new RazerServalRemapper()},
       {GamepadId::kSonyProduct0268, new Playstation3Remapper()},
       {GamepadId::kSonyProduct05c4, new Dualshock4Remapper()},
@@ -1742,10 +2115,9 @@ already_AddRefed<GamepadRemapper> GetGamepadRemapper(const uint16_t aVendorId,
     }
   }
 
-  static RefPtr<GamepadRemapper> defaultRemapper = new DefaultRemapper();
+  RefPtr<GamepadRemapper> defaultRemapper = new DefaultRemapper();
   aUsingDefault = true;
   return do_AddRef(defaultRemapper.get());
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

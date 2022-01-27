@@ -10,13 +10,13 @@
  *  sendWheelAndPaintNoFlush
  *  synthesizeMouse
  *  synthesizeMouseAtCenter
+ *  synthesizeNativeMouseEvent
  *  synthesizeWheel
  *  synthesizeWheelAtPoint
  *  synthesizeKey
  *  synthesizeNativeKey
  *  synthesizeMouseExpectEvent
  *  synthesizeKeyExpectEvent
- *  synthesizeNativeOSXClick
  *  synthesizeDragOver
  *  synthesizeDropAfterDragOver
  *  synthesizeDrop
@@ -139,6 +139,76 @@ function _EU_maybeUnwrap(o) {
   return c && c.value && !c.writable ? o : SpecialPowers.unwrap(o);
 }
 
+function _EU_getPlatform() {
+  if (_EU_isWin()) {
+    return "windows";
+  }
+  if (_EU_isMac()) {
+    return "mac";
+  }
+  if (_EU_isAndroid()) {
+    return "android";
+  }
+  if (_EU_isLinux()) {
+    return "linux";
+  }
+  return "unknown";
+}
+
+/**
+ * promiseElementReadyForUserInput() dispatches mousemove events to aElement
+ * and waits one of them for a while.  Then, returns "resolved" state when it's
+ * successfully received.  Otherwise, if it couldn't receive mousemove event on
+ * it, this throws an exception.  So, aElement must be an element which is
+ * assumed non-collapsed visible element in the window.
+ *
+ * This is useful if you need to synthesize mouse events via the main process
+ * but your test cannot check whether the element is now in APZ to deliver
+ * a user input event.
+ */
+async function promiseElementReadyForUserInput(
+  aElement,
+  aWindow = window,
+  aLogFunc = null
+) {
+  if (typeof aElement == "string") {
+    aElement = aWindow.document.getElementById(aElement);
+  }
+
+  function waitForMouseMoveForHittest() {
+    return new Promise(resolve => {
+      let timeout;
+      const onHit = () => {
+        if (aLogFunc) {
+          aLogFunc("mousemove received");
+        }
+        aWindow.clearInterval(timeout);
+        resolve(true);
+      };
+      aElement.addEventListener("mousemove", onHit, {
+        capture: true,
+        once: true,
+      });
+      synthesizeMouseAtCenter(aElement, { type: "mousemove" }, aWindow);
+      timeout = aWindow.setInterval(() => {
+        if (aLogFunc) {
+          aLogFunc("mousemove not received in this 300ms");
+        }
+        aElement.removeEventListener("mousemove", onHit, {
+          capture: true,
+        });
+        resolve(false);
+      }, 300);
+    });
+  }
+  for (let i = 0; i < 20; i++) {
+    if (await waitForMouseMoveForHittest()) {
+      return Promise.resolve();
+    }
+  }
+  throw new Error("The element or the window did not become interactive");
+}
+
 /**
  * Send a mouse event to the node aTarget (aTarget can be an id, or an
  * actual node) . The "event" passed in to aEvent is just a JavaScript
@@ -159,6 +229,22 @@ function computeButton(aEvent) {
     return aEvent.button;
   }
   return aEvent.type == "contextmenu" ? 2 : 0;
+}
+
+function computeButtons(aEvent, utils) {
+  if (typeof aEvent.buttons != "undefined") {
+    return aEvent.buttons;
+  }
+
+  if (typeof aEvent.button != "undefined") {
+    return utils.MOUSE_BUTTONS_NOT_SPECIFIED;
+  }
+
+  if (typeof aEvent.type != "undefined" && aEvent.type != "mousedown") {
+    return utils.MOUSE_BUTTONS_NO_BUTTON;
+  }
+
+  return utils.MOUSE_BUTTONS_NOT_SPECIFIED;
 }
 
 function sendMouseEvent(aEvent, aTarget, aWindow) {
@@ -184,6 +270,10 @@ function sendMouseEvent(aEvent, aTarget, aWindow) {
 
   if (typeof aTarget == "string") {
     aTarget = aWindow.document.getElementById(aTarget);
+  }
+
+  if (aEvent.type === "click" && this.AccessibilityUtils) {
+    this.AccessibilityUtils.assertCanBeClicked(aTarget);
   }
 
   var event = aWindow.document.createEvent("MouseEvent");
@@ -456,11 +546,12 @@ function _parseModifiers(aEvent, aWindow = window) {
  * aOffsetY. This allows mouse clicks to be simulated by calling this method.
  *
  * aEvent is an object which may contain the properties:
- *   accelKey, shiftKey, ctrlKey, altKey, metaKey, accessKey, clickCount,
- *   button, type
+ *   `shiftKey`, `ctrlKey`, `altKey`, `metaKey`, `accessKey`, `clickCount`,
+ *   `button`, `type`.
+ *   For valid `type`s see nsIDOMWindowUtils' `sendMouseEvent`.
  *
  * If the type is specified, an mouse event of that type is fired. Otherwise,
- * a mousedown followed by a mouse up is performed.
+ * a mousedown followed by a mouseup is performed.
  *
  * aWindow is optional, and defaults to the current window object.
  *
@@ -489,10 +580,12 @@ function synthesizeTouch(aTarget, aOffsetX, aOffsetY, aEvent, aWindow) {
  * Synthesize a mouse event at a particular point in aWindow.
  *
  * aEvent is an object which may contain the properties:
- *   shiftKey, ctrlKey, altKey, metaKey, accessKey, clickCount, button, type
+ *   `shiftKey`, `ctrlKey`, `altKey`, `metaKey`, `accessKey`, `clickCount`,
+ *   `button`, `type`.
+ *   For valid `type`s see nsIDOMWindowUtils' `sendMouseEvent`.
  *
  * If the type is specified, an mouse event of that type is fired. Otherwise,
- * a mousedown followed by a mouse up is performed.
+ * a mousedown followed by a mouseup is performed.
  *
  * aWindow is optional, and defaults to the current window object.
  */
@@ -531,8 +624,6 @@ function synthesizeMouseAtPoint(left, top, aEvent, aWindow = window) {
       "isWidgetEventSynthesized" in aEvent
         ? aEvent.isWidgetEventSynthesized
         : false;
-    var buttons =
-      "buttons" in aEvent ? aEvent.buttons : utils.MOUSE_BUTTONS_NOT_SPECIFIED;
     if ("type" in aEvent && aEvent.type) {
       defaultPrevented = utils.sendMouseEvent(
         aEvent.type,
@@ -546,7 +637,7 @@ function synthesizeMouseAtPoint(left, top, aEvent, aWindow = window) {
         inputSource,
         isDOMEventSynthesized,
         isWidgetEventSynthesized,
-        buttons,
+        computeButtons(aEvent, utils),
         id
       );
     } else {
@@ -562,7 +653,7 @@ function synthesizeMouseAtPoint(left, top, aEvent, aWindow = window) {
         inputSource,
         isDOMEventSynthesized,
         isWidgetEventSynthesized,
-        buttons,
+        computeButtons(Object.assign({ type: "mousedown" }, aEvent), utils),
         id
       );
       utils.sendMouseEvent(
@@ -577,7 +668,7 @@ function synthesizeMouseAtPoint(left, top, aEvent, aWindow = window) {
         inputSource,
         isDOMEventSynthesized,
         isWidgetEventSynthesized,
-        buttons,
+        computeButtons(Object.assign({ type: "mouseup" }, aEvent), utils),
         id
       );
     }
@@ -595,7 +686,7 @@ function synthesizeTouchAtPoint(left, top, aEvent, aWindow = window) {
     var rx = aEvent.rx || 1;
     var ry = aEvent.ry || 1;
     var angle = aEvent.angle || 0;
-    var force = aEvent.force || 1;
+    var force = aEvent.force || (aEvent.type === "touchend" ? 0 : 1);
     var modifiers = _parseModifiers(aEvent, aWindow);
 
     if ("type" in aEvent && aEvent.type) {
@@ -956,35 +1047,200 @@ function synthesizeNativeTap(
   utils.sendNativeTouchTap(x, y, aLongTap, observer);
 }
 
-function synthesizeNativeMouseMove(
-  aTarget,
-  aOffsetX,
-  aOffsetY,
-  aCallback,
-  aWindow = window
-) {
-  var utils = _getDOMWindowUtils(aWindow);
+function synthesizeNativeMouseEvent(aParams, aCallback = null) {
+  const {
+    type, // "click", "mousedown", "mouseup" or "mousemove"
+    target, // Origin of offsetX and offsetY, must be an element
+    offsetX, // X offset in `target` (in CSS pixels if `scale` is "screenPixelsPerCSSPixel*")
+    offsetY, // Y offset in `target` (in CSS pixels if `scale` is "screenPixelsPerCSSPixel*")
+    atCenter, // Instead of offsetX/Y, synthesize the event at center of `target`
+    screenX, // X offset in screen (in CSS pixels if `scale` is "screenPixelsPerCSSPixel*"), offsetX/Y nor atCenter must not be set if this is set
+    screenY, // Y offset in screen (in CSS pixels if `scale` is "screenPixelsPerCSSPixel*"), offsetX/Y nor atCenter must not be set if this is set
+    // If scale is "screenPixelsPerCSSPixel", it'll be used.
+    // If scale is "screenPixelsPerCSSPixelNoOverride", it'll be used.
+    // If scale is "inScreenPixels", clientX/Y nor scaleX/Y are not adjusted with screenPixelsPerCSSPixel*.
+    scale = "screenPixelsPerCSSPixel",
+    button = 0, // if "click", "mousedown", "mouseup", set same value as DOM MouseEvent.button
+    modifiers = {}, // Active modifiers, see `_parseNativeModifiers`
+    win = window, // The window to use its utils
+    // If element under the point is in another widget from target's widget,
+    //  e.g., when it's in a XUL <panel>, specify this.
+    elementOnWidget = target,
+  } = aParams;
+  if (atCenter) {
+    if (offsetX != undefined || offsetY != undefined) {
+      throw Error(
+        `atCenter is specified, but offsetX (${offsetX}) and/or offsetY (${offsetY}) are also specified`
+      );
+    }
+    if (screenX != undefined || screenY != undefined) {
+      throw Error(
+        `atCenter is specified, but screenX (${screenX}) and/or screenY (${screenY}) are also specified`
+      );
+    }
+    if (!target) {
+      throw Error("atCenter is specified, but target is not specified");
+    }
+  } else if (offsetX != undefined && offsetY != undefined) {
+    if (screenX != undefined || screenY != undefined) {
+      throw Error(
+        `offsetX/Y are specified, but screenX (${screenX}) and/or screenY (${screenY}) are also specified`
+      );
+    }
+    if (!target) {
+      throw Error(
+        "offsetX and offsetY are specified, but target is not specified"
+      );
+    }
+  } else if (screenX != undefined && screenY != undefined) {
+    if (offsetX != undefined || offsetY != undefined) {
+      throw Error(
+        `screenX/Y are specified, but offsetX (${offsetX}) and/or offsetY (${offsetY}) are also specified`
+      );
+    }
+  }
+  const utils = _getDOMWindowUtils(win);
   if (!utils) {
     return;
   }
 
-  var rect = aTarget.getBoundingClientRect();
-  var x = aOffsetX + window.mozInnerScreenX + rect.left;
-  var y = aOffsetY + window.mozInnerScreenY + rect.top;
-  var scale = utils.screenPixelsPerCSSPixel;
+  const rect = target?.getBoundingClientRect();
+  let resolution = 1.0;
+  try {
+    resolution = _getDOMWindowUtils(win.top).getResolution();
+  } catch (e) {
+    // XXX How to get mobile viewport scale on Fission+xorigin since
+    //     window.top access isn't allowed due to cross-origin?
+  }
+  const scaleValue = (() => {
+    if (scale === "inScreenPixels") {
+      return 1.0;
+    }
+    if (scale === "screenPixelsPerCSSPixel") {
+      return utils.screenPixelsPerCSSPixel;
+    }
+    if (scale === "screenPixelsPerCSSPixelNoOverride") {
+      return utils.screenPixelsPerCSSPixelNoOverride;
+    }
+    throw Error(`invalid scale value (${scale}) is specified`);
+  })();
+  // XXX mozInnerScreen might be invalid value on mobile viewport (Bug 1701546),
+  //     so use window.top's mozInnerScreen. But this won't work fission+xorigin
+  //     with mobile viewport until mozInnerScreen returns valid value with
+  //     scale.
+  const x = (() => {
+    if (screenX != undefined) {
+      return screenX * scaleValue;
+    }
+    let winInnerOffsetX = win.mozInnerScreenX;
+    try {
+      winInnerOffsetX =
+        win.top.mozInnerScreenX +
+        (win.mozInnerScreenX - win.top.mozInnerScreenX) * resolution;
+    } catch (e) {
+      // XXX fission+xorigin test throws permission denied since win.top is
+      //     cross-origin.
+    }
+    return (
+      (((atCenter ? rect.width / 2 : offsetX) + rect.left) * resolution +
+        winInnerOffsetX) *
+      scaleValue
+    );
+  })();
+  const y = (() => {
+    if (screenY != undefined) {
+      return screenY * scaleValue;
+    }
+    let winInnerOffsetY = win.mozInnerScreenY;
+    try {
+      winInnerOffsetY =
+        win.top.mozInnerScreenY +
+        (win.mozInnerScreenY - win.top.mozInnerScreenY) * resolution;
+    } catch (e) {
+      // XXX fission+xorigin test throws permission denied since win.top is
+      //     cross-origin.
+    }
+    return (
+      (((atCenter ? rect.height / 2 : offsetY) + rect.top) * resolution +
+        winInnerOffsetY) *
+      scaleValue
+    );
+  })();
+  const modifierFlags = _parseNativeModifiers(modifiers);
 
-  var observer = {
+  const observer = {
     observe: (subject, topic, data) => {
       if (aCallback && topic == "mouseevent") {
         aCallback(data);
       }
     },
   };
-  utils.sendNativeMouseMove(x * scale, y * scale, null, observer);
+  if (type === "click") {
+    utils.sendNativeMouseEvent(
+      x,
+      y,
+      utils.NATIVE_MOUSE_MESSAGE_BUTTON_DOWN,
+      button,
+      modifierFlags,
+      elementOnWidget,
+      function() {
+        utils.sendNativeMouseEvent(
+          x,
+          y,
+          utils.NATIVE_MOUSE_MESSAGE_BUTTON_UP,
+          button,
+          modifierFlags,
+          elementOnWidget,
+          observer
+        );
+      }
+    );
+    return;
+  }
+  utils.sendNativeMouseEvent(
+    x,
+    y,
+    (() => {
+      switch (type) {
+        case "mousedown":
+          return utils.NATIVE_MOUSE_MESSAGE_BUTTON_DOWN;
+        case "mouseup":
+          return utils.NATIVE_MOUSE_MESSAGE_BUTTON_UP;
+        case "mousemove":
+          return utils.NATIVE_MOUSE_MESSAGE_MOVE;
+        default:
+          throw Error(`Invalid type is specified: ${type}`);
+      }
+    })(),
+    button,
+    modifierFlags,
+    elementOnWidget,
+    observer
+  );
+}
+
+function promiseNativeMouseEvent(aParams) {
+  return new Promise(resolve => synthesizeNativeMouseEvent(aParams, resolve));
+}
+
+function synthesizeNativeMouseEventAndWaitForEvent(aParams, aCallback) {
+  const listener = aParams.eventTargetToListen || aParams.target;
+  const eventType = aParams.eventTypeToWait || aParams.type;
+  listener.addEventListener(eventType, aCallback, {
+    capture: true,
+    once: true,
+  });
+  synthesizeNativeMouseEvent(aParams);
+}
+
+function promiseNativeMouseEventAndWaitForEvent(aParams) {
+  return new Promise(resolve =>
+    synthesizeNativeMouseEventAndWaitForEvent(aParams, resolve)
+  );
 }
 
 /**
- * This is a wrapper around synthesizeNativeMouseMove that waits for the mouse
+ * This is a wrapper around synthesizeNativeMouseEvent that waits for the mouse
  * event to be dispatched to the target content.
  *
  * This API is supposed to be used in those test cases that synthesize some
@@ -1028,7 +1284,13 @@ function synthesizeAndWaitNativeMouseMove(
     }
   );
   eventRegisteredPromise.then(() => {
-    synthesizeNativeMouseMove(aTarget, aOffsetX, aOffsetY, null, aWindow);
+    synthesizeNativeMouseEvent({
+      type: "mousemove",
+      target: aTarget,
+      offsetX: aOffsetX,
+      offsetY: aOffsetY,
+      win: aWindow,
+    });
   });
   return eventReceivedPromise;
 }
@@ -1168,55 +1430,66 @@ function synthesizeAndWaitKey(
 }
 
 function _parseNativeModifiers(aModifiers, aWindow = window) {
-  var modifiers;
+  let modifiers = 0;
   if (aModifiers.capsLockKey) {
-    modifiers |= 0x00000001;
+    modifiers |= SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_CAPS_LOCK;
   }
   if (aModifiers.numLockKey) {
-    modifiers |= 0x00000002;
+    modifiers |= SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_NUM_LOCK;
   }
   if (aModifiers.shiftKey) {
-    modifiers |= 0x00000100;
+    modifiers |= SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_SHIFT_LEFT;
   }
   if (aModifiers.shiftRightKey) {
-    modifiers |= 0x00000200;
+    modifiers |= SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_SHIFT_RIGHT;
   }
   if (aModifiers.ctrlKey) {
-    modifiers |= 0x00000400;
+    modifiers |=
+      SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_CONTROL_LEFT;
   }
   if (aModifiers.ctrlRightKey) {
-    modifiers |= 0x00000800;
+    modifiers |=
+      SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_CONTROL_RIGHT;
   }
   if (aModifiers.altKey) {
-    modifiers |= 0x00001000;
+    modifiers |= SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_ALT_LEFT;
   }
   if (aModifiers.altRightKey) {
-    modifiers |= 0x00002000;
+    modifiers |= SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_ALT_RIGHT;
   }
   if (aModifiers.metaKey) {
-    modifiers |= 0x00004000;
+    modifiers |=
+      SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_COMMAND_LEFT;
   }
   if (aModifiers.metaRightKey) {
-    modifiers |= 0x00008000;
+    modifiers |=
+      SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_COMMAND_RIGHT;
   }
   if (aModifiers.helpKey) {
-    modifiers |= 0x00010000;
+    modifiers |= SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_HELP;
   }
   if (aModifiers.fnKey) {
-    modifiers |= 0x00100000;
+    modifiers |= SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_FUNCTION;
   }
   if (aModifiers.numericKeyPadKey) {
-    modifiers |= 0x01000000;
+    modifiers |=
+      SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_NUMERIC_KEY_PAD;
   }
 
   if (aModifiers.accelKey) {
-    modifiers |= _EU_isMac(aWindow) ? 0x00004000 : 0x00000400;
+    modifiers |= _EU_isMac(aWindow)
+      ? SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_COMMAND_LEFT
+      : SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_CONTROL_LEFT;
   }
   if (aModifiers.accelRightKey) {
-    modifiers |= _EU_isMac(aWindow) ? 0x00008000 : 0x00000800;
+    modifiers |= _EU_isMac(aWindow)
+      ? SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_COMMAND_RIGHT
+      : SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_CONTROL_RIGHT;
   }
   if (aModifiers.altGrKey) {
-    modifiers |= _EU_isWin(aWindow) ? 0x00020000 : 0x00001000;
+    modifiers |= _EU_isMac(aWindow)
+      ? SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_ALT_LEFT
+      : SpecialPowers.Ci.nsIDOMWindowUtils.NATIVE_MODIFIER_ALT_GRAPH;
   }
   return modifiers;
 }
@@ -2296,133 +2569,6 @@ function synthesizeSelectionSet(aOffset, aLength, aReverse, aWindow) {
   return utils.sendSelectionSetEvent(aOffset, aLength, flags);
 }
 
-/*
- * Synthesize a native mouse click event at a particular point in screen.
- * This function should be used only for testing native event loop.
- * Use synthesizeMouse instead for most case.
- *
- * This works only on OS X.  Throws an error on other OS.  Also throws an error
- * when the library or any of function are not found, or something goes wrong
- * in native functions.
- */
-function synthesizeNativeOSXClick(x, y) {
-  var { ctypes } = _EU_Cu.import("resource://gre/modules/ctypes.jsm", {});
-
-  // Library
-  var CoreFoundation = ctypes.open(
-    "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
-  );
-  var CoreGraphics = ctypes.open(
-    "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
-  );
-
-  // Contants
-  var kCGEventLeftMouseDown = 1;
-  var kCGEventLeftMouseUp = 2;
-  var kCGEventSourceStateHIDSystemState = 1;
-  var kCGHIDEventTap = 0;
-  var kCGMouseButtonLeft = 0;
-  var kCGMouseEventClickState = 1;
-
-  // Types
-  var CGEventField = ctypes.uint32_t;
-  var CGEventRef = ctypes.voidptr_t;
-  var CGEventSourceRef = ctypes.voidptr_t;
-  var CGEventSourceStateID = ctypes.uint32_t;
-  var CGEventTapLocation = ctypes.uint32_t;
-  var CGEventType = ctypes.uint32_t;
-  var CGFloat = ctypes.voidptr_t.size == 4 ? ctypes.float : ctypes.double;
-  var CGMouseButton = ctypes.uint32_t;
-
-  var CGPoint = new ctypes.StructType("CGPoint", [
-    { x: CGFloat },
-    { y: CGFloat },
-  ]);
-
-  // Functions
-  var CGEventSourceCreate = CoreGraphics.declare(
-    "CGEventSourceCreate",
-    ctypes.default_abi,
-    CGEventSourceRef,
-    CGEventSourceStateID
-  );
-  var CGEventCreateMouseEvent = CoreGraphics.declare(
-    "CGEventCreateMouseEvent",
-    ctypes.default_abi,
-    CGEventRef,
-    CGEventSourceRef,
-    CGEventType,
-    CGPoint,
-    CGMouseButton
-  );
-  var CGEventSetIntegerValueField = CoreGraphics.declare(
-    "CGEventSetIntegerValueField",
-    ctypes.default_abi,
-    ctypes.void_t,
-    CGEventRef,
-    CGEventField,
-    ctypes.int64_t
-  );
-  var CGEventPost = CoreGraphics.declare(
-    "CGEventPost",
-    ctypes.default_abi,
-    ctypes.void_t,
-    CGEventTapLocation,
-    CGEventRef
-  );
-  var CFRelease = CoreFoundation.declare(
-    "CFRelease",
-    ctypes.default_abi,
-    ctypes.void_t,
-    CGEventRef
-  );
-
-  var source = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
-  if (!source) {
-    throw new Error("CGEventSourceCreate returns null");
-  }
-
-  var loc = new CGPoint({ x, y });
-  var event = CGEventCreateMouseEvent(
-    source,
-    kCGEventLeftMouseDown,
-    loc,
-    kCGMouseButtonLeft
-  );
-  if (!event) {
-    throw new Error("CGEventCreateMouseEvent returns null");
-  }
-  CGEventSetIntegerValueField(
-    event,
-    kCGMouseEventClickState,
-    new ctypes.Int64(1)
-  );
-  CGEventPost(kCGHIDEventTap, event);
-  CFRelease(event);
-
-  event = CGEventCreateMouseEvent(
-    source,
-    kCGEventLeftMouseUp,
-    loc,
-    kCGMouseButtonLeft
-  );
-  if (!event) {
-    throw new Error("CGEventCreateMouseEvent returns null");
-  }
-  CGEventSetIntegerValueField(
-    event,
-    kCGMouseEventClickState,
-    new ctypes.Int64(1)
-  );
-  CGEventPost(kCGHIDEventTap, event);
-  CFRelease(event);
-
-  CFRelease(source);
-
-  CoreFoundation.close();
-  CoreGraphics.close();
-}
-
 /**
  * Synthesize a query text rect event.
  *
@@ -2430,19 +2576,30 @@ function synthesizeNativeOSXClick(x, y) {
  *                 selection root.
  * @param aLength  The length of the text.  If the length is too long,
  *                 the extra length is ignored.
+ * @param aIsRelative   Optional (If true, aOffset is relative to start of
+ *                      composition if there is, or start of selection.)
  * @param aWindow  Optional (If null, current |window| will be used)
  * @return         An nsIQueryContentEventResult object.  If this failed,
  *                 the result might be null.
  */
-function synthesizeQueryTextRect(aOffset, aLength, aWindow) {
+function synthesizeQueryTextRect(aOffset, aLength, aIsRelative, aWindow) {
+  if (aIsRelative !== undefined && typeof aIsRelative !== "boolean") {
+    throw new Error(
+      "Maybe, you set Window object to the 3rd argument, but it should be a boolean value"
+    );
+  }
   var utils = _getDOMWindowUtils(aWindow);
+  let flags = QUERY_CONTENT_FLAG_USE_NATIVE_LINE_BREAK;
+  if (aIsRelative === true) {
+    flags |= QUERY_CONTENT_FLAG_OFFSET_RELATIVE_TO_INSERTION_POINT;
+  }
   return utils.sendQueryContentEvent(
     utils.QUERY_TEXT_RECT,
     aOffset,
     aLength,
     0,
     0,
-    QUERY_CONTENT_FLAG_USE_NATIVE_LINE_BREAK
+    flags
   );
 }
 
@@ -2839,11 +2996,15 @@ function _computeSrcElementFromSrcSelection(aSrcSelection) {
  *          stepY:        The y-axis step for mousemove inside srcElement
  *          finalX:       The final x coordinate inside srcElement
  *          finalY:       The final x coordinate inside srcElement
+ *          id:           The pointer event id
  *          srcWindow:    The window for dispatching event on srcElement,
  *                        defaults to the current window object
  *          destWindow:   The window for dispatching event on destElement,
  *                        defaults to the current window object
  *          expectCancelDragStart:  Set to true if the test cancels "dragstart"
+ *          expectSrcElementDisconnected:
+ *                        Set to true if srcElement will be disconnected and
+ *                        "dragend" event won't be fired.
  *          logFunc:      Set function which takes one argument if you need
  *                        to log rect of target.  E.g., `console.log`.
  *        }
@@ -2861,9 +3022,11 @@ async function synthesizePlainDragAndDrop(aParams) {
     stepY = 9,
     finalX = srcX + stepX * 2,
     finalY = srcY + stepY * 2,
+    id = _getDOMWindowUtils(window).DEFAULT_MOUSE_POINTER_ID,
     srcWindow = window,
     destWindow = window,
     expectCancelDragStart = false,
+    expectSrcElementDisconnected = false,
     logFunc,
   } = aParams;
   // Don't modify given dragEvent object because we modify dragEvent below and
@@ -2932,9 +3095,45 @@ async function synthesizePlainDragAndDrop(aParams) {
 
     await new Promise(r => setTimeout(r, 0));
 
-    synthesizeMouse(srcElement, srcX, srcY, { type: "mousedown" }, srcWindow);
-    if (logFunc) {
-      logFunc(`mousedown at ${srcX}, ${srcY}`);
+    let mouseDownEvent;
+    function onMouseDown(aEvent) {
+      mouseDownEvent = aEvent;
+      if (logFunc) {
+        logFunc(`"${aEvent.type}" event is fired`);
+      }
+      if (
+        !srcElement.contains(
+          _EU_maybeUnwrap(_EU_maybeWrap(aEvent).composedTarget)
+        )
+      ) {
+        // If srcX and srcY does not point in one of rects in srcElement,
+        // "mousedown" target is not in srcElement.  Such case must not
+        // be expected by this API users so that we should throw an exception
+        // for making debugging easier.
+        throw new Error(
+          'event target of "mousedown" is not srcElement nor its descendant'
+        );
+      }
+    }
+    try {
+      srcWindow.addEventListener("mousedown", onMouseDown, { capture: true });
+      synthesizeMouse(
+        srcElement,
+        srcX,
+        srcY,
+        { type: "mousedown", id },
+        srcWindow
+      );
+      if (logFunc) {
+        logFunc(`mousedown at ${srcX}, ${srcY}`);
+      }
+      if (!mouseDownEvent) {
+        throw new Error('"mousedown" event is not fired');
+      }
+    } finally {
+      srcWindow.removeEventListener("mousedown", onMouseDown, {
+        capture: true,
+      });
     }
 
     let dragStartEvent;
@@ -2951,7 +3150,7 @@ async function synthesizePlainDragAndDrop(aParams) {
         // If srcX and srcY does not point in one of rects in srcElement,
         // "dragstart" target is not in srcElement.  Such case must not
         // be expected by this API users so that we should throw an exception
-        // for making debug easier.
+        // for making debugging easier.
         throw new Error(
           'event target of "dragstart" is not srcElement nor its descendant'
         );
@@ -2972,7 +3171,13 @@ async function synthesizePlainDragAndDrop(aParams) {
 
       srcX += stepX;
       srcY += stepY;
-      synthesizeMouse(srcElement, srcX, srcY, { type: "mousemove" }, srcWindow);
+      synthesizeMouse(
+        srcElement,
+        srcX,
+        srcY,
+        { type: "mousemove", id },
+        srcWindow
+      );
       if (logFunc) {
         logFunc(`first mousemove at ${srcX}, ${srcY}`);
       }
@@ -2981,7 +3186,13 @@ async function synthesizePlainDragAndDrop(aParams) {
 
       srcX += stepX;
       srcY += stepY;
-      synthesizeMouse(srcElement, srcX, srcY, { type: "mousemove" }, srcWindow);
+      synthesizeMouse(
+        srcElement,
+        srcX,
+        srcY,
+        { type: "mousemove", id },
+        srcWindow
+      );
       if (logFunc) {
         logFunc(`second mousemove at ${srcX}, ${srcY}`);
       }
@@ -3007,7 +3218,7 @@ async function synthesizePlainDragAndDrop(aParams) {
           srcElement,
           finalX,
           finalY,
-          { type: "mouseup" },
+          { type: "mouseup", id },
           srcWindow
         );
         return;
@@ -3164,6 +3375,7 @@ async function synthesizePlainDragAndDrop(aParams) {
     await new Promise(r => setTimeout(r, 0));
 
     if (ds.getCurrentSession()) {
+      const sourceNode = ds.sourceNode;
       let dragEndEvent;
       function onDragEnd(aEvent) {
         dragEndEvent = aEvent;
@@ -3179,14 +3391,25 @@ async function synthesizePlainDragAndDrop(aParams) {
             'event target of "dragend" is not srcElement nor its descendant'
           );
         }
+        if (expectSrcElementDisconnected) {
+          throw new Error(
+            `"dragend" event shouldn't be fired when the source node is disconnected (the source node is ${
+              sourceNode?.isConnected ? "connected" : "null or disconnected"
+            })`
+          );
+        }
       }
       srcWindow.addEventListener("dragend", onDragEnd, { capture: true });
       try {
         ds.endDragSession(true, _parseModifiers(dragEvent));
-        if (!dragEndEvent) {
+        if (!expectSrcElementDisconnected && !dragEndEvent) {
           // eslint-disable-next-line no-unsafe-finally
           throw new Error(
-            '"dragend" event is not fired by nsIDragService.endDragSession()'
+            `"dragend" event is not fired by nsIDragService.endDragSession()${
+              ds.sourceNode && !ds.sourceNode.isConnected
+                ? "(sourceNode was disconnected)"
+                : ""
+            }`
           );
         }
       } finally {
@@ -3299,25 +3522,6 @@ async function synthesizePlainDragAndCancel(
   }
   return result;
 }
-
-var PluginUtils = {
-  withTestPlugin(callback) {
-    var ph = _EU_Cc["@mozilla.org/plugin/host;1"].getService(
-      _EU_Ci.nsIPluginHost
-    );
-    var tags = ph.getPluginTags();
-
-    // Find the test plugin
-    for (var i = 0; i < tags.length; i++) {
-      if (tags[i].name == "Test Plug-in") {
-        callback(tags[i]);
-        return true;
-      }
-    }
-    todo(false, "Need a test plugin on this platform");
-    return false;
-  },
-};
 
 class EventCounter {
   constructor(aTarget, aType, aOptions = {}) {

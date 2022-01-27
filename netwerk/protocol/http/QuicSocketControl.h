@@ -31,23 +31,35 @@ class QuicSocketControl final : public CommonSocketControl {
 
   NS_IMETHOD GetSSLVersionOffered(int16_t* aSSLVersionOffered) override;
 
-  explicit QuicSocketControl(uint32_t providerFlags);
+  explicit QuicSocketControl(uint32_t providerFlags,
+                             Http3Session* aHttp3Session);
 
   void SetNegotiatedNPN(const nsACString& aValue);
   void SetInfo(uint16_t aCipherSuite, uint16_t aProtocolVersion,
-               uint16_t aKeaGroup, uint16_t aSignatureScheme);
+               uint16_t aKeaGroup, uint16_t aSignatureScheme,
+               bool aEchAccepted);
 
-  void SetAuthenticationCallback(Http3Session* aHttp3Session);
   void CallAuthenticated();
 
   void HandshakeCompleted();
   void SetCertVerificationResult(PRErrorCode errorCode) override;
 
- private:
-  ~QuicSocketControl() = default;
+  NS_IMETHOD GetPeerId(nsACString& aResult) override;
 
-  // For Authentication done callback.
+  NS_IMETHOD GetEchConfig(nsACString& aEchConfig) override;
+  NS_IMETHOD SetEchConfig(const nsACString& aEchConfig) override;
+  NS_IMETHOD GetRetryEchConfig(nsACString& aEchConfig) override;
+  void SetRetryEchConfig(const nsACString& aEchConfig);
+
+ private:
+  ~QuicSocketControl();
+
+  // For Authentication done callback and echConfig.
   nsWeakPtr mHttp3Session;
+  nsCOMPtr<nsIEventTarget> mSocketThread;
+
+  nsCString mEchConfig;
+  nsCString mRetryEchConfig;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(QuicSocketControl, NS_QUICSOCKETCONTROL_IID)

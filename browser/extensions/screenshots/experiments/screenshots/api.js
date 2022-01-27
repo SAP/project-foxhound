@@ -2,18 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* globals browser, AppConstants, Services, ExtensionAPI */
+/* globals browser, AppConstants, Services, ExtensionAPI, ExtensionCommon */
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(this, "AppConstants",
-                               "resource://gre/modules/AppConstants.jsm");
-ChromeUtils.defineModuleGetter(this, "Services",
-                               "resource://gre/modules/Services.jsm");
+const TOPIC = "menuitem-screenshot-extension";
 
 this.screenshots = class extends ExtensionAPI {
   getAPI(context) {
-    const {extension} = context;
+    let EventManager = ExtensionCommon.EventManager;
+
     return {
       experiments: {
         screenshots: {
@@ -37,9 +35,20 @@ this.screenshots = class extends ExtensionAPI {
           isHistoryEnabled() {
             return Services.prefs.getBoolPref("places.history.enabled", true);
           },
-          isUploadDisabled() {
-            return Services.prefs.getBoolPref("extensions.screenshots.upload-disabled", false);
-          },
+          onScreenshotCommand: new EventManager({
+            context,
+            name: "experiments.screenshots.onScreenshotCommand",
+            register: fire => {
+              let observer = (subject, topic, data) => {
+                let type = data;
+                fire.sync(type);
+              };
+              Services.obs.addObserver(observer, TOPIC);
+              return () => {
+                Services.obs.removeObserver(observer, TOPIC);
+              };
+            },
+          }).api(),
         },
       },
     };

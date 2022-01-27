@@ -22,20 +22,14 @@ class CanvasGradient : public nsWrapperCache {
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(CanvasGradient)
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(CanvasGradient)
 
-  enum class Type : uint8_t { LINEAR = 0, RADIAL };
+  enum class Type : uint8_t { LINEAR = 0, RADIAL, CONIC };
 
   Type GetType() { return mType; }
 
-  mozilla::gfx::GradientStops* GetGradientStopsForTarget(
+  already_AddRefed<mozilla::gfx::GradientStops> GetGradientStopsForTarget(
       mozilla::gfx::DrawTarget* aRT) {
-    if (mStops && mStops->GetBackendType() == aRT->GetBackendType()) {
-      return mStops;
-    }
-
-    mStops = gfx::gfxGradientCache::GetOrCreateGradientStops(
+    return gfx::gfxGradientCache::GetOrCreateGradientStops(
         aRT, mRawStops, gfx::ExtendMode::CLAMP);
-
-    return mStops;
   }
 
   // WebIDL
@@ -57,7 +51,6 @@ class CanvasGradient : public nsWrapperCache {
 
   RefPtr<CanvasRenderingContext2D> mContext;
   nsTArray<mozilla::gfx::GradientStop> mRawStops;
-  RefPtr<mozilla::gfx::GradientStops> mStops;
   Type mType;
 };
 

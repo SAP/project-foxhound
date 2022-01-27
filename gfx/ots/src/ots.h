@@ -187,8 +187,6 @@ template<typename T> T Round2(T value) {
 // Check that a tag consists entirely of printable ASCII characters
 bool CheckTag(uint32_t tag_value);
 
-bool IsValidVersionTag(uint32_t tag);
-
 #define OTS_TAG_CFF  OTS_TAG('C','F','F',' ')
 #define OTS_TAG_CFF2 OTS_TAG('C','F','F','2')
 #define OTS_TAG_CMAP OTS_TAG('c','m','a','p')
@@ -231,6 +229,10 @@ bool IsValidVersionTag(uint32_t tag);
 #define OTS_TAG_MVAR OTS_TAG('M','V','A','R')
 #define OTS_TAG_VVAR OTS_TAG('V','V','A','R')
 #define OTS_TAG_STAT OTS_TAG('S','T','A','T')
+
+// See https://github.com/khaledhosny/ots/issues/219
+#define OTS_MAX_DECOMPRESSED_FILE_SIZE 300 * 1024 * 1024
+#define OTS_MAX_DECOMPRESSED_TABLE_SIZE 150 * 1024 * 1024
 
 struct Font;
 struct FontFile;
@@ -299,9 +301,7 @@ struct Font {
         num_tables(0),
         search_range(0),
         entry_selector(0),
-        range_shift(0),
-        dropped_graphite(false),
-        dropped_variations(false) {
+        range_shift(0) {
   }
 
   bool ParseTable(const TableEntry& tableinfo, const uint8_t* data,
@@ -326,8 +326,6 @@ struct Font {
   uint16_t search_range;
   uint16_t entry_selector;
   uint16_t range_shift;
-  bool dropped_graphite;
-  bool dropped_variations;
 
  private:
   std::map<uint32_t, Table*> m_tables;

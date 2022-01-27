@@ -10,7 +10,6 @@
 #include "mozilla/EditorBase.h"
 #include "mozilla/EditorDOMPoint.h"
 #include "mozilla/EditTransactionBase.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/Text.h"
@@ -69,6 +68,9 @@ class ReplaceTextTransaction final : public EditTransactionBase {
   NS_DECL_EDITTRANSACTIONBASE_GETASMETHODS_OVERRIDE(ReplaceTextTransaction)
 
   MOZ_CAN_RUN_SCRIPT NS_IMETHOD RedoTransaction() final;
+
+  friend std::ostream& operator<<(std::ostream& aStream,
+                                  const ReplaceTextTransaction& aTransaction);
 
  private:
   RefPtr<EditorBase> mEditorBase;

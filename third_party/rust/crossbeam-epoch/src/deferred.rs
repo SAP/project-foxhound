@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use core::fmt;
 use core::marker::PhantomData;
-use core::mem;
+use core::mem::{self, MaybeUninit};
 use core::ptr;
 
 /// Number of words a piece of `Data` can hold.
@@ -16,31 +16,28 @@ type Data = [usize; DATA_WORDS];
 /// A `FnOnce()` that is stored inline if small, or otherwise boxed on the heap.
 ///
 /// This is a handy way of keeping an unsized `FnOnce()` within a sized structure.
-pub struct Deferred {
+pub(crate) struct Deferred {
     call: unsafe fn(*mut u8),
     data: Data,
     _marker: PhantomData<*mut ()>, // !Send + !Sync
 }
 
 impl fmt::Debug for Deferred {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         f.pad("Deferred { .. }")
     }
 }
 
 impl Deferred {
     /// Constructs a new `Deferred` from a `FnOnce()`.
-    pub fn new<F: FnOnce()>(f: F) -> Self {
+    pub(crate) fn new<F: FnOnce()>(f: F) -> Self {
         let size = mem::size_of::<F>();
         let align = mem::align_of::<F>();
 
         unsafe {
             if size <= mem::size_of::<Data>() && align <= mem::align_of::<Data>() {
-                // TODO(taiki-e): when the minimum supported Rust version is bumped to 1.36+,
-                // replace this with `mem::MaybeUninit`.
-                #[allow(deprecated)]
-                let mut data: Data = mem::uninitialized();
-                ptr::write(&mut data as *mut Data as *mut F, f);
+                let mut data = MaybeUninit::<Data>::uninit();
+                ptr::write(data.as_mut_ptr() as *mut F, f);
 
                 unsafe fn call<F: FnOnce()>(raw: *mut u8) {
                     let f: F = ptr::read(raw as *mut F);
@@ -49,25 +46,25 @@ impl Deferred {
 
                 Deferred {
                     call: call::<F>,
-                    data,
+                    data: data.assume_init(),
                     _marker: PhantomData,
                 }
             } else {
                 let b: Box<F> = Box::new(f);
-                // TODO(taiki-e): when the minimum supported Rust version is bumped to 1.36+,
-                // replace this with `mem::MaybeUninit`.
-                #[allow(deprecated)]
-                let mut data: Data = mem::uninitialized();
-                ptr::write(&mut data as *mut Data as *mut Box<F>, b);
+                let mut data = MaybeUninit::<Data>::uninit();
+                ptr::write(data.as_mut_ptr() as *mut Box<F>, b);
 
                 unsafe fn call<F: FnOnce()>(raw: *mut u8) {
+                    // It's safe to cast `raw` from `*mut u8` to `*mut Box<F>`, because `raw` is
+                    // originally derived from `*mut Box<F>`.
+                    #[allow(clippy::cast_ptr_alignment)]
                     let b: Box<F> = ptr::read(raw as *mut Box<F>);
                     (*b)();
                 }
 
                 Deferred {
                     call: call::<F>,
-                    data,
+                    data: data.assume_init(),
                     _marker: PhantomData,
                 }
             }
@@ -76,13 +73,13 @@ impl Deferred {
 
     /// Calls the function.
     #[inline]
-    pub fn call(mut self) {
+    pub(crate) fn call(mut self) {
         let call = self.call;
         unsafe { call(&mut self.data as *mut Data as *mut u8) };
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(crossbeam_loom)))]
 mod tests {
     use super::Deferred;
     use std::cell::Cell;

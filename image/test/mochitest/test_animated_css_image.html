@@ -15,7 +15,7 @@ SimpleTest.waitForExplicitFinish();
 // https://searchfox.org/mozilla-central/rev/b7f3977978922d44c7d92ae01c0d4cc2baca7bc2/layout/style/ImageLoader.cpp#553
 //
 // So our assertions and polling need to be a bit weaker on WR.
-const kUsingWebRender = SpecialPowers.DOMWindowUtils.layerManagerType === "WebRender";
+const kUsingWebRender = SpecialPowers.DOMWindowUtils.layerManagerType.startsWith("WebRender");
 
 let iframe = document.getElementById("iframe");
 let blankSnapshot;
@@ -150,7 +150,65 @@ const kTests = [
     element(doc) {
       return doc.documentElement;
     },
-  }
+  },
+
+  // bug 1719375: CSS animation in SVG image.
+  {
+    html: `
+      <!doctype html>
+      <style>
+        div {
+          width: 100px;
+          height: 100px;
+          background-image: url(animated1.svg);
+        }
+      </style>
+      <div></div>
+    `,
+    element(doc) {
+      return doc.querySelector("div");
+    },
+  },
+
+  // bug 1730834: stopped window.
+  {
+    html: `
+      <!doctype html>
+      <style>
+        div {
+          width: 100px;
+          height: 100px;
+        }
+      </style>
+      <body onload="window.stop(); document.querySelector('div').style.backgroundImage = 'url(animated1.gif)';">
+        <div></div>
+      </body>
+    `,
+    element(doc) {
+      return doc.querySelector("div");
+    },
+  },
+
+  // bug 1731138: Animated mask
+  {
+    html: `
+      <!doctype html>
+      <style>
+        div {
+          width: 100px;
+          height: 100px;
+          background-color: lime;
+          mask-clip: border-box;
+          mask-size: 100% 100%;
+          mask-image: url(animatedMask.gif);
+      }
+      </style>
+      <div></div>
+    `,
+    element(doc) {
+      return doc.querySelector("div");
+    },
+  },
 ];
 
 onload = async function() {

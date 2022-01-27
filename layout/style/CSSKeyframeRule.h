@@ -11,10 +11,8 @@
 #include "mozilla/ServoBindingTypes.h"
 
 class nsICSSDeclaration;
-class DeclarationBlock;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class CSSKeyframeDeclaration;
 
@@ -32,12 +30,13 @@ class CSSKeyframeRule final : public css::Rule {
 #endif
 
   RawServoKeyframe* Raw() const { return mRaw; }
+  void SetRawAfterClone(RefPtr<RawServoKeyframe>);
 
   // WebIDL interface
-  uint16_t Type() const final { return CSSRule_Binding::KEYFRAME_RULE; }
-  void GetCssText(nsAString& aCssText) const final;
-  void GetKeyText(nsAString& aKey);
-  void SetKeyText(const nsAString& aKey);
+  StyleCssRuleType Type() const final;
+  void GetCssText(nsACString& aCssText) const final;
+  void GetKeyText(nsACString& aKey);
+  void SetKeyText(const nsACString& aKey);
   nsICSSDeclaration* Style();
 
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const final;
@@ -57,7 +56,6 @@ class CSSKeyframeRule final : public css::Rule {
   RefPtr<CSSKeyframeDeclaration> mDeclaration;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_CSSKeyframeRule_h

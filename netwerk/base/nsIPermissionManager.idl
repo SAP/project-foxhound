@@ -83,6 +83,17 @@ interface nsIPermissionManager : nsISupports
   Array<nsIPermission> getAllWithTypePrefix(in ACString prefix);
 
   /**
+   * Get all custom permissions of a specific type and that were modified after
+   * the specified date. This will return an array of all permissions which are
+   * not set to default.
+   *
+   * @param type    a case-sensitive ASCII string, identifying the permission.
+   * @param since   a unix timestamp representing the number of milliseconds from
+   *                Jan 1, 1970 00:00:00 UTC.
+   */
+  Array<nsIPermission> getAllByTypeSince(in ACString type, in int64_t since);
+
+  /**
    * Add permission information for a given principal.
    * It is internally calling the other add() method using the nsIURI from the
    * principal.
@@ -93,6 +104,23 @@ interface nsIPermissionManager : nsISupports
                         in uint32_t permission,
                         [optional] in uint32_t expireType,
                         [optional] in int64_t expireTime);
+
+  /**
+   * Add permanent permission information for a given principal in private
+   * browsing.
+   *
+   * Normally permissions in private browsing are cleared at the end of the
+   * session, this method allows you to override this behavior and set
+   * permanent permissions.
+   *
+   * WARNING: setting permanent permissions _will_ leak data in private
+   * browsing. Only use if you understand the consequences and trade-offs. If
+   * you are unsure, |addFromPrincipal| is very likely what you want to use
+   * instead.
+   */
+  void addFromPrincipalAndPersistInPrivateBrowsing(in nsIPrincipal principal,
+                                                   in ACString type,
+                                                   in uint32_t permission);
 
   /**
    * Remove permission information for a given principal.
@@ -142,7 +170,9 @@ interface nsIPermissionManager : nsISupports
                                        in ACString type);
 
   /**
-   * See testExactPermission() above.
+   * Test whether the principal has the permission to perform a given action.
+   * This requires an exact hostname match. Subdomain principals do not match
+   * permissions of base domains.
    * System principals will always have permissions granted.
    * This function will perform a pref lookup to permissions.default.<type>
    * if the specific permission type is part of the whitelist for that functionality.
@@ -169,9 +199,9 @@ interface nsIPermissionManager : nsISupports
    * Get the permission object associated with the given principal and action.
    * @param principal The principal
    * @param type      A case-sensitive ASCII string identifying the consumer
-   * @param exactHost If true, only the specific host will be matched,
-   *                  @see testExactPermission. If false, subdomains will
-   *                  also be searched, @see testPermission.
+   * @param exactHost If true, only the specific host will be matched.
+   *                  If false, base domains of the principal will also
+   *                  be searched.
    * @returns The matching permission object, or null if no matching object
    *          was found. No matching object is equivalent to UNKNOWN_ACTION.
    * @note Clients in general should prefer the test* methods unless they
@@ -192,17 +222,6 @@ interface nsIPermissionManager : nsISupports
    * Remove all permissions that will match the origin pattern.
    */
   void removePermissionsWithAttributes(in AString patternAsJSON);
-
-  /**
-   * Broadcasts permissions for the given principal to all content processes.
-   *
-   * DO NOT USE THIS METHOD if you can avoid it. It was added in bug XXX to
-   * handle the current temporary implementation of ServiceWorker debugging. It
-   * will be removed when service worker debugging is fixed.
-   *
-   * @param aPrincipal The principal to broadcast permissions for.
-   */
-  void broadcastPermissionsForPrincipalToAllContentProcesses(in nsIPrincipal aPrincipal);
 };
 
 %{ C++

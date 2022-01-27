@@ -13,7 +13,6 @@
 #include "mozilla/arm.h"
 #include "qcms.h"
 #include "qcmsint.h"
-#include "transform_util.h"
 
 #include <cmath>
 
@@ -24,119 +23,6 @@
 #endif
 
 using namespace mozilla;
-
-TEST(GfxQcms, LutInverseCrash)
-{
-  uint16_t lutTable1[] = {
-      0x0000, 0x0000, 0x0000, 0x8000, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF,
-  };
-  uint16_t lutTable2[] = {
-      0xFFF0, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF,
-  };
-
-  // Crash/Assert test
-  lut_inverse_interp16((uint16_t)5, lutTable1,
-                       (int)mozilla::ArrayLength(lutTable1));
-  lut_inverse_interp16((uint16_t)5, lutTable2,
-                       (int)mozilla::ArrayLength(lutTable2));
-}
-
-TEST(GfxQcms, LutInverse)
-{
-  // mimic sRGB_v4_ICC mBA Output
-  //
-  //       XXXX
-  //      X
-  //     X
-  // XXXX
-  uint16_t value;
-  uint16_t lutTable[256];
-
-  for (int i = 0; i < 20; i++) {
-    lutTable[i] = 0;
-  }
-
-  for (int i = 20; i < 200; i++) {
-    lutTable[i] = (i - 20) * 0xFFFF / (200 - 20);
-  }
-
-  for (int i = 200; i < (int)mozilla::ArrayLength(lutTable); i++) {
-    lutTable[i] = 0xFFFF;
-  }
-
-  for (uint16_t i = 0; i < 65535; i++) {
-    lut_inverse_interp16(i, lutTable, (int)mozilla::ArrayLength(lutTable));
-  }
-
-  // Lookup the interesting points
-
-  value =
-      lut_inverse_interp16(0, lutTable, (int)mozilla::ArrayLength(lutTable));
-  EXPECT_LE(value, 20 * 256);
-
-  value =
-      lut_inverse_interp16(1, lutTable, (int)mozilla::ArrayLength(lutTable));
-  EXPECT_GT(value, 20 * 256);
-
-  value = lut_inverse_interp16(65535, lutTable,
-                               (int)mozilla::ArrayLength(lutTable));
-  EXPECT_LT(value, 201 * 256);
-}
-
-TEST(GfxQcms, LutInverseNonMonotonic)
-{
-  // Make sure we behave sanely for non monotic functions
-  //   X  X  X
-  //  X  X  X
-  // X  X  X
-  uint16_t lutTable[256];
-
-  for (int i = 0; i < 100; i++) {
-    lutTable[i] = (i - 0) * 0xFFFF / (100 - 0);
-  }
-
-  for (int i = 100; i < 200; i++) {
-    lutTable[i] = (i - 100) * 0xFFFF / (200 - 100);
-  }
-
-  for (int i = 200; i < 256; i++) {
-    lutTable[i] = (i - 200) * 0xFFFF / (256 - 200);
-  }
-
-  for (uint16_t i = 0; i < 65535; i++) {
-    lut_inverse_interp16(i, lutTable, (int)mozilla::ArrayLength(lutTable));
-  }
-
-  // Make sure we don't crash, hang or let sanitizers do their magic
-}
 
 static bool CmpRgbChannel(const uint8_t* aRef, const uint8_t* aTest,
                           size_t aIndex) {
@@ -308,23 +194,10 @@ class GfxQcms_ProfilePairBase : public ::testing::Test {
         mStorageType(QCMS_DATA_RGB_8),
         mPrecache(false) {}
 
-  void TransformPrecache();
-  void TransformPrecachePlatformExt();
-
   void SetUp() override {
     // XXX: This means that we can't have qcms v2 unit test
     //      without changing the qcms API.
     qcms_enable_iccv4();
-#ifdef MOZILLA_MAY_SUPPORT_AVX
-    if (mozilla::supports_avx()) {
-      qcms_enable_avx();
-    }
-#endif
-#ifdef MOZILLA_MAY_SUPPORT_NEON
-    if (mozilla::supports_neon()) {
-      qcms_enable_neon();
-    }
-#endif
   }
 
   void TearDown() override {
@@ -458,98 +331,6 @@ class GfxQcms_ProfilePairBase : public ::testing::Test {
   bool mPrecache;
 };
 
-void GfxQcms_ProfilePairBase::TransformPrecache() {
-  // Produce reference using interpolation and the lookup tables.
-  ASSERT_FALSE(mPrecache);
-  ASSERT_TRUE(SetBuffers(QCMS_DATA_RGB_8));
-  ASSERT_TRUE(SetTransform(QCMS_DATA_RGB_8));
-  ProduceRef(qcms_transform_data_rgb_out_lut);
-
-  // Produce output using lut and precaching.
-  PrecacheOutput();
-  ASSERT_TRUE(SetTransform(QCMS_DATA_RGB_8));
-  EXPECT_TRUE(ProduceVerifyOutput(qcms_transform_data_rgb_out_lut_precache));
-}
-
-void GfxQcms_ProfilePairBase::TransformPrecachePlatformExt() {
-  PrecacheOutput();
-
-  // Verify RGB transforms.
-  ASSERT_TRUE(SetBuffers(QCMS_DATA_RGB_8));
-  ASSERT_TRUE(SetTransform(QCMS_DATA_RGB_8));
-  ProduceRef(qcms_transform_data_rgb_out_lut_precache);
-#ifdef QCMS_MAY_SUPPORT_SSE
-  if (mozilla::supports_sse()) {
-    EXPECT_TRUE(ProduceVerifyOutput(qcms_transform_data_rgb_out_lut_sse1));
-  }
-#endif
-#ifdef MOZILLA_MAY_SUPPORT_SSE2
-  if (mozilla::supports_sse2()) {
-    EXPECT_TRUE(ProduceVerifyOutput(qcms_transform_data_rgb_out_lut_sse2));
-  }
-#endif
-#ifdef MOZILLA_MAY_SUPPORT_AVX
-  if (mozilla::supports_avx()) {
-    EXPECT_TRUE(ProduceVerifyOutput(qcms_transform_data_rgb_out_lut_avx));
-  }
-#endif
-#ifdef MOZILLA_MAY_SUPPORT_NEON
-  if (mozilla::supports_neon()) {
-    EXPECT_TRUE(ProduceVerifyOutput(qcms_transform_data_rgb_out_lut_neon));
-  }
-#endif
-
-  // Verify RGBA transforms.
-  ASSERT_TRUE(SetBuffers(QCMS_DATA_RGBA_8));
-  ASSERT_TRUE(SetTransform(QCMS_DATA_RGBA_8));
-  ProduceRef(qcms_transform_data_rgba_out_lut_precache);
-#ifdef QCMS_MAY_SUPPORT_SSE
-  if (mozilla::supports_sse()) {
-    EXPECT_TRUE(ProduceVerifyOutput(qcms_transform_data_rgba_out_lut_sse1));
-  }
-#endif
-#ifdef MOZILLA_MAY_SUPPORT_SSE2
-  if (mozilla::supports_sse2()) {
-    EXPECT_TRUE(ProduceVerifyOutput(qcms_transform_data_rgba_out_lut_sse2));
-  }
-#endif
-#ifdef MOZILLA_MAY_SUPPORT_AVX
-  if (mozilla::supports_avx()) {
-    EXPECT_TRUE(ProduceVerifyOutput(qcms_transform_data_rgba_out_lut_avx));
-  }
-#endif
-#ifdef MOZILLA_MAY_SUPPORT_NEON
-  if (mozilla::supports_neon()) {
-    EXPECT_TRUE(ProduceVerifyOutput(qcms_transform_data_rgba_out_lut_neon));
-  }
-#endif
-
-  // Verify BGRA transforms.
-  ASSERT_TRUE(SetBuffers(QCMS_DATA_BGRA_8));
-  ASSERT_TRUE(SetTransform(QCMS_DATA_BGRA_8));
-  ProduceRef(qcms_transform_data_bgra_out_lut_precache);
-#ifdef QCMS_MAY_SUPPORT_SSE
-  if (mozilla::supports_sse()) {
-    EXPECT_TRUE(ProduceVerifyOutput(qcms_transform_data_bgra_out_lut_sse1));
-  }
-#endif
-#ifdef MOZILLA_MAY_SUPPORT_SSE2
-  if (mozilla::supports_sse2()) {
-    EXPECT_TRUE(ProduceVerifyOutput(qcms_transform_data_bgra_out_lut_sse2));
-  }
-#endif
-#ifdef MOZILLA_MAY_SUPPORT_AVX
-  if (mozilla::supports_avx()) {
-    EXPECT_TRUE(ProduceVerifyOutput(qcms_transform_data_bgra_out_lut_avx));
-  }
-#endif
-#ifdef MOZILLA_MAY_SUPPORT_NEON
-  if (mozilla::supports_neon()) {
-    EXPECT_TRUE(ProduceVerifyOutput(qcms_transform_data_bgra_out_lut_neon));
-  }
-#endif
-}
-
 class GfxQcms_sRGB_To_sRGB : public GfxQcms_ProfilePairBase {
  protected:
   void SetUp() override {
@@ -577,19 +358,6 @@ class GfxQcms_sRGB_To_ThinkpadW540 : public GfxQcms_ProfilePairBase {
   }
 };
 
-#define TEST_QCMS_PROFILE_F(test_fixture)                    \
-  TEST_F(test_fixture, TransformPrecachePlatformExt) {       \
-    GfxQcms_ProfilePairBase::TransformPrecachePlatformExt(); \
-  }
-
-TEST_F(GfxQcms_sRGB_To_sRGB, TransformPrecache) {
-  // TODO(aosmond): This doesn't pass for the non-identity transform. Should
-  // they produce the same results?
-  GfxQcms_ProfilePairBase::TransformPrecache();
-}
-
-TEST_QCMS_PROFILE_F(GfxQcms_sRGB_To_sRGB)
-
 TEST_F(GfxQcms_sRGB_To_sRGB, TransformIdentity) {
   PrecacheOutput();
   SetBuffers(QCMS_DATA_RGB_8);
@@ -597,9 +365,6 @@ TEST_F(GfxQcms_sRGB_To_sRGB, TransformIdentity) {
   qcms_transform_data(mTransform, mInput.get(), mOutput.get(), mPixels);
   EXPECT_TRUE(VerifyOutput(mInput));
 }
-
-TEST_QCMS_PROFILE_F(GfxQcms_sRGB_To_SamsungSyncmaster)
-TEST_QCMS_PROFILE_F(GfxQcms_sRGB_To_ThinkpadW540)
 
 class GfxQcmsPerf_Base : public GfxQcms_sRGB_To_ThinkpadW540 {
  protected:

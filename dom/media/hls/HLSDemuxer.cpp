@@ -127,7 +127,8 @@ class HLSDemuxer::HLSDemuxerCallbacksSupport
 };
 
 HLSDemuxer::HLSDemuxer(int aPlayerId)
-    : mTaskQueue(new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER),
+    : mTaskQueue(new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                               "HLSDemuxer",
                                /* aSupportsTailDispatch = */ false)) {
   MOZ_ASSERT(NS_IsMainThread());
   HLSDemuxerCallbacksSupport::Init();
@@ -446,11 +447,10 @@ CryptoSample HLSTrackDemuxer::ExtractCryptoSample(
       msg = "Error when extracting clear data.";
       break;
     }
-    // Data in mPlainSizes is uint16_t, NumBytesOfClearData is int32_t
-    // , so need a for loop to copy
-    for (const auto& b : clearData->GetElements()) {
-      crypto.mPlainSizes.AppendElement(b);
-    }
+    auto&& clearArr = clearData->GetElements();
+    // Data in mPlainSizes is uint32_t, NumBytesOfClearData is int32_t
+    crypto.mPlainSizes.AppendElements(reinterpret_cast<uint32_t*>(&clearArr[0]),
+                                      clearArr.Length());
 
     mozilla::jni::IntArray::LocalRef encryptedData;
     if (NS_FAILED(aCryptoInfo->NumBytesOfEncryptedData(&encryptedData))) {

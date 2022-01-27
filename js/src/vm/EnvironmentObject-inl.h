@@ -10,18 +10,17 @@
 #include "vm/EnvironmentObject.h"
 
 #include "vm/JSObject-inl.h"
-#include "vm/TypeInference-inl.h"
 
 namespace js {
 
-inline LexicalEnvironmentObject& NearestEnclosingExtensibleLexicalEnvironment(
-    JSObject* env) {
+inline ExtensibleLexicalEnvironmentObject&
+NearestEnclosingExtensibleLexicalEnvironment(JSObject* env) {
   MOZ_ASSERT(env);
-  while (!IsExtensibleLexicalEnvironment(env)) {
+  while (!env->is<ExtensibleLexicalEnvironmentObject>()) {
     env = env->enclosingEnvironment();
     MOZ_ASSERT(env);
   }
-  return env->as<LexicalEnvironmentObject>();
+  return env->as<ExtensibleLexicalEnvironmentObject>();
 }
 
 // Returns the innermost "qualified var object" on the environment chain.
@@ -42,35 +41,28 @@ inline const Value& EnvironmentObject::aliasedBinding(
   return getSlot(ec.slot());
 }
 
-inline void EnvironmentObject::setAliasedBinding(JSContext* cx, uint32_t slot,
+inline void EnvironmentObject::setAliasedBinding(uint32_t slot,
                                                  const Value& v) {
-  MOZ_ASSERT(!isSingleton());
   setSlot(slot, v);
 }
 
-inline void EnvironmentObject::setAliasedBinding(JSContext* cx,
-                                                 EnvironmentCoordinate ec,
+inline void EnvironmentObject::setAliasedBinding(EnvironmentCoordinate ec,
                                                  const Value& v) {
   MOZ_ASSERT(!IsExtensibleLexicalEnvironment(this));
   MOZ_ASSERT(nonExtensibleIsFixedSlot(ec) ==
              NativeObject::isFixedSlot(ec.slot()));
-  setAliasedBinding(cx, ec.slot(), v);
+  setAliasedBinding(ec.slot(), v);
 }
 
-inline void EnvironmentObject::setAliasedBinding(JSContext* cx,
-                                                 const BindingIter& bi,
+inline void EnvironmentObject::setAliasedBinding(const BindingIter& bi,
                                                  const Value& v) {
   MOZ_ASSERT(bi.location().kind() == BindingLocation::Kind::Environment);
-  setAliasedBinding(cx, bi.location().slot(), v);
+  setAliasedBinding(bi.location().slot(), v);
 }
 
-inline void CallObject::setAliasedFormalFromArguments(JSContext* cx,
-                                                      const Value& argsValue,
-                                                      jsid id, const Value& v) {
+inline void CallObject::setAliasedFormalFromArguments(const Value& argsValue,
+                                                      const Value& v) {
   setSlot(ArgumentsObject::SlotFromMagicScopeSlotValue(argsValue), v);
-  if (isSingleton()) {
-    AddTypePropertyId(cx, this, id, v);
-  }
 }
 
 } /* namespace js */

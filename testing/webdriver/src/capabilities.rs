@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 use crate::common::MAX_SAFE_INTEGER;
 use crate::error::{ErrorStatus, WebDriverError, WebDriverResult};
 use serde_json::{Map, Value};
@@ -45,6 +49,9 @@ pub trait BrowserCapabilities {
 
     /// Indicates that interactability checks will be applied to `<input type=file>`.
     fn strict_file_interactability(&mut self, _: &Capabilities) -> WebDriverResult<bool>;
+
+    /// Whether a WebSocket URL for the created session has to be returned
+    fn web_socket_url(&mut self, _: &Capabilities) -> WebDriverResult<bool>;
 
     fn accept_proxy(
         &mut self,
@@ -117,7 +124,7 @@ impl SpecNewSessionParameters {
         // Filter out entries with the value `null`
         let null_entries = capabilities
             .iter()
-            .filter(|&(_, ref value)| **value == Value::Null)
+            .filter(|&(_, value)| *value == Value::Null)
             .map(|(k, _)| k.clone())
             .collect::<Vec<String>>();
         for key in null_entries {
@@ -128,7 +135,8 @@ impl SpecNewSessionParameters {
             match &**key {
                 x @ "acceptInsecureCerts"
                 | x @ "setWindowRect"
-                | x @ "strictFileInteractability" => {
+                | x @ "strictFileInteractability"
+                | x @ "webSocketUrl" => {
                     if !value.is_boolean() {
                         return Err(WebDriverError::new(
                             ErrorStatus::InvalidArgument,
@@ -165,6 +173,12 @@ impl SpecNewSessionParameters {
                 }
             }
         }
+
+        // With a value of `false` the capability needs to be removed.
+        if let Some(Value::Bool(false)) = capabilities.get(&"webSocketUrl".to_string()) {
+            capabilities.remove(&"webSocketUrl".to_string());
+        }
+
         Ok(capabilities)
     }
 
@@ -217,11 +231,11 @@ impl SpecNewSessionParameters {
 
                 "proxyAutoconfigUrl" => match value.as_str() {
                     Some(x) => {
-                        Url::parse(x).or_else(|_| {
-                            Err(WebDriverError::new(
+                        Url::parse(x).map_err(|_| {
+                            WebDriverError::new(
                                 ErrorStatus::InvalidArgument,
                                 format!("proxyAutoconfigUrl is not a valid URL: {}", x),
-                            ))
+                            )
                         })?;
                     }
                     None => {
@@ -297,11 +311,11 @@ impl SpecNewSessionParameters {
                 }
 
                 // Temporarily add a scheme so the host can be parsed as URL
-                let url = Url::parse(&format!("http://{}", host)).or_else(|_| {
-                    Err(WebDriverError::new(
+                let url = Url::parse(&format!("http://{}", host)).map_err(|_| {
+                    WebDriverError::new(
                         ErrorStatus::InvalidArgument,
                         format!("{} is not a valid URL: {}", entry, host),
-                    ))
+                    )
                 })?;
 
                 if url.username() != ""
@@ -444,7 +458,7 @@ impl CapabilitiesMatching for SpecNewSessionParameters {
                                 .ok()
                                 .and_then(|x| x);
 
-                            if value.as_str() != browserValue.as_ref().map(|x| &**x) {
+                            if value.as_str() != browserValue.as_deref() {
                                 return false;
                             }
                         }
@@ -471,7 +485,7 @@ impl CapabilitiesMatching for SpecNewSessionParameters {
                                 .platform_name(merged)
                                 .ok()
                                 .and_then(|x| x);
-                            if value.as_str() != browserValue.as_ref().map(|x| &**x) {
+                            if value.as_str() != browserValue.as_deref() {
                                 return false;
                             }
                         }
@@ -506,8 +520,15 @@ impl CapabilitiesMatching for SpecNewSessionParameters {
                             let default = Map::new();
                             let proxy = value.as_object().unwrap_or(&default);
                             if !browser_capabilities
-                                .accept_proxy(&proxy, merged)
+                                .accept_proxy(proxy, merged)
                                 .unwrap_or(false)
+                            {
+                                return false;
+                            }
+                        }
+                        "webSocketUrl" => {
+                            if value.as_bool().unwrap_or(false)
+                                && !browser_capabilities.web_socket_url(merged).unwrap_or(false)
                             {
                                 return false;
                             }

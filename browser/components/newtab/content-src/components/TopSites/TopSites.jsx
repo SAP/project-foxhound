@@ -3,11 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
-import {
-  MIN_CORNER_FAVICON_SIZE,
-  MIN_RICH_FAVICON_SIZE,
-  TOP_SITES_SOURCE,
-} from "./TopSitesConstants";
+import { MIN_RICH_FAVICON_SIZE, TOP_SITES_SOURCE } from "./TopSitesConstants";
 import { CollapsibleSection } from "content-src/components/CollapsibleSection/CollapsibleSection";
 import { ComponentPerfTimer } from "content-src/components/ComponentPerfTimer/ComponentPerfTimer";
 import { connect } from "react-redux";
@@ -28,9 +24,6 @@ function topSiteIconType(link) {
   if (link.faviconSize >= MIN_RICH_FAVICON_SIZE) {
     return "rich_icon";
   }
-  if (link.screenshot && link.faviconSize >= MIN_CORNER_FAVICON_SIZE) {
-    return "screenshot_with_icon";
-  }
   if (link.screenshot) {
     return "screenshot";
   }
@@ -50,7 +43,6 @@ function countTopSitesIconsTypes(topSites) {
 
   return topSites.reduce(countTopSitesTypes, {
     custom_screenshot: 0,
-    screenshot_with_icon: 0,
     screenshot: 0,
     tippytop: 0,
     rich_icon: 0,
@@ -139,6 +131,8 @@ export class _TopSites extends React.PureComponent {
     const { props } = this;
     const { editForm, showSearchShortcutsForm } = props.TopSites;
     const extraMenuOptions = ["AddTopSite"];
+    const colors = props.Prefs.values["newNewtabExperience.colors"];
+
     if (props.Prefs.values["improvesearch.topSiteSearchShortcuts"]) {
       extraMenuOptions.push("AddSearchShortcut");
     }
@@ -151,15 +145,13 @@ export class _TopSites extends React.PureComponent {
       >
         <CollapsibleSection
           className="top-sites"
-          icon="topsites"
           id="topsites"
-          title={this.props.title || { id: "newtab-section-header-topsites" }}
+          title={props.title || { id: "newtab-section-header-topsites" }}
+          hideTitle={true}
           extraMenuOptions={extraMenuOptions}
           showPrefName="feeds.topsites"
           eventSource={TOP_SITES_SOURCE}
-          collapsed={
-            props.TopSites.pref ? props.TopSites.pref.collapsed : undefined
-          }
+          collapsed={false}
           isFixed={props.isFixed}
           isFirst={props.isFirst}
           isLast={props.isLast}
@@ -170,6 +162,7 @@ export class _TopSites extends React.PureComponent {
             TopSitesRows={props.TopSitesRows}
             dispatch={props.dispatch}
             topSiteIconType={topSiteIconType}
+            colors={colors}
           />
           <div className="edit-topsites-wrapper">
             {editForm && (

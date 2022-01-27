@@ -660,6 +660,16 @@ TEST_P(TlsConnectGeneric, ClientAuthEcdsa) {
   CheckKeys(ssl_kea_ecdh, ssl_auth_ecdsa);
 }
 
+TEST_P(TlsConnectGeneric, ClientAuthWithEch) {
+  Reset(TlsAgent::kServerEcdsa256);
+  EnsureTlsSetup();
+  SetupEch(client_, server_);
+  client_->SetupClientAuth();
+  server_->RequestClientAuth(true);
+  Connect();
+  CheckKeys(ssl_kea_ecdh, ssl_auth_ecdsa);
+}
+
 TEST_P(TlsConnectGeneric, ClientAuthBigRsa) {
   Reset(TlsAgent::kServerRsa, TlsAgent::kRsa2048);
   client_->SetupClientAuth();
@@ -913,6 +923,104 @@ TEST_P(TlsConnectTls12, ClientAuthNoSigAlgs) {
 
   server_->CheckErrorCode(SSL_ERROR_HANDSHAKE_FAILURE_ALERT);
   client_->CheckErrorCode(SSL_ERROR_UNSUPPORTED_SIGNATURE_ALGORITHM);
+}
+
+static SECStatus GetEcClientAuthDataHook(void* self, PRFileDesc* fd,
+                                         CERTDistNames* caNames,
+                                         CERTCertificate** clientCert,
+                                         SECKEYPrivateKey** clientKey) {
+  ScopedCERTCertificate cert;
+  ScopedSECKEYPrivateKey priv;
+  // use a different certificate than TlsAgent::kClient
+  if (!TlsAgent::LoadCertificate(TlsAgent::kServerEcdsa256, &cert, &priv)) {
+    return SECFailure;
+  }
+
+  *clientCert = cert.release();
+  *clientKey = priv.release();
+  return SECSuccess;
+}
+
+TEST_P(TlsConnectTls12Plus, ClientAuthDisjointSchemes) {
+  EnsureTlsSetup();
+  client_->SetupClientAuth();
+  server_->RequestClientAuth(true);
+
+  SSLSignatureScheme server_scheme = ssl_sig_rsa_pss_rsae_sha256;
+  std::vector<SSLSignatureScheme> client_schemes{
+      ssl_sig_rsa_pss_rsae_sha256, ssl_sig_ecdsa_secp256r1_sha256};
+  SECStatus rv =
+      SSL_SignatureSchemePrefSet(server_->ssl_fd(), &server_scheme, 1);
+  EXPECT_EQ(SECSuccess, rv);
+  rv = SSL_SignatureSchemePrefSet(
+      client_->ssl_fd(), client_schemes.data(),
+      static_cast<unsigned int>(client_schemes.size()));
+  EXPECT_EQ(SECSuccess, rv);
+
+  // Select an EC cert that's incompatible with server schemes.
+  EXPECT_EQ(SECSuccess,
+            SSL_GetClientAuthDataHook(client_->ssl_fd(),
+                                      GetEcClientAuthDataHook, nullptr));
+
+  StartConnect();
+  client_->Handshake();  // CH
+  server_->Handshake();  // SH
+  client_->Handshake();
+  if (version_ >= SSL_LIBRARY_VERSION_TLS_1_3) {
+    ASSERT_EQ(TlsAgent::STATE_CONNECTED, client_->state());
+    ExpectAlert(server_, kTlsAlertCertificateRequired);
+    server_->Handshake();  // Alert
+    server_->CheckErrorCode(SSL_ERROR_NO_CERTIFICATE);
+    client_->Handshake();  // Receive Alert
+    client_->CheckErrorCode(SSL_ERROR_RX_CERTIFICATE_REQUIRED_ALERT);
+  } else {
+    ASSERT_EQ(TlsAgent::STATE_CONNECTING, client_->state());
+    ExpectAlert(server_, kTlsAlertBadCertificate);
+    server_->Handshake();  // Alert
+    server_->CheckErrorCode(SSL_ERROR_NO_CERTIFICATE);
+    client_->Handshake();  // Receive Alert
+    client_->CheckErrorCode(SSL_ERROR_BAD_CERT_ALERT);
+  }
+}
+
+TEST_F(TlsConnectStreamTls13, PostHandshakeAuthDisjointSchemes) {
+  EnsureTlsSetup();
+  SSLSignatureScheme server_scheme = ssl_sig_rsa_pss_rsae_sha256;
+  std::vector<SSLSignatureScheme> client_schemes{
+      ssl_sig_rsa_pss_rsae_sha256, ssl_sig_ecdsa_secp256r1_sha256};
+  SECStatus rv =
+      SSL_SignatureSchemePrefSet(server_->ssl_fd(), &server_scheme, 1);
+  EXPECT_EQ(SECSuccess, rv);
+  rv = SSL_SignatureSchemePrefSet(
+      client_->ssl_fd(), client_schemes.data(),
+      static_cast<unsigned int>(client_schemes.size()));
+  EXPECT_EQ(SECSuccess, rv);
+
+  client_->SetupClientAuth();
+  client_->SetOption(SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE);
+
+  // Select an EC cert that's incompatible with server schemes.
+  EXPECT_EQ(SECSuccess,
+            SSL_GetClientAuthDataHook(client_->ssl_fd(),
+                                      GetEcClientAuthDataHook, nullptr));
+
+  Connect();
+
+  // Send CertificateRequest.
+  EXPECT_EQ(SECSuccess, SSL_SendCertificateRequest(server_->ssl_fd()))
+      << "Unexpected error: " << PORT_ErrorToName(PORT_GetError());
+
+  // Need to do a round-trip so that the post-handshake message is
+  // handled on both client and server.
+  server_->SendData(50);
+  client_->ReadBytes(50);
+  client_->SendData(50);
+  server_->ReadBytes(50);
+
+  ScopedCERTCertificate cert1(SSL_PeerCertificate(server_->ssl_fd()));
+  ASSERT_EQ(nullptr, cert1.get());
+  ScopedCERTCertificate cert2(SSL_LocalCertificate(client_->ssl_fd()));
+  ASSERT_EQ(nullptr, cert2.get());
 }
 
 static const SSLSignatureScheme kSignatureSchemeEcdsaSha384[] = {
@@ -1232,7 +1340,7 @@ TEST_F(TlsConnectDatagram13, AuthCompleteBeforeFinished) {
 // This test uses a simple AuthCertificateCallback.  Due to the way that the
 // entire server flight is processed, the call to SSL_AuthCertificateComplete
 // will trigger after the Finished message is processed.
-TEST_F(TlsConnectDatagram13, AuthCompleteAfterFinished) {
+TEST_P(TlsConnectTls13, AuthCompleteAfterFinished) {
   SetDeferredAuthCertificateCallback(client_, 0);  // 0 = success.
   Connect();
 }
@@ -1690,7 +1798,166 @@ TEST_P(TlsSignatureSchemeConfiguration, SignatureSchemeConfigBoth) {
   CheckKeys(ssl_kea_ecdh, ssl_grp_ec_curve25519, auth_type_, signature_scheme_);
 }
 
-INSTANTIATE_TEST_CASE_P(
+class Tls12CertificateRequestReplacer : public TlsHandshakeFilter {
+ public:
+  Tls12CertificateRequestReplacer(const std::shared_ptr<TlsAgent>& a,
+                                  SSLSignatureScheme scheme)
+      : TlsHandshakeFilter(a, {kTlsHandshakeCertificateRequest}),
+        scheme_(scheme) {}
+
+  virtual PacketFilter::Action FilterHandshake(const HandshakeHeader& header,
+                                               const DataBuffer& input,
+                                               DataBuffer* output) {
+    uint32_t offset = 0;
+
+    if (header.handshake_type() != ssl_hs_certificate_request) {
+      return KEEP;
+    }
+
+    *output = input;
+
+    uint32_t types_len = 0;
+    if (!output->Read(offset, 1, &types_len)) {
+      ADD_FAILURE();
+      return KEEP;
+    }
+    offset += 1 + types_len;
+    uint32_t scheme_len = 0;
+    if (!output->Read(offset, 2, &scheme_len)) {
+      ADD_FAILURE();
+      return KEEP;
+    }
+    DataBuffer schemes;
+    schemes.Write(0, 2, 2);
+    schemes.Write(2, scheme_, 2);
+    output->Write(offset, 2, schemes.len());
+    output->Splice(schemes, offset + 2, scheme_len);
+
+    return CHANGE;
+  }
+
+ private:
+  SSLSignatureScheme scheme_;
+};
+
+//
+// Test how policy interacts with client auth connections
+//
+
+// TLS/DTLS version algorithm policy
+typedef std::tuple<SSLProtocolVariant, uint16_t, SECOidTag, PRUint32>
+    PolicySignatureSchemeProfile;
+
+// Only TLS 1.2 handles client auth schemes inside
+// the certificate request packet, so our failure tests for
+// those kinds of connections only occur here.
+class TlsConnectAuthWithPolicyTls12
+    : public TlsConnectTestBase,
+      public ::testing::WithParamInterface<PolicySignatureSchemeProfile> {
+ public:
+  TlsConnectAuthWithPolicyTls12()
+      : TlsConnectTestBase(std::get<0>(GetParam()), std::get<1>(GetParam())) {
+    alg_ = std::get<2>(GetParam());
+    policy_ = std::get<3>(GetParam());
+    // use the algorithm to select which single scheme to deploy
+    // We use these schemes to force servers sending schemes the client
+    // didn't advertise to make sure the client will still filter these
+    // by policy and detect that no valid schemes were presented, rather
+    // than sending an empty client auth message.
+    switch (alg_) {
+      case SEC_OID_SHA256:
+      case SEC_OID_PKCS1_RSA_PSS_SIGNATURE:
+        scheme_ = ssl_sig_rsa_pss_pss_sha256;
+        break;
+      case SEC_OID_PKCS1_RSA_ENCRYPTION:
+        scheme_ = ssl_sig_rsa_pkcs1_sha256;
+        break;
+      case SEC_OID_ANSIX962_EC_PUBLIC_KEY:
+        scheme_ = ssl_sig_ecdsa_secp256r1_sha256;
+        break;
+      default:
+        ADD_FAILURE() << "need to update algorithm table in "
+                         "TlsConnectAuthWithPolicyTls12";
+        scheme_ = ssl_sig_none;
+        break;
+    }
+  }
+
+ protected:
+  SECOidTag alg_;
+  PRUint32 policy_;
+  SSLSignatureScheme scheme_;
+};
+
+// Only TLS 1.2 and greater looks at schemes extensions on client auth
+class TlsConnectAuthWithPolicyTls12Plus
+    : public TlsConnectTestBase,
+      public ::testing::WithParamInterface<PolicySignatureSchemeProfile> {
+ public:
+  TlsConnectAuthWithPolicyTls12Plus()
+      : TlsConnectTestBase(std::get<0>(GetParam()), std::get<1>(GetParam())) {
+    alg_ = std::get<2>(GetParam());
+    policy_ = std::get<3>(GetParam());
+  }
+
+ protected:
+  SECOidTag alg_;
+  PRUint32 policy_;
+};
+
+// make sure we can turn single algorithms off by policy an still connect
+// this is basically testing that we are properly filtering our schemes
+// by policy before communicating them to the server, and that the
+// server is respecting our choices
+TEST_P(TlsConnectAuthWithPolicyTls12Plus, PolicySuccessTest) {
+  // in TLS 1.3, RSA PKCS1 is restricted. If we are also
+  // restricting RSA PSS by policy, we can't use the default
+  // RSA certificate as the server cert, switch to ECDSA
+  if ((version_ >= SSL_LIBRARY_VERSION_TLS_1_3) &&
+      (alg_ == SEC_OID_PKCS1_RSA_PSS_SIGNATURE)) {
+    Reset(TlsAgent::kServerEcdsa256);
+  }
+  client_->SetPolicy(alg_, 0, policy_);  // Disable policy for client
+  client_->SetupClientAuth();
+  server_->RequestClientAuth(false);
+  Connect();
+}
+
+// make sure we fail if the server ignores our policy preference and
+// requests client auth with a scheme we don't support
+TEST_P(TlsConnectAuthWithPolicyTls12, PolicyFailureTest) {
+  client_->SetPolicy(alg_, 0, policy_);
+  client_->SetupClientAuth();
+  server_->RequestClientAuth(false);
+  MakeTlsFilter<Tls12CertificateRequestReplacer>(server_, scheme_);
+  ConnectExpectAlert(client_, kTlsAlertHandshakeFailure);
+  client_->CheckErrorCode(SSL_ERROR_UNSUPPORTED_SIGNATURE_ALGORITHM);
+  server_->CheckErrorCode(SSL_ERROR_HANDSHAKE_FAILURE_ALERT);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    SignaturesWithPolicyFail, TlsConnectAuthWithPolicyTls12,
+    ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
+                       TlsConnectTestBase::kTlsV12,
+                       ::testing::Values(SEC_OID_SHA256,
+                                         SEC_OID_PKCS1_RSA_PSS_SIGNATURE,
+                                         SEC_OID_PKCS1_RSA_ENCRYPTION,
+                                         SEC_OID_ANSIX962_EC_PUBLIC_KEY),
+                       ::testing::Values(NSS_USE_ALG_IN_SSL_KX,
+                                         NSS_USE_ALG_IN_ANY_SIGNATURE)));
+
+INSTANTIATE_TEST_SUITE_P(
+    SignaturesWithPolicySuccess, TlsConnectAuthWithPolicyTls12Plus,
+    ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
+                       TlsConnectTestBase::kTlsV12Plus,
+                       ::testing::Values(SEC_OID_SHA256,
+                                         SEC_OID_PKCS1_RSA_PSS_SIGNATURE,
+                                         SEC_OID_PKCS1_RSA_ENCRYPTION,
+                                         SEC_OID_ANSIX962_EC_PUBLIC_KEY),
+                       ::testing::Values(NSS_USE_ALG_IN_SSL_KX,
+                                         NSS_USE_ALG_IN_ANY_SIGNATURE)));
+
+INSTANTIATE_TEST_SUITE_P(
     SignatureSchemeRsa, TlsSignatureSchemeConfiguration,
     ::testing::Combine(
         TlsConnectTestBase::kTlsVariantsAll, TlsConnectTestBase::kTlsV12,
@@ -1700,7 +1967,7 @@ INSTANTIATE_TEST_CASE_P(
                           ssl_sig_rsa_pkcs1_sha512, ssl_sig_rsa_pss_rsae_sha256,
                           ssl_sig_rsa_pss_rsae_sha384)));
 // RSASSA-PKCS1-v1_5 is not allowed to be used in TLS 1.3
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SignatureSchemeRsaTls13, TlsSignatureSchemeConfiguration,
     ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
                        TlsConnectTestBase::kTlsV13,
@@ -1709,42 +1976,42 @@ INSTANTIATE_TEST_CASE_P(
                        ::testing::Values(ssl_sig_rsa_pss_rsae_sha256,
                                          ssl_sig_rsa_pss_rsae_sha384)));
 // PSS with SHA-512 needs a bigger key to work.
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SignatureSchemeBigRsa, TlsSignatureSchemeConfiguration,
     ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
                        TlsConnectTestBase::kTlsV12Plus,
                        ::testing::Values(TlsAgent::kRsa2048),
                        ::testing::Values(ssl_auth_rsa_sign),
                        ::testing::Values(ssl_sig_rsa_pss_rsae_sha512)));
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SignatureSchemeRsaSha1, TlsSignatureSchemeConfiguration,
     ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
                        TlsConnectTestBase::kTlsV12,
                        ::testing::Values(TlsAgent::kServerRsa),
                        ::testing::Values(ssl_auth_rsa_sign),
                        ::testing::Values(ssl_sig_rsa_pkcs1_sha1)));
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SignatureSchemeEcdsaP256, TlsSignatureSchemeConfiguration,
     ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
                        TlsConnectTestBase::kTlsV12Plus,
                        ::testing::Values(TlsAgent::kServerEcdsa256),
                        ::testing::Values(ssl_auth_ecdsa),
                        ::testing::Values(ssl_sig_ecdsa_secp256r1_sha256)));
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SignatureSchemeEcdsaP384, TlsSignatureSchemeConfiguration,
     ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
                        TlsConnectTestBase::kTlsV12Plus,
                        ::testing::Values(TlsAgent::kServerEcdsa384),
                        ::testing::Values(ssl_auth_ecdsa),
                        ::testing::Values(ssl_sig_ecdsa_secp384r1_sha384)));
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SignatureSchemeEcdsaP521, TlsSignatureSchemeConfiguration,
     ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
                        TlsConnectTestBase::kTlsV12Plus,
                        ::testing::Values(TlsAgent::kServerEcdsa521),
                        ::testing::Values(ssl_auth_ecdsa),
                        ::testing::Values(ssl_sig_ecdsa_secp521r1_sha512)));
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SignatureSchemeEcdsaSha1, TlsSignatureSchemeConfiguration,
     ::testing::Combine(TlsConnectTestBase::kTlsVariantsAll,
                        TlsConnectTestBase::kTlsV12,

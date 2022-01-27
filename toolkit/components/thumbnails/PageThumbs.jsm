@@ -22,16 +22,17 @@ const MAX_THUMBNAIL_AGE_SECS = 172800; // 2 days == 60*60*24*2 == 172800 secs.
  */
 const THUMBNAIL_DIRECTORY = "thumbnails";
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/PromiseWorker.jsm", this);
-ChromeUtils.import("resource://gre/modules/osfile.jsm", this);
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { BasePromiseWorker } = ChromeUtils.import(
+  "resource://gre/modules/PromiseWorker.jsm"
+);
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["FileReader"]);
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
-  AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
   PageThumbUtils: "resource://gre/modules/PageThumbUtils.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
 });
@@ -113,11 +114,35 @@ var PageThumbs = {
   init: function PageThumbs_init() {
     if (!this._initialized) {
       this._initialized = true;
-      PlacesUtils.history.addObserver(PageThumbsHistoryObserver, true);
+
+      this._placesObserver = new PlacesWeakCallbackWrapper(
+        this.handlePlacesEvents.bind(this)
+      );
+      PlacesObservers.addListener(
+        ["history-cleared", "page-removed"],
+        this._placesObserver
+      );
 
       // Migrate the underlying storage, if needed.
       PageThumbsStorageMigrator.migrate();
       PageThumbsExpiration.init();
+    }
+  },
+
+  handlePlacesEvents(events) {
+    for (const event of events) {
+      switch (event.type) {
+        case "history-cleared": {
+          PageThumbsStorage.wipe();
+          break;
+        }
+        case "page-removed": {
+          if (event.isRemovedFromStore) {
+            PageThumbsStorage.remove(event.url);
+          }
+          break;
+        }
+      }
     }
   },
 
@@ -161,17 +186,18 @@ var PageThumbs = {
    * window.
    *
    * @param aBrowser The <browser> to capture a thumbnail from.
+   * @param aArgs See captureToCanvas for accepted arguments.
    * @return {Promise}
    * @resolve {Blob} The thumbnail, as a Blob.
    */
-  captureToBlob: function PageThumbs_captureToBlob(aBrowser) {
+  captureToBlob: function PageThumbs_captureToBlob(aBrowser, aArgs) {
     if (!this._prefEnabled()) {
       return null;
     }
 
     return new Promise(resolve => {
       let canvas = this.createCanvas(aBrowser.ownerGlobal);
-      this.captureToCanvas(aBrowser, canvas)
+      this.captureToCanvas(aBrowser, canvas, aArgs)
         .then(() => {
           canvas.toBlob(blob => {
             resolve(blob, this.contentType);
@@ -192,16 +218,33 @@ var PageThumbs = {
    *   will be resized to default thumbnail dimensions just prior to painting.
    * @param aArgs (optional) Additional named parameters:
    *   fullScale - request that a non-downscaled image be returned.
+   *   isImage - indicate that this should be treated as an image url.
+   *   backgroundColor - background color to draw behind images.
+   *   targetWidth - desired width for images.
+   *   isBackgroundThumb - true if request is from the background thumb service.
+   *   fullViewport - request that a screenshot for the viewport be
+   *     captured. This makes it possible to get a screenshot that reflects
+   *     the current scroll position of aBrowser.
+   * @param aSkipTelemetry skip recording telemetry
    */
-  async captureToCanvas(aBrowser, aCanvas, aArgs) {
+  async captureToCanvas(aBrowser, aCanvas, aArgs, aSkipTelemetry = false) {
     let telemetryCaptureTime = new Date();
     let args = {
       fullScale: aArgs ? aArgs.fullScale : false,
+      isImage: aArgs ? aArgs.isImage : false,
+      backgroundColor:
+        aArgs?.backgroundColor ?? PageThumbUtils.THUMBNAIL_BG_COLOR,
+      targetWidth: aArgs?.targetWidth ?? PageThumbUtils.THUMBNAIL_DEFAULT_SIZE,
+      isBackgroundThumb: aArgs ? aArgs.isBackgroundThumb : false,
+      fullViewport: aArgs?.fullViewport ?? false,
     };
+
     return this._captureToCanvas(aBrowser, aCanvas, args).then(() => {
-      Services.telemetry
-        .getHistogramById("FX_THUMBNAILS_CAPTURE_TIME_MS")
-        .add(new Date() - telemetryCaptureTime);
+      if (!aSkipTelemetry) {
+        Services.telemetry
+          .getHistogramById("FX_THUMBNAILS_CAPTURE_TIME_MS")
+          .add(new Date() - telemetryCaptureTime);
+      }
       return aCanvas;
     });
   },
@@ -259,14 +302,11 @@ var PageThumbs = {
         aCanvas.height = thumbnail.height;
         aCanvas.getContext("2d").putImageData(imgData, 0, 0);
       }
+
       return aCanvas;
     }
     // The content is a local page, grab a thumbnail sync.
-    PageThumbUtils.createSnapshotThumbnail(
-      aBrowser.contentWindow,
-      aCanvas,
-      aArgs
-    );
+    await PageThumbUtils.createSnapshotThumbnail(aBrowser, aCanvas, aArgs);
     return aCanvas;
   },
 
@@ -278,43 +318,77 @@ var PageThumbs = {
    * @param aHeight The desired canvas height.
    * @param aArgs (optional) Additional named parameters:
    *   fullScale - request that a non-downscaled image be returned.
+   *   isImage - indicate that this should be treated as an image url.
+   *   backgroundColor - background color to draw behind images.
+   *   targetWidth - desired width for images.
+   *   isBackgroundThumb - true if request is from the background thumb service.
+   *   fullViewport - request that a screenshot for the viewport be
+   *     captured. This makes it possible to get a screenshot that reflects
+   *     the current scroll position of aBrowser.
    * @return a promise
    */
   async _captureRemoteThumbnail(aBrowser, aWidth, aHeight, aArgs) {
-    if (!aBrowser.browsingContext) {
+    if (!aBrowser.browsingContext || !aBrowser.parentElement) {
       return null;
     }
+
     let thumbnailsActor = aBrowser.browsingContext.currentWindowGlobal.getActor(
-      "Thumbnails"
+      aArgs.isBackgroundThumb ? "BackgroundThumbnails" : "Thumbnails"
     );
-    let [contentWidth, contentHeight] = await thumbnailsActor.sendQuery(
-      "Browser:Thumbnail:ContentSize"
+    let contentInfo = await thumbnailsActor.sendQuery(
+      "Browser:Thumbnail:ContentInfo",
+      {
+        isImage: aArgs.isImage,
+        targetWidth: aArgs.targetWidth,
+        backgroundColor: aArgs.backgroundColor,
+      }
     );
-    let fullScale = aArgs ? aArgs.fullScale : false;
-    let scale = fullScale
-      ? 1
-      : Math.min(Math.max(aWidth / contentWidth, aHeight / contentHeight), 1);
-    let image = await aBrowser.drawSnapshot(
-      0,
-      0,
-      contentWidth,
-      contentHeight,
-      scale,
-      PageThumbUtils.THUMBNAIL_BG_COLOR
+
+    let contentWidth = contentInfo.width;
+    let contentHeight = contentInfo.height;
+    if (contentWidth == 0 || contentHeight == 0) {
+      throw new Error("IMAGE_ZERO_DIMENSION");
+    }
+
+    let doc = aBrowser.parentElement.ownerDocument;
+    let thumbnail = doc.createElementNS(
+      PageThumbUtils.HTML_NAMESPACE,
+      "canvas"
     );
-    if (aBrowser.parentElement) {
-      let doc = aBrowser.parentElement.ownerDocument;
-      let thumbnail = doc.createElementNS(
-        PageThumbUtils.HTML_NAMESPACE,
-        "canvas"
+
+    let image;
+    if (contentInfo.imageData) {
+      thumbnail.width = contentWidth;
+      thumbnail.height = contentHeight;
+
+      image = new aBrowser.ownerGlobal.Image();
+      await new Promise(resolve => {
+        image.onload = resolve;
+        image.src = contentInfo.imageData;
+      });
+    } else {
+      let fullScale = aArgs ? aArgs.fullScale : false;
+      let scale = fullScale
+        ? 1
+        : Math.min(Math.max(aWidth / contentWidth, aHeight / contentHeight), 1);
+
+      image = await aBrowser.drawSnapshot(
+        0,
+        0,
+        contentWidth,
+        contentHeight,
+        scale,
+        aArgs.backgroundColor,
+        aArgs.fullViewport
       );
+
       thumbnail.width = fullScale ? contentWidth : aWidth;
       thumbnail.height = fullScale ? contentHeight : aHeight;
-      let ctx = thumbnail.getContext("2d");
-      ctx.drawImage(image, 0, 0);
-      return thumbnail;
     }
-    return null;
+
+    thumbnail.getContext("2d").drawImage(image, 0, 0);
+
+    return thumbnail;
   },
 
   /**
@@ -552,9 +626,7 @@ var PageThumbsStorage = {
       aData,
       {
         tmpPath: path + ".tmp",
-        bytes: aData.byteLength,
-        noOverwrite: aNoOverwrite,
-        flush: false /* thumbnails do not require the level of guarantee provided by flush*/,
+        mode: aNoOverwrite ? "create" : "overwrite",
       },
     ];
     return PageThumbsWorker.post(
@@ -622,12 +694,12 @@ var PageThumbsStorage = {
     //    which will eventually be fixed by bug 965309)
     //
 
-    let blocker = () => promise;
+    let blocker = () => undefined;
 
     // The following operation will rise an error if we have already
     // reached profileBeforeChange, in which case it is too late
     // to clear the thumbnail wipe.
-    AsyncShutdown.profileBeforeChange.addBlocker(
+    IOUtils.profileBeforeChange.addBlocker(
       "PageThumbs: removing all thumbnails",
       blocker
     );
@@ -643,12 +715,7 @@ var PageThumbsStorage = {
     } finally {
       // Generally, we will be done much before profileBeforeChange,
       // so let's not hoard blockers.
-      if ("removeBlocker" in AsyncShutdown.profileBeforeChange) {
-        // `removeBlocker` was added with bug 985655. In the interest
-        // of backporting, let's degrade gracefully if `removeBlocker`
-        // doesn't exist.
-        AsyncShutdown.profileBeforeChange.removeBlocker(blocker);
-      }
+      IOUtils.profileBeforeChange.removeBlocker(blocker);
     }
   },
 
@@ -666,11 +733,11 @@ var PageThumbsStorage = {
   },
 
   /**
-   * For functions that take a noOverwrite option, OS.File throws an error if
+   * For functions that take a noOverwrite option, IOUtils throws an error if
    * the target file exists and noOverwrite is true.  We don't consider that an
    * error, and we don't want such errors propagated.
    *
-   * @param {aNoOverwrite} The noOverwrite option used in the OS.File operation.
+   * @param {aNoOverwrite} The noOverwrite option used in the IOUtils operation.
    *
    * @return {function} A function that should be passed as the second argument
    * to then() (the `onError` argument).
@@ -679,8 +746,8 @@ var PageThumbsStorage = {
     return function onError(err) {
       if (
         !aNoOverwrite ||
-        !(err instanceof OS.File.Error) ||
-        !err.becauseExists
+        !(err instanceof DOMException) ||
+        err.name !== "TypeMismatchError"
       ) {
         throw err;
       }
@@ -736,12 +803,12 @@ var PageThumbsStorageMigrator = {
    * Used for testing. Default argument is good for all non-testing uses.
    */
   migrateToVersion3: function Migrator_migrateToVersion3(
-    local = OS.Constants.Path.localProfileDir,
-    roaming = OS.Constants.Path.profileDir
+    local = Services.dirsvc.get("ProfLD", Ci.nsIFile).path,
+    roaming = Services.dirsvc.get("ProfD", Ci.nsIFile).path
   ) {
     PageThumbsWorker.post("moveOrDeleteAllThumbnails", [
-      OS.Path.join(roaming, THUMBNAIL_DIRECTORY),
-      OS.Path.join(local, THUMBNAIL_DIRECTORY),
+      PathUtils.join(roaming, THUMBNAIL_DIRECTORY),
+      PathUtils.join(local, THUMBNAIL_DIRECTORY),
     ]);
   },
 };
@@ -814,27 +881,3 @@ var PageThumbsExpiration = {
 var PageThumbsWorker = new BasePromiseWorker(
   "resource://gre/modules/PageThumbsWorker.js"
 );
-// As the PageThumbsWorker performs I/O, we can receive instances of
-// OS.File.Error, so we need to install a decoder.
-PageThumbsWorker.ExceptionHandlers["OS.File.Error"] = OS.File.Error.fromMsg;
-
-var PageThumbsHistoryObserver = {
-  onDeleteURI(aURI, aGUID) {
-    PageThumbsStorage.remove(aURI.spec);
-  },
-
-  onClearHistory() {
-    PageThumbsStorage.wipe();
-  },
-
-  onTitleChanged() {},
-  onBeginUpdateBatch() {},
-  onEndUpdateBatch() {},
-  onPageChanged() {},
-  onDeleteVisits() {},
-
-  QueryInterface: ChromeUtils.generateQI([
-    "nsINavHistoryObserver",
-    "nsISupportsWeakReference",
-  ]),
-};

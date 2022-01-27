@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_workers_WorkerLoadInfo_h
 #define mozilla_dom_workers_WorkerLoadInfo_h
 
+#include "mozilla/OriginAttributes.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/ChannelInfo.h"
@@ -15,14 +16,17 @@
 
 #include "nsIInterfaceRequestor.h"
 #include "nsILoadContext.h"
+#include "nsIRequest.h"
 #include "nsISupportsImpl.h"
 #include "nsIWeakReferenceUtils.h"
+#include "nsTArray.h"
 
 class nsIChannel;
 class nsIContentSecurityPolicy;
 class nsICookieJarSettings;
 class nsILoadGroup;
 class nsIPrincipal;
+class nsIReferrerInfo;
 class nsIRunnable;
 class nsIScriptContext;
 class nsIBrowserChild;
@@ -125,6 +129,7 @@ struct WorkerLoadInfoData {
   uint64_t mWindowID;
 
   nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
+  uint32_t mPrincipalHashValue;
   bool mFromWindow;
   bool mEvalAllowed;
   bool mReportCSPViolations;
@@ -136,7 +141,9 @@ struct WorkerLoadInfoData {
   bool mUseRegularPrincipal;
   bool mHasStorageAccessPermissionGranted;
   bool mServiceWorkersTestingInWindow;
+  bool mShouldResistFingerprinting;
   OriginAttributes mOriginAttributes;
+  bool mIsThirdPartyContextToTopWindow;
 
   enum {
     eNotSet,
@@ -180,7 +187,7 @@ struct WorkerLoadInfo : WorkerLoadInfoData {
 
   bool ProxyReleaseMainThreadObjects(
       WorkerPrivate* aWorkerPrivate,
-      nsCOMPtr<nsILoadGroup>& aLoadGroupToCancel);
+      nsCOMPtr<nsILoadGroup>&& aLoadGroupToCancel);
 };
 
 }  // namespace dom

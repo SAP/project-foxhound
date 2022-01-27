@@ -22,6 +22,9 @@ include protocol PRemoteDecoderManager;
 include protocol PSandboxTesting;
 #endif
 
+include "mozilla/ipc/ByteBufUtils.h";
+include "mozilla/layers/LayersMessageUtils.h";
+
 using base::ProcessId from "base/process.h";
 using mozilla::dom::NativeThreadId from "mozilla/dom/NativeThreadId.h";
 using mozilla::Telemetry::HistogramAccumulation from "mozilla/TelemetryComms.h";
@@ -33,6 +36,7 @@ using mozilla::Telemetry::DiscardedData from "mozilla/TelemetryComms.h";
 using mozilla::gfx::Feature from "gfxFeature.h";
 using mozilla::gfx::Fallback from "gfxFallback.h";
 using mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
+using mozilla::PDMFactory::MediaCodecsSupported from "PDMFactory.h";
 
 namespace mozilla {
 namespace gfx {
@@ -45,19 +49,15 @@ struct LayerTreeIdMapping {
 // This protocol allows the UI process to talk to the GPU process. There is one
 // instance of this protocol, with the GPUParent living on the main thread of
 // the GPU process and the GPUChild living on the main thread of the UI process.
+[NeedsOtherPid]
 sync protocol PGPU
 {
-  manages PAPZInputBridge;
-
 parent:
-  // Sent from the UI process to initialize a new APZ input bridge when a new
-  // top-level compositor is created.
-  async PAPZInputBridge(LayersId aLayersId);
-
   // Sent by the UI process to initiate core settings.
   async Init(GfxVarUpdate[] vars,
              DevicePrefs devicePrefs,
-             LayerTreeIdMapping[] mapping);
+             LayerTreeIdMapping[] mapping,
+             GfxInfoFeatureStatus[] features);
 
   async InitCompositorManager(Endpoint<PCompositorManagerParent> endpoint);
   async InitVsyncBridge(Endpoint<PVsyncBridgeParent> endpoint);
@@ -65,6 +65,8 @@ parent:
   async InitVideoBridge(Endpoint<PVideoBridgeParent> endpoint);
   async InitVRManager(Endpoint<PVRManagerParent> endpoint);
   async InitUiCompositorController(LayersId rootLayerTreeId, Endpoint<PUiCompositorControllerParent> endpoint);
+  async InitAPZInputBridge(LayersId layersId,
+                           Endpoint<PAPZInputBridgeParent> endpoint);
   async InitProfiler(Endpoint<PProfilerChild> endpoint);
   // Forward GPU process its endpoints to the VR process.
   async InitVR(Endpoint<PVRGPUChild> endpoint);
@@ -98,7 +100,9 @@ parent:
   async RequestMemoryReport(uint32_t generation,
                             bool anonymize,
                             bool minimizeMemoryUsage,
-                            FileDescriptor? DMDFile);
+                            FileDescriptor? DMDFile)
+      returns (uint32_t aGeneration);
+
   async ShutdownVR();
 
   // Functions supporting PerfStats data collection.
@@ -108,6 +112,15 @@ parent:
 #if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
   async InitSandboxTesting(Endpoint<PSandboxTestingChild> aEndpoint);
 #endif
+
+  // Tells the gpu process to flush any pending telemetry.
+  // Used in tests and ping assembly. Buffer contains bincoded Rust structs.
+  // https://firefox-source-docs.mozilla.org/toolkit/components/glean/dev/ipc.html
+  async FlushFOGData() returns (ByteBuf buf);
+
+  // Test-only method.
+  // Asks the gpu process to trigger test-only instrumentation.
+  async TestTriggerMetrics();
 
 child:
   // Sent when the GPU process has initialized devices. This occurs once, after
@@ -137,10 +150,11 @@ child:
   async RecordChildEvents(ChildEventData[] events);
   async RecordDiscardedData(DiscardedData data);
 
+  async DeclareStable();
   async NotifyDeviceReset(GPUDeviceData status);
+  async FlushMemory(nsString reason);
 
   async AddMemoryReport(MemoryReport aReport);
-  async FinishMemoryReport(uint32_t aGeneration);
 
   // Update the UI process after a feature's status has changed. This is used
   // outside of the normal startup flow.
@@ -150,6 +164,15 @@ child:
   async UsedFallback(Fallback aFallback, nsCString message);
 
   async BHRThreadHang(HangDetails aDetails);
+
+  // Update the cached list of codec supported following a check in the
+  // GPU parent.
+  async UpdateMediaCodecsSupported(MediaCodecsSupported aSupported);
+
+  // Sent from time-to-time to limit the amount of telemetry vulnerable to loss
+  // Buffer contains bincoded Rust structs.
+  // https://firefox-source-docs.mozilla.org/toolkit/components/glean/dev/ipc.html
+  async FOGData(ByteBuf buf);
 };
 
 } // namespace gfx

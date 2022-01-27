@@ -4,15 +4,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsThreadPool.h"
+
 #include "nsCOMArray.h"
 #include "ThreadDelay.h"
-#include "nsThreadPool.h"
 #include "nsThreadManager.h"
 #include "nsThread.h"
 #include "nsMemory.h"
 #include "prinrval.h"
 #include "mozilla/Logging.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerRunnable.h"
 #include "mozilla/SchedulerGroup.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "nsThreadSyncDispatch.h"
 
 #include <mutex>
@@ -228,7 +233,7 @@ nsThreadPool::Run() {
     {
       MutexAutoLock lock(mMutex);
 
-      event = mEvents.GetEvent(nullptr, lock, &delay);
+      event = mEvents.GetEvent(lock, &delay);
       if (!event) {
         TimeStamp now = TimeStamp::Now();
         uint32_t idleTimeoutDivider =
@@ -296,6 +301,7 @@ nsThreadPool::Run() {
       current->SetRunningEventDelay(delay, TimeStamp::Now());
 
       LogRunnable::Run log(event);
+      AUTO_PROFILE_FOLLOWING_RUNNABLE(event);
       event->Run();
       // To cover the event's destructor code in the LogRunnable span
       event = nullptr;
@@ -342,8 +348,9 @@ nsThreadPool::Dispatch(already_AddRefed<nsIRunnable> aEvent, uint32_t aFlags) {
         new nsThreadSyncDispatch(thread.forget(), std::move(aEvent));
     PutEvent(wrapper);
 
-    SpinEventLoopUntil(
-        [&, wrapper]() -> bool { return !wrapper->IsPending(); });
+    SpinEventLoopUntil("nsThreadPool::Dispatch"_ns, [&, wrapper]() -> bool {
+      return !wrapper->IsPending();
+    });
   } else {
     NS_ASSERTION(aFlags == NS_DISPATCH_NORMAL || aFlags == NS_DISPATCH_AT_END,
                  "unexpected dispatch flags");
@@ -379,6 +386,9 @@ nsThreadPool::Shutdown() {
   nsCOMPtr<nsIThreadPoolListener> listener;
   {
     MutexAutoLock lock(mMutex);
+    if (mShutdown) {
+      return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
+    }
     mShutdown = true;
     mEventsAvailable.NotifyAll();
 
@@ -430,6 +440,9 @@ nsThreadPool::ShutdownWithTimeout(int32_t aTimeoutMs) {
   nsCOMPtr<nsIThreadPoolListener> listener;
   {
     MutexAutoLock lock(mMutex);
+    if (mShutdown) {
+      return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
+    }
     mShutdown = true;
     mEventsAvailable.NotifyAll();
 

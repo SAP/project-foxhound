@@ -7,14 +7,15 @@
 #include "Telemetry.h"
 #include "TelemetryOrigin.h"
 
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsIObserverService.h"
 #include "nsPrintfCString.h"
 #include "nsTArray.h"
 #include "TelemetryCommon.h"
 #include "TelemetryOriginEnums.h"
 
-#include "js/Array.h"  // JS::NewArrayObject
+#include "js/Array.h"               // JS::NewArrayObject
+#include "js/PropertyAndElement.h"  // JS_DefineElement, JS_DefineProperty
 #include "mozilla/Atomics.h"
 #include "mozilla/Base64.h"
 #include "mozilla/dom/PrioEncoder.h"
@@ -112,14 +113,14 @@ static StaticMutex gTelemetryOriginMutex;
 typedef nsTArray<Tuple<const char*, const char*>> OriginHashesList;
 UniquePtr<OriginHashesList> gOriginHashesList;
 
-typedef nsDataHashtable<nsCStringHashKey, size_t> OriginToIndexMap;
+typedef nsTHashMap<nsCStringHashKey, size_t> OriginToIndexMap;
 UniquePtr<OriginToIndexMap> gOriginToIndexMap;
 
-typedef nsDataHashtable<nsCStringHashKey, size_t> HashToIndexMap;
+typedef nsTHashMap<nsCStringHashKey, size_t> HashToIndexMap;
 UniquePtr<HashToIndexMap> gHashToIndexMap;
 
-typedef nsDataHashtable<nsCStringHashKey, uint32_t> OriginBag;
-typedef nsDataHashtable<OriginMetricIDHashKey, OriginBag> IdToOriginBag;
+typedef nsTHashMap<nsCStringHashKey, uint32_t> OriginBag;
+typedef nsTHashMap<OriginMetricIDHashKey, OriginBag> IdToOriginBag;
 
 UniquePtr<IdToOriginBag> gMetricToOriginBag;
 
@@ -163,12 +164,10 @@ const char* GetNameForMetricID(OriginMetricID aId) {
 // an encoded snapshot right now.
 uint32_t PrioDataCount(const StaticMutexAutoLock& lock) {
   uint32_t count = 0;
-  auto iter = gMetricToOriginBag->ConstIter();
-  for (; !iter.Done(); iter.Next()) {
-    auto originIt = iter.Data().ConstIter();
+  for (const auto& origins : gMetricToOriginBag->Values()) {
     uint32_t maxOriginCount = 0;
-    for (; !originIt.Done(); originIt.Next()) {
-      maxOriginCount = std::max(maxOriginCount, originIt.Data());
+    for (const auto& data : origins.Values()) {
+      maxOriginCount = std::max(maxOriginCount, data);
     }
     count += gPrioDatasPerMetric * maxOriginCount;
   }
@@ -187,10 +186,9 @@ uint32_t PrioDataCount(const StaticMutexAutoLock& lock) {
 // [(metric1, [[1], [1]]), (metric1, [[0], [1]])]
 nsresult AppEncodeTo(const StaticMutexAutoLock& lock,
                      IdBoolsPairArray& aResult) {
-  auto iter = gMetricToOriginBag->ConstIter();
-  for (; !iter.Done(); iter.Next()) {
-    OriginMetricID id = iter.Key();
-    const OriginBag& bag = iter.Data();
+  for (const auto& bagEntry : *gMetricToOriginBag) {
+    OriginMetricID id = bagEntry.GetKey();
+    const OriginBag& bag = bagEntry.GetData();
 
     uint32_t generation = 1;
     uint32_t maxGeneration = 1;
@@ -211,13 +209,12 @@ nsresult AppEncodeTo(const StaticMutexAutoLock& lock,
         metricDatum = false;
       }
 
-      auto originIt = bag.ConstIter();
-      for (; !originIt.Done(); originIt.Next()) {
-        uint32_t originCount = originIt.Data();
+      for (const auto& originEntry : bag) {
+        uint32_t originCount = originEntry.GetData();
         if (originCount >= generation) {
           maxGeneration = std::max(maxGeneration, originCount);
 
-          const nsACString& origin = originIt.Key();
+          const nsACString& origin = originEntry.GetKey();
           size_t index;
           if (!gOriginToIndexMap->Get(origin, &index)) {
             return NS_ERROR_FAILURE;
@@ -305,12 +302,15 @@ void TelemetryOrigin::InitializeGlobalState() {
     hashOffset += hashLength;
 
     // -1 to leave off the null terminators.
-    gOriginToIndexMap->Put(nsDependentCString(origin, originLength - 1), i);
-    gHashToIndexMap->Put(nsDependentCString(hash, hashLength - 1), i);
+    gOriginToIndexMap->InsertOrUpdate(
+        nsDependentCString(origin, originLength - 1), i);
+    gHashToIndexMap->InsertOrUpdate(nsDependentCString(hash, hashLength - 1),
+                                    i);
   }
 
   // Add the meta-origin for tracking recordings to untracked origins.
-  gOriginToIndexMap->Put(kUnknownOrigin, gOriginHashesList->Length());
+  gOriginToIndexMap->InsertOrUpdate(kUnknownOrigin,
+                                    gOriginHashesList->Length());
 
   gMetricToOriginBag = MakeUnique<IdToOriginBag>();
 
@@ -373,14 +373,14 @@ nsresult TelemetryOrigin::RecordOrigin(OriginMetricID aId,
       // Only record one unknown origin per metric per snapshot.
       // (otherwise we may get swamped and blow our data budget.)
       if (gMetricToOriginBag->Contains(aId) &&
-          gMetricToOriginBag->GetOrInsert(aId).Contains(kUnknownOrigin)) {
+          gMetricToOriginBag->LookupOrInsert(aId).Contains(kUnknownOrigin)) {
         return NS_OK;
       }
       origin = kUnknownOrigin;
     }
 
-    auto& originBag = gMetricToOriginBag->GetOrInsert(aId);
-    originBag.GetOrInsert(origin)++;
+    auto& originBag = gMetricToOriginBag->LookupOrInsert(aId);
+    originBag.LookupOrInsert(origin)++;
 
     prioDataCount = PrioDataCount(locker);
   }
@@ -423,13 +423,8 @@ nsresult TelemetryOrigin::GetOriginSnapshot(bool aClear, JSContext* aCx,
 
       gMetricToOriginBag->SwapElements(copy);
     } else {
-      auto iter = gMetricToOriginBag->ConstIter();
-      for (; !iter.Done(); iter.Next()) {
-        OriginBag& bag = copy.GetOrInsert(iter.Key());
-        auto originIt = iter.Data().ConstIter();
-        for (; !originIt.Done(); originIt.Next()) {
-          bag.Put(originIt.Key(), originIt.Data());
-        }
+      for (const auto& entry : *gMetricToOriginBag) {
+        copy.InsertOrUpdate(entry.GetKey(), entry.GetData().Clone());
       }
     }
   }
@@ -440,22 +435,21 @@ nsresult TelemetryOrigin::GetOriginSnapshot(bool aClear, JSContext* aCx,
     return NS_ERROR_FAILURE;
   }
   aResult.setObject(*rootObj);
-  for (auto iter = copy.ConstIter(); !iter.Done(); iter.Next()) {
+  for (const auto& entry : copy) {
     JS::RootedObject originsObj(aCx, JS_NewPlainObject(aCx));
     if (NS_WARN_IF(!originsObj)) {
       return NS_ERROR_FAILURE;
     }
-    if (!JS_DefineProperty(aCx, rootObj, GetNameForMetricID(iter.Key()),
+    if (!JS_DefineProperty(aCx, rootObj, GetNameForMetricID(entry.GetKey()),
                            originsObj, JSPROP_ENUMERATE)) {
       NS_WARNING("Failed to define property in origin snapshot.");
       return NS_ERROR_FAILURE;
     }
 
-    auto originIt = iter.Data().ConstIter();
-    for (; !originIt.Done(); originIt.Next()) {
+    for (const auto& originEntry : entry.GetData()) {
       if (!JS_DefineProperty(aCx, originsObj,
-                             nsPromiseFlatCString(originIt.Key()).get(),
-                             originIt.Data(), JSPROP_ENUMERATE)) {
+                             nsPromiseFlatCString(originEntry.GetKey()).get(),
+                             originEntry.GetData(), JSPROP_ENUMERATE)) {
         NS_WARNING("Failed to define origin and count in snapshot.");
         return NS_ERROR_FAILURE;
       }
@@ -522,8 +516,8 @@ nsresult TelemetryOrigin::GetEncodedOriginSnapshot(
         return rv;
       }
 
-      prioData.AppendElement(
-          std::make_pair(encodingName, std::make_pair(aBase64, bBase64)));
+      prioData.EmplaceBack(std::move(encodingName),
+                           std::pair(std::move(aBase64), std::move(bBase64)));
     }
   }
 
@@ -608,10 +602,9 @@ size_t TelemetryOrigin::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) {
   }
 
   n += gMetricToOriginBag->ShallowSizeOfIncludingThis(aMallocSizeOf);
-  auto iter = gMetricToOriginBag->ConstIter();
-  for (; !iter.Done(); iter.Next()) {
+  for (const auto& origins : gMetricToOriginBag->Values()) {
     // The string hashkey and count should both be contained by the hashtable.
-    n += iter.Data().ShallowSizeOfIncludingThis(aMallocSizeOf);
+    n += origins.ShallowSizeOfIncludingThis(aMallocSizeOf);
   }
 
   // The string hashkey and ID should both be contained within the hashtable.

@@ -16,6 +16,7 @@
 #include "nsStringStream.h"
 #include "nsNetUtil.h"
 
+#include "nsIClassInfoImpl.h"
 #include "nsIStreamListener.h"
 #include "nsIURI.h"
 #include "nsIScriptContext.h"
@@ -41,7 +42,9 @@
 #include "nsSandboxFlags.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/DOMSecurityMonitor.h"
+#include "mozilla/dom/JSExecutionContext.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/PopupBlocker.h"
 #include "nsContentSecurityManager.h"
@@ -53,6 +56,7 @@
 
 using mozilla::IsAscii;
 using mozilla::dom::AutoEntryScript;
+using mozilla::dom::JSExecutionContext;
 
 static NS_DEFINE_CID(kJSURICID, NS_JSURI_CID);
 
@@ -134,15 +138,16 @@ static bool AllowedByCSP(nsIContentSecurityPolicy* aCSP,
   }
 
   bool allowsInlineScript = true;
-  nsresult rv = aCSP->GetAllowsInline(nsIContentPolicy::TYPE_SCRIPT,
-                                      EmptyString(),  // aNonce
-                                      true,           // aParserCreated
-                                      nullptr,        // aElement,
-                                      nullptr,        // nsICSPEventListener
-                                      aContentOfPseudoScript,  // aContent
-                                      0,                       // aLineNumber
-                                      0,                       // aColumnNumber
-                                      &allowsInlineScript);
+  nsresult rv =
+      aCSP->GetAllowsInline(nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE,
+                            u""_ns,                  // aNonce
+                            true,                    // aParserCreated
+                            nullptr,                 // aElement,
+                            nullptr,                 // nsICSPEventListener
+                            aContentOfPseudoScript,  // aContent
+                            0,                       // aLineNumber
+                            0,                       // aColumnNumber
+                            &allowsInlineScript);
 
   return (NS_SUCCEEDED(rv) && allowsInlineScript);
 }
@@ -298,9 +303,9 @@ nsresult nsJSThunk::EvaluateScript(
   options.setFileAndLine(mURL.get(), 1);
   options.setIntroductionType("javascriptURL");
   {
-    nsJSUtils::ExecutionContext exec(cx, globalJSObject);
+    JSExecutionContext exec(cx, globalJSObject, options);
     exec.SetCoerceToString(true);
-    exec.Compile(options, NS_ConvertUTF8toUTF16(script));
+    exec.Compile(NS_ConvertUTF8toUTF16(script));
     rv = exec.ExecScript(&v);
   }
 
@@ -308,39 +313,40 @@ nsresult nsJSThunk::EvaluateScript(
 
   if (NS_FAILED(rv) || !(v.isString() || v.isUndefined())) {
     return NS_ERROR_MALFORMED_URI;
-  } else if (v.isUndefined()) {
+  }
+  if (v.isUndefined()) {
     return NS_ERROR_DOM_RETVAL_UNDEFINED;
-  } else {
-    MOZ_ASSERT(rv != NS_SUCCESS_DOM_SCRIPT_EVALUATION_THREW,
-               "How did we get a non-undefined return value?");
-    nsAutoJSString result;
-    if (!result.init(cx, v)) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+  }
+  MOZ_ASSERT(rv != NS_SUCCESS_DOM_SCRIPT_EVALUATION_THREW,
+             "How did we get a non-undefined return value?");
+  nsAutoJSString result;
+  if (!result.init(cx, v)) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
 
-    char* bytes;
-    uint32_t bytesLen;
-    constexpr auto isoCharset = "windows-1252"_ns;
-    constexpr auto utf8Charset = "UTF-8"_ns;
-    const nsLiteralCString* charset;
-    if (IsISO88591(result)) {
-      // For compatibility, if the result is ISO-8859-1, we use
-      // windows-1252, so that people can compatibly create images
-      // using javascript: URLs.
-      bytes = ToNewCString(result, mozilla::fallible);
-      bytesLen = result.Length();
-      charset = &isoCharset;
-    } else {
-      bytes = ToNewUTF8String(result, &bytesLen);
-      charset = &utf8Charset;
-    }
-    aChannel->SetContentCharset(*charset);
-    if (bytes)
-      rv = NS_NewByteInputStream(getter_AddRefs(mInnerStream),
-                                 mozilla::MakeSpan(bytes, bytesLen),
-                                 NS_ASSIGNMENT_ADOPT);
-    else
-      rv = NS_ERROR_OUT_OF_MEMORY;
+  char* bytes;
+  uint32_t bytesLen;
+  constexpr auto isoCharset = "windows-1252"_ns;
+  constexpr auto utf8Charset = "UTF-8"_ns;
+  const nsLiteralCString* charset;
+  if (IsISO88591(result)) {
+    // For compatibility, if the result is ISO-8859-1, we use
+    // windows-1252, so that people can compatibly create images
+    // using javascript: URLs.
+    bytes = ToNewCString(result, mozilla::fallible);
+    bytesLen = result.Length();
+    charset = &isoCharset;
+  } else {
+    bytes = ToNewUTF8String(result, &bytesLen);
+    charset = &utf8Charset;
+  }
+  aChannel->SetContentCharset(*charset);
+  if (bytes) {
+    rv = NS_NewByteInputStream(getter_AddRefs(mInnerStream),
+                               mozilla::Span(bytes, bytesLen),
+                               NS_ASSIGNMENT_ADOPT);
+  } else {
+    rv = NS_ERROR_OUT_OF_MEMORY;
   }
 
   return rv;
@@ -439,8 +445,8 @@ nsresult nsJSChannel::Init(nsIURI* aURI, nsILoadInfo* aLoadInfo) {
   nsCOMPtr<nsIChannel> channel;
   RefPtr<nsJSThunk> thunk = mIOThunk;
   rv = NS_NewInputStreamChannelInternal(getter_AddRefs(channel), aURI,
-                                        thunk.forget(), "text/html"_ns,
-                                        EmptyCString(), aLoadInfo);
+                                        thunk.forget(), "text/html"_ns, ""_ns,
+                                        aLoadInfo);
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = mIOThunk->Init(aURI);
@@ -1144,7 +1150,7 @@ nsJSProtocolHandler::GetProtocolFlags(uint32_t* result) {
 
   NS_MutateURI mutator(new nsJSURI::Mutator());
   nsCOMPtr<nsIURI> base(aBaseURI);
-  mutator.Apply(NS_MutatorMethod(&nsIJSURIMutator::SetBase, base));
+  mutator.Apply(&nsIJSURIMutator::SetBase, base);
   if (!aCharset || !nsCRT::strcasecmp("UTF-8", aCharset)) {
     mutator.SetSpec(aSpec);
   } else {
@@ -1206,6 +1212,10 @@ static NS_DEFINE_CID(kThisSimpleURIImplementationCID,
 NS_IMPL_ADDREF_INHERITED(nsJSURI, mozilla::net::nsSimpleURI)
 NS_IMPL_RELEASE_INHERITED(nsJSURI, mozilla::net::nsSimpleURI)
 
+NS_IMPL_CLASSINFO(nsJSURI, nullptr, nsIClassInfo::THREADSAFE, NS_JSURI_CID);
+// Empty CI getter. We only need nsIClassInfo for Serialization
+NS_IMPL_CI_INTERFACE_GETTER0(nsJSURI)
+
 NS_INTERFACE_MAP_BEGIN(nsJSURI)
   if (aIID.Equals(kJSURICID))
     foundInterface = static_cast<nsIURI*>(this);
@@ -1216,6 +1226,7 @@ NS_INTERFACE_MAP_BEGIN(nsJSURI)
     *aInstancePtr = nullptr;
     return NS_NOINTERFACE;
   } else
+    NS_IMPL_QUERY_CLASSINFO(nsJSURI)
 NS_INTERFACE_MAP_END_INHERITING(mozilla::net::nsSimpleURI)
 
 // nsISerializable methods:
@@ -1351,11 +1362,5 @@ nsresult nsJSURI::EqualsInternal(
   }
 
   *aResult = !otherBaseURI;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsJSURI::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
-  *aClassIDNoAlloc = kJSURICID;
   return NS_OK;
 }

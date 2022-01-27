@@ -299,3 +299,158 @@ function addCertFromFile(certdb, filename, trustString) {
     .replace(/[\r\n]/g, "");
   certdb.addCertFromBase64(pem, trustString);
 }
+
+// Helper code to test nsISerializable
+function serialize_to_escaped_string(obj) {
+  let objectOutStream = Cc["@mozilla.org/binaryoutputstream;1"].createInstance(
+    Ci.nsIObjectOutputStream
+  );
+  let pipe = Cc["@mozilla.org/pipe;1"].createInstance(Ci.nsIPipe);
+  pipe.init(false, false, 0, 0xffffffff, null);
+  objectOutStream.setOutputStream(pipe.outputStream);
+  objectOutStream.writeCompoundObject(obj, Ci.nsISupports, true);
+  objectOutStream.close();
+
+  let objectInStream = Cc["@mozilla.org/binaryinputstream;1"].createInstance(
+    Ci.nsIObjectInputStream
+  );
+  objectInStream.setInputStream(pipe.inputStream);
+  let data = [];
+  // This reads all the data from the stream until an error occurs.
+  while (true) {
+    try {
+      let bytes = objectInStream.readByteArray(1);
+      data.push(String.fromCharCode.apply(null, bytes));
+    } catch (e) {
+      break;
+    }
+  }
+  return escape(data.join(""));
+}
+
+function deserialize_from_escaped_string(str) {
+  let payload = unescape(str);
+  let data = [];
+  let i = 0;
+  while (i < payload.length) {
+    data.push(payload.charCodeAt(i++));
+  }
+
+  let objectOutStream = Cc["@mozilla.org/binaryoutputstream;1"].createInstance(
+    Ci.nsIObjectOutputStream
+  );
+  let pipe = Cc["@mozilla.org/pipe;1"].createInstance(Ci.nsIPipe);
+  pipe.init(false, false, 0, 0xffffffff, null);
+  objectOutStream.setOutputStream(pipe.outputStream);
+  objectOutStream.writeByteArray(data);
+  objectOutStream.close();
+
+  let objectInStream = Cc["@mozilla.org/binaryinputstream;1"].createInstance(
+    Ci.nsIObjectInputStream
+  );
+  objectInStream.setInputStream(pipe.inputStream);
+  return objectInStream.readObject(true);
+}
+
+// Copied from head_psm.js.
+function add_tls_server_setup(serverBinName, certsPath, addDefaultRoot = true) {
+  add_test(function() {
+    _setupTLSServerTest(serverBinName, certsPath, addDefaultRoot);
+  });
+}
+
+// Do not call this directly; use add_tls_server_setup
+function _setupTLSServerTest(serverBinName, certsPath, addDefaultRoot) {
+  asyncStartTLSTestServer(serverBinName, certsPath, addDefaultRoot).then(
+    run_next_test
+  );
+}
+
+async function asyncStartTLSTestServer(
+  serverBinName,
+  certsPath,
+  addDefaultRoot
+) {
+  const { HttpServer } = ChromeUtils.import(
+    "resource://testing-common/httpd.js"
+  );
+  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
+    Ci.nsIX509CertDB
+  );
+  // The trusted CA that is typically used for "good" certificates.
+  if (addDefaultRoot) {
+    addCertFromFile(certdb, `${certsPath}/test-ca.pem`, "CTu,u,u");
+  }
+
+  const CALLBACK_PORT = 8444;
+
+  let envSvc = Cc["@mozilla.org/process/environment;1"].getService(
+    Ci.nsIEnvironment
+  );
+  let greBinDir = Services.dirsvc.get("GreBinD", Ci.nsIFile);
+  envSvc.set("DYLD_LIBRARY_PATH", greBinDir.path);
+  // TODO(bug 1107794): Android libraries are in /data/local/xpcb, but "GreBinD"
+  // does not return this path on Android, so hard code it here.
+  envSvc.set("LD_LIBRARY_PATH", greBinDir.path + ":/data/local/xpcb");
+  envSvc.set("MOZ_TLS_SERVER_DEBUG_LEVEL", "3");
+  envSvc.set("MOZ_TLS_SERVER_CALLBACK_PORT", CALLBACK_PORT);
+
+  let httpServer = new HttpServer();
+  let serverReady = new Promise(resolve => {
+    httpServer.registerPathHandler("/", function handleServerCallback(
+      aRequest,
+      aResponse
+    ) {
+      aResponse.setStatusLine(aRequest.httpVersion, 200, "OK");
+      aResponse.setHeader("Content-Type", "text/plain");
+      let responseBody = "OK!";
+      aResponse.bodyOutputStream.write(responseBody, responseBody.length);
+      executeSoon(function() {
+        httpServer.stop(resolve);
+      });
+    });
+    httpServer.start(CALLBACK_PORT);
+  });
+
+  let serverBin = _getBinaryUtil(serverBinName);
+  let process = Cc["@mozilla.org/process/util;1"].createInstance(Ci.nsIProcess);
+  process.init(serverBin);
+  let certDir = do_get_file(certsPath, false);
+  Assert.ok(certDir.exists(), `certificate folder (${certsPath}) should exist`);
+  // Using "sql:" causes the SQL DB to be used so we can run tests on Android.
+  process.run(false, ["sql:" + certDir.path, Services.appinfo.processID], 2);
+
+  registerCleanupFunction(function() {
+    process.kill();
+  });
+
+  await serverReady;
+}
+
+function _getBinaryUtil(binaryUtilName) {
+  let utilBin = Services.dirsvc.get("GreD", Ci.nsIFile);
+  // On macOS, GreD is .../Contents/Resources, and most binary utilities
+  // are located there, but certutil is in GreBinD (or .../Contents/MacOS),
+  // so we have to change the path accordingly.
+  if (binaryUtilName === "certutil") {
+    utilBin = Services.dirsvc.get("GreBinD", Ci.nsIFile);
+  }
+  utilBin.append(binaryUtilName + mozinfo.bin_suffix);
+  // If we're testing locally, the above works. If not, the server executable
+  // is in another location.
+  if (!utilBin.exists()) {
+    utilBin = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
+    while (utilBin.path.includes("xpcshell")) {
+      utilBin = utilBin.parent;
+    }
+    utilBin.append("bin");
+    utilBin.append(binaryUtilName + mozinfo.bin_suffix);
+  }
+  // But maybe we're on Android, where binaries are in /data/local/xpcb.
+  if (!utilBin.exists()) {
+    utilBin.initWithPath("/data/local/xpcb/");
+    utilBin.append(binaryUtilName);
+  }
+  Assert.ok(utilBin.exists(), `Binary util ${binaryUtilName} should exist`);
+  return utilBin;
+}

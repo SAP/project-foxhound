@@ -5,13 +5,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WMFDecoderModule.h"
+
 #include <algorithm>
 #include <vector>
+
 #include "DriverCrashGuard.h"
 #include "GfxDriverInfo.h"
 #include "MFTDecoder.h"
 #include "MP4Decoder.h"
 #include "MediaInfo.h"
+#include "PDMFactory.h"
 #include "VPXDecoder.h"
 #include "WMF.h"
 #include "WMFAudioMFTManager.h"
@@ -24,24 +27,62 @@
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/mscom/EnsureMTA.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIXULRuntime.h"
+#include "nsIXULRuntime.h"  // for BrowserTabsRemoteAutostart
 #include "nsServiceManagerUtils.h"
 #include "nsWindowsHelpers.h"
 #include "prsystem.h"
+
+#define LOG(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
 
 extern const GUID CLSID_WebmMfVpxDec;
 
 namespace mozilla {
 
+// Helper function to add a profile marker and log at the same time.
+static void MOZ_FORMAT_PRINTF(2, 3)
+    WmfDecoderModuleMarkerAndLog(const ProfilerString8View& aMarkerTag,
+                                 const char* aFormat, ...) {
+  va_list ap;
+  va_start(ap, aFormat);
+  const nsVprintfCString markerString(aFormat, ap);
+  va_end(ap);
+  PROFILER_MARKER_TEXT(aMarkerTag, MEDIA_PLAYBACK, {}, markerString);
+  LOG("%s", markerString.get());
+}
+
 static Atomic<bool> sDXVAEnabled(false);
 static Atomic<bool> sUsableVPXMFT(false);
+
+/* static */
+already_AddRefed<PlatformDecoderModule> WMFDecoderModule::Create() {
+  RefPtr<WMFDecoderModule> wmf = new WMFDecoderModule();
+  return wmf.forget();
+}
 
 WMFDecoderModule::~WMFDecoderModule() {
   if (mWMFInitialized) {
     DebugOnly<HRESULT> hr = wmf::MFShutdown();
     NS_ASSERTION(SUCCEEDED(hr), "MFShutdown failed");
   }
+}
+
+static bool IsRemoteAcceleratedCompositor(
+    layers::KnowsCompositor* aKnowsCompositor) {
+  if (!aKnowsCompositor) {
+    return false;
+  }
+
+  if (aKnowsCompositor->UsingSoftwareWebRenderD3D11()) {
+    return true;
+  }
+
+  TextureFactoryIdentifier ident =
+      aKnowsCompositor->GetTextureFactoryIdentifier();
+  return !aKnowsCompositor->UsingSoftwareWebRender() &&
+         ident.mParentProcessType == GeckoProcessType_GPU;
 }
 
 static bool CanCreateMFTDecoder(const GUID& aGuid) {
@@ -66,32 +107,54 @@ static bool CanCreateMFTDecoder(const GUID& aGuid) {
 /* static */
 void WMFDecoderModule::Init() {
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
-  bool testForVPx;
   if (XRE_IsContentProcess()) {
     // If we're in the content process and the UseGPUDecoder pref is set, it
     // means that we've given up on the GPU process (it's been crashing) so we
     // should disable DXVA
     sDXVAEnabled = !StaticPrefs::media_gpu_process_decoder();
-    // We need to test for VPX in the content process as the GPUDecoderModule
-    // directly calls WMFDecoderModule::Supports in the content process.
-    // This unnecessary requirement will be fixed in bug 1534815.
-    testForVPx = true;
   } else if (XRE_IsGPUProcess()) {
     // Always allow DXVA in the GPU process.
-    testForVPx = sDXVAEnabled = true;
+    sDXVAEnabled = true;
+  } else if (XRE_IsRDDProcess()) {
+    // Only allows DXVA if we have an image device. We may have explicitly
+    // disabled its creation following an earlier RDD process crash.
+    sDXVAEnabled = !!DeviceManagerDx::Get()->GetImageDevice();
   } else {
     // Only allow DXVA in the UI process if we aren't in e10s Firefox
-    testForVPx = sDXVAEnabled = !mozilla::BrowserTabsRemoteAutostart();
+    sDXVAEnabled = !mozilla::BrowserTabsRemoteAutostart();
   }
 
+  // We have heavy logging below to help diagnose issue around hardware decoding
+  // failures. Due to these failures often relating to driver level problems
+  // they're hard to nail down, so we want lots of info. We may be able to relax
+  // this in future if we're not seeing such problems (see bug 1673007 for
+  // references to the bugs motivating this).
   sDXVAEnabled = sDXVAEnabled && gfx::gfxVars::CanUseHardwareVideoDecoding();
-  testForVPx = testForVPx && gfx::gfxVars::CanUseHardwareVideoDecoding();
+  bool testForVPx = gfx::gfxVars::CanUseHardwareVideoDecoding();
   if (testForVPx && StaticPrefs::media_wmf_vp9_enabled_AtStartup()) {
     gfx::WMFVPXVideoCrashGuard guard;
     if (!guard.Crashed()) {
+      WmfDecoderModuleMarkerAndLog("WMFInit VPx Pending",
+                                   "Attempting to create MFT decoder for VPx");
+
       sUsableVPXMFT = CanCreateMFTDecoder(CLSID_WebmMfVpxDec);
+
+      WmfDecoderModuleMarkerAndLog("WMFInit VPx Initialized",
+                                   "CanCreateMFTDecoder returned %s for VPx",
+                                   sUsableVPXMFT ? "true" : "false");
+    } else {
+      WmfDecoderModuleMarkerAndLog(
+          "WMFInit VPx Failure",
+          "Will not use MFT VPx due to crash guard reporting a crash");
     }
   }
+
+  WmfDecoderModuleMarkerAndLog(
+      "WMFInit Result",
+      "WMFDecoderModule::Init finishing with sDXVAEnabled=%s testForVPx=%s "
+      "sUsableVPXMFT=%s",
+      sDXVAEnabled ? "true" : "false", testForVPx ? "true" : "false",
+      sUsableVPXMFT ? "true" : "false");
 }
 
 /* static */
@@ -114,11 +177,12 @@ nsresult WMFDecoderModule::Startup() {
 
 already_AddRefed<MediaDataDecoder> WMFDecoderModule::CreateVideoDecoder(
     const CreateDecoderParams& aParams) {
-  // Temporary - forces use of VPXDecoder when alpha is present.
-  // Bug 1263836 will handle alpha scenario once implemented. It will shift
-  // the check for alpha to PDMFactory but not itself remove the need for a
-  // check.
-  if (aParams.VideoConfig().HasAlpha()) {
+  ReportUsageForTelemetry();
+
+  // In GPU process, only support decoding if an accelerated compositor is
+  // known.
+  if (XRE_IsGPUProcess() &&
+      !IsRemoteAcceleratedCompositor(aParams.mKnowsCompositor)) {
     return nullptr;
   }
 
@@ -131,26 +195,52 @@ already_AddRefed<MediaDataDecoder> WMFDecoderModule::CreateVideoDecoder(
     if (aParams.mError) {
       *aParams.mError = result;
     }
+    WmfDecoderModuleMarkerAndLog(
+        "WMFVDecoderCreation Failure",
+        "WMFDecoderModule::CreateVideoDecoder failed for manager with "
+        "description %s with result: %s",
+        manager->GetDescriptionName().get(), result.Description().get());
     return nullptr;
   }
 
-  RefPtr<MediaDataDecoder> decoder =
-      new WMFMediaDataDecoder(manager.release(), aParams.mTaskQueue);
+  WmfDecoderModuleMarkerAndLog(
+      "WMFVDecoderCreation Success",
+      "WMFDecoderModule::CreateVideoDecoder success for manager with "
+      "description %s",
+      manager->GetDescriptionName().get());
 
+  RefPtr<MediaDataDecoder> decoder = new WMFMediaDataDecoder(manager.release());
   return decoder.forget();
 }
 
 already_AddRefed<MediaDataDecoder> WMFDecoderModule::CreateAudioDecoder(
     const CreateDecoderParams& aParams) {
+  ReportUsageForTelemetry();
+
+  if (XRE_IsGPUProcess()) {
+    // Only allow video in the GPU process.
+    return nullptr;
+  }
+
   UniquePtr<WMFAudioMFTManager> manager(
       new WMFAudioMFTManager(aParams.AudioConfig()));
 
   if (!manager->Init()) {
+    WmfDecoderModuleMarkerAndLog(
+        "WMFADecoderCreation Failure",
+        "WMFDecoderModule::CreateAudioDecoder failed for manager with "
+        "description %s",
+        manager->GetDescriptionName().get());
     return nullptr;
   }
 
-  RefPtr<MediaDataDecoder> decoder =
-      new WMFMediaDataDecoder(manager.release(), aParams.mTaskQueue);
+  WmfDecoderModuleMarkerAndLog(
+      "WMFADecoderCreation Success",
+      "WMFDecoderModule::CreateAudioDecoder success for manager with "
+      "description %s",
+      manager->GetDescriptionName().get());
+
+  RefPtr<MediaDataDecoder> decoder = new WMFMediaDataDecoder(manager.release());
   return decoder.forget();
 }
 
@@ -171,8 +261,23 @@ bool WMFDecoderModule::HasH264() {
 }
 
 /* static */
+bool WMFDecoderModule::HasVP8() {
+  return sUsableVPXMFT && CanCreateWMFDecoder<CLSID_WebmMfVpxDec>();
+}
+
+/* static */
+bool WMFDecoderModule::HasVP9() {
+  return sUsableVPXMFT && CanCreateWMFDecoder<CLSID_WebmMfVpxDec>();
+}
+
+/* static */
 bool WMFDecoderModule::HasAAC() {
   return CanCreateWMFDecoder<CLSID_CMSAACDecMFT>();
+}
+
+/* static */
+bool WMFDecoderModule::HasMP3() {
+  return CanCreateWMFDecoder<CLSID_CMP3DecMediaObject>();
 }
 
 bool WMFDecoderModule::SupportsMimeType(
@@ -181,49 +286,63 @@ bool WMFDecoderModule::SupportsMimeType(
   if (!trackInfo) {
     return false;
   }
-  return Supports(*trackInfo, aDiagnostics);
+  return Supports(SupportDecoderParams(*trackInfo), aDiagnostics);
 }
 
-bool WMFDecoderModule::Supports(const TrackInfo& aTrackInfo,
+bool WMFDecoderModule::Supports(const SupportDecoderParams& aParams,
                                 DecoderDoctorDiagnostics* aDiagnostics) const {
-  const auto videoInfo = aTrackInfo.GetAsVideoInfo();
-  if (videoInfo && !SupportsColorDepth(videoInfo->mColorDepth, aDiagnostics)) {
+  ReportUsageForTelemetry();
+
+  // In GPU process, only support decoding if video. This only gives a hint of
+  // what the GPU decoder *may* support. The actual check will occur in
+  // CreateVideoDecoder.
+  const auto& trackInfo = aParams.mConfig;
+  if (XRE_IsGPUProcess() && !trackInfo.GetAsVideoInfo()) {
     return false;
   }
 
-  if ((aTrackInfo.mMimeType.EqualsLiteral("audio/mp4a-latm") ||
-       aTrackInfo.mMimeType.EqualsLiteral("audio/mp4")) &&
+  const auto* videoInfo = trackInfo.GetAsVideoInfo();
+  // Temporary - forces use of VPXDecoder when alpha is present.
+  // Bug 1263836 will handle alpha scenario once implemented. It will shift
+  // the check for alpha to PDMFactory but not itself remove the need for a
+  // check.
+  if (videoInfo && (!SupportsColorDepth(videoInfo->mColorDepth, aDiagnostics) ||
+                    videoInfo->HasAlpha())) {
+    return false;
+  }
+
+  if ((trackInfo.mMimeType.EqualsLiteral("audio/mp4a-latm") ||
+       trackInfo.mMimeType.EqualsLiteral("audio/mp4")) &&
       WMFDecoderModule::HasAAC()) {
-    const auto audioInfo = aTrackInfo.GetAsAudioInfo();
-    if (audioInfo && audioInfo->mRate > 0) {
-      // Supported sampling rates per:
-      // https://msdn.microsoft.com/en-us/library/windows/desktop/dd742784(v=vs.85).aspx
-      const std::vector<uint32_t> frequencies = {
-          8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000,
-      };
-      return std::find(frequencies.begin(), frequencies.end(),
-                       audioInfo->mRate) != frequencies.end();
-    }
     return true;
   }
-  if (MP4Decoder::IsH264(aTrackInfo.mMimeType) && WMFDecoderModule::HasH264()) {
+  if (MP4Decoder::IsH264(trackInfo.mMimeType) && WMFDecoderModule::HasH264()) {
     return true;
   }
-  if (aTrackInfo.mMimeType.EqualsLiteral("audio/mpeg") &&
-      CanCreateWMFDecoder<CLSID_CMP3DecMediaObject>()) {
+  if (trackInfo.mMimeType.EqualsLiteral("audio/mpeg") &&
+      !StaticPrefs::media_ffvpx_mp3_enabled() && WMFDecoderModule::HasMP3()) {
     return true;
   }
-  if (sUsableVPXMFT) {
-    static const uint32_t VP8_USABLE_BUILD = 16287;
-    if ((VPXDecoder::IsVP8(aTrackInfo.mMimeType) &&
-         IsWindowsBuildOrLater(VP8_USABLE_BUILD)) ||
-        VPXDecoder::IsVP9(aTrackInfo.mMimeType)) {
-      return CanCreateWMFDecoder<CLSID_WebmMfVpxDec>();
-    }
+  static const uint32_t VP8_USABLE_BUILD = 16287;
+  if (VPXDecoder::IsVP8(trackInfo.mMimeType) &&
+      IsWindowsBuildOrLater(VP8_USABLE_BUILD) && WMFDecoderModule::HasVP8()) {
+    return true;
+  }
+  if (VPXDecoder::IsVP9(trackInfo.mMimeType) && WMFDecoderModule::HasVP9()) {
+    return true;
   }
 
   // Some unsupported codec.
   return false;
 }
 
+void WMFDecoderModule::ReportUsageForTelemetry() const {
+  if (XRE_IsParentProcess() || XRE_IsContentProcess()) {
+    Telemetry::ScalarSet(Telemetry::ScalarID::MEDIA_WMF_PROCESS_USAGE, true);
+  }
+}
+
 }  // namespace mozilla
+
+#undef WFM_DECODER_MODULE_STATUS_MARKER
+#undef LOG

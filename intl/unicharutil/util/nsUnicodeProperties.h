@@ -51,6 +51,10 @@ enum EmojiPresentation { TextOnly = 0, TextDefault = 1, EmojiDefault = 2 };
 const uint32_t kVariationSelector15 = 0xFE0E;  // text presentation
 const uint32_t kVariationSelector16 = 0xFE0F;  // emoji presentation
 
+// Unicode values for EMOJI MODIFIER FITZPATRICK TYPE-*
+const uint32_t kEmojiSkinToneFirst = 0x1f3fb;
+const uint32_t kEmojiSkinToneLast = 0x1f3ff;
+
 extern const hb_unicode_general_category_t sICUtoHBcategory[];
 
 inline uint32_t GetMirroredChar(uint32_t aCh) { return u_charMirror(aCh); }
@@ -163,6 +167,20 @@ inline bool IsEastAsianWidthAFW(uint32_t aCh) {
   return false;
 }
 
+inline bool IsEastAsianWidthFW(uint32_t aCh) {
+  switch (u_getIntPropertyValue(aCh, UCHAR_EAST_ASIAN_WIDTH)) {
+    case U_EA_FULLWIDTH:
+    case U_EA_WIDE:
+      return true;
+    case U_EA_AMBIGUOUS:
+    case U_EA_HALFWIDTH:
+    case U_EA_NARROW:
+    case U_EA_NEUTRAL:
+      return false;
+  }
+  return false;
+}
+
 inline bool IsDefaultIgnorable(uint32_t aCh) {
   return u_hasBinaryProperty(aCh, UCHAR_DEFAULT_IGNORABLE_CODE_POINT);
 }
@@ -245,10 +263,17 @@ uint32_t CountGraphemeClusters(const char16_t* aText, uint32_t aLength);
 //   3099;COMBINING KATAKANA-HIRAGANA VOICED SOUND MARK;Mn;8;NSM
 //   309A;COMBINING KATAKANA-HIRAGANA SEMI-VOICED SOUND MARK;Mn;8;NSM
 // which users report should not be ignored (bug 1624244).
-inline bool IsCombiningDiacritic(uint32_t aCh) {
-  uint8_t cc = u_getCombiningClass(aCh);
-  return cc != HB_UNICODE_COMBINING_CLASS_NOT_REORDERED &&
-         cc != HB_UNICODE_COMBINING_CLASS_KANA_VOICING;
+// See is_combining_diacritic in base_chars.py and is_combining_diacritic.py.
+//
+// TODO: once ICU4X is integrated (replacing ICU4C) as the source of Unicode
+// properties, re-evaluate whether building the static bitset is worthwhile
+// or if we can revert to simply getting the combining class and comparing
+// to the values we care about at runtime.
+bool IsCombiningDiacritic(uint32_t aCh);
+
+// Keep this function in sync with is_math_symbol in base_chars.py.
+inline bool IsMathOrMusicSymbol(uint32_t aCh) {
+  return u_charType(aCh) == U_MATH_SYMBOL || u_charType(aCh) == U_OTHER_SYMBOL;
 }
 
 // Remove diacritics from a character

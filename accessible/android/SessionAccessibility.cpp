@@ -4,23 +4,24 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SessionAccessibility.h"
-#include "Accessible-inl.h"
+#include "LocalAccessible-inl.h"
 #include "AndroidUiThread.h"
 #include "DocAccessibleParent.h"
 #include "nsThreadUtils.h"
+#include "AccAttributes.h"
 #include "AccessibilityEvent.h"
 #include "HyperTextAccessible.h"
 #include "JavaBuiltins.h"
 #include "RootAccessibleWrap.h"
 #include "nsAccessibilityService.h"
 #include "nsViewManager.h"
-#include "nsIPersistentProperties2.h"
 
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/a11y/DocManager.h"
 #include "mozilla/jni/GeckoBundleUtils.h"
+#include "mozilla/widget/GeckoViewSupport.h"
 
 #ifdef DEBUG
 #  include <android/log.h>
@@ -42,10 +43,6 @@
     acc->funcname(__VA_ARGS__);                             \
   }
 
-template <>
-const char nsWindow::NativePtr<mozilla::a11y::SessionAccessibility>::sName[] =
-    "SessionAccessibility";
-
 using namespace mozilla::a11y;
 
 class Settings final
@@ -59,6 +56,13 @@ class Settings final
     }
   }
 };
+
+SessionAccessibility::SessionAccessibility(
+    jni::NativeWeakPtr<widget::GeckoViewSupport> aWindow,
+    java::SessionAccessibility::NativeProvider::Param aSessionAccessibility)
+    : mWindow(aWindow), mSessionAccessibility(aSessionAccessibility) {
+  SetAttached(true, nullptr);
+}
 
 void SessionAccessibility::SetAttached(bool aAttached,
                                        already_AddRefed<Runnable> aRunnable) {
@@ -101,11 +105,17 @@ mozilla::jni::Object::LocalRef SessionAccessibility::GetNodeInfo(int32_t aID) {
 }
 
 RootAccessibleWrap* SessionAccessibility::GetRoot() {
-  if (!mWindow) {
+  auto acc(mWindow.Access());
+  if (!acc) {
     return nullptr;
   }
 
-  return static_cast<RootAccessibleWrap*>(mWindow->GetRootAccessible());
+  nsWindow* gkWindow = acc->GetNsWindow();
+  if (!gkWindow) {
+    return nullptr;
+  }
+
+  return static_cast<RootAccessibleWrap*>(gkWindow->GetRootAccessible());
 }
 
 void SessionAccessibility::SetText(int32_t aID, jni::String::Param aText) {
@@ -118,7 +128,7 @@ void SessionAccessibility::Click(int32_t aID) {
 
 void SessionAccessibility::Pivot(int32_t aID, int32_t aGranularity,
                                  bool aForward, bool aInclusive) {
-  FORWARD_ACTION_TO_ACCESSIBLE(Pivot, aGranularity, aForward, aInclusive);
+  FORWARD_ACTION_TO_ACCESSIBLE(PivotTo, aGranularity, aForward, aInclusive);
 }
 
 void SessionAccessibility::ExploreByTouch(int32_t aID, float aX, float aY) {
@@ -150,8 +160,8 @@ void SessionAccessibility::Paste(int32_t aID) {
   FORWARD_ACTION_TO_ACCESSIBLE(Paste);
 }
 
-SessionAccessibility* SessionAccessibility::GetInstanceFor(
-    ProxyAccessible* aAccessible) {
+RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
+    RemoteAccessible* aAccessible) {
   auto tab =
       static_cast<dom::BrowserParent*>(aAccessible->Document()->Manager());
   dom::Element* frame = tab->GetOwnerElement();
@@ -160,20 +170,19 @@ SessionAccessibility* SessionAccessibility::GetInstanceFor(
     return nullptr;
   }
 
-  Accessible* chromeDoc = GetExistingDocAccessible(frame->OwnerDoc());
+  LocalAccessible* chromeDoc = GetExistingDocAccessible(frame->OwnerDoc());
   return chromeDoc ? GetInstanceFor(chromeDoc) : nullptr;
 }
 
-SessionAccessibility* SessionAccessibility::GetInstanceFor(
-    Accessible* aAccessible) {
+RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
+    LocalAccessible* aAccessible) {
   RootAccessible* rootAcc = aAccessible->RootAccessible();
   nsViewManager* vm = rootAcc->PresShellPtr()->GetViewManager();
   if (!vm) {
     return nullptr;
   }
 
-  nsCOMPtr<nsIWidget> rootWidget;
-  vm->GetRootWidget(getter_AddRefs(rootWidget));
+  nsCOMPtr<nsIWidget> rootWidget = vm->GetRootWidget();
   // `rootWidget` can be one of several types. Here we make sure it is an
   // android nsWindow.
   if (RefPtr<nsWindow> window = nsWindow::From(rootWidget)) {
@@ -406,13 +415,11 @@ void SessionAccessibility::ReplaceFocusPathCache(
 
     if (aData.Length() == aAccessibles.Length()) {
       const BatchData& data = aData.ElementAt(i);
-      nsCOMPtr<nsIPersistentProperties> props =
-          AccessibleWrap::AttributeArrayToProperties(data.Attributes());
       auto bundle =
           acc->ToBundle(data.State(), data.Bounds(), data.ActionCount(),
                         data.Name(), data.TextValue(), data.DOMNodeID(),
                         data.Description(), data.CurValue(), data.MinValue(),
-                        data.MaxValue(), data.Step(), props);
+                        data.MaxValue(), data.Step(), data.Attributes());
       infos->SetElement(i, bundle);
     } else {
       infos->SetElement(i, acc->ToBundle());

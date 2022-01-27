@@ -22,6 +22,8 @@ const kESModuleList = new Set([
   /browser\/lockwise-card.js$/,
   /browser\/monitor-card.js$/,
   /browser\/proxy-card.js$/,
+  /browser\/vpn-card.js$/,
+  /browser\/content\/browser\/certerror\/aboutNetError\.js$/,
   /toolkit\/content\/global\/certviewer\/components\/.*\.js$/,
   /toolkit\/content\/global\/certviewer\/.*\.js$/,
 ]);

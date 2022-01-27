@@ -22,18 +22,12 @@ XPCOMUtils.defineLazyServiceGetter(
   "@mozilla.org/cookieService;1",
   "nsICookieService"
 );
+// eslint-disable-next-line mozilla/use-services
 XPCOMUtils.defineLazyServiceGetter(
   Services,
   "cookiemgr",
   "@mozilla.org/cookiemanager;1",
   "nsICookieManager"
-);
-
-XPCOMUtils.defineLazyServiceGetter(
-  Services,
-  "etld",
-  "@mozilla.org/network/effective-tld-service;1",
-  "nsIEffectiveTLDService"
 );
 
 function do_check_throws(f, result, stack) {
@@ -96,11 +90,11 @@ _observer.prototype = {
 // once the close is complete.
 function do_close_profile(generator) {
   // Register an observer for db close.
-  let obs = new _observer(generator, "cookie-db-closed");
+  new _observer(generator, "cookie-db-closed");
 
   // Close the db.
   let service = Services.cookies.QueryInterface(Ci.nsIObserver);
-  service.observe(null, "profile-before-change", "shutdown-persist");
+  service.observe(null, "profile-before-change", null);
 }
 
 function _promise_observer(topic) {
@@ -131,7 +125,7 @@ function promise_close_profile() {
 
   // Close the db.
   let service = Services.cookies.QueryInterface(Ci.nsIObserver);
-  service.observe(null, "profile-before-change", "shutdown-persist");
+  service.observe(null, "profile-before-change", null);
 
   return promise;
 }
@@ -152,7 +146,7 @@ function promise_load_profile() {
 // once the load is complete.
 function do_load_profile(generator) {
   // Register an observer for read completion.
-  let obs = new _observer(generator, "cookie-db-read");
+  new _observer(generator, "cookie-db-read");
 
   // Load the profile.
   let service = Services.cookies.QueryInterface(Ci.nsIObserver);
@@ -243,7 +237,7 @@ function Cookie(
   let strippedHost = host.charAt(0) == "." ? host.slice(1) : host;
 
   try {
-    this.baseDomain = Services.etld.getBaseDomainFromHost(strippedHost);
+    this.baseDomain = Services.eTLD.getBaseDomainFromHost(strippedHost);
   } catch (e) {
     if (
       e.result == Cr.NS_ERROR_HOST_IS_IP_ADDRESS ||

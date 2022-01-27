@@ -18,10 +18,11 @@ add_task(async function() {
   await pushPref("devtools.netmonitor.har.defaultFileName", "test_filename");
 
   const tab = await addTab(SIMPLE_URL);
-  const target = await TargetFactory.forTab(tab);
-  const toolbox = await gDevTools.showToolbox(target, "inspector");
+  const toolbox = await gDevTools.showToolboxForTab(tab, {
+    toolId: "inspector",
+  });
 
-  tab.linkedBrowser.reload();
+  await reloadBrowser();
 
   info("Wait until the HAR file is created in the profile directory");
   await waitUntil(() => FileUtils.getFile("ProfD", HAR_PATH).exists());

@@ -12,9 +12,68 @@ enum PlacesEventType {
   "bookmark-added",
   /**
    * data: PlacesBookmarkRemoved. Fired whenever a bookmark
-   * (or a bookmark folder/separator) is created.
+   * (or a bookmark folder/separator) is removed.
    */
   "bookmark-removed",
+  /**
+   * data: PlacesBookmarkMoved. Fired whenever a bookmark
+   * (or a bookmark folder/separator) is moved.
+   */
+  "bookmark-moved",
+  /**
+   * data: PlacesBookmarkGuid. Fired whenever a bookmark guid changes.
+   */
+  "bookmark-guid-changed",
+  /**
+   * data: PlacesBookmarkTags. Fired whenever tags of bookmark changes.
+   */
+  "bookmark-tags-changed",
+  /**
+   * data: PlacesBookmarkTime.
+   * Fired whenever dateAdded or lastModified of a bookmark is explicitly changed
+   * through the Bookmarks API. This notification doesn't fire when a bookmark is
+   * created, or when a property of a bookmark (e.g. title) is changed, even if
+   * lastModified will be updated as a consequence of that change.
+   */
+  "bookmark-time-changed",
+  /**
+   * data: PlacesBookmarkTitle. Fired whenever a bookmark title changes.
+   */
+  "bookmark-title-changed",
+  /**
+   * data: PlacesBookmarkUrl. Fired whenever a bookmark url changes.
+   */
+  "bookmark-url-changed",
+  /**
+   * data: PlacesFavicon. Fired whenever a favicon changes.
+   */
+  "favicon-changed",
+  /**
+   * data: PlacesVisitTitle. Fired whenever a page title changes.
+   */
+  "page-title-changed",
+  /**
+   * data: PlacesHistoryCleared. Fired whenever history is cleared.
+   */
+  "history-cleared",
+  /**
+   * data: PlacesRanking. Fired whenever pages ranking is changed.
+   */
+  "pages-rank-changed",
+  /**
+   * data: PlacesVisitRemoved. Fired whenever a page or its visits are removed.
+   * This may be invoked when a page is removed from the store because it has no more
+   * visits, nor bookmarks. It may also be invoked when all or some of the page visits are
+   * removed, but the page itself is not removed from the store, because it may be
+   * bookmarked.
+   */
+  "page-removed",
+  /**
+   * data: PlacesPurgeCaches. Fired whenever changes happened that could not be observed
+   * through other notifications, for example a database fixup. When received, observers,
+   * especially data views, should drop any caches and reload from scratch.
+   */
+  "purge-caches",
 };
 
 [ChromeOnly, Exposed=Window]
@@ -185,4 +244,271 @@ interface PlacesBookmarkRemoved : PlacesBookmark {
    * The item is a descendant of an item whose notification has been sent out.
    */
   readonly attribute boolean isDescendantRemoval;
+};
+
+dictionary PlacesBookmarkMovedInit {
+  required long long id;
+  required unsigned short itemType;
+  DOMString? url = null;
+  required ByteString guid;
+  required ByteString parentGuid;
+  required long index;
+  required ByteString oldParentGuid;
+  required long oldIndex;
+  required unsigned short source;
+  required boolean isTagging;
+};
+
+[ChromeOnly, Exposed=Window]
+/**
+ * NOTE: Though PlacesBookmarkMoved extends PlacesBookmark,
+ *       parentId will not be set. Use parentGuid instead.
+ */
+interface PlacesBookmarkMoved : PlacesBookmark {
+  constructor(PlacesBookmarkMovedInit initDict);
+  /**
+   * The item's index in the folder.
+   */
+  readonly attribute long index;
+
+  /**
+   * The unique ID associated with the item's old parent.
+   */
+  readonly attribute ByteString oldParentGuid;
+
+  /**
+   * The item's old index in the folder.
+   */
+  readonly attribute long oldIndex;
+};
+
+[ChromeOnly, Exposed=Window]
+interface PlacesBookmarkChanged : PlacesBookmark {
+  /**
+   * The updated last modified value in milliseconds.
+   */
+  readonly attribute long long lastModified;
+};
+
+dictionary PlacesBookmarkGuidInit {
+  required long long id;
+  required unsigned short itemType;
+  DOMString? url = null;
+  required ByteString guid;
+  required ByteString parentGuid;
+  required long long lastModified;
+  required unsigned short source;
+  required boolean isTagging;
+};
+
+[ChromeOnly, Exposed=Window]
+interface PlacesBookmarkGuid : PlacesBookmarkChanged {
+  constructor(PlacesBookmarkGuidInit initDict);
+};
+
+dictionary PlacesBookmarkTagsInit {
+  required long long id;
+  required unsigned short itemType;
+  DOMString? url = null;
+  required ByteString guid;
+  required ByteString parentGuid;
+  required sequence<DOMString> tags;
+  required long long lastModified;
+  required unsigned short source;
+  required boolean isTagging;
+};
+
+[ChromeOnly, Exposed=Window]
+interface PlacesBookmarkTags : PlacesBookmarkChanged {
+  constructor(PlacesBookmarkTagsInit initDict);
+
+  /**
+   * Tags the bookmark has currently.
+   */
+  [Constant,Cached]
+  readonly attribute sequence<DOMString> tags;
+};
+
+dictionary PlacesBookmarkTimeInit {
+  required long long id;
+  required unsigned short itemType;
+  DOMString? url = null;
+  required ByteString guid;
+  required ByteString parentGuid;
+  required long long dateAdded;
+  required long long lastModified;
+  required unsigned short source;
+  required boolean isTagging;
+};
+
+[ChromeOnly, Exposed=Window]
+interface PlacesBookmarkTime : PlacesBookmarkChanged {
+  constructor(PlacesBookmarkTimeInit initDict);
+
+  /**
+   * The added date in milliseconds.
+   */
+  readonly attribute long long dateAdded;
+};
+
+dictionary PlacesBookmarkTitleInit {
+  required long long id;
+  required unsigned short itemType;
+  DOMString? url = null;
+  required ByteString guid;
+  required ByteString parentGuid;
+  required DOMString title;
+  required long long lastModified;
+  required unsigned short source;
+  required boolean isTagging;
+};
+
+[ChromeOnly, Exposed=Window]
+interface PlacesBookmarkTitle : PlacesBookmarkChanged {
+  constructor(PlacesBookmarkTitleInit initDict);
+
+  /**
+   * The title of the changed bookmark.
+   */
+  readonly attribute DOMString title;
+};
+
+dictionary PlacesBookmarkUrlInit {
+  required long long id;
+  required unsigned short itemType;
+  required DOMString url;
+  required ByteString guid;
+  required ByteString parentGuid;
+  required long long lastModified;
+  required unsigned short source;
+  required boolean isTagging;
+};
+
+[ChromeOnly, Exposed=Window]
+interface PlacesBookmarkUrl : PlacesBookmarkChanged {
+  constructor(PlacesBookmarkUrlInit initDict);
+};
+
+dictionary PlacesFaviconInit {
+  required DOMString url;
+  required ByteString pageGuid;
+  required DOMString faviconUrl;
+};
+
+[ChromeOnly, Exposed=Window]
+interface PlacesFavicon : PlacesEvent {
+  constructor(PlacesFaviconInit initDict);
+
+  /**
+   * The URI of the changed page.
+   */
+  readonly attribute DOMString url;
+
+  /**
+   * The unique id associated with the page.
+   */
+  readonly attribute ByteString pageGuid;
+
+  /**
+   * The URI of the new favicon.
+   */
+  readonly attribute DOMString faviconUrl;
+};
+
+dictionary PlacesVisitTitleInit {
+  required DOMString url;
+  required ByteString pageGuid;
+  required DOMString title;
+};
+
+[ChromeOnly, Exposed=Window]
+interface PlacesVisitTitle : PlacesEvent {
+  constructor(PlacesVisitTitleInit initDict);
+
+  /**
+   * The URI of the changed page.
+   */
+  readonly attribute DOMString url;
+
+  /**
+   * The unique id associated with the page.
+   */
+  readonly attribute ByteString pageGuid;
+
+  /**
+   * The title of the changed page.
+   */
+  readonly attribute DOMString title;
+};
+
+[ChromeOnly, Exposed=Window]
+interface PlacesHistoryCleared : PlacesEvent {
+  constructor();
+};
+
+[ChromeOnly, Exposed=Window]
+interface PlacesRanking : PlacesEvent {
+  constructor();
+};
+
+dictionary PlacesVisitRemovedInit {
+  required DOMString url;
+  required ByteString pageGuid;
+  required unsigned short reason;
+  unsigned long transitionType = 0;
+  boolean isRemovedFromStore = false;
+  boolean isPartialVisistsRemoval = false;
+};
+
+[ChromeOnly, Exposed=Window]
+interface PlacesVisitRemoved : PlacesEvent {
+  /**
+   * Removed by the user.
+   */
+  const unsigned short REASON_DELETED = 0;
+
+  /**
+   * Removed by periodic expiration.
+   */
+  const unsigned short REASON_EXPIRED = 1;
+
+  constructor(PlacesVisitRemovedInit initDict);
+
+  /**
+   * The URI of the page.
+   */
+  readonly attribute DOMString url;
+
+  /**
+   * The unique id associated with the page.
+   */
+  readonly attribute ByteString pageGuid;
+
+  /**
+   * The reason of removal.
+   */
+  readonly attribute unsigned short reason;
+
+  /**
+   * One of nsINavHistoryService.TRANSITION_*
+   * NOTE: Please refer this attribute only when isRemovedFromStore is false.
+   *       Otherwise this will be 0.
+   */
+  readonly attribute unsigned long transitionType;
+
+  /**
+   * This will be true if the page is removed from store.
+   * If false, only visits were removed, but not the page.
+   */
+  readonly attribute boolean isRemovedFromStore;
+
+  /**
+   * This will be true if remains at least one visit to the page.
+   */
+  readonly attribute boolean isPartialVisistsRemoval;
+};
+
+[ChromeOnly, Exposed=Window]
+interface PlacesPurgeCaches : PlacesEvent {
+  constructor();
 };

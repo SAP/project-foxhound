@@ -11,7 +11,10 @@
 #include "mozilla/Compiler.h"
 #include "mozilla/Sprintf.h"
 
+#include <iterator>
 #include <stdarg.h>
+
+#include "util/GetPidProvider.h"  // getpid()
 
 #ifdef MOZ_CALLGRIND
 #  include <valgrind/callgrind.h>
@@ -23,12 +26,8 @@
 #  endif
 #endif
 
-#ifdef XP_WIN
-#  include <process.h>
-#  define getpid _getpid
-#endif
-
 #include "js/CharacterEncoding.h"
+#include "js/PropertyAndElement.h"  // JS_DefineFunctions
 #include "js/PropertySpec.h"
 #include "js/Utility.h"
 #include "util/Text.h"
@@ -37,8 +36,6 @@
 #include "vm/JSContext-inl.h"
 
 using namespace js;
-
-using mozilla::ArrayLength;
 
 /* Thread-unsafe error management */
 
@@ -411,18 +408,18 @@ JS_PUBLIC_API bool JS_DefineProfilingFunctions(JSContext* cx,
       JS_END_MACRO
 #  endif
 
-JS_FRIEND_API bool js_StartCallgrind() {
+JS_PUBLIC_API bool js_StartCallgrind() {
   JS_SILENCE_UNUSED_VALUE_IN_EXPR(CALLGRIND_START_INSTRUMENTATION);
   JS_SILENCE_UNUSED_VALUE_IN_EXPR(CALLGRIND_ZERO_STATS);
   return true;
 }
 
-JS_FRIEND_API bool js_StopCallgrind() {
+JS_PUBLIC_API bool js_StopCallgrind() {
   JS_SILENCE_UNUSED_VALUE_IN_EXPR(CALLGRIND_STOP_INSTRUMENTATION);
   return true;
 }
 
-JS_FRIEND_API bool js_DumpCallgrind(const char* outfile) {
+JS_PUBLIC_API bool js_DumpCallgrind(const char* outfile) {
   if (outfile) {
     JS_SILENCE_UNUSED_VALUE_IN_EXPR(CALLGRIND_DUMP_STATS_AT(outfile));
   } else {
@@ -502,7 +499,7 @@ bool js_StartPerf() {
                                  mainPidStr, "--output", outfile};
 
     Vector<const char*, 0, SystemAllocPolicy> args;
-    if (!args.append(defaultArgs, ArrayLength(defaultArgs))) {
+    if (!args.append(defaultArgs, std::size(defaultArgs))) {
       return false;
     }
 

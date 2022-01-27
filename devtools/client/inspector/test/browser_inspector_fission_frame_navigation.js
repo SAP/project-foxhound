@@ -3,17 +3,15 @@
 "use strict";
 
 const EXAMPLE_COM_URI =
-  "http://example.com/document-builder.sjs?html=<div id=com>com";
+  "https://example.com/document-builder.sjs?html=<div id=com>com";
 const EXAMPLE_NET_URI =
-  "http://example.net/document-builder.sjs?html=<div id=net>net";
+  "https://example.net/document-builder.sjs?html=<div id=net>net";
 
 const ORG_URL_ROOT = URL_ROOT.replace("example.com", "example.org");
 const TEST_ORG_URI =
   ORG_URL_ROOT + "doc_inspector_fission_frame_navigation.html";
 
 add_task(async function() {
-  await pushPref("devtools.contenttoolbox.fission", true);
-
   const { inspector } = await openInspectorForURL(TEST_ORG_URI);
   const tree = `
     id="root"
@@ -68,10 +66,8 @@ add_task(async function navigateFrameNotExpandedInMarkupView() {
     return;
   }
 
-  await pushPref("devtools.contenttoolbox.fission", true);
-
   const { inspector } = await openInspectorForURL(TEST_ORG_URI);
-  const resourceWatcher = inspector.toolbox.resourceWatcher;
+  const resourceCommand = inspector.toolbox.resourceCommand;
 
   // At this stage the expected layout of the markup view is
   // v html     (expanded)
@@ -81,14 +77,11 @@ add_task(async function navigateFrameNotExpandedInMarkupView() {
   //
   // The iframe we are about to navigate is therefore hidden and we are not
   // watching it - ie, it is not in the list of known NodeFronts/Actors.
-  const { resource, targetFront } = await navigateIframeTo(
-    inspector,
-    EXAMPLE_COM_URI
-  );
+  const resource = await navigateIframeTo(inspector, EXAMPLE_COM_URI);
 
   is(
-    resource?.resourceType,
-    resourceWatcher.TYPES.ROOT_NODE,
+    resource.resourceType,
+    resourceCommand.TYPES.ROOT_NODE,
     "A resource with resourceType ROOT_NODE was received when navigating"
   );
 
@@ -108,30 +101,24 @@ add_task(async function navigateFrameNotExpandedInMarkupView() {
   // This should be fixed when implementing the RootNode resource on the server
   // in https://bugzilla.mozilla.org/show_bug.cgi?id=1644190
   todo(
-    !targetFront.getCachedFront("inspector"),
+    !resource.targetFront.getCachedFront("inspector"),
     "The inspector front for the new target should not be initialized"
   );
 });
 
 async function navigateIframeTo(inspector, url) {
   info("Navigate the test iframe to " + url);
-  const resourceWatcher = inspector.toolbox.resourceWatcher;
-  let onNewRoot;
-  if (isFissionEnabled()) {
-    // With Fission, the frame navigation will result in a new root-node
-    // resource.
-    onNewRoot = waitForResourceOnce(
-      resourceWatcher,
-      resourceWatcher.TYPES.ROOT_NODE
-    );
-  } else {
-    // Without Fission, the frame navigation is handled on the server and will
-    // create two (fake) mutations: frameLoad + childList.
-    onNewRoot = Promise.all([
-      waitForMutation(inspector, "childList"),
-      waitForMutation(inspector, "frameLoad"),
-    ]);
-  }
+
+  const { commands } = inspector;
+  const { resourceCommand } = inspector.toolbox;
+  const onTargetProcessed = waitForTargetProcessed(commands, url);
+
+  const { onResource: onNewRoot } = await resourceCommand.waitForNextResource(
+    resourceCommand.TYPES.ROOT_NODE,
+    {
+      ignoreExistingResources: true,
+    }
+  );
 
   info("Update the src attribute of the iframe tag");
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [url], function(_url) {
@@ -144,6 +131,33 @@ async function navigateIframeTo(inspector, url) {
   info("Wait for pending children updates");
   await inspector.markup._waitForChildren();
 
+  if (isFissionEnabled()) {
+    info("Wait until the new target has been processed by TargetCommand");
+    await onTargetProcessed;
+  }
+
   // Note: the newRootResult changes when the test runs with or without fission.
   return newRootResult;
+}
+
+/**
+ * Returns a promise that waits until the provided commands's TargetCommand has fully
+ * processed a target with the provided URL.
+ * This will avoid navigating again before the new resource command  have fully
+ * attached to the new target.
+ */
+function waitForTargetProcessed(commands, url) {
+  return new Promise(resolve => {
+    const onTargetProcessed = targetFront => {
+      if (targetFront.url !== encodeURI(url)) {
+        return;
+      }
+      commands.targetCommand.off(
+        "processed-available-target",
+        onTargetProcessed
+      );
+      resolve();
+    };
+    commands.targetCommand.on("processed-available-target", onTargetProcessed);
+  });
 }

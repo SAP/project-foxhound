@@ -6,9 +6,12 @@
 
 #include "DecoderDoctorDiagnostics.h"
 #include "MediaKeySystemAccessPermissionRequest.h"
+#include "VideoUtils.h"
 #include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/DetailedPromise.h"
 #include "mozilla/EMEUtils.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/Unused.h"
@@ -20,14 +23,13 @@
 #endif
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
-#include "nsDataHashtable.h"
+#include "nsTHashMap.h"
 #include "nsIObserverService.h"
 #include "nsIScriptError.h"
 #include "nsPrintfCString.h"
 #include "nsServiceManagerUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 MediaKeySystemAccessManager::PendingRequest::PendingRequest(
     DetailedPromise* aPromise, const nsAString& aKeySystem,
@@ -69,8 +71,9 @@ void MediaKeySystemAccessManager::PendingRequest::RejectPromiseWithTypeError(
 }
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(MediaKeySystemAccessManager)
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIObserver)
   NS_INTERFACE_MAP_ENTRY(nsIObserver)
+  NS_INTERFACE_MAP_ENTRY(nsINamed)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(MediaKeySystemAccessManager)
@@ -458,14 +461,14 @@ void MediaKeySystemAccessManager::RequestMediaKeySystemAccess(
   }
 
   nsCOMPtr<Document> doc = mWindow->GetExtantDoc();
-  nsDataHashtable<nsCharPtrHashKey, bool> warnings;
+  nsTHashMap<nsCharPtrHashKey, bool> warnings;
   std::function<void(const char*)> deprecationWarningLogFn =
       [&](const char* aMsgName) {
         EME_LOG(
             "MediaKeySystemAccessManager::DeprecationWarningLambda Logging "
             "deprecation warning '%s' to WebConsole.",
             aMsgName);
-        warnings.Put(aMsgName, true);
+        warnings.InsertOrUpdate(aMsgName, true);
         AutoTArray<nsString, 1> params;
         nsString& uri = *params.AppendElement();
         if (doc) {
@@ -624,6 +627,11 @@ nsresult MediaKeySystemAccessManager::Observe(nsISupports* aSubject,
   return NS_OK;
 }
 
+nsresult MediaKeySystemAccessManager::GetName(nsACString& aName) {
+  aName.AssignLiteral("MediaKeySystemAccessManager");
+  return NS_OK;
+}
+
 bool MediaKeySystemAccessManager::EnsureObserversAdded() {
   MOZ_ASSERT(NS_IsMainThread());
   if (mAddedObservers) {
@@ -668,7 +676,6 @@ void MediaKeySystemAccessManager::Shutdown() {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #undef MKSAM_LOG_DEBUG

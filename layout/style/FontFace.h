@@ -28,7 +28,7 @@ class FontFaceBufferSource;
 struct FontFaceDescriptors;
 class FontFaceSet;
 class Promise;
-class StringOrArrayBufferOrArrayBufferView;
+class UTF8StringOrArrayBufferOrArrayBufferView;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -51,11 +51,14 @@ class FontFace final : public nsISupports, public nsWrapperCache {
           const nsTArray<gfxFontFeature>& aFeatureSettings,
           const nsTArray<gfxFontVariation>& aVariationSettings,
           uint32_t aLanguageOverride, gfxCharacterMap* aUnicodeRanges,
-          StyleFontDisplay aFontDisplay, RangeFlags aRangeFlags)
+          StyleFontDisplay aFontDisplay, RangeFlags aRangeFlags,
+          float aAscentOverride, float aDescentOverride, float aLineGapOverride,
+          float aSizeAdjust)
         : gfxUserFontEntry(aFontSet, aFontFaceSrcList, aWeight, aStretch,
                            aStyle, aFeatureSettings, aVariationSettings,
                            aLanguageOverride, aUnicodeRanges, aFontDisplay,
-                           aRangeFlags) {}
+                           aRangeFlags, aAscentOverride, aDescentOverride,
+                           aLineGapOverride, aSizeAdjust) {}
 
     virtual void SetLoadState(UserFontLoadState aLoadState) override;
     virtual void GetUserFontSets(nsTArray<gfxUserFontSet*>& aResult) override;
@@ -91,6 +94,10 @@ class FontFace final : public nsISupports, public nsWrapperCache {
   void GetFontVariationSettings(nsTArray<gfxFontVariation>&) const;
   void GetSources(nsTArray<StyleFontFaceSourceListComponent>&) const;
   Maybe<StyleFontLanguageOverride> GetFontLanguageOverride() const;
+  Maybe<StylePercentage> GetAscentOverride() const;
+  Maybe<StylePercentage> GetDescentOverride() const;
+  Maybe<StylePercentage> GetLineGapOverride() const;
+  Maybe<StylePercentage> GetSizeAdjust() const;
 
   gfxUserFontEntry* CreateUserFontEntry();
   gfxUserFontEntry* GetUserFontEntry() const { return mUserFontEntry; }
@@ -149,28 +156,36 @@ class FontFace final : public nsISupports, public nsWrapperCache {
 
   // Web IDL
   static already_AddRefed<FontFace> Constructor(
-      const GlobalObject& aGlobal, const nsAString& aFamily,
-      const StringOrArrayBufferOrArrayBufferView& aSource,
+      const GlobalObject& aGlobal, const nsACString& aFamily,
+      const UTF8StringOrArrayBufferOrArrayBufferView& aSource,
       const FontFaceDescriptors& aDescriptors, ErrorResult& aRV);
 
-  void GetFamily(nsString& aResult);
-  void SetFamily(const nsAString& aValue, ErrorResult& aRv);
-  void GetStyle(nsString& aResult);
-  void SetStyle(const nsAString& aValue, ErrorResult& aRv);
-  void GetWeight(nsString& aResult);
-  void SetWeight(const nsAString& aValue, ErrorResult& aRv);
-  void GetStretch(nsString& aResult);
-  void SetStretch(const nsAString& aValue, ErrorResult& aRv);
-  void GetUnicodeRange(nsString& aResult);
-  void SetUnicodeRange(const nsAString& aValue, ErrorResult& aRv);
-  void GetVariant(nsString& aResult);
-  void SetVariant(const nsAString& aValue, ErrorResult& aRv);
-  void GetFeatureSettings(nsString& aResult);
-  void SetFeatureSettings(const nsAString& aValue, ErrorResult& aRv);
-  void GetVariationSettings(nsString& aResult);
-  void SetVariationSettings(const nsAString& aValue, ErrorResult& aRv);
-  void GetDisplay(nsString& aResult);
-  void SetDisplay(const nsAString& aValue, ErrorResult& aRv);
+  void GetFamily(nsACString& aResult);
+  void SetFamily(const nsACString& aValue, ErrorResult& aRv);
+  void GetStyle(nsACString& aResult);
+  void SetStyle(const nsACString& aValue, ErrorResult& aRv);
+  void GetWeight(nsACString& aResult);
+  void SetWeight(const nsACString& aValue, ErrorResult& aRv);
+  void GetStretch(nsACString& aResult);
+  void SetStretch(const nsACString& aValue, ErrorResult& aRv);
+  void GetUnicodeRange(nsACString& aResult);
+  void SetUnicodeRange(const nsACString& aValue, ErrorResult& aRv);
+  void GetVariant(nsACString& aResult);
+  void SetVariant(const nsACString& aValue, ErrorResult& aRv);
+  void GetFeatureSettings(nsACString& aResult);
+  void SetFeatureSettings(const nsACString& aValue, ErrorResult& aRv);
+  void GetVariationSettings(nsACString& aResult);
+  void SetVariationSettings(const nsACString& aValue, ErrorResult& aRv);
+  void GetDisplay(nsACString& aResult);
+  void SetDisplay(const nsACString& aValue, ErrorResult& aRv);
+  void GetAscentOverride(nsACString& aResult);
+  void SetAscentOverride(const nsACString& aValue, ErrorResult& aRv);
+  void GetDescentOverride(nsACString& aResult);
+  void SetDescentOverride(const nsACString& aValue, ErrorResult& aRv);
+  void GetLineGapOverride(nsACString& aResult);
+  void SetLineGapOverride(const nsACString& aValue, ErrorResult& aRv);
+  void GetSizeAdjust(nsACString& aResult);
+  void SetSizeAdjust(const nsACString& aValue, ErrorResult& aRv);
 
   FontFaceLoadStatus Status();
   Promise* Load(ErrorResult& aRv);
@@ -180,7 +195,7 @@ class FontFace final : public nsISupports, public nsWrapperCache {
   FontFace(nsISupports* aParent, FontFaceSet* aFontFaceSet);
   ~FontFace();
 
-  void InitializeSource(const StringOrArrayBufferOrArrayBufferView& aSource);
+  void InitializeSource(const UTF8StringOrArrayBufferOrArrayBufferView&);
 
   // Helper function for Load.
   void DoLoad();
@@ -188,7 +203,7 @@ class FontFace final : public nsISupports, public nsWrapperCache {
   // Helper function for the descriptor setter methods.
   // Returns true if the descriptor was modified, false if descriptor is
   // unchanged (which may not be an error: check aRv for actual failure).
-  bool SetDescriptor(nsCSSFontDesc aFontDesc, const nsAString& aValue,
+  bool SetDescriptor(nsCSSFontDesc aFontDesc, const nsACString& aValue,
                      ErrorResult& aRv);
 
   /**
@@ -196,7 +211,7 @@ class FontFace final : public nsISupports, public nsWrapperCache {
    * to the JS constructor.
    * Returns true on success, false if parsing any descriptor failed.
    */
-  bool SetDescriptors(const nsAString& aFamily,
+  bool SetDescriptors(const nsACString& aFamily,
                       const FontFaceDescriptors& aDescriptors);
 
   /**
@@ -210,7 +225,7 @@ class FontFace final : public nsISupports, public nsWrapperCache {
    */
   void SetStatus(FontFaceLoadStatus aStatus);
 
-  void GetDesc(nsCSSFontDesc aDescID, nsString& aResult) const;
+  void GetDesc(nsCSSFontDesc aDescID, nsACString& aResult) const;
 
   already_AddRefed<URLExtraData> GetURLExtraData() const;
 

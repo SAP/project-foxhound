@@ -5,15 +5,15 @@
 :host {
   display: grid;
   padding: 1em 0 1em;
-  background-color: var(--in-content-box-background);
-  border-style: solid;
-  border-color: var(--in-content-box-border-color);
-  border-width: .5px;
+  border-block: 0.5px solid var(--in-content-border-color);
+  border-inline: 0.5px solid transparent;
   position: relative;
 }
 
 :host(:hover) {
-  background-color: var(--in-content-box-background-hover);
+  background-color: var(--in-content-item-hover);
+  color: var(--in-content-item-hover-text);
+  border-inline-color: var(--in-content-border-color);
   cursor: pointer;
 }
 
@@ -36,8 +36,8 @@ a {
 
 .export {
   position: absolute;
-  top: 0.3em;
   inset-inline-end: 2em;
+  align-self: center;
   font-size: 1em;
 }
 

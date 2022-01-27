@@ -114,6 +114,9 @@
   ; Register AccessibleMarshal.dll with COM (this requires write access to HKLM)
   ${RegisterAccessibleMarshal}
 
+  ; Record the Windows Error Reporting module
+  WriteRegDWORD HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\RuntimeExceptionHelperModules" "$INSTDIR\mozwer.dll" 0
+
 !ifdef MOZ_MAINTENANCE_SERVICE
   Call IsUserAdmin
   Pop $R0
@@ -159,25 +162,6 @@
   ${EndIf}
 !endif
 
-!ifdef MOZ_UPDATE_AGENT
-  ; This macro runs the update agent with the update-task-local-service
-  ; command, if it detects the needed admin privileges. Otherwise it
-  ; runs with update-task.
-  ; Both commands attempt to remove the scheduled task, then register
-  ; a new one. If the task was registered by an elevated user, it won't
-  ; be removable when not elevated, so the unelevated attempt will fail
-  ; harmlessly.
-  ; Therefore it is safe to run this in both elevated and nonelevated
-  ; PostUpdate: The highest privileged run will win out, so the task can
-  ; run as Local Service if it was ever possible to register it that way.
-  ${PushRegisterUpdateAgentTaskCommand} "update"
-  Pop $0
-  ${If} "$0" != ""
-    nsExec::Exec $0
-    Pop $0
-  ${EndIf}
-!endif
-
 !ifdef MOZ_LAUNCHER_PROCESS
   ${ResetLauncherProcessDefaults}
 !endif
@@ -193,15 +177,16 @@ ${If} $TmpVal == "HKCU"
                     "DidRegisterDefaultBrowserAgent"
   ${If} $0 != 0
   ${OrIf} ${Errors}
-    Exec '"$INSTDIR\default-browser-agent.exe" register-task $AppUserModelID'
+    ExecWait '"$INSTDIR\default-browser-agent.exe" register-task $AppUserModelID'
   ${EndIf}
 ${ElseIf} $TmpVal == "HKLM"
   ; If we're the privileged PostUpdate, make sure that the unprivileged one
   ; will have permission to create a task by clearing out the old one first.
-  Exec '"$INSTDIR\default-browser-agent.exe" unregister-task $AppUserModelID'
+  ExecWait '"$INSTDIR\default-browser-agent.exe" unregister-task $AppUserModelID'
 ${EndIf}
 !endif
 
+${RemoveDefaultBrowserAgentShortcut}
 !macroend
 !define PostUpdate "!insertmacro PostUpdate"
 
@@ -425,6 +410,42 @@ ${EndIf}
 !macroend
 !define UpdateOneShortcutBranding "!insertmacro UpdateOneShortcutBranding"
 
+; Remove a shortcut unintentionally added by the default browser agent (bug 1672957, 1681207)
+!macro RemoveDefaultBrowserAgentShortcut
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+
+  ; Get the current user's Start Menu Programs.
+  ${GetProgramsFolder} $1
+
+  ; The shortcut would have been named MOZ_BASE_NAME regardless of branding.
+  ; According to defines.nsi.in AppName should match application.ini, and application.ini.in sets
+  ; [App] Name from MOZ_BASE_NAME.
+  StrCpy $1 "$1\${AppName}.lnk"
+  ShellLink::GetShortCutTarget $1
+  Pop $0
+
+  ; ShellLink::GetShortCutTarget, and the underlying IShellLink::GetPath(), have an issue
+  ; where "C:\Program Files" becomes "C:\Program Files (x86)" in some cases.
+  ; It should be OK to remove the shortcut (which matches our app name) even if it isn't from this
+  ; install, as long as the file name portion of the target path matches.
+  StrCpy $2 "\default-browser-agent.exe"
+  StrLen $3 $2
+  ; Select the substring to match from the end of the target path.
+  StrCpy $0 $0 $3 -$3
+  ${If} $0 == $2
+    Delete $1
+  ${EndIf}
+
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+!macroend
+!define RemoveDefaultBrowserAgentShortcut "!insertmacro RemoveDefaultBrowserAgentShortcut"
+
 !macro AddAssociationIfNoneExist FILE_TYPE KEY
   ClearErrors
   EnumRegKey $7 HKCR "${FILE_TYPE}" 0
@@ -492,6 +513,7 @@ ${EndIf}
   ${AddAssociationIfNoneExist} ".webm" "FirefoxHTML$5"
   ${AddAssociationIfNoneExist} ".svg" "FirefoxHTML$5"
   ${AddAssociationIfNoneExist} ".webp"  "FirefoxHTML$5"
+  ${AddAssociationIfNoneExist} ".avif" "FirefoxHTML$5"
 
   ; An empty string is used for the 5th param because FirefoxHTML is not a
   ; protocol handler
@@ -503,11 +525,6 @@ ${EndIf}
   ; An empty string is used for the 4th & 5th params because the following
   ; protocol handlers already have a display name and the additional keys
   ; required for a protocol handler.
-!ifndef NIGHTLY_BUILD
-  ; Keep the compile-time conditional synchronized with the
-  ; "network.ftp.enabled" compile-time conditional.
-  ${AddDisabledDDEHandlerValues} "ftp" "$2" "$8,1" "" ""
-!endif ; !NIGHTLY_BUILD
   ${AddDisabledDDEHandlerValues} "http" "$2" "$8,1" "" ""
   ${AddDisabledDDEHandlerValues} "https" "$2" "$8,1" "" ""
   ${AddDisabledDDEHandlerValues} "mailto" "$2" "$8,1" "" ""
@@ -588,18 +605,13 @@ ${EndIf}
   WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".xhtml" "FirefoxHTML$2"
   WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".svg"   "FirefoxHTML$2"
   WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".webp"  "FirefoxHTML$2"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".avif"  "FirefoxHTML$2"
 
   WriteRegStr ${RegKey} "$0\Capabilities\StartMenu" "StartMenuInternet" "$1"
 
-!ifndef NIGHTLY_BUILD
-  ; Keep the compile-time conditional synchronized with the
-  ; "network.ftp.enabled" compile-time conditional.
-  WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "ftp"    "FirefoxURL$2"
-!else
-  ; We don't delete and re-create the entire key, so we need to remove
-  ; any existing registration.
+  ; In the past, we supported ftp.  Since we don't delete and re-create the
+  ; entire key, we need to remove any existing registration.
   DeleteRegValue ${RegKey} "$0\Capabilities\URLAssociations" "ftp"
-!endif ; !NIGHTLY_BUILD
 
   WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "http"   "FirefoxURL$2"
   WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "https"  "FirefoxURL$2"
@@ -663,6 +675,7 @@ ${EndIf}
     ${WriteApplicationsSupportedType} ${RegKey} ".svg"
     ${WriteApplicationsSupportedType} ${RegKey} ".webm"
     ${WriteApplicationsSupportedType} ${RegKey} ".webp"
+    ${WriteApplicationsSupportedType} ${RegKey} ".avif"
     ${WriteApplicationsSupportedType} ${RegKey} ".xht"
     ${WriteApplicationsSupportedType} ${RegKey} ".xhtml"
     ${WriteApplicationsSupportedType} ${RegKey} ".xml"
@@ -854,7 +867,7 @@ ${EndIf}
     ; Write the uninstall registry keys
     ${WriteRegStr2} $1 "$0" "Comments" "${BrandFullNameInternal} ${AppVersion}$3 (${ARCH} ${AB_CD})" 0
     ${WriteRegStr2} $1 "$0" "DisplayIcon" "$8\${FileMainEXE},0" 0
-    ${WriteRegStr2} $1 "$0" "DisplayName" "${BrandFullNameInternal} ${AppVersion}$3 (${ARCH} ${AB_CD})" 0
+    ${WriteRegStr2} $1 "$0" "DisplayName" "${BrandFullNameInternal}$3 (${ARCH} ${AB_CD})" 0
     ${WriteRegStr2} $1 "$0" "DisplayVersion" "${AppVersion}" 0
     ${WriteRegStr2} $1 "$0" "HelpLink" "${HelpLink}" 0
     ${WriteRegStr2} $1 "$0" "InstallLocation" "$8" 0
@@ -1000,13 +1013,8 @@ ${EndIf}
 
   ${IsHandlerForInstallDir} "ftp" $R9
   ${If} "$R9" == "true"
-!ifndef NIGHTLY_BUILD
-    ; Keep the compile-time conditional synchronized with the
-    ; "network.ftp.enabled" compile-time conditional.
-    ${AddDisabledDDEHandlerValues} "ftp" "$2" "$8,1" "" ""
-!else
+    ; In the past, we supported ftp, so we need to delete any registration.
     ${AddDisabledDDEHandlerValues} "ftp" "$2" "$8,1" "" "delete"
-!endif ; !NIGHTLY_BUILD
   ${EndIf}
 
   ${IsHandlerForInstallDir} "http" $R9
@@ -1474,7 +1482,7 @@ ${EndIf}
   Push "minidump-analyzer.exe"
   Push "pingsender.exe"
   Push "updater.exe"
-  Push "updateagent.exe"
+  Push "mozwer.dll"
   Push "${FileMainEXE}"
 !macroend
 !define PushFilesToCheck "!insertmacro PushFilesToCheck"
@@ -1609,7 +1617,24 @@ Function SetAsDefaultAppUserHKCU
   ${Unless} ${Errors}
     ; This is all protected by a user choice hash in Windows 8 so it won't
     ; help, but it also won't hurt.
-    AppAssocReg::SetAppAsDefaultAll "$R9"
+    AppAssocReg::SetAppAsDefault "$R9" ".htm" "file"
+    Pop $0
+    AppAssocReg::SetAppAsDefault "$R9" ".html" "file"
+    Pop $0
+    AppAssocReg::SetAppAsDefault "$R9" ".shtml" "file"
+    Pop $0
+    AppAssocReg::SetAppAsDefault "$R9" ".webp" "file"
+    Pop $0
+    AppAssocReg::SetAppAsDefault "$R9" ".avif" "file"
+    Pop $0
+    AppAssocReg::SetAppAsDefault "$R9" ".xht" "file"
+    Pop $0
+    AppAssocReg::SetAppAsDefault "$R9" ".xhtml" "file"
+    Pop $0
+    AppAssocReg::SetAppAsDefault "$R9" "http" "protocol"
+    Pop $0
+    AppAssocReg::SetAppAsDefault "$R9" "https" "protocol"
+    Pop $0
   ${EndUnless}
   ${RemoveDeprecatedKeys}
   ${MigrateTaskBarShortcut}
@@ -1738,45 +1763,4 @@ FunctionEnd
   DeleteRegValue HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Browser"
 !macroend
 !define ResetLauncherProcessDefaults "!insertmacro ResetLauncherProcessDefaults"
-!endif
-
-!ifdef MOZ_UPDATE_AGENT
-; Push, onto the stack, the command line used to register (or update) the
-; update agent scheduled task.
-;
-; InitHashAppModelId must have already been called to set $AppUserModelID,
-; if that is empty then an empty string will be pushed instead.
-;
-; COMMAND_BASE must be "register" or "update". Both will remove any
-; pre-existing task and register a new one, but "update" will first attempt
-; to copy some settings.
-!macro PushRegisterUpdateAgentTaskCommand COMMAND_BASE
-  Push $0
-  Push $1
-
-  Call IsUserAdmin
-  Pop $0
-  ; Register the update agent to run as Local Service if the user is an admin...
-  ${If} $0 == "true"
-  ; ...and if we have HKLM write access
-  ${AndIf} $TmpVal == "HKLM"
-    StrCpy $1 "${COMMAND_BASE}-task-local-service"
-  ${Else}
-    ; Otherwise attempt to register the task for the current user.
-    ; If we had previously registered the task while elevated, then we shouldn't
-    ; be able to replace it now with another task of the same name, so this
-    ; will fail harmlessly.
-    StrCpy $1 "${COMMAND_BASE}-task"
-  ${EndIf}
-
-  ${If} "$AppUserModelID" != ""
-    StrCpy $0 '"$INSTDIR\updateagent.exe" $1 "${UpdateAgentFullName} $AppUserModelID" "$AppUserModelID" "$INSTDIR"'
-  ${Else}
-    StrCpy $0 ''
-  ${EndIf}
-
-  Pop $1
-  Exch $0
-!macroend
-!define PushRegisterUpdateAgentTaskCommand "!insertmacro PushRegisterUpdateAgentTaskCommand"
 !endif

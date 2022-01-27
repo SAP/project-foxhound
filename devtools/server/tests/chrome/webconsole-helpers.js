@@ -1,9 +1,13 @@
-/* exported attachURL, evaluateJS */
+/* exported addTabAndCreateCommands */
 "use strict";
 
-const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+const { require } = ChromeUtils.import(
+  "resource://devtools/shared/loader/Loader.jsm"
+);
 const { DevToolsServer } = require("devtools/server/devtools-server");
-const { TargetFactory } = require("devtools/client/framework/target");
+const {
+  CommandsFactory,
+} = require("devtools/shared/commands/commands-factory");
 
 const Services = require("Services");
 
@@ -26,22 +30,14 @@ if (!DevToolsServer.initialized) {
  * and attach the console to it.
  *
  * @param {string} url : url to navigate to
- * @return {Promise} Promise resolving when the console is attached.
- *         The Promise resolves with an object containing :
- *           - tab: the attached tab
- *           - targetFront: the target front
- *           - webConsoleFront: the console front
- *           - cleanup: a generator function which can be called to close
- *             the opened tab and disconnect its devtools client.
+ * @return {Promise} Promise resolving when commands are initialized
+ *         The Promise resolves with the commands.
  */
-async function attachURL(url) {
+async function addTabAndCreateCommands(url) {
   const tab = await addTab(url);
-  const target = await TargetFactory.forTab(tab);
-  await target.attach();
-  const webConsoleFront = await target.getFront("console");
-  return {
-    webConsoleFront,
-  };
+  const commands = await CommandsFactory.forTab(tab);
+  await commands.targetCommand.startListening();
+  return commands;
 }
 
 /**

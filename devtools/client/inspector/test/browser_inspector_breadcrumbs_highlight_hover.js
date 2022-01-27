@@ -8,14 +8,21 @@
 // shows the highlighter over those nodes
 add_task(async function() {
   info("Loading the test document and opening the inspector");
-  const { inspector, testActor } = await openInspectorForURL(
+  const { inspector, highlighterTestFront } = await openInspectorForURL(
     "data:text/html;charset=utf-8,<h1>foo</h1><span>bar</span>"
   );
+  const {
+    waitForHighlighterTypeShown,
+    waitForHighlighterTypeHidden,
+  } = getHighlighterTestHelpers(inspector);
+
   info("Selecting the test node");
   await selectNode("span", inspector);
   const bcButtons = inspector.breadcrumbs.container;
 
-  let onNodeHighlighted = inspector.highlighter.once("node-highlight");
+  let onNodeHighlighted = waitForHighlighterTypeShown(
+    inspector.highlighters.TYPES.BOXMODEL
+  );
   let button = bcButtons.childNodes[1];
   EventUtils.synthesizeMouseAtCenter(
     button,
@@ -24,15 +31,17 @@ add_task(async function() {
   );
   await onNodeHighlighted;
 
-  let isVisible = await testActor.isHighlighting();
+  let isVisible = await highlighterTestFront.isHighlighting();
   ok(isVisible, "The highlighter is shown on a markup container hover");
 
   ok(
-    await testActor.assertHighlightedNode("body"),
+    await highlighterTestFront.assertHighlightedNode("body"),
     "The highlighter highlights the right node"
   );
 
-  const onNodeUnhighlighted = inspector.highlighter.once("node-unhighlight");
+  const onNodeUnhighlighted = waitForHighlighterTypeHidden(
+    inspector.highlighters.TYPES.BOXMODEL
+  );
   // move outside of the breadcrumb trail to trigger unhighlight
   EventUtils.synthesizeMouseAtCenter(
     inspector.addNodeButton,
@@ -41,7 +50,9 @@ add_task(async function() {
   );
   await onNodeUnhighlighted;
 
-  onNodeHighlighted = inspector.highlighter.once("node-highlight");
+  onNodeHighlighted = waitForHighlighterTypeShown(
+    inspector.highlighters.TYPES.BOXMODEL
+  );
   button = bcButtons.childNodes[2];
   EventUtils.synthesizeMouseAtCenter(
     button,
@@ -50,11 +61,11 @@ add_task(async function() {
   );
   await onNodeHighlighted;
 
-  isVisible = await testActor.isHighlighting();
+  isVisible = await highlighterTestFront.isHighlighting();
   ok(isVisible, "The highlighter is shown on a markup container hover");
 
   ok(
-    await testActor.assertHighlightedNode("span"),
+    await highlighterTestFront.assertHighlightedNode("span"),
     "The highlighter highlights the right node"
   );
 });

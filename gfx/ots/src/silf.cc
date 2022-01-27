@@ -7,14 +7,12 @@
 #include "name.h"
 #include "mozilla/Compression.h"
 #include <cmath>
+#include <memory>
 
 namespace ots {
 
 bool OpenTypeSILF::Parse(const uint8_t* data, size_t length,
                          bool prevent_decompression) {
-  if (GetFont()->dropped_graphite) {
-    return Drop("Skipping Graphite table");
-  }
   Buffer table(data, length);
 
   if (!table.ReadU32(&this->version)) {
@@ -45,23 +43,24 @@ bool OpenTypeSILF::Parse(const uint8_t* data, size_t length,
         if (decompressed_size == 0) {
           return DropGraphite("Decompressed size is set to 0");
         }
-        // decompressed table must be <= 30MB
-        if (decompressed_size > 30 * 1024 * 1024) {
-          return DropGraphite("Decompressed size exceeds 30MB: %gMB",
+        // decompressed table must be <= OTS_MAX_DECOMPRESSED_TABLE_SIZE
+        if (decompressed_size > OTS_MAX_DECOMPRESSED_TABLE_SIZE) {
+          return DropGraphite("Decompressed size exceeds %gMB: %gMB",
+                              OTS_MAX_DECOMPRESSED_TABLE_SIZE / (1024.0 * 1024.0),
                               decompressed_size / (1024.0 * 1024.0));
         }
-        std::vector<uint8_t> decompressed(decompressed_size);
+        std::unique_ptr<uint8_t> decompressed(new uint8_t[decompressed_size]());
         size_t outputSize = 0;
         bool ret = mozilla::Compression::LZ4::decompressPartial(
             reinterpret_cast<const char*>(data + table.offset()),
             table.remaining(),  // input buffer size (input size + padding)
-            reinterpret_cast<char*>(decompressed.data()),
-            decompressed.size(),  // target output size
+            reinterpret_cast<char*>(decompressed.get()),
+            decompressed_size,  // target output size
             &outputSize);   // return output size
-        if (!ret || outputSize != decompressed.size()) {
+        if (!ret || outputSize != decompressed_size) {
           return DropGraphite("Decompression failed");
         }
-        return this->Parse(decompressed.data(), decompressed.size(), true);
+        return this->Parse(decompressed.get(), decompressed_size, true);
       }
       default:
         return DropGraphite("Unknown compression scheme");
@@ -205,11 +204,11 @@ bool OpenTypeSILF::SILSub::ParsePart(Buffer& table) {
   if (!table.ReadU8(&this->direction)) {
     return parent->Error("SILSub: Failed to read direction");
   }
-  if (!table.ReadU8(&this->attCollisions)) {
-    return parent->Error("SILSub: Failed to read attCollisions");
+  if (!table.ReadU8(&this->attrCollisions)) {
+    return parent->Error("SILSub: Failed to read attrCollisions");
   }
-  if (parent->version >> 16 < 5 && this->attCollisions != 0) {
-    parent->Warning("SILSub: Nonzero attCollisions (reserved before v5)");
+  if (parent->version < 0x40001 && this->attrCollisions != 0) {
+    parent->Warning("SILSub: Nonzero attrCollisions (reserved before v4.1)");
   }
   if (!table.ReadU8(&this->reserved4)) {
     return parent->Error("SILSub: Failed to read reserved4");
@@ -367,7 +366,7 @@ bool OpenTypeSILF::SILSub::SerializePart(OTSStream* out) const {
       !out->WriteU8(this->numUserDefn) ||
       !out->WriteU8(this->maxCompPerLig) ||
       !out->WriteU8(this->direction) ||
-      !out->WriteU8(this->attCollisions) ||
+      !out->WriteU8(this->attrCollisions) ||
       !out->WriteU8(this->reserved4) ||
       !out->WriteU8(this->reserved5) ||
       (parent->version >> 16 >= 2 &&

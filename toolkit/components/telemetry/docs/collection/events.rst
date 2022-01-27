@@ -80,7 +80,7 @@ The YAML definition file
 ========================
 
 Any event recorded into Firefox Telemetry must be registered before it can be recorded.
-For any code that ships as part of Firefox that happens in `Events.yaml <https://dxr.mozilla.org/mozilla-central/source/toolkit/components/telemetry/Events.yaml>`_.
+For any code that ships as part of Firefox that happens in `Events.yaml <https://searchfox.org/mozilla-central/source/toolkit/components/telemetry/Events.yaml>`_.
 
 The probes in the definition file are represented in a fixed-depth, three-level structure. The first level contains *category* names (grouping multiple events together), the second level contains *event* names, under which the events properties are listed. E.g.:
 
@@ -132,7 +132,7 @@ The following event properties are valid:
 - ``products`` *(required, list of strings)*: A list of products the event can be recorded on. Currently supported values are:
 
   - ``firefox`` - Collected in Firefox Desktop for submission via Firefox Telemetry.
-  - ``fennec`` - Collected in Firefox for Android for submission via Firefox Mobile Telemetry.
+  - ``thunderbird`` - Collected in Thunderbird for submission via Thunderbird Telemetry.
 
 - ``operating_systems`` *(optional, list of strings)*: This field restricts recording to certain operating systems only. It defaults to ``all``. Currently supported values are:
 
@@ -269,7 +269,7 @@ Internal API
 These functions are only supposed to be used by Telemetry internally or in tests.
 
 Also, the ``event-telemetry-storage-limit-reached`` topic is notified when the event ping event
-limit is reached (configurable via the ``toolkit.telemetry.eventping.eventLimit`` preference).
+limit is reached (1000 event records).
 This is intended only for use internally or in tests.
 
 .. _events.event-summary:
@@ -287,8 +287,7 @@ registered via ``registerEvents``). These are :ref:`keyed scalars <scalars.keyed
 the keys are of the form ``category#method#object`` and the values are counts of the number of
 times ``recordEvent`` was called with that combination of ``category``, ``method``, and ``object``.
 
-These two scalars have a default maximum key limit of 500 per process. This limit is configurable
-via the ``toolkit.telemetry.maxEventSummaryKeys`` preference.
+These two scalars have a default maximum key limit of 500 per process.
 
 Example:
 

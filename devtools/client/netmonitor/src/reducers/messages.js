@@ -64,8 +64,10 @@ function getMessageDefaultColumnsState(channelType) {
  * from the backend.
  */
 function Messages(initialState = {}) {
+  const { EVENT_STREAM, WEB_SOCKET } = CHANNEL_TYPE;
+
   return {
-    // Map with all requests (key = channelId, value = array of message objects)
+    // Map with all requests (key = resourceId, value = array of message objects)
     messages: new Map(),
     messageFilterText: "",
     // Default filter type is "all",
@@ -77,33 +79,41 @@ function Messages(initialState = {}) {
     currentChannelType: null,
     currentRequestId: null,
     closedConnections: new Map(),
-    columns: getMessageDefaultColumnsState(),
+    columns: null,
+    sseColumns: getMessageDefaultColumnsState(EVENT_STREAM),
+    wsColumns: getMessageDefaultColumnsState(WEB_SOCKET),
     ...initialState,
   };
 }
 
 /**
  * When a network request is selected,
- * set the current channelId affiliated with the connection.
+ * set the current resourceId affiliated with the connection.
  */
 function setCurrentChannel(state, action) {
   if (!action.request) {
     return state;
   }
 
-  const { id, cause, channelId, isEventStream } = action.request;
+  const { id, cause, resourceId, isEventStream } = action.request;
   const { EVENT_STREAM, WEB_SOCKET } = CHANNEL_TYPE;
   let currentChannelType = null;
+  let columnsKey = "columns";
   if (cause.type === "websocket") {
     currentChannelType = WEB_SOCKET;
+    columnsKey = "wsColumns";
   } else if (isEventStream) {
     currentChannelType = EVENT_STREAM;
+    columnsKey = "sseColumns";
   }
 
   return {
     ...state,
-    columns: getMessageDefaultColumnsState(currentChannelType),
-    currentChannelId: channelId,
+    columns:
+      currentChannelType === state.currentChannelType
+        ? { ...state.columns }
+        : { ...state[columnsKey] },
+    currentChannelId: resourceId,
     currentChannelType,
     currentRequestId: id,
     // Default filter text is empty string for a new connection
@@ -120,7 +130,7 @@ function updateCurrentChannel(state, action) {
     const currentChannelType = CHANNEL_TYPE.EVENT_STREAM;
     return {
       ...state,
-      columns: getMessageDefaultColumnsState(currentChannelType),
+      columns: { ...state.sseColumns },
       currentChannelType,
     };
   }
@@ -220,13 +230,20 @@ function setMessageFilterText(state, action) {
  */
 function toggleColumn(state, action) {
   const { column } = action;
-
+  let columnsKey = null;
+  if (state.currentChannelType === CHANNEL_TYPE.WEB_SOCKET) {
+    columnsKey = "wsColumns";
+  } else {
+    columnsKey = "sseColumns";
+  }
+  const newColumnsState = {
+    ...state[columnsKey],
+    [column]: !state[columnsKey][column],
+  };
   return {
     ...state,
-    columns: {
-      ...state.columns,
-      [column]: !state.columns[column],
-    },
+    columns: newColumnsState,
+    [columnsKey]: newColumnsState,
   };
 }
 
@@ -234,9 +251,19 @@ function toggleColumn(state, action) {
  * Reset back to default columns view state.
  */
 function resetColumns(state) {
+  let columnsKey = null;
+  if (state.currentChannelType === CHANNEL_TYPE.WEB_SOCKET) {
+    columnsKey = "wsColumns";
+  } else {
+    columnsKey = "sseColumns";
+  }
+  const newColumnsState = getMessageDefaultColumnsState(
+    state.currentChannelType
+  );
   return {
     ...state,
-    columns: getMessageDefaultColumnsState(state.currentChannelType),
+    [columnsKey]: newColumnsState,
+    columns: newColumnsState,
   };
 }
 

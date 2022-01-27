@@ -8,6 +8,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=835044
         onload="startTest()"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
   <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
 <panel id="thepanel" level="parent"
        onpopupshown="sendMouseEvent();"
@@ -29,46 +30,38 @@ SimpleTest.waitForExplicitFinish();
 
 let utils = window.windowUtils;
 let panel = document.getElementById('thepanel');
-let nativeMouseMove;
 let rect;
 
 function startTest() {
-    let widgetToolkit = Cc["@mozilla.org/xre/app-info;1"].
-        getService(Ci.nsIXULRuntime).widgetToolkit;
+  // This first event is to ensure that the next event will have different
+  // coordinates to the previous mouse position, and so actually generates
+  // mouse events.  The mouse is not moved off the window, as that might
+  // move focus to another application.
+  synthesizeNativeMouseEvent({
+    type: "mousemove",
+    screenX: window.mozInnerScreenX,
+    screenY: window.mozInnerScreenY,
+    scale: "screenPixelsPerCSSPixelNoOverride",
+    elementOnWidget: window.documentElement,
+  });
 
-    if (widgetToolkit == "cocoa") {
-        nativeMouseMove = 5; // NSMouseMoved
-    } else if (widgetToolkit == "windows") {
-        nativeMouseMove = 1; // MOUSEEVENTF_MOVE
-    } else if (/^gtk/.test(widgetToolkit)) {
-        nativeMouseMove = 3; // GDK_MOTION_NOTIFY
-    } else {
-        todo_is("widgetToolkit", widgetToolkit, "Platform not supported");
-        done();
-    }
-
-    // This first event is to ensure that the next event will have different
-    // coordinates to the previous mouse position, and so actually generates
-    // mouse events.  The mouse is not moved off the window, as that might
-    // move focus to another application.
-    utils.sendNativeMouseEvent(window.mozInnerScreenX, window.mozInnerScreenY,
-                               nativeMouseMove, 0, window.documentElement);
-
-    panel.openPopup(document.getElementById("anchor"), "after_start");
+  panel.openPopup(document.getElementById("anchor"), "after_start");
 }
 
 function sendMouseEvent() {
-    rect = panel.getBoundingClientRect();
-    let x = window.mozInnerScreenX + rect.left + 1;
-    let y = window.mozInnerScreenY + rect.top + 2;
-    utils.sendNativeMouseEvent(x, y, nativeMouseMove, 0,
-                               window.documentElement);
+  rect = panel.getBoundingClientRect();
+  synthesizeNativeMouseEvent({
+    type: "mousemove",
+    target: panel,
+    offsetX: 1,
+    offsetY: 2,
+  });
 }
 
 function checkCoords(event) {
-    is(event.clientX, rect.left + 1, "Motion x coordinate");
-    is(event.clientY, rect.top + 2, "Motion y coordinate");
-    done();
+  isfuzzy(event.clientX, rect.left + 1, window.windowUtils.screenPixelsPerCSSPixel, "Motion x coordinate");
+  isfuzzy(event.clientY, rect.top + 2, window.windowUtils.screenPixelsPerCSSPixel, "Motion y coordinate");
+  done();
 }
 
 function done() {

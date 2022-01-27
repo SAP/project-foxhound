@@ -41,6 +41,10 @@ const { E10SUtils } = ChromeUtils.import(
   "resource://gre/modules/E10SUtils.jsm"
 );
 
+XPCOMUtils.defineLazyModuleGetters(this, {
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
+});
+
 /**
  * BEWARE: Do not add variables for holding state in the global scope.
  * Any state variables should be properties of the appropriate class
@@ -50,12 +54,9 @@ const { E10SUtils } = ChromeUtils.import(
  * Constants are fine in the global scope.
  */
 
-const PREF_ABOUT_HOME_CACHE_ENABLED =
-  "browser.startup.homepage.abouthome_cache.enabled";
 const PREF_ABOUT_HOME_CACHE_TESTING =
   "browser.startup.homepage.abouthome_cache.testing";
-const PREF_SEPARATE_ABOUT_WELCOME = "browser.aboutwelcome.enabled";
-const SEPARATE_ABOUT_WELCOME_URL =
+const ABOUT_WELCOME_URL =
   "resource://activity-stream/aboutwelcome/aboutwelcome.html";
 
 ChromeUtils.defineModuleGetter(
@@ -89,6 +90,19 @@ const AboutHomeStartupCacheChild = {
   CACHE_REQUEST_MESSAGE: "AboutHomeStartupCache:CacheRequest",
   CACHE_RESPONSE_MESSAGE: "AboutHomeStartupCache:CacheResponse",
   CACHE_USAGE_RESULT_MESSAGE: "AboutHomeStartupCache:UsageResult",
+  STATES: {
+    UNAVAILABLE: 0,
+    UNCONSUMED: 1,
+    PAGE_CONSUMED: 2,
+    PAGE_AND_SCRIPT_CONSUMED: 3,
+    FAILED: 4,
+  },
+  REQUEST_TYPE: {
+    PAGE: 0,
+    SCRIPT: 1,
+  },
+  _state: 0,
+  _consumerBCID: null,
 
   /**
    * Called via a process script very early on in the process lifetime. This
@@ -102,13 +116,16 @@ const AboutHomeStartupCacheChild = {
    *   The stream for the cached script to run on the page.
    */
   init(pageInputStream, scriptInputStream) {
-    if (!IS_PRIVILEGED_PROCESS) {
+    if (
+      !IS_PRIVILEGED_PROCESS &&
+      !Services.prefs.getBoolPref(PREF_ABOUT_HOME_CACHE_TESTING, false)
+    ) {
       throw new Error(
         "Can only instantiate in the privileged about content processes."
       );
     }
 
-    if (!Services.prefs.getBoolPref(PREF_ABOUT_HOME_CACHE_ENABLED, false)) {
+    if (!NimbusFeatures.abouthomecache.isEnabled()) {
       return;
     }
 
@@ -116,11 +133,13 @@ const AboutHomeStartupCacheChild = {
       throw new Error("AboutHomeStartupCacheChild already initted.");
     }
 
+    Services.obs.addObserver(this, "memory-pressure");
     Services.cpmm.addMessageListener(this.CACHE_REQUEST_MESSAGE, this);
 
     this._pageInputStream = pageInputStream;
     this._scriptInputStream = scriptInputStream;
     this._initted = true;
+    this.setState(this.STATES.UNCONSUMED);
   },
 
   /**
@@ -136,9 +155,23 @@ const AboutHomeStartupCacheChild = {
       );
     }
 
+    if (!this._initted) {
+      return;
+    }
+
+    Services.obs.removeObserver(this, "memory-pressure");
+    Services.cpmm.removeMessageListener(this.CACHE_REQUEST_MESSAGE, this);
+
+    if (this._cacheWorker) {
+      this._cacheWorker.terminate();
+      this._cacheWorker = null;
+    }
+
     this._pageInputStream = null;
     this._scriptInputStream = null;
     this._initted = false;
+    this._state = this.STATES.UNAVAILABLE;
+    this._consumerBCID = null;
   },
 
   /**
@@ -146,11 +179,14 @@ const AboutHomeStartupCacheChild = {
    * return an nsIChannel for a cached about:home document that we
    * were initialized with. If we failed to be initted with the
    * cache, or the input streams that we were sent have no data
-   * yet available, this function returns null. The caller should =
+   * yet available, this function returns null. The caller should
    * fall back to generating the page dynamically.
    *
    * This function will be called when loading about:home, or
    * about:home?jscache - the latter returns the cached script.
+   *
+   * It is expected that the same BrowsingContext that loads the cached
+   * page will also load the cached script.
    *
    * @param uri (nsIURI)
    *   The URI for the requested page, as passed by nsIAboutNewTabService.
@@ -164,7 +200,27 @@ const AboutHomeStartupCacheChild = {
       return null;
     }
 
-    let isScriptRequest = uri.query === "jscache";
+    if (this._state >= this.STATES.PAGE_AND_SCRIPT_CONSUMED) {
+      return null;
+    }
+
+    let requestType =
+      uri.query === "jscache"
+        ? this.REQUEST_TYPE.SCRIPT
+        : this.REQUEST_TYPE.PAGE;
+
+    // If this is a page request, then we need to be in the UNCONSUMED state,
+    // since we expect the page request to come first. If this is a script
+    // request, we expect to be in PAGE_CONSUMED state, since the page cache
+    // stream should he been consumed already.
+    if (
+      (requestType === this.REQUEST_TYPE.PAGE &&
+        this._state !== this.STATES.UNCONSUMED) ||
+      (requestType === this.REQUEST_TYPE_SCRIPT &&
+        this._state !== this.STATES.PAGE_CONSUMED)
+    ) {
+      return null;
+    }
 
     // If by this point, we don't have anything in the streams,
     // then either the cache was too slow to give us data, or the cache
@@ -174,16 +230,18 @@ const AboutHomeStartupCacheChild = {
     // We only do this on the page request, because by the time
     // we get to the script request, we should have already drained
     // the page input stream.
-    if (!isScriptRequest) {
+    if (requestType === this.REQUEST_TYPE.PAGE) {
       try {
         if (
           !this._scriptInputStream.available() ||
           !this._pageInputStream.available()
         ) {
+          this.setState(this.STATES.FAILED);
           this.reportUsageResult(false /* success */);
           return null;
         }
       } catch (e) {
+        this.setState(this.STATES.FAILED);
         if (e.result === Cr.NS_BASE_STREAM_CLOSED) {
           this.reportUsageResult(false /* success */);
           return null;
@@ -192,17 +250,37 @@ const AboutHomeStartupCacheChild = {
       }
     }
 
+    if (
+      requestType === this.REQUEST_TYPE.SCRIPT &&
+      this._consumerBCID !== loadInfo.browsingContextID
+    ) {
+      // Some other document is somehow requesting the script - one
+      // that didn't originally request the page. This is not allowed.
+      this.setState(this.STATES.FAILED);
+      return null;
+    }
+
     let channel = Cc[
       "@mozilla.org/network/input-stream-channel;1"
     ].createInstance(Ci.nsIInputStreamChannel);
     channel.QueryInterface(Ci.nsIChannel);
     channel.setURI(uri);
     channel.loadInfo = loadInfo;
-    channel.contentStream = isScriptRequest
-      ? this._scriptInputStream
-      : this._pageInputStream;
+    channel.contentStream =
+      requestType === this.REQUEST_TYPE.PAGE
+        ? this._pageInputStream
+        : this._scriptInputStream;
 
-    this.reportUsageResult(true /* success */);
+    if (requestType === this.REQUEST_TYPE.SCRIPT) {
+      this.setState(this.STATES.PAGE_AND_SCRIPT_CONSUMED);
+      this.reportUsageResult(true /* success */);
+    } else {
+      this.setState(this.STATES.PAGE_CONSUMED);
+      // Stash the BrowsingContext ID so that when the script stream
+      // attempts to be consumed, we ensure that it's from the same
+      // BrowsingContext that loaded the page.
+      this._consumerBCID = loadInfo.browsingContextID;
+    }
 
     return channel;
   },
@@ -276,6 +354,32 @@ const AboutHomeStartupCacheChild = {
       success,
     });
   },
+
+  observe(subject, topic, data) {
+    if (topic === "memory-pressure" && this._cacheWorker) {
+      this._cacheWorker.terminate();
+      this._cacheWorker = null;
+    }
+  },
+
+  /**
+   * Transitions the AboutHomeStartupCacheChild from one state
+   * to the next, where each state is defined in this.STATES.
+   *
+   * States can only be transitioned in increasing order, otherwise
+   * an error is logged.
+   */
+  setState(state) {
+    if (state > this._state) {
+      this._state = state;
+    } else {
+      console.error(
+        "AboutHomeStartupCacheChild could not transition from state " +
+          `${this._state} to ${state}`,
+        new Error().stack
+      );
+    }
+  },
 };
 
 /**
@@ -294,13 +398,6 @@ class BaseAboutNewTabService {
     } else {
       this.activityStreamDebug = false;
     }
-
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "isSeparateAboutWelcome",
-      PREF_SEPARATE_ABOUT_WELCOME,
-      false
-    );
 
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
@@ -339,14 +436,16 @@ class BaseAboutNewTabService {
     ].join("");
   }
 
-  /*
-   * Returns the about:welcome URL
-   *
-   * This is calculated in the same way the default URL is.
-   */
   get welcomeURL() {
-    if (this.isSeparateAboutWelcome) {
-      return SEPARATE_ABOUT_WELCOME_URL;
+    /*
+     * Returns the about:welcome URL
+     *
+     * This is calculated in the same way the default URL is.
+     */
+
+    NimbusFeatures.aboutwelcome.recordExposureEvent({ once: true });
+    if (NimbusFeatures.aboutwelcome.isEnabled({ defaultValue: true })) {
+      return ABOUT_WELCOME_URL;
     }
     return this.defaultURL;
   }

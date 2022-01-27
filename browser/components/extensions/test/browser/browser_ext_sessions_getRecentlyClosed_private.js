@@ -32,11 +32,11 @@ async function run_test_extension(incognitoOverride) {
 
   await extension.startup();
 
-  let {
+  const {
     Management: {
       global: { windowTracker },
     },
-  } = ChromeUtils.import("resource://gre/modules/Extension.jsm", null);
+  } = ChromeUtils.import("resource://gre/modules/Extension.jsm");
   let privateWinId = windowTracker.getId(privateWin);
 
   extension.sendMessage("check-sessions");
@@ -60,7 +60,8 @@ async function run_test_extension(incognitoOverride) {
 
   extension.sendMessage("check-sessions");
   recentlyClosed = await extension.awaitMessage("recentlyClosed");
-  let expectedCount = incognitoOverride == "not_allowed" ? 0 : 2;
+  let expectedCount =
+    !incognitoOverride || incognitoOverride == "not_allowed" ? 0 : 2;
   checkRecentlyClosed(
     recentlyClosed.filter(onlyNewItemsFilter),
     expectedCount,
@@ -83,18 +84,10 @@ async function run_test_extension(incognitoOverride) {
 }
 
 add_task(async function test_sessions_get_recently_closed_default() {
-  SpecialPowers.pushPrefEnv({
-    set: [["extensions.allowPrivateBrowsingByDefault", true]],
-  });
-
   await run_test_extension();
 });
 
 add_task(async function test_sessions_get_recently_closed_private_incognito() {
-  SpecialPowers.pushPrefEnv({
-    set: [["extensions.allowPrivateBrowsingByDefault", false]],
-  });
-
   await run_test_extension("spanning");
   await run_test_extension("not_allowed");
 });

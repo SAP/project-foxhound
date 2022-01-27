@@ -28,6 +28,7 @@ use crate::gecko_bindings::bindings;
 use crate::gecko_bindings::bindings::Gecko_ElementHasAnimations;
 use crate::gecko_bindings::bindings::Gecko_ElementHasCSSAnimations;
 use crate::gecko_bindings::bindings::Gecko_ElementHasCSSTransitions;
+use crate::gecko_bindings::bindings::Gecko_ElementState;
 use crate::gecko_bindings::bindings::Gecko_GetActiveLinkAttrDeclarationBlock;
 use crate::gecko_bindings::bindings::Gecko_GetAnimationEffectCount;
 use crate::gecko_bindings::bindings::Gecko_GetAnimationRule;
@@ -40,11 +41,9 @@ use crate::gecko_bindings::bindings::Gecko_IsSignificantChild;
 use crate::gecko_bindings::bindings::Gecko_MatchLang;
 use crate::gecko_bindings::bindings::Gecko_UnsetDirtyStyleAttr;
 use crate::gecko_bindings::bindings::Gecko_UpdateAnimations;
-use crate::gecko_bindings::bindings::{Gecko_ElementState, Gecko_GetDocumentLWTheme};
 use crate::gecko_bindings::bindings::{Gecko_SetNodeFlags, Gecko_UnsetNodeFlags};
 use crate::gecko_bindings::structs;
 use crate::gecko_bindings::structs::nsChangeHint;
-use crate::gecko_bindings::structs::Document_DocumentTheme as DocumentTheme;
 use crate::gecko_bindings::structs::EffectCompositor_CascadeLevel as CascadeLevel;
 use crate::gecko_bindings::structs::ELEMENT_HANDLED_SNAPSHOT;
 use crate::gecko_bindings::structs::ELEMENT_HAS_ANIMATION_ONLY_DIRTY_DESCENDANTS_FOR_SERVO;
@@ -63,14 +62,16 @@ use crate::properties::animated_properties::{AnimationValue, AnimationValueMap};
 use crate::properties::{ComputedValues, LonghandId};
 use crate::properties::{Importance, PropertyDeclaration, PropertyDeclarationBlock};
 use crate::rule_tree::CascadeLevel as ServoCascadeLevel;
-use crate::selector_parser::{AttrValue, HorizontalDirection, Lang};
+use crate::selector_parser::{AttrValue, Lang};
 use crate::shared_lock::{Locked, SharedRwLock};
 use crate::string_cache::{Atom, Namespace, WeakAtom, WeakNamespace};
 use crate::stylist::CascadeData;
 use crate::values::computed::font::GenericFontFamily;
 use crate::values::computed::Length;
 use crate::values::specified::length::FontBaseSize;
+use crate::values::{AtomIdent, AtomString};
 use crate::CaseSensitivityExt;
+use crate::LocalName;
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use selectors::attr::{AttrSelectorOperation, AttrSelectorOperator};
 use selectors::attr::{CaseSensitivity, NamespaceConstraint};
@@ -130,7 +131,7 @@ impl<'ld> TDocument for GeckoDocument<'ld> {
     }
 
     #[inline]
-    fn elements_with_id<'a>(&self, id: &Atom) -> Result<&'a [GeckoElement<'ld>], ()>
+    fn elements_with_id<'a>(&self, id: &AtomIdent) -> Result<&'a [GeckoElement<'ld>], ()>
     where
         Self: 'a,
     {
@@ -186,7 +187,7 @@ impl<'lr> TShadowRoot for GeckoShadowRoot<'lr> {
     }
 
     #[inline]
-    fn elements_with_id<'a>(&self, id: &Atom) -> Result<&'a [GeckoElement<'lr>], ()>
+    fn elements_with_id<'a>(&self, id: &AtomIdent) -> Result<&'a [GeckoElement<'lr>], ()>
     where
         Self: 'a,
     {
@@ -412,9 +413,11 @@ impl<'ln> TNode for GeckoNode<'ln> {
     #[inline]
     fn prev_sibling(&self) -> Option<Self> {
         unsafe {
-            bindings::Gecko_GetPreviousSibling(self.0)
-                .as_ref()
-                .map(GeckoNode)
+            let prev_or_last = GeckoNode::from_content(self.0.mPreviousOrLastSibling.as_ref()?);
+            if prev_or_last.0.mNextSibling.raw::<nsIContent>().is_null() {
+                return None;
+            }
+            Some(prev_or_last)
         }
     }
 
@@ -573,9 +576,26 @@ impl<'le> GeckoElement<'le> {
     }
 
     #[inline(always)]
-    fn attrs(&self) -> &[structs::AttrArray_InternalAttr] {
+    fn non_mapped_attrs(&self) -> &[structs::AttrArray_InternalAttr] {
         unsafe {
             let attrs = match self.0.mAttrs.mImpl.mPtr.as_ref() {
+                Some(attrs) => attrs,
+                None => return &[],
+            };
+
+            attrs.mBuffer.as_slice(attrs.mAttrCount as usize)
+        }
+    }
+
+    #[inline(always)]
+    fn mapped_attrs(&self) -> &[structs::AttrArray_InternalAttr] {
+        unsafe {
+            let attrs = match self.0.mAttrs.mImpl.mPtr.as_ref() {
+                Some(attrs) => attrs,
+                None => return &[],
+            };
+
+            let attrs = match attrs.mMappedAttrs.as_ref() {
                 Some(attrs) => attrs,
                 None => return &[],
             };
@@ -589,7 +609,7 @@ impl<'le> GeckoElement<'le> {
         if !self.has_part_attr() {
             return None;
         }
-        snapshot_helpers::find_attr(self.attrs(), &atom!("part"))
+        snapshot_helpers::find_attr(self.non_mapped_attrs(), &atom!("part"))
     }
 
     #[inline(always)]
@@ -605,7 +625,7 @@ impl<'le> GeckoElement<'le> {
             }
         }
 
-        snapshot_helpers::find_attr(self.attrs(), &atom!("class"))
+        snapshot_helpers::find_attr(self.non_mapped_attrs(), &atom!("class"))
     }
 
     #[inline]
@@ -736,12 +756,6 @@ impl<'le> GeckoElement<'le> {
             .get_bool_flag(nsINode_BooleanFlag::ElementMayHaveStyle)
     }
 
-    #[inline]
-    fn document_theme(&self) -> DocumentTheme {
-        let node = self.as_node();
-        unsafe { Gecko_GetDocumentLWTheme(node.owner_doc().0) }
-    }
-
     /// Only safe to call on the main thread, with exclusive access to the
     /// element and its ancestors.
     ///
@@ -801,7 +815,7 @@ impl<'le> GeckoElement<'le> {
             return false;
         }
         let host = self.containing_shadow_host().unwrap();
-        host.is_svg_element() && host.local_name() == &*local_name!("use")
+        host.is_svg_element() && host.local_name() == &**local_name!("use")
     }
 
     fn css_transitions_info(&self) -> FxHashMap<LonghandId, Arc<AnimationValue>> {
@@ -1011,6 +1025,7 @@ pub struct DefaultFontSizes {
     monospace: Length,
     cursive: Length,
     fantasy: Length,
+    system_ui: Length,
 }
 
 impl DefaultFontSizes {
@@ -1022,6 +1037,7 @@ impl DefaultFontSizes {
             GenericFontFamily::Monospace => self.monospace,
             GenericFontFamily::Cursive => self.cursive,
             GenericFontFamily::Fantasy => self.fantasy,
+            GenericFontFamily::SystemUi => self.system_ui,
             GenericFontFamily::MozEmoji => unreachable!(
                 "Should never get here, since this doesn't (yet) appear on font family"
             ),
@@ -1112,7 +1128,7 @@ impl<'le> TElement for GeckoElement<'le> {
     #[inline]
     fn namespace(&self) -> &WeakNamespace {
         unsafe {
-            let namespace_manager = structs::nsContentUtils_sNameSpaceManager;
+            let namespace_manager = structs::nsNameSpaceManager_sInstance.mRawPtr;
             WeakNamespace::new((*namespace_manager).mURIArray[self.namespace_id() as usize].mRawPtr)
         }
     }
@@ -1250,11 +1266,17 @@ impl<'le> TElement for GeckoElement<'le> {
         }
     }
 
-    fn animation_rule(&self, _: &SharedStyleContext) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
+    fn animation_rule(
+        &self,
+        _: &SharedStyleContext,
+    ) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
         get_animation_rule(self, CascadeLevel::Animations)
     }
 
-    fn transition_rule(&self, _: &SharedStyleContext) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
+    fn transition_rule(
+        &self,
+        _: &SharedStyleContext,
+    ) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
         get_animation_rule(self, CascadeLevel::Transitions)
     }
 
@@ -1264,7 +1286,7 @@ impl<'le> TElement for GeckoElement<'le> {
     }
 
     #[inline]
-    fn has_attr(&self, namespace: &Namespace, attr: &Atom) -> bool {
+    fn has_attr(&self, namespace: &Namespace, attr: &AtomIdent) -> bool {
         unsafe { bindings::Gecko_HasAttr(self.0, namespace.0.as_ptr(), attr.as_ptr()) }
     }
 
@@ -1276,7 +1298,7 @@ impl<'le> TElement for GeckoElement<'le> {
 
     #[inline]
     fn exports_any_part(&self) -> bool {
-        snapshot_helpers::find_attr(self.attrs(), &atom!("exportparts")).is_some()
+        snapshot_helpers::find_attr(self.non_mapped_attrs(), &atom!("exportparts")).is_some()
     }
 
     // FIXME(emilio): we should probably just return a reference to the Atom.
@@ -1286,12 +1308,34 @@ impl<'le> TElement for GeckoElement<'le> {
             return None;
         }
 
-        snapshot_helpers::get_id(self.attrs())
+        snapshot_helpers::get_id(self.non_mapped_attrs())
+    }
+
+    fn each_attr_name<F>(&self, mut callback: F)
+    where
+        F: FnMut(&AtomIdent),
+    {
+        for attr in self
+            .non_mapped_attrs()
+            .iter()
+            .chain(self.mapped_attrs().iter())
+        {
+            let is_nodeinfo = attr.mName.mBits & 1 != 0;
+            unsafe {
+                let atom = if is_nodeinfo {
+                    let node_info = &*((attr.mName.mBits & !1) as *const structs::NodeInfo);
+                    node_info.mInner.mName
+                } else {
+                    attr.mName.mBits as *const nsAtom
+                };
+                AtomIdent::with(atom, |a| callback(a))
+            }
+        }
     }
 
     fn each_class<F>(&self, callback: F)
     where
-        F: FnMut(&Atom),
+        F: FnMut(&AtomIdent),
     {
         let attr = match self.get_class_attr() {
             Some(c) => c,
@@ -1302,16 +1346,16 @@ impl<'le> TElement for GeckoElement<'le> {
     }
 
     #[inline]
-    fn each_exported_part<F>(&self, name: &Atom, callback: F)
+    fn each_exported_part<F>(&self, name: &AtomIdent, callback: F)
     where
-        F: FnMut(&Atom),
+        F: FnMut(&AtomIdent),
     {
-        snapshot_helpers::each_exported_part(self.attrs(), name, callback)
+        snapshot_helpers::each_exported_part(self.non_mapped_attrs(), name, callback)
     }
 
     fn each_part<F>(&self, callback: F)
     where
-        F: FnMut(&Atom),
+        F: FnMut(&AtomIdent),
     {
         let attr = match self.get_part_attr() {
             Some(c) => c,
@@ -1465,15 +1509,14 @@ impl<'le> TElement for GeckoElement<'le> {
     #[inline]
     fn may_have_animations(&self) -> bool {
         if let Some(pseudo) = self.implemented_pseudo_element() {
-            if !pseudo.is_animatable() {
-                return false;
+            if pseudo.animations_stored_in_parent() {
+                // FIXME(emilio): When would the parent of a ::before / ::after
+                // pseudo-element be null?
+                return self.parent_element().map_or(false, |p| {
+                    p.as_node()
+                        .get_bool_flag(nsINode_BooleanFlag::ElementHasAnimations)
+                });
             }
-            // FIXME(emilio): When would the parent of a ::before / ::after
-            // pseudo-element be null?
-            return self.parent_element().map_or(false, |p| {
-                p.as_node()
-                    .get_bool_flag(nsINode_BooleanFlag::ElementHasAnimations)
-            });
         }
         self.as_node()
             .get_bool_flag(nsINode_BooleanFlag::ElementHasAnimations)
@@ -1609,7 +1652,7 @@ impl<'le> TElement for GeckoElement<'le> {
         if ptr.is_null() {
             None
         } else {
-            Some(unsafe { Atom::from_addrefed(ptr) })
+            Some(AtomString(unsafe { Atom::from_addrefed(ptr) }))
         }
     }
 
@@ -1617,8 +1660,8 @@ impl<'le> TElement for GeckoElement<'le> {
         // Gecko supports :lang() from CSS Selectors 3, which only accepts a
         // single language tag, and which performs simple dash-prefix matching
         // on it.
-        let override_lang_ptr = match &override_lang {
-            &Some(Some(ref atom)) => atom.as_ptr(),
+        let override_lang_ptr = match override_lang {
+            Some(Some(ref atom)) => atom.as_ptr(),
             _ => ptr::null_mut(),
         };
         unsafe {
@@ -1632,7 +1675,7 @@ impl<'le> TElement for GeckoElement<'le> {
     }
 
     fn is_html_document_body_element(&self) -> bool {
-        if self.local_name() != &*local_name!("body") {
+        if self.local_name() != &**local_name!("body") {
             return false;
         }
 
@@ -1889,8 +1932,8 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
     fn attr_matches(
         &self,
         ns: &NamespaceConstraint<&Namespace>,
-        local_name: &Atom,
-        operation: &AttrSelectorOperation<&Atom>,
+        local_name: &LocalName,
+        operation: &AttrSelectorOperation<&AttrValue>,
     ) -> bool {
         unsafe {
             match *operation {
@@ -2009,6 +2052,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
     {
         use selectors::matching::*;
         match *pseudo_class {
+            NonTSPseudoClass::Autofill |
             NonTSPseudoClass::Defined |
             NonTSPseudoClass::Focus |
             NonTSPseudoClass::Enabled |
@@ -2021,14 +2065,8 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::Target |
             NonTSPseudoClass::Valid |
             NonTSPseudoClass::Invalid |
-            NonTSPseudoClass::MozUIValid |
             NonTSPseudoClass::MozBroken |
-            NonTSPseudoClass::MozUserDisabled |
-            NonTSPseudoClass::MozSuppressed |
             NonTSPseudoClass::MozLoading |
-            NonTSPseudoClass::MozHandlerBlocked |
-            NonTSPseudoClass::MozHandlerDisabled |
-            NonTSPseudoClass::MozHandlerCrashed |
             NonTSPseudoClass::Required |
             NonTSPseudoClass::Optional |
             NonTSPseudoClass::ReadOnly |
@@ -2038,16 +2076,12 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::MozDragOver |
             NonTSPseudoClass::MozDevtoolsHighlighted |
             NonTSPseudoClass::MozStyleeditorTransitioning |
-            NonTSPseudoClass::MozFocusRing |
-            NonTSPseudoClass::MozHandlerClickToPlay |
-            NonTSPseudoClass::MozHandlerVulnerableUpdatable |
-            NonTSPseudoClass::MozHandlerVulnerableNoUpdate |
             NonTSPseudoClass::MozMathIncrementScriptLevel |
             NonTSPseudoClass::InRange |
             NonTSPseudoClass::OutOfRange |
             NonTSPseudoClass::Default |
-            NonTSPseudoClass::MozSubmitInvalid |
-            NonTSPseudoClass::MozUIInvalid |
+            NonTSPseudoClass::UserValid |
+            NonTSPseudoClass::UserInvalid |
             NonTSPseudoClass::MozMeterOptimum |
             NonTSPseudoClass::MozMeterSubOptimum |
             NonTSPseudoClass::MozMeterSubSubOptimum |
@@ -2055,13 +2089,14 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::MozDirAttrLTR |
             NonTSPseudoClass::MozDirAttrRTL |
             NonTSPseudoClass::MozDirAttrLikeAuto |
-            NonTSPseudoClass::MozAutofill |
             NonTSPseudoClass::MozModalDialog |
+            NonTSPseudoClass::MozTopmostModalDialog |
             NonTSPseudoClass::Active |
             NonTSPseudoClass::Hover |
-            NonTSPseudoClass::MozAutofillPreview => {
-                self.state().intersects(pseudo_class.state_flag())
-            },
+            NonTSPseudoClass::MozAutofillPreview |
+            NonTSPseudoClass::MozRevealed |
+            NonTSPseudoClass::MozValueEmpty |
+            NonTSPseudoClass::Dir(..) => self.state().intersects(pseudo_class.state_flag()),
             NonTSPseudoClass::AnyLink => self.is_link(),
             NonTSPseudoClass::Link => {
                 self.is_link() && context.visited_handling().matches_unvisited()
@@ -2102,10 +2137,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                 }
                 true
             },
-            NonTSPseudoClass::MozNativeAnonymous |
-            NonTSPseudoClass::MozNativeAnonymousNoSpecificity => {
-                self.is_in_native_anonymous_subtree()
-            },
+            NonTSPseudoClass::MozNativeAnonymous => self.is_in_native_anonymous_subtree(),
             NonTSPseudoClass::MozUseShadowTreeRoot => self.is_root_of_use_element_shadow_tree(),
             NonTSPseudoClass::MozTableBorderNonzero => unsafe {
                 bindings::Gecko_IsTableBorderNonzero(self.0)
@@ -2115,44 +2147,27 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                 bindings::Gecko_IsSelectListBox(self.0)
             },
             NonTSPseudoClass::MozIsHTML => self.is_html_element_in_html_document(),
-            NonTSPseudoClass::MozLWTheme => self.document_theme() != DocumentTheme::Doc_Theme_None,
-            NonTSPseudoClass::MozLWThemeBrightText => {
-                self.document_theme() == DocumentTheme::Doc_Theme_Bright
-            },
-            NonTSPseudoClass::MozLWThemeDarkText => {
-                self.document_theme() == DocumentTheme::Doc_Theme_Dark
-            },
+
+            NonTSPseudoClass::MozLWTheme |
+            NonTSPseudoClass::MozLWThemeBrightText |
+            NonTSPseudoClass::MozLWThemeDarkText |
+            NonTSPseudoClass::MozLocaleDir(..) |
             NonTSPseudoClass::MozWindowInactive => {
-                let state_bit = DocumentState::NS_DOCUMENT_STATE_WINDOW_INACTIVE;
+                let state_bit = pseudo_class.document_state_flag();
+                if state_bit.is_empty() {
+                    debug_assert!(
+                        matches!(pseudo_class, NonTSPseudoClass::MozLocaleDir(..)),
+                        "Only moz-locale-dir should ever return an empty state"
+                    );
+                    return false;
+                }
                 if context.extra_data.document_state.intersects(state_bit) {
                     return !context.in_negation();
                 }
-
                 self.document_state().contains(state_bit)
             },
             NonTSPseudoClass::MozPlaceholder => false,
-            NonTSPseudoClass::MozAny(ref sels) => context.nest(|context| {
-                sels.iter()
-                    .any(|s| matches_complex_selector(s.iter(), self, context, flags_setter))
-            }),
             NonTSPseudoClass::Lang(ref lang_arg) => self.match_element_lang(None, lang_arg),
-            NonTSPseudoClass::MozLocaleDir(ref dir) => {
-                let state_bit = DocumentState::NS_DOCUMENT_STATE_RTL_LOCALE;
-                if context.extra_data.document_state.intersects(state_bit) {
-                    // NOTE(emilio): We could still return false for values
-                    // other than "ltr" and "rtl", but we don't bother.
-                    return !context.in_negation();
-                }
-
-                let doc_is_rtl = self.document_state().contains(state_bit);
-
-                match dir.as_horizontal_direction() {
-                    Some(HorizontalDirection::Ltr) => !doc_is_rtl,
-                    Some(HorizontalDirection::Rtl) => doc_is_rtl,
-                    None => false,
-                }
-            },
-            NonTSPseudoClass::Dir(ref dir) => self.state().intersects(dir.element_state()),
         }
     }
 
@@ -2177,12 +2192,12 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
     }
 
     #[inline]
-    fn has_id(&self, id: &Atom, case_sensitivity: CaseSensitivity) -> bool {
+    fn has_id(&self, id: &AtomIdent, case_sensitivity: CaseSensitivity) -> bool {
         if !self.has_id() {
             return false;
         }
 
-        let element_id = match snapshot_helpers::get_id(self.attrs()) {
+        let element_id = match snapshot_helpers::get_id(self.non_mapped_attrs()) {
             Some(id) => id,
             None => return false,
         };
@@ -2191,7 +2206,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
     }
 
     #[inline]
-    fn is_part(&self, name: &Atom) -> bool {
+    fn is_part(&self, name: &AtomIdent) -> bool {
         let attr = match self.get_part_attr() {
             Some(c) => c,
             None => return false,
@@ -2201,12 +2216,12 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
     }
 
     #[inline]
-    fn imported_part(&self, name: &Atom) -> Option<Atom> {
-        snapshot_helpers::imported_part(self.attrs(), name)
+    fn imported_part(&self, name: &AtomIdent) -> Option<AtomIdent> {
+        snapshot_helpers::imported_part(self.non_mapped_attrs(), name)
     }
 
     #[inline(always)]
-    fn has_class(&self, name: &Atom, case_sensitivity: CaseSensitivity) -> bool {
+    fn has_class(&self, name: &AtomIdent, case_sensitivity: CaseSensitivity) -> bool {
         let attr = match self.get_class_attr() {
             Some(c) => c,
             None => return false,

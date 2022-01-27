@@ -1,2 +1,2 @@
-// |jit-test| module
+// |jit-test| module;
 eval("1");

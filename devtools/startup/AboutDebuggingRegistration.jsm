@@ -29,7 +29,13 @@ AboutDebugging.prototype = {
   },
 
   getURIFlags: function(uri) {
-    return nsIAboutModule.ALLOW_SCRIPT;
+    return nsIAboutModule.ALLOW_SCRIPT | nsIAboutModule.IS_SECURE_CHROME_UI;
+  },
+
+  getChromeURI: function(_uri) {
+    return Services.io.newURI(
+      "chrome://devtools/content/aboutdebugging/index.html"
+    );
   },
 };
 

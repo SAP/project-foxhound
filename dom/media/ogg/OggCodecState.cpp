@@ -31,9 +31,9 @@ extern LazyLogModule gMediaDecoderLog;
 using media::TimeUnit;
 
 /** Decoder base class for Ogg-encapsulated streams. */
-OggCodecState* OggCodecState::Create(rlbox_sandbox_ogg* aSandbox,
-                                     tainted_opaque_ogg<ogg_page*> aPage,
-                                     uint32_t aSerial) {
+UniquePtr<OggCodecState> OggCodecState::Create(
+    rlbox_sandbox_ogg* aSandbox, tainted_opaque_ogg<ogg_page*> aPage,
+    uint32_t aSerial) {
   NS_ASSERTION(sandbox_invoke(*aSandbox, ogg_page_bos, aPage)
                    .unverified_safe_because(RLBOX_SAFE_DEBUG_ASSERTION),
                "Only call on BOS page!");
@@ -69,8 +69,12 @@ OggCodecState* OggCodecState::Create(rlbox_sandbox_ogg* aSandbox,
     // Can't use MakeUnique here, OggCodecState is protected.
     codecState.reset(new OggCodecState(aSandbox, aPage, aSerial, false));
   }
-  return codecState->OggCodecState::InternalInit() ? codecState.release()
-                                                   : nullptr;
+
+  if (!codecState->OggCodecState::InternalInit()) {
+    codecState.reset();
+  }
+
+  return codecState;
 }
 
 OggCodecState::OggCodecState(rlbox_sandbox_ogg* aSandbox,
@@ -152,7 +156,7 @@ bool OggCodecState::AddVorbisComment(UniquePtr<MetadataTags>& aTags,
     LOG(LogLevel::Debug, ("Skipping comment: invalid UTF-8 in value"));
     return false;
   }
-  aTags->Put(key, value);
+  aTags->InsertOrUpdate(key, value);
   return true;
 }
 
@@ -1559,7 +1563,7 @@ bool SkeletonState::DecodeIndex(ogg_packet* aPacket) {
 
   int32_t keyPointsRead = keyPoints->Length();
   if (keyPointsRead > 0) {
-    mIndex.Put(serialno, keyPoints.release());
+    mIndex.InsertOrUpdate(serialno, std::move(keyPoints));
   }
 
   LOG(LogLevel::Debug, ("Loaded %d keypoints for Skeleton on stream %u",
@@ -1708,12 +1712,12 @@ bool SkeletonState::DecodeFisbone(ogg_packet* aPacket) {
 
           if ((i == 0 && IsAscii(strMsg)) || (i != 0 && IsUtf8(strMsg))) {
             EMsgHeaderType eHeaderType = kFieldTypeMaps[i].mMsgHeaderType;
-            field->mValuesStore.LookupForAdd(eHeaderType)
-                .OrInsert([i, msgHead, msgProbe]() {
+            Unused << field->mValuesStore.LookupOrInsertWith(
+                eHeaderType, [i, msgHead, msgProbe]() {
                   uint32_t nameLen =
                       strlen(kFieldTypeMaps[i].mPatternToRecognize);
-                  return new nsCString(msgHead + nameLen,
-                                       msgProbe - msgHead - nameLen);
+                  return MakeUnique<nsCString>(msgHead + nameLen,
+                                               msgProbe - msgHead - nameLen);
                 });
             isContentTypeParsed = i == 0 ? true : isContentTypeParsed;
           }
@@ -1729,13 +1733,14 @@ bool SkeletonState::DecodeFisbone(ogg_packet* aPacket) {
     msgProbe++;
   }
 
-  auto entry = mMsgFieldStore.LookupForAdd(serialno);
-  if (entry) {
-    // mMsgFieldStore has an entry for serialno already.
-    return false;
-  }
-  entry.OrInsert([&field]() { return field.release(); });
-  return true;
+  return mMsgFieldStore.WithEntryHandle(serialno, [&](auto&& entry) {
+    if (entry) {
+      // mMsgFieldStore has an entry for serialno already.
+      return false;
+    }
+    entry.Insert(std::move(field));
+    return true;
+  });
 }
 
 bool SkeletonState::DecodeHeader(OggPacketPtr aPacket) {
@@ -1771,14 +1776,15 @@ bool SkeletonState::DecodeHeader(OggPacketPtr aPacket) {
 
     // Initialize the serialno-to-index map.
     return true;
-  } else if (IsSkeletonIndex(aPacket.get()) &&
-             mVersion >= SKELETON_VERSION(4, 0)) {
+  }
+  if (IsSkeletonIndex(aPacket.get()) && mVersion >= SKELETON_VERSION(4, 0)) {
     return DecodeIndex(aPacket.get());
-  } else if (IsSkeletonFisbone(aPacket.get())) {
+  }
+  if (IsSkeletonFisbone(aPacket.get())) {
     return DecodeFisbone(aPacket.get());
-  } else if (aPacket->e_o_s) {
+  }
+  if (aPacket->e_o_s) {
     mDoneReadingHeaders = true;
-    return true;
   }
   return true;
 }

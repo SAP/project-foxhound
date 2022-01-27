@@ -2,7 +2,7 @@ Task Generation
 ===============
 
 Many selectors (including ``chooser``, ``coverage`` and ``fuzzy``) source their available tasks
-directly from the :doc:`taskgraph </taskcluster/taskcluster/index>` module by building the taskgraph
+directly from the :ref:`taskgraph <TaskCluster Task-Graph Generation>` module by building the taskgraph
 locally. This means that the list of available tasks will never be stale. While this is very
 powerful, it comes with a large enough performance cost to get annoying (around twenty seconds).
 
@@ -33,6 +33,7 @@ Next run the following commands:
 .. code-block:: shell
 
     $ cd path/to/mozilla-central
+    $ watchman watch .
     $ watchman -j < tools/tryselect/watchman.json
 
 You should see output like:
@@ -40,9 +41,9 @@ You should see output like:
 .. code-block:: json
 
     {
-        "version": "4.9.0",
         "triggerid": "rebuild-taskgraph-cache",
-        "disposition": "created"
+        "disposition": "created",
+        "version": "20200920.192359.0"
     }
 
 That's it. Now anytime a file under ``/taskcluster`` is modified (either by your editor, or by
@@ -58,7 +59,7 @@ You can test that everything is working by running these commands:
 
 .. code-block:: shell
 
-    $ statedir=`mach python -c "from mozboot.util import get_state_dir; print(get_state_dir(srcdir=True))"`
+    $ statedir=`mach python -c "from mach.util import get_state_dir; print(get_state_dir(specific_to_topsrcdir=True))"`
     $ rm -rf $statedir/cache/taskgraph
     $ touch taskcluster/mach_commands.py
     # wait a minute for generation to trigger and finish

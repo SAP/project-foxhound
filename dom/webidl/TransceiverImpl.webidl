@@ -9,7 +9,7 @@
  * communication between the PeerConnection JS DOM binding and the C++
  * implementation.
  *
- * See media/webrtc/signaling/src/peerconnection/TransceiverImpl.h
+ * See media/webrtc/peerconnection/TransceiverImpl.h
  *
  */
 
@@ -23,5 +23,7 @@ interface TransceiverImpl {
   // TODO(bug 1616937): We won't need this once we implement RTCRtpSender in c++
   [ChromeOnly]
   readonly attribute RTCDTMFSender? dtmf;
+  [ChromeOnly]
+  readonly attribute RTCDtlsTransport? dtlsTransport;
 };
 

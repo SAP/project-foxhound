@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 su{
     RBNFRules{
         SpelloutRules{
@@ -32,12 +33,11 @@ su{
             "1000000000000: =#,##0=;",
             "%%spellout-cardinal-large:",
             "1: sa;",
-            "0: =%spellout-cardinal= ;",
+            "2: =%spellout-cardinal= ;",
             "%spellout-ordinal:",
             "-x: mineus >>;",
             "x.x: =#,##0.0=;",
             "0: ka=%spellout-cardinal=;",
         }
     }
-    Version{"37"}
 }

@@ -80,7 +80,27 @@ class nsFrameList {
     VerifyList();
   }
 
+  // XXX: Ideally, copy constructor should be removed because a frame should be
+  // owned by one list.
   nsFrameList(const nsFrameList& aOther) = default;
+
+  // XXX: ideally, copy assignment should be removed because we should use move
+  // assignment to transfer the ownership.
+  nsFrameList& operator=(const nsFrameList& aOther) = default;
+
+  /**
+   * Move the frames in aOther to this list. aOther becomes empty after this
+   * operation.
+   */
+  nsFrameList(nsFrameList&& aOther)
+      : mFirstChild(aOther.mFirstChild), mLastChild(aOther.mLastChild) {
+    aOther.Clear();
+    VerifyList();
+  }
+  nsFrameList& operator=(nsFrameList&& aOther) {
+    SetFrames(aOther);
+    return *this;
+  }
 
   /**
    * Infallibly allocate a nsFrameList from the shell arena.
@@ -603,19 +623,19 @@ class MOZ_RAII AutoFrameListPtr final {
   nsFrameList* mFrameList;
 };
 
-namespace layout::detail {
+namespace detail {
 union AlignedFrameListBytes {
   void* ptr;
   char bytes[sizeof(nsFrameList)];
 };
 extern const AlignedFrameListBytes gEmptyFrameListBytes;
-}  // namespace layout::detail
+}  // namespace detail
 
 }  // namespace mozilla
 
 /* static */ inline const nsFrameList& nsFrameList::EmptyList() {
   return *reinterpret_cast<const nsFrameList*>(
-      &mozilla::layout::detail::gEmptyFrameListBytes);
+      &mozilla::detail::gEmptyFrameListBytes);
 }
 
 #endif /* nsFrameList_h___ */

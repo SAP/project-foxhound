@@ -7,15 +7,16 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/PaymentRequestChild.h"
 #include "mozilla/dom/BrowserChild.h"
+#include "mozilla/Preferences.h"
 #include "nsContentUtils.h"
 #include "nsString.h"
 #include "nsIPrincipal.h"
+#include "nsIPaymentActionResponse.h"
 #include "PaymentRequestManager.h"
 #include "PaymentRequestUtils.h"
 #include "PaymentResponse.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 namespace {
 
 /*
@@ -152,10 +153,10 @@ void ConvertDetailsInit(JSContext* aCx, const PaymentDetailsInit& aDetails,
 
   aIPCDetails =
       IPCPaymentDetails(id, total, displayItems, shippingOptions, modifiers,
-                        EmptyString(),   // error message
-                        EmptyString(),   // shippingAddressErrors
-                        EmptyString(),   // payerErrors
-                        EmptyString());  // paymentMethodErrors
+                        u""_ns,   // error message
+                        u""_ns,   // shippingAddressErrors
+                        u""_ns,   // payerErrors
+                        u""_ns);  // paymentMethodErrors
 }
 
 void ConvertDetailsUpdate(JSContext* aCx, const PaymentDetailsUpdate& aDetails,
@@ -211,7 +212,7 @@ void ConvertDetailsUpdate(JSContext* aCx, const PaymentDetailsUpdate& aDetails,
     }
   }
 
-  aIPCDetails = IPCPaymentDetails(EmptyString(),  // id
+  aIPCDetails = IPCPaymentDetails(u""_ns,  // id
                                   total, displayItems, shippingOptions,
                                   modifiers, error, shippingAddressErrors,
                                   payerErrors, paymentMethodErrors);
@@ -379,12 +380,7 @@ nsresult PaymentRequestManager::SendRequestPayment(
   }
 
   if (aResponseExpected) {
-    auto count = mActivePayments.LookupForAdd(aRequest);
-    if (count) {
-      count.Data()++;
-    } else {
-      count.OrInsert([]() { return 1; });
-    }
+    ++mActivePayments.LookupOrInsert(aRequest, 0);
   }
   return NS_OK;
 }
@@ -499,14 +495,8 @@ void PaymentRequestManager::CreatePayment(
   IPCPaymentOptions options;
   ConvertOptions(aOptions, options);
 
-  nsCOMPtr<nsPIDOMWindowOuter> outerWindow = aWindow->GetOuterWindow();
-  MOZ_ASSERT(outerWindow);
-  if (nsCOMPtr<nsPIDOMWindowOuter> topOuterWindow =
-          outerWindow->GetInProcessTop()) {
-    outerWindow = topOuterWindow;
-  }
-  uint64_t topOuterWindowId = outerWindow->WindowID();
-
+  uint64_t topOuterWindowId =
+      aWindow->GetWindowContext()->TopWindowContext()->OuterWindowId();
   IPCPaymentCreateActionRequest action(topOuterWindowId, internalId,
                                        aTopLevelPrincipal, methodData, details,
                                        options, shippingOption);
@@ -749,5 +739,4 @@ nsresult PaymentRequestManager::ChangePaymentMethod(
   return aRequest->UpdatePaymentMethod(aMethodName, methodDetails);
 }
 
-}  // end of namespace dom
-}  // end of namespace mozilla
+}  // namespace mozilla::dom

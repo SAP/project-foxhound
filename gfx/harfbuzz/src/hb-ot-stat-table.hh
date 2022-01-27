@@ -292,28 +292,15 @@ struct STAT
 
   bool has_data () const { return version.to_int (); }
 
-  bool find_axis_index (hb_tag_t tag, unsigned int *axis_index) const
-  {
-    hb_array_t<const StatAxisRecord> axes = get_design_axes ();
-    /* TODO: add lfind in hb_array_t and use it in here and fvar's find_axis_info */
-    for (unsigned int i = 0; i < axes.length; i++)
-      if (!axes[i].cmp (tag))
-      {
-	*axis_index = i;
-	return true;
-      }
-    return false;
-  }
-
   bool get_value (hb_tag_t tag, float *value) const
   {
     unsigned int axis_index;
-    if (!find_axis_index (tag, &axis_index)) return false;
+    if (!get_design_axes ().lfind (tag, &axis_index)) return false;
 
-    hb_array_t<const OffsetTo<AxisValue>> axis_values = get_axis_value_offsets ();
+    hb_array_t<const Offset16To<AxisValue>> axis_values = get_axis_value_offsets ();
     for (unsigned int i = 0; i < axis_values.length; i++)
     {
-      const AxisValue& axis_value = (this + axis_values[i]);
+      const AxisValue& axis_value = this+axis_values[i];
       if (axis_value.get_axis_index () == axis_index)
       {
 	if (value)
@@ -372,7 +359,7 @@ struct STAT
   hb_array_t<const StatAxisRecord> const get_design_axes () const
   { return (this+designAxesOffset).as_array (designAxisCount); }
 
-  hb_array_t<const OffsetTo<AxisValue>> const get_axis_value_offsets () const
+  hb_array_t<const Offset16To<AxisValue>> const get_axis_value_offsets () const
   { return (this+offsetToAxisValueOffsets).as_array (axisValueCount); }
 
 
@@ -386,7 +373,7 @@ struct STAT
 				 * in the 'fvar' table. In all fonts, must
 				 * be greater than zero if axisValueCount
 				 * is greater than zero. */
-  LNNOffsetTo<UnsizedArrayOf<StatAxisRecord>>
+  NNOffset32To<UnsizedArrayOf<StatAxisRecord>>
 		designAxesOffset;
 				/* Offset in bytes from the beginning of
 				 * the STAT table to the start of the design
@@ -394,7 +381,7 @@ struct STAT
 				 * set to zero; if designAxisCount is greater
 				 * than zero, must be greater than zero. */
   HBUINT16	axisValueCount;	/* The number of axis value tables. */
-  LNNOffsetTo<UnsizedArrayOf<OffsetTo<AxisValue>>>
+  NNOffset32To<UnsizedArrayOf<Offset16To<AxisValue>>>
 		offsetToAxisValueOffsets;
 				/* Offset in bytes from the beginning of
 				 * the STAT table to the start of the design

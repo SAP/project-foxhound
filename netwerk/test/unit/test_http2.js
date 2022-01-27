@@ -563,6 +563,16 @@ function test_http2_header() {
   chan.asyncOpen(listener);
 }
 
+// Test to make sure headers with invalid characters in the name are rejected
+function test_http2_invalid_response_header() {
+  var listener = new Http2CheckListener();
+  listener.shouldSucceed = false;
+  var chan = makeChan(
+    "https://localhost:" + serverPort + "/invalid_response_header"
+  );
+  chan.asyncOpen(listener);
+}
+
 // Test to make sure cookies are split into separate fields before compression
 function test_http2_cookie_crumbling() {
   var chan = makeChan("https://localhost:" + serverPort + "/cookie_crumbling");
@@ -692,7 +702,6 @@ const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 var httpserv = null;
 var httpserv2 = null;
-var ios = Cc["@mozilla.org/network/io-service;1"].getService(Ci.nsIIOService);
 
 var altsvcClientListener = {
   onStartRequest: function test_onStartR(request) {
@@ -1202,7 +1211,7 @@ Http2DiskCachePushListener.onStopRequest = function(request, status) {
   chan.asyncOpen(listener);
 };
 
-function continue_test_http2_disk_cache_push(status, entry, appCache) {
+function continue_test_http2_disk_cache_push(status, entry) {
   // TODO - store stuff in cache entry, then open an h2 channel that will push
   // this, once that completes, open a channel for the cache entry we made and
   // ensure it came from disk cache, not the push cache.
@@ -1304,6 +1313,7 @@ var tests = [
   test_http2_doubleheader,
   test_http2_xhr,
   test_http2_header,
+  test_http2_invalid_response_header,
   test_http2_cookie_crumbling,
   test_http2_multiplex,
   test_http2_big,
@@ -1342,7 +1352,9 @@ var current_test = 0;
 
 function run_next_test() {
   if (current_test < tests.length) {
-    dump("starting test number " + current_test + "\n");
+    dump(
+      `starting test number ${current_test} - ${tests[current_test].name}\n`
+    );
     tests[current_test]();
     current_test++;
     do_test_pending();
@@ -1380,7 +1392,7 @@ function run_test() {
 
   // Set to allow the cert presented by our H2 server
   do_get_profile();
-  prefs = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefBranch);
+  prefs = Services.prefs;
   speculativeLimit = prefs.getIntPref(
     "network.http.speculative-parallel-limit"
   );

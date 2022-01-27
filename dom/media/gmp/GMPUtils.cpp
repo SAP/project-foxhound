@@ -5,16 +5,18 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPUtils.h"
-#include "nsDirectoryServiceDefs.h"
-#include "nsIFile.h"
-#include "nsCOMPtr.h"
-#include "nsLiteralString.h"
-#include "nsCRTGlue.h"
-#include "mozilla/Base64.h"
-#include "prio.h"
-#include "nsIConsoleService.h"
-#include "mozIGeckoMediaPluginService.h"
+
 #include "GMPService.h"
+#include "VideoLimits.h"
+#include "mozIGeckoMediaPluginService.h"
+#include "mozilla/Base64.h"
+#include "nsCOMPtr.h"
+#include "nsCRTGlue.h"
+#include "nsDirectoryServiceDefs.h"
+#include "nsIConsoleService.h"
+#include "nsIFile.h"
+#include "nsLiteralString.h"
+#include "prio.h"
 
 namespace mozilla {
 
@@ -148,9 +150,11 @@ bool GMPInfoFileParser::Init(nsIFile* aInfoFile) {
     ToLowerCase(key);
     key.Trim(" ");
 
-    nsCString* value = new nsCString(Substring(line, colon + 1));
+    auto value = MakeUnique<nsCString>(Substring(line, colon + 1));
     value->Trim(" ");
-    mValues.Put(key, value);  // Hashtable assumes ownership of value.
+    mValues.InsertOrUpdate(
+        key,
+        std::move(value));  // Hashtable assumes ownership of value.
   }
 
   return true;
@@ -170,7 +174,7 @@ nsCString GMPInfoFileParser::Get(const nsCString& aKey) const {
   if (mValues.Get(key, &p)) {
     return nsCString(*p);
   }
-  return EmptyCString();
+  return ""_ns;
 }
 
 bool HaveGMPFor(const nsCString& aAPI, nsTArray<nsCString>&& aTags) {
@@ -198,10 +202,12 @@ void LogToConsole(const nsAString& aMsg) {
   console->LogStringMessage(msg.get());
 }
 
-RefPtr<AbstractThread> GetGMPAbstractThread() {
+already_AddRefed<nsISerialEventTarget> GetGMPThread() {
   RefPtr<gmp::GeckoMediaPluginService> service =
       gmp::GeckoMediaPluginService::GetGeckoMediaPluginService();
-  return service ? service->GetAbstractGMPThread() : nullptr;
+  nsCOMPtr<nsISerialEventTarget> thread =
+      service ? service->GetGMPThread() : nullptr;
+  return thread.forget();
 }
 
 static size_t Align16(size_t aNumber) {

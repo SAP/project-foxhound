@@ -22,6 +22,7 @@ mod boilerplate;
 use crate::boilerplate::{Example, HandyDandyRectBuilder};
 use euclid::Angle;
 use webrender::api::*;
+use webrender::render_api::*;
 use webrender::api::units::*;
 
 
@@ -58,11 +59,15 @@ impl App {
         };
 
         let spatial_id = builder.push_reference_frame(
-            bounds.origin,
+            bounds.min,
             SpatialId::root_scroll_node(pipeline_id),
             TransformStyle::Flat,
             PropertyBinding::Binding(property_key, LayoutTransform::identity()),
-            ReferenceFrameKind::Transform,
+            ReferenceFrameKind::Transform {
+                is_2d_scale_translation: false,
+                should_snap: false,
+            },
+            SpatialTreeItemKey::new(0, 0),
         );
 
         builder.push_simple_stacking_context_with_filters(
@@ -78,7 +83,7 @@ impl App {
             spatial_id,
             clip_id: ClipId::root(pipeline_id),
         };
-        let clip_bounds = LayoutRect::new(LayoutPoint::zero(), bounds.size);
+        let clip_bounds = LayoutRect::from_size(bounds.size());
         let complex_clip = ComplexClipRegion {
             rect: clip_bounds,
             radii: BorderRadius::uniform(30.0),
@@ -92,13 +97,13 @@ impl App {
         // Fill it with a white rect
         builder.push_rect(
             &CommonItemProperties::new(
-                LayoutRect::new(LayoutPoint::zero(), bounds.size),
+                LayoutRect::from_size(bounds.size()),
                 SpaceAndClipInfo {
                     spatial_id,
                     clip_id,
                 }
             ),
-            LayoutRect::new(LayoutPoint::zero(), bounds.size),
+            LayoutRect::from_size(bounds.size()),
             color,
         );
 
@@ -165,11 +170,12 @@ impl Example for App {
                 self.angle0 += delta_angle * 0.1;
                 self.angle1 += delta_angle * 0.2;
                 self.angle2 -= delta_angle * 0.15;
-                let xf0 = LayoutTransform::create_rotation(0.0, 0.0, 1.0, Angle::radians(self.angle0));
-                let xf1 = LayoutTransform::create_rotation(0.0, 0.0, 1.0, Angle::radians(self.angle1));
-                let xf2 = LayoutTransform::create_rotation(0.0, 0.0, 1.0, Angle::radians(self.angle2));
+                let xf0 = LayoutTransform::rotation(0.0, 0.0, 1.0, Angle::radians(self.angle0));
+                let xf1 = LayoutTransform::rotation(0.0, 0.0, 1.0, Angle::radians(self.angle1));
+                let xf2 = LayoutTransform::rotation(0.0, 0.0, 1.0, Angle::radians(self.angle2));
                 let mut txn = Transaction::new();
-                txn.update_dynamic_properties(
+                txn.reset_dynamic_properties();
+                txn.append_dynamic_properties(
                     DynamicProperties {
                         transforms: vec![
                             PropertyValue {
@@ -194,7 +200,7 @@ impl Example for App {
                         colors: vec![],
                     },
                 );
-                txn.generate_frame();
+                txn.generate_frame(0, RenderReasons::empty());
                 api.send_transaction(document_id, txn);
             }
             _ => (),

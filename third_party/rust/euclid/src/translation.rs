@@ -55,6 +55,22 @@ pub struct Translation2D<T, Src, Dst> {
     pub _unit: PhantomData<(Src, Dst)>,
 }
 
+#[cfg(feature = "arbitrary")]
+impl<'a, T, Src, Dst> arbitrary::Arbitrary<'a> for Translation2D<T, Src, Dst>
+where
+    T: arbitrary::Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self>
+    {
+        let (x, y) = arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(Translation2D {
+            x,
+            y,
+            _unit: PhantomData,
+        })
+    }
+}
+
 impl<T: Copy, Src, Dst> Copy for Translation2D<T, Src, Dst> {}
 
 impl<T: Clone, Src, Dst> Clone for Translation2D<T, Src, Dst> {
@@ -94,6 +110,18 @@ impl<T, Src, Dst> Translation2D<T, Src, Dst> {
         Translation2D {
             x,
             y,
+            _unit: PhantomData,
+        }
+    }
+
+    #[inline]
+    pub fn splat(v: T) -> Self
+    where
+        T: Clone,
+    {
+        Translation2D {
+            x: v.clone(),
+            y: v,
             _unit: PhantomData,
         }
     }
@@ -271,7 +299,7 @@ where
     T: Zero + One,
 {
     fn into(self) -> Transform2D<T, Src, Dst> {
-        Transform2D::create_translation(self.x, self.y)
+        Transform2D::translation(self.x, self.y)
     }
 }
 
@@ -287,12 +315,6 @@ where
 impl<T: fmt::Debug, Src, Dst> fmt::Debug for Translation2D<T, Src, Dst> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Translation({:?},{:?})", self.x, self.y)
-    }
-}
-
-impl<T: fmt::Display, Src, Dst> fmt::Display for Translation2D<T, Src, Dst> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "({},{})", self.x, self.y)
     }
 }
 
@@ -383,6 +405,19 @@ impl<T, Src, Dst> Translation3D<T, Src, Dst> {
             x,
             y,
             z,
+            _unit: PhantomData,
+        }
+    }
+
+    #[inline]
+    pub fn splat(v: T) -> Self
+    where
+        T: Clone,
+    {
+        Translation3D {
+            x: v.clone(),
+            y: v.clone(),
+            z: v,
             _unit: PhantomData,
         }
     }
@@ -586,7 +621,7 @@ where
     T: Zero + One,
 {
     fn into(self) -> Transform3D<T, Src, Dst> {
-        Transform3D::create_translation(self.x, self.y, self.z)
+        Transform3D::translation(self.x, self.y, self.z)
     }
 }
 
@@ -602,12 +637,6 @@ where
 impl<T: fmt::Debug, Src, Dst> fmt::Debug for Translation3D<T, Src, Dst> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Translation({:?},{:?},{:?})", self.x, self.y, self.z)
-    }
-}
-
-impl<T: fmt::Display, Src, Dst> fmt::Display for Translation3D<T, Src, Dst> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "({},{},{})", self.x, self.y, self.z)
     }
 }
 

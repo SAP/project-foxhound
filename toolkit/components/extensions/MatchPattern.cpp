@@ -250,7 +250,12 @@ already_AddRefed<MatchPattern> MatchPattern::Constructor(
 void MatchPattern::Init(JSContext* aCx, const nsAString& aPattern,
                         bool aIgnorePath, bool aRestrictSchemes,
                         ErrorResult& aRv) {
-  RefPtr<AtomSet> permittedSchemes = AtomSet::Get<PERMITTED_SCHEMES>();
+  RefPtr<AtomSet> permittedSchemes;
+  nsresult rv = AtomSet::Get<PERMITTED_SCHEMES>(permittedSchemes);
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
+    return;
+  }
 
   mPattern = aPattern;
 
@@ -276,11 +281,20 @@ void MatchPattern::Init(JSContext* aCx, const nsAString& aPattern,
   RefPtr<nsAtom> scheme = NS_AtomizeMainThread(StringHead(aPattern, index));
   bool requireHostLocatorScheme = true;
   if (scheme == nsGkAtoms::_asterisk) {
-    mSchemes = AtomSet::Get<WILDCARD_SCHEMES>();
+    rv = AtomSet::Get<WILDCARD_SCHEMES>(mSchemes);
+    if (NS_FAILED(rv)) {
+      aRv.Throw(rv);
+      return;
+    }
   } else if (!aRestrictSchemes || permittedSchemes->Contains(scheme) ||
              scheme == nsGkAtoms::moz_extension) {
+    RefPtr<AtomSet> hostLocatorSchemes;
+    rv = AtomSet::Get<HOST_LOCATOR_SCHEMES>(hostLocatorSchemes);
+    if (NS_FAILED(rv)) {
+      aRv.Throw(rv);
+      return;
+    }
     mSchemes = new AtomSet({scheme});
-    RefPtr<AtomSet> hostLocatorSchemes = AtomSet::Get<HOST_LOCATOR_SCHEMES>();
     requireHostLocatorScheme = hostLocatorSchemes->Contains(scheme);
   } else {
     aRv.Throw(NS_ERROR_INVALID_ARG);
@@ -323,15 +337,15 @@ void MatchPattern::Init(JSContext* aCx, const nsAString& aPattern,
     if (host.EqualsLiteral("*")) {
       mMatchSubdomain = true;
     } else if (StringHead(host, 2).EqualsLiteral("*.")) {
-      mDomain = NS_ConvertUTF16toUTF8(Substring(host, 2));
+      CopyUTF16toUTF8(Substring(host, 2), mDomain);
       mMatchSubdomain = true;
     } else if (host.Length() > 1 && host[0] == '[' &&
                host[host.Length() - 1] == ']') {
       // This is an IPv6 literal, we drop the enclosing `[]` to be
       // consistent with nsIURI.
-      mDomain = NS_ConvertUTF16toUTF8(Substring(host, 1, host.Length() - 2));
+      CopyUTF16toUTF8(Substring(host, 1, host.Length() - 2), mDomain);
     } else {
-      mDomain = NS_ConvertUTF16toUTF8(host);
+      CopyUTF16toUTF8(host, mDomain);
     }
   }
 
@@ -464,7 +478,12 @@ JSObject* MatchPattern::WrapObject(JSContext* aCx,
 
 /* static */
 bool MatchPattern::MatchesAllURLs(const URLInfo& aURL) {
-  RefPtr<AtomSet> permittedSchemes = AtomSet::Get<PERMITTED_SCHEMES>();
+  RefPtr<AtomSet> permittedSchemes;
+  nsresult rv = AtomSet::Get<PERMITTED_SCHEMES>(permittedSchemes);
+  if (NS_FAILED(rv)) {
+    NS_WARNING("Failed to retrireve PERMITTED_SCHEMES AtomSet");
+    return false;
+  }
   return permittedSchemes->Contains(aURL.Scheme());
 }
 
@@ -642,10 +661,17 @@ void MatchGlob::Init(JSContext* aCx, const nsAString& aGlob,
   nsAutoString escaped;
   escaped.Append('^');
 
+  // For any continuous string of * (and ? if aAllowQuestion) wildcards, only
+  // emit the first *, later ones are redundant, and can hang regex matching.
+  bool emittedFirstStar = false;
+
   for (uint32_t i = 0; i < mGlob.Length(); i++) {
     auto c = mGlob[i];
     if (c == '*') {
-      escaped.AppendLiteral(".*");
+      if (!emittedFirstStar) {
+        escaped.AppendLiteral(".*");
+        emittedFirstStar = true;
+      }
     } else if (c == '?' && aAllowQuestion) {
       escaped.Append('.');
     } else {
@@ -653,6 +679,9 @@ void MatchGlob::Init(JSContext* aCx, const nsAString& aGlob,
         escaped.Append('\\');
       }
       escaped.Append(c);
+
+      // String of wildcards broken by a non-wildcard char, reset tracking flag.
+      emittedFirstStar = false;
     }
   }
 

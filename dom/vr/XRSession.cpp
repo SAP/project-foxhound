@@ -10,6 +10,7 @@
 #include "mozilla/dom/XRInputSourceEvent.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/Promise.h"
 #include "XRSystem.h"
 #include "XRRenderState.h"
 #include "XRBoundedReferenceSpace.h"
@@ -26,6 +27,7 @@
 #include "nsGlobalWindow.h"
 #include "nsIObserverService.h"
 #include "nsISupportsPrimitives.h"
+#include "nsRefreshDriver.h"
 #include "VRDisplayClient.h"
 #include "VRDisplayPresentation.h"
 
@@ -95,7 +97,7 @@ already_AddRefed<XRSession> XRSession::CreateInlineSession(
   RefPtr<XRSession> session =
       new XRSession(aWindow, aXRSystem, driver, nullptr, gfx::kVRGroupContent,
                     aEnabledReferenceSpaceTypes);
-  driver->AddRefreshObserver(session, FlushType::Display);
+  driver->AddRefreshObserver(session, FlushType::Display, "XR Session");
   return session.forget();
 }
 
@@ -143,7 +145,9 @@ XRSession::XRSession(
 
 XRSession::~XRSession() { MOZ_ASSERT(mShutdown); }
 
-gfx::VRDisplayClient* XRSession::GetDisplayClient() { return mDisplayClient; }
+gfx::VRDisplayClient* XRSession::GetDisplayClient() const {
+  return mDisplayClient;
+}
 
 JSObject* XRSession::WrapObject(JSContext* aCx,
                                 JS::Handle<JSObject*> aGivenProto) {
@@ -171,9 +175,17 @@ bool XRSession::IsImmersive() const {
   return mDisplayClient != nullptr;
 }
 
-XRVisibilityState XRSession::VisibilityState() {
+XRVisibilityState XRSession::VisibilityState() const {
   return XRVisibilityState::Visible;
   // TODO (Bug 1609771): Implement changing visibility state
+}
+
+// https://immersive-web.github.io/webxr/#poses-may-be-reported
+// Given that an XRSession cannot be requested without explicit consent
+// by the user, the only necessary check is whether the XRSession's
+// visiblityState is 'visible'.
+bool XRSession::CanReportPoses() const {
+  return VisibilityState() == XRVisibilityState::Visible;
 }
 
 // https://immersive-web.github.io/webxr/#dom-xrsession-updaterenderstate
@@ -382,7 +394,9 @@ already_AddRefed<Promise> XRSession::RequestReferenceSpace(
   return promise.forget();
 }
 
-XRRenderState* XRSession::GetActiveRenderState() { return mActiveRenderState; }
+XRRenderState* XRSession::GetActiveRenderState() const {
+  return mActiveRenderState;
+}
 
 void XRSession::XRFrameRequest::Call(const DOMHighResTimeStamp& aTimeStamp,
                                      XRFrame& aFrame) {

@@ -1,4 +1,4 @@
-/* Copyright 2020 Mozilla Foundation
+/* Copyright 2021 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,26 +22,27 @@
 "use strict";
 var EXPORTED_SYMBOLS = ["PdfJsDefaultPreferences"];
 var PdfJsDefaultPreferences = Object.freeze({
+ "annotationMode": 2,
  "cursorToolOnLoad": 0,
  "defaultZoomValue": "",
  "disablePageLabels": false,
  "enablePermissions": false,
- "enablePrintAutoRotate": false,
- "enableWebGL": false,
+ "enablePrintAutoRotate": true,
+ "enableScripting": true,
  "externalLinkTarget": 0,
  "historyUpdateUrl": false,
  "ignoreDestinationZoom": false,
  "pdfBugEnabled": false,
- "renderer": "canvas",
- "renderInteractiveForms": false,
  "sidebarViewOnLoad": -1,
  "scrollModeOnLoad": -1,
  "spreadModeOnLoad": -1,
  "textLayerMode": 1,
  "useOnlyCssZoom": false,
+ "viewerCssTheme": 0,
  "viewOnLoad": 0,
  "disableAutoFetch": false,
  "disableFontFace": false,
  "disableRange": false,
- "disableStream": false
+ "disableStream": false,
+ "enableXfa": true
 });

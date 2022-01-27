@@ -20,6 +20,9 @@ const S100NS_FROM1601TO1970 = 0x19db1ded53e8000;
 const S100NS_PER_MS = 10;
 
 var ChromeMigrationUtils = {
+  // Supported browsers with importable logins.
+  CONTEXTUAL_LOGIN_IMPORT_BROWSERS: ["chrome", "chromium-edge", "chromium"],
+
   _extensionVersionDirectoryNames: {},
 
   // The cache for the locale strings.
@@ -33,6 +36,10 @@ var ChromeMigrationUtils = {
   //   },
   // }
   _extensionLocaleStrings: {},
+
+  get supportsLoginsForPlatform() {
+    return ["macosx", "win"].includes(AppConstants.platform);
+  },
 
   /**
    * Get all extensions installed in a specific profile.
@@ -218,16 +225,16 @@ var ChromeMigrationUtils = {
   async getLocalState(dataPath = "Chrome") {
     let localState = null;
     try {
-      let localStatePath = OS.Path.join(
+      let localStatePath = PathUtils.join(
         this.getDataPath(dataPath),
         "Local State"
       );
-      let localStateJson = await OS.File.read(localStatePath, {
-        encoding: "utf-8",
-      });
-      localState = JSON.parse(localStateJson);
+      localState = JSON.parse(await IOUtils.readUTF8(localStatePath));
     } catch (ex) {
-      Cu.reportError(ex);
+      // Don't report the error if it's just a file not existing.
+      if (ex.name != "NotFoundError") {
+        Cu.reportError(ex);
+      }
       throw ex;
     }
     return localState;
@@ -239,7 +246,7 @@ var ChromeMigrationUtils = {
    * @returns {String} The path of Chrome extension directory.
    */
   getExtensionPath(profileId) {
-    return OS.Path.join(this.getDataPath(), profileId, "Extensions");
+    return PathUtils.join(this.getDataPath(), profileId, "Extensions");
   },
 
   /**
@@ -251,6 +258,7 @@ var ChromeMigrationUtils = {
   getDataPath(chromeProjectName = "Chrome") {
     const SUB_DIRECTORIES = {
       win: {
+        Brave: ["BraveSoftware", "Brave-Browser"],
         Chrome: ["Google", "Chrome"],
         "Chrome Beta": ["Google", "Chrome Beta"],
         Chromium: ["Chromium"],
@@ -259,6 +267,7 @@ var ChromeMigrationUtils = {
         "Edge Beta": ["Microsoft", "Edge Beta"],
       },
       macosx: {
+        Brave: ["BraveSoftware", "Brave-Browser"],
         Chrome: ["Google", "Chrome"],
         Chromium: ["Chromium"],
         Canary: ["Google", "Chrome Canary"],
@@ -266,6 +275,7 @@ var ChromeMigrationUtils = {
         "Edge Beta": ["Microsoft Edge Beta"],
       },
       linux: {
+        Brave: ["BraveSoftware", "Brave-Browser"],
         Chrome: ["google-chrome"],
         "Chrome Beta": ["google-chrome-beta"],
         "Chrome Dev": ["google-chrome-unstable"],
@@ -274,24 +284,33 @@ var ChromeMigrationUtils = {
         // Edge is not available on Linux.
       },
     };
-    let dirKey, subfolders;
-    subfolders = SUB_DIRECTORIES[AppConstants.platform][chromeProjectName];
+    let subfolders = SUB_DIRECTORIES[AppConstants.platform][chromeProjectName];
     if (!subfolders) {
       return null;
     }
 
+    let rootDir;
     if (AppConstants.platform == "win") {
-      dirKey = "winLocalAppDataDir";
+      rootDir = "LocalAppData";
       subfolders = subfolders.concat(["User Data"]);
     } else if (AppConstants.platform == "macosx") {
-      dirKey = "macUserLibDir";
+      rootDir = "ULibDir";
       subfolders = ["Application Support"].concat(subfolders);
     } else {
-      dirKey = "homeDir";
+      rootDir = "Home";
       subfolders = [".config"].concat(subfolders);
     }
-    subfolders.unshift(OS.Constants.Path[dirKey]);
-    return OS.Path.join(...subfolders);
+    try {
+      let target = Services.dirsvc.get(rootDir, Ci.nsIFile);
+      for (let subfolder of subfolders) {
+        target.append(subfolder);
+      }
+      return target.path;
+    } catch (ex) {
+      // The path logic here shouldn't error, so log it:
+      Cu.reportError(ex);
+    }
+    return null;
   },
 
   /**
@@ -366,12 +385,17 @@ var ChromeMigrationUtils = {
    */
   _importableLoginsCache: null,
   async getImportableLogins(formOrigin) {
+    // Only provide importable if we actually support importing.
+    if (!this.supportsLoginsForPlatform) {
+      return undefined;
+    }
+
     // Lazily fill the cache with all importable login browsers.
     if (!this._importableLoginsCache) {
       this._importableLoginsCache = new Map();
 
       // Just handle these chromium-based browsers for now.
-      for (const browserId of ["chrome", "chromium-edge", "chromium"]) {
+      for (const browserId of this.CONTEXTUAL_LOGIN_IMPORT_BROWSERS) {
         // Skip if there's no profile data.
         const migrator = await MigrationUtils.getMigrator(browserId);
         if (!migrator) {

@@ -9,7 +9,7 @@ const TAB_URL = URL_ROOT + "resources/service-workers/simple.html";
 add_task(async function() {
   await enableApplicationPanel();
 
-  const { panel, tab, toolbox, target } = await openNewTabAndApplicationPanel(
+  const { panel, tab, toolbox, commands } = await openNewTabAndApplicationPanel(
     TAB_URL
   );
 
@@ -22,15 +22,14 @@ add_task(async function() {
   await waitUntil(() => getWorkerContainers(doc).length === 1);
 
   const container = getWorkerContainers(doc)[0];
-  info("Wait until the debug button is displayed and enabled");
+  info("Wait until the debug link is displayed");
   await waitUntil(() => {
-    const button = container.querySelector(".js-debug-button");
-    return button && !button.disabled;
+    return container.querySelector(".js-inspect-link");
   });
 
-  info("Click on the debug button and wait for debugger to be ready");
-  const debugButton = container.querySelector(".js-debug-button");
-  debugButton.click();
+  info("Click on the debug link and wait for debugger to be ready");
+  const debugLink = container.querySelector(".js-inspect-link");
+  debugLink.click();
   await waitUntil(() => toolbox.getPanel("jsdebugger"));
 
   const events = getTelemetryEvents("jsdebugger");
@@ -43,8 +42,8 @@ add_task(async function() {
   );
 
   // clean up and close the tab
-  await unregisterAllWorkers(target.client, doc);
+  await unregisterAllWorkers(commands.client, doc);
   info("Closing the tab.");
-  await target.client.waitForRequestsToSettle();
+  await commands.client.waitForRequestsToSettle();
   await BrowserTestUtils.removeTab(tab);
 });

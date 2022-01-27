@@ -16,6 +16,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/FetchEventOpParent.h"
+#include "mozilla/dom/RemoteWorkerParent.h"
 #include "mozilla/dom/ServiceWorkerOpPromise.h"
 #include "mozilla/ipc/BackgroundParent.h"
 
@@ -68,7 +69,7 @@ RemoteWorkerControllerParent::~RemoteWorkerControllerParent() {
 }
 
 PFetchEventOpParent* RemoteWorkerControllerParent::AllocPFetchEventOpParent(
-    const ServiceWorkerFetchEventOpArgs& aArgs) {
+    const ParentToParentServiceWorkerFetchEventOpArgs& aArgs) {
   AssertIsOnBackgroundThread();
 
   RefPtr<FetchEventOpParent> actor = new FetchEventOpParent();
@@ -76,11 +77,27 @@ PFetchEventOpParent* RemoteWorkerControllerParent::AllocPFetchEventOpParent(
 }
 
 IPCResult RemoteWorkerControllerParent::RecvPFetchEventOpConstructor(
-    PFetchEventOpParent* aActor, const ServiceWorkerFetchEventOpArgs& aArgs) {
+    PFetchEventOpParent* aActor,
+    const ParentToParentServiceWorkerFetchEventOpArgs& aArgs) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aActor);
 
-  (static_cast<FetchEventOpParent*>(aActor))->Initialize(aArgs);
+  RefPtr<FetchEventOpParent> realFetchOp =
+      static_cast<FetchEventOpParent*>(aActor);
+  mRemoteWorkerController->ExecServiceWorkerFetchEventOp(aArgs, realFetchOp)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [fetchOp = std::move(realFetchOp)](
+              ServiceWorkerFetchEventOpPromise::ResolveOrRejectValue&&
+                  aResult) {
+            if (NS_WARN_IF(aResult.IsReject())) {
+              MOZ_ASSERT(NS_FAILED(aResult.RejectValue()));
+              Unused << fetchOp->Send__delete__(fetchOp, aResult.RejectValue());
+              return;
+            }
+
+            Unused << fetchOp->Send__delete__(fetchOp, aResult.ResolveValue());
+          });
 
   return IPC_OK();
 }

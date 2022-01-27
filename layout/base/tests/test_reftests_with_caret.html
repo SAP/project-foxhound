@@ -16,7 +16,7 @@
 <script type="text/javascript">
 
 SimpleTest.waitForExplicitFinish();
-SimpleTest.requestLongerTimeout(2);
+SimpleTest.requestLongerTimeout(3);
 
 var iframes = [];
 function callbackTestIframe(iframe)
@@ -97,9 +97,11 @@ function refTest(test,ref) {
 };
 
 var caretBlinkTime = null;
-function endTest() {
-  var parentDoc = window.parent.document;
-  parentDoc.styleSheets[parentDoc.styleSheets.length-1].deleteRule(0);
+async function endTest() {
+  await SpecialPowers.spawn(window.parent, [], () => {
+    content.document.styleSheets[content.document.styleSheets.length-1].deleteRule(0);
+  });
+
   // finish(), yet let the test actually end first, to be safe.
   SimpleTest.executeSoon(SimpleTest.finish);
 }
@@ -164,6 +166,8 @@ var tests = [
     [ 'input-maxlength-ui-invalid-change.html', 'input-invalid-ref.html'] ,
     [ 'input-minlength-ui-valid-change.html', 'input-valid-ref.html'] ,
     [ 'input-minlength-ui-invalid-change.html', 'input-invalid-ref.html'] ,
+
+    function() {SpecialPowers.pushPrefEnv({'set': [['layout.forms.input-type-show-password-button.enabled', false]]}, nextTest);} ,
     [ 'input-password-remask.html', 'input-password-remask-ref.html' ],
 
     // The following hash means language.
@@ -189,6 +193,7 @@ var tests = [
     [ 'input-password-unmask-around-emoji.html#2-3-3-3', 'input-password-unmask-around-emoji-ref.html#2-3-3-3'],
     [ 'input-password-unmask-around-emoji.html#3-4-4-4', 'input-password-unmask-around-emoji-ref.html#3-4-4-4'],
     [ 'input-password-unmask-around-emoji.html#1-4-4-4', 'input-password-unmask-around-emoji-ref.html#1-4-4-4'],
+    function() {SpecialPowers.pushPrefEnv({'clear': [['layout.forms.input-type-show-password-button.enabled']]}, nextTest);} ,
 
     [ 'input-stoppropagation.html', 'input-stoppropagation-ref.html'] ,
     [ 'textarea-maxlength-valid-before-change.html', 'textarea-valid-ref.html'] ,
@@ -274,6 +279,12 @@ var tests = [
     [ 'bug1637476-1.html' , 'bug1637476-1-ref.html' ] ,
     [ 'bug1637476-2.html' , 'bug1637476-2-ref.html' ] ,
     [ 'bug1637476-3.html' , 'bug1637476-3-ref.html' ] ,
+    [ 'bug1663475-1.html' , 'bug1663475-1-ref.html' ] ,
+    [ 'bug1663475-2.html' , 'bug1663475-2-ref.html' ] ,
+    // shift+arrow key should select non-editable only
+    [ 'bug1670531-1.html' , 'bug1670531-2.html' ] ,
+    [ 'bug1670531-3.html' , 'bug1670531-3-ref.html' ] ,
+    [ 'bug1670531-4.html' , 'bug1670531-3-ref.html' ] ,
     function() {SpecialPowers.pushPrefEnv({'clear': [['layout.accessiblecaret.enabled_on_touch']]}, nextTest);} ,
     function() {SpecialPowers.pushPrefEnv({'set': [['accessibility.browsewithcaret', true]]}, nextTest);} ,
     [ 'bug1529492-1.html' , 'bug1529492-1-ref.html' ] ,
@@ -424,12 +435,13 @@ function nextTest() {
     endTest();
   }
 }
-function runTests() {
+async function runTests() {
   try {
     if (window.parent) {
-      var parentDoc = window.parent.document;
-      extraCSSRule = parentDoc.styleSheets[parentDoc.styleSheets.length-1]
-        .insertRule("iframe#testframe{width:600px;height:400px}",0);
+      await SpecialPowers.spawn(window.parent, [], () => {
+          content.document.styleSheets[content.document.styleSheets.length-1]
+            .insertRule("iframe#testframe{width:600px;height:400px}",0);
+      });
     }
     try {
       caretBlinkTime = SpecialPowers.getIntPref("ui.caretBlinkTime");

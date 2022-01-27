@@ -31,7 +31,8 @@ inline constexpr void convert_type_fundamental(T_To& to,
   }
   else if_constexpr_named(cond3, is_enum_v<T_To> || is_enum_v<T_From>)
   {
-    static_assert(std::is_same_v<T_To, T_From>);
+    static_assert(std::is_same_v<detail::remove_cv_ref_t<T_To>,
+                                 detail::remove_cv_ref_t<T_From>>);
     to = from;
   }
   else if_constexpr_named(
@@ -108,7 +109,7 @@ inline constexpr void convert_type_fundamental_or_array(T_To& to,
   }
   else if constexpr (!is_array_v<T_To_C>)
   {
-    return convert_type_fundamental(to, from);
+    convert_type_fundamental(to, from);
   }
   else if_constexpr_named(cond2, !all_extents_same<T_To_C, T_From_C>)
   {
@@ -130,7 +131,7 @@ inline constexpr void convert_type_fundamental_or_array(T_To& to,
                   is_signed_v<T_To_El> == is_signed_v<T_From_El>) {
       // Sanity check - this should definitely be true
       static_assert(sizeof(T_From_C) == sizeof(T_To_C));
-      memcpy(&to, &from, sizeof(T_To_C));
+      std::memcpy(&to, &from, sizeof(T_To_C));
     } else {
       for (size_t i = 0; i < std::extent_v<T_To_C>; i++) {
         convert_type_fundamental_or_array(to[i], from[i]);

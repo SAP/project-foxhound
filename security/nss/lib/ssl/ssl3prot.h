@@ -14,7 +14,7 @@ typedef PRUint16 SSL3ProtocolVersion;
 /* version numbers are defined in sslproto.h */
 
 /* DTLS 1.3 is still a draft. */
-#define DTLS_1_3_DRAFT_VERSION 38
+#define DTLS_1_3_DRAFT_VERSION 43
 
 typedef PRUint16 ssl3CipherSuite;
 /* The cipher suites are defined in sslproto.h */
@@ -76,6 +76,7 @@ typedef enum {
     bad_certificate_hash_value = 114,
     certificate_required = 116,
     no_application_protocol = 120,
+    ech_required = 121,
 
     /* invalid alert */
     no_alert = 256

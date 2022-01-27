@@ -26,15 +26,19 @@ impl MetricType for BooleanMetric {
     }
 }
 
+// IMPORTANT:
+//
+// When changing this implementation, make sure all the operations are
+// also declared in the related trait in `../traits/`.
 impl BooleanMetric {
-    /// Create a new boolean metric.
+    /// Creates a new boolean metric.
     pub fn new(meta: CommonMetricData) -> Self {
         Self { meta }
     }
 
-    /// Set to the specified boolean value.
+    /// Sets to the specified boolean value.
     ///
-    /// ## Arguments
+    /// # Arguments
     ///
     /// * `glean` - the Glean instance this metric belongs to.
     /// * `value` - the value to set.
@@ -49,14 +53,15 @@ impl BooleanMetric {
 
     /// **Test-only API (exported for FFI purposes).**
     ///
-    /// Get the currently stored value as a boolean.
+    /// Gets the currently stored value as a boolean.
     ///
     /// This doesn't clear the stored value.
     pub fn test_get_value(&self, glean: &Glean, storage_name: &str) -> Option<bool> {
-        match StorageManager.snapshot_metric(
+        match StorageManager.snapshot_metric_for_test(
             glean.storage(),
             storage_name,
             &self.meta.identifier(glean),
+            self.meta.lifetime,
         ) {
             Some(Metric::Boolean(b)) => Some(b),
             _ => None,

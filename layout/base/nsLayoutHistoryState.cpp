@@ -11,10 +11,10 @@
 
 #include "nsILayoutHistoryState.h"
 #include "nsWeakReference.h"
-#include "nsClassHashtable.h"
 #include "mozilla/PresState.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/UniquePtr.h"
+#include "nsTHashMap.h"
 
 using namespace mozilla;
 
@@ -30,7 +30,7 @@ class nsLayoutHistoryState final : public nsILayoutHistoryState,
   ~nsLayoutHistoryState() = default;
   bool mScrollPositionOnly;
 
-  nsDataHashtable<nsCStringHashKey, UniquePtr<PresState>> mStates;
+  nsTHashMap<nsCString, UniquePtr<PresState>> mStates;
 };
 
 already_AddRefed<nsILayoutHistoryState> NS_NewLayoutHistoryState() {
@@ -53,10 +53,7 @@ nsLayoutHistoryState::GetKeys(nsTArray<nsCString>& aKeys) {
     return NS_ERROR_FAILURE;
   }
 
-  aKeys.SetCapacity(mStates.Count());
-  for (auto iter = mStates.Iter(); !iter.Done(); iter.Next()) {
-    aKeys.AppendElement(iter.Key());
-  }
+  AppendToArray(aKeys, mStates.Keys());
 
   return NS_OK;
 }
@@ -90,18 +87,18 @@ nsLayoutHistoryState::AddNewPresState(const nsACString& aKey, float aScrollX,
   newState->allowScrollOriginDowngrade() = aAllowScrollOriginDowngrade;
   newState->resolution() = aRes;
 
-  mStates.Put(nsCString(aKey), std::move(newState));
+  mStates.InsertOrUpdate(nsCString(aKey), std::move(newState));
 
   return NS_OK;
 }
 
 void nsLayoutHistoryState::AddState(const nsCString& aStateKey,
                                     UniquePtr<PresState> aState) {
-  mStates.Put(aStateKey, std::move(aState));
+  mStates.InsertOrUpdate(aStateKey, std::move(aState));
 }
 
 PresState* nsLayoutHistoryState::GetState(const nsCString& aKey) {
-  UniquePtr<PresState>* statePtr = mStates.GetValue(aKey);
+  auto statePtr = mStates.Lookup(aKey);
   if (!statePtr) {
     return nullptr;
   }
@@ -127,8 +124,7 @@ void nsLayoutHistoryState::SetScrollPositionOnly(const bool aFlag) {
 }
 
 void nsLayoutHistoryState::ResetScrollState() {
-  for (auto iter = mStates.Iter(); !iter.Done(); iter.Next()) {
-    PresState* state = iter.Data().get();
+  for (const auto& state : mStates.Values()) {
     if (state) {
       state->scrollState() = nsPoint(0, 0);
     }
@@ -141,9 +137,9 @@ void nsLayoutHistoryState::GetContents(bool* aScrollPositionOnly,
   *aScrollPositionOnly = mScrollPositionOnly;
   aKeys.SetCapacity(mStates.Count());
   aStates.SetCapacity(mStates.Count());
-  for (auto iter = mStates.Iter(); !iter.Done(); iter.Next()) {
-    aKeys.AppendElement(iter.Key());
-    aStates.AppendElement(*(iter.Data().get()));
+  for (const auto& entry : mStates) {
+    aKeys.AppendElement(entry.GetKey());
+    aStates.AppendElement(*(entry.GetData().get()));
   }
 }
 

@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 as{
     Currencies{
         AED{
@@ -330,6 +331,10 @@ as{
             "LRD",
             "লাইবেৰিয়ান ডলাৰ",
         }
+        LSL{
+            "LSL",
+            "লেচোথো লোটি",
+        }
         LYD{
             "LYD",
             "লিবিয়ান ডিনাৰ",
@@ -619,7 +624,7 @@ as{
             "ইষ্ট কেৰিবিয়ান ডলাৰ",
         }
         XOF{
-            "CFA",
+            "F CFA",
             "পশ্চিম আফ্ৰিকান CFA ফ্ৰেংক",
         }
         XPF{
@@ -1071,6 +1076,10 @@ as{
             one{"লাইবেৰিয়ান ডলাৰ"}
             other{"লাইবেৰিয়ান ডলাৰ"}
         }
+        LSL{
+            one{"লেচোথো লোটি"}
+            other{"লেচোথো লোটিচ"}
+        }
         LYD{
             one{"লিবিয়ান ডিনাৰ"}
             other{"লিবিয়ান ডিনাৰ"}
@@ -1384,5 +1393,4 @@ as{
             other{"জাম্বিয়ান কোৱাচা"}
         }
     }
-    Version{"37"}
 }

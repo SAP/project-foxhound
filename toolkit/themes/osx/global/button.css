@@ -5,7 +5,6 @@
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 
 button {
-  appearance: button;
   /* The horizontal margin used here come from the Aqua Human Interface
      Guidelines, there should be 12 pixels between two buttons. */
   margin: 5px 6px 3px;
@@ -14,20 +13,14 @@ button {
   text-shadow: none;
 }
 
-button:not([disabled="true"]):hover:active {
-  color: -moz-mac-buttonactivetext;
+button:where(:hover:active) {
+  color: -moz-buttonactivetext;
 }
 
 /* When the window isn't focused, the default button background isn't drawn,
  * so don't change the text color then: */
-button[default="true"]:not([disabled="true"]):not(:-moz-window-inactive) {
+button:where([default="true"]:not(:-moz-window-inactive)) {
   color: -moz-mac-defaultbuttontext;
-}
-
-/* Likewise, when active (mousedown) but not hovering, the default button
- * background isn't drawn, override the previous selector for that case: */
-button[default="true"]:not(:hover):active {
-  color: ButtonText;
 }
 
 .button-text {
@@ -42,7 +35,7 @@ button[type="default"] {
 
 /* .......... disabled state .......... */
 
-button[disabled="true"] {
+button:where([disabled="true"]) {
   color: GrayText;
 }
 

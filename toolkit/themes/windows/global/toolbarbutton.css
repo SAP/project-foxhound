@@ -37,9 +37,13 @@ toolbarbutton[disabled="true"] {
 }
 
 @media (-moz-windows-classic) {
+  @media not (prefers-contrast) {
+    toolbarbutton[disabled="true"] {
+      text-shadow: 1px 1px ThreeDHighlight;
+    }
+  }
   toolbarbutton[disabled="true"] {
     color: ThreeDShadow;
-    text-shadow: 1px 1px ThreeDHighlight;
   }
 }
 
@@ -61,13 +65,13 @@ toolbarbutton[disabled="true"] {
 
 /* ::::: toolbarbutton menu ::::: */
 
-.toolbarbutton-menu-dropmarker {
+.toolbarbutton-menu-dropmarker,
+.toolbarbutton-combined-buttons-dropmarker {
   appearance: none;
-  list-style-image: url("chrome://global/skin/icons/arrow-dropdown-12.svg");
+  list-style-image: url("chrome://global/skin/icons/arrow-down-12.svg");
   -moz-context-properties: fill;
   fill: currentColor;
-  width: 12px;
-  height: 12px;
+  width: auto;
 }
 
 /* ::::: toolbarbutton badged ::::: */
@@ -90,10 +94,10 @@ toolbarbutton[disabled="true"] {
   box-shadow: 0 1px 0 hsla(0, 100%, 100%, .2) inset,
               0 -1px 0 hsla(0, 0%, 0%, .1) inset,
               0 1px 0 hsla(206, 50%, 10%, .2);
-  margin: -6px 0 0 !important;
-  margin-inline-end: -8px !important;
+  margin: -5px 0 0 !important;
+  margin-inline-end: -4px !important;
   min-width: 14px;
-  max-width: 24px;
+  max-width: 20px;
   line-height: 10px;
   text-align: center;
   align-self: start;

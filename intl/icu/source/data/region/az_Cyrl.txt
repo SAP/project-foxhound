@@ -1,5 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
-// License & terms of use: http://www.unicode.org/copyright.html#License
+// License & terms of use: http://www.unicode.org/copyright.html
+// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
 az_Cyrl{
     %%Parent{"root"}
     Countries{
@@ -76,7 +77,7 @@ az_Cyrl{
         CF{"Мәркәзи Африка Республикасы"}
         CG{"Конго-Браззавил"}
         CH{"Исвечрә"}
-        CI{"Kотд’ивуар"}
+        CI{"Котд’ивуар"}
         CK{"Кук адалары"}
         CL{"Чили"}
         CM{"Камерун"}
@@ -301,5 +302,4 @@ az_Cyrl{
         CZ{"Чех Республикасы"}
         FK{"Фолкленд адалары (Малвин адалары)"}
     }
-    Version{"37"}
 }
