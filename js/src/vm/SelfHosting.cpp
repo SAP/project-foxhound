@@ -2229,6 +2229,9 @@ static const JSFunctionSpec intrinsic_functions[] = {
     // Intrinsic helper functions
     JS_FN("AddModuleNamespaceBinding", intrinsic_AddModuleNamespaceBinding, 4,
           0),
+    JS_FN("AddTaintOperation", taint_addTaintOperation, 2, 0),
+    JS_FN("AddTaintOperationNative", taint_addTaintOperation_native, 2, 0),
+    JS_FN("AddTaintOperationNativeFull", taint_addTaintOperation_native_full, 2, 0),
     JS_FN("AppendAsyncParentModule", intrinsic_AppendAsyncParentModule, 2, 0),
     JS_INLINABLE_FN("ArrayBufferByteLength",
                     intrinsic_ArrayBufferByteLength<ArrayBufferObject>, 1, 0,
@@ -2276,6 +2279,7 @@ static const JSFunctionSpec intrinsic_functions[] = {
     JS_FN("ConstructorForTypedArray", intrinsic_ConstructorForTypedArray, 1, 0),
     JS_FN("CopyDataPropertiesOrGetOwnKeys",
           intrinsic_CopyDataPropertiesOrGetOwnKeys, 3, 0),
+    JS_FN("CopyString", taint_copyString, 1, 0),
     JS_FN("CreateImportBinding", intrinsic_CreateImportBinding, 4, 0),
     JS_FN("CreateMapIterationResultPair",
           intrinsic_CreateMapIterationResultPair, 0, 0),
@@ -2626,11 +2630,6 @@ static const JSFunctionSpec intrinsic_functions[] = {
     JS_FN("std_String_indexOf", str_indexOf, 1, 0),
     JS_FN("std_String_startsWith", str_startsWith, 1, 0),
     JS_FN("std_TypedArray_buffer", js::TypedArray_bufferGetter, 1, 0),
-
-    JS_FN("AddTaintOperation", taint_addTaintOperation, 2, 0),
-    JS_FN("AddTaintOperationNative", taint_addTaintOperation_native, 2, 0),
-    JS_FN("AddTaintOperationNativeFull", taint_addTaintOperation_native_full, 2, 0),
-    JS_FN("CopyString", taint_copyString, 1, 0),
 
     JS_FS_END};
 

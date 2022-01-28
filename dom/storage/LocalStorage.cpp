@@ -22,6 +22,7 @@
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/EnumSet.h"
+#include "nsJSUtils.h"
 #include "nsThreadUtils.h"
 #include "nsContentUtils.h"
 #include "nsServiceManagerUtils.h"

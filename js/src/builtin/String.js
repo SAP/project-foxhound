@@ -82,7 +82,7 @@ function String_match(regexp) {
     }
 
     // Step 5.
-    var ret callContentFunction(GetMethod(rx, GetBuiltinSymbol("match")), rx, S);
+    var ret = callContentFunction(GetMethod(rx, GetBuiltinSymbol("match")), rx, S);
     addTaintToArray(ret, "match", regexp);
     return ret;
 }

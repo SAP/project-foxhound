@@ -4634,7 +4634,6 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
   RootedFunction report(cx);
 
   JSObject* global = cx->global();
-  MOZ_ASSERT(global->isNative());
 
   RootedValue slot(cx, JS::GetReservedSlot(global, TAINT_REPORT_FUNCTION_SLOT));
   if (slot.isUndefined()) {
