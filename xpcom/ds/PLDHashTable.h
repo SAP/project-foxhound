@@ -368,13 +368,19 @@ class PLDHashTable {
   // These fields are packed carefully. On 32-bit platforms,
   // sizeof(PLDHashTable) is 20. On 64-bit platforms, sizeof(PLDHashTable) is
   // 32; 28 bytes of data followed by 4 bytes of padding for alignment.
+  //
+  // Taintfox: We get some entries which are 256 bytes in size, which
+  // overflows the byte value and causes a MOZ_CRASH in the PLDHashTable
+  // constuctor.
+  // Increased mEntrySize to 16 bit and shifted variables to help alignment.
+  //
   const PLDHashTableOps* const mOps;  // Virtual operations; see below.
   EntryStore mEntryStore;             // (Lazy) entry storage and generation.
   uint16_t mGeneration;               // The storage generation.
-  uint8_t mHashShift;                 // Multiplicative hash shift.
-  const uint8_t mEntrySize;           // Number of bytes in an entry.
+  const uint16_t mEntrySize;          // Number of bytes in an entry.
   uint32_t mEntryCount;               // Number of entries in table.
   uint32_t mRemovedCount;             // Removed entry sentinels in table.
+  uint8_t mHashShift;                 // Multiplicative hash shift.
 
 #ifdef MOZ_HASH_TABLE_CHECKS_ENABLED
   mutable Checker mChecker;

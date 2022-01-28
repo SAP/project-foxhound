@@ -1422,7 +1422,9 @@ TextControlState::TextControlState(TextControlElement* aOwningElement)
 // also to ::Construct.
 {
   MOZ_COUNT_CTOR(TextControlState);
-  static_assert(sizeof(*this) <= 256,
+  // Taintfox: originally 128, we need addition 8 bytes for taint pointer
+  // as TextControlState contains an nsString
+  static_assert(sizeof(*this) <= 136,
                 "Please keep small TextControlState as far as possible");
 }
 
