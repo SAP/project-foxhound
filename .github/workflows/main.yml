@@ -28,7 +28,7 @@ jobs:
 
       # Bootstrap
       - name: Bootstrap Build Environment
-        run: ./mach bootstrap
+        run: ./mach bootstrap --application-choice=browser
 
       # Configure
       - name: Copy configuration
