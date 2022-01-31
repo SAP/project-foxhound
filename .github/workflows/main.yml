@@ -16,7 +16,7 @@ on:
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   # This workflow contains a single job called "build"
-  build:
+  setup:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
@@ -30,10 +30,26 @@ jobs:
       - name: Bootstrap Build Environment
         run: ./mach bootstrap --application-choice=browser
 
+  build:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
       # Configure
       - name: Copy configuration
         run: cp taintfox_mozconfig_ubuntu .mozconfig
         
+      # Build
+      - name: Build
+        run: ./mach build
+
+  build_js:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      # Configure
+      - name: Copy configuration
+        run: cp taintfox_mozconfig_spidermonkey .mozconfig
+
       # Build
       - name: Build
         run: ./mach build
